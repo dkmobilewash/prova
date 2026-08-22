@@ -57,13 +57,27 @@ async function assertJobInCompany(jobId: string, companyId: string) {
 }
 
 /**
+ * Only an ESTIMATE-stage job allows direct line-item edits. Once a job is
+ * CONTRACTED, scope/pricing changes must go through a change order so
+ * there's an audit trail of what changed after the client agreed to it.
+ */
+function assertEditableDirectly(job: { status: string }) {
+  if (job.status !== "ESTIMATE") {
+    throw new Error(
+      "This job is contracted — edit line items via a change order instead of directly.",
+    );
+  }
+}
+
+/**
  * Adds a line item directly to the estimate. Because contract/budget/costing
  * all read from JobLineItem, this single insert is what "building the
  * estimate" means — nothing else needs to be told about it separately.
  */
 export async function addLineItem(jobId: string, formData: FormData) {
   const { company } = await requireCompanyContext();
-  await assertJobInCompany(jobId, company.id);
+  const job = await assertJobInCompany(jobId, company.id);
+  assertEditableDirectly(job);
 
   const description = String(formData.get("description") ?? "").trim();
   const unit = String(formData.get("unit") ?? "").trim();
@@ -87,6 +101,17 @@ export async function addLineItem(jobId: string, formData: FormData) {
   revalidatePath(`/jobs/${jobId}`);
 }
 
+/**
+ * Change orders only make sense once there's a contracted baseline to
+ * change. Before that, direct edits (see assertEditableDirectly) are the
+ * right tool.
+ */
+function assertEditableViaChangeOrder(job: { status: string }) {
+  if (job.status === "ESTIMATE") {
+    throw new Error("This job isn't contracted yet — edit line items directly instead.");
+  }
+}
+
 async function nextChangeOrderNumber(jobId: string) {
   const last = await prisma.changeOrder.findFirst({
     where: { jobId },
@@ -102,7 +127,8 @@ async function nextChangeOrderNumber(jobId: string) {
  */
 export async function addChangeOrderLineItem(jobId: string, formData: FormData) {
   const { company } = await requireCompanyContext();
-  await assertJobInCompany(jobId, company.id);
+  const job = await assertJobInCompany(jobId, company.id);
+  assertEditableViaChangeOrder(job);
 
   const title = String(formData.get("title") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();
@@ -145,7 +171,8 @@ export async function addChangeOrderLineItem(jobId: string, formData: FormData) 
  */
 export async function editLineItemViaChangeOrder(jobId: string, formData: FormData) {
   const { company } = await requireCompanyContext();
-  await assertJobInCompany(jobId, company.id);
+  const job = await assertJobInCompany(jobId, company.id);
+  assertEditableViaChangeOrder(job);
 
   const lineItemId = String(formData.get("lineItemId") ?? "");
   const title = String(formData.get("title") ?? "").trim();
@@ -200,4 +227,122 @@ export async function editLineItemViaChangeOrder(jobId: string, formData: FormDa
   ]);
 
   revalidatePath(`/jobs/${jobId}`);
+}
+
+async function assertLineItemOnJob(lineItemId: string, jobId: string) {
+  const lineItem = await prisma.jobLineItem.findUnique({ where: { id: lineItemId } });
+  if (!lineItem || lineItem.jobId !== jobId) {
+    throw new Error("Line item not found on this job");
+  }
+  return lineItem;
+}
+
+/** Direct edit of a line item — only while the job is still an ESTIMATE. */
+export async function updateLineItem(jobId: string, lineItemId: string, formData: FormData) {
+  const { company } = await requireCompanyContext();
+  const job = await assertJobInCompany(jobId, company.id);
+  assertEditableDirectly(job);
+  await assertLineItemOnJob(lineItemId, jobId);
+
+  const description = String(formData.get("description") ?? "").trim();
+  const unit = String(formData.get("unit") ?? "").trim();
+  const quantity = decimalFromForm(formData, "quantity");
+  const unitPrice = decimalFromForm(formData, "unitPrice");
+
+  if (!description) {
+    throw new Error("Description is required");
+  }
+
+  await prisma.jobLineItem.update({
+    where: { id: lineItemId },
+    data: { description, unit: unit || null, quantity, unitPrice },
+  });
+
+  revalidatePath(`/jobs/${jobId}`);
+}
+
+/** Direct removal of a line item — only while the job is still an ESTIMATE. */
+export async function deleteLineItem(jobId: string, lineItemId: string) {
+  const { company } = await requireCompanyContext();
+  const job = await assertJobInCompany(jobId, company.id);
+  assertEditableDirectly(job);
+  await assertLineItemOnJob(lineItemId, jobId);
+
+  await prisma.jobLineItem.update({
+    where: { id: lineItemId },
+    data: { isDeleted: true },
+  });
+
+  revalidatePath(`/jobs/${jobId}`);
+}
+
+/**
+ * Removes an EXISTING line item via a change order once the job is
+ * contracted: soft-deletes the same row (never forks it) and logs the
+ * removal to ChangeOrderLineItemEdit for audit history.
+ */
+export async function removeLineItemViaChangeOrder(jobId: string, formData: FormData) {
+  const { company } = await requireCompanyContext();
+  const job = await assertJobInCompany(jobId, company.id);
+  assertEditableViaChangeOrder(job);
+
+  const lineItemId = String(formData.get("lineItemId") ?? "");
+  const title = String(formData.get("title") ?? "").trim();
+  const description = String(formData.get("description") ?? "").trim();
+
+  if (!title || !lineItemId) {
+    throw new Error("Change order title and target line item are required");
+  }
+
+  const lineItem = await assertLineItemOnJob(lineItemId, jobId);
+  const number = await nextChangeOrderNumber(jobId);
+
+  await prisma.$transaction([
+    prisma.changeOrder.create({
+      data: {
+        jobId,
+        number,
+        title,
+        description: description || null,
+        edits: {
+          create: [{ lineItemId: lineItem.id, field: "deleted", oldValue: "false", newValue: "true" }],
+        },
+      },
+    }),
+    prisma.jobLineItem.update({
+      where: { id: lineItemId },
+      data: { isDeleted: true },
+    }),
+  ]);
+
+  revalidatePath(`/jobs/${jobId}`);
+}
+
+/**
+ * Locks in the estimate as a contract. From this point on, line items are
+ * only editable via change orders (see assertEditableDirectly /
+ * assertEditableViaChangeOrder above).
+ */
+export async function markJobContracted(jobId: string) {
+  const { company } = await requireCompanyContext();
+  const job = await assertJobInCompany(jobId, company.id);
+
+  if (job.status !== "ESTIMATE") {
+    throw new Error("Job is already contracted");
+  }
+
+  const lineItemCount = await prisma.jobLineItem.count({
+    where: { jobId, isDeleted: false },
+  });
+  if (lineItemCount === 0) {
+    throw new Error("Add at least one line item before contracting this job");
+  }
+
+  await prisma.job.update({
+    where: { id: jobId },
+    data: { status: "CONTRACTED" },
+  });
+
+  revalidatePath(`/jobs/${jobId}`);
+  revalidatePath("/dashboard");
 }
