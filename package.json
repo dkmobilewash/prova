@@ -1,0 +1,21 @@
+{
+  "name": "prova",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@10.33.0",
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "db:generate": "pnpm --filter @prova/db generate",
+    "db:migrate": "pnpm --filter @prova/db migrate:dev",
+    "db:studio": "pnpm --filter @prova/db studio"
+  },
+  "devDependencies": {
+    "turbo": "^2.3.3",
+    "typescript": "^5.7.2"
+  }
+}
