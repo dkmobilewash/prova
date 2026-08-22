@@ -37,9 +37,20 @@ Company
 ### `Job`
 
 A Job represents one project for one client. Its `status` field
-(`ESTIMATE → CONTRACTED → IN_PROGRESS → COMPLETE`) is just a label for
-where the job is in its lifecycle — it does not gate which table
-`lineItems` come from. The same rows back the job at every stage.
+(`ESTIMATE → CONTRACTED → IN_PROGRESS → COMPLETE`) does not gate which
+table `lineItems` come from — the same rows back the job at every stage.
+What it does gate (enforced server-side in `apps/web/lib/actions.ts`, not
+just hidden in the UI) is *how* those rows may be changed:
+
+- **`ESTIMATE`** — line items can be added, edited, and removed directly.
+  Nothing to audit yet; it's still a draft.
+- **`CONTRACTED` or later** — direct edits are rejected. Any change to
+  scope or pricing must go through a `ChangeOrder`, which is what makes
+  the audit trail in `ChangeOrderLineItemEdit` meaningful: it only exists
+  for changes made *after* the client agreed to something.
+
+This is the piece that makes "change order" a real concept rather than
+just an alternate way to edit the same table at any time.
 
 ### `JobLineItem` — the unified object
 
@@ -64,7 +75,7 @@ nothing that was once billed disappears from the audit trail.
 
 ### `ChangeOrder` — mutates the same rows, never forks them
 
-A change order does exactly one of two things, and both operate on
+A change order does exactly one of three things, and all three operate on
 `JobLineItem` directly:
 
 1. **Adds new scope** → a new `JobLineItem` row is inserted with
@@ -81,6 +92,11 @@ A change order does exactly one of two things, and both operate on
    logic from it. If you deleted every row in
    `ChangeOrderLineItemEdit`, the budget and contract summary would be
    unaffected; you'd only lose the "why did this change" history.
+
+3. **Removes scope** → the existing `JobLineItem` row is soft-deleted
+   (`isDeleted = true`) in place, logged the same way as a modification
+   (`field: "deleted"`). Same reasoning as above: no fork, no second
+   table, just a flag on the row that already existed.
 
 **This is how a change order updates the budget without re-entry:** the
 budget was never a separate number to begin with. It's
