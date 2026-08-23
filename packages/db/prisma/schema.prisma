@@ -113,7 +113,8 @@ model JobLineItem {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  edits ChangeOrderLineItemEdit[]
+  edits       ChangeOrderLineItemEdit[]
+  costEntries CostEntry[]
 
   @@index([jobId])
   @@index([originChangeOrderId])
@@ -154,5 +155,31 @@ model ChangeOrderLineItemEdit {
   createdAt     DateTime    @default(now())
 
   @@index([changeOrderId])
+  @@index([lineItemId])
+}
+
+enum CostCategory {
+  LABOR
+  MATERIAL
+  SUBCONTRACTOR
+  OTHER
+}
+
+/// An actual expense logged against a JobLineItem — references the line
+/// item rather than duplicating it, the same way ChangeOrder does. Actual
+/// cost per line item is SUM(costEntries.amount), computed, never stored.
+/// Unlike change orders, logging a cost isn't gated by job status: real
+/// spending happens throughout the job, especially once work is in
+/// progress.
+model CostEntry {
+  id          String       @id @default(cuid())
+  lineItemId  String
+  lineItem    JobLineItem  @relation(fields: [lineItemId], references: [id])
+  description String
+  amount      Decimal      @db.Decimal(12, 2)
+  category    CostCategory @default(OTHER)
+  incurredAt  DateTime     @default(now())
+  createdAt   DateTime     @default(now())
+
   @@index([lineItemId])
 }
