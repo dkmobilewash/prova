@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { headers } from "next/headers";
 import { StatusBadge } from "@prova/ui";
 import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
-import { updateContact } from "@/lib/actions";
+import { enablePortalAccess, updateContact } from "@/lib/actions";
 import { money } from "@/lib/money";
 
 export default async function ContactPage({ params }: { params: Promise<{ id: string }> }) {
@@ -25,6 +26,10 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
   }
 
   const updateContactWithId = updateContact.bind(null, contact.id);
+  const enablePortalWithId = enablePortalAccess.bind(null, contact.id);
+
+  const headerList = await headers();
+  const origin = `${headerList.get("x-forwarded-proto") ?? "https"}://${headerList.get("host")}`;
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-8">
@@ -72,6 +77,35 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
             Save
           </button>
         </form>
+      </section>
+
+      <section className="mb-10 rounded-lg border border-slate-800 bg-slate-900 p-6">
+        <h2 className="mb-3 text-lg font-semibold text-slate-100">Client portal</h2>
+        {contact.portalToken ? (
+          <div className="text-sm">
+            <p className="mb-2 text-slate-300">
+              Share this link so {contact.name} can view their jobs, contracts, and invoices:
+            </p>
+            <p className="break-all rounded-md bg-slate-950 px-3 py-2 font-mono text-xs text-blue-400">
+              {origin}/portal/{contact.portalToken}
+            </p>
+          </div>
+        ) : (
+          <div>
+            <p className="mb-3 text-sm text-slate-400">
+              No portal access yet. This gives {contact.name} a read-only link to view their jobs
+              — no login required.
+            </p>
+            <form action={enablePortalWithId}>
+              <button
+                type="submit"
+                className="rounded-md bg-slate-800 px-3 py-2 text-sm font-medium text-slate-100 hover:bg-slate-700"
+              >
+                Enable client portal
+              </button>
+            </form>
+          </div>
+        )}
       </section>
 
       <section>
