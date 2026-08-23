@@ -13,7 +13,7 @@ import {
   type QuickBooksCompanyInfo,
 } from "@prova/integrations";
 import { requireCompanyContext } from "@/lib/auth";
-import { QUICKBOOKS_OAUTH_STATE_COOKIE } from "@/lib/quickbooks-constants";
+import { QUICKBOOKS_OAUTH_STATE_COOKIE, type QuickBooksOAuthCookiePayload } from "@/lib/quickbooks-constants";
 
 function decimalFromForm(formData: FormData, key: string): string {
   const raw = formData.get(key);
@@ -768,18 +768,27 @@ const QUICKBOOKS_OAUTH_STATE_MAX_AGE_SECONDS = 600;
 
 /**
  * Starts the QuickBooks OAuth flow. OWNER-only, matching the /settings
- * page's access gate. Stores a random `state` value in a short-lived,
- * httpOnly cookie and passes the same value in the authorize URL — the
- * callback route (app/api/quickbooks/callback) checks the two match as
- * CSRF protection before exchanging the code.
+ * page's access gate. Stores the CSRF `state` value AND who's connecting
+ * (companyId/userId) in a short-lived, httpOnly cookie — the callback
+ * route (app/api/quickbooks/callback) reads it back directly rather than
+ * requiring a live Clerk session at that point. Intuit's redirect back is
+ * a third-party-initiated navigation that can outlast a short Clerk
+ * session token (e.g. time spent on Intuit's consent/2FA screen); a live-
+ * session requirement there forces a re-login detour mid-flow that drops
+ * the in-flight exchange. See QuickBooksOAuthCookiePayload for the
+ * reasoning in full.
  */
 export async function initiateQuickBooksConnect() {
   const context = await requireCompanyContext();
   assertOwner(context);
 
-  const state = randomBytes(24).toString("hex");
+  const payload: QuickBooksOAuthCookiePayload = {
+    state: randomBytes(24).toString("hex"),
+    companyId: context.company.id,
+    userId: context.id,
+  };
   const cookieStore = await cookies();
-  cookieStore.set(QUICKBOOKS_OAUTH_STATE_COOKIE, state, {
+  cookieStore.set(QUICKBOOKS_OAUTH_STATE_COOKIE, JSON.stringify(payload), {
     httpOnly: true,
     secure: true,
     sameSite: "lax",
@@ -787,7 +796,7 @@ export async function initiateQuickBooksConnect() {
     path: "/",
   });
 
-  redirect(getAuthorizeUrl(state));
+  redirect(getAuthorizeUrl(payload.state));
 }
 
 /** Ends the QuickBooks connection: best-effort revoke on Intuit's side,
