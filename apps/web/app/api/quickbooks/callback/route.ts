@@ -31,6 +31,11 @@ export async function GET(request: NextRequest) {
   const state = params.get("state");
   const realmId = params.get("realmId");
   if (!code || !state || !realmId) {
+    console.warn("QuickBooks callback missing params", {
+      hasCode: !!code,
+      hasState: !!state,
+      hasRealmId: !!realmId,
+    });
     return settingsRedirect(request, "error", "missing_params");
   }
 
@@ -38,6 +43,16 @@ export async function GET(request: NextRequest) {
   const expectedState = cookieStore.get(QUICKBOOKS_OAUTH_STATE_COOKIE)?.value;
   cookieStore.delete(QUICKBOOKS_OAUTH_STATE_COOKIE);
   if (!expectedState || expectedState !== state) {
+    // Diagnostic only — never log the raw state values, just whether the
+    // cookie made it back at all. A missing cookie almost always means the
+    // browser lost it between initiateQuickBooksConnect's redirect to
+    // Intuit and Intuit's redirect back here (e.g. an auth detour in
+    // between, a different browser profile/tab, or the cookie's maxAge
+    // was exceeded).
+    console.warn("QuickBooks OAuth state mismatch", {
+      hadCookie: expectedState !== undefined,
+      cookieMatchedParam: expectedState === state,
+    });
     return settingsRedirect(request, "error", "state_mismatch");
   }
 
