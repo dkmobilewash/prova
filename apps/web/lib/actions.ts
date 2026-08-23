@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 import { Prisma, prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 
@@ -338,6 +339,13 @@ export async function markJobContracted(jobId: string) {
     throw new Error("Add at least one line item before contracting this job");
   }
 
+  const signedRequest = await prisma.signatureRequest.findFirst({
+    where: { jobId, status: "SIGNED" },
+  });
+  if (!signedRequest) {
+    throw new Error("The client needs to sign the contract before this job can be contracted");
+  }
+
   await prisma.job.update({
     where: { id: jobId },
     data: { status: "CONTRACTED" },
@@ -552,4 +560,99 @@ export async function unassignCrewMember(jobId: string, userId: string) {
 
   revalidatePath(`/jobs/${jobId}`);
   revalidatePath("/schedule");
+}
+
+/**
+ * Creates a client-signing link for a job's contract. Only while ESTIMATE —
+ * this is signing the estimate that becomes the contract, not something you
+ * re-sign after the fact. Idempotent: if an unsigned request already
+ * exists, reuses it instead of spawning a second link.
+ */
+export async function createSignatureRequest(jobId: string) {
+  const { company } = await requireCompanyContext();
+  const job = await assertJobInCompany(jobId, company.id);
+
+  if (job.status !== "ESTIMATE") {
+    throw new Error("This job is already contracted");
+  }
+
+  const existing = await prisma.signatureRequest.findFirst({
+    where: { jobId, status: "PENDING" },
+  });
+  if (!existing) {
+    await prisma.signatureRequest.create({ data: { jobId } });
+  }
+
+  revalidatePath(`/jobs/${jobId}`);
+}
+
+/**
+ * Public action — no requireCompanyContext(). The client signing a
+ * contract has no account; the unguessable token in the URL is the access
+ * control. Captures signer name, IP, user agent, and an immutable snapshot
+ * of what was signed at this moment (audit-only — see SignatureRequest in
+ * schema.prisma and ARCHITECTURE.md).
+ */
+export async function signRequest(token: string, formData: FormData) {
+  const request = await prisma.signatureRequest.findUnique({
+    where: { token },
+    include: { job: { include: { company: true, contact: true } } },
+  });
+  if (!request) {
+    throw new Error("Signing link not found");
+  }
+  if (request.status === "SIGNED") {
+    throw new Error("This contract has already been signed");
+  }
+
+  const signerName = String(formData.get("signerName") ?? "").trim();
+  const signerEmail = String(formData.get("signerEmail") ?? "").trim();
+  const agreed = formData.get("agree") === "on";
+  if (!signerName) {
+    throw new Error("Name is required");
+  }
+  if (!agreed) {
+    throw new Error("You must confirm you agree before signing");
+  }
+
+  const headerList = await headers();
+  const forwardedFor = headerList.get("x-forwarded-for");
+  const ipAddress = forwardedFor ? forwardedFor.split(",")[0].trim() : null;
+  const userAgent = headerList.get("user-agent");
+
+  const lineItems = await prisma.jobLineItem.findMany({
+    where: { jobId: request.jobId, isDeleted: false },
+    orderBy: { createdAt: "asc" },
+  });
+  const total = lineItems.reduce((sum, item) => sum + Number(item.quantity) * Number(item.unitPrice), 0);
+
+  const snapshot = {
+    companyName: request.job.company.name,
+    jobName: request.job.name,
+    clientName: request.job.contact.name,
+    scope: request.job.scope,
+    total,
+    lineItems: lineItems.map((item) => ({
+      description: item.description,
+      quantity: item.quantity.toString(),
+      unit: item.unit,
+      unitPrice: item.unitPrice.toString(),
+    })),
+  };
+
+  await prisma.signatureRequest.update({
+    where: { id: request.id },
+    data: {
+      status: "SIGNED",
+      signedAt: new Date(),
+      signerName,
+      signerEmail: signerEmail || null,
+      ipAddress,
+      userAgent,
+      snapshot,
+    },
+  });
+
+  revalidatePath(`/esign/${token}`);
+  revalidatePath(`/jobs/${request.jobId}`);
 }
