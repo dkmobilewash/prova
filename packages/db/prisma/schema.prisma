@@ -114,9 +114,10 @@ model Job {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
-  lineItems    JobLineItem[]
-  changeOrders ChangeOrder[]
-  assignments  JobAssignment[]
+  lineItems         JobLineItem[]
+  changeOrders      ChangeOrder[]
+  assignments       JobAssignment[]
+  signatureRequests SignatureRequest[]
 
   @@index([companyId])
   @@index([contactId])
@@ -233,4 +234,35 @@ model JobAssignment {
   @@unique([jobId, userId])
   @@index([jobId])
   @@index([userId])
+}
+
+enum SignatureStatus {
+  PENDING
+  SIGNED
+}
+
+/// A client e-signature request for a Job's contract. The unguessable
+/// `token` is the client's access control — there's no client login
+/// (that's a separate, not-yet-built phase), so the token stands in for
+/// one. Once signed, `snapshot` freezes what the client actually agreed to
+/// at that moment: it's an audit record only, exactly like
+/// ChangeOrderLineItemEdit — nothing live (the contract summary, the
+/// budget) ever reads from it. See ARCHITECTURE.md.
+model SignatureRequest {
+  id     String          @id @default(cuid())
+  jobId  String
+  job    Job             @relation(fields: [jobId], references: [id])
+  token  String          @unique @default(cuid())
+  status SignatureStatus @default(PENDING)
+
+  signerName  String?
+  signerEmail String?
+  signedAt    DateTime?
+  ipAddress   String?
+  userAgent   String?
+  snapshot    Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([jobId])
 }
