@@ -1,6 +1,6 @@
 import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
-import { initiateQuickBooksConnect, disconnectQuickBooks } from "@/lib/actions";
+import { disconnectQuickBooks } from "@/lib/actions";
 import { QuickBooksTestConnectionButton } from "@/components/QuickBooksTestConnectionButton";
 
 const QB_ERROR_MESSAGES: Record<string, string> = {
@@ -74,14 +74,15 @@ export default async function SettingsPage({
             </div>
           </div>
         ) : (
-          <form action={initiateQuickBooksConnect}>
-            <button
-              type="submit"
-              className="inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
-            >
-              Connect QuickBooks
-            </button>
-          </form>
+          // A plain link (not next/link, so it's never hover-prefetched, and
+          // not a Server Action form — see app/api/quickbooks/start/route.ts
+          // for why this needs to be a real GET navigation).
+          <a
+            href="/api/quickbooks/start"
+            className="inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
+          >
+            Connect QuickBooks
+          </a>
         )}
       </section>
     </div>

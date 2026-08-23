@@ -2,18 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { headers, cookies } from "next/headers";
+import { headers } from "next/headers";
 import { randomBytes } from "node:crypto";
 import { Prisma, prisma } from "@prova/db";
-import {
-  getAuthorizeUrl,
-  revokeToken,
-  refreshTokens,
-  getCompanyInfo,
-  type QuickBooksCompanyInfo,
-} from "@prova/integrations";
+import { revokeToken, refreshTokens, getCompanyInfo, type QuickBooksCompanyInfo } from "@prova/integrations";
 import { requireCompanyContext } from "@/lib/auth";
-import { QUICKBOOKS_OAUTH_STATE_COOKIE, type QuickBooksOAuthCookiePayload } from "@/lib/quickbooks-constants";
 
 function decimalFromForm(formData: FormData, key: string): string {
   const raw = formData.get(key);
@@ -764,40 +757,8 @@ export async function deletePayment(jobId: string, paymentId: string) {
   revalidatePath(`/jobs/${jobId}`);
 }
 
-const QUICKBOOKS_OAUTH_STATE_MAX_AGE_SECONDS = 600;
-
-/**
- * Starts the QuickBooks OAuth flow. OWNER-only, matching the /settings
- * page's access gate. Stores the CSRF `state` value AND who's connecting
- * (companyId/userId) in a short-lived, httpOnly cookie — the callback
- * route (app/api/quickbooks/callback) reads it back directly rather than
- * requiring a live Clerk session at that point. Intuit's redirect back is
- * a third-party-initiated navigation that can outlast a short Clerk
- * session token (e.g. time spent on Intuit's consent/2FA screen); a live-
- * session requirement there forces a re-login detour mid-flow that drops
- * the in-flight exchange. See QuickBooksOAuthCookiePayload for the
- * reasoning in full.
- */
-export async function initiateQuickBooksConnect() {
-  const context = await requireCompanyContext();
-  assertOwner(context);
-
-  const payload: QuickBooksOAuthCookiePayload = {
-    state: randomBytes(24).toString("hex"),
-    companyId: context.company.id,
-    userId: context.id,
-  };
-  const cookieStore = await cookies();
-  cookieStore.set(QUICKBOOKS_OAUTH_STATE_COOKIE, JSON.stringify(payload), {
-    httpOnly: true,
-    secure: true,
-    sameSite: "lax",
-    maxAge: QUICKBOOKS_OAUTH_STATE_MAX_AGE_SECONDS,
-    path: "/",
-  });
-
-  redirect(getAuthorizeUrl(payload.state));
-}
+// QuickBooks OAuth start moved to app/api/quickbooks/start/route.ts (a
+// plain Route Handler, not a Server Action) — see that file for why.
 
 /** Ends the QuickBooks connection: best-effort revoke on Intuit's side,
  * then always removes the local record regardless of whether the revoke
