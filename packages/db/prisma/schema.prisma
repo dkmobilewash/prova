@@ -28,6 +28,12 @@ model Company {
   users    User[]
   contacts Contact[]
   jobs     Job[]
+  invites  Invite[]
+}
+
+enum UserRole {
+  OWNER
+  MEMBER
 }
 
 model User {
@@ -35,10 +41,30 @@ model User {
   clerkId   String   @unique
   email     String   @unique
   name      String?
+  // Defaults to OWNER (not MEMBER) so the migration backfill is correct for
+  // every User row that already exists in production today: pre-this-phase,
+  // every user was the sole/first user of their Company, i.e. its owner.
+  // New rows always set this explicitly in code (OWNER on first sign-in,
+  // MEMBER on invite acceptance) — this default only matters for backfill.
+  role      UserRole @default(OWNER)
   companyId String
   company   Company  @relation(fields: [companyId], references: [id])
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+}
+
+/// A pending invitation for someone to join a Company. Deleted once
+/// accepted — see requireCompanyContext() in apps/web/lib/auth.ts, which
+/// checks for a matching Invite (by email) before creating a brand new
+/// Company on first sign-in.
+model Invite {
+  id        String   @id @default(cuid())
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id])
+  email     String   @unique
+  createdAt DateTime @default(now())
 
   @@index([companyId])
 }
