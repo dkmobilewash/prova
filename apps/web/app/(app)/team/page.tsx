@@ -1,6 +1,5 @@
 import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
-import { AppHeader } from "@/components/AppHeader";
 import { cancelInvite, inviteTeamMember, removeTeamMember } from "@/lib/actions";
 
 export default async function TeamPage() {
@@ -13,23 +12,23 @@ export default async function TeamPage() {
   ]);
 
   return (
-    <main className="mx-auto max-w-3xl px-4 py-10">
-      <AppHeader companyName={company.name} />
+    <div className="mx-auto max-w-3xl px-6 py-8">
+      <h1 className="mb-6 text-xl font-semibold text-slate-100">Team</h1>
 
       <section className="mb-10">
-        <h1 className="mb-3 text-lg font-semibold">Team members</h1>
-        <ul className="divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white">
+        <h2 className="mb-3 text-sm font-semibold text-slate-300">Team members</h2>
+        <ul className="divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900">
           {members.map((member) => (
             <li key={member.id} className="flex items-center justify-between p-4">
               <div>
-                <p className="font-medium">{member.name ?? member.email}</p>
-                <p className="text-sm text-slate-500">
+                <p className="font-medium text-slate-100">{member.name ?? member.email}</p>
+                <p className="text-sm text-slate-400">
                   {member.email} · {member.role}
                 </p>
               </div>
               {isOwner && member.role !== "OWNER" && (
                 <form action={removeTeamMember.bind(null, member.id)}>
-                  <button type="submit" className="text-sm text-red-600 hover:underline">
+                  <button type="submit" className="text-sm text-red-400 hover:underline">
                     Remove
                   </button>
                 </form>
@@ -42,21 +41,21 @@ export default async function TeamPage() {
       {isOwner && (
         <>
           <section className="mb-10">
-            <h2 className="mb-3 text-lg font-semibold">Invite a teammate</h2>
+            <h2 className="mb-3 text-sm font-semibold text-slate-300">Invite a teammate</h2>
             <form action={inviteTeamMember} className="flex flex-wrap items-end gap-3">
-              <label className="flex flex-col gap-1 text-sm">
+              <label className="flex flex-col gap-1 text-sm text-slate-300">
                 Email
                 <input
                   name="email"
                   type="email"
                   required
                   placeholder="teammate@example.com"
-                  className="w-64 rounded-md border border-slate-300 px-3 py-2"
+                  className="w-64 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
                 />
               </label>
               <button
                 type="submit"
-                className="inline-flex items-center justify-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
+                className="inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
               >
                 Invite
               </button>
@@ -69,13 +68,13 @@ export default async function TeamPage() {
 
           {invites.length > 0 && (
             <section>
-              <h2 className="mb-3 text-lg font-semibold">Pending invites</h2>
-              <ul className="divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white">
+              <h2 className="mb-3 text-sm font-semibold text-slate-300">Pending invites</h2>
+              <ul className="divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900">
                 {invites.map((invite) => (
                   <li key={invite.id} className="flex items-center justify-between p-4">
-                    <p className="text-sm">{invite.email}</p>
+                    <p className="text-sm text-slate-100">{invite.email}</p>
                     <form action={cancelInvite.bind(null, invite.id)}>
-                      <button type="submit" className="text-sm text-red-600 hover:underline">
+                      <button type="submit" className="text-sm text-red-400 hover:underline">
                         Cancel
                       </button>
                     </form>
@@ -86,6 +85,6 @@ export default async function TeamPage() {
           )}
         </>
       )}
-    </main>
+    </div>
   );
 }
