@@ -25,10 +25,11 @@ model Company {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  users    User[]
-  contacts Contact[]
-  jobs     Job[]
-  invites  Invite[]
+  users                User[]
+  contacts             Contact[]
+  jobs                 Job[]
+  invites              Invite[]
+  quickBooksConnection QuickBooksConnection?
 }
 
 enum UserRole {
@@ -52,7 +53,8 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  assignments JobAssignment[]
+  assignments           JobAssignment[]
+  connectedQuickBooks   QuickBooksConnection[]
 
   @@index([companyId])
 }
@@ -306,4 +308,29 @@ model Payment {
   note       String?
 
   @@index([invoiceId])
+}
+
+/// One QuickBooks Online connection per Company. Tokens stored as plain
+/// columns (sandbox-appropriate; revisit encryption-at-rest before this
+/// connects to a real production QuickBooks account — see ARCHITECTURE.md).
+/// This is connection infrastructure only: no Contact/Invoice data is
+/// pushed to QuickBooks yet. See packages/integrations/src/quickbooks.ts.
+model QuickBooksConnection {
+  id        String  @id @default(cuid())
+  companyId String  @unique
+  company   Company @relation(fields: [companyId], references: [id])
+
+  /// The QuickBooks company ID this connection is scoped to.
+  realmId String
+
+  accessToken           String
+  refreshToken          String
+  accessTokenExpiresAt  DateTime
+  refreshTokenExpiresAt DateTime
+
+  connectedByUserId String?
+  connectedByUser   User?   @relation(fields: [connectedByUserId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
