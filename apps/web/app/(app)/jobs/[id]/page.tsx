@@ -7,11 +7,14 @@ import {
   addChangeOrderLineItem,
   addCostEntry,
   addLineItem,
+  assignCrewMember,
   deleteCostEntry,
   deleteLineItem,
   editLineItemViaChangeOrder,
   markJobContracted,
   removeLineItemViaChangeOrder,
+  unassignCrewMember,
+  updateJobSchedule,
   updateLineItem,
 } from "@/lib/actions";
 
@@ -19,6 +22,10 @@ const COST_CATEGORIES = ["LABOR", "MATERIAL", "SUBCONTRACTOR", "OTHER"] as const
 
 function money(value: number) {
   return value.toLocaleString("en-US", { style: "currency", currency: "USD" });
+}
+
+function dateInputValue(date: Date | null) {
+  return date ? date.toISOString().slice(0, 10) : "";
 }
 
 export default async function JobPage({ params }: { params: Promise<{ id: string }> }) {
@@ -41,12 +48,23 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
         orderBy: { number: "asc" },
         include: { edits: true },
       },
+      assignments: {
+        include: { user: true },
+        orderBy: { createdAt: "asc" },
+      },
     },
   });
 
   if (!job || job.companyId !== company.id) {
     notFound();
   }
+
+  const companyMembers = await prisma.user.findMany({
+    where: { companyId: company.id },
+    orderBy: { createdAt: "asc" },
+  });
+  const assignedUserIds = new Set(job.assignments.map((a) => a.userId));
+  const unassignedMembers = companyMembers.filter((m) => !assignedUserIds.has(m.id));
 
   const isEstimateStage = job.status === "ESTIMATE";
   const total = job.lineItems.reduce(
@@ -68,6 +86,9 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
   const markContractedWithId = markJobContracted.bind(null, job.id);
   const addCostEntryWithId = (lineItemId: string) => addCostEntry.bind(null, job.id, lineItemId);
   const deleteCostEntryWithId = (costEntryId: string) => deleteCostEntry.bind(null, job.id, costEntryId);
+  const updateScheduleWithId = updateJobSchedule.bind(null, job.id);
+  const assignCrewWithId = assignCrewMember.bind(null, job.id);
+  const unassignCrewWithId = (userId: string) => unassignCrewMember.bind(null, job.id, userId);
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-8 print:max-w-none print:px-0 print:py-0">
@@ -132,6 +153,85 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
       </section>
 
       <div className="print:hidden">
+        <section className="mb-10">
+          <h2 className="mb-3 text-lg font-semibold text-slate-100">Schedule</h2>
+          <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
+            <form action={updateScheduleWithId} className="flex flex-wrap items-end gap-3">
+              <label className="flex flex-col gap-1 text-sm text-slate-300">
+                Start date
+                <input
+                  type="date"
+                  name="startDate"
+                  defaultValue={dateInputValue(job.startDate)}
+                  className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-sm text-slate-300">
+                End date
+                <input
+                  type="date"
+                  name="endDate"
+                  defaultValue={dateInputValue(job.endDate)}
+                  className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
+                />
+              </label>
+              <button
+                type="submit"
+                className="rounded-md bg-slate-800 px-3 py-2 text-sm font-medium text-slate-100 hover:bg-slate-700"
+              >
+                Save dates
+              </button>
+            </form>
+
+            <div className="mt-4 border-t border-slate-800 pt-4">
+              <p className="mb-2 text-sm font-medium text-slate-300">Crew</p>
+              {job.assignments.length === 0 ? (
+                <p className="text-sm text-slate-500">No one assigned yet.</p>
+              ) : (
+                <ul className="mb-3 flex flex-col gap-1">
+                  {job.assignments.map((assignment) => (
+                    <li key={assignment.id} className="flex items-center justify-between text-sm">
+                      <span className="text-slate-100">
+                        {assignment.user.name ?? assignment.user.email}
+                      </span>
+                      <form action={unassignCrewWithId(assignment.userId)}>
+                        <button type="submit" className="text-xs text-red-400 hover:underline">
+                          Remove
+                        </button>
+                      </form>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              {unassignedMembers.length > 0 && (
+                <form action={assignCrewWithId} className="flex items-end gap-2">
+                  <label className="flex flex-col gap-1 text-sm text-slate-300">
+                    Assign teammate
+                    <select
+                      name="userId"
+                      required
+                      className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
+                    >
+                      {unassignedMembers.map((member) => (
+                        <option key={member.id} value={member.id}>
+                          {member.name ?? member.email}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button
+                    type="submit"
+                    className="rounded-md bg-slate-800 px-3 py-2 text-sm font-medium text-slate-100 hover:bg-slate-700"
+                  >
+                    Assign
+                  </button>
+                </form>
+              )}
+            </div>
+          </div>
+        </section>
+
         <section className="mb-10">
           <h2 className="mb-3 text-lg font-semibold text-slate-100">Job costing</h2>
           <div className="flex flex-col gap-4">
