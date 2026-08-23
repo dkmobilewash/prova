@@ -1,8 +1,9 @@
 import { notFound } from "next/navigation";
-import { StatusBadge } from "@prova/ui";
 import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { PrintButton } from "@/components/PrintButton";
+import { ContractSummary } from "@/components/ContractSummary";
+import { money } from "@/lib/money";
 import {
   addChangeOrderLineItem,
   addCostEntry,
@@ -19,10 +20,6 @@ import {
 } from "@/lib/actions";
 
 const COST_CATEGORIES = ["LABOR", "MATERIAL", "SUBCONTRACTOR", "OTHER"] as const;
-
-function money(value: number) {
-  return value.toLocaleString("en-US", { style: "currency", currency: "USD" });
-}
 
 function dateInputValue(date: Date | null) {
   return date ? date.toISOString().slice(0, 10) : "";
@@ -93,64 +90,27 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
   return (
     <div className="mx-auto max-w-3xl px-6 py-8 print:max-w-none print:px-0 print:py-0">
       {/* Contract-style summary — the same JobLineItem rows used as the
-          estimate are rendered here as contract content. Nothing below this
-          heading is retyped from a separate table. Kept as a light "paper"
-          surface deliberately: it's the one thing on this page meant to
-          look like an actual document, not app chrome. */}
-      <section className="mb-10 rounded-lg border border-slate-200 bg-white p-6 text-slate-900 print:border-0 print:shadow-none">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-sm font-medium text-slate-500">{company.name}</p>
-            <h1 className="text-2xl font-semibold">{job.name}</h1>
-          </div>
-          <StatusBadge status={job.status} />
-        </div>
-        <p className="mt-1 text-slate-600">Client: {job.contact.name}</p>
-        {job.scope && <p className="mt-3 text-sm text-slate-700">{job.scope}</p>}
-
-        <table className="mt-6 w-full text-sm">
-          <thead>
-            <tr className="border-b border-slate-200 text-left text-slate-500">
-              <th className="py-2">Description</th>
-              <th className="py-2">Qty</th>
-              <th className="py-2">Unit</th>
-              <th className="py-2">Unit price</th>
-              <th className="py-2 text-right">Line total</th>
-            </tr>
-          </thead>
-          <tbody>
-            {job.lineItems.map((item) => (
-              <tr key={item.id} className="border-b border-slate-100">
-                <td className="py-2">
-                  {item.description}
-                  {item.originChangeOrder && (
-                    <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800">
-                      CO #{item.originChangeOrder.number}
-                    </span>
-                  )}
-                </td>
-                <td className="py-2">{item.quantity.toString()}</td>
-                <td className="py-2">{item.unit ?? "—"}</td>
-                <td className="py-2">{money(Number(item.unitPrice))}</td>
-                <td className="py-2 text-right">
-                  {money(Number(item.quantity) * Number(item.unitPrice))}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-
-        <p className="mt-4 text-right text-lg font-semibold">Total: {money(total)}</p>
-
-        <p className="mt-6 text-xs text-slate-400 print:mt-16">
-          This reflects the current agreed scope and pricing for this job, including any approved
-          change orders.
-        </p>
-
-        <div className="mt-4 print:hidden">
-          <PrintButton />
-        </div>
-      </section>
+          estimate are rendered here as contract content, via the shared
+          ContractSummary component also used by the public /esign/[token]
+          signing page. Nothing below this heading is retyped anywhere. */}
+      <div className="mb-10">
+        <ContractSummary
+          companyName={company.name}
+          jobName={job.name}
+          status={job.status}
+          clientName={job.contact.name}
+          scope={job.scope}
+          lineItems={job.lineItems.map((item) => ({
+            id: item.id,
+            description: item.description,
+            quantity: item.quantity.toString(),
+            unit: item.unit,
+            unitPrice: item.unitPrice.toString(),
+            changeOrderNumber: item.originChangeOrder?.number ?? null,
+          }))}
+          footer={<PrintButton />}
+        />
+      </div>
 
       <div className="print:hidden">
         <section className="mb-10">

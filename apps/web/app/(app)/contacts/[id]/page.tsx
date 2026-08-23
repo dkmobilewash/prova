@@ -4,10 +4,7 @@ import { StatusBadge } from "@prova/ui";
 import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { updateContact } from "@/lib/actions";
-
-function money(value: number) {
-  return value.toLocaleString("en-US", { style: "currency", currency: "USD" });
-}
+import { money } from "@/lib/money";
 
 export default async function ContactPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
