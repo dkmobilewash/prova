@@ -52,6 +52,8 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  assignments JobAssignment[]
+
   @@index([companyId])
 }
 
@@ -104,11 +106,17 @@ model Job {
   name      String
   scope     String?
   status    JobStatus @default(ESTIMATE)
+  // Single start/end dates on the Job itself — properties of the job, not a
+  // list of entries, so (unlike CostEntry/ChangeOrder) this doesn't need a
+  // separate table. Nullable: most jobs start unscheduled.
+  startDate DateTime?
+  endDate   DateTime?
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
   lineItems    JobLineItem[]
   changeOrders ChangeOrder[]
+  assignments  JobAssignment[]
 
   @@index([companyId])
   @@index([contactId])
@@ -208,4 +216,21 @@ model CostEntry {
   createdAt   DateTime     @default(now())
 
   @@index([lineItemId])
+}
+
+/// Crew assignment: which company Users are on a Job. Genuinely many-to-many
+/// (a job can have several people, a person can be on several jobs), so —
+/// unlike startDate/endDate — this needs a join table. References Job and
+/// User directly; never duplicates their data.
+model JobAssignment {
+  id        String   @id @default(cuid())
+  jobId     String
+  job       Job      @relation(fields: [jobId], references: [id])
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@unique([jobId, userId])
+  @@index([jobId])
+  @@index([userId])
 }
