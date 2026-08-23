@@ -495,3 +495,61 @@ export async function updateContact(contactId: string, formData: FormData) {
   revalidatePath(`/contacts/${contactId}`);
   revalidatePath("/contacts");
 }
+
+/** Sets a job's scheduled start/end dates. Either or both may be cleared. */
+export async function updateJobSchedule(jobId: string, formData: FormData) {
+  const { company } = await requireCompanyContext();
+  await assertJobInCompany(jobId, company.id);
+
+  const startRaw = String(formData.get("startDate") ?? "").trim();
+  const endRaw = String(formData.get("endDate") ?? "").trim();
+  const startDate = startRaw ? new Date(startRaw) : null;
+  const endDate = endRaw ? new Date(endRaw) : null;
+
+  if (startDate && endDate && endDate < startDate) {
+    throw new Error("End date can't be before the start date");
+  }
+
+  await prisma.job.update({
+    where: { id: jobId },
+    data: { startDate, endDate },
+  });
+
+  revalidatePath(`/jobs/${jobId}`);
+  revalidatePath("/schedule");
+}
+
+/** Assigns a company teammate to a job's crew. */
+export async function assignCrewMember(jobId: string, formData: FormData) {
+  const { company } = await requireCompanyContext();
+  await assertJobInCompany(jobId, company.id);
+
+  const userId = String(formData.get("userId") ?? "");
+  const member = await prisma.user.findUnique({ where: { id: userId } });
+  if (!member || member.companyId !== company.id) {
+    throw new Error("Team member not found");
+  }
+
+  try {
+    await prisma.jobAssignment.create({ data: { jobId, userId } });
+  } catch (error) {
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002")) {
+      throw error;
+    }
+    // Already assigned — treat as a no-op rather than an error.
+  }
+
+  revalidatePath(`/jobs/${jobId}`);
+  revalidatePath("/schedule");
+}
+
+/** Removes a teammate from a job's crew. */
+export async function unassignCrewMember(jobId: string, userId: string) {
+  const { company } = await requireCompanyContext();
+  await assertJobInCompany(jobId, company.id);
+
+  await prisma.jobAssignment.deleteMany({ where: { jobId, userId } });
+
+  revalidatePath(`/jobs/${jobId}`);
+  revalidatePath("/schedule");
+}
