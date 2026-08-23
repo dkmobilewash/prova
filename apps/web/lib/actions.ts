@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
+import { randomBytes } from "node:crypto";
 import { Prisma, prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 
@@ -655,4 +656,102 @@ export async function signRequest(token: string, formData: FormData) {
 
   revalidatePath(`/esign/${token}`);
   revalidatePath(`/jobs/${request.jobId}`);
+}
+
+/**
+ * Generates the client's portal access link. Idempotent — if a token
+ * already exists, does nothing. Same access-control pattern as
+ * SignatureRequest: no client login, the unguessable token is the login.
+ */
+export async function enablePortalAccess(contactId: string) {
+  const { company } = await requireCompanyContext();
+
+  const contact = await prisma.contact.findUnique({ where: { id: contactId } });
+  if (!contact || contact.companyId !== company.id) {
+    throw new Error("Contact not found");
+  }
+  if (contact.portalToken) {
+    return;
+  }
+
+  const token = randomBytes(24).toString("hex");
+  await prisma.contact.update({ where: { id: contactId }, data: { portalToken: token } });
+
+  revalidatePath(`/contacts/${contactId}`);
+}
+
+async function nextInvoiceNumber(jobId: string) {
+  const last = await prisma.invoice.findFirst({ where: { jobId }, orderBy: { number: "desc" } });
+  return (last?.number ?? 0) + 1;
+}
+
+/** Bills the client. Only once a job is CONTRACTED or later — you don't
+ * invoice an estimate nobody has agreed to yet. */
+export async function createInvoice(jobId: string, formData: FormData) {
+  const { company } = await requireCompanyContext();
+  const job = await assertJobInCompany(jobId, company.id);
+
+  if (job.status === "ESTIMATE") {
+    throw new Error("Contract this job before invoicing it");
+  }
+
+  const description = String(formData.get("description") ?? "").trim();
+  const amount = decimalFromForm(formData, "amount");
+  const dueRaw = String(formData.get("dueAt") ?? "").trim();
+  const dueAt = dueRaw ? new Date(dueRaw) : null;
+
+  const number = await nextInvoiceNumber(jobId);
+  await prisma.invoice.create({
+    data: { jobId, number, description: description || null, amount, dueAt },
+  });
+
+  revalidatePath(`/jobs/${jobId}`);
+}
+
+async function assertInvoiceInCompany(invoiceId: string, companyId: string) {
+  const invoice = await prisma.invoice.findUnique({ where: { id: invoiceId }, include: { job: true } });
+  if (!invoice || invoice.job.companyId !== companyId) {
+    throw new Error("Invoice not found");
+  }
+  return invoice;
+}
+
+/** Logs a payment received against an invoice. Not a charge — just a
+ * record (check, cash, card handled elsewhere). Supports partial payments;
+ * an invoice's balance is always amount - SUM(payments.amount). */
+export async function logPayment(jobId: string, invoiceId: string, formData: FormData) {
+  const { company } = await requireCompanyContext();
+  await assertJobInCompany(jobId, company.id);
+  const invoice = await assertInvoiceInCompany(invoiceId, company.id);
+  if (invoice.jobId !== jobId) {
+    throw new Error("Invoice not found on this job");
+  }
+
+  const amount = decimalFromForm(formData, "amount");
+  const method = String(formData.get("method") ?? "").trim();
+  const note = String(formData.get("note") ?? "").trim();
+
+  await prisma.payment.create({
+    data: { invoiceId, amount, method: method || null, note: note || null },
+  });
+
+  revalidatePath(`/jobs/${jobId}`);
+}
+
+/** Removes a mistaken payment entry. */
+export async function deletePayment(jobId: string, paymentId: string) {
+  const { company } = await requireCompanyContext();
+  await assertJobInCompany(jobId, company.id);
+
+  const payment = await prisma.payment.findUnique({
+    where: { id: paymentId },
+    include: { invoice: { include: { job: true } } },
+  });
+  if (!payment || payment.invoice.job.companyId !== company.id || payment.invoice.jobId !== jobId) {
+    throw new Error("Payment not found");
+  }
+
+  await prisma.payment.delete({ where: { id: paymentId } });
+
+  revalidatePath(`/jobs/${jobId}`);
 }
