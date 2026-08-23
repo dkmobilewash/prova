@@ -346,3 +346,51 @@ export async function markJobContracted(jobId: string) {
   revalidatePath(`/jobs/${jobId}`);
   revalidatePath("/dashboard");
 }
+
+const COST_CATEGORIES = ["LABOR", "MATERIAL", "SUBCONTRACTOR", "OTHER"] as const;
+
+/**
+ * Logs an actual expense against a line item. Not gated by job status —
+ * real spending happens throughout the job, including after it's
+ * contracted and in progress, unlike scope/pricing changes.
+ */
+export async function addCostEntry(jobId: string, lineItemId: string, formData: FormData) {
+  const { company } = await requireCompanyContext();
+  await assertJobInCompany(jobId, company.id);
+  await assertLineItemOnJob(lineItemId, jobId);
+
+  const description = String(formData.get("description") ?? "").trim();
+  const amount = decimalFromForm(formData, "amount");
+  const categoryRaw = String(formData.get("category") ?? "OTHER");
+  const category = COST_CATEGORIES.includes(categoryRaw as (typeof COST_CATEGORIES)[number])
+    ? (categoryRaw as (typeof COST_CATEGORIES)[number])
+    : "OTHER";
+
+  if (!description) {
+    throw new Error("Description is required");
+  }
+
+  await prisma.costEntry.create({
+    data: { lineItemId, description, amount, category },
+  });
+
+  revalidatePath(`/jobs/${jobId}`);
+}
+
+/** Removes a mistaken cost entry. */
+export async function deleteCostEntry(jobId: string, costEntryId: string) {
+  const { company } = await requireCompanyContext();
+  await assertJobInCompany(jobId, company.id);
+
+  const costEntry = await prisma.costEntry.findUnique({
+    where: { id: costEntryId },
+    include: { lineItem: true },
+  });
+  if (!costEntry || costEntry.lineItem.jobId !== jobId) {
+    throw new Error("Cost entry not found on this job");
+  }
+
+  await prisma.costEntry.delete({ where: { id: costEntryId } });
+
+  revalidatePath(`/jobs/${jobId}`);
+}
