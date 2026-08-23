@@ -10,10 +10,13 @@ import {
   addCostEntry,
   addLineItem,
   assignCrewMember,
+  createInvoice,
   createSignatureRequest,
   deleteCostEntry,
   deleteLineItem,
+  deletePayment,
   editLineItemViaChangeOrder,
+  logPayment,
   markJobContracted,
   removeLineItemViaChangeOrder,
   unassignCrewMember,
@@ -54,6 +57,10 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
       signatureRequests: {
         orderBy: { createdAt: "desc" },
       },
+      invoices: {
+        orderBy: { number: "asc" },
+        include: { payments: { orderBy: { receivedAt: "desc" } } },
+      },
     },
   });
 
@@ -92,6 +99,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
   const assignCrewWithId = assignCrewMember.bind(null, job.id);
   const unassignCrewWithId = (userId: string) => unassignCrewMember.bind(null, job.id, userId);
   const createSignatureRequestWithId = createSignatureRequest.bind(null, job.id);
+  const createInvoiceWithId = createInvoice.bind(null, job.id);
 
   const headerList = await headers();
   const origin = `${headerList.get("x-forwarded-proto") ?? "https"}://${headerList.get("host")}`;
@@ -335,6 +343,133 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             </span>
           </div>
         </section>
+
+        {!isEstimateStage && (
+          <section className="mb-10">
+            <h2 className="mb-3 text-lg font-semibold text-slate-100">Invoices</h2>
+            <div className="flex flex-col gap-4">
+              {job.invoices.map((invoice) => {
+                const paid = invoice.payments.reduce((s, p) => s + Number(p.amount), 0);
+                const balance = Number(invoice.amount) - paid;
+                const logPaymentWithIds = logPayment.bind(null, job.id, invoice.id);
+                return (
+                  <div key={invoice.id} className="rounded-lg border border-slate-800 bg-slate-900 p-4">
+                    <div className="flex flex-wrap items-baseline justify-between gap-2">
+                      <p className="font-medium text-slate-100">
+                        Invoice #{invoice.number}
+                        {invoice.description ? ` — ${invoice.description}` : ""}
+                      </p>
+                      <div className="flex gap-4 text-sm">
+                        <span className="text-slate-400">Amount {money(Number(invoice.amount))}</span>
+                        <span className="text-slate-400">Paid {money(paid)}</span>
+                        <span className={balance <= 0 ? "text-green-400" : "text-amber-400"}>
+                          {balance <= 0 ? "Paid in full" : `Balance ${money(balance)}`}
+                        </span>
+                      </div>
+                    </div>
+                    {invoice.dueAt && (
+                      <p className="mt-1 text-xs text-slate-500">
+                        Due {invoice.dueAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                      </p>
+                    )}
+
+                    {invoice.payments.length > 0 && (
+                      <ul className="mt-3 flex flex-col gap-1 border-t border-slate-800 pt-3">
+                        {invoice.payments.map((payment) => (
+                          <li key={payment.id} className="flex items-center justify-between text-sm">
+                            <span className="text-slate-300">
+                              {payment.receivedAt.toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                              {payment.method ? ` · ${payment.method}` : ""}
+                              {payment.note ? ` · ${payment.note}` : ""}
+                            </span>
+                            <span className="flex items-center gap-2">
+                              <span className="text-slate-100">{money(Number(payment.amount))}</span>
+                              <form action={deletePayment.bind(null, job.id, payment.id)}>
+                                <button
+                                  type="submit"
+                                  title="Remove"
+                                  className="text-xs text-red-400 hover:underline"
+                                >
+                                  Remove
+                                </button>
+                              </form>
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+
+                    {balance > 0 && (
+                      <form
+                        action={logPaymentWithIds}
+                        className="mt-3 flex flex-wrap items-end gap-2 border-t border-slate-800 pt-3"
+                      >
+                        <input
+                          name="amount"
+                          placeholder="Amount"
+                          required
+                          className="w-24 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+                        />
+                        <input
+                          name="method"
+                          placeholder="Method (check, cash...)"
+                          className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+                        />
+                        <input
+                          name="note"
+                          placeholder="Note (optional)"
+                          className="flex-1 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+                        />
+                        <button
+                          type="submit"
+                          className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-100 hover:bg-slate-700"
+                        >
+                          Log payment
+                        </button>
+                      </form>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            <form
+              action={createInvoiceWithId}
+              className="mt-4 flex flex-wrap items-end gap-3 rounded-lg border border-slate-800 bg-slate-900 p-4"
+            >
+              <label className="flex flex-col gap-1 text-sm text-slate-300">
+                Description
+                <input
+                  name="description"
+                  placeholder="Deposit, final payment, etc."
+                  className="w-56 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-sm text-slate-300">
+                Amount
+                <input
+                  name="amount"
+                  required
+                  className="w-28 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-sm text-slate-300">
+                Due date
+                <input
+                  type="date"
+                  name="dueAt"
+                  className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
+                />
+              </label>
+              <button
+                type="submit"
+                className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
+              >
+                Create invoice
+              </button>
+            </form>
+          </section>
+        )}
 
         {isEstimateStage ? (
           <>
