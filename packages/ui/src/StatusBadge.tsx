@@ -1,8 +1,8 @@
 const STYLES: Record<string, string> = {
-  ESTIMATE: "bg-slate-100 text-slate-700",
-  CONTRACTED: "bg-blue-100 text-blue-700",
-  IN_PROGRESS: "bg-amber-100 text-amber-800",
-  COMPLETE: "bg-green-100 text-green-700",
+  ESTIMATE: "bg-slate-800 text-slate-300 ring-1 ring-inset ring-slate-700",
+  CONTRACTED: "bg-blue-500/15 text-blue-300 ring-1 ring-inset ring-blue-500/30",
+  IN_PROGRESS: "bg-amber-500/15 text-amber-300 ring-1 ring-inset ring-amber-500/30",
+  COMPLETE: "bg-green-500/15 text-green-300 ring-1 ring-inset ring-green-500/30",
 };
 
 const LABELS: Record<string, string> = {
@@ -13,7 +13,7 @@ const LABELS: Record<string, string> = {
 };
 
 export function StatusBadge({ status }: { status: string }) {
-  const style = STYLES[status] ?? "bg-slate-100 text-slate-700";
+  const style = STYLES[status] ?? "bg-slate-800 text-slate-300 ring-1 ring-inset ring-slate-700";
   const label = LABELS[status] ?? status;
 
   return (
