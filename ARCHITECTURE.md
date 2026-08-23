@@ -231,6 +231,45 @@ If a future change to this codebase makes step 3 need to read from
 somewhere other than `job.lineItems`, that change has broken the
 foundation — revert it.
 
+### `QuickBooksConnection` — accounting sync, connection only
+
+One `QuickBooksConnection` per `Company`, storing the OAuth access/refresh
+tokens and `realmId` (Intuit's company identifier) needed to call the
+QuickBooks Online API on that company's behalf. It follows the same rule
+as every other model here: it references `Company` and `User`
+(`connectedByUserId`, who authorized it) rather than copying anything —
+there is no QuickBooks-shaped duplicate of `Contact` or `Job` anywhere in
+this schema.
+
+**Scope, deliberately narrow:** this phase is the OAuth 2.0
+`authorization_code` handshake, token storage, token refresh, and a
+read-only connectivity check (fetching company info) — nothing more.
+`Contact` rows are not pushed to QuickBooks as Customers, `Invoice` rows
+are not pushed as QBO Invoices, and no accounting data is pulled back.
+Wiring actual sync is a separate, larger decision (which direction is the
+source of truth? what happens on conflict?) that this phase intentionally
+doesn't answer. See `packages/integrations/src/quickbooks.ts` for the
+OAuth client and `apps/web/app/api/quickbooks/callback/route.ts` +
+`initiateQuickBooksConnect`/`disconnectQuickBooks`/`testQuickBooksConnection`
+in `apps/web/lib/actions.ts` for how it's wired up.
+
+Only the `com.intuit.quickbooks.accounting` and OpenID profile scopes are
+requested — QuickBooks Payments is not, since this app already has its
+own manual `Payment` tracking (see above) and isn't charging cards
+through Intuit.
+
+Tokens are stored as plain columns, not encrypted at rest. That's a
+sandbox-appropriate tradeoff, made explicitly (not an oversight) — revisit
+before this ever connects to a real production QuickBooks company. The
+connect flow is `OWNER`-only, matching how `/team` gates membership
+changes, since it's company-wide infrastructure, not per-job data.
+
+CSRF protection for the OAuth redirect uses a random `state` value held in
+a short-lived `httpOnly` cookie set by `initiateQuickBooksConnect` and
+checked against the value Intuit echoes back to the callback route — no
+database table for it, since it only needs to survive one redirect
+round-trip.
+
 ## Multi-tenancy and roles
 
 Every `Contact` and `Job` belongs to a `Company`. Every `User` belongs to
@@ -258,9 +297,10 @@ completeness" — that produces half-built abstractions this phase is
 specifically trying to avoid.
 
 - **AI features** — no assist/automation of any kind yet.
-- **QuickBooks / accounting sync** — `packages/integrations` is an empty
-  placeholder for this and other future integrations. Blocked on real
-  Intuit Developer credentials (Client ID/Secret), not a design question.
+- **QuickBooks data sync** — the OAuth connection itself is built (see
+  `QuickBooksConnection` above); actually pushing/pulling `Contact` or
+  `Invoice` data to/from QuickBooks is not. That needs its own design pass
+  for sync direction and conflict handling before it's built.
 - **Real payment processing** — `Payment` rows are manual records (check,
   cash, card handled elsewhere), not charges. Actually collecting a card/
   ACH payment in-app needs a processor (e.g. Stripe) and its own API keys
