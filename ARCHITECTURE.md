@@ -114,13 +114,52 @@ step, no second write, no reconciliation job.
 An earlier, more "complete-looking" design considered snapshotting the
 full line-item set at every change order (so you could show "here's
 exactly what the contract said before CO #2"). That was deliberately cut
-for this phase — it's a compliance/audit concern, not a foundation
-concern, and building it now would mean guessing at a shape before a real
-e-sign/compliance flow (a later phase) defines what "the signed version"
-actually needs to capture. The `ChangeOrderLineItemEdit` log gives you the
-field-level diff, which is enough to answer "what changed and when" today.
-Revisit this if/when Phase "compliance & e-sign" needs stronger
-guarantees.
+from Phase 00 — it's a compliance/audit concern, not a foundation
+concern, and building it before a real e-sign/compliance flow defined
+what "the signed version" actually needs to capture would have meant
+guessing at a shape.
+
+That e-sign phase has since landed (see `SignatureRequest` below), and it
+resolved the question narrower than the original framing: a snapshot is
+taken **once, at contract signing** — not at every change order. A signed
+change order's own approval flow doesn't exist yet (see below), so there's
+still no per-CO snapshot. The `ChangeOrderLineItemEdit` log remains the
+answer to "what changed and when" for everything after signing.
+
+### `SignatureRequest` — the client's e-signature, and where snapshotting actually landed
+
+A `SignatureRequest` is a token-based, unguessable link (`/esign/[token]`)
+the contractor generates and sends to the client out of band — there's no
+client login (that's the separate, not-yet-built client-portal phase), so
+the token stands in for one. While pending, the link renders the **live**
+contract via the same `ContractSummary` component `/jobs/[id]` uses — one
+rendering path, so the client never sees something different from what the
+contractor sees.
+
+The moment the client signs, `signRequest` writes a `snapshot` (JSON) of
+the line items, total, and scope **as they were at that exact instant**,
+alongside `signerName`, `ipAddress`, `userAgent`, and `signedAt`. This is
+the snapshot the earlier design considered and Phase 00 deferred — it
+exists now because there's finally a real reason to freeze a point in
+time: proving what was legally agreed to. It follows the same rule as
+`ChangeOrderLineItemEdit`: **audit-only**. No live view — not the contract
+summary, not the budget — ever reads from it. If a change order later
+edits a line item that was part of the signed snapshot, the snapshot does
+not change; `/esign/[token]` renders from it directly once signed, so a
+client revisiting their signed link always sees exactly what they agreed
+to, even if the job has moved on since.
+
+`markJobContracted` now requires a `SIGNED` `SignatureRequest` to exist
+before a job can leave `ESTIMATE` — the "contracted" status is meant to
+represent a legally agreed contract, not just an internal decision, so
+the gate enforces that rather than just labeling it.
+
+**Explicitly not built**: change orders still apply immediately on
+submission with no draft/approval state, so there's no signature flow for
+change orders yet — only the initial contract. Adding one would mean
+giving `ChangeOrder` a pending/approved lifecycle of its own, which is a
+larger change than extending the existing signature flow. Natural next
+increment if it's needed.
 
 ### `CostEntry` — actual cost, referencing the same line item
 
@@ -188,11 +227,6 @@ specifically trying to avoid.
 - **AI features** — no assist/automation of any kind yet.
 - **QuickBooks / accounting sync** — `packages/integrations` is an empty
   placeholder for this and other future integrations.
-- **Scheduling** — no calendar, crew assignment, or timeline model yet.
-- **E-sign / compliance flow** — no legally-binding signature capture,
-  and (see above) no line-item snapshotting at signing. When this phase
-  lands, it should read `JobLineItem` at the moment of signing rather
-  than introducing a parallel "signed contract" table.
 - **Client portal** — clients have no login or view of their own yet;
   `Contact` is purely a record the contractor manages.
 - **Billing** — no invoicing, payments, or draw schedules.
