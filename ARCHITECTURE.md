@@ -159,13 +159,25 @@ If a future change to this codebase makes step 3 need to read from
 somewhere other than `job.lineItems`, that change has broken the
 foundation — revert it.
 
-## Multi-tenancy
+## Multi-tenancy and roles
 
 Every `Contact` and `Job` belongs to a `Company`. Every `User` belongs to
 exactly one `Company` (linked via Clerk's `clerkId`). All queries in
 `apps/web` scope by `companyId` from the authenticated user's session —
-there is no cross-company data access path in Phase 00. A permissions/
-roles model beyond "belongs to this company" is future-phase work.
+there is no cross-company data access path.
+
+Multiple users can now share a Company. The first person to sign in
+creates the Company and becomes its `OWNER`. An `OWNER` can invite a
+teammate by email (`Invite`, see `apps/web/lib/actions.ts` and
+`requireCompanyContext()` in `apps/web/lib/auth.ts`) — there is no
+email-sending integration for this; the `OWNER` shares the normal
+`/sign-up` link out of band, and matching the invited email on first
+sign-in attaches that person to the existing Company as a `MEMBER`
+instead of creating a new one. `MEMBER`s have full access to jobs,
+contacts, and costing; the only thing gated by role today is team
+management itself (inviting, removing, canceling an invite) — `OWNER`
+only. Finer-grained per-feature permissions are future-phase work if it
+turns out to be needed.
 
 ## Future phases (explicitly not built yet)
 
