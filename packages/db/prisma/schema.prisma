@@ -82,6 +82,11 @@ model Contact {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  /// Generated on-demand (client portal "enable" action), null until then.
+  /// Same access-control pattern as SignatureRequest.token: an unguessable
+  /// link stands in for a client login that doesn't exist yet.
+  portalToken String? @unique
+
   jobs Job[]
 
   @@index([companyId])
@@ -118,6 +123,7 @@ model Job {
   changeOrders      ChangeOrder[]
   assignments       JobAssignment[]
   signatureRequests SignatureRequest[]
+  invoices          Invoice[]
 
   @@index([companyId])
   @@index([contactId])
@@ -265,4 +271,39 @@ model SignatureRequest {
   createdAt DateTime @default(now())
 
   @@index([jobId])
+}
+
+/// A bill against a Job. Amount paid and balance are always
+/// SUM(payments.amount) vs. amount — computed, never stored, same rule as
+/// actual cost on JobLineItem. Only creatable once a job is CONTRACTED or
+/// later: you don't invoice an estimate nobody agreed to yet.
+model Invoice {
+  id          String    @id @default(cuid())
+  jobId       String
+  job         Job       @relation(fields: [jobId], references: [id])
+  number      Int
+  description String?
+  amount      Decimal   @db.Decimal(12, 2)
+  issuedAt    DateTime  @default(now())
+  dueAt       DateTime?
+
+  payments Payment[]
+
+  @@unique([jobId, number])
+  @@index([jobId])
+}
+
+/// A payment received against an Invoice. No payment processor — this is a
+/// manual record (check, cash, card swipe elsewhere), not a charge. An
+/// invoice can have several, supporting partial/progress payments.
+model Payment {
+  id         String   @id @default(cuid())
+  invoiceId  String
+  invoice    Invoice  @relation(fields: [invoiceId], references: [id])
+  amount     Decimal  @db.Decimal(12, 2)
+  method     String?
+  receivedAt DateTime @default(now())
+  note       String?
+
+  @@index([invoiceId])
 }
