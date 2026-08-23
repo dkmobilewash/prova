@@ -70,11 +70,13 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
   const deleteCostEntryWithId = (costEntryId: string) => deleteCostEntry.bind(null, job.id, costEntryId);
 
   return (
-    <main className="mx-auto max-w-3xl px-4 py-10 print:max-w-none print:px-0 print:py-0">
+    <div className="mx-auto max-w-3xl px-6 py-8 print:max-w-none print:px-0 print:py-0">
       {/* Contract-style summary — the same JobLineItem rows used as the
           estimate are rendered here as contract content. Nothing below this
-          heading is retyped from a separate table. */}
-      <section className="mb-10 rounded-lg border border-slate-200 bg-white p-6 print:border-0 print:shadow-none">
+          heading is retyped from a separate table. Kept as a light "paper"
+          surface deliberately: it's the one thing on this page meant to
+          look like an actual document, not app chrome. */}
+      <section className="mb-10 rounded-lg border border-slate-200 bg-white p-6 text-slate-900 print:border-0 print:shadow-none">
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-sm font-medium text-slate-500">{company.name}</p>
@@ -131,40 +133,40 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
 
       <div className="print:hidden">
         <section className="mb-10">
-          <h2 className="mb-3 text-lg font-semibold">Job costing</h2>
+          <h2 className="mb-3 text-lg font-semibold text-slate-100">Job costing</h2>
           <div className="flex flex-col gap-4">
             {job.lineItems.map((item) => {
               const estimated = Number(item.quantity) * Number(item.unitPrice);
               const actual = item.costEntries.reduce((s, entry) => s + Number(entry.amount), 0);
               const variance = estimated - actual;
               return (
-                <div key={item.id} className="rounded-lg border border-slate-200 bg-white p-4">
+                <div key={item.id} className="rounded-lg border border-slate-800 bg-slate-900 p-4">
                   <div className="flex flex-wrap items-baseline justify-between gap-2">
-                    <p className="font-medium">{item.description}</p>
+                    <p className="font-medium text-slate-100">{item.description}</p>
                     <div className="flex gap-4 text-sm">
-                      <span className="text-slate-500">Est. {money(estimated)}</span>
-                      <span className="text-slate-500">Actual {money(actual)}</span>
-                      <span className={variance >= 0 ? "text-green-700" : "text-red-700"}>
+                      <span className="text-slate-400">Est. {money(estimated)}</span>
+                      <span className="text-slate-400">Actual {money(actual)}</span>
+                      <span className={variance >= 0 ? "text-green-400" : "text-red-400"}>
                         {variance >= 0 ? "Under" : "Over"} by {money(Math.abs(variance))}
                       </span>
                     </div>
                   </div>
 
                   {item.costEntries.length > 0 && (
-                    <ul className="mt-3 flex flex-col gap-1 border-t border-slate-100 pt-3">
+                    <ul className="mt-3 flex flex-col gap-1 border-t border-slate-800 pt-3">
                       {item.costEntries.map((entry) => (
                         <li key={entry.id} className="flex items-center justify-between text-sm">
-                          <span className="text-slate-600">
+                          <span className="text-slate-300">
                             {entry.description}{" "}
-                            <span className="text-xs text-slate-400">({entry.category})</span>
+                            <span className="text-xs text-slate-500">({entry.category})</span>
                           </span>
                           <span className="flex items-center gap-2">
-                            <span>{money(Number(entry.amount))}</span>
+                            <span className="text-slate-100">{money(Number(entry.amount))}</span>
                             <form action={deleteCostEntryWithId(entry.id)}>
                               <button
                                 type="submit"
                                 title="Remove"
-                                className="text-xs text-red-600 hover:underline"
+                                className="text-xs text-red-400 hover:underline"
                               >
                                 Remove
                               </button>
@@ -177,24 +179,24 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
 
                   <form
                     action={addCostEntryWithId(item.id)}
-                    className="mt-3 flex flex-wrap items-end gap-2 border-t border-slate-100 pt-3"
+                    className="mt-3 flex flex-wrap items-end gap-2 border-t border-slate-800 pt-3"
                   >
                     <input
                       name="description"
                       placeholder="Cost description"
                       required
-                      className="flex-1 rounded-md border border-slate-300 px-2 py-1 text-sm"
+                      className="flex-1 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
                     />
                     <input
                       name="amount"
                       placeholder="Amount"
                       required
-                      className="w-24 rounded-md border border-slate-300 px-2 py-1 text-sm"
+                      className="w-24 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
                     />
                     <select
                       name="category"
                       defaultValue="OTHER"
-                      className="rounded-md border border-slate-300 px-2 py-1 text-sm"
+                      className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
                     >
                       {COST_CATEGORIES.map((c) => (
                         <option key={c} value={c}>
@@ -204,7 +206,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                     </select>
                     <button
                       type="submit"
-                      className="rounded-md bg-slate-100 px-3 py-1.5 text-sm font-medium text-slate-900 hover:bg-slate-200"
+                      className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-100 hover:bg-slate-700"
                     >
                       Log cost
                     </button>
@@ -215,9 +217,9 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
           </div>
 
           <div className="mt-4 flex justify-end gap-6 text-sm">
-            <span className="text-slate-500">Total estimated: {money(total)}</span>
-            <span className="text-slate-500">Total actual: {money(actualTotal)}</span>
-            <span className={total - actualTotal >= 0 ? "text-green-700" : "text-red-700"}>
+            <span className="text-slate-400">Total estimated: {money(total)}</span>
+            <span className="text-slate-400">Total actual: {money(actualTotal)}</span>
+            <span className={total - actualTotal >= 0 ? "text-green-400" : "text-red-400"}>
               {total - actualTotal >= 0 ? "Under" : "Over"} by {money(Math.abs(total - actualTotal))}
             </span>
           </div>
@@ -226,9 +228,9 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
         {isEstimateStage ? (
           <>
             <section className="mb-10">
-              <h2 className="mb-3 text-lg font-semibold">Line items (estimate)</h2>
-              <div className="rounded-lg border border-slate-200 bg-white p-4">
-                <div className="grid grid-cols-[1fr_70px_80px_100px_auto] items-center gap-2 pb-2 text-xs font-medium text-slate-500">
+              <h2 className="mb-3 text-lg font-semibold text-slate-100">Line items (estimate)</h2>
+              <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
+                <div className="grid grid-cols-[1fr_70px_80px_100px_auto] items-center gap-2 pb-2 text-xs font-medium text-slate-400">
                   <span>Description</span>
                   <span>Qty</span>
                   <span>Unit</span>
@@ -236,42 +238,42 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                   <span></span>
                 </div>
                 {job.lineItems.length === 0 && (
-                  <p className="py-2 text-sm text-slate-500">No line items yet — add one below.</p>
+                  <p className="py-2 text-sm text-slate-400">No line items yet — add one below.</p>
                 )}
                 {job.lineItems.map((item) => (
                   <form
                     key={item.id}
                     action={updateLineItemWithId(item.id)}
-                    className="grid grid-cols-[1fr_70px_80px_100px_auto] items-center gap-2 border-t border-slate-100 py-2"
+                    className="grid grid-cols-[1fr_70px_80px_100px_auto] items-center gap-2 border-t border-slate-800 py-2"
                   >
                     <input
                       name="description"
                       defaultValue={item.description}
                       required
-                      className="rounded-md border border-slate-300 px-2 py-1 text-sm"
+                      className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
                     />
                     <input
                       name="quantity"
                       defaultValue={item.quantity.toString()}
                       required
-                      className="rounded-md border border-slate-300 px-2 py-1 text-sm"
+                      className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
                     />
                     <input
                       name="unit"
                       defaultValue={item.unit ?? ""}
-                      className="rounded-md border border-slate-300 px-2 py-1 text-sm"
+                      className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
                     />
                     <input
                       name="unitPrice"
                       defaultValue={item.unitPrice.toString()}
                       required
-                      className="rounded-md border border-slate-300 px-2 py-1 text-sm"
+                      className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
                     />
                     <div className="flex gap-1">
                       <button
                         type="submit"
                         title="Save"
-                        className="rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-900 hover:bg-slate-200"
+                        className="rounded-md bg-slate-800 px-2 py-1 text-xs font-medium text-slate-100 hover:bg-slate-700"
                       >
                         Save
                       </button>
@@ -279,7 +281,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                         type="submit"
                         formAction={deleteLineItemWithId(item.id)}
                         title="Remove"
-                        className="rounded-md bg-red-50 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-100"
+                        className="rounded-md bg-red-950 px-2 py-1 text-xs font-medium text-red-400 hover:bg-red-900"
                       >
                         Remove
                       </button>
@@ -290,56 +292,59 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             </section>
 
             <section className="mb-10">
-              <h2 className="mb-3 text-lg font-semibold">Add line item</h2>
+              <h2 className="mb-3 text-lg font-semibold text-slate-100">Add line item</h2>
               <form action={addLineItemWithId} className="flex flex-wrap items-end gap-3">
-                <label className="flex flex-col gap-1 text-sm">
+                <label className="flex flex-col gap-1 text-sm text-slate-300">
                   Description
                   <input
                     name="description"
                     required
-                    className="rounded-md border border-slate-300 px-3 py-2"
+                    className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
                   />
                 </label>
-                <label className="flex flex-col gap-1 text-sm">
+                <label className="flex flex-col gap-1 text-sm text-slate-300">
                   Qty
                   <input
                     name="quantity"
                     defaultValue="1"
                     required
-                    className="w-20 rounded-md border border-slate-300 px-3 py-2"
+                    className="w-20 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
                   />
                 </label>
-                <label className="flex flex-col gap-1 text-sm">
+                <label className="flex flex-col gap-1 text-sm text-slate-300">
                   Unit
-                  <input name="unit" className="w-24 rounded-md border border-slate-300 px-3 py-2" />
+                  <input
+                    name="unit"
+                    className="w-24 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
+                  />
                 </label>
-                <label className="flex flex-col gap-1 text-sm">
+                <label className="flex flex-col gap-1 text-sm text-slate-300">
                   Unit price
                   <input
                     name="unitPrice"
                     required
-                    className="w-28 rounded-md border border-slate-300 px-3 py-2"
+                    className="w-28 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
                   />
                 </label>
                 <button
                   type="submit"
-                  className="inline-flex items-center justify-center rounded-md bg-slate-100 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-slate-200"
+                  className="inline-flex items-center justify-center rounded-md bg-slate-800 px-4 py-2 text-sm font-medium text-slate-100 hover:bg-slate-700"
                 >
                   Add line item
                 </button>
               </form>
             </section>
 
-            <section className="mb-10 rounded-lg border border-slate-200 bg-white p-4">
-              <h2 className="mb-2 text-lg font-semibold">Ready to lock this in?</h2>
-              <p className="mb-3 text-sm text-slate-600">
+            <section className="mb-10 rounded-lg border border-slate-800 bg-slate-900 p-4">
+              <h2 className="mb-2 text-lg font-semibold text-slate-100">Ready to lock this in?</h2>
+              <p className="mb-3 text-sm text-slate-400">
                 Once contracted, line items can only change through a change order — this keeps an
                 audit trail of anything that changes after the client agrees to it.
               </p>
               <form action={markContractedWithId}>
                 <button
                   type="submit"
-                  className="inline-flex items-center justify-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
+                  className="inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
                 >
                   Mark as contracted
                 </button>
@@ -349,59 +354,62 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
         ) : (
           <>
             <section className="mb-10">
-              <h2 className="mb-3 text-lg font-semibold">Add change order (new scope)</h2>
+              <h2 className="mb-3 text-lg font-semibold text-slate-100">Add change order (new scope)</h2>
               <form action={addChangeOrderWithId} className="flex flex-col gap-3">
                 <div className="flex flex-wrap gap-3">
-                  <label className="flex flex-col gap-1 text-sm">
+                  <label className="flex flex-col gap-1 text-sm text-slate-300">
                     Change order title
                     <input
                       name="title"
                       required
-                      className="w-64 rounded-md border border-slate-300 px-3 py-2"
+                      className="w-64 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
                       placeholder="Add tile backsplash"
                     />
                   </label>
-                  <label className="flex flex-col gap-1 text-sm">
+                  <label className="flex flex-col gap-1 text-sm text-slate-300">
                     Notes
                     <input
                       name="description"
-                      className="w-64 rounded-md border border-slate-300 px-3 py-2"
+                      className="w-64 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
                     />
                   </label>
                 </div>
                 <div className="flex flex-wrap items-end gap-3">
-                  <label className="flex flex-col gap-1 text-sm">
+                  <label className="flex flex-col gap-1 text-sm text-slate-300">
                     New line item description
                     <input
                       name="itemDescription"
                       required
-                      className="w-64 rounded-md border border-slate-300 px-3 py-2"
+                      className="w-64 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
                     />
                   </label>
-                  <label className="flex flex-col gap-1 text-sm">
+                  <label className="flex flex-col gap-1 text-sm text-slate-300">
                     Qty
                     <input
                       name="quantity"
                       defaultValue="1"
                       required
-                      className="w-20 rounded-md border border-slate-300 px-3 py-2"
+                      className="w-20 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
                     />
                   </label>
-                  <label className="flex flex-col gap-1 text-sm">
+                  <label className="flex flex-col gap-1 text-sm text-slate-300">
                     Unit
-                    <input name="unit" className="w-24 rounded-md border border-slate-300 px-3 py-2" />
+                    <input
+                      name="unit"
+                      className="w-24 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
+                    />
                   </label>
-                  <label className="flex flex-col gap-1 text-sm">
+                  <label className="flex flex-col gap-1 text-sm text-slate-300">
                     Unit price
                     <input
                       name="unitPrice"
                       required
-                      className="w-28 rounded-md border border-slate-300 px-3 py-2"
+                      className="w-28 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
                     />
                   </label>
                   <button
                     type="submit"
-                    className="inline-flex items-center justify-center rounded-md bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600"
+                    className="inline-flex items-center justify-center rounded-md bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-500"
                   >
                     Submit change order
                   </button>
@@ -411,33 +419,35 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
 
             {job.lineItems.length > 0 && (
               <section className="mb-10">
-                <h2 className="mb-3 text-lg font-semibold">Revise a line item via change order</h2>
+                <h2 className="mb-3 text-lg font-semibold text-slate-100">
+                  Revise a line item via change order
+                </h2>
                 <form action={editViaChangeOrderWithId} className="flex flex-col gap-3">
                   <div className="flex flex-wrap gap-3">
-                    <label className="flex flex-col gap-1 text-sm">
+                    <label className="flex flex-col gap-1 text-sm text-slate-300">
                       Change order title
                       <input
                         name="title"
                         required
-                        className="w-64 rounded-md border border-slate-300 px-3 py-2"
+                        className="w-64 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
                         placeholder="Upgrade countertop material"
                       />
                     </label>
-                    <label className="flex flex-col gap-1 text-sm">
+                    <label className="flex flex-col gap-1 text-sm text-slate-300">
                       Notes
                       <input
                         name="description"
-                        className="w-64 rounded-md border border-slate-300 px-3 py-2"
+                        className="w-64 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
                       />
                     </label>
                   </div>
                   <div className="flex flex-wrap items-end gap-3">
-                    <label className="flex flex-col gap-1 text-sm">
+                    <label className="flex flex-col gap-1 text-sm text-slate-300">
                       Line item
                       <select
                         name="lineItemId"
                         required
-                        className="w-64 rounded-md border border-slate-300 px-3 py-2"
+                        className="w-64 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
                       >
                         {job.lineItems.map((item) => (
                           <option key={item.id} value={item.id}>
@@ -446,25 +456,25 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                         ))}
                       </select>
                     </label>
-                    <label className="flex flex-col gap-1 text-sm">
+                    <label className="flex flex-col gap-1 text-sm text-slate-300">
                       New qty
                       <input
                         name="quantity"
                         required
-                        className="w-20 rounded-md border border-slate-300 px-3 py-2"
+                        className="w-20 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
                       />
                     </label>
-                    <label className="flex flex-col gap-1 text-sm">
+                    <label className="flex flex-col gap-1 text-sm text-slate-300">
                       New unit price
                       <input
                         name="unitPrice"
                         required
-                        className="w-28 rounded-md border border-slate-300 px-3 py-2"
+                        className="w-28 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
                       />
                     </label>
                     <button
                       type="submit"
-                      className="inline-flex items-center justify-center rounded-md bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600"
+                      className="inline-flex items-center justify-center rounded-md bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-500"
                     >
                       Submit revision
                     </button>
@@ -475,33 +485,35 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
 
             {job.lineItems.length > 0 && (
               <section className="mb-10">
-                <h2 className="mb-3 text-lg font-semibold">Remove a line item via change order</h2>
+                <h2 className="mb-3 text-lg font-semibold text-slate-100">
+                  Remove a line item via change order
+                </h2>
                 <form action={removeViaChangeOrderWithId} className="flex flex-col gap-3">
                   <div className="flex flex-wrap gap-3">
-                    <label className="flex flex-col gap-1 text-sm">
+                    <label className="flex flex-col gap-1 text-sm text-slate-300">
                       Change order title
                       <input
                         name="title"
                         required
-                        className="w-64 rounded-md border border-slate-300 px-3 py-2"
+                        className="w-64 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
                         placeholder="Remove backsplash tile"
                       />
                     </label>
-                    <label className="flex flex-col gap-1 text-sm">
+                    <label className="flex flex-col gap-1 text-sm text-slate-300">
                       Notes
                       <input
                         name="description"
-                        className="w-64 rounded-md border border-slate-300 px-3 py-2"
+                        className="w-64 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
                       />
                     </label>
                   </div>
                   <div className="flex flex-wrap items-end gap-3">
-                    <label className="flex flex-col gap-1 text-sm">
+                    <label className="flex flex-col gap-1 text-sm text-slate-300">
                       Line item
                       <select
                         name="lineItemId"
                         required
-                        className="w-64 rounded-md border border-slate-300 px-3 py-2"
+                        className="w-64 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
                       >
                         {job.lineItems.map((item) => (
                           <option key={item.id} value={item.id}>
@@ -512,7 +524,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                     </label>
                     <button
                       type="submit"
-                      className="inline-flex items-center justify-center rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
+                      className="inline-flex items-center justify-center rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-500"
                     >
                       Submit removal
                     </button>
@@ -525,14 +537,14 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
 
         {job.changeOrders.length > 0 && (
           <section>
-            <h2 className="mb-3 text-lg font-semibold">Change order history</h2>
+            <h2 className="mb-3 text-lg font-semibold text-slate-100">Change order history</h2>
             <ul className="flex flex-col gap-2">
               {job.changeOrders.map((co) => (
-                <li key={co.id} className="rounded-md border border-slate-200 bg-white p-3 text-sm">
-                  <p className="font-medium">
+                <li key={co.id} className="rounded-md border border-slate-800 bg-slate-900 p-3 text-sm">
+                  <p className="font-medium text-slate-100">
                     CO #{co.number}: {co.title}
                   </p>
-                  {co.description && <p className="text-slate-600">{co.description}</p>}
+                  {co.description && <p className="text-slate-400">{co.description}</p>}
                   {co.edits.map((edit) => (
                     <p key={edit.id} className="text-slate-500">
                       {edit.field}: {edit.oldValue} → {edit.newValue}
@@ -544,6 +556,6 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
           </section>
         )}
       </div>
-    </main>
+    </div>
   );
 }
