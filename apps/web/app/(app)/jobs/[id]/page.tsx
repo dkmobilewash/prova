@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { headers } from "next/headers";
 import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { PrintButton } from "@/components/PrintButton";
@@ -9,6 +10,7 @@ import {
   addCostEntry,
   addLineItem,
   assignCrewMember,
+  createSignatureRequest,
   deleteCostEntry,
   deleteLineItem,
   editLineItemViaChangeOrder,
@@ -49,6 +51,9 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
         include: { user: true },
         orderBy: { createdAt: "asc" },
       },
+      signatureRequests: {
+        orderBy: { createdAt: "desc" },
+      },
     },
   });
 
@@ -86,6 +91,12 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
   const updateScheduleWithId = updateJobSchedule.bind(null, job.id);
   const assignCrewWithId = assignCrewMember.bind(null, job.id);
   const unassignCrewWithId = (userId: string) => unassignCrewMember.bind(null, job.id, userId);
+  const createSignatureRequestWithId = createSignatureRequest.bind(null, job.id);
+
+  const headerList = await headers();
+  const origin = `${headerList.get("x-forwarded-proto") ?? "https"}://${headerList.get("host")}`;
+  const pendingSignature = job.signatureRequests.find((r) => r.status === "PENDING");
+  const signedSignature = job.signatureRequests.find((r) => r.status === "SIGNED");
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-8 print:max-w-none print:px-0 print:py-0">
@@ -189,6 +200,46 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                 </form>
               )}
             </div>
+          </div>
+        </section>
+
+        <section className="mb-10">
+          <h2 className="mb-3 text-lg font-semibold text-slate-100">Contract signature</h2>
+          <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
+            {signedSignature ? (
+              <p className="text-sm text-green-400">
+                Signed by {signedSignature.signerName} on{" "}
+                {signedSignature.signedAt?.toLocaleDateString("en-US", {
+                  month: "short",
+                  day: "numeric",
+                  year: "numeric",
+                })}
+                .
+              </p>
+            ) : pendingSignature ? (
+              <div className="text-sm">
+                <p className="mb-2 text-slate-300">
+                  Waiting on the client to sign. Share this link with them:
+                </p>
+                <p className="break-all rounded-md bg-slate-950 px-3 py-2 font-mono text-xs text-blue-400">
+                  {origin}/esign/{pendingSignature.token}
+                </p>
+              </div>
+            ) : (
+              <div>
+                <p className="mb-3 text-sm text-slate-400">
+                  No signing link yet. Once the client signs, this job can be marked as contracted.
+                </p>
+                <form action={createSignatureRequestWithId}>
+                  <button
+                    type="submit"
+                    className="rounded-md bg-slate-800 px-3 py-2 text-sm font-medium text-slate-100 hover:bg-slate-700"
+                  >
+                    Create signing link
+                  </button>
+                </form>
+              </div>
+            )}
           </div>
         </section>
 
@@ -401,14 +452,20 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                 Once contracted, line items can only change through a change order — this keeps an
                 audit trail of anything that changes after the client agrees to it.
               </p>
-              <form action={markContractedWithId}>
-                <button
-                  type="submit"
-                  className="inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
-                >
-                  Mark as contracted
-                </button>
-              </form>
+              {signedSignature ? (
+                <form action={markContractedWithId}>
+                  <button
+                    type="submit"
+                    className="inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
+                  >
+                    Mark as contracted
+                  </button>
+                </form>
+              ) : (
+                <p className="text-sm text-amber-400">
+                  Get the client&apos;s signature above before contracting this job.
+                </p>
+              )}
             </section>
           </>
         ) : (
