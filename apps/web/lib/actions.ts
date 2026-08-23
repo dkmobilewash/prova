@@ -463,3 +463,35 @@ export async function removeTeamMember(memberUserId: string) {
 
   revalidatePath("/team");
 }
+
+/** Direct edit of a contact's details. */
+export async function updateContact(contactId: string, formData: FormData) {
+  const { company } = await requireCompanyContext();
+
+  const contact = await prisma.contact.findUnique({ where: { id: contactId } });
+  if (!contact || contact.companyId !== company.id) {
+    throw new Error("Contact not found");
+  }
+
+  const name = String(formData.get("name") ?? "").trim();
+  const email = String(formData.get("email") ?? "").trim();
+  const phone = String(formData.get("phone") ?? "").trim();
+  const address = String(formData.get("address") ?? "").trim();
+
+  if (!name) {
+    throw new Error("Name is required");
+  }
+
+  await prisma.contact.update({
+    where: { id: contactId },
+    data: {
+      name,
+      email: email || null,
+      phone: phone || null,
+      address: address || null,
+    },
+  });
+
+  revalidatePath(`/contacts/${contactId}`);
+  revalidatePath("/contacts");
+}
