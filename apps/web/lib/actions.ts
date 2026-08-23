@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { prisma } from "@prova/db";
+import { Prisma, prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 
 function decimalFromForm(formData: FormData, key: string): string {
@@ -393,4 +393,73 @@ export async function deleteCostEntry(jobId: string, costEntryId: string) {
   await prisma.costEntry.delete({ where: { id: costEntryId } });
 
   revalidatePath(`/jobs/${jobId}`);
+}
+
+function assertOwner(user: { role: string }) {
+  if (user.role !== "OWNER") {
+    throw new Error("Only the account owner can manage team members");
+  }
+}
+
+/** Invites a teammate by email. They join the OWNER's Company as a MEMBER
+ * the next time they sign up with that email — see requireCompanyContext(). */
+export async function inviteTeamMember(formData: FormData) {
+  const { company, ...user } = await requireCompanyContext();
+  assertOwner(user);
+
+  const email = String(formData.get("email") ?? "")
+    .trim()
+    .toLowerCase();
+  if (!email) {
+    throw new Error("Email is required");
+  }
+
+  const existingUser = await prisma.user.findUnique({ where: { email } });
+  if (existingUser) {
+    throw new Error("Someone with that email already has an account");
+  }
+
+  try {
+    await prisma.invite.create({ data: { companyId: company.id, email } });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      throw new Error("That email has already been invited (here or elsewhere)");
+    }
+    throw error;
+  }
+
+  revalidatePath("/team");
+}
+
+/** Cancels a pending invite (e.g. to fix a typo). */
+export async function cancelInvite(inviteId: string) {
+  const { company, ...user } = await requireCompanyContext();
+  assertOwner(user);
+
+  const invite = await prisma.invite.findUnique({ where: { id: inviteId } });
+  if (!invite || invite.companyId !== company.id) {
+    throw new Error("Invite not found");
+  }
+
+  await prisma.invite.delete({ where: { id: inviteId } });
+
+  revalidatePath("/team");
+}
+
+/** Removes a MEMBER from the company. Owners can't be removed this way. */
+export async function removeTeamMember(memberUserId: string) {
+  const { company, ...user } = await requireCompanyContext();
+  assertOwner(user);
+
+  const member = await prisma.user.findUnique({ where: { id: memberUserId } });
+  if (!member || member.companyId !== company.id) {
+    throw new Error("Team member not found");
+  }
+  if (member.role === "OWNER") {
+    throw new Error("Owners can't be removed");
+  }
+
+  await prisma.user.delete({ where: { id: memberUserId } });
+
+  revalidatePath("/team");
 }

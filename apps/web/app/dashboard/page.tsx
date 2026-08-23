@@ -1,8 +1,8 @@
 import Link from "next/link";
-import { UserButton } from "@clerk/nextjs";
 import { StatusBadge } from "@prova/ui";
 import { JobStatus, Prisma, prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
+import { AppHeader } from "@/components/AppHeader";
 
 const STATUS_OPTIONS: JobStatus[] = ["ESTIMATE", "CONTRACTED", "IN_PROGRESS", "COMPLETE"];
 
@@ -38,13 +38,7 @@ export default async function DashboardPage({
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-10">
-      <div className="mb-8 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">{company.name}</h1>
-          <p className="text-sm text-slate-600">Jobs</p>
-        </div>
-        <UserButton />
-      </div>
+      <AppHeader companyName={company.name} />
 
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <Link
