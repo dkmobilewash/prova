@@ -178,6 +178,39 @@ Actual spending is a different kind of fact: it's internal, it happens
 throughout the job (often *because* work is in progress), and gating it
 would just make the numbers less accurate for no protective benefit.
 
+### `Invoice` / `Payment` — billing, same pattern again
+
+A third instance of the "reference, don't duplicate" rule. `Invoice`
+references `Job` (not a copy of its line items — an invoice is a billing
+event, a request for money, independent of which specific line items it
+covers). `Payment` references `Invoice`, one row per real payment
+received, supporting partial/progress payments. Amount paid and balance
+are always `SUM(payments.amount)` vs. the invoice amount — computed, never
+stored, exactly like actual cost on `JobLineItem`.
+
+`Payment` is a manual record, not a charge — there's no payment
+processor wired up (see Future phases). Invoicing is only available once
+a job is `CONTRACTED` or later, for the same reason change orders are
+gated: you don't bill for scope nobody has agreed to yet.
+
+### Client portal — the `SignatureRequest` token pattern, generalized
+
+`Contact.portalToken` is the same idea as `SignatureRequest.token`,
+applied to standing access instead of a one-time signature: an
+unguessable link stands in for a client login that doesn't exist yet
+(that's still a separate, bigger decision — see Future phases if it ever
+needs to become a real Clerk-backed account). Generated on demand from
+`/contacts/[id]`, null until then.
+
+The portal pages (`/portal/[token]` and `/portal/[token]/jobs/[jobId]`)
+read the exact same `Job`/`JobLineItem`/`Invoice` data every other view
+reads — the job list-page even renders through the same
+`ContractSummary` component `/jobs/[id]` and `/esign/[token]` use.
+Nothing is duplicated for the client's benefit. What's deliberately
+excluded is job costing: actual cost and variance are internal margin
+data, not something a client should see, so the portal never queries
+`CostEntry` at all.
+
 ## What proves this works (Phase 00's CRUD flow)
 
 The minimal CRUD flow in `apps/web` exists specifically to demonstrate the
@@ -226,10 +259,13 @@ specifically trying to avoid.
 
 - **AI features** — no assist/automation of any kind yet.
 - **QuickBooks / accounting sync** — `packages/integrations` is an empty
-  placeholder for this and other future integrations.
-- **Client portal** — clients have no login or view of their own yet;
-  `Contact` is purely a record the contractor manages.
-- **Billing** — no invoicing, payments, or draw schedules.
+  placeholder for this and other future integrations. Blocked on real
+  Intuit Developer credentials (Client ID/Secret), not a design question.
+- **Real payment processing** — `Payment` rows are manual records (check,
+  cash, card handled elsewhere), not charges. Actually collecting a card/
+  ACH payment in-app needs a processor (e.g. Stripe) and its own API keys
+  — a deliberately separate decision from the invoicing/tracking built
+  now.
 - **Trade-specific modules** — no framework yet for trade-specific line
   item templates, catalogs, or workflows.
 
