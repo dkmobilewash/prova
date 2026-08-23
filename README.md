@@ -48,10 +48,15 @@ Fill in:
 | `DATABASE_URL` | both `.env` files | Postgres connection string (a Neon pooled connection string works) |
 | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | `apps/web/.env` | From your Clerk app's API Keys page |
 | `CLERK_SECRET_KEY` | `apps/web/.env` | From your Clerk app's API Keys page |
+| `QUICKBOOKS_CLIENT_ID` | `apps/web/.env` | From your Intuit Developer app's Keys page — only needed to use the `/settings` QuickBooks connection |
+| `QUICKBOOKS_CLIENT_SECRET` | `apps/web/.env` | From your Intuit Developer app's Keys page — never commit this |
+| `QUICKBOOKS_REDIRECT_URI` | `apps/web/.env` | `<your origin>/api/quickbooks/callback`, must exactly match a redirect URI registered on that Intuit app |
 
 The remaining `NEXT_PUBLIC_CLERK_*_URL` vars in `apps/web/.env.example`
 are already set to sensible defaults (`/sign-in`, `/sign-up`,
 `/dashboard`) — only change them if you rename those routes.
+`QUICKBOOKS_ENVIRONMENT` defaults to `sandbox` in `.env.example`; set it
+to `production` only once you're using a production Intuit app.
 
 `packages/db/.env` and `apps/web/.env` can point at the same
 `DATABASE_URL`; they're separate files because Prisma CLI commands run
