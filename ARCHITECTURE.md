@@ -62,9 +62,14 @@ A single `JobLineItem` row is simultaneously:
 - **A budget line** — `SUM(quantity * unitPrice)` across a job's
   non-deleted line items is the budget, always, at any point in the job's
   life.
-- **A job-costing line** — later phases that track actual cost vs.
-  estimated cost add columns to this same row (e.g. `actualCost`), not a
-  parallel `CostingLine` table.
+- **A job-costing line** — actual cost vs. estimated cost is tracked via
+  `CostEntry` rows that reference a `JobLineItem` (one per real expense —
+  a receipt, a labor entry), the same way `ChangeOrder` references it.
+  Actual cost is `SUM(costEntries.amount)`, computed, never stored as a
+  duplicate field on the line item. A single `actualCost` column was
+  considered and rejected: it can't tell you *what* it's made of, and a
+  contractor needs the breakdown (materials vs. labor vs. subcontractor),
+  not just a number.
 
 There is no transformation step where an "estimate" becomes a "contract"
 or a "budget." They were never different things.
@@ -116,6 +121,23 @@ actually needs to capture. The `ChangeOrderLineItemEdit` log gives you the
 field-level diff, which is enough to answer "what changed and when" today.
 Revisit this if/when Phase "compliance & e-sign" needs stronger
 guarantees.
+
+### `CostEntry` — actual cost, referencing the same line item
+
+Job costing follows the identical pattern as change orders: a new table
+that references `JobLineItem` rather than a new copy of line-item data.
+Each `CostEntry` is one real expense (a receipt, a labor entry) tied to
+the line item it was spent against. "Estimated" is
+`quantity * unitPrice` (unchanged, still the only estimate). "Actual" is
+`SUM(costEntries.amount)` for that line item. Variance is the difference
+— always computed at read time, never stored.
+
+Unlike change orders, logging a cost is **not** gated by `Job.status`.
+The ESTIMATE/CONTRACTED gate exists to protect the client-facing
+agreement — scope and pricing shouldn't silently change after signing.
+Actual spending is a different kind of fact: it's internal, it happens
+throughout the job (often *because* work is in progress), and gating it
+would just make the numbers less accurate for no protective benefit.
 
 ## What proves this works (Phase 00's CRUD flow)
 

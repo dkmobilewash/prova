@@ -5,13 +5,17 @@ import { requireCompanyContext } from "@/lib/auth";
 import { PrintButton } from "@/components/PrintButton";
 import {
   addChangeOrderLineItem,
+  addCostEntry,
   addLineItem,
+  deleteCostEntry,
   deleteLineItem,
   editLineItemViaChangeOrder,
   markJobContracted,
   removeLineItemViaChangeOrder,
   updateLineItem,
 } from "@/lib/actions";
+
+const COST_CATEGORIES = ["LABOR", "MATERIAL", "SUBCONTRACTOR", "OTHER"] as const;
 
 function money(value: number) {
   return value.toLocaleString("en-US", { style: "currency", currency: "USD" });
@@ -28,7 +32,10 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
       lineItems: {
         where: { isDeleted: false },
         orderBy: { createdAt: "asc" },
-        include: { originChangeOrder: true },
+        include: {
+          originChangeOrder: true,
+          costEntries: { orderBy: { incurredAt: "desc" } },
+        },
       },
       changeOrders: {
         orderBy: { number: "asc" },
@@ -47,6 +54,11 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
     0,
   );
 
+  const actualTotal = job.lineItems.reduce(
+    (sum, item) => sum + item.costEntries.reduce((s, entry) => s + Number(entry.amount), 0),
+    0,
+  );
+
   const addLineItemWithId = addLineItem.bind(null, job.id);
   const updateLineItemWithId = (lineItemId: string) => updateLineItem.bind(null, job.id, lineItemId);
   const deleteLineItemWithId = (lineItemId: string) => deleteLineItem.bind(null, job.id, lineItemId);
@@ -54,6 +66,8 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
   const editViaChangeOrderWithId = editLineItemViaChangeOrder.bind(null, job.id);
   const removeViaChangeOrderWithId = removeLineItemViaChangeOrder.bind(null, job.id);
   const markContractedWithId = markJobContracted.bind(null, job.id);
+  const addCostEntryWithId = (lineItemId: string) => addCostEntry.bind(null, job.id, lineItemId);
+  const deleteCostEntryWithId = (costEntryId: string) => deleteCostEntry.bind(null, job.id, costEntryId);
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-10 print:max-w-none print:px-0 print:py-0">
@@ -116,6 +130,99 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
       </section>
 
       <div className="print:hidden">
+        <section className="mb-10">
+          <h2 className="mb-3 text-lg font-semibold">Job costing</h2>
+          <div className="flex flex-col gap-4">
+            {job.lineItems.map((item) => {
+              const estimated = Number(item.quantity) * Number(item.unitPrice);
+              const actual = item.costEntries.reduce((s, entry) => s + Number(entry.amount), 0);
+              const variance = estimated - actual;
+              return (
+                <div key={item.id} className="rounded-lg border border-slate-200 bg-white p-4">
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <p className="font-medium">{item.description}</p>
+                    <div className="flex gap-4 text-sm">
+                      <span className="text-slate-500">Est. {money(estimated)}</span>
+                      <span className="text-slate-500">Actual {money(actual)}</span>
+                      <span className={variance >= 0 ? "text-green-700" : "text-red-700"}>
+                        {variance >= 0 ? "Under" : "Over"} by {money(Math.abs(variance))}
+                      </span>
+                    </div>
+                  </div>
+
+                  {item.costEntries.length > 0 && (
+                    <ul className="mt-3 flex flex-col gap-1 border-t border-slate-100 pt-3">
+                      {item.costEntries.map((entry) => (
+                        <li key={entry.id} className="flex items-center justify-between text-sm">
+                          <span className="text-slate-600">
+                            {entry.description}{" "}
+                            <span className="text-xs text-slate-400">({entry.category})</span>
+                          </span>
+                          <span className="flex items-center gap-2">
+                            <span>{money(Number(entry.amount))}</span>
+                            <form action={deleteCostEntryWithId(entry.id)}>
+                              <button
+                                type="submit"
+                                title="Remove"
+                                className="text-xs text-red-600 hover:underline"
+                              >
+                                Remove
+                              </button>
+                            </form>
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+
+                  <form
+                    action={addCostEntryWithId(item.id)}
+                    className="mt-3 flex flex-wrap items-end gap-2 border-t border-slate-100 pt-3"
+                  >
+                    <input
+                      name="description"
+                      placeholder="Cost description"
+                      required
+                      className="flex-1 rounded-md border border-slate-300 px-2 py-1 text-sm"
+                    />
+                    <input
+                      name="amount"
+                      placeholder="Amount"
+                      required
+                      className="w-24 rounded-md border border-slate-300 px-2 py-1 text-sm"
+                    />
+                    <select
+                      name="category"
+                      defaultValue="OTHER"
+                      className="rounded-md border border-slate-300 px-2 py-1 text-sm"
+                    >
+                      {COST_CATEGORIES.map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="submit"
+                      className="rounded-md bg-slate-100 px-3 py-1.5 text-sm font-medium text-slate-900 hover:bg-slate-200"
+                    >
+                      Log cost
+                    </button>
+                  </form>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="mt-4 flex justify-end gap-6 text-sm">
+            <span className="text-slate-500">Total estimated: {money(total)}</span>
+            <span className="text-slate-500">Total actual: {money(actualTotal)}</span>
+            <span className={total - actualTotal >= 0 ? "text-green-700" : "text-red-700"}>
+              {total - actualTotal >= 0 ? "Under" : "Over"} by {money(Math.abs(total - actualTotal))}
+            </span>
+          </div>
+        </section>
+
         {isEstimateStage ? (
           <>
             <section className="mb-10">
