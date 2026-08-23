@@ -12,6 +12,7 @@
   "dependencies": {
     "@clerk/nextjs": "^6.9.6",
     "@prova/db": "workspace:*",
+    "@prova/integrations": "workspace:*",
     "@prova/ui": "workspace:*",
     "next": "^15.1.3",
     "react": "^19.0.0",

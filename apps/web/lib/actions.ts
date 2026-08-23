@@ -2,10 +2,18 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { headers } from "next/headers";
+import { headers, cookies } from "next/headers";
 import { randomBytes } from "node:crypto";
 import { Prisma, prisma } from "@prova/db";
+import {
+  getAuthorizeUrl,
+  revokeToken,
+  refreshTokens,
+  getCompanyInfo,
+  type QuickBooksCompanyInfo,
+} from "@prova/integrations";
 import { requireCompanyContext } from "@/lib/auth";
+import { QUICKBOOKS_OAUTH_STATE_COOKIE } from "@/lib/quickbooks-constants";
 
 function decimalFromForm(formData: FormData, key: string): string {
   const raw = formData.get(key);
@@ -754,4 +762,90 @@ export async function deletePayment(jobId: string, paymentId: string) {
   await prisma.payment.delete({ where: { id: paymentId } });
 
   revalidatePath(`/jobs/${jobId}`);
+}
+
+const QUICKBOOKS_OAUTH_STATE_MAX_AGE_SECONDS = 600;
+
+/**
+ * Starts the QuickBooks OAuth flow. OWNER-only, matching the /settings
+ * page's access gate. Stores a random `state` value in a short-lived,
+ * httpOnly cookie and passes the same value in the authorize URL — the
+ * callback route (app/api/quickbooks/callback) checks the two match as
+ * CSRF protection before exchanging the code.
+ */
+export async function initiateQuickBooksConnect() {
+  const context = await requireCompanyContext();
+  assertOwner(context);
+
+  const state = randomBytes(24).toString("hex");
+  const cookieStore = await cookies();
+  cookieStore.set(QUICKBOOKS_OAUTH_STATE_COOKIE, state, {
+    httpOnly: true,
+    secure: true,
+    sameSite: "lax",
+    maxAge: QUICKBOOKS_OAUTH_STATE_MAX_AGE_SECONDS,
+    path: "/",
+  });
+
+  redirect(getAuthorizeUrl(state));
+}
+
+/** Ends the QuickBooks connection: best-effort revoke on Intuit's side,
+ * then always removes the local record regardless of whether the revoke
+ * call succeeded — an orphaned token we can no longer use is harmless. */
+export async function disconnectQuickBooks() {
+  const context = await requireCompanyContext();
+  assertOwner(context);
+  const { company } = context;
+
+  const connection = await prisma.quickBooksConnection.findUnique({ where: { companyId: company.id } });
+  if (!connection) {
+    return;
+  }
+
+  try {
+    await revokeToken(connection.refreshToken);
+  } catch {
+    // Already revoked, expired, or a transient network error — either way,
+    // proceed to remove our record.
+  }
+
+  await prisma.quickBooksConnection.delete({ where: { companyId: company.id } });
+
+  revalidatePath("/settings");
+}
+
+/**
+ * Read-only connectivity check: refreshes the access token first if it's
+ * about to expire, then fetches company info from the Accounting API.
+ * Called directly from a client component (not a <form action>) so its
+ * return value can be shown inline.
+ */
+export async function testQuickBooksConnection(): Promise<QuickBooksCompanyInfo> {
+  const context = await requireCompanyContext();
+  assertOwner(context);
+  const { company } = context;
+
+  const connection = await prisma.quickBooksConnection.findUnique({ where: { companyId: company.id } });
+  if (!connection) {
+    throw new Error("QuickBooks is not connected");
+  }
+
+  let accessToken = connection.accessToken;
+
+  if (connection.accessTokenExpiresAt.getTime() - Date.now() < 60_000) {
+    const refreshed = await refreshTokens(connection.refreshToken);
+    await prisma.quickBooksConnection.update({
+      where: { companyId: company.id },
+      data: {
+        accessToken: refreshed.accessToken,
+        refreshToken: refreshed.refreshToken,
+        accessTokenExpiresAt: refreshed.accessTokenExpiresAt,
+        refreshTokenExpiresAt: refreshed.refreshTokenExpiresAt,
+      },
+    });
+    accessToken = refreshed.accessToken;
+  }
+
+  return getCompanyInfo(connection.realmId, accessToken);
 }
