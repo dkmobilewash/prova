@@ -48,6 +48,7 @@ model Company {
   complianceDocuments  ComplianceDocument[]
   licenses             CompanyLicense[]
   tradeScopes          CompanyTradeScope[]
+  unionAgreements      CompanyUnionAgreement[]
 }
 
 enum UserRole {
@@ -424,6 +425,7 @@ enum ComplianceDocumentType {
   CERTIFICATE_OF_INSURANCE
   CERTIFIED_PAYROLL
   UNION_FRINGE_BENEFIT_FILING
+  UNION_AGREEMENT
 }
 
 enum ComplianceDocumentStatus {
@@ -490,6 +492,10 @@ model ComplianceDocument {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  /// A CBA (type UNION_AGREEMENT) can be linked from CompanyUnionAgreement
+  /// as its source document.
+  companyUnionAgreements CompanyUnionAgreement[]
 
   @@index([companyId])
   @@index([jobId])
@@ -566,4 +572,110 @@ model LicenseClassificationReference {
   createdAt        DateTime @default(now())
 
   @@unique([jurisdictionName, code])
+}
+
+/// A global reference table (not scoped to a Company) — the same union
+/// local applies to every company that works under it. Deliberately NOT
+/// seeded: no verified source for real local numbers/jurisdictions, and a
+/// wrong entry here would misattribute a company's CBA to the wrong local.
+model UnionLocal {
+  id                  String @id @default(cuid())
+  parentInternational String // "United Brotherhood of Carpenters", "OPCMIA", "IUPAT", "LIUNA"
+  localNumber         String
+  jurisdictionName    String
+  tradeJurisdiction   String?
+  createdAt           DateTime @default(now())
+
+  craftClassifications CraftClassification[]
+  apprenticeRatioRules ApprenticeRatioRule[]
+  companyAgreements    CompanyUnionAgreement[]
+
+  @@unique([parentInternational, localNumber])
+}
+
+/// One CBA between a Company and a UnionLocal. `complianceDocument` links
+/// to the actual agreement document (type UNION_AGREEMENT) if one's been
+/// uploaded — reuses the existing document-tracking table rather than a
+/// separate file reference.
+model CompanyUnionAgreement {
+  id           String     @id @default(cuid())
+  companyId    String
+  company      Company    @relation(fields: [companyId], references: [id])
+  unionLocalId String
+  unionLocal   UnionLocal @relation(fields: [unionLocalId], references: [id])
+
+  effectiveFrom DateTime
+  effectiveTo   DateTime?
+
+  complianceDocumentId String?
+  complianceDocument   ComplianceDocument? @relation(fields: [complianceDocumentId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([companyId])
+  @@index([unionLocalId])
+}
+
+/// Craft classifications and their progression aren't standardized across
+/// locals (journeyman, apprentice period 1-5, foreman — the exact steps
+/// vary), so this is tied to a specific UnionLocal rather than a shared
+/// list.
+model CraftClassification {
+  id           String     @id @default(cuid())
+  unionLocalId String
+  unionLocal   UnionLocal @relation(fields: [unionLocalId], references: [id])
+  name         String
+  createdAt    DateTime   @default(now())
+
+  fringeRateSchedules FringeRateSchedule[]
+
+  @@unique([unionLocalId, name])
+  @@index([unionLocalId])
+}
+
+/// Effective-dated, not a flat current-rate field: CBA rates typically
+/// change annually, and job costing or certified payroll on an older job
+/// needs the rate that was in effect AT THE TIME, not today's rate. A flat
+/// rate field would quietly corrupt historical job costing the first time
+/// a rate changed mid-project. `effectiveTo` null means currently in
+/// effect. Non-overlapping ranges per craft classification are enforced
+/// at the database level below (an EXCLUDE constraint — see the migration
+/// SQL; Prisma's schema language has no declarative way to express this,
+/// so it's hand-written raw SQL in the migration rather than generated
+/// from this model).
+model FringeRateSchedule {
+  id                    String @id @default(cuid())
+  craftClassificationId String
+  craftClassification   CraftClassification @relation(fields: [craftClassificationId], references: [id])
+
+  baseWage          Decimal  @db.Decimal(12, 2)
+  pensionRate       Decimal? @db.Decimal(12, 2)
+  vacationRate      Decimal? @db.Decimal(12, 2)
+  healthWelfareRate Decimal? @db.Decimal(12, 2)
+  trainingRate      Decimal? @db.Decimal(12, 2)
+
+  effectiveFrom DateTime
+  effectiveTo   DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([craftClassificationId])
+  @@index([effectiveFrom])
+}
+
+/// Captures the ratio rule itself (e.g. 1 apprentice per 3 journeymen).
+/// Does NOT implement the actual daily compliance check — ratios are
+/// enforced daily, not on a monthly rollup, which needs a labor/time-entry
+/// data model that doesn't exist anywhere in this schema yet. That check
+/// is real future work, not something this table alone can drive.
+model ApprenticeRatioRule {
+  id                       String     @id @default(cuid())
+  unionLocalId             String
+  unionLocal               UnionLocal @relation(fields: [unionLocalId], references: [id])
+  apprenticeCount          Int
+  journeymenCount          Int
+  programStandardReference String?
+  createdAt                DateTime   @default(now())
+
+  @@index([unionLocalId])
 }

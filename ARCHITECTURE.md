@@ -300,6 +300,65 @@ company from getting duplicate rows for the same trade. `activeSince` is
 nullable because a company can add a trade scope later as it grows,
 rather than every company holding all five from day one.
 
+### Union affiliation — CBAs, craft classifications, and effective-dated fringe rates
+
+Five models, structured around one hard requirement: **certified payroll
+and fringe reporting on an older job have to use the wage rate that was
+in effect at the time, not today's rate.** A flat "current rate" field
+would quietly corrupt historical job costing the first time a CBA rate
+changed mid-project.
+
+- `UnionLocal` — a global reference table (not scoped to a Company; the
+  same local applies to every company that works under it). Deliberately
+  **not seeded** — no verified source for real local numbers, and a wrong
+  entry would misattribute a company's CBA to the wrong local.
+- `CompanyUnionAgreement` — one CBA between a Company and a `UnionLocal`.
+  `complianceDocumentId` links to the actual agreement document via the
+  existing `ComplianceDocument` table (new `UNION_AGREEMENT` type) rather
+  than a separate, disconnected file reference — the same document
+  gets tracked one way, whether it's a lien waiver or a CBA.
+- `CraftClassification` — tied to a specific `UnionLocal`, not a shared
+  list, because classification names and progression steps (journeyman,
+  apprentice period 1–5, foreman) aren't standardized across locals.
+- `FringeRateSchedule` — **effective-dated**
+  (`effectiveFrom`/`effectiveTo`, null `effectiveTo` = currently in
+  effect), tied to a `CraftClassification`. `baseWage` plus four named
+  fringe components (pension, vacation, health & welfare, training) as
+  explicit `Decimal` columns rather than a JSON blob — these four are
+  standard across CBAs in this trade, and typed columns are easier to sum
+  and report on than a flexible blob would be.
+- `ApprenticeRatioRule` — captures the ratio itself (e.g. 1 apprentice per
+  3 journeymen). **Does not implement the actual daily compliance
+  check** — ratios are enforced daily, not on a monthly rollup, which
+  needs a labor/time-entry data model that doesn't exist anywhere in this
+  schema yet. That's real future work this table alone can't drive.
+
+**Non-overlapping `FringeRateSchedule` ranges are enforced at the
+database level**, not just assumed correct by the application:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS btree_gist;
+
+ALTER TABLE "FringeRateSchedule" ADD CONSTRAINT "FringeRateSchedule_no_overlapping_rates"
+EXCLUDE USING gist (
+  "craftClassificationId" WITH =,
+  tsrange("effectiveFrom", COALESCE("effectiveTo", 'infinity'::timestamp)) WITH &&
+);
+```
+
+This is a genuine exception to how every other constraint in this schema
+gets expressed: `schema.prisma`'s DSL has no declarative way to describe
+a Postgres exclusion constraint, so it's hand-written raw SQL in the
+migration rather than generated from the Prisma model. Prisma Client
+doesn't "know" about it either — a violation surfaces as a raw
+Postgres error (verified: `P2010`, message containing "exclusion"), not
+a typed Prisma error, so whatever create/edit action eventually gets
+built for this table needs to specifically catch and translate it.
+`btree_gist` is a standard Postgres contrib extension (bundled with
+Postgres itself, supported on Neon) — required for a GiST index to
+compare the plain-text `craftClassificationId` column for equality
+alongside the date-range overlap check.
+
 ### `Invoice` / `Payment` — billing, same pattern again
 
 A third instance of the "reference, don't duplicate" rule. `Invoice`
