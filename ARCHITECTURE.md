@@ -246,6 +246,40 @@ Requires a real `ANTHROPIC_API_KEY` in the environment — same "provided by
 the user, loaded from an env var, never hardcoded" rule as the QuickBooks
 client secret.
 
+### Company profile and multi-jurisdiction licensing
+
+`Company` gained profile fields (`dbaName`, `ein`, HQ address, `phone`,
+`website`) — all optional, since existing companies predate them and
+there's no backfill source.
+
+`CompanyLicense` is one row **per license held, not per state** —
+licensing structure genuinely isn't uniform across jurisdictions:
+California and Arizona classify by trade (`C-9`, `R-10/C-10/CR-10`, …),
+Utah combines several trades into one code (`S270`), and Colorado has no
+state contractor license at all — only municipal ones, so a company
+working in Denver and Longmont holds two separate `CompanyLicense` rows
+under `jurisdictionType: CITY`, not one "Colorado" row. That's why
+`classificationCode`/`classificationLabel` are free text rather than a
+hardcoded enum: a fixed list would only be correct for the states that
+actually have one.
+
+`LicenseClassificationReference` is a **global lookup, not scoped to a
+Company** — the same CA/AZ/UT codes apply to every company licensed
+there, so it's seeded once, not per-tenant. It's only seeded for
+jurisdictions with a real, verified, fixed classification system.
+**Nevada is deliberately unseeded**: NAC 624's exact subclassification
+wasn't available from a public source at build time, and a wrong guess
+there is worse than an empty table — `CompanyLicense.classificationCode`
+just stays free text for Nevada (and for Colorado's municipal licenses,
+which never had a fixed list to begin with) until someone does the real
+lookup.
+
+Whether a license is expiring/expired is computed at read time from
+`expirationDate`, never stored — same rule as `ComplianceDocument`.
+**Explicitly not built yet**: any actual alert/notification delivery —
+there's no notification mechanism anywhere in this app. This is the data
+an alert view would query, not the alert itself.
+
 ### `TradeScope` — a flat trade-family tag, not a hierarchy
 
 `JobLineItem.tradeScope` and `CostEntry.tradeScope` (independent of each

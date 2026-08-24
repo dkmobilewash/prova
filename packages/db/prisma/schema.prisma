@@ -20,8 +20,23 @@ datasource db {
 }
 
 model Company {
-  id        String   @id @default(cuid())
-  name      String
+  id   String @id @default(cuid())
+  name String
+
+  /// Company profile fields — all optional since existing companies
+  /// predate them and there's no backfill source. `name` stays the
+  /// existing display name; `dbaName` is a separate "doing business as"
+  /// name where one exists.
+  dbaName        String?
+  ein            String?
+  hqAddressLine1 String?
+  hqAddressLine2 String?
+  hqCity         String?
+  hqState        String?
+  hqZip          String?
+  phone          String?
+  website        String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -31,6 +46,7 @@ model Company {
   invites              Invite[]
   quickBooksConnection QuickBooksConnection?
   complianceDocuments  ComplianceDocument[]
+  licenses             CompanyLicense[]
 }
 
 enum UserRole {
@@ -458,4 +474,76 @@ model ComplianceDocument {
   @@index([companyId])
   @@index([jobId])
   @@index([expiresAt])
+}
+
+enum JurisdictionType {
+  STATE
+  COUNTY
+  CITY
+}
+
+enum LicenseStatus {
+  ACTIVE
+  EXPIRED
+  SUSPENDED
+  PENDING
+  INACTIVE
+}
+
+/// One row per license HELD, not per state — some jurisdictions (Colorado)
+/// have no state license at all, only municipal ones, so a company working
+/// in two Colorado cities holds two separate rows here, not one "Colorado"
+/// row. classificationCode/Label are free text rather than a hardcoded
+/// enum: licensing structure isn't uniform across jurisdictions (CA/AZ
+/// split by trade, UT combines several trades into one code, CO has no
+/// classification system at all) — see LicenseClassificationReference for
+/// the jurisdictions where a fixed code list actually exists.
+model CompanyLicense {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  jurisdictionType JurisdictionType
+  /// e.g. "California", "Arizona", or "City of Longmont, CO" for a
+  /// municipal license.
+  jurisdictionName String
+
+  classificationCode  String?
+  classificationLabel String?
+
+  licenseNumber String
+  issueDate     DateTime?
+  /// Whether a license is "expiring soon" is computed at read time from
+  /// this field, same rule as ComplianceDocument.expiresAt.
+  expirationDate DateTime?
+  status         LicenseStatus @default(ACTIVE)
+  /// Only for jurisdictions that tie a bond to the license itself —
+  /// distinct from the company's general bonding capacity (CompanyBond,
+  /// a later phase).
+  bondNumber String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([expirationDate])
+}
+
+/// A global lookup, not scoped to a Company — the same CA/AZ/UT
+/// classification codes apply to every company licensed in those states.
+/// Only seeded for jurisdictions with a real, verified, fixed
+/// classification list (CA, AZ, UT). Deliberately NOT seeded for Nevada:
+/// the exact NAC 624 subclassification wasn't available from a public
+/// source, and a wrong guess here is worse than an empty table — see
+/// ARCHITECTURE.md. Jurisdictions with no classification system at all
+/// (Colorado's municipal licenses) never get rows here; CompanyLicense's
+/// classificationCode/Label just stay free text for those.
+model LicenseClassificationReference {
+  id               String   @id @default(cuid())
+  jurisdictionName String
+  code             String
+  label            String
+  createdAt        DateTime @default(now())
+
+  @@unique([jurisdictionName, code])
 }
