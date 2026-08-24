@@ -51,6 +51,7 @@ model Company {
   unionAgreements      CompanyUnionAgreement[]
   insurancePolicies    CompanyInsurancePolicy[]
   bonds                CompanyBond[]
+  locations            CompanyLocation[]
 }
 
 enum UserRole {
@@ -140,6 +141,15 @@ model Job {
   // separate table. Nullable: most jobs start unscheduled.
   startDate DateTime?
   endDate   DateTime?
+
+  /// Which office/yard is running this job. Nullable: most existing jobs
+  /// predate this and there's no backfill source. This is a place to
+  /// RECORD the operating location only — nothing yet reads it to
+  /// auto-derive the applicable license or union agreement; that's real
+  /// application logic for a future phase, not built here.
+  operatingLocationId String?
+  operatingLocation   CompanyLocation? @relation(fields: [operatingLocationId], references: [id])
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
@@ -152,6 +162,7 @@ model Job {
 
   @@index([companyId])
   @@index([contactId])
+  @@index([operatingLocationId])
 }
 
 /// The five WWCCA trade families a wall-and-ceiling specialty subcontractor
@@ -761,4 +772,43 @@ model CompanyBond {
 
   @@index([companyId])
   @@index([renewalDate])
+}
+
+enum LocationType {
+  HQ
+  BRANCH_YARD
+  WAREHOUSE
+}
+
+/// A physical office/yard/warehouse. `state` is broken out from the
+/// address specifically because it's what would eventually let the app
+/// auto-derive which CompanyLicense/CompanyUnionAgreement applies to a
+/// Job via Job.operatingLocationId — that derivation logic isn't built
+/// yet, but the field exists for it.
+model CompanyLocation {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  locationType LocationType
+  /// Friendly label ("Denver Yard") for picking a location in a list —
+  /// not explicitly requested, but without one a picker would just show
+  /// raw addresses.
+  name String?
+
+  addressLine1 String
+  addressLine2 String?
+  city         String
+  state        String
+  zip          String
+
+  primaryContactName  String?
+  primaryContactPhone String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  jobs Job[]
+
+  @@index([companyId])
 }

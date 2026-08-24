@@ -385,6 +385,22 @@ here.
 Same pattern as licensing: `expirationDate`/`renewalDate` computed at
 read time, no stored status, no actual alert/notification delivery built.
 
+### `CompanyLocation` and `Job.operatingLocationId`
+
+A physical office/yard/warehouse. `state` is broken out from the address
+specifically because it's what would eventually let the app auto-derive
+which `CompanyLicense`/`CompanyUnionAgreement` applies to a `Job` based on
+which location is running it, rather than relying on someone to manually
+pick the right one every time — but **that derivation logic isn't built**.
+`Job.operatingLocationId` is just a place to record which location is
+running the job; nothing reads it yet. `name` is a small addition beyond
+what was asked for: a friendly label ("Denver Yard") so a location picker
+doesn't have to show raw addresses.
+
+The foreign key is `ON DELETE SET NULL` — deleting a `CompanyLocation`
+un-assigns any jobs pointing at it rather than failing or cascading the
+delete, verified against real Postgres.
+
 ### `Invoice` / `Payment` — billing, same pattern again
 
 A third instance of the "reference, don't duplicate" rule. `Invoice`
