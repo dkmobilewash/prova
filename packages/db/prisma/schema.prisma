@@ -141,8 +141,30 @@ model JobLineItem {
   description String
   quantity    Decimal @default(1) @db.Decimal(12, 2)
   unit        String?
-  unitPrice   Decimal @db.Decimal(12, 2)
-  sortOrder   Int     @default(0)
+  /// Nullable: a cost-only budget line (general conditions, overhead,
+  /// contingency) has no client-facing sale price. Contract value /
+  /// invoicing totals treat a null unitPrice as $0 revenue — the line still
+  /// carries quantity and cost fields, it just isn't billed directly.
+  unitPrice Decimal? @db.Decimal(12, 2)
+  sortOrder Int      @default(0)
+
+  /// The estimated unit cost at the time this line was priced (estimate
+  /// approval). Set once, stays put as the historical baseline for WIP
+  /// reporting — never silently overwritten by later re-forecasting.
+  budgetedUnitCost Decimal? @db.Decimal(12, 2)
+
+  /// The PM's current forecast of unit cost, re-estimated as the job
+  /// progresses. Defaults to budgetedUnitCost at creation (app-level, not a
+  /// DB default) but is independently mutable afterward. This is what
+  /// feeds the live percent-complete calculation — see lib/wip.ts.
+  currentEstimatedUnitCost Decimal? @db.Decimal(12, 2)
+
+  /// PM override for cost-to-complete. When null, it's derived mechanically
+  /// as (currentEstimatedUnitCost * quantity) - actual costs to date. When
+  /// set, it overrides that mechanical number — e.g. the PM knows a sub is
+  /// behind schedule or a change order is coming before the cost data
+  /// reflects it. See lib/wip.ts.
+  estimatedCostToComplete Decimal? @db.Decimal(12, 2)
 
   /// Soft delete: a change order can remove scope without losing history.
   /// Deleted line items are excluded from budget/contract totals.
