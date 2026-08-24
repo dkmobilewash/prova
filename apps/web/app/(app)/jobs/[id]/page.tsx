@@ -5,6 +5,7 @@ import { requireCompanyContext } from "@/lib/auth";
 import { PrintButton } from "@/components/PrintButton";
 import { ContractSummary } from "@/components/ContractSummary";
 import { money } from "@/lib/money";
+import { calculateLineItemWip, calculateJobWip } from "@/lib/wip";
 import {
   addChangeOrderLineItem,
   addCostEntry,
@@ -22,9 +23,17 @@ import {
   unassignCrewMember,
   updateJobSchedule,
   updateLineItem,
+  updateLineItemForecast,
 } from "@/lib/actions";
 
 const COST_CATEGORIES = ["LABOR", "MATERIAL", "SUBCONTRACTOR", "OTHER"] as const;
+const TRADE_SCOPE_OPTIONS = [
+  { value: "METAL_FRAMING_DRYWALL", label: "Metal framing / drywall" },
+  { value: "LATH_PLASTER", label: "Lath & plaster" },
+  { value: "EIFS", label: "EIFS" },
+  { value: "ACOUSTICAL_CEILINGS", label: "Acoustical ceilings" },
+  { value: "FIREPROOFING", label: "Fireproofing" },
+] as const;
 
 function dateInputValue(date: Date | null) {
   return date ? date.toISOString().slice(0, 10) : "";
@@ -76,18 +85,34 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
   const unassignedMembers = companyMembers.filter((m) => !assignedUserIds.has(m.id));
 
   const isEstimateStage = job.status === "ESTIMATE";
-  const total = job.lineItems.reduce(
-    (sum, item) => sum + Number(item.quantity) * Number(item.unitPrice),
-    0,
-  );
 
-  const actualTotal = job.lineItems.reduce(
-    (sum, item) => sum + item.costEntries.reduce((s, entry) => s + Number(entry.amount), 0),
-    0,
+  // Percentage-of-completion WIP, cost-to-cost method — see lib/wip.ts.
+  // jobWip.contractValue / jobWip.actualCostToDate are the single source of
+  // truth for "total estimated" / "total actual" below — no separate
+  // duplicate computation.
+  const lineItemWip = job.lineItems.map((item) => ({
+    item,
+    wip: calculateLineItemWip({
+      quantity: Number(item.quantity),
+      unitPrice: item.unitPrice != null ? Number(item.unitPrice) : null,
+      budgetedUnitCost: item.budgetedUnitCost != null ? Number(item.budgetedUnitCost) : null,
+      currentEstimatedUnitCost:
+        item.currentEstimatedUnitCost != null ? Number(item.currentEstimatedUnitCost) : null,
+      estimatedCostToComplete:
+        item.estimatedCostToComplete != null ? Number(item.estimatedCostToComplete) : null,
+      actualCostToDate: item.costEntries.reduce((s, entry) => s + Number(entry.amount), 0),
+    }),
+  }));
+  const billedToDate = job.invoices.reduce((sum, invoice) => sum + Number(invoice.amount), 0);
+  const jobWip = calculateJobWip(
+    lineItemWip.map((l) => l.wip),
+    billedToDate,
   );
 
   const addLineItemWithId = addLineItem.bind(null, job.id);
   const updateLineItemWithId = (lineItemId: string) => updateLineItem.bind(null, job.id, lineItemId);
+  const updateLineItemForecastWithId = (lineItemId: string) =>
+    updateLineItemForecast.bind(null, job.id, lineItemId);
   const deleteLineItemWithId = (lineItemId: string) => deleteLineItem.bind(null, job.id, lineItemId);
   const addChangeOrderWithId = addChangeOrderLineItem.bind(null, job.id);
   const editViaChangeOrderWithId = editLineItemViaChangeOrder.bind(null, job.id);
@@ -124,7 +149,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             description: item.description,
             quantity: item.quantity.toString(),
             unit: item.unit,
-            unitPrice: item.unitPrice.toString(),
+            unitPrice: item.unitPrice?.toString() ?? null,
             changeOrderNumber: item.originChangeOrder?.number ?? null,
           }))}
           footer={<PrintButton />}
@@ -252,23 +277,73 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
         </section>
 
         <section className="mb-10">
-          <h2 className="mb-3 text-lg font-semibold text-slate-100">Job costing</h2>
+          <h2 className="mb-3 text-lg font-semibold text-slate-100">Job costing &amp; WIP</h2>
+
+          <div className="mb-4 grid grid-cols-2 gap-3 rounded-lg border border-slate-800 bg-slate-900 p-4 sm:grid-cols-4">
+            <div>
+              <p className="text-xs text-slate-500">Contract value</p>
+              <p className="text-slate-100">{money(jobWip.contractValue)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-500">Actual cost to date</p>
+              <p className="text-slate-100">{money(jobWip.actualCostToDate)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-500">% complete</p>
+              <p className="text-slate-100">
+                {jobWip.percentComplete != null ? `${(jobWip.percentComplete * 100).toFixed(1)}%` : "—"}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-500">Earned revenue</p>
+              <p className="text-slate-100">{money(jobWip.earnedRevenue)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-500">Billed to date</p>
+              <p className="text-slate-100">{money(jobWip.billedToDate)}</p>
+            </div>
+            <div className="col-span-2 sm:col-span-1">
+              <p className="text-xs text-slate-500">Over / under billed</p>
+              <p className={jobWip.overUnderBilling > 0 ? "text-amber-400" : "text-green-400"}>
+                {jobWip.overUnderBilling > 0
+                  ? `Overbilled ${money(jobWip.overUnderBilling)}`
+                  : jobWip.overUnderBilling < 0
+                    ? `Underbilled ${money(Math.abs(jobWip.overUnderBilling))}`
+                    : "Even"}
+              </p>
+            </div>
+          </div>
+
           <div className="flex flex-col gap-4">
-            {job.lineItems.map((item) => {
-              const estimated = Number(item.quantity) * Number(item.unitPrice);
-              const actual = item.costEntries.reduce((s, entry) => s + Number(entry.amount), 0);
-              const variance = estimated - actual;
+            {lineItemWip.map(({ item, wip }) => {
+              const tradeLabel = TRADE_SCOPE_OPTIONS.find((t) => t.value === item.tradeScope)?.label;
               return (
                 <div key={item.id} className="rounded-lg border border-slate-800 bg-slate-900 p-4">
                   <div className="flex flex-wrap items-baseline justify-between gap-2">
-                    <p className="font-medium text-slate-100">{item.description}</p>
-                    <div className="flex gap-4 text-sm">
-                      <span className="text-slate-400">Est. {money(estimated)}</span>
-                      <span className="text-slate-400">Actual {money(actual)}</span>
-                      <span className={variance >= 0 ? "text-green-400" : "text-red-400"}>
-                        {variance >= 0 ? "Under" : "Over"} by {money(Math.abs(variance))}
-                      </span>
-                    </div>
+                    <p className="font-medium text-slate-100">
+                      {item.description}
+                      {tradeLabel && (
+                        <span className="ml-2 rounded bg-slate-800 px-1.5 py-0.5 text-xs text-slate-400">
+                          {tradeLabel}
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm">
+                    <span className="text-slate-400">Contract {money(wip.contractValue)}</span>
+                    <span className="text-slate-400">
+                      Budget {wip.budgetedCost != null ? money(wip.budgetedCost) : "—"}
+                    </span>
+                    <span className="text-slate-400">
+                      Current est. {wip.currentEstimatedCost != null ? money(wip.currentEstimatedCost) : "—"}
+                    </span>
+                    <span className="text-slate-400">Actual {money(wip.actualCostToDate)}</span>
+                    <span className="text-slate-400">
+                      % complete {wip.percentComplete != null ? `${(wip.percentComplete * 100).toFixed(1)}%` : "—"}
+                    </span>
+                    <span className="text-slate-400">
+                      Earned {wip.earnedRevenue != null ? money(wip.earnedRevenue) : "—"}
+                    </span>
                   </div>
 
                   {item.costEntries.length > 0 && (
@@ -323,6 +398,19 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                         </option>
                       ))}
                     </select>
+                    <select
+                      name="tradeScope"
+                      defaultValue={item.tradeScope ?? ""}
+                      title="Trade this expense belongs to — defaults to this line item's trade, but can differ (e.g. a general-conditions line spanning several trades)"
+                      className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
+                    >
+                      <option value="">No trade tag</option>
+                      {TRADE_SCOPE_OPTIONS.map((t) => (
+                        <option key={t.value} value={t.value}>
+                          {t.label}
+                        </option>
+                      ))}
+                    </select>
                     <button
                       type="submit"
                       className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-100 hover:bg-slate-700"
@@ -330,17 +418,40 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                       Log cost
                     </button>
                   </form>
+
+                  <form
+                    action={updateLineItemForecastWithId(item.id)}
+                    className="mt-3 flex flex-wrap items-end gap-2 border-t border-slate-800 pt-3"
+                  >
+                    <label className="flex flex-col gap-1 text-xs text-slate-400">
+                      Re-forecast current unit cost
+                      <input
+                        name="currentEstimatedUnitCost"
+                        defaultValue={item.currentEstimatedUnitCost?.toString() ?? ""}
+                        placeholder="per unit"
+                        className="w-28 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-600 focus:border-blue-500 focus:outline-none"
+                      />
+                    </label>
+                    <label className="flex flex-col gap-1 text-xs text-slate-400">
+                      Override cost-to-complete
+                      <input
+                        name="estimatedCostToComplete"
+                        defaultValue={item.estimatedCostToComplete?.toString() ?? ""}
+                        placeholder="leave blank to auto-derive"
+                        title="Overrides the mechanical (current estimate - actual) calculation — use when you know something the cost data doesn't reflect yet"
+                        className="w-44 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-600 focus:border-blue-500 focus:outline-none"
+                      />
+                    </label>
+                    <button
+                      type="submit"
+                      className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-100 hover:bg-slate-700"
+                    >
+                      Save forecast
+                    </button>
+                  </form>
                 </div>
               );
             })}
-          </div>
-
-          <div className="mt-4 flex justify-end gap-6 text-sm">
-            <span className="text-slate-400">Total estimated: {money(total)}</span>
-            <span className="text-slate-400">Total actual: {money(actualTotal)}</span>
-            <span className={total - actualTotal >= 0 ? "text-green-400" : "text-red-400"}>
-              {total - actualTotal >= 0 ? "Under" : "Over"} by {money(Math.abs(total - actualTotal))}
-            </span>
           </div>
         </section>
 
@@ -476,13 +587,6 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             <section className="mb-10">
               <h2 className="mb-3 text-lg font-semibold text-slate-100">Line items (estimate)</h2>
               <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-                <div className="grid grid-cols-[1fr_70px_80px_100px_auto] items-center gap-2 pb-2 text-xs font-medium text-slate-400">
-                  <span>Description</span>
-                  <span>Qty</span>
-                  <span>Unit</span>
-                  <span>Unit price</span>
-                  <span></span>
-                </div>
                 {job.lineItems.length === 0 && (
                   <p className="py-2 text-sm text-slate-400">No line items yet — add one below.</p>
                 )}
@@ -490,32 +594,63 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                   <form
                     key={item.id}
                     action={updateLineItemWithId(item.id)}
-                    className="grid grid-cols-[1fr_70px_80px_100px_auto] items-center gap-2 border-t border-slate-800 py-2"
+                    className="flex flex-col gap-2 border-t border-slate-800 py-3 first:border-t-0"
                   >
-                    <input
-                      name="description"
-                      defaultValue={item.description}
-                      required
-                      className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
-                    />
-                    <input
-                      name="quantity"
-                      defaultValue={item.quantity.toString()}
-                      required
-                      className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
-                    />
-                    <input
-                      name="unit"
-                      defaultValue={item.unit ?? ""}
-                      className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
-                    />
-                    <input
-                      name="unitPrice"
-                      defaultValue={item.unitPrice.toString()}
-                      required
-                      className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
-                    />
-                    <div className="flex gap-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <input
+                        name="description"
+                        defaultValue={item.description}
+                        required
+                        placeholder="Description"
+                        className="min-w-[160px] flex-1 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
+                      />
+                      <input
+                        name="quantity"
+                        defaultValue={item.quantity.toString()}
+                        required
+                        title="Quantity"
+                        className="w-16 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
+                      />
+                      <input
+                        name="unit"
+                        defaultValue={item.unit ?? ""}
+                        placeholder="Unit"
+                        className="w-20 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
+                      />
+                      <select
+                        name="tradeScope"
+                        defaultValue={item.tradeScope ?? ""}
+                        className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
+                      >
+                        <option value="">No trade tag</option>
+                        {TRADE_SCOPE_OPTIONS.map((t) => (
+                          <option key={t.value} value={t.value}>
+                            {t.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <label className="flex items-center gap-1 text-xs text-slate-400">
+                        Unit price
+                        <input
+                          name="unitPrice"
+                          defaultValue={item.unitPrice?.toString() ?? ""}
+                          placeholder="cost-only"
+                          title="Leave blank for a cost-only budget line (general conditions, overhead) with no client-facing price"
+                          className="w-24 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-600 focus:border-blue-500 focus:outline-none"
+                        />
+                      </label>
+                      <label className="flex items-center gap-1 text-xs text-slate-400">
+                        Budgeted cost
+                        <input
+                          name="budgetedUnitCost"
+                          defaultValue={item.budgetedUnitCost?.toString() ?? ""}
+                          placeholder="per unit"
+                          title="Estimated unit cost at estimate approval — the frozen historical baseline for WIP reporting"
+                          className="w-24 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-600 focus:border-blue-500 focus:outline-none"
+                        />
+                      </label>
                       <button
                         type="submit"
                         title="Save"
@@ -568,9 +703,34 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                   Unit price
                   <input
                     name="unitPrice"
-                    required
-                    className="w-28 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
+                    placeholder="cost-only"
+                    title="Leave blank for a cost-only budget line (general conditions, overhead) with no client-facing price"
+                    className="w-28 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
                   />
+                </label>
+                <label className="flex flex-col gap-1 text-sm text-slate-300">
+                  Budgeted cost
+                  <input
+                    name="budgetedUnitCost"
+                    placeholder="per unit"
+                    title="Estimated unit cost — the historical baseline for WIP reporting"
+                    className="w-28 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-sm text-slate-300">
+                  Trade
+                  <select
+                    name="tradeScope"
+                    defaultValue=""
+                    className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
+                  >
+                    <option value="">No trade tag</option>
+                    {TRADE_SCOPE_OPTIONS.map((t) => (
+                      <option key={t.value} value={t.value}>
+                        {t.label}
+                      </option>
+                    ))}
+                  </select>
                 </label>
                 <button
                   type="submit"
@@ -655,9 +815,33 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                     Unit price
                     <input
                       name="unitPrice"
-                      required
-                      className="w-28 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
+                      placeholder="cost-only"
+                      title="Leave blank for a cost-only budget line with no client-facing price"
+                      className="w-28 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
                     />
+                  </label>
+                  <label className="flex flex-col gap-1 text-sm text-slate-300">
+                    Budgeted cost
+                    <input
+                      name="budgetedUnitCost"
+                      placeholder="per unit"
+                      className="w-28 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1 text-sm text-slate-300">
+                    Trade
+                    <select
+                      name="tradeScope"
+                      defaultValue=""
+                      className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
+                    >
+                      <option value="">No trade tag</option>
+                      {TRADE_SCOPE_OPTIONS.map((t) => (
+                        <option key={t.value} value={t.value}>
+                          {t.label}
+                        </option>
+                      ))}
+                    </select>
                   </label>
                   <button
                     type="submit"
@@ -720,8 +904,9 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                       New unit price
                       <input
                         name="unitPrice"
-                        required
-                        className="w-28 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
+                        placeholder="cost-only"
+                        title="Leave blank to make this a cost-only budget line with no client-facing price"
+                        className="w-28 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
                       />
                     </label>
                     <button

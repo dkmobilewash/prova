@@ -131,6 +131,20 @@ model Job {
   @@index([contactId])
 }
 
+/// The five WWCCA trade families a wall-and-ceiling specialty subcontractor
+/// self-performs. A flat categorization tag, not a hierarchy — a company
+/// may hold several of these in-house and job costing needs to separate
+/// them. Deliberately not a self-performed-vs-subcontracted model or full
+/// CSI MasterFormat coding: this ICP is a narrow-trade-family sub, not a
+/// diversified GC coordinating many subs.
+enum TradeScope {
+  METAL_FRAMING_DRYWALL
+  LATH_PLASTER
+  EIFS
+  ACOUSTICAL_CEILINGS
+  FIREPROOFING
+}
+
 /// A single line item, referenced everywhere: estimate, contract summary,
 /// budget total, and job costing. A change order mutates rows in this table
 /// (or adds new ones) — it never forks them into a parallel shape.
@@ -141,6 +155,10 @@ model JobLineItem {
   description String
   quantity    Decimal @default(1) @db.Decimal(12, 2)
   unit        String?
+
+  /// Optional — a categorization dimension on top of the cost/WIP fields
+  /// below, not a prerequisite for them.
+  tradeScope TradeScope?
   /// Nullable: a cost-only budget line (general conditions, overhead,
   /// contingency) has no client-facing sale price. Contract value /
   /// invoicing totals treat a null unitPrice as $0 revenue — the line still
@@ -243,6 +261,11 @@ model CostEntry {
   description String
   amount      Decimal      @db.Decimal(12, 2)
   category    CostCategory @default(OTHER)
+
+  /// Independent of the parent JobLineItem's tradeScope — a "general
+  /// conditions" line can carry cost entries spanning several trades, so
+  /// this is tagged per-expense, not just inherited from the line item.
+  tradeScope TradeScope?
   incurredAt  DateTime     @default(now())
   createdAt   DateTime     @default(now())
 

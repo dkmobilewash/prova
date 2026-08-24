@@ -17,6 +17,21 @@ function decimalFromForm(formData: FormData, key: string): string {
   return value;
 }
 
+/** Like decimalFromForm, but an empty field is valid and means "not set"
+ * (null) rather than an error — used for unitPrice (cost-only budget
+ * lines have none) and the WIP cost fields (optional until entered). */
+function nullableDecimalFromForm(formData: FormData, key: string): string | null {
+  const raw = formData.get(key);
+  const value = typeof raw === "string" ? raw.trim() : "";
+  if (!value) {
+    return null;
+  }
+  if (Number.isNaN(Number(value))) {
+    throw new Error(`"${key}" must be a number`);
+  }
+  return value;
+}
+
 /** Creates a Job with a new Contact. This is the start of the estimate. */
 export async function createJob(formData: FormData) {
   const { company } = await requireCompanyContext();
@@ -85,7 +100,16 @@ export async function addLineItem(jobId: string, formData: FormData) {
   const description = String(formData.get("description") ?? "").trim();
   const unit = String(formData.get("unit") ?? "").trim();
   const quantity = decimalFromForm(formData, "quantity");
-  const unitPrice = decimalFromForm(formData, "unitPrice");
+  // Nullable: a cost-only budget line (general conditions, overhead,
+  // contingency) has no client-facing sale price.
+  const unitPrice = nullableDecimalFromForm(formData, "unitPrice");
+  const budgetedUnitCost = nullableDecimalFromForm(formData, "budgetedUnitCost");
+  // currentEstimatedUnitCost defaults to budgetedUnitCost at creation (app-
+  // level, not a DB default) unless the form explicitly sets a different
+  // value — see the field's doc comment in schema.prisma.
+  const currentEstimatedUnitCost =
+    nullableDecimalFromForm(formData, "currentEstimatedUnitCost") ?? budgetedUnitCost;
+  const tradeScope = tradeScopeFromForm(formData);
 
   if (!description) {
     throw new Error("Description is required");
@@ -98,6 +122,9 @@ export async function addLineItem(jobId: string, formData: FormData) {
       unit: unit || null,
       quantity,
       unitPrice,
+      budgetedUnitCost,
+      currentEstimatedUnitCost,
+      tradeScope,
     },
   });
 
@@ -138,7 +165,11 @@ export async function addChangeOrderLineItem(jobId: string, formData: FormData) 
   const itemDescription = String(formData.get("itemDescription") ?? "").trim();
   const unit = String(formData.get("unit") ?? "").trim();
   const quantity = decimalFromForm(formData, "quantity");
-  const unitPrice = decimalFromForm(formData, "unitPrice");
+  const unitPrice = nullableDecimalFromForm(formData, "unitPrice");
+  const budgetedUnitCost = nullableDecimalFromForm(formData, "budgetedUnitCost");
+  const currentEstimatedUnitCost =
+    nullableDecimalFromForm(formData, "currentEstimatedUnitCost") ?? budgetedUnitCost;
+  const tradeScope = tradeScopeFromForm(formData);
 
   if (!title || !itemDescription) {
     throw new Error("Change order title and line item description are required");
@@ -159,6 +190,9 @@ export async function addChangeOrderLineItem(jobId: string, formData: FormData) 
           unit: unit || null,
           quantity,
           unitPrice,
+          budgetedUnitCost,
+          currentEstimatedUnitCost,
+          tradeScope,
         },
       },
     },
@@ -181,7 +215,7 @@ export async function editLineItemViaChangeOrder(jobId: string, formData: FormDa
   const title = String(formData.get("title") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();
   const newQuantity = decimalFromForm(formData, "quantity");
-  const newUnitPrice = decimalFromForm(formData, "unitPrice");
+  const newUnitPrice = nullableDecimalFromForm(formData, "unitPrice");
 
   if (!title || !lineItemId) {
     throw new Error("Change order title and target line item are required");
@@ -202,12 +236,12 @@ export async function editLineItemViaChangeOrder(jobId: string, formData: FormDa
       newValue: newQuantity,
     });
   }
-  if (lineItem.unitPrice.toString() !== newUnitPrice) {
+  if ((lineItem.unitPrice?.toString() ?? "") !== (newUnitPrice ?? "")) {
     edits.push({
       lineItemId: lineItem.id,
       field: "unitPrice",
-      oldValue: lineItem.unitPrice.toString(),
-      newValue: newUnitPrice,
+      oldValue: lineItem.unitPrice?.toString() ?? "(none)",
+      newValue: newUnitPrice ?? "(none)",
     });
   }
 
@@ -250,7 +284,11 @@ export async function updateLineItem(jobId: string, lineItemId: string, formData
   const description = String(formData.get("description") ?? "").trim();
   const unit = String(formData.get("unit") ?? "").trim();
   const quantity = decimalFromForm(formData, "quantity");
-  const unitPrice = decimalFromForm(formData, "unitPrice");
+  const unitPrice = nullableDecimalFromForm(formData, "unitPrice");
+  const budgetedUnitCost = nullableDecimalFromForm(formData, "budgetedUnitCost");
+  const currentEstimatedUnitCost =
+    nullableDecimalFromForm(formData, "currentEstimatedUnitCost") ?? budgetedUnitCost;
+  const tradeScope = tradeScopeFromForm(formData);
 
   if (!description) {
     throw new Error("Description is required");
@@ -258,7 +296,39 @@ export async function updateLineItem(jobId: string, lineItemId: string, formData
 
   await prisma.jobLineItem.update({
     where: { id: lineItemId },
-    data: { description, unit: unit || null, quantity, unitPrice },
+    data: {
+      description,
+      unit: unit || null,
+      quantity,
+      unitPrice,
+      budgetedUnitCost,
+      currentEstimatedUnitCost,
+      tradeScope,
+    },
+  });
+
+  revalidatePath(`/jobs/${jobId}`);
+}
+
+/**
+ * Re-forecasts a line item's cost — the PM's live percent-complete input,
+ * separate from budgetedUnitCost (the frozen historical baseline) and from
+ * unitPrice/quantity (client-facing terms, change-order-gated once
+ * CONTRACTED). Not gated by job status, same reasoning as addCostEntry:
+ * this is internal cost tracking, not a change to what the client agreed
+ * to, and real spending/re-forecasting happens throughout the job.
+ */
+export async function updateLineItemForecast(jobId: string, lineItemId: string, formData: FormData) {
+  const { company } = await requireCompanyContext();
+  await assertJobInCompany(jobId, company.id);
+  await assertLineItemOnJob(lineItemId, jobId);
+
+  const currentEstimatedUnitCost = nullableDecimalFromForm(formData, "currentEstimatedUnitCost");
+  const estimatedCostToComplete = nullableDecimalFromForm(formData, "estimatedCostToComplete");
+
+  await prisma.jobLineItem.update({
+    where: { id: lineItemId },
+    data: { currentEstimatedUnitCost, estimatedCostToComplete },
   });
 
   revalidatePath(`/jobs/${jobId}`);
@@ -358,6 +428,21 @@ export async function markJobContracted(jobId: string) {
 }
 
 const COST_CATEGORIES = ["LABOR", "MATERIAL", "SUBCONTRACTOR", "OTHER"] as const;
+const TRADE_SCOPES = [
+  "METAL_FRAMING_DRYWALL",
+  "LATH_PLASTER",
+  "EIFS",
+  "ACOUSTICAL_CEILINGS",
+  "FIREPROOFING",
+] as const;
+
+/** Empty selection means "untagged" — a valid, common state, not an error. */
+function tradeScopeFromForm(formData: FormData): (typeof TRADE_SCOPES)[number] | null {
+  const raw = String(formData.get("tradeScope") ?? "");
+  return TRADE_SCOPES.includes(raw as (typeof TRADE_SCOPES)[number])
+    ? (raw as (typeof TRADE_SCOPES)[number])
+    : null;
+}
 
 /**
  * Logs an actual expense against a line item. Not gated by job status —
@@ -375,13 +460,14 @@ export async function addCostEntry(jobId: string, lineItemId: string, formData: 
   const category = COST_CATEGORIES.includes(categoryRaw as (typeof COST_CATEGORIES)[number])
     ? (categoryRaw as (typeof COST_CATEGORIES)[number])
     : "OTHER";
+  const tradeScope = tradeScopeFromForm(formData);
 
   if (!description) {
     throw new Error("Description is required");
   }
 
   await prisma.costEntry.create({
-    data: { lineItemId, description, amount, category },
+    data: { lineItemId, description, amount, category, tradeScope },
   });
 
   revalidatePath(`/jobs/${jobId}`);
@@ -638,7 +724,7 @@ export async function signRequest(token: string, formData: FormData) {
       description: item.description,
       quantity: item.quantity.toString(),
       unit: item.unit,
-      unitPrice: item.unitPrice.toString(),
+      unitPrice: item.unitPrice?.toString() ?? null,
     })),
   };
 

@@ -9,7 +9,7 @@ type Snapshot = {
   clientName: string;
   scope: string | null;
   total: number;
-  lineItems: { description: string; quantity: string; unit: string | null; unitPrice: string }[];
+  lineItems: { description: string; quantity: string; unit: string | null; unitPrice: string | null }[];
 };
 
 export default async function EsignPage({ params }: { params: Promise<{ token: string }> }) {
@@ -84,7 +84,7 @@ export default async function EsignPage({ params }: { params: Promise<{ token: s
           description: item.description,
           quantity: item.quantity.toString(),
           unit: item.unit,
-          unitPrice: item.unitPrice.toString(),
+          unitPrice: item.unitPrice?.toString() ?? null,
           changeOrderNumber: null,
         }))}
       />

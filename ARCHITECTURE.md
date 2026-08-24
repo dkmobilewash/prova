@@ -166,10 +166,10 @@ increment if it's needed.
 Job costing follows the identical pattern as change orders: a new table
 that references `JobLineItem` rather than a new copy of line-item data.
 Each `CostEntry` is one real expense (a receipt, a labor entry) tied to
-the line item it was spent against. "Estimated" is
-`quantity * unitPrice` (unchanged, still the only estimate). "Actual" is
-`SUM(costEntries.amount)` for that line item. Variance is the difference
-— always computed at read time, never stored.
+the line item it was spent against. "Actual" is `SUM(costEntries.amount)`
+for that line item — always computed at read time, never stored. "Estimated"
+used to mean `quantity * unitPrice` (the sale price); since the WIP fields
+below landed, it means the cost side instead — see `lib/wip.ts`.
 
 Unlike change orders, logging a cost is **not** gated by `Job.status`.
 The ESTIMATE/CONTRACTED gate exists to protect the client-facing
@@ -177,6 +177,63 @@ agreement — scope and pricing shouldn't silently change after signing.
 Actual spending is a different kind of fact: it's internal, it happens
 throughout the job (often *because* work is in progress), and gating it
 would just make the numbers less accurate for no protective benefit.
+
+### WIP (percentage-of-completion) — `JobLineItem`'s cost side, and `lib/wip.ts`
+
+`unitPrice` is the sale price — what the client is billed. It was never
+enough, on its own, to know whether a job is actually profitable at any
+given moment: that requires a *cost* side too, and a way to say "budgeted
+X, but we're now forecasting Y." Three fields on `JobLineItem` carry that,
+deliberately kept separate rather than collapsed into one:
+
+- **`budgetedUnitCost`** — set once, at estimate approval. The frozen
+  historical baseline. Never silently overwritten by re-forecasting.
+- **`currentEstimatedUnitCost`** — the PM's live forecast, defaulting to
+  `budgetedUnitCost` at creation but independently mutable afterward via
+  `updateLineItemForecast` (not gated by `Job.status`, same reasoning as
+  `CostEntry` above — re-forecasting is internal, ongoing, not a change to
+  what the client agreed to).
+- **`estimatedCostToComplete`** — a nullable PM override. When null, cost-
+  to-complete is derived mechanically as
+  `(currentEstimatedUnitCost * quantity) - actual costs to date`. When
+  set, it overrides that mechanical number, because the mechanical number
+  is a floor, not the answer — a PM who knows a sub is behind schedule or
+  a change order is coming can say so before the cost data reflects it.
+
+`unitPrice` is also now nullable, for **cost-only budget lines** (general
+conditions, overhead, contingency) that have no client-facing sale price.
+Every place that sums `quantity * unitPrice` for a contract/invoice total
+treats a null `unitPrice` as $0 revenue — the line still carries quantity
+and cost fields, it just isn't billed directly.
+
+`lib/wip.ts` holds the actual math — the cost-to-cost method, the standard
+approach for a WIP schedule:
+
+```
+% complete   = actual costs to date ÷ estimated total cost at completion
+earned rev.  = % complete × contract value (Σ quantity × unitPrice)
+over/under   = billed to date − earned revenue
+  (positive = overbilled/liability, negative = underbilled/asset)
+```
+
+Deliberately pure, deterministic arithmetic — not an LLM call. Financial
+figures on a WIP schedule have to be exactly reproducible. Change orders
+already write into `JobLineItem` directly (new rows via
+`originChangeOrderId`, edits in place), so this math needs no special
+handling for them — it just aggregates whatever line items exist on the
+job at any point, the same way the budget total always has.
+
+### `TradeScope` — a flat trade-family tag, not a hierarchy
+
+`JobLineItem.tradeScope` and `CostEntry.tradeScope` (independent of each
+other — a general-conditions line's cost entries can span more than one
+trade) tag rows with one of five trade families. This schema's ICP is a
+union wall-and-ceiling specialty subcontractor self-performing a narrow
+set of trades with its own crews — not a diversified GC coordinating many
+subs — so this is deliberately a flat categorization dimension on top of
+the cost/WIP fields, not a self-performed-vs-subcontracted model and not
+full CSI MasterFormat coding. Both are nullable: tagging is optional, not
+a prerequisite for WIP reporting to work.
 
 ### `Invoice` / `Payment` — billing, same pattern again
 
@@ -296,7 +353,17 @@ These are deferred on purpose, not forgotten. Do not stub them out "for
 completeness" — that produces half-built abstractions this phase is
 specifically trying to avoid.
 
-- **AI features** — no assist/automation of any kind yet.
+- **AI features** — the first priority item (WIP/over-under-billing
+  variance) shipped, but as deterministic math (`lib/wip.ts`), not an LLM
+  call — the numbers on a WIP schedule have to be exactly reproducible.
+  Still blocked on a real Anthropic API key: nothing that actually calls
+  an LLM has been built. Next up once a key exists: a narrative layer over
+  the WIP numbers, then lien-waiver/COI extraction into a new
+  `ComplianceDocument` table (also covering certified payroll and union
+  fringe/benefit filings — the recurring compliance burden for this ICP),
+  then draft-estimate-from-text. Plan-takeoff via computer vision is a
+  distinct, later, larger effort — different input modality, different
+  accuracy bar, deliberately not bundled into this phase.
 - **QuickBooks data sync** — the OAuth connection itself is built (see
   `QuickBooksConnection` above); actually pushing/pulling `Contact` or
   `Invoice` data to/from QuickBooks is not. That needs its own design pass
@@ -306,8 +373,9 @@ specifically trying to avoid.
   ACH payment in-app needs a processor (e.g. Stripe) and its own API keys
   — a deliberately separate decision from the invoicing/tracking built
   now.
-- **Trade-specific modules** — no framework yet for trade-specific line
-  item templates, catalogs, or workflows.
+- **Trade-specific modules beyond the `TradeScope` tag** — no calculators,
+  compliance-tracking UI, or catalog/template system yet. `TradeScope`
+  (see above) is a categorization dimension only.
 
 When any of these get built, the test is the same one this document
 opens with: does it read and write `JobLineItem` (extended as needed), or

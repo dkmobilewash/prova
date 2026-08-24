@@ -66,7 +66,7 @@ export default async function PortalJobPage({
             description: item.description,
             quantity: item.quantity.toString(),
             unit: item.unit,
-            unitPrice: item.unitPrice.toString(),
+            unitPrice: item.unitPrice?.toString() ?? null,
             changeOrderNumber: item.originChangeOrder?.number ?? null,
           }))}
           footer={

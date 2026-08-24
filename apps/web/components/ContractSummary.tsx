@@ -7,7 +7,10 @@ export type ContractSummaryLineItem = {
   description: string;
   quantity: string;
   unit: string | null;
-  unitPrice: string;
+  /// Null for a cost-only budget line (general conditions, overhead,
+  /// contingency) — it has no client-facing sale price and contributes $0
+  /// to the contract total, rendered as "—" rather than $0.00.
+  unitPrice: string | null;
   changeOrderNumber: number | null;
 };
 
@@ -34,7 +37,10 @@ export function ContractSummary({
   lineItems: ContractSummaryLineItem[];
   footer?: ReactNode;
 }) {
-  const total = lineItems.reduce((sum, item) => sum + Number(item.quantity) * Number(item.unitPrice), 0);
+  const total = lineItems.reduce(
+    (sum, item) => sum + (item.unitPrice != null ? Number(item.quantity) * Number(item.unitPrice) : 0),
+    0,
+  );
 
   return (
     <section className="rounded-lg border border-slate-200 bg-white p-6 text-slate-900 print:border-0 print:shadow-none">
@@ -71,8 +77,10 @@ export function ContractSummary({
               </td>
               <td className="py-2">{item.quantity}</td>
               <td className="py-2">{item.unit ?? "—"}</td>
-              <td className="py-2">{money(Number(item.unitPrice))}</td>
-              <td className="py-2 text-right">{money(Number(item.quantity) * Number(item.unitPrice))}</td>
+              <td className="py-2">{item.unitPrice != null ? money(Number(item.unitPrice)) : "—"}</td>
+              <td className="py-2 text-right">
+                {item.unitPrice != null ? money(Number(item.quantity) * Number(item.unitPrice)) : "—"}
+              </td>
             </tr>
           ))}
         </tbody>
