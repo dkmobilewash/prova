@@ -47,6 +47,7 @@ model Company {
   quickBooksConnection QuickBooksConnection?
   complianceDocuments  ComplianceDocument[]
   licenses             CompanyLicense[]
+  tradeScopes          CompanyTradeScope[]
 }
 
 enum UserRole {
@@ -162,6 +163,25 @@ enum TradeScope {
   EIFS
   ACOUSTICAL_CEILINGS
   FIREPROOFING
+}
+
+/// Which trade scopes a Company actually holds/self-performs — reuses the
+/// TradeScope enum above rather than a parallel reference table, so there's
+/// one source of truth for "what are the five trade scopes." A company may
+/// add a trade scope later as it grows rather than holding all five from
+/// day one, hence `activeSince` rather than assuming everything started at
+/// company creation.
+model CompanyTradeScope {
+  id          String     @id @default(cuid())
+  companyId   String
+  company     Company    @relation(fields: [companyId], references: [id])
+  tradeScope  TradeScope
+  isPrimary   Boolean    @default(false)
+  activeSince DateTime?
+  createdAt   DateTime   @default(now())
+
+  @@unique([companyId, tradeScope])
+  @@index([companyId])
 }
 
 /// A single line item, referenced everywhere: estimate, contract summary,

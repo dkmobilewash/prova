@@ -292,6 +292,14 @@ the cost/WIP fields, not a self-performed-vs-subcontracted model and not
 full CSI MasterFormat coding. Both are nullable: tagging is optional, not
 a prerequisite for WIP reporting to work.
 
+`CompanyTradeScope` — which trade scopes a company actually holds —
+reuses this same enum rather than a parallel reference table (one
+`companyId, tradeScope` join row, not a second "list of five trades" that
+could drift from the first). `@@unique([companyId, tradeScope])` keeps a
+company from getting duplicate rows for the same trade. `activeSince` is
+nullable because a company can add a trade scope later as it grows,
+rather than every company holding all five from day one.
+
 ### `Invoice` / `Payment` — billing, same pattern again
 
 A third instance of the "reference, don't duplicate" rule. `Invoice`
