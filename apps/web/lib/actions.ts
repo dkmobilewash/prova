@@ -4,12 +4,14 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { randomBytes } from "node:crypto";
+import { put } from "@vercel/blob";
 import { Prisma, prisma } from "@prova/db";
 import {
   revokeToken,
   refreshTokens,
   getCompanyInfo,
   generateWipNarrative,
+  extractComplianceDocument,
   type QuickBooksCompanyInfo,
 } from "@prova/integrations";
 import { requireCompanyContext } from "@/lib/auth";
@@ -987,6 +989,13 @@ export async function generateJobWipNarrative(jobId: string): Promise<string> {
 const INSURANCE_POLICY_TYPES = ["GENERAL_LIABILITY", "WORKERS_COMP", "AUTO", "UMBRELLA_EXCESS"] as const;
 const BOND_TYPES = ["LICENSE_BOND", "PERFORMANCE_PAYMENT_CAPACITY"] as const;
 const LOCATION_TYPES = ["HQ", "BRANCH_YARD", "WAREHOUSE"] as const;
+const COMPLIANCE_DOCUMENT_TYPES = [
+  "LIEN_WAIVER",
+  "CERTIFICATE_OF_INSURANCE",
+  "CERTIFIED_PAYROLL",
+  "UNION_FRINGE_BENEFIT_FILING",
+  "UNION_AGREEMENT",
+] as const;
 
 function enumFromForm<T extends readonly string[]>(formData: FormData, key: string, allowed: T): T[number] {
   const raw = String(formData.get(key) ?? "");
@@ -1147,4 +1156,139 @@ export async function deleteCompanyLocation(locationId: string) {
   await prisma.companyLocation.delete({ where: { id: locationId } });
 
   revalidatePath("/settings");
+}
+
+const COMPLIANCE_UPLOAD_MEDIA_TYPES = ["application/pdf", "image/png", "image/jpeg", "image/webp"] as const;
+const COMPLIANCE_UPLOAD_MAX_BYTES = 15 * 1024 * 1024;
+
+/** Uploads a compliance document (lien waiver, COI, certified payroll,
+ * union fringe filing) and has Claude read it into structured fields —
+ * see extractComplianceDocument in @prova/integrations. Not owner-gated:
+ * any team member can log paperwork they receive from a sub or vendor,
+ * same reasoning as addCostEntry. The extracted fields are saved as a
+ * normal, editable row (aiExtracted just flags it for review, not a
+ * lock) — a bad extraction is fixed the same way a typo would be. */
+export async function uploadComplianceDocument(formData: FormData) {
+  const { company, ...user } = await requireCompanyContext();
+
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) {
+    throw new Error("A file is required");
+  }
+  if (!(COMPLIANCE_UPLOAD_MEDIA_TYPES as readonly string[]).includes(file.type)) {
+    throw new Error("Upload a PDF, PNG, JPEG, or WEBP file");
+  }
+  if (file.size > COMPLIANCE_UPLOAD_MAX_BYTES) {
+    throw new Error("File is too large (max 15MB)");
+  }
+
+  const jobIdRaw = String(formData.get("jobId") ?? "").trim();
+  let jobId: string | null = null;
+  if (jobIdRaw) {
+    const job = await prisma.job.findUnique({ where: { id: jobIdRaw } });
+    if (!job || job.companyId !== company.id) {
+      throw new Error("Job not found");
+    }
+    jobId = job.id;
+  }
+
+  const buffer = Buffer.from(await file.arrayBuffer());
+  const mediaType = file.type as (typeof COMPLIANCE_UPLOAD_MEDIA_TYPES)[number];
+
+  const [blob, extraction] = await Promise.all([
+    put(`compliance/${company.id}/${file.name}`, buffer, { access: "public", contentType: file.type }),
+    extractComplianceDocument({ fileBase64: buffer.toString("base64"), mediaType, fileName: file.name }),
+  ]);
+
+  await prisma.complianceDocument.create({
+    data: {
+      companyId: company.id,
+      jobId,
+      type: extraction.type,
+      partyName: extraction.partyName,
+      amount: extraction.amount != null ? extraction.amount.toString() : null,
+      periodStart: extraction.periodStart ? new Date(extraction.periodStart) : null,
+      periodEnd: extraction.periodEnd ? new Date(extraction.periodEnd) : null,
+      effectiveDate: extraction.effectiveDate ? new Date(extraction.effectiveDate) : null,
+      expiresAt: extraction.expiresAt ? new Date(extraction.expiresAt) : null,
+      notes: extraction.notes,
+      fileUrl: blob.url,
+      fileName: file.name,
+      aiExtracted: true,
+      uploadedByUserId: user.id,
+    },
+  });
+
+  revalidatePath("/compliance");
+}
+
+/** Edits a compliance document's fields — how a bad AI extraction gets
+ * fixed (same as fixing a typo, not a separate "correction" flow) but
+ * also just how anyone edits a manually-entered record. Not owner-gated,
+ * same reasoning as uploadComplianceDocument. */
+export async function updateComplianceDocument(documentId: string, formData: FormData) {
+  const { company } = await requireCompanyContext();
+
+  const document = await prisma.complianceDocument.findUnique({ where: { id: documentId } });
+  if (!document || document.companyId !== company.id) {
+    throw new Error("Compliance document not found");
+  }
+
+  const type = enumFromForm(formData, "type", COMPLIANCE_DOCUMENT_TYPES);
+  const partyName = String(formData.get("partyName") ?? "").trim();
+  if (!partyName) {
+    throw new Error("Party name is required");
+  }
+  const amount = nullableDecimalFromForm(formData, "amount");
+  const periodStartRaw = String(formData.get("periodStart") ?? "").trim();
+  const periodEndRaw = String(formData.get("periodEnd") ?? "").trim();
+  const effectiveRaw = String(formData.get("effectiveDate") ?? "").trim();
+  const expiresRaw = String(formData.get("expiresAt") ?? "").trim();
+  const notes = String(formData.get("notes") ?? "").trim();
+
+  await prisma.complianceDocument.update({
+    where: { id: documentId },
+    data: {
+      type,
+      partyName,
+      amount,
+      periodStart: periodStartRaw ? new Date(periodStartRaw) : null,
+      periodEnd: periodEndRaw ? new Date(periodEndRaw) : null,
+      effectiveDate: effectiveRaw ? new Date(effectiveRaw) : null,
+      expiresAt: expiresRaw ? new Date(expiresRaw) : null,
+      notes: notes || null,
+    },
+  });
+
+  revalidatePath("/compliance");
+}
+
+/** Marks a compliance document RECEIVED (e.g. the lien waiver came back
+ * signed, or the sub's updated COI arrived). */
+export async function markComplianceDocumentReceived(documentId: string) {
+  const { company } = await requireCompanyContext();
+
+  const document = await prisma.complianceDocument.findUnique({ where: { id: documentId } });
+  if (!document || document.companyId !== company.id) {
+    throw new Error("Compliance document not found");
+  }
+
+  await prisma.complianceDocument.update({ where: { id: documentId }, data: { status: "RECEIVED" } });
+
+  revalidatePath("/compliance");
+}
+
+export async function deleteComplianceDocument(documentId: string) {
+  const context = await requireCompanyContext();
+  assertOwner(context);
+  const { company } = context;
+
+  const document = await prisma.complianceDocument.findUnique({ where: { id: documentId } });
+  if (!document || document.companyId !== company.id) {
+    throw new Error("Compliance document not found");
+  }
+
+  await prisma.complianceDocument.delete({ where: { id: documentId } });
+
+  revalidatePath("/compliance");
 }

@@ -435,12 +435,17 @@ moment the clock passed the date; `status` only tracks the lifecycle step
 that isn't derivable from dates alone (has the document been received at
 all).
 
-**Explicitly not built**: file storage. No decision has been made about
-where an uploaded PDF would live (Vercel Blob, S3, etc.), and the planned
-AI-extraction feature (reading a scanned lien waiver/COI into these
-fields) may not even need to persist the source document — just the
-structured data pulled from it. Both AI extraction and file storage are
-future phases, blocked on a real Anthropic API key — see Future phases.
+**AI extraction and file storage** (`/compliance`): uploading a document
+stores the original file in Vercel Blob (`fileUrl`/`fileName`) and, in
+parallel, sends it to Claude via `extractComplianceDocument` (see
+`packages/integrations/src/anthropic.ts`), which reads `type`, `partyName`,
+`amount`, and the dates into a forced tool call — never free-text JSON, so
+there's no ambiguity in parsing what Claude returned. The result is saved
+as a normal `ComplianceDocument` row with `aiExtracted: true`; that flag is
+a "please verify" signal for the UI, not a lock — a wrong extraction is
+fixed the same way a typo would be, not through some separate correction
+flow. Upload isn't owner-gated (any team member can log paperwork they
+receive from a sub), matching `addCostEntry`'s reasoning.
 
 `Payment` is a manual record, not a charge — there's no payment
 processor wired up (see Future phases). Invoicing is only available once

@@ -452,11 +452,10 @@ enum ComplianceDocumentStatus {
 /// vendor, or union trust fund), often a specific job, with a lifecycle
 /// (requested -> received) and, for COIs, an expiration to track renewal.
 ///
-/// Not yet wired to file storage — no infrastructure decision has been
-/// made about where uploaded PDFs live, and AI extraction (reading a
-/// scanned lien waiver/COI into these fields) may not even need to
-/// persist the source file, just the structured data. Both are future
-/// phases, blocked on a real Anthropic API key. See ARCHITECTURE.md.
+/// File storage (Vercel Blob) and AI extraction are both wired up now —
+/// see extractComplianceDocument in packages/integrations/src/anthropic.ts
+/// and uploadComplianceDocument in apps/web/lib/actions.ts. See
+/// ARCHITECTURE.md.
 model ComplianceDocument {
   id        String  @id @default(cuid())
   companyId String
@@ -499,6 +498,17 @@ model ComplianceDocument {
   expiresAt DateTime?
 
   notes String?
+
+  /// The uploaded source file (Vercel Blob URL) and its original name.
+  /// Both null for a document created without an upload (manual entry).
+  fileUrl  String?
+  fileName String?
+
+  /// True when type/partyName/amount/dates were populated by
+  /// extractComplianceDocument (Claude reading the uploaded file) rather
+  /// than typed in by hand. Extracted fields are still editable — this is
+  /// a "please verify" signal for the UI, not a lock.
+  aiExtracted Boolean @default(false)
 
   uploadedByUserId String?
   uploadedByUser   User?   @relation(fields: [uploadedByUserId], references: [id])

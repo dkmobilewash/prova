@@ -16,7 +16,9 @@
         "QUICKBOOKS_CLIENT_ID",
         "QUICKBOOKS_CLIENT_SECRET",
         "QUICKBOOKS_REDIRECT_URI",
-        "QUICKBOOKS_ENVIRONMENT"
+        "QUICKBOOKS_ENVIRONMENT",
+        "ANTHROPIC_API_KEY",
+        "BLOB_READ_WRITE_TOKEN"
       ]
     },
     "dev": {

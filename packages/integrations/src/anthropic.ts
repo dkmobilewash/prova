@@ -63,3 +63,102 @@ export async function generateWipNarrative(summary: WipNarrativeJobSummary): Pro
   }
   return textBlock.text;
 }
+
+const COMPLIANCE_DOCUMENT_TYPES = [
+  "LIEN_WAIVER",
+  "CERTIFICATE_OF_INSURANCE",
+  "CERTIFIED_PAYROLL",
+  "UNION_FRINGE_BENEFIT_FILING",
+  "UNION_AGREEMENT",
+] as const;
+
+export type ComplianceDocumentTypeExtraction = (typeof COMPLIANCE_DOCUMENT_TYPES)[number];
+
+export interface ComplianceDocumentExtraction {
+  type: ComplianceDocumentTypeExtraction;
+  /** The subcontractor, vendor, or union trust fund the document is about. */
+  partyName: string;
+  /** Lien waiver amount or fringe-benefit contribution. Null for a COI. */
+  amount: number | null;
+  /** ISO date (YYYY-MM-DD) strings — null when the document doesn't state one. */
+  periodStart: string | null;
+  periodEnd: string | null;
+  effectiveDate: string | null;
+  expiresAt: string | null;
+  /** Anything Claude wants to flag for human review — illegible fields,
+   * ambiguous dates, a guess it isn't fully confident in. Null if nothing
+   * stands out. */
+  notes: string | null;
+}
+
+const EXTRACTION_TOOL_NAME = "record_compliance_document";
+
+const EXTRACTION_SYSTEM_PROMPT = `You are reading a scanned construction compliance document (a lien waiver, certificate of insurance, certified payroll report, union fringe/benefit filing, or union agreement/CBA) for a general contractor. Extract the fields into the record_compliance_document tool exactly as they appear on the document — do not infer or guess a value that isn't actually printed on the page. Use null for any field the document doesn't state. Dates must be ISO format (YYYY-MM-DD). If you're unsure about a field, still make your best extraction but say so in "notes".`;
+
+/**
+ * Reads an uploaded compliance document (PDF or image) and extracts
+ * structured fields via a forced tool call — never free-text JSON, so
+ * there's no parsing ambiguity about what Claude returned. The caller
+ * (uploadComplianceDocument in apps/web/lib/actions.ts) persists these
+ * fields as a normal, editable ComplianceDocument row; this function never
+ * touches the database itself.
+ */
+export async function extractComplianceDocument(params: {
+  fileBase64: string;
+  mediaType: "application/pdf" | "image/png" | "image/jpeg" | "image/webp";
+  fileName: string;
+}): Promise<ComplianceDocumentExtraction> {
+  const client = new Anthropic();
+
+  const fileBlock: Anthropic.ContentBlockParam =
+    params.mediaType === "application/pdf"
+      ? {
+          type: "document",
+          source: { type: "base64", media_type: "application/pdf", data: params.fileBase64 },
+        }
+      : {
+          type: "image",
+          source: { type: "base64", media_type: params.mediaType, data: params.fileBase64 },
+        };
+
+  const response = await client.messages.create({
+    model: "claude-opus-5",
+    max_tokens: 1024,
+    system: EXTRACTION_SYSTEM_PROMPT,
+    tools: [
+      {
+        name: EXTRACTION_TOOL_NAME,
+        description: "Records the fields extracted from the uploaded compliance document.",
+        input_schema: {
+          type: "object",
+          properties: {
+            type: { type: "string", enum: [...COMPLIANCE_DOCUMENT_TYPES] },
+            partyName: { type: "string" },
+            amount: { type: ["number", "null"] },
+            periodStart: { type: ["string", "null"] },
+            periodEnd: { type: ["string", "null"] },
+            effectiveDate: { type: ["string", "null"] },
+            expiresAt: { type: ["string", "null"] },
+            notes: { type: ["string", "null"] },
+          },
+          required: ["type", "partyName", "amount", "periodStart", "periodEnd", "effectiveDate", "expiresAt", "notes"],
+        },
+      },
+    ],
+    tool_choice: { type: "tool", name: EXTRACTION_TOOL_NAME },
+    messages: [
+      {
+        role: "user",
+        content: [fileBlock, { type: "text", text: `File name: ${params.fileName}` }],
+      },
+    ],
+  });
+
+  const toolUse = response.content.find(
+    (block): block is Anthropic.ToolUseBlock => block.type === "tool_use" && block.name === EXTRACTION_TOOL_NAME,
+  );
+  if (!toolUse) {
+    throw new Error("Claude did not return an extraction result");
+  }
+  return toolUse.input as ComplianceDocumentExtraction;
+}

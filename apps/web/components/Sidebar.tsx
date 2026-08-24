@@ -47,6 +47,21 @@ const NAV_ITEMS: { href: string; label: string; icon: ReactNode }[] = [
     ),
   },
   {
+    href: "/compliance",
+    label: "Compliance",
+    icon: (
+      <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5">
+        <path
+          d="M6 3.5h6l2.5 2.5v10a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1V4.5a1 1 0 0 1 1-1Z"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinejoin="round"
+        />
+        <path d="M7 9.5h6M7 12.5h6M7 6.5h3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      </svg>
+    ),
+  },
+  {
     href: "/team",
     label: "Team",
     icon: (
