@@ -223,6 +223,29 @@ already write into `JobLineItem` directly (new rows via
 handling for them — it just aggregates whatever line items exist on the
 job at any point, the same way the budget total always has.
 
+### The AI narrative layer — interpretation only, never the math
+
+`generateJobWipNarrative` (in `actions.ts`) recomputes the exact same
+`lib/wip.ts` figures the page itself displays, then hands only those
+already-computed numbers to Claude (`generateWipNarrative` in
+`packages/integrations/src/anthropic.ts`) for a short plain-language
+interpretation — flagging what's overbilled/underbilled or which line
+item's cost forecast has drifted from budget. The system prompt is
+explicit that every number it receives is final: Claude is never asked to
+recompute, restate as a different value, or "correct" a figure, only to
+explain what the given numbers mean. This is the boundary the whole WIP
+feature is built around — deterministic code owns every number that
+appears on screen; the model only ever narrates numbers it was handed.
+
+On-demand only, via a button (`WipNarrativeButton`) that calls the server
+action directly and shows the result inline — the same "no `<form
+action>`, call it from a client component" pattern `testQuickBooksConnection`
+uses. Nothing is persisted: there's no schema field to cache a narrative
+in yet, so every click regenerates fresh rather than reading a stale one.
+Requires a real `ANTHROPIC_API_KEY` in the environment — same "provided by
+the user, loaded from an env var, never hardcoded" rule as the QuickBooks
+client secret.
+
 ### `TradeScope` — a flat trade-family tag, not a hierarchy
 
 `JobLineItem.tradeScope` and `CostEntry.tradeScope` (independent of each
@@ -385,17 +408,15 @@ completeness" — that produces half-built abstractions this phase is
 specifically trying to avoid.
 
 - **AI features** — the first priority item (WIP/over-under-billing
-  variance) shipped, but as deterministic math (`lib/wip.ts`), not an LLM
-  call — the numbers on a WIP schedule have to be exactly reproducible.
-  `ComplianceDocument` (see above) is also built — schema only, ready to
+  variance) shipped as deterministic math (`lib/wip.ts`) plus an AI
+  narrative layer over it (see above) — the first feature that actually
+  calls Claude. `ComplianceDocument` is also built — schema only, ready to
   receive lien waiver/COI/certified payroll/union fringe filing records,
-  but nothing populates it yet. Still blocked on a real Anthropic API key:
-  nothing that actually calls an LLM has been built. Next up once a key
-  exists: a narrative layer over the WIP numbers, then AI extraction of
-  scanned documents into `ComplianceDocument` rows, then
-  draft-estimate-from-text. Plan-takeoff via computer vision is a
-  distinct, later, larger effort — different input modality, different
-  accuracy bar, deliberately not bundled into this phase.
+  but nothing populates it yet. Next up: AI extraction of scanned
+  documents into `ComplianceDocument` rows, then draft-estimate-from-text.
+  Plan-takeoff via computer vision is a distinct, later, larger effort —
+  different input modality, different accuracy bar, deliberately not
+  bundled into this phase.
 - **QuickBooks data sync** — the OAuth connection itself is built (see
   `QuickBooksConnection` above); actually pushing/pulling `Contact` or
   `Invoice` data to/from QuickBooks is not. That needs its own design pass

@@ -4,6 +4,7 @@ import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { PrintButton } from "@/components/PrintButton";
 import { ContractSummary } from "@/components/ContractSummary";
+import { WipNarrativeButton } from "@/components/WipNarrativeButton";
 import { money } from "@/lib/money";
 import { calculateLineItemWip, calculateJobWip } from "@/lib/wip";
 import {
@@ -314,7 +315,9 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             </div>
           </div>
 
-          <div className="flex flex-col gap-4">
+          <WipNarrativeButton jobId={job.id} />
+
+          <div className="mt-6 flex flex-col gap-4">
             {lineItemWip.map(({ item, wip }) => {
               const tradeLabel = TRADE_SCOPE_OPTIONS.find((t) => t.value === item.tradeScope)?.label;
               return (

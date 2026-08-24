@@ -8,6 +8,9 @@
     "lint": "echo 'no lint config for integrations package yet'",
     "typecheck": "tsc --noEmit"
   },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.70.0"
+  },
   "devDependencies": {
     "@types/node": "^22.10.2",
     "typescript": "^5.7.2"

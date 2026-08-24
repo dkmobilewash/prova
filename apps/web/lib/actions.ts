@@ -5,8 +5,15 @@ import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { randomBytes } from "node:crypto";
 import { Prisma, prisma } from "@prova/db";
-import { revokeToken, refreshTokens, getCompanyInfo, type QuickBooksCompanyInfo } from "@prova/integrations";
+import {
+  revokeToken,
+  refreshTokens,
+  getCompanyInfo,
+  generateWipNarrative,
+  type QuickBooksCompanyInfo,
+} from "@prova/integrations";
 import { requireCompanyContext } from "@/lib/auth";
+import { calculateLineItemWip, calculateJobWip } from "@/lib/wip";
 
 function decimalFromForm(formData: FormData, key: string): string {
   const raw = formData.get(key);
@@ -904,4 +911,63 @@ export async function testQuickBooksConnection(): Promise<QuickBooksCompanyInfo>
   }
 
   return getCompanyInfo(connection.realmId, accessToken);
+}
+
+/**
+ * Generates a short AI narrative over a job's WIP figures. Recomputes the
+ * exact same deterministic numbers lib/wip.ts computes for the page itself
+ * (single source of truth for the math), then hands only those numbers to
+ * Claude for interpretation — never lets the model touch the arithmetic.
+ * On-demand only: called directly from a client component (not a <form
+ * action>) so the result can be shown inline, and nothing here is
+ * persisted — every click regenerates fresh rather than reading a cached
+ * value, since there's no schema field to cache it in yet.
+ */
+export async function generateJobWipNarrative(jobId: string): Promise<string> {
+  const { company } = await requireCompanyContext();
+  const job = await assertJobInCompany(jobId, company.id);
+
+  const lineItems = await prisma.jobLineItem.findMany({
+    where: { jobId, isDeleted: false },
+    orderBy: { createdAt: "asc" },
+    include: { costEntries: true },
+  });
+  const invoices = await prisma.invoice.findMany({ where: { jobId } });
+
+  const lineItemWip = lineItems.map((item) => ({
+    item,
+    wip: calculateLineItemWip({
+      quantity: Number(item.quantity),
+      unitPrice: item.unitPrice != null ? Number(item.unitPrice) : null,
+      budgetedUnitCost: item.budgetedUnitCost != null ? Number(item.budgetedUnitCost) : null,
+      currentEstimatedUnitCost:
+        item.currentEstimatedUnitCost != null ? Number(item.currentEstimatedUnitCost) : null,
+      estimatedCostToComplete:
+        item.estimatedCostToComplete != null ? Number(item.estimatedCostToComplete) : null,
+      actualCostToDate: item.costEntries.reduce((s, entry) => s + Number(entry.amount), 0),
+    }),
+  }));
+  const billedToDate = invoices.reduce((sum, invoice) => sum + Number(invoice.amount), 0);
+  const jobWip = calculateJobWip(
+    lineItemWip.map((l) => l.wip),
+    billedToDate,
+  );
+
+  return generateWipNarrative({
+    jobName: job.name,
+    jobStatus: job.status,
+    contractValue: jobWip.contractValue,
+    percentComplete: jobWip.percentComplete,
+    earnedRevenue: jobWip.earnedRevenue,
+    billedToDate: jobWip.billedToDate,
+    overUnderBilling: jobWip.overUnderBilling,
+    lineItems: lineItemWip.map(({ item, wip }) => ({
+      description: item.description,
+      contractValue: wip.contractValue,
+      percentComplete: wip.percentComplete,
+      budgetedCost: wip.budgetedCost,
+      currentEstimatedCost: wip.currentEstimatedCost,
+      actualCostToDate: wip.actualCostToDate,
+    })),
+  });
 }
