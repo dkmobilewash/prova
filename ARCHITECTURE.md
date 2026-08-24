@@ -359,6 +359,32 @@ Postgres itself, supported on Neon) — required for a GiST index to
 compare the plain-text `craftClassificationId` column for equality
 alongside the date-range overlap check.
 
+### Insurance and bonding — the company's own source records
+
+`CompanyInsurancePolicy` and `CompanyBond` are the company's own
+insurance/bonding data — distinct from `ComplianceDocument`, which tracks
+documents flowing between this company and GCs/subs on a per-job basis.
+This is the source data those per-job COIs would eventually get generated
+from (future phase, not built here).
+
+`coverageLimits` is free text, not structured limit fields: what
+"coverage limits" means genuinely varies by policy type (general
+liability: per-occurrence + aggregate; auto: combined single limit;
+workers' comp: statutory + employer's liability) — a fixed set of columns
+would be wrong for at least one type, the same reasoning as
+`CompanyLicense.classificationCode` staying free text for jurisdictions
+without a fixed classification system.
+
+`CompanyBond` is **deliberately not linked** to
+`CompanyLicense.bondNumber` (the bond-number field on a license, for
+jurisdictions that tie a bond to the license itself). The two can
+describe the same real-world bond without a forced foreign key between
+them — connecting them explicitly is a future refinement, not guessed at
+here.
+
+Same pattern as licensing: `expirationDate`/`renewalDate` computed at
+read time, no stored status, no actual alert/notification delivery built.
+
 ### `Invoice` / `Payment` — billing, same pattern again
 
 A third instance of the "reference, don't duplicate" rule. `Invoice`

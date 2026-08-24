@@ -49,6 +49,8 @@ model Company {
   licenses             CompanyLicense[]
   tradeScopes          CompanyTradeScope[]
   unionAgreements      CompanyUnionAgreement[]
+  insurancePolicies    CompanyInsurancePolicy[]
+  bonds                CompanyBond[]
 }
 
 enum UserRole {
@@ -678,4 +680,85 @@ model ApprenticeRatioRule {
   createdAt                DateTime   @default(now())
 
   @@index([unionLocalId])
+}
+
+enum InsurancePolicyType {
+  GENERAL_LIABILITY
+  WORKERS_COMP
+  AUTO
+  UMBRELLA_EXCESS
+}
+
+/// The company's own insurance record — distinct from ComplianceDocument,
+/// which tracks documents flowing between this company and GCs/subs on a
+/// per-job basis. This is the source data those per-job COIs eventually
+/// get generated from (future phase).
+model CompanyInsurancePolicy {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  policyType   InsurancePolicyType
+  carrier      String
+  policyNumber String
+
+  /// Free text rather than structured limit fields — what "coverage
+  /// limits" means varies by policy type (GL: per-occurrence + aggregate;
+  /// auto: combined single limit; workers' comp: statutory + employer's
+  /// liability), so a fixed set of columns would be wrong for at least
+  /// one type.
+  coverageLimits String?
+
+  effectiveDate  DateTime?
+  /// Whether a policy is expiring/expired is computed at read time from
+  /// this field, never stored — same rule as CompanyLicense.
+  expirationDate DateTime?
+
+  /// Reusable boilerplate used as the starting point when generating a
+  /// COI to send a GC — e.g. standard additional-insured language. Not
+  /// per-job or per-GC; that customization happens when a COI actually
+  /// gets generated (future phase, not built here).
+  defaultCertificateHolderTemplate String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([expirationDate])
+}
+
+enum BondType {
+  LICENSE_BOND
+  PERFORMANCE_PAYMENT_CAPACITY
+}
+
+/// The company's own bonding record. Deliberately NOT linked to
+/// CompanyLicense.bondNumber (a jurisdiction-specific bond number entered
+/// on the license itself) — the two can reference the same real-world bond
+/// without a forced foreign key between them; connecting them explicitly
+/// is a future refinement, not guessed at here.
+model CompanyBond {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  suretyName String
+  bondType   BondType
+
+  aggregateBondingCapacity Decimal? @db.Decimal(12, 2)
+  singleJobLimit           Decimal? @db.Decimal(12, 2)
+
+  agentContactName  String?
+  agentContactPhone String?
+  agentContactEmail String?
+
+  /// Whether a bond is up for renewal is computed at read time from this
+  /// field, never stored — same rule as everywhere else in this schema.
+  renewalDate DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([renewalDate])
 }
