@@ -30,6 +30,7 @@ model Company {
   jobs                 Job[]
   invites              Invite[]
   quickBooksConnection QuickBooksConnection?
+  complianceDocuments  ComplianceDocument[]
 }
 
 enum UserRole {
@@ -53,8 +54,9 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  assignments           JobAssignment[]
-  connectedQuickBooks   QuickBooksConnection[]
+  assignments                 JobAssignment[]
+  connectedQuickBooks         QuickBooksConnection[]
+  uploadedComplianceDocuments ComplianceDocument[]
 
   @@index([companyId])
 }
@@ -121,11 +123,12 @@ model Job {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
-  lineItems         JobLineItem[]
-  changeOrders      ChangeOrder[]
-  assignments       JobAssignment[]
-  signatureRequests SignatureRequest[]
-  invoices          Invoice[]
+  lineItems           JobLineItem[]
+  changeOrders        ChangeOrder[]
+  assignments         JobAssignment[]
+  signatureRequests   SignatureRequest[]
+  invoices            Invoice[]
+  complianceDocuments ComplianceDocument[]
 
   @@index([companyId])
   @@index([contactId])
@@ -378,4 +381,81 @@ model QuickBooksConnection {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+enum ComplianceDocumentType {
+  LIEN_WAIVER
+  CERTIFICATE_OF_INSURANCE
+  CERTIFIED_PAYROLL
+  UNION_FRINGE_BENEFIT_FILING
+}
+
+enum ComplianceDocumentStatus {
+  PENDING
+  RECEIVED
+}
+
+/// Tracks compliance paperwork — lien waivers, certificates of insurance,
+/// certified payroll reports, and union fringe/benefit filings. All four
+/// share the same shape: a document tied to a party (subcontractor,
+/// vendor, or union trust fund), often a specific job, with a lifecycle
+/// (requested -> received) and, for COIs, an expiration to track renewal.
+///
+/// Not yet wired to file storage — no infrastructure decision has been
+/// made about where uploaded PDFs live, and AI extraction (reading a
+/// scanned lien waiver/COI into these fields) may not even need to
+/// persist the source file, just the structured data. Both are future
+/// phases, blocked on a real Anthropic API key. See ARCHITECTURE.md.
+model ComplianceDocument {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  /// Optional: some documents are job-specific (a lien waiver, certified
+  /// payroll for a job's crew); others are company-level (a general
+  /// liability COI covering all jobs).
+  jobId String?
+  job   Job?    @relation(fields: [jobId], references: [id])
+
+  type ComplianceDocumentType
+
+  /// The subcontractor, vendor, or union trust fund this document is
+  /// about. Free text rather than a new Subcontractor/Vendor directory
+  /// model — that's a separate modeling decision this phase doesn't need
+  /// to make yet.
+  partyName String
+
+  status ComplianceDocumentStatus @default(PENDING)
+
+  /// Lien waiver amount, or fringe-benefit contribution amount. Null for
+  /// a COI (no dollar amount).
+  amount Decimal? @db.Decimal(12, 2)
+
+  /// The billing/reporting period this document covers — a certified
+  /// payroll week, a fringe filing month, a lien waiver's covered payment
+  /// period. Null for a COI (it doesn't cover a period).
+  periodStart DateTime?
+  periodEnd   DateTime?
+
+  /// When the document took effect — a COI's effective date, a lien
+  /// waiver's signed date.
+  effectiveDate DateTime?
+
+  /// A COI's expiration date. Whether a document is "expired" or
+  /// "expiring soon" is computed at read time from this field, never
+  /// stored as a separate status — same rule as every computed total
+  /// elsewhere in this schema (it would just go stale otherwise).
+  expiresAt DateTime?
+
+  notes String?
+
+  uploadedByUserId String?
+  uploadedByUser   User?   @relation(fields: [uploadedByUserId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([jobId])
+  @@index([expiresAt])
 }

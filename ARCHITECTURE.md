@@ -245,6 +245,37 @@ received, supporting partial/progress payments. Amount paid and balance
 are always `SUM(payments.amount)` vs. the invoice amount — computed, never
 stored, exactly like actual cost on `JobLineItem`.
 
+### `ComplianceDocument` — one table for four document types
+
+Lien waivers, certificates of insurance, certified payroll reports, and
+union fringe/benefit filings all share the same shape: a document tied to
+a party (subcontractor, vendor, or union trust fund), often a specific
+job, with a lifecycle (`PENDING` → `RECEIVED`) and, for COIs, an
+expiration to track renewal. One table, one `type` enum, rather than four
+near-identical tables — the same reasoning as `CostCategory` on
+`CostEntry`.
+
+`partyName` is free text, not a foreign key to a new Subcontractor/Vendor
+directory model — building that directory is a separate modeling decision
+this phase didn't need to make. `jobId` is nullable: a lien waiver or
+certified payroll report is job-specific, but a general-liability COI
+often covers the whole company, not one job.
+
+Whether a document is "expired" or "expiring soon" is **computed at read
+time** from `expiresAt`, never stored as a status — the same rule as every
+computed total elsewhere in this schema (actual cost, invoice balance,
+WIP percent-complete). A stored `EXPIRED` status would just go stale the
+moment the clock passed the date; `status` only tracks the lifecycle step
+that isn't derivable from dates alone (has the document been received at
+all).
+
+**Explicitly not built**: file storage. No decision has been made about
+where an uploaded PDF would live (Vercel Blob, S3, etc.), and the planned
+AI-extraction feature (reading a scanned lien waiver/COI into these
+fields) may not even need to persist the source document — just the
+structured data pulled from it. Both AI extraction and file storage are
+future phases, blocked on a real Anthropic API key — see Future phases.
+
 `Payment` is a manual record, not a charge — there's no payment
 processor wired up (see Future phases). Invoicing is only available once
 a job is `CONTRACTED` or later, for the same reason change orders are
@@ -356,12 +387,13 @@ specifically trying to avoid.
 - **AI features** — the first priority item (WIP/over-under-billing
   variance) shipped, but as deterministic math (`lib/wip.ts`), not an LLM
   call — the numbers on a WIP schedule have to be exactly reproducible.
-  Still blocked on a real Anthropic API key: nothing that actually calls
-  an LLM has been built. Next up once a key exists: a narrative layer over
-  the WIP numbers, then lien-waiver/COI extraction into a new
-  `ComplianceDocument` table (also covering certified payroll and union
-  fringe/benefit filings — the recurring compliance burden for this ICP),
-  then draft-estimate-from-text. Plan-takeoff via computer vision is a
+  `ComplianceDocument` (see above) is also built — schema only, ready to
+  receive lien waiver/COI/certified payroll/union fringe filing records,
+  but nothing populates it yet. Still blocked on a real Anthropic API key:
+  nothing that actually calls an LLM has been built. Next up once a key
+  exists: a narrative layer over the WIP numbers, then AI extraction of
+  scanned documents into `ComplianceDocument` rows, then
+  draft-estimate-from-text. Plan-takeoff via computer vision is a
   distinct, later, larger effort — different input modality, different
   accuracy bar, deliberately not bundled into this phase.
 - **QuickBooks data sync** — the OAuth connection itself is built (see
