@@ -613,9 +613,17 @@ export async function updateJobSchedule(jobId: string, formData: FormData) {
     throw new Error("End date can't be before the start date");
   }
 
+  const operatingLocationId = String(formData.get("operatingLocationId") ?? "").trim() || null;
+  if (operatingLocationId) {
+    const location = await prisma.companyLocation.findUnique({ where: { id: operatingLocationId } });
+    if (!location || location.companyId !== company.id) {
+      throw new Error("Location not found");
+    }
+  }
+
   await prisma.job.update({
     where: { id: jobId },
-    data: { startDate, endDate },
+    data: { startDate, endDate, operatingLocationId },
   });
 
   revalidatePath(`/jobs/${jobId}`);
@@ -970,4 +978,173 @@ export async function generateJobWipNarrative(jobId: string): Promise<string> {
       actualCostToDate: wip.actualCostToDate,
     })),
   });
+}
+
+// --- Company profile: insurance/bonding and locations ---------------------
+// All OWNER-gated, same as team/QuickBooks management: these are company-
+// wide compliance and identity records, not per-job data.
+
+const INSURANCE_POLICY_TYPES = ["GENERAL_LIABILITY", "WORKERS_COMP", "AUTO", "UMBRELLA_EXCESS"] as const;
+const BOND_TYPES = ["LICENSE_BOND", "PERFORMANCE_PAYMENT_CAPACITY"] as const;
+const LOCATION_TYPES = ["HQ", "BRANCH_YARD", "WAREHOUSE"] as const;
+
+function enumFromForm<T extends readonly string[]>(formData: FormData, key: string, allowed: T): T[number] {
+  const raw = String(formData.get(key) ?? "");
+  if (!allowed.includes(raw as T[number])) {
+    throw new Error(`"${key}" must be one of: ${allowed.join(", ")}`);
+  }
+  return raw as T[number];
+}
+
+/** Adds a company insurance policy record (GL, workers' comp, auto, umbrella). */
+export async function createInsurancePolicy(formData: FormData) {
+  const context = await requireCompanyContext();
+  assertOwner(context);
+  const { company } = context;
+
+  const policyType = enumFromForm(formData, "policyType", INSURANCE_POLICY_TYPES);
+  const carrier = String(formData.get("carrier") ?? "").trim();
+  const policyNumber = String(formData.get("policyNumber") ?? "").trim();
+  const coverageLimits = String(formData.get("coverageLimits") ?? "").trim();
+  const effectiveRaw = String(formData.get("effectiveDate") ?? "").trim();
+  const expirationRaw = String(formData.get("expirationDate") ?? "").trim();
+
+  if (!carrier || !policyNumber) {
+    throw new Error("Carrier and policy number are required");
+  }
+
+  await prisma.companyInsurancePolicy.create({
+    data: {
+      companyId: company.id,
+      policyType,
+      carrier,
+      policyNumber,
+      coverageLimits: coverageLimits || null,
+      effectiveDate: effectiveRaw ? new Date(effectiveRaw) : null,
+      expirationDate: expirationRaw ? new Date(expirationRaw) : null,
+    },
+  });
+
+  revalidatePath("/settings");
+}
+
+export async function deleteInsurancePolicy(policyId: string) {
+  const context = await requireCompanyContext();
+  assertOwner(context);
+  const { company } = context;
+
+  const policy = await prisma.companyInsurancePolicy.findUnique({ where: { id: policyId } });
+  if (!policy || policy.companyId !== company.id) {
+    throw new Error("Insurance policy not found");
+  }
+
+  await prisma.companyInsurancePolicy.delete({ where: { id: policyId } });
+
+  revalidatePath("/settings");
+}
+
+/** Adds a company bonding record (license bond or performance/payment capacity). */
+export async function createBond(formData: FormData) {
+  const context = await requireCompanyContext();
+  assertOwner(context);
+  const { company } = context;
+
+  const bondType = enumFromForm(formData, "bondType", BOND_TYPES);
+  const suretyName = String(formData.get("suretyName") ?? "").trim();
+  const aggregateBondingCapacity = nullableDecimalFromForm(formData, "aggregateBondingCapacity");
+  const singleJobLimit = nullableDecimalFromForm(formData, "singleJobLimit");
+  const agentContactName = String(formData.get("agentContactName") ?? "").trim();
+  const agentContactPhone = String(formData.get("agentContactPhone") ?? "").trim();
+  const agentContactEmail = String(formData.get("agentContactEmail") ?? "").trim();
+  const renewalRaw = String(formData.get("renewalDate") ?? "").trim();
+
+  if (!suretyName) {
+    throw new Error("Surety name is required");
+  }
+
+  await prisma.companyBond.create({
+    data: {
+      companyId: company.id,
+      suretyName,
+      bondType,
+      aggregateBondingCapacity,
+      singleJobLimit,
+      agentContactName: agentContactName || null,
+      agentContactPhone: agentContactPhone || null,
+      agentContactEmail: agentContactEmail || null,
+      renewalDate: renewalRaw ? new Date(renewalRaw) : null,
+    },
+  });
+
+  revalidatePath("/settings");
+}
+
+export async function deleteBond(bondId: string) {
+  const context = await requireCompanyContext();
+  assertOwner(context);
+  const { company } = context;
+
+  const bond = await prisma.companyBond.findUnique({ where: { id: bondId } });
+  if (!bond || bond.companyId !== company.id) {
+    throw new Error("Bond not found");
+  }
+
+  await prisma.companyBond.delete({ where: { id: bondId } });
+
+  revalidatePath("/settings");
+}
+
+/** Adds a company location (HQ / branch yard / warehouse). */
+export async function createCompanyLocation(formData: FormData) {
+  const context = await requireCompanyContext();
+  assertOwner(context);
+  const { company } = context;
+
+  const locationType = enumFromForm(formData, "locationType", LOCATION_TYPES);
+  const name = String(formData.get("name") ?? "").trim();
+  const addressLine1 = String(formData.get("addressLine1") ?? "").trim();
+  const addressLine2 = String(formData.get("addressLine2") ?? "").trim();
+  const city = String(formData.get("city") ?? "").trim();
+  const state = String(formData.get("state") ?? "").trim();
+  const zip = String(formData.get("zip") ?? "").trim();
+  const primaryContactName = String(formData.get("primaryContactName") ?? "").trim();
+  const primaryContactPhone = String(formData.get("primaryContactPhone") ?? "").trim();
+
+  if (!addressLine1 || !city || !state || !zip) {
+    throw new Error("Address, city, state, and zip are required");
+  }
+
+  await prisma.companyLocation.create({
+    data: {
+      companyId: company.id,
+      locationType,
+      name: name || null,
+      addressLine1,
+      addressLine2: addressLine2 || null,
+      city,
+      state,
+      zip,
+      primaryContactName: primaryContactName || null,
+      primaryContactPhone: primaryContactPhone || null,
+    },
+  });
+
+  revalidatePath("/settings");
+}
+
+/** Deletes a company location. Any job pointing at it keeps existing via
+ * ON DELETE SET NULL (schema-level), not blocked or cascaded here. */
+export async function deleteCompanyLocation(locationId: string) {
+  const context = await requireCompanyContext();
+  assertOwner(context);
+  const { company } = context;
+
+  const location = await prisma.companyLocation.findUnique({ where: { id: locationId } });
+  if (!location || location.companyId !== company.id) {
+    throw new Error("Location not found");
+  }
+
+  await prisma.companyLocation.delete({ where: { id: locationId } });
+
+  revalidatePath("/settings");
 }

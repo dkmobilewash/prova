@@ -71,6 +71,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
         orderBy: { number: "asc" },
         include: { payments: { orderBy: { receivedAt: "desc" } } },
       },
+      operatingLocation: true,
     },
   });
 
@@ -78,10 +79,10 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
     notFound();
   }
 
-  const companyMembers = await prisma.user.findMany({
-    where: { companyId: company.id },
-    orderBy: { createdAt: "asc" },
-  });
+  const [companyMembers, companyLocations] = await Promise.all([
+    prisma.user.findMany({ where: { companyId: company.id }, orderBy: { createdAt: "asc" } }),
+    prisma.companyLocation.findMany({ where: { companyId: company.id }, orderBy: { createdAt: "asc" } }),
+  ]);
   const assignedUserIds = new Set(job.assignments.map((a) => a.userId));
   const unassignedMembers = companyMembers.filter((m) => !assignedUserIds.has(m.id));
 
@@ -179,6 +180,21 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                   defaultValue={dateInputValue(job.endDate)}
                   className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
                 />
+              </label>
+              <label className="flex flex-col gap-1 text-sm text-slate-300">
+                Operating location
+                <select
+                  name="operatingLocationId"
+                  defaultValue={job.operatingLocationId ?? ""}
+                  className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
+                >
+                  <option value="">Unassigned</option>
+                  {companyLocations.map((location) => (
+                    <option key={location.id} value={location.id}>
+                      {location.name ?? `${location.city}, ${location.state}`}
+                    </option>
+                  ))}
+                </select>
               </label>
               <button
                 type="submit"
