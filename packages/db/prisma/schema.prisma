@@ -53,6 +53,7 @@ model Company {
   bonds                CompanyBond[]
   locations            CompanyLocation[]
   bidInvitations       BidInvitation[]
+  lineItemCatalogEntries LineItemCatalogEntry[]
 }
 
 enum UserRole {
@@ -79,6 +80,7 @@ model User {
   assignments                 JobAssignment[]
   connectedQuickBooks         QuickBooksConnection[]
   uploadedComplianceDocuments ComplianceDocument[]
+  savedEstimateVersions       EstimateVersion[]
 
   @@index([companyId])
 }
@@ -159,6 +161,13 @@ model BidInvitation {
   status      BidInvitationStatus @default(INVITED)
   notes       String?
 
+  /// Which trade this bid is for, and what was actually bid — together
+  /// these are what turn a plain invitation log into a historical bid
+  /// database: "what have we bid on similar EIFS work before, and at what
+  /// price" is just filtering/reading this table, not a separate one.
+  tradeScope TradeScope?
+  bidAmount  Decimal?    @db.Decimal(12, 2)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -208,10 +217,35 @@ model Job {
   signatureRequests   SignatureRequest[]
   invoices            Invoice[]
   complianceDocuments ComplianceDocument[]
+  estimateVersions    EstimateVersion[]
 
   @@index([companyId])
   @@index([contactId])
   @@index([operatingLocationId])
+}
+
+/// A manual checkpoint of a job's line items while it's still an
+/// ESTIMATE — "save version" on the current JobLineItem rows, not an
+/// automatic log of every edit. `snapshot` is a plain JSON copy (same
+/// pattern as SignatureRequest.snapshot): estimate versioning needs to
+/// answer "what did we price this at before the scope changed," which a
+/// point-in-time copy answers directly, without a parallel line-item
+/// history table to keep in sync with every edit JobLineItem ever makes.
+model EstimateVersion {
+  id            String @id @default(cuid())
+  jobId         String
+  job           Job    @relation(fields: [jobId], references: [id])
+  versionNumber Int
+
+  note     String?
+  snapshot Json
+
+  createdByUserId String?
+  createdByUser   User?   @relation(fields: [createdByUserId], references: [id])
+  createdAt       DateTime @default(now())
+
+  @@unique([jobId, versionNumber])
+  @@index([jobId])
 }
 
 /// The five WWCCA trade families a wall-and-ceiling specialty subcontractor
@@ -261,6 +295,16 @@ model JobLineItem {
   /// Optional — a categorization dimension on top of the cost/WIP fields
   /// below, not a prerequisite for them.
   tradeScope TradeScope?
+
+  /// Estimated labor hours for this line, optionally tied to which craft
+  /// classification would perform it (journeyman/apprentice/foreman by
+  /// local — see CraftClassification). Both optional: a material-only or
+  /// lump-sum line has neither. Not yet fed into a burdened labor cost —
+  /// that needs FringeRateSchedule wired in, a separate future step.
+  laborHours            Decimal?             @db.Decimal(8, 2)
+  craftClassificationId String?
+  craftClassification   CraftClassification? @relation(fields: [craftClassificationId], references: [id])
+
   /// Nullable: a cost-only budget line (general conditions, overhead,
   /// contingency) has no client-facing sale price. Contract value /
   /// invoicing totals treat a null unitPrice as $0 revenue — the line still
@@ -309,6 +353,7 @@ model JobLineItem {
 
   @@index([jobId])
   @@index([originChangeOrderId])
+  @@index([craftClassificationId])
 }
 
 /// A change order groups: (a) newly added JobLineItems (via
@@ -706,9 +751,39 @@ model CraftClassification {
   createdAt    DateTime   @default(now())
 
   fringeRateSchedules FringeRateSchedule[]
+  jobLineItems        JobLineItem[]
+  catalogEntries      LineItemCatalogEntry[]
 
   @@unique([unionLocalId, name])
   @@index([unionLocalId])
+}
+
+/// A reusable line item, scoped to the company, not any one job —
+/// "Add from catalog" on a new estimate inserts an ordinary JobLineItem
+/// pre-filled from here (same jobLineItem.create path every other line
+/// goes through; a catalog entry is a template for that call, not a
+/// second live copy of estimate data to keep in sync). Built up over
+/// time from real estimates ("save as catalog item" on an existing line)
+/// rather than requiring separate manual data entry.
+model LineItemCatalogEntry {
+  id          String  @id @default(cuid())
+  companyId   String
+  company     Company @relation(fields: [companyId], references: [id])
+  description String
+  unit        String?
+  tradeScope  TradeScope?
+
+  defaultUnitPrice        Decimal? @db.Decimal(12, 2)
+  defaultBudgetedUnitCost Decimal? @db.Decimal(12, 2)
+  defaultLaborHours       Decimal? @db.Decimal(8, 2)
+  craftClassificationId   String?
+  craftClassification     CraftClassification? @relation(fields: [craftClassificationId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([craftClassificationId])
 }
 
 /// Effective-dated, not a flat current-rate field: CBA rates typically

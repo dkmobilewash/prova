@@ -78,6 +78,45 @@ or a "budget." They were never different things.
 is flagged rather than destroyed, so the job's history stays intact and
 nothing that was once billed disappears from the audit trail.
 
+`laborHours`/`craftClassificationId` are the same idea applied to labor:
+optional fields on the one row, not a parallel labor-estimate table.
+`craftClassificationId` points at the global `CraftClassification`
+reference table (journeyman/apprentice/foreman, per union local), scoped
+at the application layer to locals this company actually has a
+`CompanyUnionAgreement` with — `CraftClassification` itself carries no
+`companyId`, so that join is the access check.
+
+### `LineItemCatalogEntry` — a template for the same `jobLineItem.create` call
+
+A reusable line item, scoped to the company rather than any one job.
+"Add from catalog" on an ESTIMATE-stage job creates an ordinary
+`JobLineItem` pre-filled from the entry's defaults — the same create call
+`addLineItem` uses, just with different inputs. There's no second live
+copy of estimate data anywhere: a catalog entry is a starting point, not
+a linked record a `JobLineItem` stays in sync with afterward. Entries are
+meant to accumulate from real, already-priced work ("save as catalog
+item" on an existing line) rather than requiring separate manual data
+entry up front.
+
+### `EstimateVersion` — a manual snapshot, not an edit log
+
+`EstimateVersion.snapshot` is a plain JSON copy of a job's line items at
+the moment "save version" is clicked — the same pattern as
+`SignatureRequest.snapshot`. This answers "what did we price this at
+before the scope changed" directly, without a parallel line-item history
+table that would need to stay in sync with every `JobLineItem` edit ever
+made. It's a checkpoint the PM chooses to save, not an automatic audit
+trail of every keystroke — only available pre-award, same
+`assertEditableDirectly` gate as every other direct estimate edit.
+
+### `BidInvitation` as the historical bid database
+
+`BidInvitation` (see the GC-relationship-management section above)
+carries `tradeScope` and `bidAmount` for exactly this reason: "what have
+we bid on similar EIFS work before, and at what price" is a filter over
+this one table — `/bids` — not a separate historical-bids table to keep
+in sync with it.
+
 ### `ChangeOrder` — mutates the same rows, never forks them
 
 A change order does exactly one of three things, and all three operate on

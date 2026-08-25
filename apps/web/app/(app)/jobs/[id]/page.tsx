@@ -12,6 +12,7 @@ import {
   addChangeOrderLineItem,
   addCostEntry,
   addLineItem,
+  addLineItemFromCatalog,
   assignCrewMember,
   createInvoice,
   createSignatureRequest,
@@ -22,6 +23,8 @@ import {
   logPayment,
   markJobContracted,
   removeLineItemViaChangeOrder,
+  saveEstimateVersion,
+  saveLineItemAsCatalogEntry,
   unassignCrewMember,
   updateJobSchedule,
   updateLineItem,
@@ -55,7 +58,12 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
         include: {
           originChangeOrder: true,
           costEntries: { orderBy: { incurredAt: "desc" } },
+          craftClassification: { include: { unionLocal: true } },
         },
+      },
+      estimateVersions: {
+        orderBy: { versionNumber: "desc" },
+        include: { createdByUser: true },
       },
       changeOrders: {
         orderBy: { number: "asc" },
@@ -80,9 +88,15 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
     notFound();
   }
 
-  const [companyMembers, companyLocations] = await Promise.all([
+  const [companyMembers, companyLocations, catalogEntries, craftClassifications] = await Promise.all([
     prisma.user.findMany({ where: { companyId: company.id }, orderBy: { createdAt: "asc" } }),
     prisma.companyLocation.findMany({ where: { companyId: company.id }, orderBy: { createdAt: "asc" } }),
+    prisma.lineItemCatalogEntry.findMany({ where: { companyId: company.id }, orderBy: { description: "asc" } }),
+    prisma.craftClassification.findMany({
+      where: { unionLocal: { companyAgreements: { some: { companyId: company.id } } } },
+      include: { unionLocal: true },
+      orderBy: { name: "asc" },
+    }),
   ]);
   const assignedUserIds = new Set(job.assignments.map((a) => a.userId));
   const unassignedMembers = companyMembers.filter((m) => !assignedUserIds.has(m.id));
@@ -113,6 +127,8 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
   );
 
   const addLineItemWithId = addLineItem.bind(null, job.id);
+  const addLineItemFromCatalogWithId = addLineItemFromCatalog.bind(null, job.id);
+  const saveEstimateVersionWithId = saveEstimateVersion.bind(null, job.id);
   const updateLineItemWithId = (lineItemId: string) => updateLineItem.bind(null, job.id, lineItemId);
   const updateLineItemForecastWithId = (lineItemId: string) =>
     updateLineItemForecast.bind(null, job.id, lineItemId);
@@ -612,10 +628,10 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                   <p className="py-2 text-sm text-slate-400">No line items yet — add one below.</p>
                 )}
                 {job.lineItems.map((item) => (
+                  <div key={item.id} className="border-t border-slate-800 py-3 first:border-t-0">
                   <form
-                    key={item.id}
                     action={updateLineItemWithId(item.id)}
-                    className="flex flex-col gap-2 border-t border-slate-800 py-3 first:border-t-0"
+                    className="flex flex-col gap-2"
                   >
                     <div className="flex flex-wrap items-center gap-2">
                       {item.aiDrafted && (
@@ -677,6 +693,28 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                           className="w-24 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-600 focus:border-blue-500 focus:outline-none"
                         />
                       </label>
+                      <label className="flex items-center gap-1 text-xs text-slate-400">
+                        Labor hrs
+                        <input
+                          name="laborHours"
+                          defaultValue={item.laborHours?.toString() ?? ""}
+                          placeholder="hrs"
+                          className="w-16 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-600 focus:border-blue-500 focus:outline-none"
+                        />
+                      </label>
+                      <select
+                        name="craftClassificationId"
+                        defaultValue={item.craftClassificationId ?? ""}
+                        title="Craft classification"
+                        className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
+                      >
+                        <option value="">No craft tag</option>
+                        {craftClassifications.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.unionLocal.parentInternational} {c.unionLocal.localNumber} — {c.name}
+                          </option>
+                        ))}
+                      </select>
                       <button
                         type="submit"
                         title="Save"
@@ -694,6 +732,12 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                       </button>
                     </div>
                   </form>
+                  <form action={saveLineItemAsCatalogEntry.bind(null, item.id)} className="mt-1">
+                    <button type="submit" className="text-xs text-slate-500 hover:text-slate-300 hover:underline">
+                      Save as catalog item
+                    </button>
+                  </form>
+                  </div>
                 ))}
               </div>
             </section>
@@ -758,11 +802,123 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                     ))}
                   </select>
                 </label>
+                <label className="flex flex-col gap-1 text-sm text-slate-300">
+                  Labor hrs
+                  <input
+                    name="laborHours"
+                    placeholder="hrs"
+                    className="w-20 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-sm text-slate-300">
+                  Craft
+                  <select
+                    name="craftClassificationId"
+                    defaultValue=""
+                    className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
+                  >
+                    <option value="">No craft tag</option>
+                    {craftClassifications.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.unionLocal.parentInternational} {c.unionLocal.localNumber} — {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
                 <button
                   type="submit"
                   className="inline-flex items-center justify-center rounded-md bg-slate-800 px-4 py-2 text-sm font-medium text-slate-100 hover:bg-slate-700"
                 >
                   Add line item
+                </button>
+              </form>
+
+              {catalogEntries.length > 0 && (
+                <form action={addLineItemFromCatalogWithId} className="mt-4 flex flex-wrap items-end gap-3">
+                  <label className="flex flex-col gap-1 text-sm text-slate-300">
+                    Add from catalog
+                    <select
+                      name="catalogEntryId"
+                      required
+                      className="min-w-[220px] rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
+                    >
+                      {catalogEntries.map((entry) => (
+                        <option key={entry.id} value={entry.id}>
+                          {entry.description}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-1 text-sm text-slate-300">
+                    Qty
+                    <input
+                      name="quantity"
+                      defaultValue="1"
+                      required
+                      className="w-20 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
+                    />
+                  </label>
+                  <button
+                    type="submit"
+                    className="inline-flex items-center justify-center rounded-md border border-slate-700 px-4 py-2 text-sm font-medium text-slate-200 hover:bg-slate-800"
+                  >
+                    Add from catalog
+                  </button>
+                </form>
+              )}
+            </section>
+
+            <section className="mb-10">
+              <h2 className="mb-1 text-lg font-semibold text-slate-100">Estimate versions</h2>
+              <p className="mb-3 text-sm text-slate-400">
+                A manual checkpoint of the line items above — save one before a scope change so you
+                can see what this was priced at before.
+              </p>
+              {job.estimateVersions.length > 0 && (
+                <ul className="mb-4 divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900">
+                  {job.estimateVersions.map((version) => {
+                    const snapshotItems = Array.isArray(version.snapshot)
+                      ? (version.snapshot as {
+                          description: string;
+                          quantity: string;
+                          unit: string | null;
+                        }[])
+                      : [];
+                    return (
+                      <li key={version.id} className="p-3 text-sm">
+                        <p className="font-medium text-slate-100">
+                          v{version.versionNumber}
+                          <span className="ml-2 font-normal text-slate-500">
+                            {version.createdAt.toLocaleDateString()}
+                            {version.createdByUser?.name || version.createdByUser?.email
+                              ? ` · ${version.createdByUser.name ?? version.createdByUser.email}`
+                              : ""}
+                          </span>
+                        </p>
+                        {version.note && <p className="mt-1 text-slate-400">{version.note}</p>}
+                        <p className="mt-1 text-xs text-slate-500">
+                          {snapshotItems.length} line item{snapshotItems.length === 1 ? "" : "s"}:{" "}
+                          {snapshotItems.map((i) => i.description).join(", ")}
+                        </p>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+              <form action={saveEstimateVersionWithId} className="flex flex-wrap items-end gap-3">
+                <label className="flex flex-1 min-w-[200px] flex-col gap-1 text-sm text-slate-300">
+                  Note (optional)
+                  <input
+                    name="note"
+                    placeholder="e.g. Before client asked to add the backsplash"
+                    className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+                  />
+                </label>
+                <button
+                  type="submit"
+                  className="inline-flex items-center justify-center rounded-md border border-slate-700 px-4 py-2 text-sm font-medium text-slate-200 hover:bg-slate-800"
+                >
+                  Save version
                 </button>
               </form>
             </section>
