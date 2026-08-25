@@ -5,6 +5,7 @@ import { requireCompanyContext } from "@/lib/auth";
 import { PrintButton } from "@/components/PrintButton";
 import { ContractSummary } from "@/components/ContractSummary";
 import { WipNarrativeButton } from "@/components/WipNarrativeButton";
+import { DraftLineItemsForm } from "@/components/DraftLineItemsForm";
 import { money } from "@/lib/money";
 import { calculateLineItemWip, calculateJobWip } from "@/lib/wip";
 import {
@@ -605,6 +606,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
           <>
             <section className="mb-10">
               <h2 className="mb-3 text-lg font-semibold text-slate-100">Line items (estimate)</h2>
+              <DraftLineItemsForm jobId={job.id} initialScope={job.scope ?? ""} />
               <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
                 {job.lineItems.length === 0 && (
                   <p className="py-2 text-sm text-slate-400">No line items yet — add one below.</p>
@@ -616,6 +618,11 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                     className="flex flex-col gap-2 border-t border-slate-800 py-3 first:border-t-0"
                   >
                     <div className="flex flex-wrap items-center gap-2">
+                      {item.aiDrafted && (
+                        <span className="inline-flex items-center rounded-full bg-blue-500/15 px-2 py-0.5 text-xs font-medium text-blue-300">
+                          AI-drafted — verify
+                        </span>
+                      )}
                       <input
                         name="description"
                         defaultValue={item.description}

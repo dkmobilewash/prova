@@ -558,13 +558,15 @@ specifically trying to avoid.
 - **AI features** — the first priority item (WIP/over-under-billing
   variance) shipped as deterministic math (`lib/wip.ts`) plus an AI
   narrative layer over it (see above) — the first feature that actually
-  calls Claude. `ComplianceDocument` is also built — schema only, ready to
-  receive lien waiver/COI/certified payroll/union fringe filing records,
-  but nothing populates it yet. Next up: AI extraction of scanned
-  documents into `ComplianceDocument` rows, then draft-estimate-from-text.
-  Plan-takeoff via computer vision is a distinct, later, larger effort —
-  different input modality, different accuracy bar, deliberately not
-  bundled into this phase.
+  calls Claude. `ComplianceDocument` extraction and draft-estimate-from-text
+  are both built next: uploading a document on `/compliance` reads it into
+  structured fields (`extractComplianceDocument`), and pasting scope-of-work
+  text on a job's estimate (`/jobs/[id]`) breaks it into draft
+  `JobLineItem` rows (`draftEstimateLineItems`) — same forced-tool-call
+  pattern, same `aiExtracted`/`aiDrafted` "please verify" flag rather than
+  a lock, in both cases. Plan-takeoff via computer vision is a distinct,
+  later, larger effort — different input modality, different accuracy
+  bar, deliberately not bundled into this phase.
 - **QuickBooks data sync** — the OAuth connection itself is built (see
   `QuickBooksConnection` above); actually pushing/pulling `Contact` or
   `Invoice` data to/from QuickBooks is not. That needs its own design pass

@@ -12,6 +12,7 @@ import {
   getCompanyInfo,
   generateWipNarrative,
   extractComplianceDocument,
+  draftEstimateLineItems,
   type QuickBooksCompanyInfo,
 } from "@prova/integrations";
 import { requireCompanyContext } from "@/lib/auth";
@@ -135,6 +136,39 @@ export async function addLineItem(jobId: string, formData: FormData) {
       currentEstimatedUnitCost,
       tradeScope,
     },
+  });
+
+  revalidatePath(`/jobs/${jobId}`);
+}
+
+/** Turns pasted scope-of-work text into draft JobLineItem rows — the
+ * "draft-estimate-from-text" feature. Same gating as addLineItem (only an
+ * ESTIMATE-stage job can get new lines this way): these are ordinary,
+ * fully-editable line items the moment they're created, just flagged
+ * aiDrafted for the UI to prompt review. Never auto-creates a contract or
+ * changes job.status itself. */
+export async function draftLineItemsFromScope(jobId: string, formData: FormData) {
+  const { company } = await requireCompanyContext();
+  const job = await assertJobInCompany(jobId, company.id);
+  assertEditableDirectly(job);
+
+  const scopeText = String(formData.get("scopeText") ?? "").trim();
+  if (!scopeText) {
+    throw new Error("Paste or type a scope of work to draft from");
+  }
+
+  const draftLineItems = await draftEstimateLineItems(scopeText);
+
+  await prisma.jobLineItem.createMany({
+    data: draftLineItems.map((item) => ({
+      jobId,
+      description: item.description,
+      quantity: item.quantity.toString(),
+      unit: item.unit,
+      unitPrice: item.unitPrice != null ? item.unitPrice.toString() : null,
+      tradeScope: item.tradeScope,
+      aiDrafted: true,
+    })),
   });
 
   revalidatePath(`/jobs/${jobId}`);

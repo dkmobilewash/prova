@@ -241,6 +241,12 @@ model JobLineItem {
   /// Deleted line items are excluded from budget/contract totals.
   isDeleted Boolean @default(false)
 
+  /// True when this row came from draftEstimateLineItems (Claude reading
+  /// free-text scope of work) rather than being typed in directly. A
+  /// "please verify" signal for the UI, same as ComplianceDocument's
+  /// aiExtracted — never a lock, and never auto-approved into a contract.
+  aiDrafted Boolean @default(false)
+
   /// Set only when this row was created BY a change order (added scope).
   /// Null for line items that were part of the original estimate.
   originChangeOrderId String?

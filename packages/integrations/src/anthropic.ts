@@ -162,3 +162,85 @@ export async function extractComplianceDocument(params: {
   }
   return toolUse.input as ComplianceDocumentExtraction;
 }
+
+const TRADE_SCOPES = [
+  "METAL_FRAMING_DRYWALL",
+  "LATH_PLASTER",
+  "EIFS",
+  "ACOUSTICAL_CEILINGS",
+  "FIREPROOFING",
+] as const;
+
+export interface DraftLineItem {
+  description: string;
+  quantity: number;
+  unit: string | null;
+  /** A rough sale-price guess to give the PM a starting point — never a
+   * quote, always subject to review (see aiDrafted on JobLineItem). Null
+   * when nothing in the scope text gives even a rough basis to guess
+   * from, rather than inventing a number. */
+  unitPrice: number | null;
+  tradeScope: (typeof TRADE_SCOPES)[number] | null;
+}
+
+const DRAFT_TOOL_NAME = "record_draft_line_items";
+
+const DRAFT_SYSTEM_PROMPT = `You are a construction estimator helping a general contractor turn a plain-language scope of work into a first-draft list of estimate line items. Break the scope into distinct, billable line items the way an experienced GC would structure a proposal — one line per distinct scope of work, not one giant catch-all line. For each line, give a reasonable quantity and unit (sq ft, lin ft, each, lump sum, etc.) based on what the text states or implies. Only set tradeScope when the line item clearly matches one of the five given trade scopes — leave it null otherwise, don't force a fit. unitPrice is optional: give a rough all-in sale price per unit ONLY when you have a reasonable basis to estimate one from the scope text and general market knowledge; set it to null rather than inventing a number when you don't. This is a draft for the PM to review and correct, never a firm quote.`;
+
+/**
+ * Turns free-text scope of work into a draft list of JobLineItem rows —
+ * the same shape every other line item uses, not a parallel "draft" table
+ * (see ARCHITECTURE.md's rule: does it read/write JobLineItem, or does it
+ * introduce a second shape to keep in sync by hand?). The caller
+ * (draftLineItemsFromScope in apps/web/lib/actions.ts) persists these with
+ * aiDrafted: true and never auto-approves them into a contract.
+ */
+export async function draftEstimateLineItems(scopeText: string): Promise<DraftLineItem[]> {
+  const client = new Anthropic();
+
+  const response = await client.messages.create({
+    model: "claude-opus-5",
+    max_tokens: 2048,
+    system: DRAFT_SYSTEM_PROMPT,
+    tools: [
+      {
+        name: DRAFT_TOOL_NAME,
+        description: "Records the draft line items broken out from the scope of work.",
+        input_schema: {
+          type: "object",
+          properties: {
+            lineItems: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  description: { type: "string" },
+                  quantity: { type: "number" },
+                  unit: { type: ["string", "null"] },
+                  unitPrice: { type: ["number", "null"] },
+                  tradeScope: { type: ["string", "null"], enum: [...TRADE_SCOPES, null] },
+                },
+                required: ["description", "quantity", "unit", "unitPrice", "tradeScope"],
+              },
+            },
+          },
+          required: ["lineItems"],
+        },
+      },
+    ],
+    tool_choice: { type: "tool", name: DRAFT_TOOL_NAME },
+    messages: [{ role: "user", content: scopeText }],
+  });
+
+  const toolUse = response.content.find(
+    (block): block is Anthropic.ToolUseBlock => block.type === "tool_use" && block.name === DRAFT_TOOL_NAME,
+  );
+  if (!toolUse) {
+    throw new Error("Claude did not return a draft result");
+  }
+  const { lineItems } = toolUse.input as { lineItems: DraftLineItem[] };
+  if (lineItems.length === 0) {
+    throw new Error("Claude couldn't draft any line items from that scope text");
+  }
+  return lineItems;
+}
