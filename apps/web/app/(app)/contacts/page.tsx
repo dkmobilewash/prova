@@ -8,7 +8,14 @@ export default async function ContactsPage() {
   const contacts = await prisma.contact.findMany({
     where: { companyId: company.id },
     orderBy: { name: "asc" },
-    include: { _count: { select: { jobs: true } } },
+    include: {
+      _count: {
+        select: {
+          jobs: true,
+          bidInvitations: { where: { status: { in: ["INVITED", "SUBMITTED"] } } },
+        },
+      },
+    },
   });
 
   return (
@@ -28,9 +35,17 @@ export default async function ContactsPage() {
                   <p className="font-medium text-slate-100">{contact.name}</p>
                   <p className="text-sm text-slate-400">{contact.email ?? contact.phone ?? "No contact info"}</p>
                 </div>
-                <p className="text-sm text-slate-400">
-                  {contact._count.jobs} {contact._count.jobs === 1 ? "job" : "jobs"}
-                </p>
+                <div className="text-right text-sm text-slate-400">
+                  <p>
+                    {contact._count.jobs} {contact._count.jobs === 1 ? "job" : "jobs"}
+                  </p>
+                  {contact._count.bidInvitations > 0 && (
+                    <p className="text-xs text-blue-400">
+                      {contact._count.bidInvitations} open{" "}
+                      {contact._count.bidInvitations === 1 ? "bid" : "bids"}
+                    </p>
+                  )}
+                </div>
               </Link>
             </li>
           ))}

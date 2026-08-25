@@ -616,9 +616,15 @@ export async function updateContact(contactId: string, formData: FormData) {
   const email = String(formData.get("email") ?? "").trim();
   const phone = String(formData.get("phone") ?? "").trim();
   const address = String(formData.get("address") ?? "").trim();
+  const defaultRetainagePercent = nullableDecimalFromForm(formData, "defaultRetainagePercent");
+  const paymentTermsDaysRaw = String(formData.get("paymentTermsDays") ?? "").trim();
+  const standardFormsUsed = String(formData.get("standardFormsUsed") ?? "").trim();
 
   if (!name) {
     throw new Error("Name is required");
+  }
+  if (paymentTermsDaysRaw && Number.isNaN(Number(paymentTermsDaysRaw))) {
+    throw new Error('"paymentTermsDays" must be a number');
   }
 
   await prisma.contact.update({
@@ -628,11 +634,76 @@ export async function updateContact(contactId: string, formData: FormData) {
       email: email || null,
       phone: phone || null,
       address: address || null,
+      defaultRetainagePercent,
+      paymentTermsDays: paymentTermsDaysRaw ? Number(paymentTermsDaysRaw) : null,
+      standardFormsUsed: standardFormsUsed || null,
     },
   });
 
   revalidatePath(`/contacts/${contactId}`);
   revalidatePath("/contacts");
+}
+
+const BID_INVITATION_STATUSES = ["INVITED", "SUBMITTED", "WON", "LOST", "DECLINED"] as const;
+
+/** Logs a GC inviting this company to bid — tracked independent of Job,
+ * since most invitations are declined or lost and never become one. */
+export async function createBidInvitation(contactId: string, formData: FormData) {
+  const { company } = await requireCompanyContext();
+
+  const contact = await prisma.contact.findUnique({ where: { id: contactId } });
+  if (!contact || contact.companyId !== company.id) {
+    throw new Error("Contact not found");
+  }
+
+  const projectName = String(formData.get("projectName") ?? "").trim();
+  const dueDateRaw = String(formData.get("dueDate") ?? "").trim();
+  const notes = String(formData.get("notes") ?? "").trim();
+
+  if (!projectName) {
+    throw new Error("Project name is required");
+  }
+
+  await prisma.bidInvitation.create({
+    data: {
+      companyId: company.id,
+      contactId,
+      projectName,
+      dueDate: dueDateRaw ? new Date(dueDateRaw) : null,
+      notes: notes || null,
+    },
+  });
+
+  revalidatePath(`/contacts/${contactId}`);
+}
+
+/** Updates a bid invitation's outcome (invited/submitted/won/lost/declined). */
+export async function updateBidInvitationStatus(bidInvitationId: string, formData: FormData) {
+  const { company } = await requireCompanyContext();
+
+  const bid = await prisma.bidInvitation.findUnique({ where: { id: bidInvitationId } });
+  if (!bid || bid.companyId !== company.id) {
+    throw new Error("Bid invitation not found");
+  }
+
+  const status = enumFromForm(formData, "status", BID_INVITATION_STATUSES);
+
+  await prisma.bidInvitation.update({ where: { id: bidInvitationId }, data: { status } });
+
+  revalidatePath(`/contacts/${bid.contactId}`);
+}
+
+export async function deleteBidInvitation(bidInvitationId: string) {
+  const { company } = await requireCompanyContext();
+
+  const bid = await prisma.bidInvitation.findUnique({ where: { id: bidInvitationId } });
+  if (!bid || bid.companyId !== company.id) {
+    throw new Error("Bid invitation not found");
+  }
+
+  await prisma.bidInvitation.delete({ where: { id: bidInvitationId } });
+
+  revalidatePath(`/contacts/${bid.contactId}`);
 }
 
 /** Sets a job's scheduled start/end dates. Either or both may be cleared. */

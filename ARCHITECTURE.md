@@ -470,6 +470,27 @@ excluded is job costing: actual cost and variance are internal margin
 data, not something a client should see, so the portal never queries
 `CostEntry` at all.
 
+### GC relationship fields, bid invitations, and payment reliability
+
+`Contact` also carries this GC's standing terms —
+`defaultRetainagePercent`, `paymentTermsDays`, `standardFormsUsed` — as a
+starting point to reference when scoping a new job with them, not a
+value enforced anywhere yet. Actual per-job retainage withheld/released
+tracking is a separate, bigger feature this phase doesn't build (see
+Future phases).
+
+`BidInvitation` tracks a GC inviting this company to bid, independent of
+`Job`: most invitations are declined or lost and never become one. When
+a bid is won, the PM creates the `Job` normally through the existing
+estimate flow — linking a won `BidInvitation` forward to its `Job` is a
+future refinement, not built here.
+
+Payment reliability (`lib/gc-reliability.ts`) is computed at read time
+from that GC's existing `Invoice`/`Payment` records — invoiced total,
+outstanding, on-time rate, average days to pay — never stored on
+`Contact`. Same rule as `lib/wip.ts`: a number like this has to be
+exactly reproducible from source data, not cached and left to go stale.
+
 ## What proves this works (Phase 00's CRUD flow)
 
 The minimal CRUD flow in `apps/web` exists specifically to demonstrate the

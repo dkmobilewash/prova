@@ -52,6 +52,7 @@ model Company {
   insurancePolicies    CompanyInsurancePolicy[]
   bonds                CompanyBond[]
   locations            CompanyLocation[]
+  bidInvitations       BidInvitation[]
 }
 
 enum UserRole {
@@ -112,9 +113,57 @@ model Contact {
   /// link stands in for a client login that doesn't exist yet.
   portalToken String? @unique
 
-  jobs Job[]
+  /// Standing terms this GC typically works under — a starting point to
+  /// reference when scoping a new job with them, not a value enforced
+  /// anywhere yet. Actual per-job retainage withheld/released tracking is
+  /// a separate, bigger feature this phase doesn't build (see
+  /// ARCHITECTURE.md).
+  defaultRetainagePercent Decimal? @db.Decimal(5, 2)
+  /// e.g. 30 for "Net 30". Free-standing integer rather than an enum —
+  /// real GC payment terms vary too much (Net 30/45/60, "pay when paid")
+  /// to fit a fixed list.
+  paymentTermsDays Int?
+  /// Free text (e.g. "AIA A401", "ConsensusDocs 750") — which standard
+  /// subcontract form this GC typically uses.
+  standardFormsUsed String?
+
+  jobs           Job[]
+  bidInvitations BidInvitation[]
 
   @@index([companyId])
+}
+
+enum BidInvitationStatus {
+  INVITED
+  SUBMITTED
+  WON
+  LOST
+  DECLINED
+}
+
+/// A GC inviting this company to bid on a project — tracked from
+/// invitation through outcome, independent of Job: most invitations are
+/// declined or lost and never become one. When a bid is won, the PM
+/// creates the Job normally through the existing estimate flow; linking
+/// a won BidInvitation forward to its Job is a future refinement, not
+/// built here.
+model BidInvitation {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+  contactId String
+  contact   Contact @relation(fields: [contactId], references: [id])
+
+  projectName String
+  dueDate     DateTime?
+  status      BidInvitationStatus @default(INVITED)
+  notes       String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([contactId])
 }
 
 enum JobStatus {
