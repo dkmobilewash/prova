@@ -23,12 +23,14 @@ import {
   logPayment,
   markJobContracted,
   removeLineItemViaChangeOrder,
+  deleteContractDocument,
   saveEstimateVersion,
   saveLineItemAsCatalogEntry,
   unassignCrewMember,
   updateJobSchedule,
   updateLineItem,
   updateLineItemForecast,
+  uploadContractDocument,
 } from "@/lib/actions";
 
 const COST_CATEGORIES = ["LABOR", "MATERIAL", "SUBCONTRACTOR", "OTHER"] as const;
@@ -46,7 +48,7 @@ function dateInputValue(date: Date | null) {
 
 export default async function JobPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const { company } = await requireCompanyContext();
+  const { company, ...currentUser } = await requireCompanyContext();
 
   const job = await prisma.job.findUnique({
     where: { id },
@@ -64,6 +66,10 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
       estimateVersions: {
         orderBy: { versionNumber: "desc" },
         include: { createdByUser: true },
+      },
+      contractDocuments: {
+        orderBy: { versionNumber: "desc" },
+        include: { uploadedByUser: true },
       },
       changeOrders: {
         orderBy: { number: "asc" },
@@ -129,6 +135,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
   const addLineItemWithId = addLineItem.bind(null, job.id);
   const addLineItemFromCatalogWithId = addLineItemFromCatalog.bind(null, job.id);
   const saveEstimateVersionWithId = saveEstimateVersion.bind(null, job.id);
+  const uploadContractDocumentWithId = uploadContractDocument.bind(null, job.id);
   const updateLineItemWithId = (lineItemId: string) => updateLineItem.bind(null, job.id, lineItemId);
   const updateLineItemForecastWithId = (lineItemId: string) =>
     updateLineItemForecast.bind(null, job.id, lineItemId);
@@ -308,6 +315,80 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
               </div>
             )}
           </div>
+        </section>
+
+        <section className="mb-10">
+          <h2 className="mb-1 text-lg font-semibold text-slate-100">Subcontract agreement</h2>
+          <p className="mb-3 text-sm text-slate-400">
+            The actual GC-to-sub contract file — separate from the e-sign snapshot above. Upload the
+            original agreement, then any amendment the GC sends later as a new version; nothing is
+            overwritten.
+          </p>
+          {job.contractDocuments.length > 0 && (
+            <ul className="mb-4 divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900">
+              {job.contractDocuments.map((doc) => (
+                <li key={doc.id} className="flex flex-wrap items-center justify-between gap-3 p-4">
+                  <div>
+                    <p className="font-medium text-slate-100">
+                      v{doc.versionNumber}
+                      {doc.versionNumber === 1 ? " (original)" : " (amendment)"}
+                    </p>
+                    <p className="text-sm text-slate-400">
+                      {doc.createdAt.toLocaleDateString()}
+                      {doc.uploadedByUser?.name || doc.uploadedByUser?.email
+                        ? ` · ${doc.uploadedByUser.name ?? doc.uploadedByUser.email}`
+                        : ""}
+                    </p>
+                    {doc.note && <p className="text-sm text-slate-500">{doc.note}</p>}
+                    <a
+                      href={doc.fileUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-1 inline-block text-xs text-blue-400 hover:underline"
+                    >
+                      {doc.fileName}
+                    </a>
+                  </div>
+                  {currentUser.role === "OWNER" && (
+                    <form action={deleteContractDocument.bind(null, doc.id)}>
+                      <button type="submit" className="text-xs text-red-400 hover:underline">
+                        Delete
+                      </button>
+                    </form>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+          <form
+            action={uploadContractDocumentWithId}
+            className="flex flex-wrap items-end gap-3 rounded-lg border border-slate-800 bg-slate-900 p-4"
+          >
+            <label className="flex flex-col gap-1 text-sm text-slate-300">
+              {job.contractDocuments.length === 0 ? "Upload the agreement" : "Upload an amendment"}
+              <input
+                type="file"
+                name="file"
+                required
+                accept=".pdf,.png,.jpg,.jpeg,.webp"
+                className="text-sm text-slate-300 file:mr-3 file:rounded-md file:border-0 file:bg-slate-800 file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-100 hover:file:bg-slate-700"
+              />
+            </label>
+            <label className="flex flex-1 min-w-[180px] flex-col gap-1 text-sm text-slate-300">
+              Note (optional)
+              <input
+                name="note"
+                placeholder={job.contractDocuments.length === 0 ? "" : "e.g. Amendment #1: added scope"}
+                className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+              />
+            </label>
+            <button
+              type="submit"
+              className="inline-flex items-center justify-center rounded-md border border-slate-700 px-4 py-2 text-sm font-medium text-slate-200 hover:bg-slate-800"
+            >
+              Upload
+            </button>
+          </form>
         </section>
 
         <section className="mb-10">

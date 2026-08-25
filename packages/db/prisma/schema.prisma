@@ -81,6 +81,7 @@ model User {
   connectedQuickBooks         QuickBooksConnection[]
   uploadedComplianceDocuments ComplianceDocument[]
   savedEstimateVersions       EstimateVersion[]
+  uploadedContractDocuments   ContractDocument[]
 
   @@index([companyId])
 }
@@ -218,6 +219,7 @@ model Job {
   invoices            Invoice[]
   complianceDocuments ComplianceDocument[]
   estimateVersions    EstimateVersion[]
+  contractDocuments   ContractDocument[]
 
   @@index([companyId])
   @@index([contactId])
@@ -470,6 +472,32 @@ model SignatureRequest {
 
   createdAt DateTime @default(now())
 
+  @@index([jobId])
+}
+
+/// The actual subcontract agreement file (the GC-to-sub contract PDF) and
+/// its amendment history — distinct from SignatureRequest.snapshot, which
+/// captures Prova's own line-item data at the moment of e-signing, not a
+/// document a GC handed over. Each upload is a new version, same pattern
+/// as EstimateVersion: a manual checkpoint (versionNumber, an optional
+/// note describing what changed), not an automatic log. The original
+/// agreement is version 1; a later amendment is version 2, 3, etc. — all
+/// kept, never overwritten, so the full history stays visible.
+model ContractDocument {
+  id            String @id @default(cuid())
+  jobId         String
+  job           Job    @relation(fields: [jobId], references: [id])
+  versionNumber Int
+
+  fileUrl  String
+  fileName String
+  note     String?
+
+  uploadedByUserId String?
+  uploadedByUser   User?   @relation(fields: [uploadedByUserId], references: [id])
+  createdAt        DateTime @default(now())
+
+  @@unique([jobId, versionNumber])
   @@index([jobId])
 }
 

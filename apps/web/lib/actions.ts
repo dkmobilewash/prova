@@ -1578,3 +1578,69 @@ export async function saveEstimateVersion(jobId: string, formData: FormData) {
 
   revalidatePath(`/jobs/${jobId}`);
 }
+
+const CONTRACT_DOCUMENT_MEDIA_TYPES = ["application/pdf", "image/png", "image/jpeg", "image/webp"] as const;
+const CONTRACT_DOCUMENT_MAX_BYTES = 15 * 1024 * 1024;
+
+/** Uploads the actual subcontract agreement file (or a later amendment) —
+ * distinct from SignatureRequest.snapshot, which is Prova's own line-item
+ * data at the moment of e-signing, not a document the GC handed over.
+ * Each upload is a new, numbered version (original = 1); nothing is ever
+ * overwritten, so the full amendment history stays visible. Not gated by
+ * job status: a GC can send an amendment at any point in the job's life,
+ * not just pre-award. */
+export async function uploadContractDocument(jobId: string, formData: FormData) {
+  const { company, ...user } = await requireCompanyContext();
+  await assertJobInCompany(jobId, company.id);
+
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) {
+    throw new Error("A file is required");
+  }
+  if (!(CONTRACT_DOCUMENT_MEDIA_TYPES as readonly string[]).includes(file.type)) {
+    throw new Error("Upload a PDF, PNG, JPEG, or WEBP file");
+  }
+  if (file.size > CONTRACT_DOCUMENT_MAX_BYTES) {
+    throw new Error("File is too large (max 15MB)");
+  }
+
+  const note = String(formData.get("note") ?? "").trim();
+
+  const [buffer, lastVersion] = await Promise.all([
+    file.arrayBuffer().then(Buffer.from),
+    prisma.contractDocument.findFirst({ where: { jobId }, orderBy: { versionNumber: "desc" } }),
+  ]);
+
+  const blob = await put(`contracts/${jobId}/${file.name}`, buffer, { access: "public", contentType: file.type });
+
+  await prisma.contractDocument.create({
+    data: {
+      jobId,
+      versionNumber: (lastVersion?.versionNumber ?? 0) + 1,
+      fileUrl: blob.url,
+      fileName: file.name,
+      note: note || null,
+      uploadedByUserId: user.id,
+    },
+  });
+
+  revalidatePath(`/jobs/${jobId}`);
+}
+
+export async function deleteContractDocument(contractDocumentId: string) {
+  const context = await requireCompanyContext();
+  assertOwner(context);
+  const { company } = context;
+
+  const document = await prisma.contractDocument.findUnique({
+    where: { id: contractDocumentId },
+    include: { job: true },
+  });
+  if (!document || document.job.companyId !== company.id) {
+    throw new Error("Contract document not found");
+  }
+
+  await prisma.contractDocument.delete({ where: { id: contractDocumentId } });
+
+  revalidatePath(`/jobs/${document.jobId}`);
+}
