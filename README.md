@@ -51,6 +51,8 @@ Fill in:
 | `QUICKBOOKS_CLIENT_ID` | `apps/web/.env` | From your Intuit Developer app's Keys page — only needed to use the `/settings` QuickBooks connection |
 | `QUICKBOOKS_CLIENT_SECRET` | `apps/web/.env` | From your Intuit Developer app's Keys page — never commit this |
 | `QUICKBOOKS_REDIRECT_URI` | `apps/web/.env` | `<your origin>/api/quickbooks/callback`, must exactly match a redirect URI registered on that Intuit app |
+| `ANTHROPIC_API_KEY` | `apps/web/.env` | From your Anthropic Console — required for all three AI features (compliance document extraction, draft-estimate-from-text, WIP summaries). Without it, those features fail at request time rather than at startup. |
+| `BLOB_READ_WRITE_TOKEN` | `apps/web/.env` | From your Vercel project's Blob store (Storage tab → create a store with "Add a read-write token" checked). Required for any file upload — compliance documents and subcontract agreement PDFs. Without it, uploads fail. |
 
 The remaining `NEXT_PUBLIC_CLERK_*_URL` vars in `apps/web/.env.example`
 are already set to sensible defaults (`/sign-in`, `/sign-up`,
