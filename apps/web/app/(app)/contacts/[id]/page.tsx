@@ -225,6 +225,7 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
                 <div className="flex items-center gap-2">
                   <form action={updateBidInvitationStatus.bind(null, bid.id)} className="flex items-center gap-2">
                     <select
+                      key={bid.status}
                       name="status"
                       defaultValue={bid.status}
                       className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
