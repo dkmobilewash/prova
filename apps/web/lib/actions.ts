@@ -1575,3 +1575,108 @@ export async function deleteEquipment(equipmentId: string) {
 
   revalidatePath("/equipment");
 }
+
+// ---------------------------------------------------------------------------
+// Punch lists (Cyrus's lane — WORK-SPLIT.md task 5).
+//
+// Built as its own page rather than a section on jobs/[id]/page.tsx, which
+// WORK-SPLIT assigns to Diego and which he has been editing this week. A
+// standalone page also matches how the list is actually used: a super
+// walking three jobs wants everything still open, not one job at a time.
+// The per-job section can be added later as a thin read of the same model.
+// ---------------------------------------------------------------------------
+
+async function requireOwnJob(jobId: string, companyId: string) {
+  const job = await prisma.job.findUnique({ where: { id: jobId } });
+  if (!job || job.companyId !== companyId) {
+    throw new Error("Job not found");
+  }
+  return job;
+}
+
+export async function createPunchListItem(formData: FormData) {
+  const { company, ...user } = await requireCompanyContext();
+
+  const description = String(formData.get("description") ?? "").trim();
+  if (!description) {
+    throw new Error("Description is required");
+  }
+
+  const jobId = String(formData.get("jobId") ?? "").trim();
+  if (!jobId) {
+    throw new Error("Pick a job");
+  }
+  await requireOwnJob(jobId, company.id);
+
+  await prisma.punchListItem.create({
+    data: {
+      companyId: company.id,
+      jobId,
+      description,
+      raisedByUserId: user.id,
+    },
+  });
+
+  revalidatePath("/punch-lists");
+}
+
+export async function updatePunchListItem(itemId: string, formData: FormData) {
+  const { company } = await requireCompanyContext();
+
+  const item = await prisma.punchListItem.findUnique({ where: { id: itemId } });
+  if (!item || item.companyId !== company.id) {
+    throw new Error("Punch list item not found");
+  }
+
+  const description = String(formData.get("description") ?? "").trim();
+  if (!description) {
+    throw new Error("Description is required");
+  }
+
+  const jobId = String(formData.get("jobId") ?? "").trim();
+  if (!jobId) {
+    throw new Error("Pick a job");
+  }
+  await requireOwnJob(jobId, company.id);
+
+  await prisma.punchListItem.update({
+    where: { id: itemId },
+    data: { description, jobId },
+  });
+
+  revalidatePath("/punch-lists");
+}
+
+/** Checking an item off is one click and reversible, so unlike delete it
+ * asks nothing. completedAt is stamped alongside isDone so "when did this
+ * get closed" is answerable later. */
+export async function setPunchListItemDone(itemId: string, isDone: boolean) {
+  const { company } = await requireCompanyContext();
+
+  const item = await prisma.punchListItem.findUnique({ where: { id: itemId } });
+  if (!item || item.companyId !== company.id) {
+    throw new Error("Punch list item not found");
+  }
+
+  await prisma.punchListItem.update({
+    where: { id: itemId },
+    data: { isDone, completedAt: isDone ? new Date() : null },
+  });
+
+  revalidatePath("/punch-lists");
+}
+
+export async function deletePunchListItem(itemId: string) {
+  const context = await requireCompanyContext();
+  assertOwner(context);
+  const { company } = context;
+
+  const item = await prisma.punchListItem.findUnique({ where: { id: itemId } });
+  if (!item || item.companyId !== company.id) {
+    throw new Error("Punch list item not found");
+  }
+
+  await prisma.punchListItem.delete({ where: { id: itemId } });
+
+  revalidatePath("/punch-lists");
+}

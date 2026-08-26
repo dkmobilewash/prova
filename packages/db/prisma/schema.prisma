@@ -55,6 +55,7 @@ model Company {
   bidInvitations       BidInvitation[]
   vendors              Vendor[]
   equipment            Equipment[]
+  punchListItems       PunchListItem[]
 }
 
 enum UserRole {
@@ -81,6 +82,7 @@ model User {
   assignments                 JobAssignment[]
   connectedQuickBooks         QuickBooksConnection[]
   uploadedComplianceDocuments ComplianceDocument[]
+  raisedPunchListItems        PunchListItem[]
 
   @@index([companyId])
 }
@@ -211,6 +213,7 @@ model Job {
   invoices            Invoice[]
   complianceDocuments ComplianceDocument[]
   equipment           Equipment[]
+  punchListItems      PunchListItem[]
 
   @@index([companyId])
   @@index([contactId])
@@ -936,4 +939,35 @@ model Equipment {
 
   @@index([companyId])
   @@index([assignedJobId])
+}
+
+/// A punch list item — something that has to be fixed or finished before a
+/// job closes out. `JobStatus` runs ESTIMATE → COMPLETE with nothing
+/// tracking what's outstanding in between, so today a job is marked
+/// complete on somebody's memory of the walkthrough.
+model PunchListItem {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+  jobId     String
+  job       Job     @relation(fields: [jobId], references: [id])
+
+  description String
+
+  /// Who raised it. Set from the signed-in user rather than a form field —
+  /// on a walkthrough nobody types their own name. Nullable so deleting a
+  /// user doesn't take the punch list with them.
+  raisedByUserId String?
+  raisedBy       User?   @relation(fields: [raisedByUserId], references: [id])
+
+  /// Denormalised rather than derived from completedAt: "done" is the thing
+  /// people filter and count on, and a boolean keeps that query trivial.
+  isDone      Boolean   @default(false)
+  completedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([jobId])
 }
