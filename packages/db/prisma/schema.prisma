@@ -53,6 +53,7 @@ model Company {
   bonds                CompanyBond[]
   locations            CompanyLocation[]
   bidInvitations       BidInvitation[]
+  vendors              Vendor[]
 }
 
 enum UserRole {
@@ -875,6 +876,32 @@ model CompanyLocation {
   updatedAt DateTime @updatedAt
 
   jobs Job[]
+
+  @@index([companyId])
+}
+
+/// A material supplier or service vendor the company buys from — the
+/// "who" behind a material cost, which until now was just a dollar
+/// amount with no source attached. Deliberately standalone for now: no
+/// job, cost, or pricing-history linkage yet (WORK-SPLIT.md task 2), so
+/// nothing existing depends on it and it can grow later.
+model Vendor {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  name String
+  /// Which trade this vendor supplies. Optional because plenty of
+  /// vendors (fasteners, general hardware, equipment rental) serve every
+  /// trade the company runs, and forcing a choice would be misleading.
+  tradeScope  TradeScope?
+  contactName String?
+  phone       String?
+  email       String?
+  notes       String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([companyId])
 }
