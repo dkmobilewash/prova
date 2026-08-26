@@ -70,6 +70,7 @@ model Job {
   prevailingWageDeterminations PrevailingWageDetermination[]
   retainageReleases            RetainageRelease[]
   punchListItems               PunchListItem[]
+  dailyFieldReports            DailyFieldReport[]
 
   @@index([companyId])
   @@index([contactId])
