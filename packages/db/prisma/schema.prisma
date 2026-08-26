@@ -40,19 +40,19 @@ model Company {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  users                User[]
-  contacts             Contact[]
-  jobs                 Job[]
-  invites              Invite[]
-  quickBooksConnection QuickBooksConnection?
-  complianceDocuments  ComplianceDocument[]
-  licenses             CompanyLicense[]
-  tradeScopes          CompanyTradeScope[]
-  unionAgreements      CompanyUnionAgreement[]
-  insurancePolicies    CompanyInsurancePolicy[]
-  bonds                CompanyBond[]
-  locations            CompanyLocation[]
-  bidInvitations       BidInvitation[]
+  users                  User[]
+  contacts               Contact[]
+  jobs                   Job[]
+  invites                Invite[]
+  quickBooksConnection   QuickBooksConnection?
+  complianceDocuments    ComplianceDocument[]
+  licenses               CompanyLicense[]
+  tradeScopes            CompanyTradeScope[]
+  unionAgreements        CompanyUnionAgreement[]
+  insurancePolicies      CompanyInsurancePolicy[]
+  bonds                  CompanyBond[]
+  locations              CompanyLocation[]
+  bidInvitations         BidInvitation[]
   lineItemCatalogEntries LineItemCatalogEntry[]
 }
 
@@ -77,13 +77,14 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  assignments                 JobAssignment[]
-  connectedQuickBooks         QuickBooksConnection[]
-  uploadedComplianceDocuments ComplianceDocument[]
-  savedEstimateVersions       EstimateVersion[]
-  uploadedContractDocuments   ContractDocument[]
-  timeEntries                 TimeEntry[]
-  dispatchSlips               DispatchSlip[]
+  assignments                          JobAssignment[]
+  connectedQuickBooks                  QuickBooksConnection[]
+  uploadedComplianceDocuments          ComplianceDocument[]
+  savedEstimateVersions                EstimateVersion[]
+  uploadedContractDocuments            ContractDocument[]
+  timeEntries                          TimeEntry[]
+  dispatchSlips                        DispatchSlip[]
+  uploadedPrevailingWageDeterminations PrevailingWageDetermination[]
 
   @@index([companyId])
 }
@@ -127,10 +128,10 @@ model Contact {
   /// e.g. 30 for "Net 30". Free-standing integer rather than an enum —
   /// real GC payment terms vary too much (Net 30/45/60, "pay when paid")
   /// to fit a fixed list.
-  paymentTermsDays Int?
+  paymentTermsDays        Int?
   /// Free text (e.g. "AIA A401", "ConsensusDocs 750") — which standard
   /// subcontract form this GC typically uses.
-  standardFormsUsed String?
+  standardFormsUsed       String?
 
   jobs           Job[]
   bidInvitations BidInvitation[]
@@ -211,19 +212,20 @@ model Job {
   operatingLocationId String?
   operatingLocation   CompanyLocation? @relation(fields: [operatingLocationId], references: [id])
 
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  lineItems           JobLineItem[]
-  changeOrders        ChangeOrder[]
-  assignments         JobAssignment[]
-  signatureRequests   SignatureRequest[]
-  invoices            Invoice[]
-  complianceDocuments ComplianceDocument[]
-  estimateVersions    EstimateVersion[]
-  contractDocuments   ContractDocument[]
-  timeEntries         TimeEntry[]
-  dispatchSlips       DispatchSlip[]
+  lineItems                    JobLineItem[]
+  changeOrders                 ChangeOrder[]
+  assignments                  JobAssignment[]
+  signatureRequests            SignatureRequest[]
+  invoices                     Invoice[]
+  complianceDocuments          ComplianceDocument[]
+  estimateVersions             EstimateVersion[]
+  contractDocuments            ContractDocument[]
+  timeEntries                  TimeEntry[]
+  dispatchSlips                DispatchSlip[]
+  prevailingWageDeterminations PrevailingWageDetermination[]
 
   @@index([companyId])
   @@index([contactId])
@@ -247,7 +249,7 @@ model EstimateVersion {
   snapshot Json
 
   createdByUserId String?
-  createdByUser   User?   @relation(fields: [createdByUserId], references: [id])
+  createdByUser   User?    @relation(fields: [createdByUserId], references: [id])
   createdAt       DateTime @default(now())
 
   @@unique([jobId, versionNumber])
@@ -426,8 +428,8 @@ model CostEntry {
   /// conditions" line can carry cost entries spanning several trades, so
   /// this is tagged per-expense, not just inherited from the line item.
   tradeScope TradeScope?
-  incurredAt  DateTime     @default(now())
-  createdAt   DateTime     @default(now())
+  incurredAt DateTime    @default(now())
+  createdAt  DateTime    @default(now())
 
   @@index([lineItemId])
 }
@@ -583,10 +585,37 @@ model ContractDocument {
   note     String?
 
   uploadedByUserId String?
-  uploadedByUser   User?   @relation(fields: [uploadedByUserId], references: [id])
+  uploadedByUser   User?    @relation(fields: [uploadedByUserId], references: [id])
   createdAt        DateTime @default(now())
 
   @@unique([jobId, versionNumber])
+  @@index([jobId])
+}
+
+/// The government wage-determination document for a job's jurisdiction
+/// (e.g. a SAM.gov federal determination, or a state DOL prevailing-wage
+/// schedule) — attached storage, not a live lookup. There's no licensed
+/// or scraped prevailing-wage dataset in this app to look one up
+/// automatically from, same reason NV licensing data was left unseeded
+/// in LicenseClassificationReference. sourceUrl covers the common case of
+/// linking to the determination on the issuing agency's site instead of
+/// uploading a copy.
+model PrevailingWageDetermination {
+  id    String @id @default(cuid())
+  jobId String
+  job   Job    @relation(fields: [jobId], references: [id])
+
+  jurisdiction String
+
+  fileUrl   String?
+  fileName  String?
+  sourceUrl String?
+  note      String?
+
+  uploadedByUserId String?
+  uploadedByUser   User?    @relation(fields: [uploadedByUserId], references: [id])
+  createdAt        DateTime @default(now())
+
   @@index([jobId])
 }
 
@@ -777,8 +806,8 @@ model CompanyLicense {
   classificationCode  String?
   classificationLabel String?
 
-  licenseNumber String
-  issueDate     DateTime?
+  licenseNumber  String
+  issueDate      DateTime?
   /// Whether a license is "expiring soon" is computed at read time from
   /// this field, same rule as ComplianceDocument.expiresAt.
   expirationDate DateTime?
@@ -786,7 +815,7 @@ model CompanyLicense {
   /// Only for jurisdictions that tie a bond to the license itself —
   /// distinct from the company's general bonding capacity (CompanyBond,
   /// a later phase).
-  bondNumber String?
+  bondNumber     String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -819,7 +848,7 @@ model LicenseClassificationReference {
 /// seeded: no verified source for real local numbers/jurisdictions, and a
 /// wrong entry here would misattribute a company's CBA to the wrong local.
 model UnionLocal {
-  id                  String @id @default(cuid())
+  id                  String   @id @default(cuid())
   parentInternational String // "United Brotherhood of Carpenters", "OPCMIA", "IUPAT", "LIUNA"
   localNumber         String
   jurisdictionName    String
@@ -885,16 +914,16 @@ model CraftClassification {
 /// time from real estimates ("save as catalog item" on an existing line)
 /// rather than requiring separate manual data entry.
 model LineItemCatalogEntry {
-  id          String  @id @default(cuid())
+  id          String      @id @default(cuid())
   companyId   String
-  company     Company @relation(fields: [companyId], references: [id])
+  company     Company     @relation(fields: [companyId], references: [id])
   description String
   unit        String?
   tradeScope  TradeScope?
 
-  defaultUnitPrice        Decimal? @db.Decimal(12, 2)
-  defaultBudgetedUnitCost Decimal? @db.Decimal(12, 2)
-  defaultLaborHours       Decimal? @db.Decimal(8, 2)
+  defaultUnitPrice        Decimal?             @db.Decimal(12, 2)
+  defaultBudgetedUnitCost Decimal?             @db.Decimal(12, 2)
+  defaultLaborHours       Decimal?             @db.Decimal(8, 2)
   craftClassificationId   String?
   craftClassification     CraftClassification? @relation(fields: [craftClassificationId], references: [id])
 
@@ -916,7 +945,7 @@ model LineItemCatalogEntry {
 /// so it's hand-written raw SQL in the migration rather than generated
 /// from this model).
 model FringeRateSchedule {
-  id                    String @id @default(cuid())
+  id                    String              @id @default(cuid())
   craftClassificationId String
   craftClassification   CraftClassification @relation(fields: [craftClassificationId], references: [id])
 
@@ -1053,7 +1082,7 @@ model CompanyLocation {
   /// Friendly label ("Denver Yard") for picking a location in a list —
   /// not explicitly requested, but without one a picker would just show
   /// raw addresses.
-  name String?
+  name         String?
 
   addressLine1 String
   addressLine2 String?

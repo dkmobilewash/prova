@@ -1804,3 +1804,73 @@ export async function deleteTimeEntry(jobId: string, timeEntryId: string) {
 
   revalidatePath(`/jobs/${jobId}`);
 }
+
+const PREVAILING_WAGE_DETERMINATION_MEDIA_TYPES = ["application/pdf", "image/png", "image/jpeg", "image/webp"] as const;
+const PREVAILING_WAGE_DETERMINATION_MAX_BYTES = 15 * 1024 * 1024;
+
+/** Attaches a government wage-determination document (or a link to one)
+ * for a job's jurisdiction. This is attached storage, not a lookup --
+ * there's no licensed prevailing-wage dataset in this app to query. */
+export async function uploadPrevailingWageDetermination(jobId: string, formData: FormData) {
+  const { company, ...user } = await requireCompanyContext();
+  await assertJobInCompany(jobId, company.id);
+
+  const jurisdiction = String(formData.get("jurisdiction") ?? "").trim();
+  if (!jurisdiction) {
+    throw new Error("Jurisdiction is required");
+  }
+
+  const sourceUrl = String(formData.get("sourceUrl") ?? "").trim();
+  const note = String(formData.get("note") ?? "").trim();
+
+  const file = formData.get("file");
+  let fileUrl: string | null = null;
+  let fileName: string | null = null;
+  if (file instanceof File && file.size > 0) {
+    if (!(PREVAILING_WAGE_DETERMINATION_MEDIA_TYPES as readonly string[]).includes(file.type)) {
+      throw new Error("Upload a PDF, PNG, JPEG, or WEBP file");
+    }
+    if (file.size > PREVAILING_WAGE_DETERMINATION_MAX_BYTES) {
+      throw new Error("File is too large (max 15MB)");
+    }
+    const buffer = await file.arrayBuffer().then(Buffer.from);
+    const blob = await put(`prevailing-wage/${jobId}/${file.name}`, buffer, {
+      access: "public",
+      contentType: file.type,
+    });
+    fileUrl = blob.url;
+    fileName = file.name;
+  }
+
+  if (!fileUrl && !sourceUrl) {
+    throw new Error("Attach a file or a source link");
+  }
+
+  await prisma.prevailingWageDetermination.create({
+    data: {
+      jobId,
+      jurisdiction,
+      fileUrl,
+      fileName,
+      sourceUrl: sourceUrl || null,
+      note: note || null,
+      uploadedByUserId: user.id,
+    },
+  });
+
+  revalidatePath(`/jobs/${jobId}`);
+}
+
+export async function deletePrevailingWageDetermination(jobId: string, determinationId: string) {
+  const { company } = await requireCompanyContext();
+  await assertJobInCompany(jobId, company.id);
+
+  const determination = await prisma.prevailingWageDetermination.findUnique({ where: { id: determinationId } });
+  if (!determination || determination.jobId !== jobId) {
+    throw new Error("Prevailing wage determination not found on this job");
+  }
+
+  await prisma.prevailingWageDetermination.delete({ where: { id: determinationId } });
+
+  revalidatePath(`/jobs/${jobId}`);
+}

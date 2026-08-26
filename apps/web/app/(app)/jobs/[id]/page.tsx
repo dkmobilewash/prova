@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { headers } from "next/headers";
+import Link from "next/link";
 import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { PrintButton } from "@/components/PrintButton";
@@ -8,6 +9,7 @@ import { WipNarrativeButton } from "@/components/WipNarrativeButton";
 import { DraftLineItemsForm } from "@/components/DraftLineItemsForm";
 import { money } from "@/lib/money";
 import { calculateLineItemWip, calculateJobWip } from "@/lib/wip";
+import { calculateTimeEntryLaborCost, findEffectiveFringeRateSchedule } from "@/lib/labor-cost";
 import {
   addChangeOrderLineItem,
   addCostEntry,
@@ -20,11 +22,13 @@ import {
   deleteDispatchSlip,
   deleteLineItem,
   deletePayment,
+  deletePrevailingWageDetermination,
   deleteTimeEntry,
   editLineItemViaChangeOrder,
   logPayment,
   logTimeEntry,
   uploadDispatchSlip,
+  uploadPrevailingWageDetermination,
   markJobContracted,
   removeLineItemViaChangeOrder,
   deleteContractDocument,
@@ -111,6 +115,10 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
           craftClassification: { include: { unionLocal: true } },
         },
       },
+      prevailingWageDeterminations: {
+        orderBy: { createdAt: "desc" },
+        include: { uploadedByUser: true },
+      },
       operatingLocation: true,
     },
   });
@@ -125,7 +133,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
     prisma.lineItemCatalogEntry.findMany({ where: { companyId: company.id }, orderBy: { description: "asc" } }),
     prisma.craftClassification.findMany({
       where: { unionLocal: { companyAgreements: { some: { companyId: company.id } } } },
-      include: { unionLocal: true },
+      include: { unionLocal: true, fringeRateSchedules: true },
       orderBy: { name: "asc" },
     }),
   ]);
@@ -151,6 +159,35 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
       actualCostToDate: item.costEntries.reduce((s, entry) => s + Number(entry.amount), 0),
     }),
   }));
+  // Burdened labor cost per time entry, using the FringeRateSchedule
+  // effective on that entry's craft/date. Null (shown as "—") when the
+  // entry has no craft tag or no schedule covers its date — see
+  // lib/labor-cost.ts for why this never guesses a rate.
+  const timeEntryLaborCosts = new Map(
+    job.timeEntries.map((entry) => {
+      const craft = craftClassifications.find((c) => c.id === entry.craftClassificationId);
+      const schedule = craft
+        ? findEffectiveFringeRateSchedule(
+            craft.fringeRateSchedules.map((s) => ({
+              baseWage: Number(s.baseWage),
+              pensionRate: s.pensionRate != null ? Number(s.pensionRate) : null,
+              vacationRate: s.vacationRate != null ? Number(s.vacationRate) : null,
+              healthWelfareRate: s.healthWelfareRate != null ? Number(s.healthWelfareRate) : null,
+              trainingRate: s.trainingRate != null ? Number(s.trainingRate) : null,
+              effectiveFrom: s.effectiveFrom,
+              effectiveTo: s.effectiveTo,
+            })),
+            entry.date,
+          )
+        : null;
+      const cost = calculateTimeEntryLaborCost(
+        { hours: Number(entry.hours), payType: entry.payType, date: entry.date },
+        schedule,
+      );
+      return [entry.id, cost];
+    }),
+  );
+
   const billedToDate = job.invoices.reduce((sum, invoice) => sum + Number(invoice.amount), 0);
   const jobWip = calculateJobWip(
     lineItemWip.map((l) => l.wip),
@@ -180,6 +217,9 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
   const deleteTimeEntryWithId = (timeEntryId: string) => deleteTimeEntry.bind(null, job.id, timeEntryId);
   const uploadDispatchSlipWithId = uploadDispatchSlip.bind(null, job.id);
   const deleteDispatchSlipWithId = (dispatchSlipId: string) => deleteDispatchSlip.bind(null, job.id, dispatchSlipId);
+  const uploadPrevailingWageDeterminationWithId = uploadPrevailingWageDetermination.bind(null, job.id);
+  const deletePrevailingWageDeterminationWithId = (determinationId: string) =>
+    deletePrevailingWageDetermination.bind(null, job.id, determinationId);
 
   const headerList = await headers();
   const origin = `${headerList.get("x-forwarded-proto") ?? "https"}://${headerList.get("host")}`;
@@ -602,10 +642,16 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
         </section>
 
         <section className="mb-10">
-          <h2 className="mb-1 text-lg font-semibold text-slate-100">Field time entries</h2>
+          <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="text-lg font-semibold text-slate-100">Field time entries</h2>
+            <Link href={`/jobs/${job.id}/certified-payroll`} className="text-sm text-blue-400 hover:underline">
+              Certified payroll report →
+            </Link>
+          </div>
           <p className="mb-3 text-sm text-slate-500">
             Hours worked by employee, by day — optionally tied to a cost code and craft classification.
-            Tracks hours by pay type; it does not calculate dollar wages.
+            Tracks hours by pay type; wage cost is estimated from the applicable fringe rate schedule when one
+            applies.
           </p>
 
           {job.timeEntries.length > 0 && (
@@ -628,6 +674,11 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                       <span className="text-xs text-slate-500">{entry.craftClassification.name}</span>
                     )}
                     {entry.lineItem && <span className="text-xs text-slate-500">{entry.lineItem.description}</span>}
+                    {timeEntryLaborCosts.get(entry.id) != null && (
+                      <span className="text-xs text-slate-500">
+                        Est. cost {money(timeEntryLaborCosts.get(entry.id)!)}
+                      </span>
+                    )}
                     {entry.perDiemAmount != null && (
                       <span className="text-xs text-slate-500">Per diem {money(Number(entry.perDiemAmount))}</span>
                     )}
@@ -872,6 +923,100 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
               className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-100 hover:bg-slate-700"
             >
               Log dispatch
+            </button>
+          </form>
+        </section>
+
+        <section className="mb-10">
+          <h2 className="mb-1 text-lg font-semibold text-slate-100">Prevailing wage determination</h2>
+          <p className="mb-3 text-sm text-slate-500">
+            The government wage determination for this job&rsquo;s jurisdiction (federal or state) — attach a copy
+            or a link to it. This app doesn&rsquo;t look one up automatically; there&rsquo;s no licensed
+            prevailing-wage dataset built in.
+          </p>
+
+          {job.prevailingWageDeterminations.length > 0 && (
+            <ul className="mb-4 flex flex-col gap-2">
+              {job.prevailingWageDeterminations.map((determination) => (
+                <li
+                  key={determination.id}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-800 bg-slate-900 p-3 text-sm"
+                >
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <span className="text-slate-100">{determination.jurisdiction}</span>
+                    {determination.fileUrl && (
+                      <a
+                        href={determination.fileUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs text-blue-400 hover:underline"
+                      >
+                        {determination.fileName ?? "View document"}
+                      </a>
+                    )}
+                    {determination.sourceUrl && (
+                      <a
+                        href={determination.sourceUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs text-blue-400 hover:underline"
+                      >
+                        Source link
+                      </a>
+                    )}
+                    {determination.note && <span className="text-xs text-slate-500">— {determination.note}</span>}
+                  </div>
+                  <form action={deletePrevailingWageDeterminationWithId(determination.id)}>
+                    <button type="submit" title="Remove" className="text-xs text-red-400 hover:underline">
+                      Remove
+                    </button>
+                  </form>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <form
+            action={uploadPrevailingWageDeterminationWithId}
+            encType="multipart/form-data"
+            className="flex flex-wrap items-end gap-2 rounded-lg border border-slate-800 bg-slate-900 p-3"
+          >
+            <label className="flex flex-col gap-1 text-xs text-slate-400">
+              Jurisdiction
+              <input
+                name="jurisdiction"
+                placeholder="e.g. California, federal (Davis-Bacon)"
+                required
+                className="w-56 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-600 focus:border-blue-500 focus:outline-none"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-slate-400">
+              Document (optional)
+              <input
+                type="file"
+                name="file"
+                accept="application/pdf,image/png,image/jpeg,image/webp"
+                className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 file:mr-2 file:rounded file:border-0 file:bg-slate-800 file:px-2 file:py-1 file:text-slate-200 focus:border-blue-500 focus:outline-none"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-slate-400">
+              Or source link
+              <input
+                name="sourceUrl"
+                placeholder="https://sam.gov/..."
+                className="w-48 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-600 focus:border-blue-500 focus:outline-none"
+              />
+            </label>
+            <input
+              name="note"
+              placeholder="Note (optional)"
+              className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+            />
+            <button
+              type="submit"
+              className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-100 hover:bg-slate-700"
+            >
+              Attach
             </button>
           </form>
         </section>

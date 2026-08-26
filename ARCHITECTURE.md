@@ -627,6 +627,34 @@ larger effort with its own design pass — the same category as
 QuickBooks data sync or plan-takeoff via computer vision above, not
 something to bolt onto this phase.
 
+## Certified payroll and prevailing wage
+
+`lib/labor-cost.ts` turns a `TimeEntry` into a burdened wage cost using
+the `FringeRateSchedule` effective for its craft classification and
+date — pure arithmetic, same reasoning as `lib/wip.ts`. Per prevailing-
+wage/Davis-Bacon convention, overtime/double-time multiply the base wage
+only; fringe benefits (pension, vacation, health & welfare, training)
+are paid at their flat per-hour rate regardless of pay type. An entry
+with no craft tag, or no schedule effective on its date, never gets a
+guessed rate — it shows as uncomputed rather than $0.
+
+`lib/certified-payroll.ts` rolls a week of a job's `TimeEntry` rows up
+into one row per employee per craft classification — hours by pay type,
+total hours, and computed wage cost — rendered at
+`/jobs/[id]/certified-payroll`. This is a certified-payroll-*style*
+summary, not a government-form-formatted WH-347/state-equivalent
+export: replicating that exact form layout is a distinct, larger effort
+this phase doesn't take on.
+
+`PrevailingWageDetermination` is attached storage for the actual
+government wage-determination document (or a link to one) per job —
+not a lookup. There's no licensed or scraped prevailing-wage dataset in
+this app to query automatically from, the same reason NV licensing data
+was left unseeded in `LicenseClassificationReference`. Multi-state
+variation isn't built as a rules engine for the same reason; a job is
+already jurisdiction-scoped via `operatingLocationId`, which is as far
+as this can honestly go without a real government wage-rate dataset.
+
 ## Multi-tenancy and roles
 
 Every `Contact` and `Job` belongs to a `Company`. Every `User` belongs to
