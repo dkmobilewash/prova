@@ -21,3 +21,4 @@ export * from "./equipment";
 export * from "./punchLists";
 export * from "./fieldReports";
 export * from "./safety";
+export * from "./rfis";

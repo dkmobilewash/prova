@@ -14,6 +14,45 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ## 2026-08-26
 
+### RFI log (Cyrus)
+`cyrus/rfis` — FEATURE-AUDIT category 16
+
+- New `/rfis` page. `Rfi` + `RfiCounter` in `operations.prisma`, new
+  `lib/actions/rfis.ts`. Its own page, nothing in Diego's lane.
+- **Built as an evidence record, not a task list.** The dates are the
+  product: sent, answer-needed-by, and the date the answer actually came
+  back. An RFI sent and answered three weeks late is what a delay claim is
+  argued from.
+- **Overdue is derived from the dates on every render, never stored.** A
+  stored overdue flag is correct for one day. `today` comes from the server
+  so the server and browser can't disagree about the date.
+- **The answer date is entered, not stamped.** Recording an answer that
+  arrived last Tuesday must not read as arriving today, or the log
+  overstates the GC's response time — which destroys its value as evidence
+  in the direction that matters.
+- **RFI numbers use the same counter pattern as safety case numbers**, for
+  the same reason: a GC references "RFI 12" in writing, so a number that
+  comes back after a deletion points at two different questions.
+- **A sent RFI cannot be deleted, only closed.** Deleting it destroys
+  correspondence the other side still holds. Drafts can be deleted.
+- Cost and schedule impact are flags set when the answer is read. They
+  deliberately do not create a change order — they mark which RFIs to pull
+  when someone builds one.
+
+### Pre-existing: `nextChangeOrderNumber` has the same reissue bug (open)
+`apps/web/lib/actions/shared.ts` computes change order numbers as
+`max(number) + 1`. Nothing deletes a change order today, so the reissue
+path isn't reachable — but the concurrency race is: two people adding a CO
+to the same job at the same moment both read the same max, and one gets a
+raw Prisma unique-constraint error. Flagged to Diego rather than fixed
+here; `shared.ts` and change orders are his lane.
+
+### FEATURE-AUDIT.md corrected
+It still listed categories 17, 19, 20 and 22 as `0 built` while vendors,
+equipment, punch lists, daily field reports and safety were all on main.
+Second time this file has drifted in a day. Corrected against what's
+actually in the schema.
+
 ### Neon connection pooling (Cyrus)
 `cyrus/db-pooling`
 

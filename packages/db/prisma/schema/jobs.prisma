@@ -73,6 +73,8 @@ model Job {
   dailyFieldReports            DailyFieldReport[]
   safetyIncidents              SafetyIncident[]
   toolboxTalks                 ToolboxTalk[]
+  rfis                         Rfi[]
+  rfiCounter                   RfiCounter?
 
   @@index([companyId])
   @@index([contactId])
