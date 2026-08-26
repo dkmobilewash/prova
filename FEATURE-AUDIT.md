@@ -14,13 +14,13 @@ it in the same PR as any work that changes a status, and check it against
 [`ONBOARDING.md`](./ONBOARDING.md) section 7 (they should always tell the
 same story — section 7 is the prose version, this is the itemized one).
 
-**104 items audited — 38 built / 17 partial / 48 missing / 1 descoped**
+**104 items audited — 40 built / 17 partial / 46 missing / 1 descoped**
 
 | Status | Count |
 | --- | --- |
-| Built | 38 |
+| Built | 40 |
 | Partial | 17 |
-| Missing | 48 |
+| Missing | 46 |
 | Descoped | 1 |
 
 ## 01. Company / Org Setup — 5 built · 0 partial · 0 missing
@@ -91,19 +91,19 @@ subcontract agreement storage and versioning shipped same-day.*
 | Partial | Cost categorization: labor, material, equipment, sub/other, by trade tag | `CostCategory` has LABOR/MATERIAL/SUBCONTRACTOR/OTHER plus a `tradeScope` tag — no distinct EQUIPMENT bucket |
 | Partial | Job cost roll-up dashboard: budget vs. actual vs. forecast, per line item and per job | built per-job on `/jobs/[id]`; no cross-job/company-wide roll-up view |
 
-## 07. Labor & Time Tracking — 3 built · 0 partial · 3 missing
+## 07. Labor & Time Tracking — 5 built · 0 partial · 1 missing
 
-*Updated — field time entry, craft classification per hour, and pay-type
-tracking shipped 26 Aug 2026.*
+*Updated — field time entry, craft classification per hour, pay-type
+tracking, per diem/travel pay, and dispatch slips shipped 26 Aug 2026.*
 
 | Status | Feature | Note |
 | --- | --- | --- |
 | Built | Field time entry by employee, job, cost code/SOV line, date | `TimeEntry` — logged per job, optionally tied to a `JobLineItem` |
 | Built | Craft classification per hour entered | `TimeEntry.craftClassificationId`, optional, same pattern as `JobLineItem` |
 | Built | Straight/overtime/double-time/shift differential tracking | `TimeEntry.payType` — tracks hours by category; does not compute dollar wages (needs a rate-rule engine, still missing) |
-| Missing | Per diem / travel pay tracking | not modeled |
-| Missing | Union hiring-hall dispatch slip tracking | not modeled |
-| Missing | Mobile/field time entry app | the whole app is a single responsive Next.js site — no dedicated field app |
+| Built | Per diem / travel pay tracking | `TimeEntry.perDiemAmount` / `.travelPayAmount` — flat daily allowances on the same row |
+| Built | Union hiring-hall dispatch slip tracking | `DispatchSlip` — hall referral onto a job, optional scanned slip via Vercel Blob |
+| Missing | Mobile/field time entry app | the whole app is a single responsive Next.js site — no dedicated field app; deliberately deferred as a separate, larger effort (see `ARCHITECTURE.md`) |
 
 ## 08. Certified Payroll & Prevailing Wage — 0 built · 1 partial · 4 missing
 
