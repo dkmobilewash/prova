@@ -9,18 +9,27 @@ work shipped later that day — the original audit predated all three. Also
 corrected a tally bug in the original audit: Sheet 10's header undercounted
 "Built" by one item (percent-complete was marked Built in the row but not
 counted in the header) — fixed here so every section header matches its own
-rows. This file is meant to stay in sync with reality going forward: update
-it in the same PR as any work that changes a status, and check it against
-[`ONBOARDING.md`](./ONBOARDING.md) section 7 (they should always tell the
-same story — section 7 is the prose version, this is the itemized one).
+rows. Updated again 26 Aug 2026 to reflect AIA-style pay applications
+(Sheet 10) shipped that day. This file is meant to stay in sync with reality
+going forward: update it in the same PR as any work that changes a status,
+and check it against [`ONBOARDING.md`](./ONBOARDING.md) section 7 (they
+should always tell the same story — section 7 is the prose version, this is
+the itemized one).
 
-**104 items audited — 43 built / 17 partial / 43 missing / 1 descoped**
+Sheets 17, 19, 20 and 22 are known stale as of this update — vendors,
+equipment, punch lists, and daily field reports have all shipped on `main`
+since these were last written, plus a safety incident/toolbox talk feature
+in flight. Left as-is here rather than guessed at from the outside; the next
+update to touch those sheets should come from whoever actually verified them
+against a fresh clone.
+
+**104 items audited — 50 built / 15 partial / 38 missing / 1 descoped**
 
 | Status | Count |
 | --- | --- |
-| Built | 43 |
-| Partial | 17 |
-| Missing | 43 |
+| Built | 50 |
+| Partial | 15 |
+| Missing | 38 |
 | Descoped | 1 |
 
 ## 01. Company / Org Setup — 5 built · 0 partial · 0 missing
@@ -127,15 +136,18 @@ costing, and prevailing wage attachment shipped 26 Aug 2026.*
 | Missing | Apprenticeship program enrollment/hours tracking | not modeled |
 | Built | Multi-CBA support (a company may run crews under more than one agreement) | `CompanyUnionAgreement` is a list per company, not a single field |
 
-## 10. Billing — AIA-Style Pay Applications — 1 built · 2 partial · 2 missing
+## 10. Billing — AIA-Style Pay Applications — 5 built · 0 partial · 0 missing
+
+*Updated — G703 continuation sheet, materials-stored tracking, G702
+generation, and payment status all shipped 26 Aug 2026.*
 
 | Status | Feature | Note |
 | --- | --- | --- |
-| Partial | G703 continuation sheet generation from `JobLineItem` | the data is exactly the SOV already; no G703-formatted export exists |
+| Built | G703 continuation sheet generation from `JobLineItem` | `lib/pay-application.ts` + `/jobs/[id]/pay-applications/[invoiceId]` — a G703-style continuation sheet (scheduled value, previous, this period, materials stored, total to date, %, balance to finish), not a pixel-exact AIA-formatted export |
 | Built | Percent-complete per line item feeding "work completed this period" | `lib/wip.ts` — cost-to-cost method, live |
-| Missing | Materials stored (not yet installed) tracking, separate from work-in-place | not modeled |
-| Partial | Monthly pay application (G702) generation and submission tracking | `Invoice` exists as a plain bill; not AIA-formatted, no submission workflow |
-| Missing | Payment status per pay app: submitted, approved, partially paid, paid, disputed | `Payment` is a raw received-payment log with no status lifecycle |
+| Built | Materials stored (not yet installed) tracking, separate from work-in-place | `InvoiceLineItem.materialsStoredValue`, its own column on the continuation sheet, not folded into work-in-place |
+| Built | Monthly pay application (G702) generation and submission tracking | `submitPayApplication` — an alternate, line-item-driven invoice creation path alongside the existing lump-sum `createInvoice`; the same report page renders the G702 summary block (contract sum to date, retainage, current payment due, balance to finish) |
+| Built | Payment status per pay app: submitted, approved, partially paid, paid, disputed | `Invoice.status` (`InvoiceStatus`) — a plain field set directly, not inferred from payment totals, since "approved"/"disputed" have no dollar signal to derive from |
 
 ## 11. Retainage — 3 built · 0 partial · 0 missing
 
