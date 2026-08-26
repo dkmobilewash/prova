@@ -1,0 +1,131 @@
+// Field operations: locations, vendors, equipment, punch lists.
+// Cyrus's lane.
+//
+// Part of the multi-file Prisma schema in this folder.
+
+enum LocationType {
+  HQ
+  BRANCH_YARD
+  WAREHOUSE
+  TRAILER
+}
+
+/// A physical office/yard/warehouse. `state` is broken out from the
+/// address specifically because it's what would eventually let the app
+/// auto-derive which CompanyLicense/CompanyUnionAgreement applies to a
+/// Job via Job.operatingLocationId — that derivation logic isn't built
+/// yet, but the field exists for it.
+model CompanyLocation {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  locationType LocationType
+  /// Friendly label ("Denver Yard") for picking a location in a list —
+  /// not explicitly requested, but without one a picker would just show
+  /// raw addresses.
+  name         String?
+
+  addressLine1 String
+  addressLine2 String?
+  city         String
+  state        String
+  zip          String
+
+  primaryContactName  String?
+  primaryContactPhone String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  jobs Job[]
+
+  @@index([companyId])
+}
+
+/// A material supplier or service vendor the company buys from — the
+/// "who" behind a material cost, which until now was just a dollar
+/// amount with no source attached. Deliberately standalone for now: no
+/// job, cost, or pricing-history linkage yet (WORK-SPLIT.md task 2), so
+/// nothing existing depends on it and it can grow later.
+model Vendor {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  name String
+  /// Which trade this vendor supplies. Optional because plenty of
+  /// vendors (fasteners, general hardware, equipment rental) serve every
+  /// trade the company runs, and forcing a choice would be misleading.
+  tradeScope  TradeScope?
+  contactName String?
+  phone       String?
+  email       String?
+  notes       String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+}
+
+/// Company-owned equipment — scaffolding, lifts, mixers, welders. Step one
+/// is knowing what you own and where it is; equipment cost allocation into
+/// job costing is a later phase and deliberately not modelled here.
+model Equipment {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  name String
+  /// Free text rather than an enum. The categories vary too much by trade
+  /// to fix a list now, and guessing wrong would mean a migration to add
+  /// the one type a contractor actually owns.
+  type     String?
+  /// Serial or asset tag. Optional — plenty of small equipment has neither.
+  assetTag String?
+
+  /// Where it is right now. Null means "in the yard / unassigned", which
+  /// is a normal state, not missing data.
+  assignedJobId String?
+  assignedJob   Job?    @relation(fields: [assignedJobId], references: [id])
+
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([assignedJobId])
+}
+
+/// A punch list item — something that has to be fixed or finished before a
+/// job closes out. `JobStatus` runs ESTIMATE → COMPLETE with nothing
+/// tracking what's outstanding in between, so today a job is marked
+/// complete on somebody's memory of the walkthrough.
+model PunchListItem {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+  jobId     String
+  job       Job     @relation(fields: [jobId], references: [id])
+
+  description String
+
+  /// Who raised it. Set from the signed-in user rather than a form field —
+  /// on a walkthrough nobody types their own name. Nullable so deleting a
+  /// user doesn't take the punch list with them.
+  raisedByUserId String?
+  raisedBy       User?   @relation(fields: [raisedByUserId], references: [id])
+
+  /// Denormalised rather than derived from completedAt: "done" is the thing
+  /// people filter and count on, and a boolean keeps that query trivial.
+  isDone      Boolean   @default(false)
+  completedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([jobId])
+}

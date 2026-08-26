@@ -1,0 +1,128 @@
+// Company, users, invites and GC contacts.
+//
+// Part of the multi-file Prisma schema in this folder.
+
+model Company {
+  id   String @id @default(cuid())
+  name String
+
+  /// Company profile fields — all optional since existing companies
+  /// predate them and there's no backfill source. `name` stays the
+  /// existing display name; `dbaName` is a separate "doing business as"
+  /// name where one exists.
+  dbaName        String?
+  ein            String?
+  hqAddressLine1 String?
+  hqAddressLine2 String?
+  hqCity         String?
+  hqState        String?
+  hqZip          String?
+  phone          String?
+  website        String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users                  User[]
+  contacts               Contact[]
+  jobs                   Job[]
+  invites                Invite[]
+  quickBooksConnection   QuickBooksConnection?
+  complianceDocuments    ComplianceDocument[]
+  licenses               CompanyLicense[]
+  tradeScopes            CompanyTradeScope[]
+  unionAgreements        CompanyUnionAgreement[]
+  insurancePolicies      CompanyInsurancePolicy[]
+  bonds                  CompanyBond[]
+  locations              CompanyLocation[]
+  bidInvitations         BidInvitation[]
+  vendors                Vendor[]
+  equipment              Equipment[]
+  lineItemCatalogEntries LineItemCatalogEntry[]
+  punchListItems         PunchListItem[]
+}
+
+enum UserRole {
+  OWNER
+  MEMBER
+}
+
+model User {
+  id        String   @id @default(cuid())
+  clerkId   String   @unique
+  email     String   @unique
+  name      String?
+  // Defaults to OWNER (not MEMBER) so the migration backfill is correct for
+  // every User row that already exists in production today: pre-this-phase,
+  // every user was the sole/first user of their Company, i.e. its owner.
+  // New rows always set this explicitly in code (OWNER on first sign-in,
+  // MEMBER on invite acceptance) — this default only matters for backfill.
+  role      UserRole @default(OWNER)
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assignments                          JobAssignment[]
+  connectedQuickBooks                  QuickBooksConnection[]
+  uploadedComplianceDocuments          ComplianceDocument[]
+  savedEstimateVersions                EstimateVersion[]
+  uploadedContractDocuments            ContractDocument[]
+  timeEntries                          TimeEntry[]
+  dispatchSlips                        DispatchSlip[]
+  uploadedPrevailingWageDeterminations PrevailingWageDetermination[]
+  createdRetainageReleases             RetainageRelease[]
+  raisedPunchListItems                 PunchListItem[]
+
+  @@index([companyId])
+}
+
+/// A pending invitation for someone to join a Company. Deleted once
+/// accepted — see requireCompanyContext() in apps/web/lib/auth.ts, which
+/// checks for a matching Invite (by email) before creating a brand new
+/// Company on first sign-in.
+model Invite {
+  id        String   @id @default(cuid())
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id])
+  email     String   @unique
+  createdAt DateTime @default(now())
+
+  @@index([companyId])
+}
+
+model Contact {
+  id        String   @id @default(cuid())
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id])
+  name      String
+  email     String?
+  phone     String?
+  address   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// Generated on-demand (client portal "enable" action), null until then.
+  /// Same access-control pattern as SignatureRequest.token: an unguessable
+  /// link stands in for a client login that doesn't exist yet.
+  portalToken String? @unique
+
+  /// Standing terms this GC typically works under — a starting point to
+  /// pre-fill Job.retainagePercent when scoping a new job with them, not a
+  /// value enforced anywhere itself. Actual per-job retainage withheld/
+  /// released tracking lives on Job/Invoice/RetainageRelease — see
+  /// ARCHITECTURE.md.
+  defaultRetainagePercent Decimal? @db.Decimal(5, 2)
+  /// e.g. 30 for "Net 30". Free-standing integer rather than an enum —
+  /// real GC payment terms vary too much (Net 30/45/60, "pay when paid")
+  /// to fit a fixed list.
+  paymentTermsDays        Int?
+  /// Free text (e.g. "AIA A401", "ConsensusDocs 750") — which standard
+  /// subcontract form this GC typically uses.
+  standardFormsUsed       String?
+
+  jobs           Job[]
+  bidInvitations BidInvitation[]
+
+  @@index([companyId])
+}

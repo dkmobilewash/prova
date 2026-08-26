@@ -1,0 +1,239 @@
+// The unified Job / JobLineItem object and everything hanging off it.
+// See /ARCHITECTURE.md before adding a model that looks like it duplicates
+// line-item data.
+//
+// Part of the multi-file Prisma schema in this folder.
+
+enum JobStatus {
+  ESTIMATE
+  CONTRACTED
+  IN_PROGRESS
+  COMPLETE
+}
+
+/// The unified object. A Job's `lineItems` ARE the estimate, the budget, the
+/// contract content, and the job-costing structure — there is no separate
+/// table for any of those views. See /ARCHITECTURE.md.
+model Job {
+  id        String    @id @default(cuid())
+  companyId String
+  company   Company   @relation(fields: [companyId], references: [id])
+  contactId String
+  contact   Contact   @relation(fields: [contactId], references: [id])
+  name      String
+  scope     String?
+  status    JobStatus @default(ESTIMATE)
+  // Single start/end dates on the Job itself — properties of the job, not a
+  // list of entries, so (unlike CostEntry/ChangeOrder) this doesn't need a
+  // separate table. Nullable: most jobs start unscheduled.
+  startDate DateTime?
+  endDate   DateTime?
+
+  /// Which office/yard is running this job. Nullable: most existing jobs
+  /// predate this and there's no backfill source. This is a place to
+  /// RECORD the operating location only — nothing yet reads it to
+  /// auto-derive the applicable license or union agreement; that's real
+  /// application logic for a future phase, not built here.
+  operatingLocationId String?
+  operatingLocation   CompanyLocation? @relation(fields: [operatingLocationId], references: [id])
+
+  /// This job's retainage rate — usually pre-filled from
+  /// Contact.defaultRetainagePercent at contract time but independently
+  /// editable per job, since a GC's standing terms are a starting point,
+  /// not a binding value. Null means retainage isn't withheld on this job
+  /// (or hasn't been set yet). New invoices snapshot this rate into
+  /// Invoice.retainageWithheld at creation — changing it here later never
+  /// rewrites past invoices, same reasoning as JobLineItem.budgetedUnitCost.
+  retainagePercent Decimal? @db.Decimal(5, 2)
+
+  /// The anchor date for retainage release forecasting — when this job is
+  /// expected to reach substantial completion, the point GCs typically
+  /// release retainage. A plain field, not a JobStatus stage: closeout/
+  /// warranty tracking (JobStatus stopping at COMPLETE today) is a
+  /// separate, not-yet-built phase.
+  substantialCompletionDate DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lineItems                    JobLineItem[]
+  changeOrders                 ChangeOrder[]
+  assignments                  JobAssignment[]
+  signatureRequests            SignatureRequest[]
+  invoices                     Invoice[]
+  complianceDocuments          ComplianceDocument[]
+  equipment                    Equipment[]
+  estimateVersions             EstimateVersion[]
+  contractDocuments            ContractDocument[]
+  timeEntries                  TimeEntry[]
+  dispatchSlips                DispatchSlip[]
+  prevailingWageDeterminations PrevailingWageDetermination[]
+  retainageReleases            RetainageRelease[]
+  punchListItems               PunchListItem[]
+
+  @@index([companyId])
+  @@index([contactId])
+  @@index([operatingLocationId])
+}
+
+/// A single line item, referenced everywhere: estimate, contract summary,
+/// budget total, and job costing. A change order mutates rows in this table
+/// (or adds new ones) — it never forks them into a parallel shape.
+model JobLineItem {
+  id          String  @id @default(cuid())
+  jobId       String
+  job         Job     @relation(fields: [jobId], references: [id])
+  description String
+  quantity    Decimal @default(1) @db.Decimal(12, 2)
+  unit        String?
+
+  /// Optional — a categorization dimension on top of the cost/WIP fields
+  /// below, not a prerequisite for them.
+  tradeScope TradeScope?
+
+  /// Estimated labor hours for this line, optionally tied to which craft
+  /// classification would perform it (journeyman/apprentice/foreman by
+  /// local — see CraftClassification). Both optional: a material-only or
+  /// lump-sum line has neither. Not yet fed into a burdened labor cost —
+  /// that needs FringeRateSchedule wired in, a separate future step.
+  laborHours            Decimal?             @db.Decimal(8, 2)
+  craftClassificationId String?
+  craftClassification   CraftClassification? @relation(fields: [craftClassificationId], references: [id])
+
+  /// Nullable: a cost-only budget line (general conditions, overhead,
+  /// contingency) has no client-facing sale price. Contract value /
+  /// invoicing totals treat a null unitPrice as $0 revenue — the line still
+  /// carries quantity and cost fields, it just isn't billed directly.
+  unitPrice Decimal? @db.Decimal(12, 2)
+  sortOrder Int      @default(0)
+
+  /// The estimated unit cost at the time this line was priced (estimate
+  /// approval). Set once, stays put as the historical baseline for WIP
+  /// reporting — never silently overwritten by later re-forecasting.
+  budgetedUnitCost Decimal? @db.Decimal(12, 2)
+
+  /// The PM's current forecast of unit cost, re-estimated as the job
+  /// progresses. Defaults to budgetedUnitCost at creation (app-level, not a
+  /// DB default) but is independently mutable afterward. This is what
+  /// feeds the live percent-complete calculation — see lib/wip.ts.
+  currentEstimatedUnitCost Decimal? @db.Decimal(12, 2)
+
+  /// PM override for cost-to-complete. When null, it's derived mechanically
+  /// as (currentEstimatedUnitCost * quantity) - actual costs to date. When
+  /// set, it overrides that mechanical number — e.g. the PM knows a sub is
+  /// behind schedule or a change order is coming before the cost data
+  /// reflects it. See lib/wip.ts.
+  estimatedCostToComplete Decimal? @db.Decimal(12, 2)
+
+  /// Soft delete: a change order can remove scope without losing history.
+  /// Deleted line items are excluded from budget/contract totals.
+  isDeleted Boolean @default(false)
+
+  /// True when this row came from draftEstimateLineItems (Claude reading
+  /// free-text scope of work) rather than being typed in directly. A
+  /// "please verify" signal for the UI, same as ComplianceDocument's
+  /// aiExtracted — never a lock, and never auto-approved into a contract.
+  aiDrafted Boolean @default(false)
+
+  /// Set only when this row was created BY a change order (added scope).
+  /// Null for line items that were part of the original estimate.
+  originChangeOrderId String?
+  originChangeOrder   ChangeOrder? @relation("OriginChangeOrder", fields: [originChangeOrderId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  edits       ChangeOrderLineItemEdit[]
+  costEntries CostEntry[]
+  timeEntries TimeEntry[]
+
+  @@index([jobId])
+  @@index([originChangeOrderId])
+  @@index([craftClassificationId])
+}
+
+/// A change order groups: (a) newly added JobLineItems (via
+/// JobLineItem.originChangeOrderId), and (b) edits to existing JobLineItems
+/// (logged in ChangeOrderLineItemEdit). It never stores its own copy of
+/// line-item data.
+model ChangeOrder {
+  id          String   @id @default(cuid())
+  jobId       String
+  job         Job      @relation(fields: [jobId], references: [id])
+  number      Int
+  title       String
+  description String?
+  createdAt   DateTime @default(now())
+
+  addedLineItems JobLineItem[]             @relation("OriginChangeOrder")
+  edits          ChangeOrderLineItemEdit[]
+
+  @@unique([jobId, number])
+  @@index([jobId])
+}
+
+/// Audit log only. Records what a change order changed on an EXISTING
+/// JobLineItem (old value -> new value). The live value always lives on
+/// JobLineItem itself — nothing reads totals from this table.
+model ChangeOrderLineItemEdit {
+  id            String      @id @default(cuid())
+  changeOrderId String
+  changeOrder   ChangeOrder @relation(fields: [changeOrderId], references: [id])
+  lineItemId    String
+  lineItem      JobLineItem @relation(fields: [lineItemId], references: [id])
+  field         String
+  oldValue      String
+  newValue      String
+  createdAt     DateTime    @default(now())
+
+  @@index([changeOrderId])
+  @@index([lineItemId])
+}
+
+enum CostCategory {
+  LABOR
+  MATERIAL
+  SUBCONTRACTOR
+  OTHER
+}
+
+/// An actual expense logged against a JobLineItem — references the line
+/// item rather than duplicating it, the same way ChangeOrder does. Actual
+/// cost per line item is SUM(costEntries.amount), computed, never stored.
+/// Unlike change orders, logging a cost isn't gated by job status: real
+/// spending happens throughout the job, especially once work is in
+/// progress.
+model CostEntry {
+  id          String       @id @default(cuid())
+  lineItemId  String
+  lineItem    JobLineItem  @relation(fields: [lineItemId], references: [id])
+  description String
+  amount      Decimal      @db.Decimal(12, 2)
+  category    CostCategory @default(OTHER)
+
+  /// Independent of the parent JobLineItem's tradeScope — a "general
+  /// conditions" line can carry cost entries spanning several trades, so
+  /// this is tagged per-expense, not just inherited from the line item.
+  tradeScope TradeScope?
+  incurredAt DateTime    @default(now())
+  createdAt  DateTime    @default(now())
+
+  @@index([lineItemId])
+}
+
+/// Crew assignment: which company Users are on a Job. Genuinely many-to-many
+/// (a job can have several people, a person can be on several jobs), so —
+/// unlike startDate/endDate — this needs a join table. References Job and
+/// User directly; never duplicates their data.
+model JobAssignment {
+  id        String   @id @default(cuid())
+  jobId     String
+  job       Job      @relation(fields: [jobId], references: [id])
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@unique([jobId, userId])
+  @@index([jobId])
+  @@index([userId])
+}
