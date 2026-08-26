@@ -14,13 +14,13 @@ it in the same PR as any work that changes a status, and check it against
 [`ONBOARDING.md`](./ONBOARDING.md) section 7 (they should always tell the
 same story — section 7 is the prose version, this is the itemized one).
 
-**104 items audited — 35 built / 17 partial / 51 missing / 1 descoped**
+**104 items audited — 38 built / 17 partial / 48 missing / 1 descoped**
 
 | Status | Count |
 | --- | --- |
-| Built | 35 |
+| Built | 38 |
 | Partial | 17 |
-| Missing | 51 |
+| Missing | 48 |
 | Descoped | 1 |
 
 ## 01. Company / Org Setup — 5 built · 0 partial · 0 missing
@@ -91,13 +91,16 @@ subcontract agreement storage and versioning shipped same-day.*
 | Partial | Cost categorization: labor, material, equipment, sub/other, by trade tag | `CostCategory` has LABOR/MATERIAL/SUBCONTRACTOR/OTHER plus a `tradeScope` tag — no distinct EQUIPMENT bucket |
 | Partial | Job cost roll-up dashboard: budget vs. actual vs. forecast, per line item and per job | built per-job on `/jobs/[id]`; no cross-job/company-wide roll-up view |
 
-## 07. Labor & Time Tracking — 0 built · 0 partial · 6 missing
+## 07. Labor & Time Tracking — 3 built · 0 partial · 3 missing
+
+*Updated — field time entry, craft classification per hour, and pay-type
+tracking shipped 26 Aug 2026.*
 
 | Status | Feature | Note |
 | --- | --- | --- |
-| Missing | Field time entry by employee, job, cost code/SOV line, date | no time-entry model anywhere |
-| Missing | Craft classification per hour entered | depends on time entry, which doesn't exist |
-| Missing | Straight/overtime/double-time/shift differential tracking | no pay-rate-rule engine |
+| Built | Field time entry by employee, job, cost code/SOV line, date | `TimeEntry` — logged per job, optionally tied to a `JobLineItem` |
+| Built | Craft classification per hour entered | `TimeEntry.craftClassificationId`, optional, same pattern as `JobLineItem` |
+| Built | Straight/overtime/double-time/shift differential tracking | `TimeEntry.payType` — tracks hours by category; does not compute dollar wages (needs a rate-rule engine, still missing) |
 | Missing | Per diem / travel pay tracking | not modeled |
 | Missing | Union hiring-hall dispatch slip tracking | not modeled |
 | Missing | Mobile/field time entry app | the whole app is a single responsive Next.js site — no dedicated field app |
