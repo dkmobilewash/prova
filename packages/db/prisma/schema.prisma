@@ -54,6 +54,7 @@ model Company {
   locations            CompanyLocation[]
   bidInvitations       BidInvitation[]
   vendors              Vendor[]
+  equipment            Equipment[]
 }
 
 enum UserRole {
@@ -209,6 +210,7 @@ model Job {
   signatureRequests   SignatureRequest[]
   invoices            Invoice[]
   complianceDocuments ComplianceDocument[]
+  equipment           Equipment[]
 
   @@index([companyId])
   @@index([contactId])
@@ -904,4 +906,34 @@ model Vendor {
   updatedAt DateTime @updatedAt
 
   @@index([companyId])
+}
+
+/// Company-owned equipment — scaffolding, lifts, mixers, welders. Step one
+/// is knowing what you own and where it is; equipment cost allocation into
+/// job costing is a later phase and deliberately not modelled here.
+model Equipment {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  name String
+  /// Free text rather than an enum. The categories vary too much by trade
+  /// to fix a list now, and guessing wrong would mean a migration to add
+  /// the one type a contractor actually owns.
+  type     String?
+  /// Serial or asset tag. Optional — plenty of small equipment has neither.
+  assetTag String?
+
+  /// Where it is right now. Null means "in the yard / unassigned", which
+  /// is a normal state, not missing data.
+  assignedJobId String?
+  assignedJob   Job?    @relation(fields: [assignedJobId], references: [id])
+
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([assignedJobId])
 }
