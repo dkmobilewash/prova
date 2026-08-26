@@ -272,6 +272,6 @@ forecasting shipped 26 Aug 2026.*
 | --- | --- | --- |
 | Missing | COI/license/bond expiration alerts | expiration is computed at read time everywhere it's shown — nothing pushes it to anyone |
 | Missing | Certified payroll submission deadline reminders | no reminder system exists |
-| Missing | Retainage release eligibility alerts | blocked on retainage itself not existing yet |
+| Missing | Retainage release eligibility alerts | the underlying retainage data exists now (Sheet 11), but no alerting/notification system reads it yet |
 | Missing | Apprentice ratio out-of-compliance alerts | blocked on apprentice tracking not existing yet |
 | Missing | WIP variance alerts | the WIP narrative is on-demand only (click a button) — nothing proactive |
