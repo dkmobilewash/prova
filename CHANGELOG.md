@@ -14,6 +14,31 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ## 2026-08-26
 
+### Punch lists (Cyrus)
+`cyrus/punch-lists` — WORK-SPLIT task 5
+
+- New `PunchListItem` model and `/punch-lists` page. What still has to be
+  fixed before a job closes out. `JobStatus` runs ESTIMATE → COMPLETE with
+  nothing in between, so until now this list lived in someone's memory of
+  the walkthrough.
+- Filter by job or see everything at once; completed items hidden by
+  default with a toggle. A super walking three jobs wants everything still
+  open, not one job at a time.
+- Checking an item off is one click and reversible, so it asks nothing.
+  Delete still asks twice.
+- "Raised by" comes from the signed-in user, not a form field — nobody
+  types their own name during a walkthrough.
+- The add form deliberately stays open after saving, unlike vendors and
+  equipment: punch items get logged in bursts, five in a row on the same
+  job. Job selection is kept, description clears and refocuses.
+
+**Built as its own page rather than a section on `jobs/[id]/page.tsx`.**
+WORK-SPLIT assigns that file to Diego and he's been editing it this week,
+so this avoids the collision entirely. The per-job section can be added
+later as a thin read of the same model — the data doesn't change.
+
+Not done: no due dates, no photo attachments, no assignment to a person.
+
 ### Equipment inventory (Cyrus)
 `cyrus/equipment` — WORK-SPLIT task 4
 
