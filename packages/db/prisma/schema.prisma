@@ -83,6 +83,7 @@ model User {
   savedEstimateVersions       EstimateVersion[]
   uploadedContractDocuments   ContractDocument[]
   timeEntries                 TimeEntry[]
+  dispatchSlips               DispatchSlip[]
 
   @@index([companyId])
 }
@@ -222,6 +223,7 @@ model Job {
   estimateVersions    EstimateVersion[]
   contractDocuments   ContractDocument[]
   timeEntries         TimeEntry[]
+  dispatchSlips       DispatchSlip[]
 
   @@index([companyId])
   @@index([contactId])
@@ -466,12 +468,50 @@ model TimeEntry {
   date    DateTime
   hours   Decimal          @db.Decimal(5, 2)
   payType TimeEntryPayType @default(STRAIGHT)
-  note    String?
+
+  /// Flat daily allowances, independent of hours/payType — a per diem or
+  /// travel day is still one row on this date for this employee/job, not
+  /// a second entry. Both null for a normal local day with no allowance.
+  perDiemAmount   Decimal? @db.Decimal(10, 2)
+  travelPayAmount Decimal? @db.Decimal(10, 2)
+
+  note String?
 
   createdAt DateTime @default(now())
 
   @@index([jobId])
   @@index([lineItemId])
+  @@index([employeeUserId])
+  @@index([craftClassificationId])
+}
+
+/// A union hiring hall's dispatch of one worker to one job — the referral
+/// record that authorizes them to work under that local's agreement on
+/// this job, distinct from TimeEntry (which logs hours actually worked
+/// afterward). The physical dispatch slip is often a paper form the hall
+/// hands the worker; fileUrl/fileName are optional since some halls
+/// dispatch by phone with just a referral number, no scanned document.
+model DispatchSlip {
+  id    String @id @default(cuid())
+  jobId String
+  job   Job    @relation(fields: [jobId], references: [id])
+
+  employeeUserId String
+  employeeUser   User   @relation(fields: [employeeUserId], references: [id])
+
+  craftClassificationId String?
+  craftClassification   CraftClassification? @relation(fields: [craftClassificationId], references: [id])
+
+  dispatchNumber String?
+  dispatchDate   DateTime
+
+  fileUrl  String?
+  fileName String?
+  note     String?
+
+  createdAt DateTime @default(now())
+
+  @@index([jobId])
   @@index([employeeUserId])
   @@index([craftClassificationId])
 }
@@ -831,6 +871,7 @@ model CraftClassification {
   jobLineItems        JobLineItem[]
   catalogEntries      LineItemCatalogEntry[]
   timeEntries         TimeEntry[]
+  dispatchSlips       DispatchSlip[]
 
   @@unique([unionLocalId, name])
   @@index([unionLocalId])

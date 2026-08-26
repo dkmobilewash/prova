@@ -17,12 +17,14 @@ import {
   createInvoice,
   createSignatureRequest,
   deleteCostEntry,
+  deleteDispatchSlip,
   deleteLineItem,
   deletePayment,
   deleteTimeEntry,
   editLineItemViaChangeOrder,
   logPayment,
   logTimeEntry,
+  uploadDispatchSlip,
   markJobContracted,
   removeLineItemViaChangeOrder,
   deleteContractDocument,
@@ -102,6 +104,13 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
           craftClassification: { include: { unionLocal: true } },
         },
       },
+      dispatchSlips: {
+        orderBy: { dispatchDate: "desc" },
+        include: {
+          employeeUser: true,
+          craftClassification: { include: { unionLocal: true } },
+        },
+      },
       operatingLocation: true,
     },
   });
@@ -169,6 +178,8 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
   const createInvoiceWithId = createInvoice.bind(null, job.id);
   const logTimeEntryWithId = logTimeEntry.bind(null, job.id);
   const deleteTimeEntryWithId = (timeEntryId: string) => deleteTimeEntry.bind(null, job.id, timeEntryId);
+  const uploadDispatchSlipWithId = uploadDispatchSlip.bind(null, job.id);
+  const deleteDispatchSlipWithId = (dispatchSlipId: string) => deleteDispatchSlip.bind(null, job.id, dispatchSlipId);
 
   const headerList = await headers();
   const origin = `${headerList.get("x-forwarded-proto") ?? "https"}://${headerList.get("host")}`;
@@ -617,6 +628,12 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                       <span className="text-xs text-slate-500">{entry.craftClassification.name}</span>
                     )}
                     {entry.lineItem && <span className="text-xs text-slate-500">{entry.lineItem.description}</span>}
+                    {entry.perDiemAmount != null && (
+                      <span className="text-xs text-slate-500">Per diem {money(Number(entry.perDiemAmount))}</span>
+                    )}
+                    {entry.travelPayAmount != null && (
+                      <span className="text-xs text-slate-500">Travel {money(Number(entry.travelPayAmount))}</span>
+                    )}
                     {entry.note && <span className="text-xs text-slate-500">— {entry.note}</span>}
                   </div>
                   <form action={deleteTimeEntryWithId(entry.id)}>
@@ -706,6 +723,22 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                 ))}
               </select>
             </label>
+            <label className="flex flex-col gap-1 text-xs text-slate-400">
+              Per diem
+              <input
+                name="perDiemAmount"
+                placeholder="optional"
+                className="w-24 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-600 focus:border-blue-500 focus:outline-none"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-slate-400">
+              Travel pay
+              <input
+                name="travelPayAmount"
+                placeholder="optional"
+                className="w-24 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-600 focus:border-blue-500 focus:outline-none"
+              />
+            </label>
             <input
               name="note"
               placeholder="Note (optional)"
@@ -716,6 +749,129 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
               className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-100 hover:bg-slate-700"
             >
               Log time
+            </button>
+          </form>
+        </section>
+
+        <section className="mb-10">
+          <h2 className="mb-1 text-lg font-semibold text-slate-100">Union hiring-hall dispatch</h2>
+          <p className="mb-3 text-sm text-slate-500">
+            The hiring hall&rsquo;s referral of a worker to this job — the authorization to work under that
+            local&rsquo;s agreement, separate from hours actually logged in Field time entries above.
+          </p>
+
+          {job.dispatchSlips.length > 0 && (
+            <ul className="mb-4 flex flex-col gap-2">
+              {job.dispatchSlips.map((slip) => (
+                <li
+                  key={slip.id}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-800 bg-slate-900 p-3 text-sm"
+                >
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <span className="text-slate-100">
+                      {slip.dispatchDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                    </span>
+                    <span className="text-slate-300">{slip.employeeUser.name ?? slip.employeeUser.email}</span>
+                    {slip.craftClassification && (
+                      <span className="text-xs text-slate-500">{slip.craftClassification.name}</span>
+                    )}
+                    {slip.dispatchNumber && (
+                      <span className="rounded bg-slate-800 px-1.5 py-0.5 text-xs text-slate-400">
+                        #{slip.dispatchNumber}
+                      </span>
+                    )}
+                    {slip.fileUrl && (
+                      <a
+                        href={slip.fileUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs text-blue-400 hover:underline"
+                      >
+                        {slip.fileName ?? "View slip"}
+                      </a>
+                    )}
+                    {slip.note && <span className="text-xs text-slate-500">— {slip.note}</span>}
+                  </div>
+                  <form action={deleteDispatchSlipWithId(slip.id)}>
+                    <button type="submit" title="Remove" className="text-xs text-red-400 hover:underline">
+                      Remove
+                    </button>
+                  </form>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <form
+            action={uploadDispatchSlipWithId}
+            encType="multipart/form-data"
+            className="flex flex-wrap items-end gap-2 rounded-lg border border-slate-800 bg-slate-900 p-3"
+          >
+            <label className="flex flex-col gap-1 text-xs text-slate-400">
+              Employee
+              <select
+                name="employeeUserId"
+                required
+                className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
+              >
+                {companyMembers.map((member) => (
+                  <option key={member.id} value={member.id}>
+                    {member.name ?? member.email}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-slate-400">
+              Dispatch date
+              <input
+                type="date"
+                name="dispatchDate"
+                required
+                className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-slate-400">
+              Craft classification
+              <select
+                name="craftClassificationId"
+                defaultValue=""
+                className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
+              >
+                <option value="">No craft tag</option>
+                {craftClassifications.map((craft) => (
+                  <option key={craft.id} value={craft.id}>
+                    {craft.unionLocal.parentInternational} {craft.unionLocal.localNumber} — {craft.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-slate-400">
+              Dispatch #
+              <input
+                name="dispatchNumber"
+                placeholder="optional"
+                className="w-28 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-600 focus:border-blue-500 focus:outline-none"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-slate-400">
+              Slip (optional)
+              <input
+                type="file"
+                name="file"
+                accept="application/pdf,image/png,image/jpeg,image/webp"
+                className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 file:mr-2 file:rounded file:border-0 file:bg-slate-800 file:px-2 file:py-1 file:text-slate-200 focus:border-blue-500 focus:outline-none"
+              />
+            </label>
+            <input
+              name="note"
+              placeholder="Note (optional)"
+              className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+            />
+            <button
+              type="submit"
+              className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-100 hover:bg-slate-700"
+            >
+              Log dispatch
             </button>
           </form>
         </section>

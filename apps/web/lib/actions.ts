@@ -1691,6 +1691,8 @@ export async function logTimeEntry(jobId: string, formData: FormData) {
   }
 
   const note = String(formData.get("note") ?? "").trim();
+  const perDiemAmount = nullableDecimalFromForm(formData, "perDiemAmount");
+  const travelPayAmount = nullableDecimalFromForm(formData, "travelPayAmount");
 
   await prisma.timeEntry.create({
     data: {
@@ -1701,9 +1703,90 @@ export async function logTimeEntry(jobId: string, formData: FormData) {
       date,
       hours: hoursRaw,
       payType: timeEntryPayTypeFromForm(formData),
+      perDiemAmount,
+      travelPayAmount,
       note: note || null,
     },
   });
+
+  revalidatePath(`/jobs/${jobId}`);
+}
+
+const DISPATCH_SLIP_MEDIA_TYPES = ["application/pdf", "image/png", "image/jpeg", "image/webp"] as const;
+const DISPATCH_SLIP_MAX_BYTES = 15 * 1024 * 1024;
+
+/** Records a union hiring hall's dispatch of one worker to this job. The
+ * scanned slip is optional — some halls dispatch by phone with just a
+ * referral number, no document to attach. */
+export async function uploadDispatchSlip(jobId: string, formData: FormData) {
+  const { company } = await requireCompanyContext();
+  await assertJobInCompany(jobId, company.id);
+
+  const employeeUserId = String(formData.get("employeeUserId") ?? "");
+  const employee = await prisma.user.findUnique({ where: { id: employeeUserId } });
+  if (!employee || employee.companyId !== company.id) {
+    throw new Error("Employee not found");
+  }
+
+  const craftClassificationId = await craftClassificationIdFromForm(formData, company.id);
+
+  const dispatchDateRaw = String(formData.get("dispatchDate") ?? "").trim();
+  if (!dispatchDateRaw) {
+    throw new Error("Dispatch date is required");
+  }
+  const dispatchDate = new Date(dispatchDateRaw);
+  if (Number.isNaN(dispatchDate.getTime())) {
+    throw new Error("Invalid dispatch date");
+  }
+
+  const dispatchNumber = String(formData.get("dispatchNumber") ?? "").trim();
+  const note = String(formData.get("note") ?? "").trim();
+
+  const file = formData.get("file");
+  let fileUrl: string | null = null;
+  let fileName: string | null = null;
+  if (file instanceof File && file.size > 0) {
+    if (!(DISPATCH_SLIP_MEDIA_TYPES as readonly string[]).includes(file.type)) {
+      throw new Error("Upload a PDF, PNG, JPEG, or WEBP file");
+    }
+    if (file.size > DISPATCH_SLIP_MAX_BYTES) {
+      throw new Error("File is too large (max 15MB)");
+    }
+    const buffer = await file.arrayBuffer().then(Buffer.from);
+    const blob = await put(`dispatch-slips/${jobId}/${file.name}`, buffer, {
+      access: "public",
+      contentType: file.type,
+    });
+    fileUrl = blob.url;
+    fileName = file.name;
+  }
+
+  await prisma.dispatchSlip.create({
+    data: {
+      jobId,
+      employeeUserId,
+      craftClassificationId,
+      dispatchDate,
+      dispatchNumber: dispatchNumber || null,
+      fileUrl,
+      fileName,
+      note: note || null,
+    },
+  });
+
+  revalidatePath(`/jobs/${jobId}`);
+}
+
+export async function deleteDispatchSlip(jobId: string, dispatchSlipId: string) {
+  const { company } = await requireCompanyContext();
+  await assertJobInCompany(jobId, company.id);
+
+  const slip = await prisma.dispatchSlip.findUnique({ where: { id: dispatchSlipId } });
+  if (!slip || slip.jobId !== jobId) {
+    throw new Error("Dispatch slip not found on this job");
+  }
+
+  await prisma.dispatchSlip.delete({ where: { id: dispatchSlipId } });
 
   revalidatePath(`/jobs/${jobId}`);
 }

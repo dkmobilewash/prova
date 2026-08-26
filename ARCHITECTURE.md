@@ -608,6 +608,25 @@ draws on the estimating side. Certified payroll report generation and
 prevailing-wage rules both build on top of `TimeEntry` once it exists,
 but neither is built yet.
 
+`perDiemAmount`/`travelPayAmount` are flat daily allowances on
+`TimeEntry` itself rather than a separate table — a per diem or travel
+day is still one row for that employee/job/date, not a second entry to
+keep in sync.
+
+`DispatchSlip` is a distinct model, not a `TimeEntry` field: it's the
+hiring hall's referral authorizing a worker onto this job, which happens
+before any hours are worked and may never result in hours at all (a
+no-show, or a job that gets pulled). The scanned slip (Vercel Blob) is
+optional — some halls dispatch by phone with only a referral number.
+
+Deliberately not built in this pass: a dedicated mobile/field time-entry
+app. Every time entry and dispatch slip today goes through the same
+responsive Next.js site as everything else. A real field app (offline
+support, native camera access for slip photos, etc.) is a separate,
+larger effort with its own design pass — the same category as
+QuickBooks data sync or plan-takeoff via computer vision above, not
+something to bolt onto this phase.
+
 ## Multi-tenancy and roles
 
 Every `Contact` and `Job` belongs to a `Company`. Every `User` belongs to
