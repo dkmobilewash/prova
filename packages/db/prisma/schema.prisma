@@ -843,6 +843,7 @@ enum LocationType {
   HQ
   BRANCH_YARD
   WAREHOUSE
+  TRAILER
 }
 
 /// A physical office/yard/warehouse. `state` is broken out from the

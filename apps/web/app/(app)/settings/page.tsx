@@ -35,6 +35,7 @@ const LOCATION_TYPE_OPTIONS = [
   { value: "HQ", label: "HQ" },
   { value: "BRANCH_YARD", label: "Branch yard" },
   { value: "WAREHOUSE", label: "Warehouse" },
+  { value: "TRAILER", label: "Trailer" },
 ] as const;
 
 function labelFor(options: readonly { value: string; label: string }[], value: string) {
