@@ -1,0 +1,20 @@
+// Prisma schema for Prova.
+//
+// See /ARCHITECTURE.md for the full explanation of why Job/JobLineItem is a
+// single unified object shared by the estimate, contract, budget, change
+// orders, and job costing — read that before adding a new model that looks
+// like it duplicates line-item data.
+
+generator client {
+  provider      = "prisma-client-js"
+  // "native" covers local dev; "rhel-openssl-3.0.x" is the runtime Vercel's
+  // serverless functions use, which differs from the build machine — without
+  // this, the query engine binary generated at build time doesn't match what
+  // the deployed function needs. See https://pris.ly/d/engine-not-found-nextjs
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}

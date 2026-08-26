@@ -1,0 +1,151 @@
+// Contracts, invoicing, payments, retainage and accounting sync.
+// Diego's lane.
+//
+// Part of the multi-file Prisma schema in this folder.
+
+enum SignatureStatus {
+  PENDING
+  SIGNED
+}
+
+/// A client e-signature request for a Job's contract. The unguessable
+/// `token` is the client's access control — there's no client login
+/// (that's a separate, not-yet-built phase), so the token stands in for
+/// one. Once signed, `snapshot` freezes what the client actually agreed to
+/// at that moment: it's an audit record only, exactly like
+/// ChangeOrderLineItemEdit — nothing live (the contract summary, the
+/// budget) ever reads from it. See ARCHITECTURE.md.
+model SignatureRequest {
+  id     String          @id @default(cuid())
+  jobId  String
+  job    Job             @relation(fields: [jobId], references: [id])
+  token  String          @unique @default(cuid())
+  status SignatureStatus @default(PENDING)
+
+  signerName  String?
+  signerEmail String?
+  signedAt    DateTime?
+  ipAddress   String?
+  userAgent   String?
+  snapshot    Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([jobId])
+}
+
+/// The actual subcontract agreement file (the GC-to-sub contract PDF) and
+/// its amendment history — distinct from SignatureRequest.snapshot, which
+/// captures Prova's own line-item data at the moment of e-signing, not a
+/// document a GC handed over. Each upload is a new version, same pattern
+/// as EstimateVersion: a manual checkpoint (versionNumber, an optional
+/// note describing what changed), not an automatic log. The original
+/// agreement is version 1; a later amendment is version 2, 3, etc. — all
+/// kept, never overwritten, so the full history stays visible.
+model ContractDocument {
+  id            String @id @default(cuid())
+  jobId         String
+  job           Job    @relation(fields: [jobId], references: [id])
+  versionNumber Int
+
+  fileUrl  String
+  fileName String
+  note     String?
+
+  uploadedByUserId String?
+  uploadedByUser   User?    @relation(fields: [uploadedByUserId], references: [id])
+  createdAt        DateTime @default(now())
+
+  @@unique([jobId, versionNumber])
+  @@index([jobId])
+}
+
+/// A bill against a Job. Amount paid and balance are always
+/// SUM(payments.amount) vs. amount — computed, never stored, same rule as
+/// actual cost on JobLineItem. Only creatable once a job is CONTRACTED or
+/// later: you don't invoice an estimate nobody agreed to yet.
+model Invoice {
+  id          String    @id @default(cuid())
+  jobId       String
+  job         Job       @relation(fields: [jobId], references: [id])
+  number      Int
+  description String?
+  amount      Decimal   @db.Decimal(12, 2)
+  issuedAt    DateTime  @default(now())
+  dueAt       DateTime?
+
+  /// Retainage withheld from this specific invoice — snapshotted at
+  /// creation from Job.retainagePercent × amount, not recomputed live.
+  /// Null when the job has no retainage rate set. This is the per-invoice
+  /// ledger entry; SUM(retainageWithheld) across a job's invoices is its
+  /// running total withheld — see lib/retainage.ts.
+  retainageWithheld Decimal? @db.Decimal(12, 2)
+
+  payments Payment[]
+
+  @@unique([jobId, number])
+  @@index([jobId])
+}
+
+/// A payment received against an Invoice. No payment processor — this is a
+/// manual record (check, cash, card swipe elsewhere), not a charge. An
+/// invoice can have several, supporting partial/progress payments.
+model Payment {
+  id         String   @id @default(cuid())
+  invoiceId  String
+  invoice    Invoice  @relation(fields: [invoiceId], references: [id])
+  amount     Decimal  @db.Decimal(12, 2)
+  method     String?
+  receivedAt DateTime @default(now())
+  note       String?
+
+  @@index([invoiceId])
+}
+
+/// A record of retainage actually paid back to the sub — distinct from
+/// Payment, which settles a specific Invoice's balance. Retainage
+/// accumulates across every invoice on a job (Invoice.retainageWithheld)
+/// and is typically released as one lump sum well after the invoices that
+/// generated it, often at/after substantial completion, not tied to any
+/// single invoice. Job-level withheld minus SUM(RetainageRelease.amount)
+/// is the outstanding retainage balance — see lib/retainage.ts.
+model RetainageRelease {
+  id    String @id @default(cuid())
+  jobId String
+  job   Job    @relation(fields: [jobId], references: [id])
+
+  amount     Decimal  @db.Decimal(12, 2)
+  releasedAt DateTime @default(now())
+  note       String?
+
+  createdByUserId String?
+  createdByUser   User?    @relation(fields: [createdByUserId], references: [id])
+  createdAt       DateTime @default(now())
+
+  @@index([jobId])
+}
+
+/// One QuickBooks Online connection per Company. Tokens stored as plain
+/// columns (sandbox-appropriate; revisit encryption-at-rest before this
+/// connects to a real production QuickBooks account — see ARCHITECTURE.md).
+/// This is connection infrastructure only: no Contact/Invoice data is
+/// pushed to QuickBooks yet. See packages/integrations/src/quickbooks.ts.
+model QuickBooksConnection {
+  id        String  @id @default(cuid())
+  companyId String  @unique
+  company   Company @relation(fields: [companyId], references: [id])
+
+  /// The QuickBooks company ID this connection is scoped to.
+  realmId String
+
+  accessToken           String
+  refreshToken          String
+  accessTokenExpiresAt  DateTime
+  refreshTokenExpiresAt DateTime
+
+  connectedByUserId String?
+  connectedByUser   User?   @relation(fields: [connectedByUserId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

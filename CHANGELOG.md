@@ -14,6 +14,44 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ## 2026-08-26
 
+### Split the two files we kept colliding in (Cyrus, agreed with Diego)
+`cyrus/split-shared-files`
+
+Every feature either of us built edited `packages/db/prisma/schema.prisma`
+and `apps/web/lib/actions.ts`. PR #6 conflicted in exactly those two files
+and nothing else — not a feature collision, just two people appending to
+the same file. This makes that structurally impossible.
+
+- **Schema** is now `packages/db/prisma/schema/` — 7 domain files
+  (`company`, `jobs`, `estimating`, `labor`, `billing`, `compliance`,
+  `operations`) plus a header file holding only the generator and
+  datasource. Grouped by domain rather than one file per model: 36 files
+  would mean hunting relations across the tree for no gain.
+- **Actions** are now `apps/web/lib/actions/` — 9 domain modules plus
+  `shared.ts`. `index.ts` re-exports them, so every existing
+  `@/lib/actions` import works unchanged. No call site was touched.
+
+Pure move. Same 51 models, same 67 exported actions, same bodies. Verified
+by diffing the sorted names before and after.
+
+**Two things this turned up that were not obvious:**
+
+1. With a multi-file schema, Prisma expects `migrations/` **inside** the
+   schema folder. Left where it was, `prisma migrate status` reported
+   "No migration found" and then "Database schema is up to date!" in the
+   same breath — because with nothing to compare, nothing looks wrong.
+   `migrate deploy` would have applied nothing to a fresh database. The
+   check that catches this is `migrate status` naming real migrations, not
+   the absence of an error.
+2. Next.js rejects `export *` inside a `"use server"` file — it can't prove
+   a wildcard only yields async functions. The barrel is therefore a plain
+   module; each domain file carries its own `"use server"`, and a
+   re-exported action keeps that identity from where it's defined.
+   `pnpm typecheck` does not catch this. Only `pnpm build` does.
+
+Also applied 6 migrations from Diego's merge that had never been run
+against the local database.
+
 ### Punch lists (Cyrus)
 `cyrus/punch-lists` — WORK-SPLIT task 5
 

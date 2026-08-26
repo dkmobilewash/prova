@@ -1,0 +1,129 @@
+// Estimating and bidding: versions, the reusable catalog, bid invitations.
+// Diego's lane.
+//
+// Part of the multi-file Prisma schema in this folder.
+
+enum BidInvitationStatus {
+  INVITED
+  SUBMITTED
+  WON
+  LOST
+  DECLINED
+}
+
+/// A GC inviting this company to bid on a project — tracked from
+/// invitation through outcome, independent of Job: most invitations are
+/// declined or lost and never become one. When a bid is won, the PM
+/// creates the Job normally through the existing estimate flow; linking
+/// a won BidInvitation forward to its Job is a future refinement, not
+/// built here.
+model BidInvitation {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+  contactId String
+  contact   Contact @relation(fields: [contactId], references: [id])
+
+  projectName String
+  dueDate     DateTime?
+  status      BidInvitationStatus @default(INVITED)
+  notes       String?
+
+  /// Which trade this bid is for, and what was actually bid — together
+  /// these are what turn a plain invitation log into a historical bid
+  /// database: "what have we bid on similar EIFS work before, and at what
+  /// price" is just filtering/reading this table, not a separate one.
+  tradeScope TradeScope?
+  bidAmount  Decimal?    @db.Decimal(12, 2)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([contactId])
+}
+
+/// A manual checkpoint of a job's line items while it's still an
+/// ESTIMATE — "save version" on the current JobLineItem rows, not an
+/// automatic log of every edit. `snapshot` is a plain JSON copy (same
+/// pattern as SignatureRequest.snapshot): estimate versioning needs to
+/// answer "what did we price this at before the scope changed," which a
+/// point-in-time copy answers directly, without a parallel line-item
+/// history table to keep in sync with every edit JobLineItem ever makes.
+model EstimateVersion {
+  id            String @id @default(cuid())
+  jobId         String
+  job           Job    @relation(fields: [jobId], references: [id])
+  versionNumber Int
+
+  note     String?
+  snapshot Json
+
+  createdByUserId String?
+  createdByUser   User?    @relation(fields: [createdByUserId], references: [id])
+  createdAt       DateTime @default(now())
+
+  @@unique([jobId, versionNumber])
+  @@index([jobId])
+}
+
+/// The five WWCCA trade families a wall-and-ceiling specialty subcontractor
+/// self-performs. A flat categorization tag, not a hierarchy — a company
+/// may hold several of these in-house and job costing needs to separate
+/// them. Deliberately not a self-performed-vs-subcontracted model or full
+/// CSI MasterFormat coding: this ICP is a narrow-trade-family sub, not a
+/// diversified GC coordinating many subs.
+enum TradeScope {
+  METAL_FRAMING_DRYWALL
+  LATH_PLASTER
+  EIFS
+  ACOUSTICAL_CEILINGS
+  FIREPROOFING
+}
+
+/// Which trade scopes a Company actually holds/self-performs — reuses the
+/// TradeScope enum above rather than a parallel reference table, so there's
+/// one source of truth for "what are the five trade scopes." A company may
+/// add a trade scope later as it grows rather than holding all five from
+/// day one, hence `activeSince` rather than assuming everything started at
+/// company creation.
+model CompanyTradeScope {
+  id          String     @id @default(cuid())
+  companyId   String
+  company     Company    @relation(fields: [companyId], references: [id])
+  tradeScope  TradeScope
+  isPrimary   Boolean    @default(false)
+  activeSince DateTime?
+  createdAt   DateTime   @default(now())
+
+  @@unique([companyId, tradeScope])
+  @@index([companyId])
+}
+
+/// A reusable line item, scoped to the company, not any one job —
+/// "Add from catalog" on a new estimate inserts an ordinary JobLineItem
+/// pre-filled from here (same jobLineItem.create path every other line
+/// goes through; a catalog entry is a template for that call, not a
+/// second live copy of estimate data to keep in sync). Built up over
+/// time from real estimates ("save as catalog item" on an existing line)
+/// rather than requiring separate manual data entry.
+model LineItemCatalogEntry {
+  id          String      @id @default(cuid())
+  companyId   String
+  company     Company     @relation(fields: [companyId], references: [id])
+  description String
+  unit        String?
+  tradeScope  TradeScope?
+
+  defaultUnitPrice        Decimal?             @db.Decimal(12, 2)
+  defaultBudgetedUnitCost Decimal?             @db.Decimal(12, 2)
+  defaultLaborHours       Decimal?             @db.Decimal(8, 2)
+  craftClassificationId   String?
+  craftClassification     CraftClassification? @relation(fields: [craftClassificationId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([craftClassificationId])
+}
