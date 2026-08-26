@@ -143,9 +143,10 @@ model JobLineItem {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  edits       ChangeOrderLineItemEdit[]
-  costEntries CostEntry[]
-  timeEntries TimeEntry[]
+  edits            ChangeOrderLineItemEdit[]
+  costEntries      CostEntry[]
+  timeEntries      TimeEntry[]
+  invoiceLineItems InvoiceLineItem[]
 
   @@index([jobId])
   @@index([originChangeOrderId])

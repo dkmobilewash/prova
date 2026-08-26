@@ -102,7 +102,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
       },
       invoices: {
         orderBy: { number: "asc" },
-        include: { payments: { orderBy: { receivedAt: "desc" } } },
+        include: { payments: { orderBy: { receivedAt: "desc" } }, lineItems: true },
       },
       timeEntries: {
         orderBy: { date: "desc" },
