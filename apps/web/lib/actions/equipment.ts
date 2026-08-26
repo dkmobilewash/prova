@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@prova/db";
-import { assertOwner, tradeScopeFromForm } from "./shared";
+import { assertOwner } from "./shared";
 
 /** Empty job selection means "in the yard", a normal state rather than an
  * error — same shape as tradeScopeFromForm. Validates the job belongs to
