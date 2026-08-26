@@ -14,6 +14,34 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ## 2026-08-26
 
+### Daily field reports (Cyrus)
+`cyrus/field-reports` — WORK-SPLIT task 3
+
+- New `DailyFieldReport` model and a section at the end of the job page:
+  crew on site, work performed, weather, delays. One entry per job per day.
+- **Weather and delays are the reason this exists.** A delay claim or a
+  schedule dispute months later gets argued from these, and nothing
+  captured them before.
+- **One report per job per day, enforced by the database**
+  (`@@unique([jobId, reportDate])`), not by code. Two people filing the
+  same day would leave contradictory records of what happened — worse than
+  one person editing an existing entry. The duplicate error is caught and
+  turned into plain language rather than surfacing a Prisma code.
+- Dates are stored at UTC midnight and rendered in UTC. Rendering in local
+  time would show the previous day for anyone west of UTC.
+- `crewPresent` is free text rather than a link to `JobAssignment`: the
+  crew that shows up rarely matches the roster, and forcing the link would
+  make people record the roster instead of the truth.
+- The report date is not editable. It's the identity of the record — filed
+  against the wrong day, delete and re-file.
+
+**Touching `jobs/[id]/page.tsx`, which is Diego's file:** 19 insertions,
+0 deletions. One import, one additive `include`, one `<section>` at the
+very end. Agreed with him in #prova-build before writing.
+
+Not done: no photos, no per-report crew hours (that's `TimeEntry`), no
+copy-yesterday shortcut.
+
 ### Split the two files we kept colliding in (Cyrus, agreed with Diego)
 `cyrus/split-shared-files`
 
