@@ -7,6 +7,7 @@ import { PrintButton } from "@/components/PrintButton";
 import { ContractSummary } from "@/components/ContractSummary";
 import { WipNarrativeButton } from "@/components/WipNarrativeButton";
 import { DraftLineItemsForm } from "@/components/DraftLineItemsForm";
+import { DailyFieldReports } from "@/components/DailyFieldReports";
 import { money } from "@/lib/money";
 import { calculateLineItemWip, calculateJobWip } from "@/lib/wip";
 import { calculateTimeEntryLaborCost, findEffectiveFringeRateSchedule } from "@/lib/labor-cost";
@@ -92,6 +93,10 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
       changeOrders: {
         orderBy: { number: "asc" },
         include: { edits: true },
+      },
+      dailyFieldReports: {
+        orderBy: { reportDate: "desc" },
+        include: { filedBy: true },
       },
       assignments: {
         include: { user: true },
@@ -1855,6 +1860,20 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             </ul>
           </section>
         )}
+
+        <DailyFieldReports
+          jobId={job.id}
+          canDelete={currentUser.role === "OWNER"}
+          reports={job.dailyFieldReports.map((report) => ({
+            id: report.id,
+            reportDate: report.reportDate.toISOString(),
+            crewPresent: report.crewPresent,
+            workPerformed: report.workPerformed,
+            weather: report.weather,
+            delays: report.delays,
+            filedByName: report.filedBy?.name ?? null,
+          }))}
+        />
       </div>
     </div>
   );

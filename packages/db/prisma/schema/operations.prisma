@@ -129,3 +129,44 @@ model PunchListItem {
   @@index([companyId])
   @@index([jobId])
 }
+
+/// One record per job per day: who was on site, what got done, weather and
+/// delays. Weather and delays are the point — a delay claim or a schedule
+/// dispute months later gets argued from these, and nothing captured them
+/// before.
+model DailyFieldReport {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+  jobId     String
+  job       Job     @relation(fields: [jobId], references: [id])
+
+  /// Date only in practice; stored as DateTime because Prisma has no date
+  /// type on Postgres. Always written at UTC midnight so the uniqueness
+  /// constraint below behaves.
+  reportDate DateTime
+
+  /// Free text rather than a link to JobAssignment. On a real site the crew
+  /// that showed up rarely matches the roster exactly, and forcing it to
+  /// would make people record the roster instead of the truth.
+  crewPresent   String?
+  workPerformed String
+  weather       String?
+  /// Anything that cost time: late delivery, another trade in the way,
+  /// inspection no-show. Blank means the day ran clean.
+  delays        String?
+
+  filedByUserId String?
+  filedBy       User?   @relation(fields: [filedByUserId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// One report per job per day, enforced here rather than in code. Two
+  /// people filing the same day would leave contradictory records of what
+  /// happened, which is worse than one person having to edit an existing
+  /// entry.
+  @@unique([jobId, reportDate])
+  @@index([companyId])
+  @@index([jobId])
+}

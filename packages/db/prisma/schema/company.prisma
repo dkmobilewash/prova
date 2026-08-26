@@ -40,6 +40,7 @@ model Company {
   equipment              Equipment[]
   lineItemCatalogEntries LineItemCatalogEntry[]
   punchListItems         PunchListItem[]
+  dailyFieldReports      DailyFieldReport[]
 }
 
 enum UserRole {
@@ -73,6 +74,7 @@ model User {
   uploadedPrevailingWageDeterminations PrevailingWageDetermination[]
   createdRetainageReleases             RetainageRelease[]
   raisedPunchListItems                 PunchListItem[]
+  filedDailyFieldReports               DailyFieldReport[]
 
   @@index([companyId])
 }
