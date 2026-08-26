@@ -27,7 +27,10 @@ export default async function VendorsPage() {
       <section>
         <h2 className="mb-3 text-sm font-semibold text-slate-300">Directory</h2>
         {vendors.length === 0 ? (
-          <p className="text-slate-400">No vendors yet — add your first one above.</p>
+          <p className="text-slate-400">
+            No vendors yet. Add the suppliers you buy from most — board and steel, scaffolding,
+            equipment rental — so material costs have a source attached to them.
+          </p>
         ) : (
           <ul className="divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900">
             {vendors.map((vendor) => (
