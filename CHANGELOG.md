@@ -14,6 +14,38 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ## 2026-08-26
 
+### Safety & field operations (Cyrus)
+`cyrus/safety` — FEATURE-AUDIT category 17
+
+- New `/safety` page with two records: the incident log and toolbox talks.
+  New `SafetyIncident` and `ToolboxTalk` models in `operations.prisma`, new
+  `lib/actions/safety.ts`. Nothing outside my lane was touched — one line
+  each in `middleware.ts` and `Sidebar.tsx`.
+- **Case numbers are sequential per company per calendar year, taken from
+  the current max rather than a row count.** Counting rows would reissue a
+  case number after a deletion, and duplicate case numbers within a year on
+  a filed log are a finding. Case number and year are not editable after
+  creation — they identify the case on a document that may already be
+  filed.
+- **"Recordable" is derived from the outcome, never stored.** Everything
+  except first aid is recordable on the 300 log. Storing it as its own
+  field lets it disagree with the outcome, which is exactly the kind of
+  contradiction an inspector finds.
+- **`jobId` is optional on incidents.** Injuries happen in the yard, the
+  shop and in transit, not only on jobs. Requiring a job would train people
+  to attach the incident to whatever job was handy, which corrupts the
+  record more than a blank field does.
+- Day counts (away / restricted) only appear for the two outcomes where
+  OSHA counts them. Showing them otherwise invites numbers that don't
+  belong on the log.
+- First aid cases are logged too, and the empty state says why: a first-aid
+  case that later turns into lost time is only defensible if it was written
+  down the day it happened.
+- Dates stored at UTC midnight and rendered in UTC, same rule as daily
+  field reports.
+- Create and inline-edit share one `SafetyIncidentFields` component so the
+  two forms can't drift. Two-step delete, owner only, no `window.confirm`.
+
 ### Daily field reports (Cyrus)
 `cyrus/field-reports` — WORK-SPLIT task 3
 

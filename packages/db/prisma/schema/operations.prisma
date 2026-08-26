@@ -170,3 +170,100 @@ model DailyFieldReport {
   @@index([companyId])
   @@index([jobId])
 }
+
+/// OSHA's recordability ladder, most severe first. Anything above
+/// FIRST_AID_ONLY is recordable on the 300 log; FIRST_AID_ONLY is not.
+/// Storing the outcome and deriving recordability from it beats a
+/// "recordable?" checkbox somebody ticks wrong under pressure.
+enum IncidentOutcome {
+  DEATH
+  DAYS_AWAY
+  RESTRICTED_OR_TRANSFER
+  OTHER_RECORDABLE
+  FIRST_AID_ONLY
+}
+
+/// The six columns OSHA's 300 log classifies a case into.
+enum IncidentClassification {
+  INJURY
+  SKIN_DISORDER
+  RESPIRATORY_CONDITION
+  POISONING
+  HEARING_LOSS
+  OTHER_ILLNESS
+}
+
+/// A recordable or first-aid safety incident. Shaped to OSHA's 300 log
+/// rather than as a free-text diary: without case number, classification
+/// and outcome you cannot generate the log later, and the log is what gets
+/// audited.
+model SafetyIncident {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  /// Optional on purpose: injuries happen in the yard and the shop, not
+  /// only on jobs. Forcing a job would make people attach incidents to
+  /// whatever job was handy, which corrupts the record.
+  jobId String?
+  job   Job?    @relation(fields: [jobId], references: [id])
+
+  /// Sequential per company per calendar year, the way OSHA case numbers
+  /// run. Assigned at creation, never reused.
+  caseNumber Int
+  caseYear   Int
+
+  occurredAt DateTime
+  /// Free text, not a User link — injured parties include day labour and
+  /// apprentices who may never have an account.
+  employeeName String
+  jobTitle     String?
+  /// Where on site, e.g. "3rd floor east corridor".
+  location     String?
+
+  description    String
+  classification IncidentClassification
+  outcome        IncidentOutcome
+  /// Only meaningful for DAYS_AWAY / RESTRICTED_OR_TRANSFER. OSHA counts
+  /// calendar days, not work days.
+  daysAway       Int?
+  daysRestricted Int?
+
+  reportedByUserId String?
+  reportedBy       User?   @relation(fields: [reportedByUserId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, caseYear, caseNumber])
+  @@index([companyId])
+  @@index([jobId])
+}
+
+/// A toolbox talk / tailgate safety meeting. Union agreements and GC
+/// contracts commonly require these be held and documented; the record is
+/// the deliverable.
+model ToolboxTalk {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+  jobId     String?
+  job       Job?    @relation(fields: [jobId], references: [id])
+
+  heldOn    DateTime
+  topic     String
+  presenter String?
+  /// Free text roster. A signature sheet photo is the real artifact on a
+  /// jobsite; capturing names here is the searchable version of it.
+  attendees String?
+  notes     String?
+
+  recordedByUserId String?
+  recordedBy       User?   @relation(fields: [recordedByUserId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([jobId])
+}
