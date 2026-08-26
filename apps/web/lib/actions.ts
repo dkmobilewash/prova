@@ -120,6 +120,8 @@ export async function addLineItem(jobId: string, formData: FormData) {
   const currentEstimatedUnitCost =
     nullableDecimalFromForm(formData, "currentEstimatedUnitCost") ?? budgetedUnitCost;
   const tradeScope = tradeScopeFromForm(formData);
+  const laborHours = nullableDecimalFromForm(formData, "laborHours");
+  const craftClassificationId = await craftClassificationIdFromForm(formData, company.id);
 
   if (!description) {
     throw new Error("Description is required");
@@ -135,6 +137,8 @@ export async function addLineItem(jobId: string, formData: FormData) {
       budgetedUnitCost,
       currentEstimatedUnitCost,
       tradeScope,
+      laborHours,
+      craftClassificationId,
     },
   });
 
@@ -332,6 +336,8 @@ export async function updateLineItem(jobId: string, lineItemId: string, formData
   const currentEstimatedUnitCost =
     nullableDecimalFromForm(formData, "currentEstimatedUnitCost") ?? budgetedUnitCost;
   const tradeScope = tradeScopeFromForm(formData);
+  const laborHours = nullableDecimalFromForm(formData, "laborHours");
+  const craftClassificationId = await craftClassificationIdFromForm(formData, company.id);
 
   if (!description) {
     throw new Error("Description is required");
@@ -347,6 +353,8 @@ export async function updateLineItem(jobId: string, lineItemId: string, formData
       budgetedUnitCost,
       currentEstimatedUnitCost,
       tradeScope,
+      laborHours,
+      craftClassificationId,
     },
   });
 
@@ -485,6 +493,22 @@ function tradeScopeFromForm(formData: FormData): (typeof TRADE_SCOPES)[number] |
   return TRADE_SCOPES.includes(raw as (typeof TRADE_SCOPES)[number])
     ? (raw as (typeof TRADE_SCOPES)[number])
     : null;
+}
+
+/** Empty selection means "no craft tag" — valid, since not every line item
+ * is labor a specific craft performs. When set, verified against this
+ * company's own union affiliations (CraftClassification is a global
+ * reference table, not company-scoped, so this is the access check). */
+async function craftClassificationIdFromForm(formData: FormData, companyId: string): Promise<string | null> {
+  const raw = String(formData.get("craftClassificationId") ?? "").trim();
+  if (!raw) return null;
+  const craft = await prisma.craftClassification.findFirst({
+    where: { id: raw, unionLocal: { companyAgreements: { some: { companyId } } } },
+  });
+  if (!craft) {
+    throw new Error("Craft classification not found");
+  }
+  return craft.id;
 }
 
 /**
@@ -659,6 +683,8 @@ export async function createBidInvitation(contactId: string, formData: FormData)
   const projectName = String(formData.get("projectName") ?? "").trim();
   const dueDateRaw = String(formData.get("dueDate") ?? "").trim();
   const notes = String(formData.get("notes") ?? "").trim();
+  const tradeScope = tradeScopeFromForm(formData);
+  const bidAmount = nullableDecimalFromForm(formData, "bidAmount");
 
   if (!projectName) {
     throw new Error("Project name is required");
@@ -671,13 +697,18 @@ export async function createBidInvitation(contactId: string, formData: FormData)
       projectName,
       dueDate: dueDateRaw ? new Date(dueDateRaw) : null,
       notes: notes || null,
+      tradeScope,
+      bidAmount,
     },
   });
 
   revalidatePath(`/contacts/${contactId}`);
+  revalidatePath("/bids");
 }
 
-/** Updates a bid invitation's outcome (invited/submitted/won/lost/declined). */
+/** Updates a bid invitation's outcome (invited/submitted/won/lost/declined)
+ * and, once known, what was actually bid — together with tradeScope this
+ * is what makes the table a historical bid database, not just a log. */
 export async function updateBidInvitationStatus(bidInvitationId: string, formData: FormData) {
   const { company } = await requireCompanyContext();
 
@@ -687,10 +718,12 @@ export async function updateBidInvitationStatus(bidInvitationId: string, formDat
   }
 
   const status = enumFromForm(formData, "status", BID_INVITATION_STATUSES);
+  const bidAmount = nullableDecimalFromForm(formData, "bidAmount");
 
-  await prisma.bidInvitation.update({ where: { id: bidInvitationId }, data: { status } });
+  await prisma.bidInvitation.update({ where: { id: bidInvitationId }, data: { status, bidAmount } });
 
   revalidatePath(`/contacts/${bid.contactId}`);
+  revalidatePath("/bids");
 }
 
 export async function deleteBidInvitation(bidInvitationId: string) {
@@ -704,6 +737,7 @@ export async function deleteBidInvitation(bidInvitationId: string) {
   await prisma.bidInvitation.delete({ where: { id: bidInvitationId } });
 
   revalidatePath(`/contacts/${bid.contactId}`);
+  revalidatePath("/bids");
 }
 
 /** Sets a job's scheduled start/end dates. Either or both may be cleared. */
@@ -909,9 +943,32 @@ export async function createInvoice(jobId: string, formData: FormData) {
   const dueRaw = String(formData.get("dueAt") ?? "").trim();
   const dueAt = dueRaw ? new Date(dueRaw) : null;
 
+  // Snapshotted from the job's current rate, not recomputed later if the
+  // rate changes -- see Invoice.retainageWithheld.
+  const retainageWithheld =
+    job.retainagePercent != null ? (Number(amount) * (Number(job.retainagePercent) / 100)).toFixed(2) : null;
+
   const number = await nextInvoiceNumber(jobId);
   await prisma.invoice.create({
-    data: { jobId, number, description: description || null, amount, dueAt },
+    data: { jobId, number, description: description || null, amount, dueAt, retainageWithheld },
+  });
+
+  revalidatePath(`/jobs/${jobId}`);
+}
+
+/** Sets this job's retainage rate and expected substantial-completion
+ * date. Only affects future invoices -- see Invoice.retainageWithheld. */
+export async function updateJobRetainageTerms(jobId: string, formData: FormData) {
+  const { company } = await requireCompanyContext();
+  await assertJobInCompany(jobId, company.id);
+
+  const retainagePercent = nullableDecimalFromForm(formData, "retainagePercent");
+  const completionRaw = String(formData.get("substantialCompletionDate") ?? "").trim();
+  const substantialCompletionDate = completionRaw ? new Date(completionRaw) : null;
+
+  await prisma.job.update({
+    where: { id: jobId },
+    data: { retainagePercent, substantialCompletionDate },
   });
 
   revalidatePath(`/jobs/${jobId}`);
@@ -961,6 +1018,39 @@ export async function deletePayment(jobId: string, paymentId: string) {
   }
 
   await prisma.payment.delete({ where: { id: paymentId } });
+
+  revalidatePath(`/jobs/${jobId}`);
+}
+
+/** Records retainage actually paid back to the sub -- a lump sum against
+ * the job's accumulated withheld balance, not against any one invoice.
+ * See RetainageRelease in schema.prisma. */
+export async function createRetainageRelease(jobId: string, formData: FormData) {
+  const { company, ...user } = await requireCompanyContext();
+  await assertJobInCompany(jobId, company.id);
+
+  const amount = decimalFromForm(formData, "amount");
+  const releasedRaw = String(formData.get("releasedAt") ?? "").trim();
+  const releasedAt = releasedRaw ? new Date(releasedRaw) : new Date();
+  const note = String(formData.get("note") ?? "").trim();
+
+  await prisma.retainageRelease.create({
+    data: { jobId, amount, releasedAt, note: note || null, createdByUserId: user.id },
+  });
+
+  revalidatePath(`/jobs/${jobId}`);
+}
+
+export async function deleteRetainageRelease(jobId: string, releaseId: string) {
+  const { company } = await requireCompanyContext();
+  await assertJobInCompany(jobId, company.id);
+
+  const release = await prisma.retainageRelease.findUnique({ where: { id: releaseId } });
+  if (!release || release.jobId !== jobId) {
+    throw new Error("Retainage release not found on this job");
+  }
+
+  await prisma.retainageRelease.delete({ where: { id: releaseId } });
 
   revalidatePath(`/jobs/${jobId}`);
 }
@@ -1486,7 +1576,6 @@ export async function updateVendor(vendorId: string, formData: FormData) {
 
   revalidatePath("/vendors");
 }
-
 // ---------------------------------------------------------------------------
 // Equipment (Cyrus's lane — WORK-SPLIT.md task 4).
 // ---------------------------------------------------------------------------
@@ -1574,4 +1663,447 @@ export async function deleteEquipment(equipmentId: string) {
   await prisma.equipment.delete({ where: { id: equipmentId } });
 
   revalidatePath("/equipment");
+}
+
+/** Adds a reusable line-item template, scoped to the company. Not tied to
+ * any job — see LineItemCatalogEntry in schema.prisma. */
+export async function createLineItemCatalogEntry(formData: FormData) {
+  const { company } = await requireCompanyContext();
+
+  const description = String(formData.get("description") ?? "").trim();
+  const unit = String(formData.get("unit") ?? "").trim();
+  const tradeScope = tradeScopeFromForm(formData);
+  const defaultUnitPrice = nullableDecimalFromForm(formData, "defaultUnitPrice");
+  const defaultBudgetedUnitCost = nullableDecimalFromForm(formData, "defaultBudgetedUnitCost");
+  const defaultLaborHours = nullableDecimalFromForm(formData, "defaultLaborHours");
+  const craftClassificationId = await craftClassificationIdFromForm(formData, company.id);
+
+  if (!description) {
+    throw new Error("Description is required");
+  }
+
+  await prisma.lineItemCatalogEntry.create({
+    data: {
+      companyId: company.id,
+      description,
+      unit: unit || null,
+      tradeScope,
+      defaultUnitPrice,
+      defaultBudgetedUnitCost,
+      defaultLaborHours,
+      craftClassificationId,
+    },
+  });
+
+  revalidatePath("/catalog");
+}
+
+export async function deleteLineItemCatalogEntry(catalogEntryId: string) {
+  const { company } = await requireCompanyContext();
+
+  const entry = await prisma.lineItemCatalogEntry.findUnique({ where: { id: catalogEntryId } });
+  if (!entry || entry.companyId !== company.id) {
+    throw new Error("Catalog entry not found");
+  }
+
+  await prisma.lineItemCatalogEntry.delete({ where: { id: catalogEntryId } });
+
+  revalidatePath("/catalog");
+}
+
+/** Turns an existing estimate line into a reusable catalog entry — the way
+ * the catalog actually grows in practice, from real priced work, rather
+ * than requiring separate manual data entry. */
+export async function saveLineItemAsCatalogEntry(lineItemId: string) {
+  const { company } = await requireCompanyContext();
+
+  const lineItem = await prisma.jobLineItem.findUnique({
+    where: { id: lineItemId },
+    include: { job: true },
+  });
+  if (!lineItem || lineItem.job.companyId !== company.id) {
+    throw new Error("Line item not found");
+  }
+
+  await prisma.lineItemCatalogEntry.create({
+    data: {
+      companyId: company.id,
+      description: lineItem.description,
+      unit: lineItem.unit,
+      tradeScope: lineItem.tradeScope,
+      defaultUnitPrice: lineItem.unitPrice,
+      defaultBudgetedUnitCost: lineItem.budgetedUnitCost,
+      defaultLaborHours: lineItem.laborHours,
+      craftClassificationId: lineItem.craftClassificationId,
+    },
+  });
+
+  revalidatePath("/catalog");
+}
+
+/** Adds a new JobLineItem pre-filled from a catalog entry, through the
+ * exact same create call addLineItem uses — a catalog entry is a template
+ * for that call, not a second live copy of estimate data. */
+export async function addLineItemFromCatalog(jobId: string, formData: FormData) {
+  const { company } = await requireCompanyContext();
+  const job = await assertJobInCompany(jobId, company.id);
+  assertEditableDirectly(job);
+
+  const catalogEntryId = String(formData.get("catalogEntryId") ?? "").trim();
+  const entry = await prisma.lineItemCatalogEntry.findUnique({ where: { id: catalogEntryId } });
+  if (!entry || entry.companyId !== company.id) {
+    throw new Error("Catalog entry not found");
+  }
+
+  const quantity = decimalFromForm(formData, "quantity");
+
+  await prisma.jobLineItem.create({
+    data: {
+      jobId,
+      description: entry.description,
+      unit: entry.unit,
+      quantity,
+      unitPrice: entry.defaultUnitPrice,
+      budgetedUnitCost: entry.defaultBudgetedUnitCost,
+      currentEstimatedUnitCost: entry.defaultBudgetedUnitCost,
+      tradeScope: entry.tradeScope,
+      laborHours: entry.defaultLaborHours,
+      craftClassificationId: entry.craftClassificationId,
+    },
+  });
+
+  revalidatePath(`/jobs/${jobId}`);
+}
+
+/** Saves a manual checkpoint of the estimate's current line items — "what
+ * did we price this at before the scope changed." A snapshot, not an
+ * automatic log of every edit; only available pre-award, same gate as
+ * every other direct estimate edit. */
+export async function saveEstimateVersion(jobId: string, formData: FormData) {
+  const { company, ...user } = await requireCompanyContext();
+  const job = await assertJobInCompany(jobId, company.id);
+  assertEditableDirectly(job);
+
+  const note = String(formData.get("note") ?? "").trim();
+
+  const [lineItems, lastVersion] = await Promise.all([
+    prisma.jobLineItem.findMany({ where: { jobId, isDeleted: false }, orderBy: { sortOrder: "asc" } }),
+    prisma.estimateVersion.findFirst({ where: { jobId }, orderBy: { versionNumber: "desc" } }),
+  ]);
+
+  await prisma.estimateVersion.create({
+    data: {
+      jobId,
+      versionNumber: (lastVersion?.versionNumber ?? 0) + 1,
+      note: note || null,
+      snapshot: lineItems.map((item) => ({
+        description: item.description,
+        quantity: item.quantity.toString(),
+        unit: item.unit,
+        tradeScope: item.tradeScope,
+        unitPrice: item.unitPrice?.toString() ?? null,
+        budgetedUnitCost: item.budgetedUnitCost?.toString() ?? null,
+        laborHours: item.laborHours?.toString() ?? null,
+      })),
+      createdByUserId: user.id,
+    },
+  });
+
+  revalidatePath(`/jobs/${jobId}`);
+}
+
+const CONTRACT_DOCUMENT_MEDIA_TYPES = ["application/pdf", "image/png", "image/jpeg", "image/webp"] as const;
+const CONTRACT_DOCUMENT_MAX_BYTES = 15 * 1024 * 1024;
+
+/** Uploads the actual subcontract agreement file (or a later amendment) —
+ * distinct from SignatureRequest.snapshot, which is Prova's own line-item
+ * data at the moment of e-signing, not a document the GC handed over.
+ * Each upload is a new, numbered version (original = 1); nothing is ever
+ * overwritten, so the full amendment history stays visible. Not gated by
+ * job status: a GC can send an amendment at any point in the job's life,
+ * not just pre-award. */
+export async function uploadContractDocument(jobId: string, formData: FormData) {
+  const { company, ...user } = await requireCompanyContext();
+  await assertJobInCompany(jobId, company.id);
+
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) {
+    throw new Error("A file is required");
+  }
+  if (!(CONTRACT_DOCUMENT_MEDIA_TYPES as readonly string[]).includes(file.type)) {
+    throw new Error("Upload a PDF, PNG, JPEG, or WEBP file");
+  }
+  if (file.size > CONTRACT_DOCUMENT_MAX_BYTES) {
+    throw new Error("File is too large (max 15MB)");
+  }
+
+  const note = String(formData.get("note") ?? "").trim();
+
+  const [buffer, lastVersion] = await Promise.all([
+    file.arrayBuffer().then(Buffer.from),
+    prisma.contractDocument.findFirst({ where: { jobId }, orderBy: { versionNumber: "desc" } }),
+  ]);
+
+  const blob = await put(`contracts/${jobId}/${file.name}`, buffer, { access: "public", contentType: file.type });
+
+  await prisma.contractDocument.create({
+    data: {
+      jobId,
+      versionNumber: (lastVersion?.versionNumber ?? 0) + 1,
+      fileUrl: blob.url,
+      fileName: file.name,
+      note: note || null,
+      uploadedByUserId: user.id,
+    },
+  });
+
+  revalidatePath(`/jobs/${jobId}`);
+}
+
+export async function deleteContractDocument(contractDocumentId: string) {
+  const context = await requireCompanyContext();
+  assertOwner(context);
+  const { company } = context;
+
+  const document = await prisma.contractDocument.findUnique({
+    where: { id: contractDocumentId },
+    include: { job: true },
+  });
+  if (!document || document.job.companyId !== company.id) {
+    throw new Error("Contract document not found");
+  }
+
+  await prisma.contractDocument.delete({ where: { id: contractDocumentId } });
+
+  revalidatePath(`/jobs/${document.jobId}`);
+}
+
+const TIME_ENTRY_PAY_TYPES = ["STRAIGHT", "OVERTIME", "DOUBLE_TIME", "SHIFT_DIFFERENTIAL"] as const;
+
+/** Unrecognized/missing selection falls back to STRAIGHT rather than
+ * erroring — every entry needs some pay type, and straight time is the
+ * overwhelmingly common case. */
+function timeEntryPayTypeFromForm(formData: FormData): (typeof TIME_ENTRY_PAY_TYPES)[number] {
+  const raw = String(formData.get("payType") ?? "");
+  return TIME_ENTRY_PAY_TYPES.includes(raw as (typeof TIME_ENTRY_PAY_TYPES)[number])
+    ? (raw as (typeof TIME_ENTRY_PAY_TYPES)[number])
+    : "STRAIGHT";
+}
+
+/** Logs a day's hours for one employee against a job — optionally tied to
+ * a specific line item (cost code/SOV line) and craft classification. See
+ * TimeEntry in schema.prisma for why pay types are separate rows rather
+ * than one row with a rate multiplier. */
+export async function logTimeEntry(jobId: string, formData: FormData) {
+  const { company } = await requireCompanyContext();
+  await assertJobInCompany(jobId, company.id);
+
+  const employeeUserId = String(formData.get("employeeUserId") ?? "");
+  const employee = await prisma.user.findUnique({ where: { id: employeeUserId } });
+  if (!employee || employee.companyId !== company.id) {
+    throw new Error("Employee not found");
+  }
+
+  const lineItemIdRaw = String(formData.get("lineItemId") ?? "").trim();
+  const lineItemId = lineItemIdRaw ? (await assertLineItemOnJob(lineItemIdRaw, jobId)).id : null;
+
+  const craftClassificationId = await craftClassificationIdFromForm(formData, company.id);
+
+  const dateRaw = String(formData.get("date") ?? "").trim();
+  if (!dateRaw) {
+    throw new Error("Date is required");
+  }
+  const date = new Date(dateRaw);
+  if (Number.isNaN(date.getTime())) {
+    throw new Error("Invalid date");
+  }
+
+  const hoursRaw = String(formData.get("hours") ?? "").trim();
+  if (!hoursRaw || Number.isNaN(Number(hoursRaw)) || Number(hoursRaw) <= 0) {
+    throw new Error("Hours must be a positive number");
+  }
+
+  const note = String(formData.get("note") ?? "").trim();
+  const perDiemAmount = nullableDecimalFromForm(formData, "perDiemAmount");
+  const travelPayAmount = nullableDecimalFromForm(formData, "travelPayAmount");
+
+  await prisma.timeEntry.create({
+    data: {
+      jobId,
+      lineItemId,
+      employeeUserId,
+      craftClassificationId,
+      date,
+      hours: hoursRaw,
+      payType: timeEntryPayTypeFromForm(formData),
+      perDiemAmount,
+      travelPayAmount,
+      note: note || null,
+    },
+  });
+
+  revalidatePath(`/jobs/${jobId}`);
+}
+
+const DISPATCH_SLIP_MEDIA_TYPES = ["application/pdf", "image/png", "image/jpeg", "image/webp"] as const;
+const DISPATCH_SLIP_MAX_BYTES = 15 * 1024 * 1024;
+
+/** Records a union hiring hall's dispatch of one worker to this job. The
+ * scanned slip is optional — some halls dispatch by phone with just a
+ * referral number, no document to attach. */
+export async function uploadDispatchSlip(jobId: string, formData: FormData) {
+  const { company } = await requireCompanyContext();
+  await assertJobInCompany(jobId, company.id);
+
+  const employeeUserId = String(formData.get("employeeUserId") ?? "");
+  const employee = await prisma.user.findUnique({ where: { id: employeeUserId } });
+  if (!employee || employee.companyId !== company.id) {
+    throw new Error("Employee not found");
+  }
+
+  const craftClassificationId = await craftClassificationIdFromForm(formData, company.id);
+
+  const dispatchDateRaw = String(formData.get("dispatchDate") ?? "").trim();
+  if (!dispatchDateRaw) {
+    throw new Error("Dispatch date is required");
+  }
+  const dispatchDate = new Date(dispatchDateRaw);
+  if (Number.isNaN(dispatchDate.getTime())) {
+    throw new Error("Invalid dispatch date");
+  }
+
+  const dispatchNumber = String(formData.get("dispatchNumber") ?? "").trim();
+  const note = String(formData.get("note") ?? "").trim();
+
+  const file = formData.get("file");
+  let fileUrl: string | null = null;
+  let fileName: string | null = null;
+  if (file instanceof File && file.size > 0) {
+    if (!(DISPATCH_SLIP_MEDIA_TYPES as readonly string[]).includes(file.type)) {
+      throw new Error("Upload a PDF, PNG, JPEG, or WEBP file");
+    }
+    if (file.size > DISPATCH_SLIP_MAX_BYTES) {
+      throw new Error("File is too large (max 15MB)");
+    }
+    const buffer = await file.arrayBuffer().then(Buffer.from);
+    const blob = await put(`dispatch-slips/${jobId}/${file.name}`, buffer, {
+      access: "public",
+      contentType: file.type,
+    });
+    fileUrl = blob.url;
+    fileName = file.name;
+  }
+
+  await prisma.dispatchSlip.create({
+    data: {
+      jobId,
+      employeeUserId,
+      craftClassificationId,
+      dispatchDate,
+      dispatchNumber: dispatchNumber || null,
+      fileUrl,
+      fileName,
+      note: note || null,
+    },
+  });
+
+  revalidatePath(`/jobs/${jobId}`);
+}
+
+export async function deleteDispatchSlip(jobId: string, dispatchSlipId: string) {
+  const { company } = await requireCompanyContext();
+  await assertJobInCompany(jobId, company.id);
+
+  const slip = await prisma.dispatchSlip.findUnique({ where: { id: dispatchSlipId } });
+  if (!slip || slip.jobId !== jobId) {
+    throw new Error("Dispatch slip not found on this job");
+  }
+
+  await prisma.dispatchSlip.delete({ where: { id: dispatchSlipId } });
+
+  revalidatePath(`/jobs/${jobId}`);
+}
+
+export async function deleteTimeEntry(jobId: string, timeEntryId: string) {
+  const { company } = await requireCompanyContext();
+  await assertJobInCompany(jobId, company.id);
+
+  const timeEntry = await prisma.timeEntry.findUnique({ where: { id: timeEntryId } });
+  if (!timeEntry || timeEntry.jobId !== jobId) {
+    throw new Error("Time entry not found on this job");
+  }
+
+  await prisma.timeEntry.delete({ where: { id: timeEntryId } });
+
+  revalidatePath(`/jobs/${jobId}`);
+}
+
+const PREVAILING_WAGE_DETERMINATION_MEDIA_TYPES = ["application/pdf", "image/png", "image/jpeg", "image/webp"] as const;
+const PREVAILING_WAGE_DETERMINATION_MAX_BYTES = 15 * 1024 * 1024;
+
+/** Attaches a government wage-determination document (or a link to one)
+ * for a job's jurisdiction. This is attached storage, not a lookup --
+ * there's no licensed prevailing-wage dataset in this app to query. */
+export async function uploadPrevailingWageDetermination(jobId: string, formData: FormData) {
+  const { company, ...user } = await requireCompanyContext();
+  await assertJobInCompany(jobId, company.id);
+
+  const jurisdiction = String(formData.get("jurisdiction") ?? "").trim();
+  if (!jurisdiction) {
+    throw new Error("Jurisdiction is required");
+  }
+
+  const sourceUrl = String(formData.get("sourceUrl") ?? "").trim();
+  const note = String(formData.get("note") ?? "").trim();
+
+  const file = formData.get("file");
+  let fileUrl: string | null = null;
+  let fileName: string | null = null;
+  if (file instanceof File && file.size > 0) {
+    if (!(PREVAILING_WAGE_DETERMINATION_MEDIA_TYPES as readonly string[]).includes(file.type)) {
+      throw new Error("Upload a PDF, PNG, JPEG, or WEBP file");
+    }
+    if (file.size > PREVAILING_WAGE_DETERMINATION_MAX_BYTES) {
+      throw new Error("File is too large (max 15MB)");
+    }
+    const buffer = await file.arrayBuffer().then(Buffer.from);
+    const blob = await put(`prevailing-wage/${jobId}/${file.name}`, buffer, {
+      access: "public",
+      contentType: file.type,
+    });
+    fileUrl = blob.url;
+    fileName = file.name;
+  }
+
+  if (!fileUrl && !sourceUrl) {
+    throw new Error("Attach a file or a source link");
+  }
+
+  await prisma.prevailingWageDetermination.create({
+    data: {
+      jobId,
+      jurisdiction,
+      fileUrl,
+      fileName,
+      sourceUrl: sourceUrl || null,
+      note: note || null,
+      uploadedByUserId: user.id,
+    },
+  });
+
+  revalidatePath(`/jobs/${jobId}`);
+}
+
+export async function deletePrevailingWageDetermination(jobId: string, determinationId: string) {
+  const { company } = await requireCompanyContext();
+  await assertJobInCompany(jobId, company.id);
+
+  const determination = await prisma.prevailingWageDetermination.findUnique({ where: { id: determinationId } });
+  if (!determination || determination.jobId !== jobId) {
+    throw new Error("Prevailing wage determination not found on this job");
+  }
+
+  await prisma.prevailingWageDetermination.delete({ where: { id: determinationId } });
+
+  revalidatePath(`/jobs/${jobId}`);
 }

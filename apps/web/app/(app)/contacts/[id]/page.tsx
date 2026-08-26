@@ -14,6 +14,14 @@ import {
 import { money } from "@/lib/money";
 import { calculatePaymentReliability } from "@/lib/gc-reliability";
 
+const TRADE_SCOPE_OPTIONS = [
+  { value: "METAL_FRAMING_DRYWALL", label: "Metal framing / drywall" },
+  { value: "LATH_PLASTER", label: "Lath & plaster" },
+  { value: "EIFS", label: "EIFS" },
+  { value: "ACOUSTICAL_CEILINGS", label: "Acoustical ceilings" },
+  { value: "FIREPROOFING", label: "Fireproofing" },
+] as const;
+
 const BID_STATUS_OPTIONS = [
   { value: "INVITED", label: "Invited" },
   { value: "SUBMITTED", label: "Submitted" },
@@ -219,7 +227,15 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
                       {BID_STATUS_OPTIONS.find((o) => o.value === bid.status)?.label ?? bid.status}
                     </span>
                   </div>
-                  {bid.dueDate && <p className="text-sm text-slate-400">Due {formatDate(bid.dueDate)}</p>}
+                  <p className="text-sm text-slate-400">
+                    {bid.tradeScope && (
+                      <>{TRADE_SCOPE_OPTIONS.find((t) => t.value === bid.tradeScope)?.label} · </>
+                    )}
+                    {bid.dueDate && <>Due {formatDate(bid.dueDate)}</>}
+                  </p>
+                  {bid.bidAmount != null && (
+                    <p className="text-sm text-slate-300">{money(Number(bid.bidAmount))}</p>
+                  )}
                   {bid.notes && <p className="text-sm text-slate-500">{bid.notes}</p>}
                 </div>
                 <div className="flex items-center gap-2">
@@ -236,6 +252,13 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
                         </option>
                       ))}
                     </select>
+                    <input
+                      name="bidAmount"
+                      defaultValue={bid.bidAmount?.toString() ?? ""}
+                      placeholder="Bid $"
+                      title="Amount bid, once known"
+                      className="w-24 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-600 focus:border-blue-500 focus:outline-none"
+                    />
                     <button
                       type="submit"
                       className="rounded-md bg-slate-800 px-2 py-1 text-xs font-medium text-slate-100 hover:bg-slate-700"
@@ -262,6 +285,21 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
               placeholder="Downtown office build-out"
               className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
             />
+          </label>
+          <label className="flex flex-col gap-1 text-sm text-slate-300">
+            Trade
+            <select
+              name="tradeScope"
+              defaultValue=""
+              className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
+            >
+              <option value="">No trade tag</option>
+              {TRADE_SCOPE_OPTIONS.map((t) => (
+                <option key={t.value} value={t.value}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
           </label>
           <label className="flex flex-col gap-1 text-sm text-slate-300">
             Bid due date
