@@ -78,6 +78,45 @@ or a "budget." They were never different things.
 is flagged rather than destroyed, so the job's history stays intact and
 nothing that was once billed disappears from the audit trail.
 
+`laborHours`/`craftClassificationId` are the same idea applied to labor:
+optional fields on the one row, not a parallel labor-estimate table.
+`craftClassificationId` points at the global `CraftClassification`
+reference table (journeyman/apprentice/foreman, per union local), scoped
+at the application layer to locals this company actually has a
+`CompanyUnionAgreement` with — `CraftClassification` itself carries no
+`companyId`, so that join is the access check.
+
+### `LineItemCatalogEntry` — a template for the same `jobLineItem.create` call
+
+A reusable line item, scoped to the company rather than any one job.
+"Add from catalog" on an ESTIMATE-stage job creates an ordinary
+`JobLineItem` pre-filled from the entry's defaults — the same create call
+`addLineItem` uses, just with different inputs. There's no second live
+copy of estimate data anywhere: a catalog entry is a starting point, not
+a linked record a `JobLineItem` stays in sync with afterward. Entries are
+meant to accumulate from real, already-priced work ("save as catalog
+item" on an existing line) rather than requiring separate manual data
+entry up front.
+
+### `EstimateVersion` — a manual snapshot, not an edit log
+
+`EstimateVersion.snapshot` is a plain JSON copy of a job's line items at
+the moment "save version" is clicked — the same pattern as
+`SignatureRequest.snapshot`. This answers "what did we price this at
+before the scope changed" directly, without a parallel line-item history
+table that would need to stay in sync with every `JobLineItem` edit ever
+made. It's a checkpoint the PM chooses to save, not an automatic audit
+trail of every keystroke — only available pre-award, same
+`assertEditableDirectly` gate as every other direct estimate edit.
+
+### `BidInvitation` as the historical bid database
+
+`BidInvitation` (see the GC-relationship-management section above)
+carries `tradeScope` and `bidAmount` for exactly this reason: "what have
+we bid on similar EIFS work before, and at what price" is a filter over
+this one table — `/bids` — not a separate historical-bids table to keep
+in sync with it.
+
 ### `ChangeOrder` — mutates the same rows, never forks them
 
 A change order does exactly one of three things, and all three operate on
@@ -549,6 +588,95 @@ a short-lived `httpOnly` cookie set by `initiateQuickBooksConnect` and
 checked against the value Intuit echoes back to the callback route — no
 database table for it, since it only needs to survive one redirect
 round-trip.
+
+## Field time tracking
+
+`TimeEntry` records a single day's hours worked by one employee on one
+job — optionally tied to a specific `JobLineItem` (cost code/SOV line)
+and `CraftClassification`, mirroring the same optional link
+`JobLineItem.craftClassificationId` already uses on the estimating side.
+Straight/overtime/double-time/shift-differential hours are separate rows
+rather than one row with a rate multiplier: a worker's mixed 8-hour day
+(6 straight + 2 OT) is two clean rows, not one row needing a blended-rate
+calculation to unwind later.
+
+This tracks hours by category only — it does not compute dollar cost.
+Turning hours into wages needs a rate-rule engine reading
+`FringeRateSchedule` (per craft, per local, per pay type), which is
+future-phase work, the same boundary `JobLineItem.laborHours` already
+draws on the estimating side. Certified payroll report generation and
+prevailing-wage rules both build on top of `TimeEntry` once it exists,
+but neither is built yet.
+
+`perDiemAmount`/`travelPayAmount` are flat daily allowances on
+`TimeEntry` itself rather than a separate table — a per diem or travel
+day is still one row for that employee/job/date, not a second entry to
+keep in sync.
+
+`DispatchSlip` is a distinct model, not a `TimeEntry` field: it's the
+hiring hall's referral authorizing a worker onto this job, which happens
+before any hours are worked and may never result in hours at all (a
+no-show, or a job that gets pulled). The scanned slip (Vercel Blob) is
+optional — some halls dispatch by phone with only a referral number.
+
+Deliberately not built in this pass: a dedicated mobile/field time-entry
+app. Every time entry and dispatch slip today goes through the same
+responsive Next.js site as everything else. A real field app (offline
+support, native camera access for slip photos, etc.) is a separate,
+larger effort with its own design pass — the same category as
+QuickBooks data sync or plan-takeoff via computer vision above, not
+something to bolt onto this phase.
+
+## Certified payroll and prevailing wage
+
+`lib/labor-cost.ts` turns a `TimeEntry` into a burdened wage cost using
+the `FringeRateSchedule` effective for its craft classification and
+date — pure arithmetic, same reasoning as `lib/wip.ts`. Per prevailing-
+wage/Davis-Bacon convention, overtime/double-time multiply the base wage
+only; fringe benefits (pension, vacation, health & welfare, training)
+are paid at their flat per-hour rate regardless of pay type. An entry
+with no craft tag, or no schedule effective on its date, never gets a
+guessed rate — it shows as uncomputed rather than $0.
+
+`lib/certified-payroll.ts` rolls a week of a job's `TimeEntry` rows up
+into one row per employee per craft classification — hours by pay type,
+total hours, and computed wage cost — rendered at
+`/jobs/[id]/certified-payroll`. This is a certified-payroll-*style*
+summary, not a government-form-formatted WH-347/state-equivalent
+export: replicating that exact form layout is a distinct, larger effort
+this phase doesn't take on.
+
+`PrevailingWageDetermination` is attached storage for the actual
+government wage-determination document (or a link to one) per job —
+not a lookup. There's no licensed or scraped prevailing-wage dataset in
+this app to query automatically from, the same reason NV licensing data
+was left unseeded in `LicenseClassificationReference`. Multi-state
+variation isn't built as a rules engine for the same reason; a job is
+already jurisdiction-scoped via `operatingLocationId`, which is as far
+as this can honestly go without a real government wage-rate dataset.
+
+## Retainage
+
+`Job.retainagePercent` is the job's retainage rate — usually pre-filled
+in the UI from `Contact.defaultRetainagePercent`, but independently
+editable per job. `Invoice.retainageWithheld` is snapshotted from that
+rate at the moment each invoice is created, not recomputed live: raising
+or lowering a job's rate later never rewrites the retainage already
+withheld on past invoices, the same reasoning `JobLineItem.budgetedUnitCost`
+already uses for cost baselines.
+
+`RetainageRelease` records retainage actually paid back to the sub — a
+lump sum against the job's accumulated withheld balance
+(`SUM(Invoice.retainageWithheld)`), not tied to any single invoice,
+since retainage is typically released well after (and separately from)
+the invoices that generated it. `lib/retainage.ts` computes the
+outstanding balance as withheld minus released.
+
+Release *forecasting* is a plain field
+(`Job.substantialCompletionDate`) plus a computed statement in the UI
+("expected release around this date"), not a scheduling or notification
+system — there's no closeout/warranty stage in `JobStatus` yet for a
+forecast to hook into more precisely than that.
 
 ## Multi-tenancy and roles
 

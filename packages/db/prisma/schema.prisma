@@ -40,22 +40,23 @@ model Company {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  users                User[]
-  contacts             Contact[]
-  jobs                 Job[]
-  invites              Invite[]
-  quickBooksConnection QuickBooksConnection?
-  complianceDocuments  ComplianceDocument[]
-  licenses             CompanyLicense[]
-  tradeScopes          CompanyTradeScope[]
-  unionAgreements      CompanyUnionAgreement[]
-  insurancePolicies    CompanyInsurancePolicy[]
-  bonds                CompanyBond[]
-  locations            CompanyLocation[]
-  bidInvitations       BidInvitation[]
-  vendors              Vendor[]
-  equipment            Equipment[]
-  punchListItems       PunchListItem[]
+  users                  User[]
+  contacts               Contact[]
+  jobs                   Job[]
+  invites                Invite[]
+  quickBooksConnection   QuickBooksConnection?
+  complianceDocuments    ComplianceDocument[]
+  licenses               CompanyLicense[]
+  tradeScopes            CompanyTradeScope[]
+  unionAgreements        CompanyUnionAgreement[]
+  insurancePolicies      CompanyInsurancePolicy[]
+  bonds                  CompanyBond[]
+  locations              CompanyLocation[]
+  bidInvitations         BidInvitation[]
+  vendors                Vendor[]
+  equipment              Equipment[]
+  lineItemCatalogEntries LineItemCatalogEntry[]
+  punchListItems         PunchListItem[]
 }
 
 enum UserRole {
@@ -79,10 +80,16 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  assignments                 JobAssignment[]
-  connectedQuickBooks         QuickBooksConnection[]
-  uploadedComplianceDocuments ComplianceDocument[]
-  raisedPunchListItems        PunchListItem[]
+  assignments                          JobAssignment[]
+  connectedQuickBooks                  QuickBooksConnection[]
+  uploadedComplianceDocuments          ComplianceDocument[]
+  savedEstimateVersions                EstimateVersion[]
+  uploadedContractDocuments            ContractDocument[]
+  timeEntries                          TimeEntry[]
+  dispatchSlips                        DispatchSlip[]
+  uploadedPrevailingWageDeterminations PrevailingWageDetermination[]
+  createdRetainageReleases             RetainageRelease[]
+  raisedPunchListItems                 PunchListItem[]
 
   @@index([companyId])
 }
@@ -118,18 +125,18 @@ model Contact {
   portalToken String? @unique
 
   /// Standing terms this GC typically works under — a starting point to
-  /// reference when scoping a new job with them, not a value enforced
-  /// anywhere yet. Actual per-job retainage withheld/released tracking is
-  /// a separate, bigger feature this phase doesn't build (see
-  /// ARCHITECTURE.md).
+  /// pre-fill Job.retainagePercent when scoping a new job with them, not a
+  /// value enforced anywhere itself. Actual per-job retainage withheld/
+  /// released tracking lives on Job/Invoice/RetainageRelease — see
+  /// ARCHITECTURE.md.
   defaultRetainagePercent Decimal? @db.Decimal(5, 2)
   /// e.g. 30 for "Net 30". Free-standing integer rather than an enum —
   /// real GC payment terms vary too much (Net 30/45/60, "pay when paid")
   /// to fit a fixed list.
-  paymentTermsDays Int?
+  paymentTermsDays        Int?
   /// Free text (e.g. "AIA A401", "ConsensusDocs 750") — which standard
   /// subcontract form this GC typically uses.
-  standardFormsUsed String?
+  standardFormsUsed       String?
 
   jobs           Job[]
   bidInvitations BidInvitation[]
@@ -162,6 +169,13 @@ model BidInvitation {
   dueDate     DateTime?
   status      BidInvitationStatus @default(INVITED)
   notes       String?
+
+  /// Which trade this bid is for, and what was actually bid — together
+  /// these are what turn a plain invitation log into a historical bid
+  /// database: "what have we bid on similar EIFS work before, and at what
+  /// price" is just filtering/reading this table, not a separate one.
+  tradeScope TradeScope?
+  bidAmount  Decimal?    @db.Decimal(12, 2)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -203,21 +217,67 @@ model Job {
   operatingLocationId String?
   operatingLocation   CompanyLocation? @relation(fields: [operatingLocationId], references: [id])
 
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  /// This job's retainage rate — usually pre-filled from
+  /// Contact.defaultRetainagePercent at contract time but independently
+  /// editable per job, since a GC's standing terms are a starting point,
+  /// not a binding value. Null means retainage isn't withheld on this job
+  /// (or hasn't been set yet). New invoices snapshot this rate into
+  /// Invoice.retainageWithheld at creation — changing it here later never
+  /// rewrites past invoices, same reasoning as JobLineItem.budgetedUnitCost.
+  retainagePercent Decimal? @db.Decimal(5, 2)
 
-  lineItems           JobLineItem[]
-  changeOrders        ChangeOrder[]
-  assignments         JobAssignment[]
-  signatureRequests   SignatureRequest[]
-  invoices            Invoice[]
-  complianceDocuments ComplianceDocument[]
-  equipment           Equipment[]
-  punchListItems      PunchListItem[]
+  /// The anchor date for retainage release forecasting — when this job is
+  /// expected to reach substantial completion, the point GCs typically
+  /// release retainage. A plain field, not a JobStatus stage: closeout/
+  /// warranty tracking (JobStatus stopping at COMPLETE today) is a
+  /// separate, not-yet-built phase.
+  substantialCompletionDate DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lineItems                    JobLineItem[]
+  changeOrders                 ChangeOrder[]
+  assignments                  JobAssignment[]
+  signatureRequests            SignatureRequest[]
+  invoices                     Invoice[]
+  complianceDocuments          ComplianceDocument[]
+  equipment                    Equipment[]
+  estimateVersions             EstimateVersion[]
+  contractDocuments            ContractDocument[]
+  timeEntries                  TimeEntry[]
+  dispatchSlips                DispatchSlip[]
+  prevailingWageDeterminations PrevailingWageDetermination[]
+  retainageReleases            RetainageRelease[]
+  punchListItems               PunchListItem[]
 
   @@index([companyId])
   @@index([contactId])
   @@index([operatingLocationId])
+}
+
+/// A manual checkpoint of a job's line items while it's still an
+/// ESTIMATE — "save version" on the current JobLineItem rows, not an
+/// automatic log of every edit. `snapshot` is a plain JSON copy (same
+/// pattern as SignatureRequest.snapshot): estimate versioning needs to
+/// answer "what did we price this at before the scope changed," which a
+/// point-in-time copy answers directly, without a parallel line-item
+/// history table to keep in sync with every edit JobLineItem ever makes.
+model EstimateVersion {
+  id            String @id @default(cuid())
+  jobId         String
+  job           Job    @relation(fields: [jobId], references: [id])
+  versionNumber Int
+
+  note     String?
+  snapshot Json
+
+  createdByUserId String?
+  createdByUser   User?    @relation(fields: [createdByUserId], references: [id])
+  createdAt       DateTime @default(now())
+
+  @@unique([jobId, versionNumber])
+  @@index([jobId])
 }
 
 /// The five WWCCA trade families a wall-and-ceiling specialty subcontractor
@@ -267,6 +327,16 @@ model JobLineItem {
   /// Optional — a categorization dimension on top of the cost/WIP fields
   /// below, not a prerequisite for them.
   tradeScope TradeScope?
+
+  /// Estimated labor hours for this line, optionally tied to which craft
+  /// classification would perform it (journeyman/apprentice/foreman by
+  /// local — see CraftClassification). Both optional: a material-only or
+  /// lump-sum line has neither. Not yet fed into a burdened labor cost —
+  /// that needs FringeRateSchedule wired in, a separate future step.
+  laborHours            Decimal?             @db.Decimal(8, 2)
+  craftClassificationId String?
+  craftClassification   CraftClassification? @relation(fields: [craftClassificationId], references: [id])
+
   /// Nullable: a cost-only budget line (general conditions, overhead,
   /// contingency) has no client-facing sale price. Contract value /
   /// invoicing totals treat a null unitPrice as $0 revenue — the line still
@@ -312,9 +382,11 @@ model JobLineItem {
 
   edits       ChangeOrderLineItemEdit[]
   costEntries CostEntry[]
+  timeEntries TimeEntry[]
 
   @@index([jobId])
   @@index([originChangeOrderId])
+  @@index([craftClassificationId])
 }
 
 /// A change order groups: (a) newly added JobLineItems (via
@@ -380,10 +452,94 @@ model CostEntry {
   /// conditions" line can carry cost entries spanning several trades, so
   /// this is tagged per-expense, not just inherited from the line item.
   tradeScope TradeScope?
-  incurredAt  DateTime     @default(now())
-  createdAt   DateTime     @default(now())
+  incurredAt DateTime    @default(now())
+  createdAt  DateTime    @default(now())
 
   @@index([lineItemId])
+}
+
+enum TimeEntryPayType {
+  STRAIGHT
+  OVERTIME
+  DOUBLE_TIME
+  SHIFT_DIFFERENTIAL
+}
+
+/// A single day's hours worked by one employee on one job — the field
+/// time-tracking record job costing and (eventually) certified payroll
+/// both need. Optionally tied to a specific JobLineItem (cost code/SOV
+/// line) and CraftClassification, since not every entry is craft-specific
+/// (e.g. a foreman's supervision time) but most union labor entries are.
+/// payType tracks straight/overtime/double-time/shift-differential hours
+/// as separate rows rather than one row with a rate multiplier, so a
+/// worker's mixed day (6 straight + 2 OT) is two clean rows instead of one
+/// row needing a blended-rate calculation. This tracks hours by category
+/// only — it does not compute dollar cost; that needs a wage-rate engine
+/// over FringeRateSchedule, a separate future step (same boundary
+/// JobLineItem.laborHours already draws on the estimating side).
+model TimeEntry {
+  id    String @id @default(cuid())
+  jobId String
+  job   Job    @relation(fields: [jobId], references: [id])
+
+  lineItemId String?
+  lineItem   JobLineItem? @relation(fields: [lineItemId], references: [id])
+
+  employeeUserId String
+  employeeUser   User   @relation(fields: [employeeUserId], references: [id])
+
+  craftClassificationId String?
+  craftClassification   CraftClassification? @relation(fields: [craftClassificationId], references: [id])
+
+  date    DateTime
+  hours   Decimal          @db.Decimal(5, 2)
+  payType TimeEntryPayType @default(STRAIGHT)
+
+  /// Flat daily allowances, independent of hours/payType — a per diem or
+  /// travel day is still one row on this date for this employee/job, not
+  /// a second entry. Both null for a normal local day with no allowance.
+  perDiemAmount   Decimal? @db.Decimal(10, 2)
+  travelPayAmount Decimal? @db.Decimal(10, 2)
+
+  note String?
+
+  createdAt DateTime @default(now())
+
+  @@index([jobId])
+  @@index([lineItemId])
+  @@index([employeeUserId])
+  @@index([craftClassificationId])
+}
+
+/// A union hiring hall's dispatch of one worker to one job — the referral
+/// record that authorizes them to work under that local's agreement on
+/// this job, distinct from TimeEntry (which logs hours actually worked
+/// afterward). The physical dispatch slip is often a paper form the hall
+/// hands the worker; fileUrl/fileName are optional since some halls
+/// dispatch by phone with just a referral number, no scanned document.
+model DispatchSlip {
+  id    String @id @default(cuid())
+  jobId String
+  job   Job    @relation(fields: [jobId], references: [id])
+
+  employeeUserId String
+  employeeUser   User   @relation(fields: [employeeUserId], references: [id])
+
+  craftClassificationId String?
+  craftClassification   CraftClassification? @relation(fields: [craftClassificationId], references: [id])
+
+  dispatchNumber String?
+  dispatchDate   DateTime
+
+  fileUrl  String?
+  fileName String?
+  note     String?
+
+  createdAt DateTime @default(now())
+
+  @@index([jobId])
+  @@index([employeeUserId])
+  @@index([craftClassificationId])
 }
 
 /// Crew assignment: which company Users are on a Job. Genuinely many-to-many
@@ -434,6 +590,59 @@ model SignatureRequest {
   @@index([jobId])
 }
 
+/// The actual subcontract agreement file (the GC-to-sub contract PDF) and
+/// its amendment history — distinct from SignatureRequest.snapshot, which
+/// captures Prova's own line-item data at the moment of e-signing, not a
+/// document a GC handed over. Each upload is a new version, same pattern
+/// as EstimateVersion: a manual checkpoint (versionNumber, an optional
+/// note describing what changed), not an automatic log. The original
+/// agreement is version 1; a later amendment is version 2, 3, etc. — all
+/// kept, never overwritten, so the full history stays visible.
+model ContractDocument {
+  id            String @id @default(cuid())
+  jobId         String
+  job           Job    @relation(fields: [jobId], references: [id])
+  versionNumber Int
+
+  fileUrl  String
+  fileName String
+  note     String?
+
+  uploadedByUserId String?
+  uploadedByUser   User?    @relation(fields: [uploadedByUserId], references: [id])
+  createdAt        DateTime @default(now())
+
+  @@unique([jobId, versionNumber])
+  @@index([jobId])
+}
+
+/// The government wage-determination document for a job's jurisdiction
+/// (e.g. a SAM.gov federal determination, or a state DOL prevailing-wage
+/// schedule) — attached storage, not a live lookup. There's no licensed
+/// or scraped prevailing-wage dataset in this app to look one up
+/// automatically from, same reason NV licensing data was left unseeded
+/// in LicenseClassificationReference. sourceUrl covers the common case of
+/// linking to the determination on the issuing agency's site instead of
+/// uploading a copy.
+model PrevailingWageDetermination {
+  id    String @id @default(cuid())
+  jobId String
+  job   Job    @relation(fields: [jobId], references: [id])
+
+  jurisdiction String
+
+  fileUrl   String?
+  fileName  String?
+  sourceUrl String?
+  note      String?
+
+  uploadedByUserId String?
+  uploadedByUser   User?    @relation(fields: [uploadedByUserId], references: [id])
+  createdAt        DateTime @default(now())
+
+  @@index([jobId])
+}
+
 /// A bill against a Job. Amount paid and balance are always
 /// SUM(payments.amount) vs. amount — computed, never stored, same rule as
 /// actual cost on JobLineItem. Only creatable once a job is CONTRACTED or
@@ -447,6 +656,13 @@ model Invoice {
   amount      Decimal   @db.Decimal(12, 2)
   issuedAt    DateTime  @default(now())
   dueAt       DateTime?
+
+  /// Retainage withheld from this specific invoice — snapshotted at
+  /// creation from Job.retainagePercent × amount, not recomputed live.
+  /// Null when the job has no retainage rate set. This is the per-invoice
+  /// ledger entry; SUM(retainageWithheld) across a job's invoices is its
+  /// running total withheld — see lib/retainage.ts.
+  retainageWithheld Decimal? @db.Decimal(12, 2)
 
   payments Payment[]
 
@@ -467,6 +683,29 @@ model Payment {
   note       String?
 
   @@index([invoiceId])
+}
+
+/// A record of retainage actually paid back to the sub — distinct from
+/// Payment, which settles a specific Invoice's balance. Retainage
+/// accumulates across every invoice on a job (Invoice.retainageWithheld)
+/// and is typically released as one lump sum well after the invoices that
+/// generated it, often at/after substantial completion, not tied to any
+/// single invoice. Job-level withheld minus SUM(RetainageRelease.amount)
+/// is the outstanding retainage balance — see lib/retainage.ts.
+model RetainageRelease {
+  id    String @id @default(cuid())
+  jobId String
+  job   Job    @relation(fields: [jobId], references: [id])
+
+  amount     Decimal  @db.Decimal(12, 2)
+  releasedAt DateTime @default(now())
+  note       String?
+
+  createdByUserId String?
+  createdByUser   User?    @relation(fields: [createdByUserId], references: [id])
+  createdAt       DateTime @default(now())
+
+  @@index([jobId])
 }
 
 /// One QuickBooks Online connection per Company. Tokens stored as plain
@@ -621,8 +860,8 @@ model CompanyLicense {
   classificationCode  String?
   classificationLabel String?
 
-  licenseNumber String
-  issueDate     DateTime?
+  licenseNumber  String
+  issueDate      DateTime?
   /// Whether a license is "expiring soon" is computed at read time from
   /// this field, same rule as ComplianceDocument.expiresAt.
   expirationDate DateTime?
@@ -630,7 +869,7 @@ model CompanyLicense {
   /// Only for jurisdictions that tie a bond to the license itself —
   /// distinct from the company's general bonding capacity (CompanyBond,
   /// a later phase).
-  bondNumber String?
+  bondNumber     String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -663,7 +902,7 @@ model LicenseClassificationReference {
 /// seeded: no verified source for real local numbers/jurisdictions, and a
 /// wrong entry here would misattribute a company's CBA to the wrong local.
 model UnionLocal {
-  id                  String @id @default(cuid())
+  id                  String   @id @default(cuid())
   parentInternational String // "United Brotherhood of Carpenters", "OPCMIA", "IUPAT", "LIUNA"
   localNumber         String
   jurisdictionName    String
@@ -712,9 +951,41 @@ model CraftClassification {
   createdAt    DateTime   @default(now())
 
   fringeRateSchedules FringeRateSchedule[]
+  jobLineItems        JobLineItem[]
+  catalogEntries      LineItemCatalogEntry[]
+  timeEntries         TimeEntry[]
+  dispatchSlips       DispatchSlip[]
 
   @@unique([unionLocalId, name])
   @@index([unionLocalId])
+}
+
+/// A reusable line item, scoped to the company, not any one job —
+/// "Add from catalog" on a new estimate inserts an ordinary JobLineItem
+/// pre-filled from here (same jobLineItem.create path every other line
+/// goes through; a catalog entry is a template for that call, not a
+/// second live copy of estimate data to keep in sync). Built up over
+/// time from real estimates ("save as catalog item" on an existing line)
+/// rather than requiring separate manual data entry.
+model LineItemCatalogEntry {
+  id          String      @id @default(cuid())
+  companyId   String
+  company     Company     @relation(fields: [companyId], references: [id])
+  description String
+  unit        String?
+  tradeScope  TradeScope?
+
+  defaultUnitPrice        Decimal?             @db.Decimal(12, 2)
+  defaultBudgetedUnitCost Decimal?             @db.Decimal(12, 2)
+  defaultLaborHours       Decimal?             @db.Decimal(8, 2)
+  craftClassificationId   String?
+  craftClassification     CraftClassification? @relation(fields: [craftClassificationId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([craftClassificationId])
 }
 
 /// Effective-dated, not a flat current-rate field: CBA rates typically
@@ -728,7 +999,7 @@ model CraftClassification {
 /// so it's hand-written raw SQL in the migration rather than generated
 /// from this model).
 model FringeRateSchedule {
-  id                    String @id @default(cuid())
+  id                    String              @id @default(cuid())
   craftClassificationId String
   craftClassification   CraftClassification @relation(fields: [craftClassificationId], references: [id])
 
@@ -866,7 +1137,7 @@ model CompanyLocation {
   /// Friendly label ("Denver Yard") for picking a location in a list —
   /// not explicitly requested, but without one a picker would just show
   /// raw addresses.
-  name String?
+  name         String?
 
   addressLine1 String
   addressLine2 String?

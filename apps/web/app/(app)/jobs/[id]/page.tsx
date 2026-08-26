@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { headers } from "next/headers";
+import Link from "next/link";
 import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { PrintButton } from "@/components/PrintButton";
@@ -8,27 +9,49 @@ import { WipNarrativeButton } from "@/components/WipNarrativeButton";
 import { DraftLineItemsForm } from "@/components/DraftLineItemsForm";
 import { money } from "@/lib/money";
 import { calculateLineItemWip, calculateJobWip } from "@/lib/wip";
+import { calculateTimeEntryLaborCost, findEffectiveFringeRateSchedule } from "@/lib/labor-cost";
+import { calculateRetainageSummary } from "@/lib/retainage";
 import {
   addChangeOrderLineItem,
   addCostEntry,
   addLineItem,
+  addLineItemFromCatalog,
   assignCrewMember,
   createInvoice,
   createSignatureRequest,
   deleteCostEntry,
+  createRetainageRelease,
+  deleteDispatchSlip,
   deleteLineItem,
   deletePayment,
+  deletePrevailingWageDetermination,
+  deleteRetainageRelease,
+  deleteTimeEntry,
   editLineItemViaChangeOrder,
   logPayment,
+  logTimeEntry,
+  updateJobRetainageTerms,
+  uploadDispatchSlip,
+  uploadPrevailingWageDetermination,
   markJobContracted,
   removeLineItemViaChangeOrder,
+  deleteContractDocument,
+  saveEstimateVersion,
+  saveLineItemAsCatalogEntry,
   unassignCrewMember,
   updateJobSchedule,
   updateLineItem,
   updateLineItemForecast,
+  uploadContractDocument,
 } from "@/lib/actions";
 
 const COST_CATEGORIES = ["LABOR", "MATERIAL", "SUBCONTRACTOR", "OTHER"] as const;
+const TIME_ENTRY_PAY_TYPE_OPTIONS = [
+  { value: "STRAIGHT", label: "Straight" },
+  { value: "OVERTIME", label: "Overtime" },
+  { value: "DOUBLE_TIME", label: "Double time" },
+  { value: "SHIFT_DIFFERENTIAL", label: "Shift differential" },
+] as const;
 const TRADE_SCOPE_OPTIONS = [
   { value: "METAL_FRAMING_DRYWALL", label: "Metal framing / drywall" },
   { value: "LATH_PLASTER", label: "Lath & plaster" },
@@ -43,7 +66,7 @@ function dateInputValue(date: Date | null) {
 
 export default async function JobPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const { company } = await requireCompanyContext();
+  const { company, ...currentUser } = await requireCompanyContext();
 
   const job = await prisma.job.findUnique({
     where: { id },
@@ -55,7 +78,16 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
         include: {
           originChangeOrder: true,
           costEntries: { orderBy: { incurredAt: "desc" } },
+          craftClassification: { include: { unionLocal: true } },
         },
+      },
+      estimateVersions: {
+        orderBy: { versionNumber: "desc" },
+        include: { createdByUser: true },
+      },
+      contractDocuments: {
+        orderBy: { versionNumber: "desc" },
+        include: { uploadedByUser: true },
       },
       changeOrders: {
         orderBy: { number: "asc" },
@@ -72,6 +104,28 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
         orderBy: { number: "asc" },
         include: { payments: { orderBy: { receivedAt: "desc" } } },
       },
+      timeEntries: {
+        orderBy: { date: "desc" },
+        include: {
+          employeeUser: true,
+          lineItem: true,
+          craftClassification: { include: { unionLocal: true } },
+        },
+      },
+      dispatchSlips: {
+        orderBy: { dispatchDate: "desc" },
+        include: {
+          employeeUser: true,
+          craftClassification: { include: { unionLocal: true } },
+        },
+      },
+      prevailingWageDeterminations: {
+        orderBy: { createdAt: "desc" },
+        include: { uploadedByUser: true },
+      },
+      retainageReleases: {
+        orderBy: { releasedAt: "desc" },
+      },
       operatingLocation: true,
     },
   });
@@ -80,9 +134,15 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
     notFound();
   }
 
-  const [companyMembers, companyLocations] = await Promise.all([
+  const [companyMembers, companyLocations, catalogEntries, craftClassifications] = await Promise.all([
     prisma.user.findMany({ where: { companyId: company.id }, orderBy: { createdAt: "asc" } }),
     prisma.companyLocation.findMany({ where: { companyId: company.id }, orderBy: { createdAt: "asc" } }),
+    prisma.lineItemCatalogEntry.findMany({ where: { companyId: company.id }, orderBy: { description: "asc" } }),
+    prisma.craftClassification.findMany({
+      where: { unionLocal: { companyAgreements: { some: { companyId: company.id } } } },
+      include: { unionLocal: true, fringeRateSchedules: true },
+      orderBy: { name: "asc" },
+    }),
   ]);
   const assignedUserIds = new Set(job.assignments.map((a) => a.userId));
   const unassignedMembers = companyMembers.filter((m) => !assignedUserIds.has(m.id));
@@ -106,6 +166,43 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
       actualCostToDate: item.costEntries.reduce((s, entry) => s + Number(entry.amount), 0),
     }),
   }));
+  // Burdened labor cost per time entry, using the FringeRateSchedule
+  // effective on that entry's craft/date. Null (shown as "—") when the
+  // entry has no craft tag or no schedule covers its date — see
+  // lib/labor-cost.ts for why this never guesses a rate.
+  const timeEntryLaborCosts = new Map(
+    job.timeEntries.map((entry) => {
+      const craft = craftClassifications.find((c) => c.id === entry.craftClassificationId);
+      const schedule = craft
+        ? findEffectiveFringeRateSchedule(
+            craft.fringeRateSchedules.map((s) => ({
+              baseWage: Number(s.baseWage),
+              pensionRate: s.pensionRate != null ? Number(s.pensionRate) : null,
+              vacationRate: s.vacationRate != null ? Number(s.vacationRate) : null,
+              healthWelfareRate: s.healthWelfareRate != null ? Number(s.healthWelfareRate) : null,
+              trainingRate: s.trainingRate != null ? Number(s.trainingRate) : null,
+              effectiveFrom: s.effectiveFrom,
+              effectiveTo: s.effectiveTo,
+            })),
+            entry.date,
+          )
+        : null;
+      const cost = calculateTimeEntryLaborCost(
+        { hours: Number(entry.hours), payType: entry.payType, date: entry.date },
+        schedule,
+      );
+      return [entry.id, cost];
+    }),
+  );
+
+  const retainageSummary = calculateRetainageSummary({
+    invoiceRetainageWithheld: job.invoices.map((invoice) =>
+      invoice.retainageWithheld != null ? Number(invoice.retainageWithheld) : null,
+    ),
+    releaseAmounts: job.retainageReleases.map((release) => Number(release.amount)),
+    substantialCompletionDate: job.substantialCompletionDate,
+  });
+
   const billedToDate = job.invoices.reduce((sum, invoice) => sum + Number(invoice.amount), 0);
   const jobWip = calculateJobWip(
     lineItemWip.map((l) => l.wip),
@@ -113,6 +210,9 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
   );
 
   const addLineItemWithId = addLineItem.bind(null, job.id);
+  const addLineItemFromCatalogWithId = addLineItemFromCatalog.bind(null, job.id);
+  const saveEstimateVersionWithId = saveEstimateVersion.bind(null, job.id);
+  const uploadContractDocumentWithId = uploadContractDocument.bind(null, job.id);
   const updateLineItemWithId = (lineItemId: string) => updateLineItem.bind(null, job.id, lineItemId);
   const updateLineItemForecastWithId = (lineItemId: string) =>
     updateLineItemForecast.bind(null, job.id, lineItemId);
@@ -128,6 +228,16 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
   const unassignCrewWithId = (userId: string) => unassignCrewMember.bind(null, job.id, userId);
   const createSignatureRequestWithId = createSignatureRequest.bind(null, job.id);
   const createInvoiceWithId = createInvoice.bind(null, job.id);
+  const logTimeEntryWithId = logTimeEntry.bind(null, job.id);
+  const deleteTimeEntryWithId = (timeEntryId: string) => deleteTimeEntry.bind(null, job.id, timeEntryId);
+  const uploadDispatchSlipWithId = uploadDispatchSlip.bind(null, job.id);
+  const deleteDispatchSlipWithId = (dispatchSlipId: string) => deleteDispatchSlip.bind(null, job.id, dispatchSlipId);
+  const uploadPrevailingWageDeterminationWithId = uploadPrevailingWageDetermination.bind(null, job.id);
+  const deletePrevailingWageDeterminationWithId = (determinationId: string) =>
+    deletePrevailingWageDetermination.bind(null, job.id, determinationId);
+  const updateJobRetainageTermsWithId = updateJobRetainageTerms.bind(null, job.id);
+  const createRetainageReleaseWithId = createRetainageRelease.bind(null, job.id);
+  const deleteRetainageReleaseWithId = (releaseId: string) => deleteRetainageRelease.bind(null, job.id, releaseId);
 
   const headerList = await headers();
   const origin = `${headerList.get("x-forwarded-proto") ?? "https"}://${headerList.get("host")}`;
@@ -292,6 +402,80 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
               </div>
             )}
           </div>
+        </section>
+
+        <section className="mb-10">
+          <h2 className="mb-1 text-lg font-semibold text-slate-100">Subcontract agreement</h2>
+          <p className="mb-3 text-sm text-slate-400">
+            The actual GC-to-sub contract file — separate from the e-sign snapshot above. Upload the
+            original agreement, then any amendment the GC sends later as a new version; nothing is
+            overwritten.
+          </p>
+          {job.contractDocuments.length > 0 && (
+            <ul className="mb-4 divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900">
+              {job.contractDocuments.map((doc) => (
+                <li key={doc.id} className="flex flex-wrap items-center justify-between gap-3 p-4">
+                  <div>
+                    <p className="font-medium text-slate-100">
+                      v{doc.versionNumber}
+                      {doc.versionNumber === 1 ? " (original)" : " (amendment)"}
+                    </p>
+                    <p className="text-sm text-slate-400">
+                      {doc.createdAt.toLocaleDateString()}
+                      {doc.uploadedByUser?.name || doc.uploadedByUser?.email
+                        ? ` · ${doc.uploadedByUser.name ?? doc.uploadedByUser.email}`
+                        : ""}
+                    </p>
+                    {doc.note && <p className="text-sm text-slate-500">{doc.note}</p>}
+                    <a
+                      href={doc.fileUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-1 inline-block text-xs text-blue-400 hover:underline"
+                    >
+                      {doc.fileName}
+                    </a>
+                  </div>
+                  {currentUser.role === "OWNER" && (
+                    <form action={deleteContractDocument.bind(null, doc.id)}>
+                      <button type="submit" className="text-xs text-red-400 hover:underline">
+                        Delete
+                      </button>
+                    </form>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+          <form
+            action={uploadContractDocumentWithId}
+            className="flex flex-wrap items-end gap-3 rounded-lg border border-slate-800 bg-slate-900 p-4"
+          >
+            <label className="flex flex-col gap-1 text-sm text-slate-300">
+              {job.contractDocuments.length === 0 ? "Upload the agreement" : "Upload an amendment"}
+              <input
+                type="file"
+                name="file"
+                required
+                accept=".pdf,.png,.jpg,.jpeg,.webp"
+                className="text-sm text-slate-300 file:mr-3 file:rounded-md file:border-0 file:bg-slate-800 file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-100 hover:file:bg-slate-700"
+              />
+            </label>
+            <label className="flex flex-1 min-w-[180px] flex-col gap-1 text-sm text-slate-300">
+              Note (optional)
+              <input
+                name="note"
+                placeholder={job.contractDocuments.length === 0 ? "" : "e.g. Amendment #1: added scope"}
+                className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+              />
+            </label>
+            <button
+              type="submit"
+              className="inline-flex items-center justify-center rounded-md border border-slate-700 px-4 py-2 text-sm font-medium text-slate-200 hover:bg-slate-800"
+            >
+              Upload
+            </button>
+          </form>
         </section>
 
         <section className="mb-10">
@@ -475,6 +659,386 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
           </div>
         </section>
 
+        <section className="mb-10">
+          <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="text-lg font-semibold text-slate-100">Field time entries</h2>
+            <Link href={`/jobs/${job.id}/certified-payroll`} className="text-sm text-blue-400 hover:underline">
+              Certified payroll report →
+            </Link>
+          </div>
+          <p className="mb-3 text-sm text-slate-500">
+            Hours worked by employee, by day — optionally tied to a cost code and craft classification.
+            Tracks hours by pay type; wage cost is estimated from the applicable fringe rate schedule when one
+            applies.
+          </p>
+
+          {job.timeEntries.length > 0 && (
+            <ul className="mb-4 flex flex-col gap-2">
+              {job.timeEntries.map((entry) => (
+                <li
+                  key={entry.id}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-800 bg-slate-900 p-3 text-sm"
+                >
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <span className="text-slate-100">
+                      {entry.date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                    </span>
+                    <span className="text-slate-300">{entry.employeeUser.name ?? entry.employeeUser.email}</span>
+                    <span className="text-slate-400">{Number(entry.hours)}h</span>
+                    <span className="rounded bg-slate-800 px-1.5 py-0.5 text-xs text-slate-400">
+                      {TIME_ENTRY_PAY_TYPE_OPTIONS.find((p) => p.value === entry.payType)?.label ?? entry.payType}
+                    </span>
+                    {entry.craftClassification && (
+                      <span className="text-xs text-slate-500">{entry.craftClassification.name}</span>
+                    )}
+                    {entry.lineItem && <span className="text-xs text-slate-500">{entry.lineItem.description}</span>}
+                    {timeEntryLaborCosts.get(entry.id) != null && (
+                      <span className="text-xs text-slate-500">
+                        Est. cost {money(timeEntryLaborCosts.get(entry.id)!)}
+                      </span>
+                    )}
+                    {entry.perDiemAmount != null && (
+                      <span className="text-xs text-slate-500">Per diem {money(Number(entry.perDiemAmount))}</span>
+                    )}
+                    {entry.travelPayAmount != null && (
+                      <span className="text-xs text-slate-500">Travel {money(Number(entry.travelPayAmount))}</span>
+                    )}
+                    {entry.note && <span className="text-xs text-slate-500">— {entry.note}</span>}
+                  </div>
+                  <form action={deleteTimeEntryWithId(entry.id)}>
+                    <button type="submit" title="Remove" className="text-xs text-red-400 hover:underline">
+                      Remove
+                    </button>
+                  </form>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <form action={logTimeEntryWithId} className="flex flex-wrap items-end gap-2 rounded-lg border border-slate-800 bg-slate-900 p-3">
+            <label className="flex flex-col gap-1 text-xs text-slate-400">
+              Employee
+              <select
+                name="employeeUserId"
+                required
+                className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
+              >
+                {companyMembers.map((member) => (
+                  <option key={member.id} value={member.id}>
+                    {member.name ?? member.email}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-slate-400">
+              Date
+              <input
+                type="date"
+                name="date"
+                required
+                className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-slate-400">
+              Hours
+              <input
+                name="hours"
+                placeholder="8"
+                required
+                className="w-20 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-slate-400">
+              Pay type
+              <select
+                name="payType"
+                defaultValue="STRAIGHT"
+                className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
+              >
+                {TIME_ENTRY_PAY_TYPE_OPTIONS.map((p) => (
+                  <option key={p.value} value={p.value}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-slate-400">
+              Cost code / SOV line
+              <select
+                name="lineItemId"
+                defaultValue=""
+                className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
+              >
+                <option value="">No specific line</option>
+                {job.lineItems.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.description}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-slate-400">
+              Craft classification
+              <select
+                name="craftClassificationId"
+                defaultValue=""
+                className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
+              >
+                <option value="">No craft tag</option>
+                {craftClassifications.map((craft) => (
+                  <option key={craft.id} value={craft.id}>
+                    {craft.unionLocal.parentInternational} {craft.unionLocal.localNumber} — {craft.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-slate-400">
+              Per diem
+              <input
+                name="perDiemAmount"
+                placeholder="optional"
+                className="w-24 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-600 focus:border-blue-500 focus:outline-none"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-slate-400">
+              Travel pay
+              <input
+                name="travelPayAmount"
+                placeholder="optional"
+                className="w-24 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-600 focus:border-blue-500 focus:outline-none"
+              />
+            </label>
+            <input
+              name="note"
+              placeholder="Note (optional)"
+              className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+            />
+            <button
+              type="submit"
+              className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-100 hover:bg-slate-700"
+            >
+              Log time
+            </button>
+          </form>
+        </section>
+
+        <section className="mb-10">
+          <h2 className="mb-1 text-lg font-semibold text-slate-100">Union hiring-hall dispatch</h2>
+          <p className="mb-3 text-sm text-slate-500">
+            The hiring hall&rsquo;s referral of a worker to this job — the authorization to work under that
+            local&rsquo;s agreement, separate from hours actually logged in Field time entries above.
+          </p>
+
+          {job.dispatchSlips.length > 0 && (
+            <ul className="mb-4 flex flex-col gap-2">
+              {job.dispatchSlips.map((slip) => (
+                <li
+                  key={slip.id}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-800 bg-slate-900 p-3 text-sm"
+                >
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <span className="text-slate-100">
+                      {slip.dispatchDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                    </span>
+                    <span className="text-slate-300">{slip.employeeUser.name ?? slip.employeeUser.email}</span>
+                    {slip.craftClassification && (
+                      <span className="text-xs text-slate-500">{slip.craftClassification.name}</span>
+                    )}
+                    {slip.dispatchNumber && (
+                      <span className="rounded bg-slate-800 px-1.5 py-0.5 text-xs text-slate-400">
+                        #{slip.dispatchNumber}
+                      </span>
+                    )}
+                    {slip.fileUrl && (
+                      <a
+                        href={slip.fileUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs text-blue-400 hover:underline"
+                      >
+                        {slip.fileName ?? "View slip"}
+                      </a>
+                    )}
+                    {slip.note && <span className="text-xs text-slate-500">— {slip.note}</span>}
+                  </div>
+                  <form action={deleteDispatchSlipWithId(slip.id)}>
+                    <button type="submit" title="Remove" className="text-xs text-red-400 hover:underline">
+                      Remove
+                    </button>
+                  </form>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <form
+            action={uploadDispatchSlipWithId}
+            encType="multipart/form-data"
+            className="flex flex-wrap items-end gap-2 rounded-lg border border-slate-800 bg-slate-900 p-3"
+          >
+            <label className="flex flex-col gap-1 text-xs text-slate-400">
+              Employee
+              <select
+                name="employeeUserId"
+                required
+                className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
+              >
+                {companyMembers.map((member) => (
+                  <option key={member.id} value={member.id}>
+                    {member.name ?? member.email}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-slate-400">
+              Dispatch date
+              <input
+                type="date"
+                name="dispatchDate"
+                required
+                className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-slate-400">
+              Craft classification
+              <select
+                name="craftClassificationId"
+                defaultValue=""
+                className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
+              >
+                <option value="">No craft tag</option>
+                {craftClassifications.map((craft) => (
+                  <option key={craft.id} value={craft.id}>
+                    {craft.unionLocal.parentInternational} {craft.unionLocal.localNumber} — {craft.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-slate-400">
+              Dispatch #
+              <input
+                name="dispatchNumber"
+                placeholder="optional"
+                className="w-28 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-600 focus:border-blue-500 focus:outline-none"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-slate-400">
+              Slip (optional)
+              <input
+                type="file"
+                name="file"
+                accept="application/pdf,image/png,image/jpeg,image/webp"
+                className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 file:mr-2 file:rounded file:border-0 file:bg-slate-800 file:px-2 file:py-1 file:text-slate-200 focus:border-blue-500 focus:outline-none"
+              />
+            </label>
+            <input
+              name="note"
+              placeholder="Note (optional)"
+              className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+            />
+            <button
+              type="submit"
+              className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-100 hover:bg-slate-700"
+            >
+              Log dispatch
+            </button>
+          </form>
+        </section>
+
+        <section className="mb-10">
+          <h2 className="mb-1 text-lg font-semibold text-slate-100">Prevailing wage determination</h2>
+          <p className="mb-3 text-sm text-slate-500">
+            The government wage determination for this job&rsquo;s jurisdiction (federal or state) — attach a copy
+            or a link to it. This app doesn&rsquo;t look one up automatically; there&rsquo;s no licensed
+            prevailing-wage dataset built in.
+          </p>
+
+          {job.prevailingWageDeterminations.length > 0 && (
+            <ul className="mb-4 flex flex-col gap-2">
+              {job.prevailingWageDeterminations.map((determination) => (
+                <li
+                  key={determination.id}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-800 bg-slate-900 p-3 text-sm"
+                >
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <span className="text-slate-100">{determination.jurisdiction}</span>
+                    {determination.fileUrl && (
+                      <a
+                        href={determination.fileUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs text-blue-400 hover:underline"
+                      >
+                        {determination.fileName ?? "View document"}
+                      </a>
+                    )}
+                    {determination.sourceUrl && (
+                      <a
+                        href={determination.sourceUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs text-blue-400 hover:underline"
+                      >
+                        Source link
+                      </a>
+                    )}
+                    {determination.note && <span className="text-xs text-slate-500">— {determination.note}</span>}
+                  </div>
+                  <form action={deletePrevailingWageDeterminationWithId(determination.id)}>
+                    <button type="submit" title="Remove" className="text-xs text-red-400 hover:underline">
+                      Remove
+                    </button>
+                  </form>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <form
+            action={uploadPrevailingWageDeterminationWithId}
+            encType="multipart/form-data"
+            className="flex flex-wrap items-end gap-2 rounded-lg border border-slate-800 bg-slate-900 p-3"
+          >
+            <label className="flex flex-col gap-1 text-xs text-slate-400">
+              Jurisdiction
+              <input
+                name="jurisdiction"
+                placeholder="e.g. California, federal (Davis-Bacon)"
+                required
+                className="w-56 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-600 focus:border-blue-500 focus:outline-none"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-slate-400">
+              Document (optional)
+              <input
+                type="file"
+                name="file"
+                accept="application/pdf,image/png,image/jpeg,image/webp"
+                className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 file:mr-2 file:rounded file:border-0 file:bg-slate-800 file:px-2 file:py-1 file:text-slate-200 focus:border-blue-500 focus:outline-none"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-slate-400">
+              Or source link
+              <input
+                name="sourceUrl"
+                placeholder="https://sam.gov/..."
+                className="w-48 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-600 focus:border-blue-500 focus:outline-none"
+              />
+            </label>
+            <input
+              name="note"
+              placeholder="Note (optional)"
+              className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+            />
+            <button
+              type="submit"
+              className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-100 hover:bg-slate-700"
+            >
+              Attach
+            </button>
+          </form>
+        </section>
+
         {!isEstimateStage && (
           <section className="mb-10">
             <h2 className="mb-3 text-lg font-semibold text-slate-100">Invoices</h2>
@@ -501,6 +1065,11 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                     {invoice.dueAt && (
                       <p className="mt-1 text-xs text-slate-500">
                         Due {invoice.dueAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                      </p>
+                    )}
+                    {invoice.retainageWithheld != null && (
+                      <p className="mt-1 text-xs text-slate-500">
+                        Retainage withheld this invoice: {money(Number(invoice.retainageWithheld))}
                       </p>
                     )}
 
@@ -602,6 +1171,134 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
           </section>
         )}
 
+        {!isEstimateStage && (
+          <section className="mb-10">
+            <h2 className="mb-1 text-lg font-semibold text-slate-100">Retainage</h2>
+            <p className="mb-3 text-sm text-slate-500">
+              Withheld amounts are snapshotted onto each invoice when it&rsquo;s created from the rate below —
+              changing the rate only affects invoices created after the change.
+            </p>
+
+            <form
+              action={updateJobRetainageTermsWithId}
+              className="mb-4 flex flex-wrap items-end gap-2 rounded-lg border border-slate-800 bg-slate-900 p-3"
+            >
+              <label className="flex flex-col gap-1 text-xs text-slate-400">
+                Retainage %
+                <input
+                  name="retainagePercent"
+                  defaultValue={job.retainagePercent?.toString() ?? job.contact.defaultRetainagePercent?.toString() ?? ""}
+                  placeholder="e.g. 10"
+                  className="w-24 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-600 focus:border-blue-500 focus:outline-none"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-xs text-slate-400">
+                Expected substantial completion
+                <input
+                  type="date"
+                  name="substantialCompletionDate"
+                  defaultValue={dateInputValue(job.substantialCompletionDate)}
+                  className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
+                />
+              </label>
+              <button
+                type="submit"
+                className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-100 hover:bg-slate-700"
+              >
+                Save
+              </button>
+            </form>
+
+            <div className="mb-4 grid grid-cols-2 gap-3 rounded-lg border border-slate-800 bg-slate-900 p-4 sm:grid-cols-3">
+              <div>
+                <p className="text-xs text-slate-500">Total withheld</p>
+                <p className="text-slate-100">{money(retainageSummary.totalWithheld)}</p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500">Total released</p>
+                <p className="text-slate-100">{money(retainageSummary.totalReleased)}</p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500">Outstanding balance</p>
+                <p className={retainageSummary.balance > 0 ? "text-amber-400" : "text-green-400"}>
+                  {money(retainageSummary.balance)}
+                </p>
+              </div>
+            </div>
+
+            {retainageSummary.balance > 0 && retainageSummary.substantialCompletionDate && (
+              <p className="mb-4 text-sm text-slate-400">
+                Expected release: {money(retainageSummary.balance)} around{" "}
+                {retainageSummary.substantialCompletionDate.toLocaleDateString("en-US", {
+                  month: "short",
+                  day: "numeric",
+                  year: "numeric",
+                })}{" "}
+                (this job&rsquo;s expected substantial completion date) — a forecast based on the date set above, not
+                a guarantee of when the GC will actually release it.
+              </p>
+            )}
+
+            {job.retainageReleases.length > 0 && (
+              <ul className="mb-4 flex flex-col gap-2">
+                {job.retainageReleases.map((release) => (
+                  <li
+                    key={release.id}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-800 bg-slate-900 p-3 text-sm"
+                  >
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <span className="text-slate-100">
+                        {release.releasedAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                      </span>
+                      <span className="text-slate-300">{money(Number(release.amount))}</span>
+                      {release.note && <span className="text-xs text-slate-500">— {release.note}</span>}
+                    </div>
+                    <form action={deleteRetainageReleaseWithId(release.id)}>
+                      <button type="submit" title="Remove" className="text-xs text-red-400 hover:underline">
+                        Remove
+                      </button>
+                    </form>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            <form
+              action={createRetainageReleaseWithId}
+              className="flex flex-wrap items-end gap-2 rounded-lg border border-slate-800 bg-slate-900 p-3"
+            >
+              <label className="flex flex-col gap-1 text-xs text-slate-400">
+                Amount released
+                <input
+                  name="amount"
+                  placeholder="Amount"
+                  required
+                  className="w-28 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-xs text-slate-400">
+                Date
+                <input
+                  type="date"
+                  name="releasedAt"
+                  className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
+                />
+              </label>
+              <input
+                name="note"
+                placeholder="Note (optional)"
+                className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+              />
+              <button
+                type="submit"
+                className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-100 hover:bg-slate-700"
+              >
+                Log release
+              </button>
+            </form>
+          </section>
+        )}
+
         {isEstimateStage ? (
           <>
             <section className="mb-10">
@@ -612,10 +1309,10 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                   <p className="py-2 text-sm text-slate-400">No line items yet — add one below.</p>
                 )}
                 {job.lineItems.map((item) => (
+                  <div key={item.id} className="border-t border-slate-800 py-3 first:border-t-0">
                   <form
-                    key={item.id}
                     action={updateLineItemWithId(item.id)}
-                    className="flex flex-col gap-2 border-t border-slate-800 py-3 first:border-t-0"
+                    className="flex flex-col gap-2"
                   >
                     <div className="flex flex-wrap items-center gap-2">
                       {item.aiDrafted && (
@@ -677,6 +1374,28 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                           className="w-24 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-600 focus:border-blue-500 focus:outline-none"
                         />
                       </label>
+                      <label className="flex items-center gap-1 text-xs text-slate-400">
+                        Labor hrs
+                        <input
+                          name="laborHours"
+                          defaultValue={item.laborHours?.toString() ?? ""}
+                          placeholder="hrs"
+                          className="w-16 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-600 focus:border-blue-500 focus:outline-none"
+                        />
+                      </label>
+                      <select
+                        name="craftClassificationId"
+                        defaultValue={item.craftClassificationId ?? ""}
+                        title="Craft classification"
+                        className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
+                      >
+                        <option value="">No craft tag</option>
+                        {craftClassifications.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.unionLocal.parentInternational} {c.unionLocal.localNumber} — {c.name}
+                          </option>
+                        ))}
+                      </select>
                       <button
                         type="submit"
                         title="Save"
@@ -694,6 +1413,12 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                       </button>
                     </div>
                   </form>
+                  <form action={saveLineItemAsCatalogEntry.bind(null, item.id)} className="mt-1">
+                    <button type="submit" className="text-xs text-slate-500 hover:text-slate-300 hover:underline">
+                      Save as catalog item
+                    </button>
+                  </form>
+                  </div>
                 ))}
               </div>
             </section>
@@ -758,11 +1483,123 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                     ))}
                   </select>
                 </label>
+                <label className="flex flex-col gap-1 text-sm text-slate-300">
+                  Labor hrs
+                  <input
+                    name="laborHours"
+                    placeholder="hrs"
+                    className="w-20 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-sm text-slate-300">
+                  Craft
+                  <select
+                    name="craftClassificationId"
+                    defaultValue=""
+                    className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
+                  >
+                    <option value="">No craft tag</option>
+                    {craftClassifications.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.unionLocal.parentInternational} {c.unionLocal.localNumber} — {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
                 <button
                   type="submit"
                   className="inline-flex items-center justify-center rounded-md bg-slate-800 px-4 py-2 text-sm font-medium text-slate-100 hover:bg-slate-700"
                 >
                   Add line item
+                </button>
+              </form>
+
+              {catalogEntries.length > 0 && (
+                <form action={addLineItemFromCatalogWithId} className="mt-4 flex flex-wrap items-end gap-3">
+                  <label className="flex flex-col gap-1 text-sm text-slate-300">
+                    Add from catalog
+                    <select
+                      name="catalogEntryId"
+                      required
+                      className="min-w-[220px] rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
+                    >
+                      {catalogEntries.map((entry) => (
+                        <option key={entry.id} value={entry.id}>
+                          {entry.description}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-1 text-sm text-slate-300">
+                    Qty
+                    <input
+                      name="quantity"
+                      defaultValue="1"
+                      required
+                      className="w-20 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
+                    />
+                  </label>
+                  <button
+                    type="submit"
+                    className="inline-flex items-center justify-center rounded-md border border-slate-700 px-4 py-2 text-sm font-medium text-slate-200 hover:bg-slate-800"
+                  >
+                    Add from catalog
+                  </button>
+                </form>
+              )}
+            </section>
+
+            <section className="mb-10">
+              <h2 className="mb-1 text-lg font-semibold text-slate-100">Estimate versions</h2>
+              <p className="mb-3 text-sm text-slate-400">
+                A manual checkpoint of the line items above — save one before a scope change so you
+                can see what this was priced at before.
+              </p>
+              {job.estimateVersions.length > 0 && (
+                <ul className="mb-4 divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900">
+                  {job.estimateVersions.map((version) => {
+                    const snapshotItems = Array.isArray(version.snapshot)
+                      ? (version.snapshot as {
+                          description: string;
+                          quantity: string;
+                          unit: string | null;
+                        }[])
+                      : [];
+                    return (
+                      <li key={version.id} className="p-3 text-sm">
+                        <p className="font-medium text-slate-100">
+                          v{version.versionNumber}
+                          <span className="ml-2 font-normal text-slate-500">
+                            {version.createdAt.toLocaleDateString()}
+                            {version.createdByUser?.name || version.createdByUser?.email
+                              ? ` · ${version.createdByUser.name ?? version.createdByUser.email}`
+                              : ""}
+                          </span>
+                        </p>
+                        {version.note && <p className="mt-1 text-slate-400">{version.note}</p>}
+                        <p className="mt-1 text-xs text-slate-500">
+                          {snapshotItems.length} line item{snapshotItems.length === 1 ? "" : "s"}:{" "}
+                          {snapshotItems.map((i) => i.description).join(", ")}
+                        </p>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+              <form action={saveEstimateVersionWithId} className="flex flex-wrap items-end gap-3">
+                <label className="flex flex-1 min-w-[200px] flex-col gap-1 text-sm text-slate-300">
+                  Note (optional)
+                  <input
+                    name="note"
+                    placeholder="e.g. Before client asked to add the backsplash"
+                    className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+                  />
+                </label>
+                <button
+                  type="submit"
+                  className="inline-flex items-center justify-center rounded-md border border-slate-700 px-4 py-2 text-sm font-medium text-slate-200 hover:bg-slate-800"
+                >
+                  Save version
                 </button>
               </form>
             </section>
