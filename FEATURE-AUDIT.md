@@ -14,13 +14,13 @@ it in the same PR as any work that changes a status, and check it against
 [`ONBOARDING.md`](./ONBOARDING.md) section 7 (they should always tell the
 same story — section 7 is the prose version, this is the itemized one).
 
-**104 items audited — 40 built / 17 partial / 46 missing / 1 descoped**
+**104 items audited — 43 built / 17 partial / 43 missing / 1 descoped**
 
 | Status | Count |
 | --- | --- |
-| Built | 40 |
+| Built | 43 |
 | Partial | 17 |
-| Missing | 46 |
+| Missing | 43 |
 | Descoped | 1 |
 
 ## 01. Company / Org Setup — 5 built · 0 partial · 0 missing
@@ -105,14 +105,17 @@ tracking, per diem/travel pay, and dispatch slips shipped 26 Aug 2026.*
 | Built | Union hiring-hall dispatch slip tracking | `DispatchSlip` — hall referral onto a job, optional scanned slip via Vercel Blob |
 | Missing | Mobile/field time entry app | the whole app is a single responsive Next.js site — no dedicated field app; deliberately deferred as a separate, larger effort (see `ARCHITECTURE.md`) |
 
-## 08. Certified Payroll & Prevailing Wage — 0 built · 1 partial · 4 missing
+## 08. Certified Payroll & Prevailing Wage — 3 built · 1 partial · 1 missing
+
+*Updated — certified payroll report generation, fringe rate labor
+costing, and prevailing wage attachment shipped 26 Aug 2026.*
 
 | Status | Feature | Note |
 | --- | --- | --- |
-| Missing | Certified payroll report generation (federal WH-347 + state equivalents) | no generator; would need real hours/wage data first (see Labor & Time) |
-| Missing | Prevailing wage determination lookup/attachment per job/jurisdiction | not modeled |
-| Missing | Fringe benefit rate application per craft/local to labor costs | same gap as the estimating-side fringe application |
-| Missing | Multi-state prevailing wage rule variation support | not modeled |
+| Built | Certified payroll report generation (federal WH-347 + state equivalents) | `lib/certified-payroll.ts` + `/jobs/[id]/certified-payroll` — a certified-payroll-style summary (hours/craft/wages by employee), not a pixel-exact WH-347/state-formatted export |
+| Built | Prevailing wage determination lookup/attachment per job/jurisdiction | `PrevailingWageDetermination` — attached storage (file or link), not a lookup; no licensed prevailing-wage dataset exists to query automatically |
+| Built | Fringe benefit rate application per craft/local to labor costs | `lib/labor-cost.ts` — burdened wage cost per `TimeEntry` from the effective `FringeRateSchedule`; never guesses a rate when none applies |
+| Missing | Multi-state prevailing wage rule variation support | not built as a rules engine — no real government wage-rate dataset to vary across states with; a job is already jurisdiction-scoped via `operatingLocationId` |
 | Partial | Certified payroll document storage/history per job, per pay period | `ComplianceDocument.type = CERTIFIED_PAYROLL` stores/tracks a submission, with AI extraction; not structured strictly by pay period |
 
 ## 09. Union Fringe & Apprenticeship Compliance — 1 built · 0 partial · 3 missing
@@ -134,13 +137,16 @@ tracking, per diem/travel pay, and dispatch slips shipped 26 Aug 2026.*
 | Partial | Monthly pay application (G702) generation and submission tracking | `Invoice` exists as a plain bill; not AIA-formatted, no submission workflow |
 | Missing | Payment status per pay app: submitted, approved, partially paid, paid, disputed | `Payment` is a raw received-payment log with no status lifecycle |
 
-## 11. Retainage — 0 built · 0 partial · 3 missing
+## 11. Retainage — 3 built · 0 partial · 0 missing
+
+*Updated — retainage rate, withheld/released tracking, and release
+forecasting shipped 26 Aug 2026.*
 
 | Status | Feature | Note |
 | --- | --- | --- |
-| Missing | Retainage % per job/contract | no field on `Job` or `Invoice` |
-| Missing | Retainage withheld vs. released tracking | not modeled |
-| Missing | Retainage release forecasting tied to substantial completion/closeout | not modeled — and closeout itself isn't modeled either (see Sheet 22) |
+| Built | Retainage % per job/contract | `Job.retainagePercent`, usually pre-filled from `Contact.defaultRetainagePercent` |
+| Built | Retainage withheld vs. released tracking | `Invoice.retainageWithheld` (snapshotted per invoice) and `RetainageRelease` (lump-sum payback); `lib/retainage.ts` computes the outstanding balance |
+| Built | Retainage release forecasting tied to substantial completion/closeout | `Job.substantialCompletionDate` plus a computed "expected release around this date" statement — a plain forecast, not a scheduling/notification system; closeout itself still isn't modeled as a `JobStatus` stage (see Sheet 22) |
 
 ## 12. Change Orders — 1 built · 0 partial · 2 missing
 
@@ -176,7 +182,7 @@ tracking, per diem/travel pay, and dispatch slips shipped 26 Aug 2026.*
 | Built | Revenue earned vs. billed (over/under-billing) report | plus an AI narrative layer over it — `generateWipNarrative` |
 | Missing | WIP schedule export in surety/CPA-expected format | shown on-screen only, no export |
 | Partial | Job profitability report (budget vs. actual vs. forecast margin) | visible per job on `/jobs/[id]`; no dedicated report or portfolio view |
-| Missing | Cash flow forecast (AR aging, retainage receivable, pay app cycles) | not built — also blocked on retainage, which doesn't exist yet |
+| Missing | Cash flow forecast (AR aging, retainage receivable, pay app cycles) | not built — the underlying retainage data exists now (Sheet 11), but no forecast report reads it yet |
 | Missing | Company-wide backlog report across active jobs | `/dashboard` lists jobs; no aggregated backlog figure |
 
 ## 16. Submittals, RFIs, Drawings — 0 built · 0 partial · 3 missing
