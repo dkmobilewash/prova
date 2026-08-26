@@ -19,10 +19,9 @@ export default async function VendorsPage() {
         A directory for now; linking vendors to material costs and pricing history comes later.
       </p>
 
-      <section className="mb-8 rounded-lg border border-slate-800 bg-slate-900 p-4">
-        <h2 className="mb-3 text-sm font-semibold text-slate-300">Add a vendor</h2>
+      <div className="mb-8">
         <VendorForm />
-      </section>
+      </div>
 
       <section>
         <h2 className="mb-3 text-sm font-semibold text-slate-300">Directory</h2>
