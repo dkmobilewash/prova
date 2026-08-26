@@ -19,15 +19,17 @@ export default async function VendorsPage() {
         A directory for now; linking vendors to material costs and pricing history comes later.
       </p>
 
-      <section className="mb-8 rounded-lg border border-slate-800 bg-slate-900 p-4">
-        <h2 className="mb-3 text-sm font-semibold text-slate-300">Add a vendor</h2>
+      <div className="mb-8">
         <VendorForm />
-      </section>
+      </div>
 
       <section>
         <h2 className="mb-3 text-sm font-semibold text-slate-300">Directory</h2>
         {vendors.length === 0 ? (
-          <p className="text-slate-400">No vendors yet — add your first one above.</p>
+          <p className="text-slate-400">
+            No vendors yet. Add the suppliers you buy from most — board and steel, scaffolding,
+            equipment rental — so material costs have a source attached to them.
+          </p>
         ) : (
           <ul className="divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900">
             {vendors.map((vendor) => (

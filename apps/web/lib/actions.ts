@@ -1450,3 +1450,39 @@ export async function deleteVendor(vendorId: string) {
 
   revalidatePath("/vendors");
 }
+
+/** Edits a vendor in place. Same field rules as createVendor — an empty
+ * optional field means "not set", not "leave unchanged", so the form
+ * always submits every field. */
+export async function updateVendor(vendorId: string, formData: FormData) {
+  const { company } = await requireCompanyContext();
+
+  const vendor = await prisma.vendor.findUnique({ where: { id: vendorId } });
+  if (!vendor || vendor.companyId !== company.id) {
+    throw new Error("Vendor not found");
+  }
+
+  const name = String(formData.get("name") ?? "").trim();
+  if (!name) {
+    throw new Error("Vendor name is required");
+  }
+
+  const contactName = String(formData.get("contactName") ?? "").trim();
+  const phone = String(formData.get("phone") ?? "").trim();
+  const email = String(formData.get("email") ?? "").trim();
+  const notes = String(formData.get("notes") ?? "").trim();
+
+  await prisma.vendor.update({
+    where: { id: vendorId },
+    data: {
+      name,
+      tradeScope: tradeScopeFromForm(formData),
+      contactName: contactName || null,
+      phone: phone || null,
+      email: email || null,
+      notes: notes || null,
+    },
+  });
+
+  revalidatePath("/vendors");
+}
