@@ -9,6 +9,7 @@ const isProtectedRoute = createRouteMatcher([
   "/schedule(.*)",
   "/settings(.*)",
   "/vendors(.*)",
+  "/equipment(.*)",
 ]);
 
 // /api/quickbooks/callback is deliberately NOT protected here — see

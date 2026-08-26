@@ -14,6 +14,23 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ## 2026-08-26
 
+### Equipment inventory (Cyrus)
+`cyrus/equipment` — WORK-SPLIT task 4
+
+- New `Equipment` model and `/equipment` page. What the company owns —
+  scaffolding, lifts, mixers — and which job each item is on right now.
+  Unassigned means "in the yard", a normal state rather than missing
+  data, so the list header counts both.
+- Type is free text rather than an enum. Categories vary too much by
+  trade to fix a list now, and guessing wrong means a migration to add
+  the one type a contractor actually owns.
+- Deleting a job returns its equipment to the yard rather than deleting
+  it along with the job.
+- Built on the vendor pattern as fixed below, not the bare version.
+
+Not done: no equipment cost allocation into job costing. Step one is
+knowing what you own and where it is.
+
 ### Vendor directory — edit, delete confirmation, collapsible form (Cyrus)
 `cyrus/vendor-edit`
 
