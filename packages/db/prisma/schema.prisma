@@ -82,6 +82,7 @@ model User {
   uploadedComplianceDocuments ComplianceDocument[]
   savedEstimateVersions       EstimateVersion[]
   uploadedContractDocuments   ContractDocument[]
+  timeEntries                 TimeEntry[]
 
   @@index([companyId])
 }
@@ -220,6 +221,7 @@ model Job {
   complianceDocuments ComplianceDocument[]
   estimateVersions    EstimateVersion[]
   contractDocuments   ContractDocument[]
+  timeEntries         TimeEntry[]
 
   @@index([companyId])
   @@index([contactId])
@@ -352,6 +354,7 @@ model JobLineItem {
 
   edits       ChangeOrderLineItemEdit[]
   costEntries CostEntry[]
+  timeEntries TimeEntry[]
 
   @@index([jobId])
   @@index([originChangeOrderId])
@@ -425,6 +428,52 @@ model CostEntry {
   createdAt   DateTime     @default(now())
 
   @@index([lineItemId])
+}
+
+enum TimeEntryPayType {
+  STRAIGHT
+  OVERTIME
+  DOUBLE_TIME
+  SHIFT_DIFFERENTIAL
+}
+
+/// A single day's hours worked by one employee on one job — the field
+/// time-tracking record job costing and (eventually) certified payroll
+/// both need. Optionally tied to a specific JobLineItem (cost code/SOV
+/// line) and CraftClassification, since not every entry is craft-specific
+/// (e.g. a foreman's supervision time) but most union labor entries are.
+/// payType tracks straight/overtime/double-time/shift-differential hours
+/// as separate rows rather than one row with a rate multiplier, so a
+/// worker's mixed day (6 straight + 2 OT) is two clean rows instead of one
+/// row needing a blended-rate calculation. This tracks hours by category
+/// only — it does not compute dollar cost; that needs a wage-rate engine
+/// over FringeRateSchedule, a separate future step (same boundary
+/// JobLineItem.laborHours already draws on the estimating side).
+model TimeEntry {
+  id    String @id @default(cuid())
+  jobId String
+  job   Job    @relation(fields: [jobId], references: [id])
+
+  lineItemId String?
+  lineItem   JobLineItem? @relation(fields: [lineItemId], references: [id])
+
+  employeeUserId String
+  employeeUser   User   @relation(fields: [employeeUserId], references: [id])
+
+  craftClassificationId String?
+  craftClassification   CraftClassification? @relation(fields: [craftClassificationId], references: [id])
+
+  date    DateTime
+  hours   Decimal          @db.Decimal(5, 2)
+  payType TimeEntryPayType @default(STRAIGHT)
+  note    String?
+
+  createdAt DateTime @default(now())
+
+  @@index([jobId])
+  @@index([lineItemId])
+  @@index([employeeUserId])
+  @@index([craftClassificationId])
 }
 
 /// Crew assignment: which company Users are on a Job. Genuinely many-to-many
@@ -781,6 +830,7 @@ model CraftClassification {
   fringeRateSchedules FringeRateSchedule[]
   jobLineItems        JobLineItem[]
   catalogEntries      LineItemCatalogEntry[]
+  timeEntries         TimeEntry[]
 
   @@unique([unionLocalId, name])
   @@index([unionLocalId])

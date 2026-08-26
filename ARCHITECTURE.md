@@ -589,6 +589,25 @@ checked against the value Intuit echoes back to the callback route — no
 database table for it, since it only needs to survive one redirect
 round-trip.
 
+## Field time tracking
+
+`TimeEntry` records a single day's hours worked by one employee on one
+job — optionally tied to a specific `JobLineItem` (cost code/SOV line)
+and `CraftClassification`, mirroring the same optional link
+`JobLineItem.craftClassificationId` already uses on the estimating side.
+Straight/overtime/double-time/shift-differential hours are separate rows
+rather than one row with a rate multiplier: a worker's mixed 8-hour day
+(6 straight + 2 OT) is two clean rows, not one row needing a blended-rate
+calculation to unwind later.
+
+This tracks hours by category only — it does not compute dollar cost.
+Turning hours into wages needs a rate-rule engine reading
+`FringeRateSchedule` (per craft, per local, per pay type), which is
+future-phase work, the same boundary `JobLineItem.laborHours` already
+draws on the estimating side. Certified payroll report generation and
+prevailing-wage rules both build on top of `TimeEntry` once it exists,
+but neither is built yet.
+
 ## Multi-tenancy and roles
 
 Every `Contact` and `Job` belongs to a `Company`. Every `User` belongs to

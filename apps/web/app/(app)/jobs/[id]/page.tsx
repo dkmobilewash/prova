@@ -19,8 +19,10 @@ import {
   deleteCostEntry,
   deleteLineItem,
   deletePayment,
+  deleteTimeEntry,
   editLineItemViaChangeOrder,
   logPayment,
+  logTimeEntry,
   markJobContracted,
   removeLineItemViaChangeOrder,
   deleteContractDocument,
@@ -34,6 +36,12 @@ import {
 } from "@/lib/actions";
 
 const COST_CATEGORIES = ["LABOR", "MATERIAL", "SUBCONTRACTOR", "OTHER"] as const;
+const TIME_ENTRY_PAY_TYPE_OPTIONS = [
+  { value: "STRAIGHT", label: "Straight" },
+  { value: "OVERTIME", label: "Overtime" },
+  { value: "DOUBLE_TIME", label: "Double time" },
+  { value: "SHIFT_DIFFERENTIAL", label: "Shift differential" },
+] as const;
 const TRADE_SCOPE_OPTIONS = [
   { value: "METAL_FRAMING_DRYWALL", label: "Metal framing / drywall" },
   { value: "LATH_PLASTER", label: "Lath & plaster" },
@@ -85,6 +93,14 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
       invoices: {
         orderBy: { number: "asc" },
         include: { payments: { orderBy: { receivedAt: "desc" } } },
+      },
+      timeEntries: {
+        orderBy: { date: "desc" },
+        include: {
+          employeeUser: true,
+          lineItem: true,
+          craftClassification: { include: { unionLocal: true } },
+        },
       },
       operatingLocation: true,
     },
@@ -151,6 +167,8 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
   const unassignCrewWithId = (userId: string) => unassignCrewMember.bind(null, job.id, userId);
   const createSignatureRequestWithId = createSignatureRequest.bind(null, job.id);
   const createInvoiceWithId = createInvoice.bind(null, job.id);
+  const logTimeEntryWithId = logTimeEntry.bind(null, job.id);
+  const deleteTimeEntryWithId = (timeEntryId: string) => deleteTimeEntry.bind(null, job.id, timeEntryId);
 
   const headerList = await headers();
   const origin = `${headerList.get("x-forwarded-proto") ?? "https"}://${headerList.get("host")}`;
@@ -570,6 +588,136 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
               );
             })}
           </div>
+        </section>
+
+        <section className="mb-10">
+          <h2 className="mb-1 text-lg font-semibold text-slate-100">Field time entries</h2>
+          <p className="mb-3 text-sm text-slate-500">
+            Hours worked by employee, by day — optionally tied to a cost code and craft classification.
+            Tracks hours by pay type; it does not calculate dollar wages.
+          </p>
+
+          {job.timeEntries.length > 0 && (
+            <ul className="mb-4 flex flex-col gap-2">
+              {job.timeEntries.map((entry) => (
+                <li
+                  key={entry.id}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-800 bg-slate-900 p-3 text-sm"
+                >
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <span className="text-slate-100">
+                      {entry.date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                    </span>
+                    <span className="text-slate-300">{entry.employeeUser.name ?? entry.employeeUser.email}</span>
+                    <span className="text-slate-400">{Number(entry.hours)}h</span>
+                    <span className="rounded bg-slate-800 px-1.5 py-0.5 text-xs text-slate-400">
+                      {TIME_ENTRY_PAY_TYPE_OPTIONS.find((p) => p.value === entry.payType)?.label ?? entry.payType}
+                    </span>
+                    {entry.craftClassification && (
+                      <span className="text-xs text-slate-500">{entry.craftClassification.name}</span>
+                    )}
+                    {entry.lineItem && <span className="text-xs text-slate-500">{entry.lineItem.description}</span>}
+                    {entry.note && <span className="text-xs text-slate-500">— {entry.note}</span>}
+                  </div>
+                  <form action={deleteTimeEntryWithId(entry.id)}>
+                    <button type="submit" title="Remove" className="text-xs text-red-400 hover:underline">
+                      Remove
+                    </button>
+                  </form>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <form action={logTimeEntryWithId} className="flex flex-wrap items-end gap-2 rounded-lg border border-slate-800 bg-slate-900 p-3">
+            <label className="flex flex-col gap-1 text-xs text-slate-400">
+              Employee
+              <select
+                name="employeeUserId"
+                required
+                className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
+              >
+                {companyMembers.map((member) => (
+                  <option key={member.id} value={member.id}>
+                    {member.name ?? member.email}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-slate-400">
+              Date
+              <input
+                type="date"
+                name="date"
+                required
+                className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-slate-400">
+              Hours
+              <input
+                name="hours"
+                placeholder="8"
+                required
+                className="w-20 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-slate-400">
+              Pay type
+              <select
+                name="payType"
+                defaultValue="STRAIGHT"
+                className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
+              >
+                {TIME_ENTRY_PAY_TYPE_OPTIONS.map((p) => (
+                  <option key={p.value} value={p.value}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-slate-400">
+              Cost code / SOV line
+              <select
+                name="lineItemId"
+                defaultValue=""
+                className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
+              >
+                <option value="">No specific line</option>
+                {job.lineItems.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.description}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-slate-400">
+              Craft classification
+              <select
+                name="craftClassificationId"
+                defaultValue=""
+                className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
+              >
+                <option value="">No craft tag</option>
+                {craftClassifications.map((craft) => (
+                  <option key={craft.id} value={craft.id}>
+                    {craft.unionLocal.parentInternational} {craft.unionLocal.localNumber} — {craft.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <input
+              name="note"
+              placeholder="Note (optional)"
+              className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+            />
+            <button
+              type="submit"
+              className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-100 hover:bg-slate-700"
+            >
+              Log time
+            </button>
+          </form>
         </section>
 
         {!isEstimateStage && (

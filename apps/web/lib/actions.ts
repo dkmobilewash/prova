@@ -1644,3 +1644,80 @@ export async function deleteContractDocument(contractDocumentId: string) {
 
   revalidatePath(`/jobs/${document.jobId}`);
 }
+
+const TIME_ENTRY_PAY_TYPES = ["STRAIGHT", "OVERTIME", "DOUBLE_TIME", "SHIFT_DIFFERENTIAL"] as const;
+
+/** Unrecognized/missing selection falls back to STRAIGHT rather than
+ * erroring — every entry needs some pay type, and straight time is the
+ * overwhelmingly common case. */
+function timeEntryPayTypeFromForm(formData: FormData): (typeof TIME_ENTRY_PAY_TYPES)[number] {
+  const raw = String(formData.get("payType") ?? "");
+  return TIME_ENTRY_PAY_TYPES.includes(raw as (typeof TIME_ENTRY_PAY_TYPES)[number])
+    ? (raw as (typeof TIME_ENTRY_PAY_TYPES)[number])
+    : "STRAIGHT";
+}
+
+/** Logs a day's hours for one employee against a job — optionally tied to
+ * a specific line item (cost code/SOV line) and craft classification. See
+ * TimeEntry in schema.prisma for why pay types are separate rows rather
+ * than one row with a rate multiplier. */
+export async function logTimeEntry(jobId: string, formData: FormData) {
+  const { company } = await requireCompanyContext();
+  await assertJobInCompany(jobId, company.id);
+
+  const employeeUserId = String(formData.get("employeeUserId") ?? "");
+  const employee = await prisma.user.findUnique({ where: { id: employeeUserId } });
+  if (!employee || employee.companyId !== company.id) {
+    throw new Error("Employee not found");
+  }
+
+  const lineItemIdRaw = String(formData.get("lineItemId") ?? "").trim();
+  const lineItemId = lineItemIdRaw ? (await assertLineItemOnJob(lineItemIdRaw, jobId)).id : null;
+
+  const craftClassificationId = await craftClassificationIdFromForm(formData, company.id);
+
+  const dateRaw = String(formData.get("date") ?? "").trim();
+  if (!dateRaw) {
+    throw new Error("Date is required");
+  }
+  const date = new Date(dateRaw);
+  if (Number.isNaN(date.getTime())) {
+    throw new Error("Invalid date");
+  }
+
+  const hoursRaw = String(formData.get("hours") ?? "").trim();
+  if (!hoursRaw || Number.isNaN(Number(hoursRaw)) || Number(hoursRaw) <= 0) {
+    throw new Error("Hours must be a positive number");
+  }
+
+  const note = String(formData.get("note") ?? "").trim();
+
+  await prisma.timeEntry.create({
+    data: {
+      jobId,
+      lineItemId,
+      employeeUserId,
+      craftClassificationId,
+      date,
+      hours: hoursRaw,
+      payType: timeEntryPayTypeFromForm(formData),
+      note: note || null,
+    },
+  });
+
+  revalidatePath(`/jobs/${jobId}`);
+}
+
+export async function deleteTimeEntry(jobId: string, timeEntryId: string) {
+  const { company } = await requireCompanyContext();
+  await assertJobInCompany(jobId, company.id);
+
+  const timeEntry = await prisma.timeEntry.findUnique({ where: { id: timeEntryId } });
+  if (!timeEntry || timeEntry.jobId !== jobId) {
+    throw new Error("Time entry not found on this job");
+  }
+
+  await prisma.timeEntry.delete({ where: { id: timeEntryId } });
+
+  revalidatePath(`/jobs/${jobId}`);
+}
