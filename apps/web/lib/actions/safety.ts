@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
-import { prisma } from "@prova/db";
+import { Prisma, prisma } from "@prova/db";
 import { assertOwner } from "./shared";
 
 const OUTCOMES = [
@@ -54,17 +54,31 @@ async function optionalJobId(formData: FormData, companyId: string) {
   return job.id;
 }
 
-/** OSHA case numbers restart at 1 each calendar year. Taking the current
- * max rather than counting rows so deleting a case never reissues its
- * number — the log is a legal record and duplicate case numbers in a year
- * are a finding. */
-async function nextCaseNumber(companyId: string, caseYear: number) {
-  const latest = await prisma.safetyIncident.findFirst({
-    where: { companyId, caseYear },
-    orderBy: { caseNumber: "desc" },
-    select: { caseNumber: true },
+/** Issues the next case number for a company and year.
+ *
+ * Reads nothing from SafetyIncident on purpose. An earlier version took
+ * `max(caseNumber) + 1`, which looks right and isn't: delete the highest
+ * case and the max drops back, so the next case reissues that number. A
+ * row count fails the same way. Anything derived from the rows that still
+ * exist can be reissued, because deleting a row changes the answer.
+ *
+ * The counter only ever increments, so a deleted case's number is retired.
+ * Must be called with a transaction client so the increment and the
+ * incident are one atomic step — otherwise two people filing at the same
+ * moment both read the same value and collide on the unique constraint.
+ */
+async function issueCaseNumber(
+  tx: Prisma.TransactionClient,
+  companyId: string,
+  caseYear: number,
+) {
+  const counter = await tx.safetyCaseCounter.upsert({
+    where: { companyId_caseYear: { companyId, caseYear } },
+    create: { companyId, caseYear, lastCaseNumber: 1 },
+    update: { lastCaseNumber: { increment: 1 } },
+    select: { lastCaseNumber: true },
   });
-  return (latest?.caseNumber ?? 0) + 1;
+  return counter.lastCaseNumber;
 }
 
 export async function createSafetyIncident(formData: FormData) {
@@ -80,23 +94,31 @@ export async function createSafetyIncident(formData: FormData) {
   const jobTitle = String(formData.get("jobTitle") ?? "").trim();
   const location = String(formData.get("location") ?? "").trim();
 
-  await prisma.safetyIncident.create({
-    data: {
-      companyId: company.id,
-      jobId: await optionalJobId(formData, company.id),
-      caseYear,
-      caseNumber: await nextCaseNumber(company.id, caseYear),
-      occurredAt,
-      employeeName,
-      jobTitle: jobTitle || null,
-      location: location || null,
-      description,
-      classification: pick(formData, "classification", CLASSIFICATIONS),
-      outcome: pick(formData, "outcome", OUTCOMES),
-      daysAway: countFromForm(formData, "daysAway"),
-      daysRestricted: countFromForm(formData, "daysRestricted"),
-      reportedByUserId: user.id,
-    },
+  const jobId = await optionalJobId(formData, company.id);
+  const classification = pick(formData, "classification", CLASSIFICATIONS);
+  const outcome = pick(formData, "outcome", OUTCOMES);
+  const daysAway = countFromForm(formData, "daysAway");
+  const daysRestricted = countFromForm(formData, "daysRestricted");
+
+  await prisma.$transaction(async (tx) => {
+    await tx.safetyIncident.create({
+      data: {
+        companyId: company.id,
+        jobId,
+        caseYear,
+        caseNumber: await issueCaseNumber(tx, company.id, caseYear),
+        occurredAt,
+        employeeName,
+        jobTitle: jobTitle || null,
+        location: location || null,
+        description,
+        classification,
+        outcome,
+        daysAway,
+        daysRestricted,
+        reportedByUserId: user.id,
+      },
+    });
   });
 
   revalidatePath("/safety");

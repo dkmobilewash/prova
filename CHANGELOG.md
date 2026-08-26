@@ -14,6 +14,28 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ## 2026-08-26
 
+### Neon connection pooling (Cyrus)
+`cyrus/db-pooling`
+
+- **Every page in the app was returning a 500**, local and deployed alike:
+  `Timed out fetching a new connection from the connection pool`. Not a
+  code change — the app had always pointed at Neon's **direct** endpoint,
+  which allows very few connections, while Prisma opened a pool of 17.
+- Fixed by using Neon's **pooled** endpoint (`-pooler` in the hostname) for
+  `DATABASE_URL` and keeping the direct endpoint as `DIRECT_URL`, which
+  `prisma migrate` requires — a pooler can't run migrations. Datasource now
+  declares `directUrl`.
+- Pool dropped to 5 connections, timeouts raised to 30s. Neon suspends an
+  idle compute; the first request after a quiet period has to wake it, and
+  the 10s default expired during the wake.
+- **This was worse in production than locally.** Vercel is serverless —
+  each invocation opens its own connection, so the direct endpoint
+  exhausts far faster there. It had never been caught because nobody had
+  loaded the deployed app end to end.
+- **Anyone with a local checkout must add `DIRECT_URL` to their `.env`,
+  and both variables must be set in Vercel project settings.** Neither is
+  fixed by pulling the code.
+
 ### Safety & field operations (Cyrus)
 `cyrus/safety` — FEATURE-AUDIT category 17
 
@@ -21,11 +43,18 @@ Entries say what changed and why it mattered, not which functions moved.
   New `SafetyIncident` and `ToolboxTalk` models in `operations.prisma`, new
   `lib/actions/safety.ts`. Nothing outside my lane was touched — one line
   each in `middleware.ts` and `Sidebar.tsx`.
-- **Case numbers are sequential per company per calendar year, taken from
-  the current max rather than a row count.** Counting rows would reissue a
-  case number after a deletion, and duplicate case numbers within a year on
-  a filed log are a finding. Case number and year are not editable after
-  creation — they identify the case on a document that may already be
+- **Case numbers are issued by a counter row that only increments
+  (`SafetyCaseCounter`), not computed from the incidents.** The first
+  version took `max(caseNumber) + 1`, which is wrong: delete the *highest*
+  case and the max drops back, so the next case reissues that number. A row
+  count fails the same way. Anything derived from the rows that still exist
+  can be reissued, because deleting a row changes the answer — caught by
+  clicking it, not by any check that passed. The counter is incremented in
+  the same transaction that creates the incident, which also settles the
+  race where two people file simultaneously and both read the same value.
+  The migration seeds the counter from existing incidents so numbering
+  continues rather than restarting. Case number and year are not editable
+  after creation — they identify the case on a document that may already be
   filed.
 - **"Recordable" is derived from the outcome, never stored.** Everything
   except first aid is recordable on the 300 log. Storing it as its own

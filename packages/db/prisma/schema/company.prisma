@@ -41,6 +41,7 @@ model Company {
   lineItemCatalogEntries LineItemCatalogEntry[]
   punchListItems         PunchListItem[]
   dailyFieldReports      DailyFieldReport[]
+  safetyCaseCounters SafetyCaseCounter[]
   safetyIncidents        SafetyIncident[]
   toolboxTalks           ToolboxTalk[]
 }

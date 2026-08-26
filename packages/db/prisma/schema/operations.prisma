@@ -197,6 +197,25 @@ enum IncidentClassification {
 /// rather than as a free-text diary: without case number, classification
 /// and outcome you cannot generate the log later, and the log is what gets
 /// audited.
+/// Issues OSHA case numbers. Deliberately NOT derived from SafetyIncident
+/// rows: any number computed from the rows that still exist (a count, or
+/// max+1) is freed again when a case is deleted, so the next case reissues
+/// it. Duplicate case numbers within one year on a filed log are a finding.
+/// This row only ever increments, so a deleted case's number is retired for
+/// good. Incrementing inside the same transaction that creates the incident
+/// also settles the race where two people file at the same moment.
+model SafetyCaseCounter {
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+  caseYear  Int
+
+  lastCaseNumber Int @default(0)
+
+  updatedAt DateTime @updatedAt
+
+  @@id([companyId, caseYear])
+}
+
 model SafetyIncident {
   id        String  @id @default(cuid())
   companyId String
@@ -209,7 +228,8 @@ model SafetyIncident {
   job   Job?    @relation(fields: [jobId], references: [id])
 
   /// Sequential per company per calendar year, the way OSHA case numbers
-  /// run. Assigned at creation, never reused.
+  /// run. Issued by SafetyCaseCounter at creation and never reissued, even
+  /// after the case is deleted.
   caseNumber Int
   caseYear   Int
 
