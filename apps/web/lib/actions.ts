@@ -1397,3 +1397,56 @@ export async function deleteComplianceDocument(documentId: string) {
 
   revalidatePath("/compliance");
 }
+
+// ---------------------------------------------------------------------------
+// Vendors (Cyrus's lane — WORK-SPLIT.md task 2). Appended at the end of the
+// file per WORK-SPLIT.md's shared-file rule.
+// ---------------------------------------------------------------------------
+
+/** Adds a supplier/vendor to the company directory. Trade scope is
+ * optional — reuses tradeScopeFromForm, where an empty selection means
+ * "serves any trade" rather than an error. */
+export async function createVendor(formData: FormData) {
+  const { company } = await requireCompanyContext();
+
+  const name = String(formData.get("name") ?? "").trim();
+  if (!name) {
+    throw new Error("Vendor name is required");
+  }
+
+  const contactName = String(formData.get("contactName") ?? "").trim();
+  const phone = String(formData.get("phone") ?? "").trim();
+  const email = String(formData.get("email") ?? "").trim();
+  const notes = String(formData.get("notes") ?? "").trim();
+
+  await prisma.vendor.create({
+    data: {
+      companyId: company.id,
+      name,
+      tradeScope: tradeScopeFromForm(formData),
+      contactName: contactName || null,
+      phone: phone || null,
+      email: email || null,
+      notes: notes || null,
+    },
+  });
+
+  revalidatePath("/vendors");
+}
+
+/** Removes a vendor. Owner-only, matching how every other company-level
+ * record deletion is gated. */
+export async function deleteVendor(vendorId: string) {
+  const context = await requireCompanyContext();
+  assertOwner(context);
+  const { company } = context;
+
+  const vendor = await prisma.vendor.findUnique({ where: { id: vendorId } });
+  if (!vendor || vendor.companyId !== company.id) {
+    throw new Error("Vendor not found");
+  }
+
+  await prisma.vendor.delete({ where: { id: vendorId } });
+
+  revalidatePath("/vendors");
+}
