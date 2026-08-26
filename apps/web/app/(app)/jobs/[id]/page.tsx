@@ -10,6 +10,7 @@ import { DraftLineItemsForm } from "@/components/DraftLineItemsForm";
 import { money } from "@/lib/money";
 import { calculateLineItemWip, calculateJobWip } from "@/lib/wip";
 import { calculateTimeEntryLaborCost, findEffectiveFringeRateSchedule } from "@/lib/labor-cost";
+import { calculateRetainageSummary } from "@/lib/retainage";
 import {
   addChangeOrderLineItem,
   addCostEntry,
@@ -19,14 +20,17 @@ import {
   createInvoice,
   createSignatureRequest,
   deleteCostEntry,
+  createRetainageRelease,
   deleteDispatchSlip,
   deleteLineItem,
   deletePayment,
   deletePrevailingWageDetermination,
+  deleteRetainageRelease,
   deleteTimeEntry,
   editLineItemViaChangeOrder,
   logPayment,
   logTimeEntry,
+  updateJobRetainageTerms,
   uploadDispatchSlip,
   uploadPrevailingWageDetermination,
   markJobContracted,
@@ -119,6 +123,9 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
         orderBy: { createdAt: "desc" },
         include: { uploadedByUser: true },
       },
+      retainageReleases: {
+        orderBy: { releasedAt: "desc" },
+      },
       operatingLocation: true,
     },
   });
@@ -188,6 +195,14 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
     }),
   );
 
+  const retainageSummary = calculateRetainageSummary({
+    invoiceRetainageWithheld: job.invoices.map((invoice) =>
+      invoice.retainageWithheld != null ? Number(invoice.retainageWithheld) : null,
+    ),
+    releaseAmounts: job.retainageReleases.map((release) => Number(release.amount)),
+    substantialCompletionDate: job.substantialCompletionDate,
+  });
+
   const billedToDate = job.invoices.reduce((sum, invoice) => sum + Number(invoice.amount), 0);
   const jobWip = calculateJobWip(
     lineItemWip.map((l) => l.wip),
@@ -220,6 +235,9 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
   const uploadPrevailingWageDeterminationWithId = uploadPrevailingWageDetermination.bind(null, job.id);
   const deletePrevailingWageDeterminationWithId = (determinationId: string) =>
     deletePrevailingWageDetermination.bind(null, job.id, determinationId);
+  const updateJobRetainageTermsWithId = updateJobRetainageTerms.bind(null, job.id);
+  const createRetainageReleaseWithId = createRetainageRelease.bind(null, job.id);
+  const deleteRetainageReleaseWithId = (releaseId: string) => deleteRetainageRelease.bind(null, job.id, releaseId);
 
   const headerList = await headers();
   const origin = `${headerList.get("x-forwarded-proto") ?? "https"}://${headerList.get("host")}`;
@@ -1049,6 +1067,11 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                         Due {invoice.dueAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
                       </p>
                     )}
+                    {invoice.retainageWithheld != null && (
+                      <p className="mt-1 text-xs text-slate-500">
+                        Retainage withheld this invoice: {money(Number(invoice.retainageWithheld))}
+                      </p>
+                    )}
 
                     {invoice.payments.length > 0 && (
                       <ul className="mt-3 flex flex-col gap-1 border-t border-slate-800 pt-3">
@@ -1143,6 +1166,134 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                 className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
               >
                 Create invoice
+              </button>
+            </form>
+          </section>
+        )}
+
+        {!isEstimateStage && (
+          <section className="mb-10">
+            <h2 className="mb-1 text-lg font-semibold text-slate-100">Retainage</h2>
+            <p className="mb-3 text-sm text-slate-500">
+              Withheld amounts are snapshotted onto each invoice when it&rsquo;s created from the rate below —
+              changing the rate only affects invoices created after the change.
+            </p>
+
+            <form
+              action={updateJobRetainageTermsWithId}
+              className="mb-4 flex flex-wrap items-end gap-2 rounded-lg border border-slate-800 bg-slate-900 p-3"
+            >
+              <label className="flex flex-col gap-1 text-xs text-slate-400">
+                Retainage %
+                <input
+                  name="retainagePercent"
+                  defaultValue={job.retainagePercent?.toString() ?? job.contact.defaultRetainagePercent?.toString() ?? ""}
+                  placeholder="e.g. 10"
+                  className="w-24 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-600 focus:border-blue-500 focus:outline-none"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-xs text-slate-400">
+                Expected substantial completion
+                <input
+                  type="date"
+                  name="substantialCompletionDate"
+                  defaultValue={dateInputValue(job.substantialCompletionDate)}
+                  className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
+                />
+              </label>
+              <button
+                type="submit"
+                className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-100 hover:bg-slate-700"
+              >
+                Save
+              </button>
+            </form>
+
+            <div className="mb-4 grid grid-cols-2 gap-3 rounded-lg border border-slate-800 bg-slate-900 p-4 sm:grid-cols-3">
+              <div>
+                <p className="text-xs text-slate-500">Total withheld</p>
+                <p className="text-slate-100">{money(retainageSummary.totalWithheld)}</p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500">Total released</p>
+                <p className="text-slate-100">{money(retainageSummary.totalReleased)}</p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500">Outstanding balance</p>
+                <p className={retainageSummary.balance > 0 ? "text-amber-400" : "text-green-400"}>
+                  {money(retainageSummary.balance)}
+                </p>
+              </div>
+            </div>
+
+            {retainageSummary.balance > 0 && retainageSummary.substantialCompletionDate && (
+              <p className="mb-4 text-sm text-slate-400">
+                Expected release: {money(retainageSummary.balance)} around{" "}
+                {retainageSummary.substantialCompletionDate.toLocaleDateString("en-US", {
+                  month: "short",
+                  day: "numeric",
+                  year: "numeric",
+                })}{" "}
+                (this job&rsquo;s expected substantial completion date) — a forecast based on the date set above, not
+                a guarantee of when the GC will actually release it.
+              </p>
+            )}
+
+            {job.retainageReleases.length > 0 && (
+              <ul className="mb-4 flex flex-col gap-2">
+                {job.retainageReleases.map((release) => (
+                  <li
+                    key={release.id}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-800 bg-slate-900 p-3 text-sm"
+                  >
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <span className="text-slate-100">
+                        {release.releasedAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                      </span>
+                      <span className="text-slate-300">{money(Number(release.amount))}</span>
+                      {release.note && <span className="text-xs text-slate-500">— {release.note}</span>}
+                    </div>
+                    <form action={deleteRetainageReleaseWithId(release.id)}>
+                      <button type="submit" title="Remove" className="text-xs text-red-400 hover:underline">
+                        Remove
+                      </button>
+                    </form>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            <form
+              action={createRetainageReleaseWithId}
+              className="flex flex-wrap items-end gap-2 rounded-lg border border-slate-800 bg-slate-900 p-3"
+            >
+              <label className="flex flex-col gap-1 text-xs text-slate-400">
+                Amount released
+                <input
+                  name="amount"
+                  placeholder="Amount"
+                  required
+                  className="w-28 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-xs text-slate-400">
+                Date
+                <input
+                  type="date"
+                  name="releasedAt"
+                  className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
+                />
+              </label>
+              <input
+                name="note"
+                placeholder="Note (optional)"
+                className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+              />
+              <button
+                type="submit"
+                className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-100 hover:bg-slate-700"
+              >
+                Log release
               </button>
             </form>
           </section>

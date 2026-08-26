@@ -943,9 +943,32 @@ export async function createInvoice(jobId: string, formData: FormData) {
   const dueRaw = String(formData.get("dueAt") ?? "").trim();
   const dueAt = dueRaw ? new Date(dueRaw) : null;
 
+  // Snapshotted from the job's current rate, not recomputed later if the
+  // rate changes -- see Invoice.retainageWithheld.
+  const retainageWithheld =
+    job.retainagePercent != null ? (Number(amount) * (Number(job.retainagePercent) / 100)).toFixed(2) : null;
+
   const number = await nextInvoiceNumber(jobId);
   await prisma.invoice.create({
-    data: { jobId, number, description: description || null, amount, dueAt },
+    data: { jobId, number, description: description || null, amount, dueAt, retainageWithheld },
+  });
+
+  revalidatePath(`/jobs/${jobId}`);
+}
+
+/** Sets this job's retainage rate and expected substantial-completion
+ * date. Only affects future invoices -- see Invoice.retainageWithheld. */
+export async function updateJobRetainageTerms(jobId: string, formData: FormData) {
+  const { company } = await requireCompanyContext();
+  await assertJobInCompany(jobId, company.id);
+
+  const retainagePercent = nullableDecimalFromForm(formData, "retainagePercent");
+  const completionRaw = String(formData.get("substantialCompletionDate") ?? "").trim();
+  const substantialCompletionDate = completionRaw ? new Date(completionRaw) : null;
+
+  await prisma.job.update({
+    where: { id: jobId },
+    data: { retainagePercent, substantialCompletionDate },
   });
 
   revalidatePath(`/jobs/${jobId}`);
@@ -995,6 +1018,39 @@ export async function deletePayment(jobId: string, paymentId: string) {
   }
 
   await prisma.payment.delete({ where: { id: paymentId } });
+
+  revalidatePath(`/jobs/${jobId}`);
+}
+
+/** Records retainage actually paid back to the sub -- a lump sum against
+ * the job's accumulated withheld balance, not against any one invoice.
+ * See RetainageRelease in schema.prisma. */
+export async function createRetainageRelease(jobId: string, formData: FormData) {
+  const { company, ...user } = await requireCompanyContext();
+  await assertJobInCompany(jobId, company.id);
+
+  const amount = decimalFromForm(formData, "amount");
+  const releasedRaw = String(formData.get("releasedAt") ?? "").trim();
+  const releasedAt = releasedRaw ? new Date(releasedRaw) : new Date();
+  const note = String(formData.get("note") ?? "").trim();
+
+  await prisma.retainageRelease.create({
+    data: { jobId, amount, releasedAt, note: note || null, createdByUserId: user.id },
+  });
+
+  revalidatePath(`/jobs/${jobId}`);
+}
+
+export async function deleteRetainageRelease(jobId: string, releaseId: string) {
+  const { company } = await requireCompanyContext();
+  await assertJobInCompany(jobId, company.id);
+
+  const release = await prisma.retainageRelease.findUnique({ where: { id: releaseId } });
+  if (!release || release.jobId !== jobId) {
+    throw new Error("Retainage release not found on this job");
+  }
+
+  await prisma.retainageRelease.delete({ where: { id: releaseId } });
 
   revalidatePath(`/jobs/${jobId}`);
 }

@@ -655,6 +655,29 @@ variation isn't built as a rules engine for the same reason; a job is
 already jurisdiction-scoped via `operatingLocationId`, which is as far
 as this can honestly go without a real government wage-rate dataset.
 
+## Retainage
+
+`Job.retainagePercent` is the job's retainage rate — usually pre-filled
+in the UI from `Contact.defaultRetainagePercent`, but independently
+editable per job. `Invoice.retainageWithheld` is snapshotted from that
+rate at the moment each invoice is created, not recomputed live: raising
+or lowering a job's rate later never rewrites the retainage already
+withheld on past invoices, the same reasoning `JobLineItem.budgetedUnitCost`
+already uses for cost baselines.
+
+`RetainageRelease` records retainage actually paid back to the sub — a
+lump sum against the job's accumulated withheld balance
+(`SUM(Invoice.retainageWithheld)`), not tied to any single invoice,
+since retainage is typically released well after (and separately from)
+the invoices that generated it. `lib/retainage.ts` computes the
+outstanding balance as withheld minus released.
+
+Release *forecasting* is a plain field
+(`Job.substantialCompletionDate`) plus a computed statement in the UI
+("expected release around this date"), not a scheduling or notification
+system — there's no closeout/warranty stage in `JobStatus` yet for a
+forecast to hook into more precisely than that.
+
 ## Multi-tenancy and roles
 
 Every `Contact` and `Job` belongs to a `Company`. Every `User` belongs to

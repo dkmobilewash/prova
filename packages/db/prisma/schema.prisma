@@ -85,6 +85,7 @@ model User {
   timeEntries                          TimeEntry[]
   dispatchSlips                        DispatchSlip[]
   uploadedPrevailingWageDeterminations PrevailingWageDetermination[]
+  createdRetainageReleases             RetainageRelease[]
 
   @@index([companyId])
 }
@@ -120,10 +121,10 @@ model Contact {
   portalToken String? @unique
 
   /// Standing terms this GC typically works under — a starting point to
-  /// reference when scoping a new job with them, not a value enforced
-  /// anywhere yet. Actual per-job retainage withheld/released tracking is
-  /// a separate, bigger feature this phase doesn't build (see
-  /// ARCHITECTURE.md).
+  /// pre-fill Job.retainagePercent when scoping a new job with them, not a
+  /// value enforced anywhere itself. Actual per-job retainage withheld/
+  /// released tracking lives on Job/Invoice/RetainageRelease — see
+  /// ARCHITECTURE.md.
   defaultRetainagePercent Decimal? @db.Decimal(5, 2)
   /// e.g. 30 for "Net 30". Free-standing integer rather than an enum —
   /// real GC payment terms vary too much (Net 30/45/60, "pay when paid")
@@ -212,6 +213,22 @@ model Job {
   operatingLocationId String?
   operatingLocation   CompanyLocation? @relation(fields: [operatingLocationId], references: [id])
 
+  /// This job's retainage rate — usually pre-filled from
+  /// Contact.defaultRetainagePercent at contract time but independently
+  /// editable per job, since a GC's standing terms are a starting point,
+  /// not a binding value. Null means retainage isn't withheld on this job
+  /// (or hasn't been set yet). New invoices snapshot this rate into
+  /// Invoice.retainageWithheld at creation — changing it here later never
+  /// rewrites past invoices, same reasoning as JobLineItem.budgetedUnitCost.
+  retainagePercent Decimal? @db.Decimal(5, 2)
+
+  /// The anchor date for retainage release forecasting — when this job is
+  /// expected to reach substantial completion, the point GCs typically
+  /// release retainage. A plain field, not a JobStatus stage: closeout/
+  /// warranty tracking (JobStatus stopping at COMPLETE today) is a
+  /// separate, not-yet-built phase.
+  substantialCompletionDate DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -226,6 +243,7 @@ model Job {
   timeEntries                  TimeEntry[]
   dispatchSlips                DispatchSlip[]
   prevailingWageDeterminations PrevailingWageDetermination[]
+  retainageReleases            RetainageRelease[]
 
   @@index([companyId])
   @@index([contactId])
@@ -633,6 +651,13 @@ model Invoice {
   issuedAt    DateTime  @default(now())
   dueAt       DateTime?
 
+  /// Retainage withheld from this specific invoice — snapshotted at
+  /// creation from Job.retainagePercent × amount, not recomputed live.
+  /// Null when the job has no retainage rate set. This is the per-invoice
+  /// ledger entry; SUM(retainageWithheld) across a job's invoices is its
+  /// running total withheld — see lib/retainage.ts.
+  retainageWithheld Decimal? @db.Decimal(12, 2)
+
   payments Payment[]
 
   @@unique([jobId, number])
@@ -652,6 +677,29 @@ model Payment {
   note       String?
 
   @@index([invoiceId])
+}
+
+/// A record of retainage actually paid back to the sub — distinct from
+/// Payment, which settles a specific Invoice's balance. Retainage
+/// accumulates across every invoice on a job (Invoice.retainageWithheld)
+/// and is typically released as one lump sum well after the invoices that
+/// generated it, often at/after substantial completion, not tied to any
+/// single invoice. Job-level withheld minus SUM(RetainageRelease.amount)
+/// is the outstanding retainage balance — see lib/retainage.ts.
+model RetainageRelease {
+  id    String @id @default(cuid())
+  jobId String
+  job   Job    @relation(fields: [jobId], references: [id])
+
+  amount     Decimal  @db.Decimal(12, 2)
+  releasedAt DateTime @default(now())
+  note       String?
+
+  createdByUserId String?
+  createdByUser   User?    @relation(fields: [createdByUserId], references: [id])
+  createdAt       DateTime @default(now())
+
+  @@index([jobId])
 }
 
 /// One QuickBooks Online connection per Company. Tokens stored as plain
