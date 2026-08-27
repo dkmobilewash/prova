@@ -170,7 +170,12 @@ export function RfiRow({
   }
 
   const overdue = isOverdue(rfi, today);
-  const openDays = rfi.sentOn ? daysBetween(rfi.sentOn, rfi.answeredOn ?? today) : null;
+  // The actions now refuse an answer dated before the send, so this can't
+  // go negative — but a day count is the number people will quote in a
+  // dispute, so it doesn't get to render nonsense even if data predating
+  // that check is still around.
+  const rawDays = rfi.sentOn ? daysBetween(rfi.sentOn, rfi.answeredOn ?? today) : null;
+  const openDays = rawDays !== null && rawDays >= 0 ? rawDays : null;
 
   return (
     <li className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start">

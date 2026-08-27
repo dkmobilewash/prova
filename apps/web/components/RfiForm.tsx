@@ -5,7 +5,15 @@ import { useRef, useState, useTransition } from "react";
 import { createRfi } from "@/lib/actions";
 import { RfiFields, type JobOption } from "@/components/RfiFields";
 
-export function RfiForm({ jobs, defaultJobId }: { jobs: JobOption[]; defaultJobId?: string }) {
+export function RfiForm({
+  jobs,
+  defaultJobId,
+  today,
+}: {
+  jobs: JobOption[];
+  defaultJobId?: string;
+  today: string;
+}) {
   const [isOpen, setIsOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -68,17 +76,15 @@ export function RfiForm({ jobs, defaultJobId }: { jobs: JobOption[]; defaultJobI
       <RfiFields
         jobs={jobs}
         defaultJobId={defaultJobId}
-        defaults={{ subject: "", question: "", drawingReference: null, specSection: null, dueBy: null }}
+        defaults={{
+          subject: "",
+          question: "",
+          drawingReference: null,
+          specSection: null,
+          dueBy: null,
+          sentOn: today,
+        }}
       />
-
-      <label className="flex items-center gap-2 text-sm text-slate-300">
-        <input type="checkbox" name="sendNow" defaultChecked className="h-4 w-4 accent-blue-500" />
-        Mark as sent today
-      </label>
-      <p className="-mt-1 text-xs text-slate-500">
-        Uncheck to keep it as a draft. The sent date is what the log exists to prove, so it&apos;s stamped
-        here rather than in a second step.
-      </p>
 
       {error && <p className="text-sm text-red-400">{error}</p>}
 

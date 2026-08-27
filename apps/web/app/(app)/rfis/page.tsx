@@ -88,7 +88,7 @@ export default async function RfisPage({
       </p>
 
       <section className="mb-8">
-        <RfiForm jobs={jobs} defaultJobId={activeJob ?? undefined} />
+        <RfiForm jobs={jobs} defaultJobId={activeJob ?? undefined} today={today} />
       </section>
 
       <div className="mb-4 grid gap-3 sm:grid-cols-3">

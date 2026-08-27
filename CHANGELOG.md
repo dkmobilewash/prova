@@ -26,6 +26,19 @@ Entries say what changed and why it mattered, not which functions moved.
 - **Overdue is derived from the dates on every render, never stored.** A
   stored overdue flag is correct for one day. `today` comes from the server
   so the server and browser can't disagree about the date.
+- **The sent date is entered, not stamped, and can be backdated.** The first
+  version stamped `sentOn = now` behind a "mark as sent today" checkbox.
+  That made the first real use of the feature impossible: entering the RFIs
+  you already sent over the last three weeks would record every one as sent
+  today, and the response-time evidence — the whole point of the log —
+  would be fiction. Blank sent date means draft; status follows the date
+  rather than being set separately, so the two can't disagree.
+- **An answer can't be dated before the RFI was sent.** Found by clicking:
+  the row rendered `sent 2026-08-26 · answered 2026-08-23 · -3 days`. A log
+  that can hold an answer arriving before the question discredits itself,
+  and a negative day count is the number someone would quote in a dispute.
+  Rejected in the action; the row also refuses to render a negative count
+  for any record predating the check.
 - **The answer date is entered, not stamped.** Recording an answer that
   arrived last Tuesday must not read as arriving today, or the log
   overstates the GC's response time — which destroys its value as evidence

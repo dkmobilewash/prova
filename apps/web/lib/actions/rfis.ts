@@ -68,10 +68,12 @@ export async function createRfi(formData: FormData) {
   const specSection = text(formData, "specSection");
   const dueBy = optionalDate(formData, "dueBy");
 
-  // "Send it now" is the common case — an RFI written and not sent is a
-  // draft, and the sent date is what the record is for, so it's stamped
-  // here rather than left for a second click someone forgets.
-  const sendNow = formData.get("sendNow") === "on";
+  // The sent date is entered, not stamped. Stamping it `now` made the first
+  // real use of this feature impossible: entering the RFIs you already sent
+  // over the last three weeks would record them all as sent today, and the
+  // response-time evidence — the entire point of the log — would be fiction.
+  // Blank means it hasn't gone out yet, which is what a draft is.
+  const sentOn = optionalDate(formData, "sentOn");
 
   await prisma.$transaction(async (tx) => {
     await tx.rfi.create({
@@ -84,8 +86,8 @@ export async function createRfi(formData: FormData) {
         drawingReference: drawingReference || null,
         specSection: specSection || null,
         dueBy,
-        status: sendNow ? "SENT" : "DRAFT",
-        sentOn: sendNow ? new Date() : null,
+        status: sentOn ? "SENT" : "DRAFT",
+        sentOn,
         askedByUserId: user.id,
       },
     });
@@ -98,6 +100,17 @@ export async function updateRfi(rfiId: string, formData: FormData) {
   const { company } = await requireCompanyContext();
   const rfi = await assertRfi(rfiId, company.id);
 
+  const sentOn = optionalDate(formData, "sentOn");
+
+  // Clearing the sent date on an RFI that has been answered would leave an
+  // answer with nothing to have answered.
+  if (!sentOn && rfi.answeredOn) {
+    throw new Error("This RFI has an answer recorded, so it can't go back to being a draft");
+  }
+  if (sentOn && rfi.answeredOn && sentOn > rfi.answeredOn) {
+    throw new Error("The sent date can't be after the date the answer came back");
+  }
+
   // Job and number are the identity of a sent RFI — a GC has them in
   // writing. Neither is editable here; a wrong job means a new RFI.
   await prisma.rfi.update({
@@ -108,6 +121,10 @@ export async function updateRfi(rfiId: string, formData: FormData) {
       drawingReference: text(formData, "drawingReference") || null,
       specSection: text(formData, "specSection") || null,
       dueBy: optionalDate(formData, "dueBy"),
+      sentOn,
+      // Status follows the sent date rather than being set separately, so
+      // the two can never disagree.
+      status: rfi.answeredOn ? rfi.status : sentOn ? "SENT" : "DRAFT",
     },
   });
 
@@ -133,7 +150,13 @@ export async function answerRfi(rfiId: string, formData: FormData) {
   const rfi = await assertRfi(rfiId, company.id);
   if (rfi.status === "DRAFT") throw new Error("Send this RFI before recording an answer");
 
-  const answeredAt = optionalDate(formData, "answeredOn");
+  const answeredAt = optionalDate(formData, "answeredOn") ?? new Date();
+
+  // An answer that arrived before the question was asked discredits the
+  // whole log — and a log that can hold one is worth nothing in a dispute.
+  if (rfi.sentOn && answeredAt < rfi.sentOn) {
+    throw new Error("The answer can't have come back before the RFI was sent");
+  }
 
   await prisma.rfi.update({
     where: { id: rfi.id },
@@ -141,7 +164,7 @@ export async function answerRfi(rfiId: string, formData: FormData) {
       answer: required(formData, "answer", "Answer"),
       // The date the answer came back, not the date it was typed in — an
       // answer entered a week late must not read as a week-late response.
-      answeredOn: answeredAt ?? new Date(),
+      answeredOn: answeredAt,
       status: "ANSWERED",
       costImpact: formData.get("costImpact") === "on",
       scheduleImpact: formData.get("scheduleImpact") === "on",

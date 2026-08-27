@@ -12,6 +12,7 @@ export type RfiDefaults = {
   drawingReference: string | null;
   specSection: string | null;
   dueBy: string | null;
+  sentOn: string | null;
 };
 
 /** The question half of an RFI, shared by create and edit so they can't
@@ -70,6 +71,17 @@ export function RfiFields({
 
       <div className="grid gap-3 sm:grid-cols-3">
         <label className={labelClass}>
+          Date sent
+          <input type="date" name="sentOn" defaultValue={defaults.sentOn ?? ""} className={inputClass} />
+          <span className="text-xs text-slate-500">
+            Blank keeps it a draft. Backdate it when you&apos;re entering an RFI you already sent.
+          </span>
+        </label>
+        <label className={labelClass}>
+          Answer needed by
+          <input type="date" name="dueBy" defaultValue={defaults.dueBy ?? ""} className={inputClass} />
+        </label>
+        <label className={labelClass}>
           Drawing reference
           <input
             type="text"
@@ -88,10 +100,6 @@ export function RfiFields({
             placeholder="e.g. 09 21 16"
             className={inputClass}
           />
-        </label>
-        <label className={labelClass}>
-          Answer needed by
-          <input type="date" name="dueBy" defaultValue={defaults.dueBy ?? ""} className={inputClass} />
         </label>
       </div>
     </>
