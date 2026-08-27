@@ -19,10 +19,22 @@ export interface PayAppLineItemInput {
    * line item, chronologically before the invoice being viewed. */
   previousBilled: number;
   thisPeriodBilled: number;
+  /** SUM(materialsStoredValue) from every earlier invoice on this job for
+   * this line item. materialsStoredValue is a per-period delta -- what got
+   * newly stored (or, entered negative, what got released into billed work)
+   * that period -- not a running balance, so the running "materials stored
+   * to date" figure has to be summed here the same way previousBilled is.
+   * Dropping this was the exact bug a materials-stored line disappeared
+   * into on its second pay application: the total looked right for one
+   * period and silently lost the earlier stored value on the next. */
+  previousMaterialsStored: number;
   materialsStoredValue: number;
 }
 
 export interface PayAppLineItemResult extends PayAppLineItemInput {
+  /** previousMaterialsStored + materialsStoredValue -- the running stored
+   * balance as of this invoice, not just what was entered this period. */
+  materialsStoredToDate: number;
   totalCompletedAndStoredToDate: number;
   /** Null when scheduledValue is 0 -- nothing to divide by. */
   percentOfScheduledValue: number | null;
@@ -30,13 +42,15 @@ export interface PayAppLineItemResult extends PayAppLineItemInput {
 }
 
 export function calculatePayAppLineItem(input: PayAppLineItemInput): PayAppLineItemResult {
-  const totalCompletedAndStoredToDate = input.previousBilled + input.thisPeriodBilled + input.materialsStoredValue;
+  const materialsStoredToDate = input.previousMaterialsStored + input.materialsStoredValue;
+  const totalCompletedAndStoredToDate = input.previousBilled + input.thisPeriodBilled + materialsStoredToDate;
   const percentOfScheduledValue =
     input.scheduledValue > 0 ? totalCompletedAndStoredToDate / input.scheduledValue : null;
   const balanceToFinish = input.scheduledValue - totalCompletedAndStoredToDate;
 
   return {
     ...input,
+    materialsStoredToDate,
     totalCompletedAndStoredToDate,
     percentOfScheduledValue,
     balanceToFinish,
@@ -74,7 +88,7 @@ export function calculatePayAppSummary(input: PayAppSummaryInput): PayAppSummary
   const totalEarnedLessRetainage = totalCompletedAndStoredToDate - retainageToDate;
 
   const previousTotalCompletedAndStored = input.lineItems.reduce(
-    (sum, item) => sum + item.previousBilled,
+    (sum, item) => sum + item.previousBilled + item.previousMaterialsStored,
     0,
   );
   const previousCertificatesForPayment = previousTotalCompletedAndStored - input.previousRetainageWithheld;

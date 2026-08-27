@@ -9,6 +9,7 @@ import { WipNarrativeButton } from "@/components/WipNarrativeButton";
 import { DraftLineItemsForm } from "@/components/DraftLineItemsForm";
 import { DailyFieldReports } from "@/components/DailyFieldReports";
 import { PayApplications, StatusForm } from "@/components/PayApplications";
+import { MarkContractedButton } from "@/components/MarkContractedButton";
 import { money } from "@/lib/money";
 import { calculateLineItemWip, calculateJobWip } from "@/lib/wip";
 import { calculateTimeEntryLaborCost, findEffectiveFringeRateSchedule } from "@/lib/labor-cost";
@@ -1643,14 +1644,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                 audit trail of anything that changes after the client agrees to it.
               </p>
               {signedSignature ? (
-                <form action={markContractedWithId}>
-                  <button
-                    type="submit"
-                    className="inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
-                  >
-                    Mark as contracted
-                  </button>
-                </form>
+                <MarkContractedButton markContracted={markContractedWithId} />
               ) : (
                 <p className="text-sm text-amber-400">
                   Get the client&apos;s signature above before contracting this job.

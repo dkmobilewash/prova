@@ -87,8 +87,9 @@ export function PayApplications({
       </div>
       <p className="mb-3 text-sm text-slate-500">
         A pay application bills against specific schedule-of-values lines — this period&rsquo;s completed work plus
-        any materials stored, per line — rather than a single lump-sum amount. See the full G702/G703-style report
-        for each one below.
+        any materials stored, per line — rather than a single lump-sum amount. New materials stored carries forward
+        automatically on later applications; leave it blank if nothing new was stored this period. See the full
+        G702/G703-style report for each one below.
       </p>
 
       {isOpen && (
@@ -136,7 +137,7 @@ export function PayApplications({
                   <th className="pb-1 pr-3 font-normal">Line item</th>
                   <th className="pb-1 pr-3 text-right font-normal">Scheduled value</th>
                   <th className="pb-1 pr-3 text-right font-normal">This period</th>
-                  <th className="pb-1 text-right font-normal">Materials stored</th>
+                  <th className="pb-1 text-right font-normal">New materials stored</th>
                 </tr>
               </thead>
               <tbody>

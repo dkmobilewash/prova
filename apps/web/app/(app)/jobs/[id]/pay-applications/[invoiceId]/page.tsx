@@ -62,6 +62,15 @@ export default async function PayApplicationPage({
         (sum, inv) => sum + Number(inv.lineItems.find((r) => r.lineItemId === lineItemId)?.thisPeriodBilled ?? 0),
         0,
       );
+      // materialsStoredValue is a per-period delta, not a running balance —
+      // summed across every earlier invoice the same way previousBilled is,
+      // or a line's stored materials from an earlier application vanish
+      // from the total the moment a later application doesn't re-enter them.
+      const previousMaterialsStored = earlierInvoices.reduce(
+        (sum, inv) =>
+          sum + Number(inv.lineItems.find((r) => r.lineItemId === lineItemId)?.materialsStoredValue ?? 0),
+        0,
+      );
       const thisRow = invoice.lineItems.find((r) => r.lineItemId === lineItemId);
 
       return {
@@ -70,13 +79,21 @@ export default async function PayApplicationPage({
         scheduledValue,
         previousBilled,
         thisPeriodBilled: Number(thisRow?.thisPeriodBilled ?? 0),
+        previousMaterialsStored,
         materialsStoredValue: Number(thisRow?.materialsStoredValue ?? 0),
       };
     })
     // Drop untouched, zero-value rows for lines that were never billed and
     // aren't in this period's application — an all-zero row for every SOV
     // line on every application would bury the ones that actually moved.
-    .filter((row) => row.scheduledValue > 0 || row.previousBilled > 0 || row.thisPeriodBilled > 0 || row.materialsStoredValue > 0)
+    .filter(
+      (row) =>
+        row.scheduledValue > 0 ||
+        row.previousBilled > 0 ||
+        row.thisPeriodBilled > 0 ||
+        row.previousMaterialsStored > 0 ||
+        row.materialsStoredValue > 0,
+    )
     .map(calculatePayAppLineItem);
 
   const summary = calculatePayAppSummary({
@@ -154,7 +171,7 @@ export default async function PayApplicationPage({
                   <th className="pb-1 pr-3 text-right font-normal">Scheduled value</th>
                   <th className="pb-1 pr-3 text-right font-normal">Previous</th>
                   <th className="pb-1 pr-3 text-right font-normal">This period</th>
-                  <th className="pb-1 pr-3 text-right font-normal">Materials stored</th>
+                  <th className="pb-1 pr-3 text-right font-normal">Materials stored to date</th>
                   <th className="pb-1 pr-3 text-right font-normal">Total to date</th>
                   <th className="pb-1 pr-3 text-right font-normal">%</th>
                   <th className="pb-1 text-right font-normal">Balance to finish</th>
@@ -167,7 +184,7 @@ export default async function PayApplicationPage({
                     <td className="py-1 pr-3 text-right text-slate-400">{money(row.scheduledValue)}</td>
                     <td className="py-1 pr-3 text-right text-slate-400">{money(row.previousBilled)}</td>
                     <td className="py-1 pr-3 text-right text-slate-100">{money(row.thisPeriodBilled)}</td>
-                    <td className="py-1 pr-3 text-right text-slate-400">{money(row.materialsStoredValue)}</td>
+                    <td className="py-1 pr-3 text-right text-slate-400">{money(row.materialsStoredToDate)}</td>
                     <td className="py-1 pr-3 text-right text-slate-100">{money(row.totalCompletedAndStoredToDate)}</td>
                     <td className="py-1 pr-3 text-right text-slate-400">{percent(row.percentOfScheduledValue)}</td>
                     <td className="py-1 text-right text-slate-400">{money(row.balanceToFinish)}</td>
