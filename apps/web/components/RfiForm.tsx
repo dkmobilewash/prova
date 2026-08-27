@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRef, useState, useTransition } from "react";
 import { createRfi } from "@/lib/actions";
 import { RfiFields, type JobOption } from "@/components/RfiFields";
+import { localToday } from "@/components/localToday";
 
 export function RfiForm({
   jobs,
@@ -82,7 +83,7 @@ export function RfiForm({
           drawingReference: null,
           specSection: null,
           dueBy: null,
-          sentOn: today,
+          sentOn: localToday(),
         }}
       />
 

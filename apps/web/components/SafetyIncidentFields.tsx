@@ -55,6 +55,11 @@ export function SafetyIncidentFields({
               name="occurredAt"
               required
               defaultValue={defaults.occurredAt}
+              // An incident can't have happened in the future, and the
+              // date is not editable afterwards — it picks the case-number
+              // series. A typo'd year here is unfixable without deleting
+              // the case, which retires its number for good.
+              max={defaults.occurredAt}
               className={inputClass}
             />
           )}

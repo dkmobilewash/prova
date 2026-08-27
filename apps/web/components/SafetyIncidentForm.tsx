@@ -6,6 +6,7 @@ import {
   SafetyIncidentFields,
   type JobOption,
 } from "@/components/SafetyIncidentFields";
+import { localToday } from "@/components/localToday";
 
 export function SafetyIncidentForm({ jobs, today }: { jobs: JobOption[]; today: string }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -49,7 +50,7 @@ export function SafetyIncidentForm({ jobs, today }: { jobs: JobOption[]; today: 
       <SafetyIncidentFields
         jobs={jobs}
         defaults={{
-          occurredAt: today,
+          occurredAt: localToday(),
           jobId: null,
           employeeName: "",
           jobTitle: null,

@@ -15,6 +15,12 @@ function required(formData: FormData, key: string, label: string) {
   return value;
 }
 
+/** Every date in this module is stored at UTC midnight so that comparisons
+ * between them are comparisons between calendar days, not instants. */
+function utcMidnight(date: Date) {
+  return new Date(`${date.toISOString().slice(0, 10)}T00:00:00.000Z`);
+}
+
 /** Dates are stored at UTC midnight and rendered in UTC, same rule as the
  * safety log and daily field reports. */
 function optionalDate(formData: FormData, key: string): Date | null {
@@ -102,10 +108,16 @@ export async function updateRfi(rfiId: string, formData: FormData) {
 
   const sentOn = optionalDate(formData, "sentOn");
 
-  // Clearing the sent date on an RFI that has been answered would leave an
-  // answer with nothing to have answered.
-  if (!sentOn && rfi.answeredOn) {
-    throw new Error("This RFI has an answer recorded, so it can't go back to being a draft");
+  // Once an RFI has been sent it can never become a draft again.
+  //
+  // This is not tidiness. `deleteRfi` allows deleting drafts only, so
+  // without this guard the delete rule is bypassable entirely through the
+  // normal UI: edit a sent RFI, clear the date, save — it is now a draft —
+  // delete it. That destroys correspondence the GC also holds and leaves a
+  // permanent hole in the numbering. The weaker version of the same bug
+  // loses the original send date, which is the evidence the log exists for.
+  if (rfi.sentOn && !sentOn) {
+    throw new Error("This RFI has already been sent, so it can't go back to being a draft");
   }
   if (sentOn && rfi.answeredOn && sentOn > rfi.answeredOn) {
     throw new Error("The sent date can't be after the date the answer came back");
@@ -122,9 +134,12 @@ export async function updateRfi(rfiId: string, formData: FormData) {
       specSection: text(formData, "specSection") || null,
       dueBy: optionalDate(formData, "dueBy"),
       sentOn,
-      // Status follows the sent date rather than being set separately, so
-      // the two can never disagree.
-      status: rfi.answeredOn ? rfi.status : sentOn ? "SENT" : "DRAFT",
+      // Editing an RFI must never change where it sits in the workflow.
+      // Deriving status purely from the dates put a withdrawn (CLOSED,
+      // never answered) RFI back on the open list the moment someone
+      // fixed a typo in its subject. A draft that has just been given a
+      // sent date is the one real transition, and it is the only one.
+      status: rfi.status === "DRAFT" && sentOn ? "SENT" : rfi.status,
     },
   });
 
@@ -140,7 +155,12 @@ export async function markRfiSent(rfiId: string) {
 
   await prisma.rfi.update({
     where: { id: rfi.id },
-    data: { status: "SENT", sentOn: new Date() },
+    // UTC midnight, like every other date here. Storing the wall-clock
+    // instant instead made a same-day answer impossible: the answer date
+    // normalises to midnight, so it compared as EARLIER than a send
+    // stamped at 14:30, and the guard rejected it with a message blaming
+    // the user for data that was correct.
+    data: { status: "SENT", sentOn: utcMidnight(new Date()) },
   });
   revalidatePath("/rfis");
 }
@@ -150,7 +170,7 @@ export async function answerRfi(rfiId: string, formData: FormData) {
   const rfi = await assertRfi(rfiId, company.id);
   if (rfi.status === "DRAFT") throw new Error("Send this RFI before recording an answer");
 
-  const answeredAt = optionalDate(formData, "answeredOn") ?? new Date();
+  const answeredAt = optionalDate(formData, "answeredOn") ?? utcMidnight(new Date());
 
   // An answer that arrived before the question was asked discredits the
   // whole log — and a log that can hold one is worth nothing in a dispute.
@@ -188,7 +208,7 @@ export async function setRfiClosed(rfiId: string, closed: boolean) {
 
 export async function deleteRfi(rfiId: string) {
   const context = await requireCompanyContext();
-  assertOwner(context);
+  assertOwner(context, "Only the account owner can delete an RFI draft");
   const rfi = await assertRfi(rfiId, context.company.id);
 
   // Deleting a sent RFI destroys correspondence the GC also holds. Close

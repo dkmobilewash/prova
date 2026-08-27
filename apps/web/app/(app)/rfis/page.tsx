@@ -60,7 +60,20 @@ export default async function RfisPage({
 
   const openCount = rows.filter((r) => isOpen(r.status)).length;
   const overdueCount = rows.filter((r) => isOverdue(r, today)).length;
-  const impactCount = rows.filter((r) => r.costImpact || r.scheduleImpact).length;
+
+  // Counted from the database rather than from `rows`, unlike the two
+  // above. Open and overdue are properties of RFIs still in play, so the
+  // default view already holds all of them. Cost/schedule impact is the
+  // set you pull when building a change order — a job-lifetime figure —
+  // and closing an answered RFI is the normal end state, so counting the
+  // visible rows made the tile fall to zero exactly as the work got done.
+  const impactCount = await prisma.rfi.count({
+    where: {
+      companyId: company.id,
+      ...(activeJob ? { jobId: activeJob } : {}),
+      OR: [{ costImpact: true }, { scheduleImpact: true }],
+    },
+  });
 
   const filterHref = (params: { job?: string | null; show?: string | null }) => {
     const next = new URLSearchParams();

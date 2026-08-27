@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { answerRfi, deleteRfi, markRfiSent, setRfiClosed, updateRfi } from "@/lib/actions";
 import { RfiFields, inputClass, labelClass, type RfiDefaults } from "@/components/RfiFields";
 import { daysBetween, isOverdue, statusLabel } from "@/components/rfiLabels";
+import { localToday } from "@/components/localToday";
 
 export type RfiRowData = RfiDefaults & {
   id: string;
@@ -118,7 +119,7 @@ export function RfiRow({
             <input
               type="date"
               name="answeredOn"
-              defaultValue={rfi.answeredOn ?? today}
+              defaultValue={rfi.answeredOn ?? localToday()}
               className={inputClass}
             />
             <span className="text-xs text-slate-500">

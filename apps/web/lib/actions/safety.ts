@@ -46,6 +46,19 @@ function countFromForm(formData: FormData, key: string): number | null {
   return n;
 }
 
+/** Day counts only mean anything for these two outcomes. The form hides
+ * the inputs otherwise, but a form is not a validator: a direct action
+ * call with FIRST_AID_ONLY and daysAway=40 would store both and the log
+ * would print "First aid · 40 days away" — a row that contradicts itself
+ * on a document an inspector reads. Cleared here so the record can't. */
+function daysForOutcome(outcome: string, daysAway: number | null, daysRestricted: number | null) {
+  const counted = outcome === "DAYS_AWAY" || outcome === "RESTRICTED_OR_TRANSFER";
+  return {
+    daysAway: counted ? daysAway : null,
+    daysRestricted: counted ? daysRestricted : null,
+  };
+}
+
 async function optionalJobId(formData: FormData, companyId: string) {
   const raw = String(formData.get("jobId") ?? "").trim();
   if (!raw) return null;
@@ -97,8 +110,11 @@ export async function createSafetyIncident(formData: FormData) {
   const jobId = await optionalJobId(formData, company.id);
   const classification = pick(formData, "classification", CLASSIFICATIONS);
   const outcome = pick(formData, "outcome", OUTCOMES);
-  const daysAway = countFromForm(formData, "daysAway");
-  const daysRestricted = countFromForm(formData, "daysRestricted");
+  const days = daysForOutcome(
+    outcome,
+    countFromForm(formData, "daysAway"),
+    countFromForm(formData, "daysRestricted"),
+  );
 
   await prisma.$transaction(async (tx) => {
     await tx.safetyIncident.create({
@@ -114,8 +130,7 @@ export async function createSafetyIncident(formData: FormData) {
         description,
         classification,
         outcome,
-        daysAway,
-        daysRestricted,
+        ...days,
         reportedByUserId: user.id,
       },
     });
@@ -137,6 +152,8 @@ export async function updateSafetyIncident(incidentId: string, formData: FormDat
   const jobTitle = String(formData.get("jobTitle") ?? "").trim();
   const location = String(formData.get("location") ?? "").trim();
 
+  const updatedOutcome = pick(formData, "outcome", OUTCOMES);
+
   // caseNumber/caseYear are deliberately not editable: they identify the
   // case on a filed log.
   await prisma.safetyIncident.update({
@@ -148,9 +165,12 @@ export async function updateSafetyIncident(incidentId: string, formData: FormDat
       location: location || null,
       description,
       classification: pick(formData, "classification", CLASSIFICATIONS),
-      outcome: pick(formData, "outcome", OUTCOMES),
-      daysAway: countFromForm(formData, "daysAway"),
-      daysRestricted: countFromForm(formData, "daysRestricted"),
+      outcome: updatedOutcome,
+      ...daysForOutcome(
+        updatedOutcome,
+        countFromForm(formData, "daysAway"),
+        countFromForm(formData, "daysRestricted"),
+      ),
     },
   });
 
@@ -159,7 +179,7 @@ export async function updateSafetyIncident(incidentId: string, formData: FormDat
 
 export async function deleteSafetyIncident(incidentId: string) {
   const context = await requireCompanyContext();
-  assertOwner(context);
+  assertOwner(context, "Only the account owner can remove a safety case");
   const { company } = context;
 
   const incident = await prisma.safetyIncident.findUnique({ where: { id: incidentId } });
@@ -196,7 +216,7 @@ export async function createToolboxTalk(formData: FormData) {
 
 export async function deleteToolboxTalk(talkId: string) {
   const context = await requireCompanyContext();
-  assertOwner(context);
+  assertOwner(context, "Only the account owner can remove a toolbox talk");
   const { company } = context;
 
   const talk = await prisma.toolboxTalk.findUnique({ where: { id: talkId } });

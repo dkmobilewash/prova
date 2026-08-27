@@ -14,6 +14,62 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ## 2026-08-26
 
+### Adversarial review of RFIs and Safety — seven defects fixed (Cyrus)
+`cyrus/rfis`
+
+Two independent reviews were run against the RFI and Safety code looking
+for defects rather than approval. Everything below passed typecheck, lint
+and a full production build, and none of it would have been caught by
+those. Most severe first:
+
+- **A sent RFI could be deleted.** `deleteRfi` allows drafts only — but
+  `updateRfi` re-derived status from the dates, so clearing the sent date
+  on a sent RFI turned it back into a draft, and then it deleted. That
+  destroys correspondence the GC also holds and leaves a permanent hole in
+  the numbering. `sentOn` can no longer be cleared once set.
+- **Editing an RFI reopened a withdrawn one.** Same re-derivation: a
+  closed-without-answer RFI went back on the open list when someone fixed
+  a typo in its subject. Status is now preserved on edit; draft → sent is
+  the only transition an edit can make.
+- **A same-day answer was impossible.** `markRfiSent` stored a wall-clock
+  instant while every other date is stored at UTC midnight, so an answer
+  dated today compared as *earlier* than a send stamped at 14:30 and was
+  rejected — with a message blaming the user for correct data.
+- **Date inputs defaulted to the server's UTC date.** At 17:00 in
+  California the UTC date is already tomorrow, so a form opened at the end
+  of a shift pre-filled tomorrow. On a safety incident that is worse than
+  a wrong date: on 31 December it picks the wrong case-number series, and
+  the incident date is not editable afterwards. Defaults now come from the
+  user's own calendar; storage and rendering stay UTC.
+- **Safety day counts were enforced only by the form hiding the inputs.**
+  A direct action call could store `FIRST_AID_ONLY` with 40 days away, and
+  the log would print a row contradicting itself. Cleared server-side
+  unless the outcome is one OSHA counts days for.
+- **`assertOwner` said "Only the account owner can manage team members" at
+  all 18 call sites** — deleting a vendor, an invoice, a punch-list item.
+  Pre-existing. Now a generic default with a specific message where useful.
+- **The cost/schedule impact tile counted only visible rows,** so it fell
+  to zero as answered RFIs were closed — exactly as the work got done. It
+  is a job-lifetime figure and is now counted from the database.
+
+**Known and not fixed here, deliberately:**
+
+- The `add_safety_case_counter` migration seeds the counter from
+  `MAX(caseNumber)` — the same derivation the feature exists to avoid. For
+  a database where cases were deleted *before* the migration ran, a number
+  can still be reissued once. There is no recoverable record of deleted
+  numbers, so no better seed exists; rewriting an already-applied
+  migration is its own hazard. Flagged rather than hidden.
+- **Next.js redacts thrown Server Action errors in production builds.** If
+  that holds here, every plain-language guard message in the app degrades
+  to an opaque digest for the user — across both lanes, not just these
+  features. Needs verifying against a real deployment and, if confirmed, a
+  move from `throw` to a returned `{ ok, error }` shape. That is its own
+  piece of work.
+- A wrong incident date can only be corrected by deleting and re-filing,
+  which retires the case number. Whether an owner should be able to edit
+  the date within the same year is a product decision, not a bug fix.
+
 ### RFI log (Cyrus)
 `cyrus/rfis` — FEATURE-AUDIT category 16
 
