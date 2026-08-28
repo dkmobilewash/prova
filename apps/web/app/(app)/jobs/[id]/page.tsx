@@ -8,6 +8,8 @@ import { ContractSummary } from "@/components/ContractSummary";
 import { WipNarrativeButton } from "@/components/WipNarrativeButton";
 import { DraftLineItemsForm } from "@/components/DraftLineItemsForm";
 import { DailyFieldReports } from "@/components/DailyFieldReports";
+import { PayApplications, StatusForm } from "@/components/PayApplications";
+import { MarkContractedButton } from "@/components/MarkContractedButton";
 import { money } from "@/lib/money";
 import { calculateLineItemWip, calculateJobWip } from "@/lib/wip";
 import { calculateTimeEntryLaborCost, findEffectiveFringeRateSchedule } from "@/lib/labor-cost";
@@ -107,7 +109,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
       },
       invoices: {
         orderBy: { number: "asc" },
-        include: { payments: { orderBy: { receivedAt: "desc" } } },
+        include: { payments: { orderBy: { receivedAt: "desc" } }, lineItems: true },
       },
       timeEntries: {
         orderBy: { date: "desc" },
@@ -213,6 +215,23 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
     lineItemWip.map((l) => l.wip),
     billedToDate,
   );
+
+  // Pay applications are just Invoices that carry a line-item breakdown —
+  // see InvoiceLineItem in schema.prisma and lib/pay-application.ts.
+  const payApplications = job.invoices
+    .filter((invoice) => invoice.lineItems.length > 0)
+    .map((invoice) => ({
+      id: invoice.id,
+      number: invoice.number,
+      status: invoice.status,
+      amount: Number(invoice.amount),
+      issuedAt: invoice.issuedAt.toISOString(),
+    }));
+  const payApplicationLineItemOptions = job.lineItems.map((item) => ({
+    id: item.id,
+    description: item.description,
+    scheduledValue: Number(item.quantity) * Number(item.unitPrice ?? 0),
+  }));
 
   const addLineItemWithId = addLineItem.bind(null, job.id);
   const addLineItemFromCatalogWithId = addLineItemFromCatalog.bind(null, job.id);
@@ -1059,14 +1078,23 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                         Invoice #{invoice.number}
                         {invoice.description ? ` — ${invoice.description}` : ""}
                       </p>
-                      <div className="flex gap-4 text-sm">
+                      <div className="flex items-center gap-4 text-sm">
                         <span className="text-slate-400">Amount {money(Number(invoice.amount))}</span>
                         <span className="text-slate-400">Paid {money(paid)}</span>
                         <span className={balance <= 0 ? "text-green-400" : "text-amber-400"}>
                           {balance <= 0 ? "Paid in full" : `Balance ${money(balance)}`}
                         </span>
+                        <StatusForm jobId={job.id} invoiceId={invoice.id} status={invoice.status} />
                       </div>
                     </div>
+                    {invoice.lineItems.length > 0 && (
+                      <Link
+                        href={`/jobs/${job.id}/pay-applications/${invoice.id}`}
+                        className="mt-1 inline-block text-xs text-blue-400 hover:underline"
+                      >
+                        View pay application →
+                      </Link>
+                    )}
                     {invoice.dueAt && (
                       <p className="mt-1 text-xs text-slate-500">
                         Due {invoice.dueAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
@@ -1616,14 +1644,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                 audit trail of anything that changes after the client agrees to it.
               </p>
               {signedSignature ? (
-                <form action={markContractedWithId}>
-                  <button
-                    type="submit"
-                    className="inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
-                  >
-                    Mark as contracted
-                  </button>
-                </form>
+                <MarkContractedButton markContracted={markContractedWithId} />
               ) : (
                 <p className="text-sm text-amber-400">
                   Get the client&apos;s signature above before contracting this job.
@@ -1874,6 +1895,14 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             filedByName: report.filedBy?.name ?? null,
           }))}
         />
+
+        {!isEstimateStage && (
+          <PayApplications
+            jobId={job.id}
+            lineItems={payApplicationLineItemOptions}
+            payApplications={payApplications}
+          />
+        )}
       </div>
     </div>
   );

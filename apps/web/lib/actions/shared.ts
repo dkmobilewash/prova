@@ -142,3 +142,5 @@ export function enumFromForm<T extends readonly string[]>(formData: FormData, ke
 }
 
 export const BID_INVITATION_STATUSES = ["INVITED", "SUBMITTED", "WON", "LOST", "DECLINED"] as const;
+
+export const INVOICE_STATUSES = ["SUBMITTED", "APPROVED", "PARTIALLY_PAID", "PAID", "DISPUTED"] as const;
