@@ -193,12 +193,51 @@ before a job can leave `ESTIMATE` — the "contracted" status is meant to
 represent a legally agreed contract, not just an internal decision, so
 the gate enforces that rather than just labeling it.
 
-**Explicitly not built**: change orders still apply immediately on
-submission with no draft/approval state, so there's no signature flow for
-change orders yet — only the initial contract. Adding one would mean
-giving `ChangeOrder` a pending/approved lifecycle of its own, which is a
-larger change than extending the existing signature flow. Natural next
-increment if it's needed.
+### `ChangeOrderStatus` / `ChangeOrderProposal` — the pending/approved lifecycle
+
+That "natural next increment" has landed. `ChangeOrder` now carries a
+status: `DRAFT` → `SUBMITTED` → `APPROVED` or `REJECTED`, with `VOID` for
+one we withdrew before the GC answered.
+
+The rule that makes it safe is that **nothing before `APPROVED` touches
+`JobLineItem`**. A pending change order's content lives in
+`ChangeOrderProposal` — a description, a quantity, a price, and which line
+item it targets — and `approveChangeOrder` is the only thing that turns
+those rows into real scope.
+
+That constraint isn't stylistic. Contract value, WIP, retainage and pay
+applications are all ultimately `SUM(job.lineItems WHERE isDeleted =
+false)`, and that filter is hand-written at ten separate call sites. If a
+pending change order wrote to `JobLineItem`, every one of those figures
+would silently include money the GC hasn't agreed to pay, and closing the
+hole would mean finding and correcting all ten — plus every one added
+afterwards. Keeping proposals out of `JobLineItem` entirely means none of
+those call sites need to know this lifecycle exists.
+
+`ChangeOrderProposal` is deliberately **not** the same table as
+`ChangeOrderLineItemEdit`. The edit log is an after-the-fact record of what
+a change order did (old → new), and it stays audit-only per the rule above.
+A proposal is a before-the-fact statement of what it *would* do. Collapsing
+them would make the audit log load-bearing, which is exactly what the
+`ChangeOrderLineItemEdit` section above rules out.
+
+`approveChangeOrder` applies every proposal inside one transaction and sets
+`appliedAt`. A partially applied change order would leave the contract
+value at a number neither party agreed to, so a single bad proposal — a
+line another CO already removed, say — aborts the whole approval and leaves
+the status at `SUBMITTED`. `appliedAt` is also what stops the same change
+order reaching the budget twice.
+
+Dates are entered rather than stamped, same rule as RFIs and submittals: a
+PCO logged after the fact has to record the date it actually went out, or
+the turnaround evidence a delay claim rests on is fiction.
+
+**Still not built**: a GC-facing review surface. Approval is recorded by
+the contractor from what the GC told them, not captured from the GC
+directly — there's no signature flow for change orders, only for the
+initial contract. Extending `SignatureRequest` to a change order is the
+natural next increment now that there's a pending state for it to attach
+to.
 
 ### `CostEntry` — actual cost, referencing the same line item
 

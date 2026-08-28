@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { requireCompanyContext } from "@/lib/auth";
 import { Prisma, prisma } from "@prova/db";
 import { draftEstimateLineItems } from "@prova/integrations";
-import { COST_CATEGORIES, assertEditableDirectly, assertEditableViaChangeOrder, assertJobInCompany, assertLineItemOnJob, craftClassificationIdFromForm, decimalFromForm, nextChangeOrderNumber, nullableDecimalFromForm, tradeScopeFromForm } from "./shared";
+import { COST_CATEGORIES, assertEditableDirectly, assertJobInCompany, assertLineItemOnJob, craftClassificationIdFromForm, decimalFromForm, nullableDecimalFromForm, tradeScopeFromForm } from "./shared";
 
 /** Creates a Job with a new Contact. This is the start of the estimate. */
 export async function createJob(formData: FormData) {
@@ -122,121 +122,7 @@ export async function draftLineItemsFromScope(jobId: string, formData: FormData)
   revalidatePath(`/jobs/${jobId}`);
 }
 
-/**
- * Adds NEW scope via a change order: a JobLineItem row tagged with
- * originChangeOrderId. It is the same table the estimate was built from —
- * the budget total updates the moment this commits, no re-entry elsewhere.
- */
-export async function addChangeOrderLineItem(jobId: string, formData: FormData) {
-  const { company } = await requireCompanyContext();
-  const job = await assertJobInCompany(jobId, company.id);
-  assertEditableViaChangeOrder(job);
 
-  const title = String(formData.get("title") ?? "").trim();
-  const description = String(formData.get("description") ?? "").trim();
-  const itemDescription = String(formData.get("itemDescription") ?? "").trim();
-  const unit = String(formData.get("unit") ?? "").trim();
-  const quantity = decimalFromForm(formData, "quantity");
-  const unitPrice = nullableDecimalFromForm(formData, "unitPrice");
-  const budgetedUnitCost = nullableDecimalFromForm(formData, "budgetedUnitCost");
-  const currentEstimatedUnitCost =
-    nullableDecimalFromForm(formData, "currentEstimatedUnitCost") ?? budgetedUnitCost;
-  const tradeScope = tradeScopeFromForm(formData);
-
-  if (!title || !itemDescription) {
-    throw new Error("Change order title and line item description are required");
-  }
-
-  const number = await nextChangeOrderNumber(jobId);
-
-  await prisma.changeOrder.create({
-    data: {
-      jobId,
-      number,
-      title,
-      description: description || null,
-      addedLineItems: {
-        create: {
-          jobId,
-          description: itemDescription,
-          unit: unit || null,
-          quantity,
-          unitPrice,
-          budgetedUnitCost,
-          currentEstimatedUnitCost,
-          tradeScope,
-        },
-      },
-    },
-  });
-
-  revalidatePath(`/jobs/${jobId}`);
-}
-
-/**
- * Modifies an EXISTING line item via a change order: the row is updated in
- * place (never forked), and the before/after values are logged to
- * ChangeOrderLineItemEdit purely for audit history.
- */
-export async function editLineItemViaChangeOrder(jobId: string, formData: FormData) {
-  const { company } = await requireCompanyContext();
-  const job = await assertJobInCompany(jobId, company.id);
-  assertEditableViaChangeOrder(job);
-
-  const lineItemId = String(formData.get("lineItemId") ?? "");
-  const title = String(formData.get("title") ?? "").trim();
-  const description = String(formData.get("description") ?? "").trim();
-  const newQuantity = decimalFromForm(formData, "quantity");
-  const newUnitPrice = nullableDecimalFromForm(formData, "unitPrice");
-
-  if (!title || !lineItemId) {
-    throw new Error("Change order title and target line item are required");
-  }
-
-  const lineItem = await prisma.jobLineItem.findUnique({ where: { id: lineItemId } });
-  if (!lineItem || lineItem.jobId !== jobId) {
-    throw new Error("Line item not found on this job");
-  }
-
-  const number = await nextChangeOrderNumber(jobId);
-  const edits: { lineItemId: string; field: string; oldValue: string; newValue: string }[] = [];
-  if (lineItem.quantity.toString() !== newQuantity) {
-    edits.push({
-      lineItemId: lineItem.id,
-      field: "quantity",
-      oldValue: lineItem.quantity.toString(),
-      newValue: newQuantity,
-    });
-  }
-  if ((lineItem.unitPrice?.toString() ?? "") !== (newUnitPrice ?? "")) {
-    edits.push({
-      lineItemId: lineItem.id,
-      field: "unitPrice",
-      oldValue: lineItem.unitPrice?.toString() ?? "(none)",
-      newValue: newUnitPrice ?? "(none)",
-    });
-  }
-
-  await prisma.$transaction([
-    prisma.changeOrder.create({
-      data: {
-        jobId,
-        number,
-        title,
-        description: description || null,
-        edits: {
-          create: edits,
-        },
-      },
-    }),
-    prisma.jobLineItem.update({
-      where: { id: lineItemId },
-      data: { quantity: newQuantity, unitPrice: newUnitPrice },
-    }),
-  ]);
-
-  revalidatePath(`/jobs/${jobId}`);
-}
 
 /** Direct edit of a line item — only while the job is still an ESTIMATE. */
 export async function updateLineItem(jobId: string, lineItemId: string, formData: FormData) {
@@ -317,52 +203,11 @@ export async function deleteLineItem(jobId: string, lineItemId: string) {
   revalidatePath(`/jobs/${jobId}`);
 }
 
-/**
- * Removes an EXISTING line item via a change order once the job is
- * contracted: soft-deletes the same row (never forks it) and logs the
- * removal to ChangeOrderLineItemEdit for audit history.
- */
-export async function removeLineItemViaChangeOrder(jobId: string, formData: FormData) {
-  const { company } = await requireCompanyContext();
-  const job = await assertJobInCompany(jobId, company.id);
-  assertEditableViaChangeOrder(job);
-
-  const lineItemId = String(formData.get("lineItemId") ?? "");
-  const title = String(formData.get("title") ?? "").trim();
-  const description = String(formData.get("description") ?? "").trim();
-
-  if (!title || !lineItemId) {
-    throw new Error("Change order title and target line item are required");
-  }
-
-  const lineItem = await assertLineItemOnJob(lineItemId, jobId);
-  const number = await nextChangeOrderNumber(jobId);
-
-  await prisma.$transaction([
-    prisma.changeOrder.create({
-      data: {
-        jobId,
-        number,
-        title,
-        description: description || null,
-        edits: {
-          create: [{ lineItemId: lineItem.id, field: "deleted", oldValue: "false", newValue: "true" }],
-        },
-      },
-    }),
-    prisma.jobLineItem.update({
-      where: { id: lineItemId },
-      data: { isDeleted: true },
-    }),
-  ]);
-
-  revalidatePath(`/jobs/${jobId}`);
-}
 
 /**
  * Locks in the estimate as a contract. From this point on, line items are
  * only editable via change orders (see assertEditableDirectly /
- * assertEditableViaChangeOrder above).
+ * assertEditableViaChangeOrder in ./shared, applied by ./changeOrders).
  */
 export async function markJobContracted(jobId: string) {
   const { company } = await requireCompanyContext();

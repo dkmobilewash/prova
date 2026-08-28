@@ -22,3 +22,4 @@ export * from "./punchLists";
 export * from "./fieldReports";
 export * from "./safety";
 export * from "./rfis";
+export * from "./changeOrders";

@@ -27,9 +27,9 @@ against a fresh clone.
 
 | Status | Count |
 | --- | --- |
-| Built | 50 |
+| Built | 52 |
 | Partial | 15 |
-| Missing | 38 |
+| Missing | 36 |
 | Descoped | 1 |
 
 ## 01. Company / Org Setup — 5 built · 0 partial · 0 missing
@@ -160,13 +160,13 @@ forecasting shipped 26 Aug 2026.*
 | Built | Retainage withheld vs. released tracking | `Invoice.retainageWithheld` (snapshotted per invoice) and `RetainageRelease` (lump-sum payback); `lib/retainage.ts` computes the outstanding balance |
 | Built | Retainage release forecasting tied to substantial completion/closeout | `Job.substantialCompletionDate` plus a computed "expected release around this date" statement — a plain forecast, not a scheduling/notification system; closeout itself still isn't modeled as a `JobStatus` stage (see Sheet 22) |
 
-## 12. Change Orders — 1 built · 0 partial · 2 missing
+## 12. Change Orders — 3 built · 0 partial · 0 missing
 
 | Status | Feature | Note |
 | --- | --- | --- |
-| Missing | Change order requests/PCOs as a distinct pre-approval state | `ChangeOrder` has no status field — rows are created already-approved |
-| Missing | Change order approval workflow with the GC | no approval step or GC-facing review exists |
-| Built | Approved COs flow into new/modified `JobLineItem` rows and update contract value | exactly how `ChangeOrder` works today — no separate contract-value field to keep in sync |
+| Built | Change order requests/PCOs as a distinct pre-approval state | `ChangeOrderStatus` (DRAFT → SUBMITTED → APPROVED/REJECTED, plus VOID). A pending CO's content lives in `ChangeOrderProposal` and never touches `JobLineItem`, so contract value, WIP, retainage and pay applications only ever count scope the GC has agreed to |
+| Built | Change order approval workflow with the GC | `submitChangeOrder` / `approveChangeOrder` / `rejectChangeOrder` / `voidChangeOrder` in `lib/actions/changeOrders.ts`. Sent and decided dates are entered rather than stamped, so a backdated PCO records real turnaround. A rejected CO keeps its proposals as evidence it was priced and refused |
+| Built | Approved COs flow into new/modified `JobLineItem` rows and update contract value | `approveChangeOrder` applies every proposal in one transaction and writes the `ChangeOrderLineItemEdit` audit rows; `appliedAt` stops the same CO reaching the budget twice |
 
 ## 13. Backcharges & Deductions — 0 built · 0 partial · 2 missing
 
