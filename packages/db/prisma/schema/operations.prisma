@@ -365,3 +365,106 @@ enum RfiStatus {
   /// Answered and acted on, or withdrawn. Off the open list.
   CLOSED
 }
+
+/// A shop drawing or product-data submittal: something we sent the GC or
+/// architect for approval before we build from it. Like an RFI it is an
+/// evidence record first — what we sent, when, what came back, and which
+/// revision is the one it is now legal to build from. The identity fields
+/// (job, number) are what the GC has in writing and are never editable.
+model Submittal {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  /// Required, same reasoning as RFIs: a submittal is always against a
+  /// specific job's drawings and spec sections.
+  jobId String
+  job   Job    @relation(fields: [jobId], references: [id])
+
+  /// Sequential per job, issued by SubmittalCounter and never reissued —
+  /// same rule as RFI and safety case numbers: anything derived from the
+  /// rows that still exist can be reissued, because deleting a row changes
+  /// the answer.
+  number Int
+
+  title       String
+  description String?
+
+  /// Free text, same as RFIs: numbering schemes are per-project.
+  specSection      String?
+  drawingReference String?
+
+  /// Revision numbers are issued from this row, incremented in the same
+  /// transaction as the revision insert. Derived from nothing — revisions
+  /// are never deletable, but the rule is cheaper to keep than to argue
+  /// about, and it also closes the race of two people resubmitting at once.
+  lastRevision Int @default(0)
+
+  submittedByUserId String?
+  submittedBy       User?   @relation(fields: [submittedByUserId], references: [id])
+
+  revisions SubmittalRevision[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([jobId, number])
+  @@index([companyId])
+  @@index([jobId])
+}
+
+/// One round trip to the GC: we sent this revision on a date, and it came
+/// back (or hasn't) with a result. The submittal's current status is
+/// DERIVED from its latest revision on every render, never stored — a
+/// stored status can disagree with the revision that supposedly produced
+/// it, and that contradiction is what gets a sub building from a
+/// superseded drawing. Sent revisions are correspondence and are never
+/// deleted or renumbered.
+model SubmittalRevision {
+  id          String    @id @default(cuid())
+  submittalId String
+  submittal   Submittal @relation(fields: [submittalId], references: [id])
+
+  /// 1-based, issued by Submittal.lastRevision in the sending transaction.
+  revisionNumber Int
+
+  /// All three dates are entered, not stamped, and stored at UTC midnight
+  /// — same rule as RFIs. Recording last month's submittal today must not
+  /// read as sent today, or the turnaround evidence is fiction.
+  sentOn     DateTime
+  dueBack    DateTime?
+  returnedOn DateTime?
+
+  /// What the stamp said, recorded when returnedOn is. Null while the GC
+  /// still has it.
+  outcome SubmittalOutcome?
+
+  /// What "approved as noted" actually noted, or why it bounced.
+  responseNotes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([submittalId, revisionNumber])
+  @@index([submittalId])
+}
+
+/// Same shape and reason as RfiCounter and SafetyCaseCounter.
+model SubmittalCounter {
+  jobId      String @id
+  job        Job    @relation(fields: [jobId], references: [id])
+  lastNumber Int    @default(0)
+
+  updatedAt DateTime @updatedAt
+}
+
+enum SubmittalOutcome {
+  /// Build from this revision.
+  APPROVED
+  /// Build from this revision, incorporating the reviewer's notes.
+  APPROVED_AS_NOTED
+  /// Fix and send again. The ball is back in our court.
+  REVISE_AND_RESUBMIT
+  /// Not acceptable. Also our court, but usually a bigger conversation.
+  REJECTED
+}

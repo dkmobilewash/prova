@@ -198,11 +198,11 @@ forecasting shipped 26 Aug 2026.*
 | Missing | Cash flow forecast (AR aging, retainage receivable, pay app cycles) | not built — the underlying retainage data exists now (Sheet 11), but no forecast report reads it yet |
 | Missing | Company-wide backlog report across active jobs | `/dashboard` lists jobs; no aggregated backlog figure |
 
-## 16. Submittals, RFIs, Drawings — 1 built · 0 partial · 2 missing
+## 16. Submittals, RFIs, Drawings — 2 built · 0 partial · 1 missing
 
 | Status | Feature | Note |
 | --- | --- | --- |
-| Missing | Shop drawing/submittal tracking and GC approval status | not modeled |
+| Built | Shop drawing/submittal tracking and GC approval status | `Submittal` + `SubmittalRevision` + `SubmittalCounter`, `/submittals` — numbers issued per job and never reissued, per-revision sent/due/returned dates, outcome (approved / approved-as-noted / revise-and-resubmit / rejected), current-revision state derived, never stored |
 | Built | RFI log per job | `Rfi` + `RfiCounter`, `/rfis` — number issued per job and never reissued, sent/due/answered dates, overdue derived, cost/schedule impact flags |
 | Missing | Current drawing set storage/versioning per job | not modeled |
 

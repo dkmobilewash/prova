@@ -136,7 +136,7 @@ export default async function RfisPage({
 
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-sm font-semibold text-slate-300">
-          {rows.length} {showClosed ? "total" : "open"}
+          {rows.length} {showClosed ? "total" : "in play"}
         </h2>
         <Link href={filterHref({ show: showClosed ? null : "all" })} className="text-sm text-blue-400">
           {showClosed ? "Hide closed" : "Show closed"}
