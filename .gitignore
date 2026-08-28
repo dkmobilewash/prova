@@ -7,6 +7,9 @@ out
 build
 
 # env
+.env.bak
+.env.*.bak
+*.bak
 .env
 .env.local
 .env.*.local

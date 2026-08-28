@@ -41,6 +41,9 @@ model Company {
   lineItemCatalogEntries LineItemCatalogEntry[]
   punchListItems         PunchListItem[]
   dailyFieldReports      DailyFieldReport[]
+  safetyCaseCounters SafetyCaseCounter[]
+  safetyIncidents        SafetyIncident[]
+  toolboxTalks           ToolboxTalk[]
 }
 
 enum UserRole {
@@ -75,6 +78,8 @@ model User {
   createdRetainageReleases             RetainageRelease[]
   raisedPunchListItems                 PunchListItem[]
   filedDailyFieldReports               DailyFieldReport[]
+  reportedSafetyIncidents              SafetyIncident[]
+  recordedToolboxTalks                 ToolboxTalk[]
 
   @@index([companyId])
 }

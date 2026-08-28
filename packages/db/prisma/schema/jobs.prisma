@@ -71,6 +71,8 @@ model Job {
   retainageReleases            RetainageRelease[]
   punchListItems               PunchListItem[]
   dailyFieldReports            DailyFieldReport[]
+  safetyIncidents              SafetyIncident[]
+  toolboxTalks                 ToolboxTalk[]
 
   @@index([companyId])
   @@index([contactId])

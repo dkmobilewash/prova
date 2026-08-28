@@ -148,6 +148,21 @@ const NAV_ITEMS: { href: string; label: string; icon: ReactNode }[] = [
     ),
   },
   {
+    href: "/safety",
+    label: "Safety",
+    icon: (
+      <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5">
+        <path
+          d="M10 3 4.5 5.2v4.4c0 3.2 2.3 6 5.5 6.9 3.2-.9 5.5-3.7 5.5-6.9V5.2L10 3Z"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinejoin="round"
+        />
+        <path d="M7.7 9.8 9.4 11.5l3-3.4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+  },
+  {
     href: "/settings",
     label: "Settings",
     icon: (
