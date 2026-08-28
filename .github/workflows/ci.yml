@@ -40,3 +40,17 @@ jobs:
 
       - name: Build
         run: pnpm build
+        env:
+          # Next's "Collecting build traces" step needs more than Node's
+          # ~4 GB default old-space on this app, and dies with an OOM at the
+          # very end of an otherwise successful build. It only shows up here:
+          # Vercel's builders size the heap from machine memory, and a dev
+          # machine with more RAM gets a bigger default too, so the build
+          # passes locally and fails in CI.
+          #
+          # 4096 reproduces the failure, 6144 passes; 8192 leaves margin for
+          # growth on a 16 GB runner. Raise it rather than trimming
+          # outputFileTracingIncludes in next.config.mjs — that glob is what
+          # gets Prisma's query-engine binary into the deployed function, and
+          # dropping it breaks production at runtime, not at build time.
+          NODE_OPTIONS: --max-old-space-size=8192
