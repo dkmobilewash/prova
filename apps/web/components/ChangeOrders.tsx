@@ -10,6 +10,8 @@ import {
   proposeScopeRemoval,
   rejectChangeOrder,
   removeProposal,
+  reopenChangeOrder,
+  reviseChangeOrder,
   submitChangeOrder,
   voidChangeOrder,
 } from "@/lib/actions";
@@ -37,6 +39,14 @@ export type ChangeOrderView = {
   decisionNotes: string | null;
   /** Signed contract-value delta, formatted. */
   valueDelta: string;
+  /** Empty when this change order can be reopened; otherwise the reasons it
+   * can't, ready to show without the user having to click and get an error. */
+  reopenBlockers: string[];
+  reopenedAt: string | null;
+  /** "CO #3", when this change order was raised to correct one. */
+  supersedesLabel: string | null;
+  /** "CO #7", when a later change order corrects this one. */
+  revisedByLabels: string[];
   proposals: ProposalView[];
   edits: { id: string; field: string; oldValue: string; newValue: string }[];
 };
@@ -222,6 +232,58 @@ function Decision({ changeOrder }: { changeOrder: ChangeOrderView }) {
   );
 }
 
+/**
+ * How an approved change order gets corrected.
+ *
+ * Reopening unwinds it back to a draft, but only while its scope is
+ * untouched. Once anything has been costed or billed against it, unwinding
+ * would leave the contract value contradicting a pay application already
+ * sent, so the blockers are shown up front rather than after a failed click.
+ */
+function Correction({ changeOrder }: { changeOrder: ChangeOrderView }) {
+  const canReopen = changeOrder.reopenBlockers.length === 0;
+
+  return (
+    <div className="mt-3 flex flex-col gap-2 rounded-md border border-slate-800 bg-slate-950 p-3">
+      {canReopen ? (
+        <form action={reopenChangeOrder.bind(null, changeOrder.id)} className="flex flex-wrap items-end gap-2">
+          <label className={labelClass}>
+            Reopen to correct it
+            <input name="reopenNote" className={`${inputClass} w-64`} placeholder="Priced at the wrong rate" />
+          </label>
+          <button className="rounded-md border border-amber-700 px-3 py-2 text-sm font-medium text-amber-300 hover:bg-amber-950">
+            Reopen
+          </button>
+          <p className="w-full text-xs text-slate-500">
+            Takes this change order back to a draft and removes its effect on the contract value. Nothing
+            has been costed or billed against it yet, so this is safe.
+          </p>
+        </form>
+      ) : (
+        <div className="flex flex-col gap-2">
+          <p className="text-xs text-amber-300">
+            This change order can no longer be reopened: {changeOrder.reopenBlockers.join("; ")}. Revising it
+            corrects the scope without contradicting what has already been costed or billed.
+          </p>
+          <form action={reviseChangeOrder.bind(null, changeOrder.id)} className="flex flex-wrap items-end gap-2">
+            <label className={labelClass}>
+              Raise a revision
+              <input
+                name="title"
+                className={`${inputClass} w-64`}
+                placeholder={`Revision of CO #${changeOrder.number}`}
+              />
+            </label>
+            <button className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500">
+              Revise
+            </button>
+          </form>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ChangeOrders({
   jobId,
   changeOrders,
@@ -287,6 +349,21 @@ export function ChangeOrders({
               </div>
               {co.description && <p className="mt-1 text-sm text-slate-400">{co.description}</p>}
 
+              {co.supersedesLabel && (
+                <p className="mt-1 text-xs text-blue-300">Raised to correct {co.supersedesLabel}.</p>
+              )}
+              {co.revisedByLabels.length > 0 && (
+                <p className="mt-1 text-xs text-blue-300">
+                  Corrected by {co.revisedByLabels.join(", ")}. This one stayed approved — it did move the
+                  contract value at the time.
+                </p>
+              )}
+              {co.reopenedAt && co.status !== "APPROVED" && (
+                <p className="mt-1 text-xs text-amber-300">
+                  Was approved and reopened on {formatDate(co.reopenedAt)}.
+                </p>
+              )}
+
               <p className="mt-1 text-xs text-slate-500">
                 {co.status === "DRAFT"
                   ? "Not sent yet."
@@ -351,6 +428,8 @@ export function ChangeOrders({
               )}
 
               {co.status === "SUBMITTED" && <Decision changeOrder={co} />}
+
+              {co.status === "APPROVED" && <Correction changeOrder={co} />}
             </li>
           ))}
         </ul>

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@prova/db";
+import { reopenBlockers } from "@/lib/change-order";
 import {
   assertEditableViaChangeOrder,
   assertJobInCompany,
@@ -290,6 +291,17 @@ export async function approveChangeOrder(changeOrderId: string, formData: FormDa
         );
       }
 
+      // Snapshot what this proposal is about to overwrite, so reopening can
+      // put it back without reading the audit log. See ChangeOrderProposal.
+      await tx.changeOrderProposal.update({
+        where: { id: proposal.id },
+        data: {
+          previousQuantity: lineItem.quantity,
+          previousUnitPrice: lineItem.unitPrice,
+          previousIsDeleted: lineItem.isDeleted,
+        },
+      });
+
       if (proposal.changeType === "REMOVE") {
         await tx.jobLineItem.update({
           where: { id: lineItem.id },
@@ -412,4 +424,112 @@ export async function voidChangeOrder(changeOrderId: string, formData: FormData)
   });
 
   revalidatePath(`/jobs/${changeOrder.jobId}`);
+}
+
+/* ------------------------------------------------------------------ */
+/* Correcting a change order that was already approved                 */
+/* ------------------------------------------------------------------ */
+
+/**
+ * APPROVED -> DRAFT, undoing the change order's effect on the contract value
+ * so it can be corrected and re-approved.
+ *
+ * Only while its scope is untouched. Once anyone has costed, logged hours
+ * against, or billed that scope, unwinding it would put the contract value
+ * somewhere that contradicts a pay application already sent to the GC --
+ * reviseChangeOrder is the way through at that point.
+ */
+export async function reopenChangeOrder(changeOrderId: string, formData: FormData) {
+  const { company } = await requireCompanyContext();
+  const changeOrder = await assertChangeOrder(changeOrderId, company.id);
+
+  if (changeOrder.status !== "APPROVED") {
+    throw new Error(`Only an approved change order can be reopened — CO #${changeOrder.number} is ${changeOrder.status}.`);
+  }
+
+  const blockers = await reopenBlockers(changeOrder);
+  if (blockers.length > 0) {
+    throw new Error(
+      `CO #${changeOrder.number} can't be reopened: ${blockers.join("; ")}. ` +
+        "Raise a revision instead — it corrects the scope without contradicting what has already been costed or billed.",
+    );
+  }
+
+  await prisma.$transaction(async (tx) => {
+    for (const proposal of changeOrder.proposals) {
+      if (proposal.changeType === "ADD") continue;
+      if (!proposal.lineItemId) continue;
+      await tx.jobLineItem.update({
+        where: { id: proposal.lineItemId },
+        data: {
+          quantity: proposal.previousQuantity ?? undefined,
+          unitPrice: proposal.previousUnitPrice,
+          isDeleted: proposal.previousIsDeleted ?? false,
+        },
+      });
+      await tx.changeOrderProposal.update({
+        where: { id: proposal.id },
+        data: { previousQuantity: null, previousUnitPrice: null, previousIsDeleted: null },
+      });
+    }
+
+    // Added scope goes away entirely. reopenBlockers has already established
+    // nothing points at these rows, so there is nothing to orphan.
+    await tx.jobLineItem.deleteMany({ where: { originChangeOrderId: changeOrder.id } });
+
+    // The edits describe a change that no longer happened.
+    await tx.changeOrderLineItemEdit.deleteMany({ where: { changeOrderId: changeOrder.id } });
+
+    await tx.changeOrder.update({
+      where: { id: changeOrderId },
+      data: {
+        status: "DRAFT",
+        appliedAt: null,
+        decidedOn: null,
+        decisionNotes: null,
+        submittedOn: null,
+        reopenedAt: new Date(),
+        reopenNote: text(formData, "reopenNote") || null,
+      },
+    });
+  });
+
+  revalidatePath(`/jobs/${changeOrder.jobId}`);
+}
+
+/**
+ * Raises a new change order that corrects an approved one.
+ *
+ * The original stays APPROVED. It was approved, and it did move the contract
+ * value; rewriting it to say otherwise would put the job's history out of
+ * step with the pay applications drawn from it. The revision is an ordinary
+ * change order against the job's current state, linked back to what it
+ * corrects — so it goes through the same submit/approve workflow and the GC
+ * sees a document rather than a silent adjustment.
+ */
+export async function reviseChangeOrder(changeOrderId: string, formData: FormData) {
+  const { company } = await requireCompanyContext();
+  const original = await assertChangeOrder(changeOrderId, company.id);
+
+  if (original.status !== "APPROVED") {
+    throw new Error(
+      `Only an approved change order needs revising — CO #${original.number} is ${original.status}, so edit or void it directly.`,
+    );
+  }
+
+  const number = await nextChangeOrderNumber(original.jobId);
+  const title = text(formData, "title") || `Revision of CO #${original.number}`;
+
+  await prisma.changeOrder.create({
+    data: {
+      jobId: original.jobId,
+      number,
+      title,
+      description: text(formData, "description") || null,
+      status: "DRAFT",
+      supersedesId: original.id,
+    },
+  });
+
+  revalidatePath(`/jobs/${original.jobId}`);
 }

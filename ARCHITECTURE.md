@@ -232,6 +232,49 @@ Dates are entered rather than stamped, same rule as RFIs and submittals: a
 PCO logged after the fact has to record the date it actually went out, or
 the turnaround evidence a delay claim rests on is fiction.
 
+### Correcting an approved change order
+
+An approved change order has already moved the contract value, so "just edit
+it" is not available in general — a pay application may already have been
+drawn against that value, and changing it underneath one makes the two
+disagree with no visible reason. There are two exits instead, and which one
+applies is decided by what already references the scope:
+
+**Reopen** (`reopenChangeOrder`) takes it back to `DRAFT` and undoes its
+effect, so it can be corrected and re-approved. Allowed only while its scope
+is untouched. What counts as "touched" depends on what the reversal does to
+the row:
+
+- `ADD` is reversed by **deleting** the line item it created, so anything
+  hanging off that row blocks it: costs, hours, pay-application lines, and
+  any other change order whose proposal targets it (that FK is `ON DELETE SET
+  NULL`, so deleting the row would quietly empty out someone else's pending
+  change order).
+- `EDIT` is reversed by restoring the old quantity and price. Costs and hours
+  survive untouched and do not block. Billing does.
+- `REMOVE` is reversed by un-deleting the line, which is purely additive, so
+  nothing blocks it.
+
+Restoring those old values needs to know what was overwritten, and reading
+that from `ChangeOrderLineItemEdit` would make the audit log load-bearing —
+deleting a log row would change the contract value, which is exactly what the
+audit-only rule above exists to prevent. So `approveChangeOrder` writes the
+replaced values onto the proposal itself (`previousQuantity`,
+`previousUnitPrice`, `previousIsDeleted`) as it applies them. A snapshot of
+what was overwritten is a different thing from a log of what happened.
+
+**Revise** (`reviseChangeOrder`) is the exit once reopening is blocked. It
+raises a new change order carrying `supersedesId` back to the one it
+corrects. The original stays `APPROVED` — it was approved, and it did move
+the contract value; rewriting history to say otherwise would put the job out
+of step with the pay applications drawn from it. A revision holds ordinary
+proposals against the job's *current* state rather than a delta against the
+original, so there is one set of apply mechanics rather than a second,
+subtly different one.
+
+Change orders approved before this existed carry no snapshot and so cannot be
+reopened; the UI shows that as a blocker and offers a revision instead.
+
 **Still not built**: a GC-facing review surface. Approval is recorded by
 the contractor from what the GC told them, not captured from the GC
 directly — there's no signature flow for change orders, only for the

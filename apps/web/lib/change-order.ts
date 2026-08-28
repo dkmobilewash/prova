@@ -1,4 +1,4 @@
-import { Prisma } from "@prova/db";
+import { Prisma, prisma } from "@prova/db";
 
 /**
  * What a change order would do to the contract value, computed from its
@@ -115,4 +115,79 @@ export function pendingChangeOrderExposure(
   return changeOrders
     .filter((co) => co.status === "SUBMITTED")
     .reduce((sum, co) => sum.add(changeOrderValueDelta(co.proposals, targets)), ZERO);
+}
+
+/**
+ * Everything that would be silently broken by unwinding an approved change
+ * order. What counts as a blocker depends on what the reversal actually does
+ * to the row, which differs by change type:
+ *
+ * - ADD is reversed by DELETING the line item it created, so anything hanging
+ *   off that row would be destroyed or orphaned: costs, hours, pay
+ *   application lines, and any other change order whose proposal targets it
+ *   (that FK is ON DELETE SET NULL, so deleting the row would quietly empty
+ *   out someone else's pending change order).
+ * - EDIT is reversed by restoring the old quantity and price. Costs and hours
+ *   against the line survive untouched, so they are not blockers. Billing is:
+ *   a pay application was drawn against the changed value, and moving the
+ *   contract value back underneath it would make the two disagree.
+ * - REMOVE is reversed by un-deleting the line, which is purely additive.
+ *   Nothing can be broken by scope coming back, so nothing blocks it.
+ */
+export async function reopenBlockers(changeOrder: {
+  id: string;
+  jobId: string;
+  proposals: { id: string; changeType: string; lineItemId: string | null; previousIsDeleted: boolean | null }[];
+}) {
+  const addedLineItems = await prisma.jobLineItem.findMany({
+    where: { originChangeOrderId: changeOrder.id },
+    select: { id: true },
+  });
+  const deletedIds = addedLineItems.map((item) => item.id);
+  const editedIds = changeOrder.proposals
+    .filter((p) => p.changeType === "EDIT" && p.lineItemId)
+    .map((p) => p.lineItemId as string);
+
+  const blockers: string[] = [];
+
+  if (deletedIds.length > 0) {
+    const [costs, hours, billed, otherProposals] = await Promise.all([
+      prisma.costEntry.count({ where: { lineItemId: { in: deletedIds } } }),
+      prisma.timeEntry.count({ where: { lineItemId: { in: deletedIds } } }),
+      prisma.invoiceLineItem.count({ where: { lineItemId: { in: deletedIds } } }),
+      prisma.changeOrderProposal.count({
+        where: { lineItemId: { in: deletedIds }, changeOrderId: { not: changeOrder.id } },
+      }),
+    ]);
+    if (costs > 0)
+      blockers.push(`${costs} cost ${costs === 1 ? "entry references" : "entries reference"} scope it added`);
+    if (hours > 0)
+      blockers.push(`${hours} time ${hours === 1 ? "entry references" : "entries reference"} scope it added`);
+    if (billed > 0)
+      blockers.push(`${billed} pay application ${billed === 1 ? "line has" : "lines have"} already billed scope it added`);
+    if (otherProposals > 0)
+      blockers.push(
+        `${otherProposals} proposal${otherProposals === 1 ? "" : "s"} on another change order target${otherProposals === 1 ? "s" : ""} scope it added`,
+      );
+  }
+
+  if (editedIds.length > 0) {
+    const billed = await prisma.invoiceLineItem.count({ where: { lineItemId: { in: editedIds } } });
+    if (billed > 0)
+      blockers.push(
+        `${billed} pay application ${billed === 1 ? "line was" : "lines were"} billed against a line it changed`,
+      );
+  }
+
+  // A change order approved before reversal snapshots existed can't be put
+  // back, because nothing recorded what it overwrote.
+  const missingSnapshot = changeOrder.proposals.some(
+    (p) => p.changeType !== "ADD" && p.previousIsDeleted === null,
+  );
+  if (missingSnapshot)
+    blockers.push(
+      "there is no record of the values it replaced (it was approved before reopening existed)",
+    );
+
+  return blockers;
 }

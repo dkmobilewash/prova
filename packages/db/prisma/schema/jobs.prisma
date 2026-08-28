@@ -187,8 +187,29 @@ model ChangeOrder {
 
   /// When this change order's proposals were written onto JobLineItem.
   /// Non-null means the scope is live; it is what stops the same change
-  /// order being applied to the budget twice.
+  /// order being applied to the budget twice. Cleared by reopenChangeOrder,
+  /// which is what allows a reopened change order to be approved again.
   appliedAt DateTime?
+
+  /// Set when an APPROVED change order was unwound back to DRAFT. Kept
+  /// rather than silently reset so the history still shows that this
+  /// change order was once approved and taken back.
+  reopenedAt DateTime?
+  reopenNote String?
+
+  /// A change order raised to correct an earlier one. The original stays
+  /// APPROVED -- it was approved, and it did move the contract value, so
+  /// saying otherwise would be a lie. This link is the documentary trail
+  /// between the two.
+  ///
+  /// A revision holds ordinary proposals against the CURRENT state of the
+  /// job, not a delta against the original: to correct a line the original
+  /// priced at $250 to $300, the revision carries an EDIT proposal setting
+  /// $300. That keeps one set of apply mechanics rather than a second,
+  /// subtly different one for revisions.
+  supersedesId String?
+  supersedes   ChangeOrder?  @relation("ChangeOrderRevision", fields: [supersedesId], references: [id])
+  revisions    ChangeOrder[] @relation("ChangeOrderRevision")
 
   addedLineItems JobLineItem[]             @relation("OriginChangeOrder")
   edits          ChangeOrderLineItemEdit[]
@@ -197,6 +218,7 @@ model ChangeOrder {
   @@unique([jobId, number])
   @@index([jobId])
   @@index([jobId, status])
+  @@index([supersedesId])
 }
 
 /// Where a change order sits between "we think this is extra work" and
@@ -272,6 +294,19 @@ model ChangeOrderProposal {
   budgetedUnitCost         Decimal?    @db.Decimal(12, 2)
   currentEstimatedUnitCost Decimal?    @db.Decimal(12, 2)
   tradeScope               TradeScope?
+
+  /// What this proposal replaced, captured at the moment it was applied.
+  /// Null until then.
+  ///
+  /// This exists so reopenChangeOrder can put the line item back without
+  /// reading ChangeOrderLineItemEdit. That table is an audit log and stays
+  /// audit-only -- deriving live values from it would make deleting a log
+  /// row change the contract value, which is exactly what the audit-only
+  /// rule in ARCHITECTURE.md prevents. A snapshot of what was overwritten
+  /// is a different thing from a log of what happened.
+  previousQuantity  Decimal? @db.Decimal(12, 2)
+  previousUnitPrice Decimal? @db.Decimal(12, 2)
+  previousIsDeleted Boolean?
 
   createdAt DateTime @default(now())
 
