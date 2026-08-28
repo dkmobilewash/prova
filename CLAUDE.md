@@ -44,14 +44,20 @@ Vercel deployment and repo settings). Each drives their own agent.
   before acting, and fail loudly.
 - Scripts start with `set -e` AND `set -o pipefail` (a failed build
   piped to `tee` printed ALL GREEN once), and `rm -f .git/index.lock`.
-- Cyrus's PAT lacks the `workflow` scope: pushes touching
-  `.github/workflows/` are rejected — that file changes via GitHub's web
-  editor only.
+- Cyrus authenticates through `gh` (token in the macOS keyring; scopes
+  `repo`, `workflow`, `read:org`, `gist`), so `.github/workflows/` IS
+  editable from the CLI, and `gh pr create` works. The older PAT lacked
+  `workflow` and pushes touching that folder were rejected — no longer
+  true as of 2026-08-28. `gh auth setup-git` is what makes git push use
+  that token; without it the stale keychain entry wins and pushes fail
+  with "Invalid username or token".
 - `.git/info/exclude` patterns must be anchored with `/` (an unanchored
   `punch-lists*` matched a source directory).
-- CI (`ci.yml`) runs lint + typecheck but NOT `pnpm build` — and only
-  `build` catches some real breakage (see traps). Run a full build
-  locally before pushing.
+- CI (`ci.yml`) runs test → lint → typecheck → build. This file used to
+  claim CI skipped `build`; that was never true — `32ea10a` added Build
+  with the workflow itself. Run `./scripts/preflight.sh` before pushing
+  anyway: same four checks, plus it names the migrations that push will
+  apply to PRODUCTION and refuses destructive ones.
 
 ## Hard-won technical rules
 
@@ -99,6 +105,24 @@ Vercel deployment and repo settings). Each drives their own agent.
 - Edit code by reading the actual text and replacing it exactly — a
   structural regex once inserted code into the wrong block and produced
   14 cascading errors.
+- **There is ONE Neon database and it is production.** Vercel runs
+  `prisma migrate deploy` on every deployment, previews included, so a
+  migration goes live WHEN YOU PUSH, not when the PR merges
+  (`add_submittals` reached production from an unmerged branch). Two
+  consequences: additive migrations only unless you've pinged first, and
+  never answer yes to `prisma migrate dev` offering to reset the
+  database — that offer is about production. It appears when your branch
+  is missing a migration the DB already has, which is what branching off
+  `main` while another branch's migration is live does. Base the branch
+  on the branch that owns the migration instead.
+- **An exhausted connection pool makes a successful write render as an
+  empty page.** The action commits, the form closes, and the revalidated
+  re-render can't get a connection, so the page queries nothing and
+  honestly reports nothing. The user then saves again — so the failure
+  mode is DUPLICATE RECORDS with no error anywhere visible. Look for
+  `Timed out fetching a new connection from the connection pool` in the
+  server log before believing a "nothing saved" report. Every stray
+  `new PrismaClient()` in a one-off script eats from the same 5.
 
 ## Docs — update in the same PR as the work
 
