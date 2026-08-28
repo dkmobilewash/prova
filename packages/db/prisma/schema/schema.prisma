@@ -15,8 +15,8 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
   // Pooled endpoint for the app, direct endpoint for migrations.
   // `migrate` cannot run through a connection pooler.
   directUrl = env("DIRECT_URL")

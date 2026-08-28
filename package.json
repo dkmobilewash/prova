@@ -10,6 +10,7 @@
     "dev": "turbo run dev",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
     "db:generate": "pnpm --filter @prova/db generate",
     "db:migrate": "pnpm --filter @prova/db migrate:dev",
     "db:studio": "pnpm --filter @prova/db studio"

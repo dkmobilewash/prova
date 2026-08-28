@@ -41,11 +41,12 @@ model Company {
   lineItemCatalogEntries LineItemCatalogEntry[]
   punchListItems         PunchListItem[]
   dailyFieldReports      DailyFieldReport[]
-  rfis               Rfi[]
-  submittals         Submittal[]
-  safetyCaseCounters SafetyCaseCounter[]
+  rfis                   Rfi[]
+  submittals             Submittal[]
+  safetyCaseCounters     SafetyCaseCounter[]
   safetyIncidents        SafetyIncident[]
   toolboxTalks           ToolboxTalk[]
+  materialOrders         MaterialOrder[]
 }
 
 enum UserRole {
@@ -80,10 +81,11 @@ model User {
   createdRetainageReleases             RetainageRelease[]
   raisedPunchListItems                 PunchListItem[]
   filedDailyFieldReports               DailyFieldReport[]
-  askedRfis               Rfi[]
-  submittedSubmittals     Submittal[]
+  askedRfis                            Rfi[]
+  submittedSubmittals                  Submittal[]
   reportedSafetyIncidents              SafetyIncident[]
   recordedToolboxTalks                 ToolboxTalk[]
+  placedMaterialOrders                 MaterialOrder[]
 
   @@index([companyId])
 }

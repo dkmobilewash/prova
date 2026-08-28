@@ -73,7 +73,10 @@ Vercel deployment and repo settings). Each drives their own agent.
   2026-08-27 on a real production build). New actions return
   `{ ok: true } | { ok: false, error }` and forms render the result —
   `lib/actions/submittals.ts` is the reference. `throw` is for genuine
-  bugs only. (Shared type in `shared.ts` pending agreement in Slack.)
+  bugs only. The `ActionResult` type and its `actionOk`/`actionFail`
+  helpers live in `lib/actions/shared.ts` — NOT in a feature module and
+  NOT in the barrel: two feature modules exporting the same type name is
+  a `TS2308` build break, since the barrel `export *`s all of them.
 - **List pages** all follow the same conventions: add-form collapsed
   behind a button; inline row edit; two-step delete (never
   `window.confirm`); one shared `*Fields` component for create+edit;

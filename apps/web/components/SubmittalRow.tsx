@@ -7,7 +7,7 @@ import {
   sendSubmittalRevision,
   updateSubmittal,
 } from "@/lib/actions";
-import type { ActionResult } from "@/lib/actions/submittals";
+import type { ActionResult } from "@/lib/actions/shared";
 import { inputClass, labelClass } from "@/components/RfiFields";
 import { SubmittalFields, type SubmittalDefaults } from "@/components/SubmittalFields";
 import {

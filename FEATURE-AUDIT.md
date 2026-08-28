@@ -23,13 +23,13 @@ in flight. Left as-is here rather than guessed at from the outside; the next
 update to touch those sheets should come from whoever actually verified them
 against a fresh clone.
 
-**104 items audited — 50 built / 15 partial / 38 missing / 1 descoped**
+**104 items audited — 51 built / 15 partial / 37 missing / 1 descoped**
 
 | Status | Count |
 | --- | --- |
-| Built | 53 |
+| Built | 54 |
 | Partial | 15 |
-| Missing | 36 |
+| Missing | 35 |
 | Descoped | 1 |
 
 ## 01. Company / Org Setup — 5 built · 0 partial · 0 missing
@@ -222,12 +222,12 @@ forecasting shipped 26 Aug 2026.*
 | Partial | Multi-job scheduling view (which crews are where, by trade) | `/schedule` lists jobs with dates and crew — job-first, not a crew-first calendar/board |
 | Missing | Equipment/scaffolding/lift allocation per job | not modeled |
 
-## 19. Materials & Vendor Management — 1 built · 0 partial · 2 missing
+## 19. Materials & Vendor Management — 2 built · 0 partial · 1 missing
 
 | Status | Feature | Note |
 | --- | --- | --- |
 | Built | Vendor/supplier directory per trade | `Vendor`, `/vendors` |
-| Missing | Material order tracking and delivery status per job | not modeled |
+| Built | Material order tracking and delivery status per job | `MaterialOrder` + `MaterialOrderDelivery` + `MaterialOrderCounter`, `/material-orders` — numbers issued per job and never reissued, ordered/promised/delivered dates all entered, partial deliveries as their own rows, late and delivery state derived and never stored. Carries no quantity or unit price by design: that would be a second copy of line-item data (see ARCHITECTURE.md), and material cost already lives on `CostEntry` |
 | Missing | Vendor pricing history for estimating | not modeled |
 
 ## 20. Equipment & Tool Tracking — 1 built · 1 partial · 0 missing
