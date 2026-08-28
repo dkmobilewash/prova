@@ -14,6 +14,114 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ## 2026-08-26
 
+### Adversarial review of RFIs and Safety — seven defects fixed (Cyrus)
+`cyrus/rfis`
+
+Two independent reviews were run against the RFI and Safety code looking
+for defects rather than approval. Everything below passed typecheck, lint
+and a full production build, and none of it would have been caught by
+those. Most severe first:
+
+- **A sent RFI could be deleted.** `deleteRfi` allows drafts only — but
+  `updateRfi` re-derived status from the dates, so clearing the sent date
+  on a sent RFI turned it back into a draft, and then it deleted. That
+  destroys correspondence the GC also holds and leaves a permanent hole in
+  the numbering. `sentOn` can no longer be cleared once set.
+- **Editing an RFI reopened a withdrawn one.** Same re-derivation: a
+  closed-without-answer RFI went back on the open list when someone fixed
+  a typo in its subject. Status is now preserved on edit; draft → sent is
+  the only transition an edit can make.
+- **A same-day answer was impossible.** `markRfiSent` stored a wall-clock
+  instant while every other date is stored at UTC midnight, so an answer
+  dated today compared as *earlier* than a send stamped at 14:30 and was
+  rejected — with a message blaming the user for correct data.
+- **Date inputs defaulted to the server's UTC date.** At 17:00 in
+  California the UTC date is already tomorrow, so a form opened at the end
+  of a shift pre-filled tomorrow. On a safety incident that is worse than
+  a wrong date: on 31 December it picks the wrong case-number series, and
+  the incident date is not editable afterwards. Defaults now come from the
+  user's own calendar; storage and rendering stay UTC.
+- **Safety day counts were enforced only by the form hiding the inputs.**
+  A direct action call could store `FIRST_AID_ONLY` with 40 days away, and
+  the log would print a row contradicting itself. Cleared server-side
+  unless the outcome is one OSHA counts days for.
+- **`assertOwner` said "Only the account owner can manage team members" at
+  all 18 call sites** — deleting a vendor, an invoice, a punch-list item.
+  Pre-existing. Now a generic default with a specific message where useful.
+- **The cost/schedule impact tile counted only visible rows,** so it fell
+  to zero as answered RFIs were closed — exactly as the work got done. It
+  is a job-lifetime figure and is now counted from the database.
+
+**Known and not fixed here, deliberately:**
+
+- The `add_safety_case_counter` migration seeds the counter from
+  `MAX(caseNumber)` — the same derivation the feature exists to avoid. For
+  a database where cases were deleted *before* the migration ran, a number
+  can still be reissued once. There is no recoverable record of deleted
+  numbers, so no better seed exists; rewriting an already-applied
+  migration is its own hazard. Flagged rather than hidden.
+- **Next.js redacts thrown Server Action errors in production builds.** If
+  that holds here, every plain-language guard message in the app degrades
+  to an opaque digest for the user — across both lanes, not just these
+  features. Needs verifying against a real deployment and, if confirmed, a
+  move from `throw` to a returned `{ ok, error }` shape. That is its own
+  piece of work.
+- A wrong incident date can only be corrected by deleting and re-filing,
+  which retires the case number. Whether an owner should be able to edit
+  the date within the same year is a product decision, not a bug fix.
+
+### RFI log (Cyrus)
+`cyrus/rfis` — FEATURE-AUDIT category 16
+
+- New `/rfis` page. `Rfi` + `RfiCounter` in `operations.prisma`, new
+  `lib/actions/rfis.ts`. Its own page, nothing in Diego's lane.
+- **Built as an evidence record, not a task list.** The dates are the
+  product: sent, answer-needed-by, and the date the answer actually came
+  back. An RFI sent and answered three weeks late is what a delay claim is
+  argued from.
+- **Overdue is derived from the dates on every render, never stored.** A
+  stored overdue flag is correct for one day. `today` comes from the server
+  so the server and browser can't disagree about the date.
+- **The sent date is entered, not stamped, and can be backdated.** The first
+  version stamped `sentOn = now` behind a "mark as sent today" checkbox.
+  That made the first real use of the feature impossible: entering the RFIs
+  you already sent over the last three weeks would record every one as sent
+  today, and the response-time evidence — the whole point of the log —
+  would be fiction. Blank sent date means draft; status follows the date
+  rather than being set separately, so the two can't disagree.
+- **An answer can't be dated before the RFI was sent.** Found by clicking:
+  the row rendered `sent 2026-08-26 · answered 2026-08-23 · -3 days`. A log
+  that can hold an answer arriving before the question discredits itself,
+  and a negative day count is the number someone would quote in a dispute.
+  Rejected in the action; the row also refuses to render a negative count
+  for any record predating the check.
+- **The answer date is entered, not stamped.** Recording an answer that
+  arrived last Tuesday must not read as arriving today, or the log
+  overstates the GC's response time — which destroys its value as evidence
+  in the direction that matters.
+- **RFI numbers use the same counter pattern as safety case numbers**, for
+  the same reason: a GC references "RFI 12" in writing, so a number that
+  comes back after a deletion points at two different questions.
+- **A sent RFI cannot be deleted, only closed.** Deleting it destroys
+  correspondence the other side still holds. Drafts can be deleted.
+- Cost and schedule impact are flags set when the answer is read. They
+  deliberately do not create a change order — they mark which RFIs to pull
+  when someone builds one.
+
+### Pre-existing: `nextChangeOrderNumber` has the same reissue bug (open)
+`apps/web/lib/actions/shared.ts` computes change order numbers as
+`max(number) + 1`. Nothing deletes a change order today, so the reissue
+path isn't reachable — but the concurrency race is: two people adding a CO
+to the same job at the same moment both read the same max, and one gets a
+raw Prisma unique-constraint error. Flagged to Diego rather than fixed
+here; `shared.ts` and change orders are his lane.
+
+### FEATURE-AUDIT.md corrected
+It still listed categories 17, 19, 20 and 22 as `0 built` while vendors,
+equipment, punch lists, daily field reports and safety were all on main.
+Second time this file has drifted in a day. Corrected against what's
+actually in the schema.
+
 ### Neon connection pooling (Cyrus)
 `cyrus/db-pooling`
 

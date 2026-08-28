@@ -197,21 +197,21 @@ forecasting shipped 26 Aug 2026.*
 | Missing | Cash flow forecast (AR aging, retainage receivable, pay app cycles) | not built — the underlying retainage data exists now (Sheet 11), but no forecast report reads it yet |
 | Missing | Company-wide backlog report across active jobs | `/dashboard` lists jobs; no aggregated backlog figure |
 
-## 16. Submittals, RFIs, Drawings — 0 built · 0 partial · 3 missing
+## 16. Submittals, RFIs, Drawings — 1 built · 0 partial · 2 missing
 
 | Status | Feature | Note |
 | --- | --- | --- |
 | Missing | Shop drawing/submittal tracking and GC approval status | not modeled |
-| Missing | RFI log per job | not modeled |
+| Built | RFI log per job | `Rfi` + `RfiCounter`, `/rfis` — number issued per job and never reissued, sent/due/answered dates, overdue derived, cost/schedule impact flags |
 | Missing | Current drawing set storage/versioning per job | not modeled |
 
-## 17. Safety & Field Operations — 0 built · 0 partial · 3 missing
+## 17. Safety & Field Operations — 3 built · 0 partial · 0 missing
 
 | Status | Feature | Note |
 | --- | --- | --- |
-| Missing | Incident/injury tracking, OSHA 300 log | not modeled |
-| Missing | Toolbox talk / safety meeting logs | not modeled |
-| Missing | Daily field reports (crew present, work performed, weather, delays) | not modeled |
+| Built | Incident/injury tracking, OSHA 300 log | `SafetyIncident` + `SafetyCaseCounter`, `/safety` — case numbers per company per year, recordable derived from outcome |
+| Built | Toolbox talk / safety meeting logs | `ToolboxTalk`, `/safety` |
+| Built | Daily field reports (crew present, work performed, weather, delays) | `DailyFieldReport`, section on the job page — one per job per day, enforced by the database |
 
 ## 18. Scheduling & Crew Dispatch — 1 built · 1 partial · 1 missing
 
@@ -221,20 +221,20 @@ forecasting shipped 26 Aug 2026.*
 | Partial | Multi-job scheduling view (which crews are where, by trade) | `/schedule` lists jobs with dates and crew — job-first, not a crew-first calendar/board |
 | Missing | Equipment/scaffolding/lift allocation per job | not modeled |
 
-## 19. Materials & Vendor Management — 0 built · 0 partial · 3 missing
+## 19. Materials & Vendor Management — 1 built · 0 partial · 2 missing
 
 | Status | Feature | Note |
 | --- | --- | --- |
-| Missing | Vendor/supplier directory per trade | not modeled |
+| Built | Vendor/supplier directory per trade | `Vendor`, `/vendors` |
 | Missing | Material order tracking and delivery status per job | not modeled |
 | Missing | Vendor pricing history for estimating | not modeled |
 
-## 20. Equipment & Tool Tracking — 0 built · 0 partial · 2 missing
+## 20. Equipment & Tool Tracking — 1 built · 1 partial · 0 missing
 
 | Status | Feature | Note |
 | --- | --- | --- |
-| Missing | Company-owned equipment inventory (scaffolding, lifts, mixers) | not modeled |
-| Missing | Equipment assignment/utilization per job (feeds job costing) | not modeled |
+| Built | Company-owned equipment inventory (scaffolding, lifts, mixers) | `Equipment`, `/equipment` |
+| Partial | Equipment assignment/utilization per job (feeds job costing) | `Equipment.jobId` records where a piece is — nothing computes utilisation or pushes cost into job costing yet |
 
 ## 21. Multi-State / Multi-Jurisdiction Support — 1 built · 1 partial · 1 missing
 
@@ -244,11 +244,11 @@ forecasting shipped 26 Aug 2026.*
 | Built | State-specific licensing requirement tracking | `CompanyLicense` + `LicenseClassificationReference` (CA/AZ/UT seeded; NV deliberately left unseeded — no verified source) |
 | Partial | Jurisdictional/union-local mapping by project location | the data exists — `Job.operatingLocationId`, `CompanyLocation.state`, `UnionLocal` — but nothing derives one from another yet; flagged as future work in the code itself |
 
-## 22. Closeout & Warranty — 0 built · 0 partial · 3 missing
+## 22. Closeout & Warranty — 1 built · 0 partial · 2 missing
 
 | Status | Feature | Note |
 | --- | --- | --- |
-| Missing | Punch list tracking per job | not modeled |
+| Built | Punch list tracking per job | `PunchListItem`, `/punch-lists` |
 | Missing | Final lien waiver and closeout document checklist | not modeled |
 | Missing | Warranty period tracking and post-completion service requests | not modeled — `JobStatus` ends at COMPLETE, no closeout/warranty stage |
 

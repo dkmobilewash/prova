@@ -287,3 +287,81 @@ model ToolboxTalk {
   @@index([companyId])
   @@index([jobId])
 }
+
+/// An RFI — a formal written question to the GC or architect, and their
+/// written answer. For a subcontractor this log is evidence first and a
+/// question-tracker second: an RFI sent on a date and answered late is the
+/// documentation behind a delay claim or a change order, and "we asked and
+/// nobody got back to us" is worth nothing without the dates.
+model Rfi {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  /// Required, unlike safety incidents. An RFI is always about a set of
+  /// drawings on a specific job — there is no such thing as a general one.
+  jobId String
+  job   Job    @relation(fields: [jobId], references: [id])
+
+  /// Sequential per job, issued by RfiCounter and never reissued. GCs
+  /// reference these by number in correspondence, so a number that comes
+  /// back after a deletion points at two different questions.
+  number Int
+
+  subject  String
+  question String
+
+  /// Where in the documents the question comes from. Free text: drawing
+  /// numbering is per-project and not worth modelling.
+  drawingReference String?
+  specSection      String?
+
+  status RfiStatus @default(DRAFT)
+
+  /// Dates are the point of the record. sentOn is when it left our hands;
+  /// dueBy is the response date the contract calls for; answeredOn is when
+  /// it actually came back. Overdue is derived from these, never stored.
+  sentOn     DateTime?
+  dueBy      DateTime?
+  answeredOn DateTime?
+  answer     String?
+
+  /// Flagged by whoever reads the answer. These do not create a change
+  /// order or move a schedule — they mark the RFIs worth revisiting when
+  /// someone builds the claim.
+  costImpact     Boolean @default(false)
+  scheduleImpact Boolean @default(false)
+
+  askedByUserId String?
+  askedBy       User?   @relation(fields: [askedByUserId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([jobId, number])
+  @@index([companyId])
+  @@index([jobId])
+}
+
+/// Issues RFI numbers per job. Same reasoning as SafetyCaseCounter: a
+/// number computed from the RFIs that still exist (a count, or max+1) is
+/// freed again when one is deleted, and the next RFI reissues it. This row
+/// only increments.
+model RfiCounter {
+  jobId      String @id
+  job        Job    @relation(fields: [jobId], references: [id])
+  lastNumber Int    @default(0)
+
+  updatedAt DateTime @updatedAt
+}
+
+enum RfiStatus {
+  /// Written but not sent. Not yet evidence of anything.
+  DRAFT
+  /// Sent to the GC or architect, awaiting a written answer.
+  SENT
+  /// Answered in writing. The answer text is the record.
+  ANSWERED
+  /// Answered and acted on, or withdrawn. Off the open list.
+  CLOSED
+}

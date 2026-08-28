@@ -113,9 +113,9 @@ export async function craftClassificationIdFromForm(formData: FormData, companyI
   return craft.id;
 }
 
-export function assertOwner(user: { role: string }) {
+export function assertOwner(user: { role: string }, message?: string) {
   if (user.role !== "OWNER") {
-    throw new Error("Only the account owner can manage team members");
+    throw new Error(message ?? "Only the account owner can do that");
   }
 }
 

@@ -3,6 +3,7 @@
 import { useRef, useState, useTransition } from "react";
 import { createToolboxTalk } from "@/lib/actions";
 import { inputClass, labelClass, type JobOption } from "@/components/SafetyIncidentFields";
+import { localToday } from "@/components/localToday";
 
 export function ToolboxTalkForm({ jobs, today }: { jobs: JobOption[]; today: string }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -46,7 +47,7 @@ export function ToolboxTalkForm({ jobs, today }: { jobs: JobOption[]; today: str
       <div className="grid gap-3 sm:grid-cols-2">
         <label className={labelClass}>
           Date held
-          <input type="date" name="heldOn" required defaultValue={today} className={inputClass} />
+          <input type="date" name="heldOn" required defaultValue={localToday()} className={inputClass} />
         </label>
         <label className={labelClass}>
           Job (optional)
