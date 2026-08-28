@@ -11,7 +11,7 @@ import { DailyFieldReports } from "@/components/DailyFieldReports";
 import { PayApplications, StatusForm } from "@/components/PayApplications";
 import { MarkContractedButton } from "@/components/MarkContractedButton";
 import { ChangeOrders, type ChangeOrderView } from "@/components/ChangeOrders";
-import { changeOrderValueDelta, pendingChangeOrderExposure } from "@/lib/change-order";
+import { changeOrderValueDelta, pendingChangeOrderExposure, reopenBlockers } from "@/lib/change-order";
 import { money } from "@/lib/money";
 import { calculateLineItemWip, calculateJobWip } from "@/lib/wip";
 import { calculateTimeEntryLaborCost, findEffectiveFringeRateSchedule } from "@/lib/labor-cost";
@@ -93,7 +93,12 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
       },
       changeOrders: {
         orderBy: { number: "asc" },
-        include: { edits: true, proposals: { orderBy: { createdAt: "asc" } } },
+        include: {
+          edits: true,
+          proposals: { orderBy: { createdAt: "asc" } },
+          supersedes: { select: { number: true } },
+          revisions: { select: { number: true }, orderBy: { number: "asc" } },
+        },
       },
       dailyFieldReports: {
         orderBy: { reportDate: "desc" },
@@ -264,6 +269,17 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
     return `${target?.description ?? "(line item)"}: ${parts.join(", ")}`;
   };
 
+  // Why an approved change order can't be reopened is worked out here rather
+  // than on click, so the UI can say so before the user tries. Only approved
+  // ones can be reopened at all, so nothing else is queried.
+  const reopenBlockersByCO = new Map(
+    await Promise.all(
+      job.changeOrders
+        .filter((co) => co.status === "APPROVED")
+        .map(async (co) => [co.id, await reopenBlockers(co)] as const),
+    ),
+  );
+
   const changeOrderViews: ChangeOrderView[] = job.changeOrders.map((co) => ({
     id: co.id,
     number: co.number,
@@ -273,6 +289,10 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
     submittedOn: co.submittedOn?.toISOString() ?? null,
     decidedOn: co.decidedOn?.toISOString() ?? null,
     decisionNotes: co.decisionNotes,
+    reopenBlockers: reopenBlockersByCO.get(co.id) ?? [],
+    reopenedAt: co.reopenedAt?.toISOString() ?? null,
+    supersedesLabel: co.supersedes ? `CO #${co.supersedes.number}` : null,
+    revisedByLabels: co.revisions.map((revision) => `CO #${revision.number}`),
     valueDelta: (() => {
       const delta = Number(changeOrderValueDelta(co.proposals, changeOrderTargetsById));
       return `${delta >= 0 ? "+" : "−"}${money(Math.abs(delta))}`;
