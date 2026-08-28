@@ -42,6 +42,7 @@ model Company {
   punchListItems         PunchListItem[]
   dailyFieldReports      DailyFieldReport[]
   rfis               Rfi[]
+  submittals         Submittal[]
   safetyCaseCounters SafetyCaseCounter[]
   safetyIncidents        SafetyIncident[]
   toolboxTalks           ToolboxTalk[]
@@ -80,6 +81,7 @@ model User {
   raisedPunchListItems                 PunchListItem[]
   filedDailyFieldReports               DailyFieldReport[]
   askedRfis               Rfi[]
+  submittedSubmittals     Submittal[]
   reportedSafetyIncidents              SafetyIncident[]
   recordedToolboxTalks                 ToolboxTalk[]
 
