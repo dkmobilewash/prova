@@ -8,12 +8,15 @@ import { ContractSummary } from "@/components/ContractSummary";
 import { WipNarrativeButton } from "@/components/WipNarrativeButton";
 import { DraftLineItemsForm } from "@/components/DraftLineItemsForm";
 import { DailyFieldReports } from "@/components/DailyFieldReports";
+import { PayApplications, StatusForm } from "@/components/PayApplications";
+import { MarkContractedButton } from "@/components/MarkContractedButton";
+import { ChangeOrders, type ChangeOrderView } from "@/components/ChangeOrders";
+import { changeOrderValueDelta, pendingChangeOrderExposure } from "@/lib/change-order";
 import { money } from "@/lib/money";
 import { calculateLineItemWip, calculateJobWip } from "@/lib/wip";
 import { calculateTimeEntryLaborCost, findEffectiveFringeRateSchedule } from "@/lib/labor-cost";
 import { calculateRetainageSummary } from "@/lib/retainage";
 import {
-  addChangeOrderLineItem,
   addCostEntry,
   addLineItem,
   addLineItemFromCatalog,
@@ -28,14 +31,12 @@ import {
   deletePrevailingWageDetermination,
   deleteRetainageRelease,
   deleteTimeEntry,
-  editLineItemViaChangeOrder,
   logPayment,
   logTimeEntry,
   updateJobRetainageTerms,
   uploadDispatchSlip,
   uploadPrevailingWageDetermination,
   markJobContracted,
-  removeLineItemViaChangeOrder,
   deleteContractDocument,
   saveEstimateVersion,
   saveLineItemAsCatalogEntry,
@@ -92,7 +93,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
       },
       changeOrders: {
         orderBy: { number: "asc" },
-        include: { edits: true },
+        include: { edits: true, proposals: { orderBy: { createdAt: "asc" } } },
       },
       dailyFieldReports: {
         orderBy: { reportDate: "desc" },
@@ -107,7 +108,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
       },
       invoices: {
         orderBy: { number: "asc" },
-        include: { payments: { orderBy: { receivedAt: "desc" } } },
+        include: { payments: { orderBy: { receivedAt: "desc" } }, lineItems: true },
       },
       timeEntries: {
         orderBy: { date: "desc" },
@@ -214,17 +215,92 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
     billedToDate,
   );
 
+  // Pay applications are just Invoices that carry a line-item breakdown —
+  // see InvoiceLineItem in schema.prisma and lib/pay-application.ts.
+  const payApplications = job.invoices
+    .filter((invoice) => invoice.lineItems.length > 0)
+    .map((invoice) => ({
+      id: invoice.id,
+      number: invoice.number,
+      status: invoice.status,
+      amount: Number(invoice.amount),
+      issuedAt: invoice.issuedAt.toISOString(),
+    }));
+  const payApplicationLineItemOptions = job.lineItems.map((item) => ({
+    id: item.id,
+    description: item.description,
+    scheduledValue: Number(item.quantity) * Number(item.unitPrice ?? 0),
+  }));
+
   const addLineItemWithId = addLineItem.bind(null, job.id);
   const addLineItemFromCatalogWithId = addLineItemFromCatalog.bind(null, job.id);
   const saveEstimateVersionWithId = saveEstimateVersion.bind(null, job.id);
   const uploadContractDocumentWithId = uploadContractDocument.bind(null, job.id);
+  // Change orders. A proposal's value is derived from the line item it
+  // targets, so EDIT/REMOVE need the current row -- including ones an
+  // earlier change order soft-deleted, which is why this map is built from
+  // an unfiltered read rather than job.lineItems.
+  const changeOrderTargetRows = await prisma.jobLineItem.findMany({
+    where: { jobId: job.id },
+    select: { id: true, description: true, quantity: true, unitPrice: true, isDeleted: true },
+  });
+  const changeOrderTargetsById = new Map(changeOrderTargetRows.map((item) => [item.id, item]));
+  const changeOrderTargets = changeOrderTargetRows
+    .filter((item) => !item.isDeleted)
+    .map((item) => ({ id: item.id, description: item.description }));
+
+  const describeProposal = (proposal: (typeof job.changeOrders)[number]["proposals"][number]) => {
+    const target = proposal.lineItemId ? changeOrderTargetsById.get(proposal.lineItemId) : null;
+    if (proposal.changeType === "ADD") {
+      const price = proposal.unitPrice ? ` @ ${money(Number(proposal.unitPrice))}` : "";
+      return `${proposal.description ?? "New scope"} — ${proposal.quantity ?? 1}${proposal.unit ? ` ${proposal.unit}` : ""}${price}`;
+    }
+    if (proposal.changeType === "REMOVE") {
+      return target?.description ?? "(line item)";
+    }
+    const parts: string[] = [];
+    if (proposal.quantity !== null) parts.push(`qty → ${proposal.quantity}`);
+    if (proposal.unitPrice !== null) parts.push(`price → ${money(Number(proposal.unitPrice))}`);
+    return `${target?.description ?? "(line item)"}: ${parts.join(", ")}`;
+  };
+
+  const changeOrderViews: ChangeOrderView[] = job.changeOrders.map((co) => ({
+    id: co.id,
+    number: co.number,
+    title: co.title,
+    description: co.description,
+    status: co.status,
+    submittedOn: co.submittedOn?.toISOString() ?? null,
+    decidedOn: co.decidedOn?.toISOString() ?? null,
+    decisionNotes: co.decisionNotes,
+    valueDelta: (() => {
+      const delta = Number(changeOrderValueDelta(co.proposals, changeOrderTargetsById));
+      return `${delta >= 0 ? "+" : "−"}${money(Math.abs(delta))}`;
+    })(),
+    proposals: co.proposals.map((proposal) => ({
+      id: proposal.id,
+      changeType: proposal.changeType,
+      targetDescription: proposal.lineItemId
+        ? changeOrderTargetsById.get(proposal.lineItemId)?.description ?? null
+        : null,
+      summary: describeProposal(proposal),
+    })),
+    edits: co.edits.map((edit) => ({
+      id: edit.id,
+      field: edit.field,
+      oldValue: edit.oldValue,
+      newValue: edit.newValue,
+    })),
+  }));
+
+  const pendingExposure = Number(
+    pendingChangeOrderExposure(job.changeOrders, changeOrderTargetsById),
+  );
+
   const updateLineItemWithId = (lineItemId: string) => updateLineItem.bind(null, job.id, lineItemId);
   const updateLineItemForecastWithId = (lineItemId: string) =>
     updateLineItemForecast.bind(null, job.id, lineItemId);
   const deleteLineItemWithId = (lineItemId: string) => deleteLineItem.bind(null, job.id, lineItemId);
-  const addChangeOrderWithId = addChangeOrderLineItem.bind(null, job.id);
-  const editViaChangeOrderWithId = editLineItemViaChangeOrder.bind(null, job.id);
-  const removeViaChangeOrderWithId = removeLineItemViaChangeOrder.bind(null, job.id);
   const markContractedWithId = markJobContracted.bind(null, job.id);
   const addCostEntryWithId = (lineItemId: string) => addCostEntry.bind(null, job.id, lineItemId);
   const deleteCostEntryWithId = (costEntryId: string) => deleteCostEntry.bind(null, job.id, costEntryId);
@@ -1059,14 +1135,23 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                         Invoice #{invoice.number}
                         {invoice.description ? ` — ${invoice.description}` : ""}
                       </p>
-                      <div className="flex gap-4 text-sm">
+                      <div className="flex items-center gap-4 text-sm">
                         <span className="text-slate-400">Amount {money(Number(invoice.amount))}</span>
                         <span className="text-slate-400">Paid {money(paid)}</span>
                         <span className={balance <= 0 ? "text-green-400" : "text-amber-400"}>
                           {balance <= 0 ? "Paid in full" : `Balance ${money(balance)}`}
                         </span>
+                        <StatusForm jobId={job.id} invoiceId={invoice.id} status={invoice.status} />
                       </div>
                     </div>
+                    {invoice.lineItems.length > 0 && (
+                      <Link
+                        href={`/jobs/${job.id}/pay-applications/${invoice.id}`}
+                        className="mt-1 inline-block text-xs text-blue-400 hover:underline"
+                      >
+                        View pay application →
+                      </Link>
+                    )}
                     {invoice.dueAt && (
                       <p className="mt-1 text-xs text-slate-500">
                         Due {invoice.dueAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
@@ -1616,14 +1701,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                 audit trail of anything that changes after the client agrees to it.
               </p>
               {signedSignature ? (
-                <form action={markContractedWithId}>
-                  <button
-                    type="submit"
-                    className="inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
-                  >
-                    Mark as contracted
-                  </button>
-                </form>
+                <MarkContractedButton markContracted={markContractedWithId} />
               ) : (
                 <p className="text-sm text-amber-400">
                   Get the client&apos;s signature above before contracting this job.
@@ -1632,234 +1710,14 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             </section>
           </>
         ) : (
-          <>
-            <section className="mb-10">
-              <h2 className="mb-3 text-lg font-semibold text-slate-100">Add change order (new scope)</h2>
-              <form action={addChangeOrderWithId} className="flex flex-col gap-3">
-                <div className="flex flex-wrap gap-3">
-                  <label className="flex flex-col gap-1 text-sm text-slate-300">
-                    Change order title
-                    <input
-                      name="title"
-                      required
-                      className="w-64 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
-                      placeholder="Add tile backsplash"
-                    />
-                  </label>
-                  <label className="flex flex-col gap-1 text-sm text-slate-300">
-                    Notes
-                    <input
-                      name="description"
-                      className="w-64 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
-                    />
-                  </label>
-                </div>
-                <div className="flex flex-wrap items-end gap-3">
-                  <label className="flex flex-col gap-1 text-sm text-slate-300">
-                    New line item description
-                    <input
-                      name="itemDescription"
-                      required
-                      className="w-64 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
-                    />
-                  </label>
-                  <label className="flex flex-col gap-1 text-sm text-slate-300">
-                    Qty
-                    <input
-                      name="quantity"
-                      defaultValue="1"
-                      required
-                      className="w-20 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
-                    />
-                  </label>
-                  <label className="flex flex-col gap-1 text-sm text-slate-300">
-                    Unit
-                    <input
-                      name="unit"
-                      className="w-24 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
-                    />
-                  </label>
-                  <label className="flex flex-col gap-1 text-sm text-slate-300">
-                    Unit price
-                    <input
-                      name="unitPrice"
-                      placeholder="cost-only"
-                      title="Leave blank for a cost-only budget line with no client-facing price"
-                      className="w-28 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
-                    />
-                  </label>
-                  <label className="flex flex-col gap-1 text-sm text-slate-300">
-                    Budgeted cost
-                    <input
-                      name="budgetedUnitCost"
-                      placeholder="per unit"
-                      className="w-28 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
-                    />
-                  </label>
-                  <label className="flex flex-col gap-1 text-sm text-slate-300">
-                    Trade
-                    <select
-                      name="tradeScope"
-                      defaultValue=""
-                      className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
-                    >
-                      <option value="">No trade tag</option>
-                      {TRADE_SCOPE_OPTIONS.map((t) => (
-                        <option key={t.value} value={t.value}>
-                          {t.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <button
-                    type="submit"
-                    className="inline-flex items-center justify-center rounded-md bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-500"
-                  >
-                    Submit change order
-                  </button>
-                </div>
-              </form>
-            </section>
-
-            {job.lineItems.length > 0 && (
-              <section className="mb-10">
-                <h2 className="mb-3 text-lg font-semibold text-slate-100">
-                  Revise a line item via change order
-                </h2>
-                <form action={editViaChangeOrderWithId} className="flex flex-col gap-3">
-                  <div className="flex flex-wrap gap-3">
-                    <label className="flex flex-col gap-1 text-sm text-slate-300">
-                      Change order title
-                      <input
-                        name="title"
-                        required
-                        className="w-64 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
-                        placeholder="Upgrade countertop material"
-                      />
-                    </label>
-                    <label className="flex flex-col gap-1 text-sm text-slate-300">
-                      Notes
-                      <input
-                        name="description"
-                        className="w-64 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
-                      />
-                    </label>
-                  </div>
-                  <div className="flex flex-wrap items-end gap-3">
-                    <label className="flex flex-col gap-1 text-sm text-slate-300">
-                      Line item
-                      <select
-                        name="lineItemId"
-                        required
-                        className="w-64 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
-                      >
-                        {job.lineItems.map((item) => (
-                          <option key={item.id} value={item.id}>
-                            {item.description} ({money(Number(item.quantity) * Number(item.unitPrice))})
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className="flex flex-col gap-1 text-sm text-slate-300">
-                      New qty
-                      <input
-                        name="quantity"
-                        required
-                        className="w-20 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
-                      />
-                    </label>
-                    <label className="flex flex-col gap-1 text-sm text-slate-300">
-                      New unit price
-                      <input
-                        name="unitPrice"
-                        placeholder="cost-only"
-                        title="Leave blank to make this a cost-only budget line with no client-facing price"
-                        className="w-28 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
-                      />
-                    </label>
-                    <button
-                      type="submit"
-                      className="inline-flex items-center justify-center rounded-md bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-500"
-                    >
-                      Submit revision
-                    </button>
-                  </div>
-                </form>
-              </section>
-            )}
-
-            {job.lineItems.length > 0 && (
-              <section className="mb-10">
-                <h2 className="mb-3 text-lg font-semibold text-slate-100">
-                  Remove a line item via change order
-                </h2>
-                <form action={removeViaChangeOrderWithId} className="flex flex-col gap-3">
-                  <div className="flex flex-wrap gap-3">
-                    <label className="flex flex-col gap-1 text-sm text-slate-300">
-                      Change order title
-                      <input
-                        name="title"
-                        required
-                        className="w-64 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
-                        placeholder="Remove backsplash tile"
-                      />
-                    </label>
-                    <label className="flex flex-col gap-1 text-sm text-slate-300">
-                      Notes
-                      <input
-                        name="description"
-                        className="w-64 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
-                      />
-                    </label>
-                  </div>
-                  <div className="flex flex-wrap items-end gap-3">
-                    <label className="flex flex-col gap-1 text-sm text-slate-300">
-                      Line item
-                      <select
-                        name="lineItemId"
-                        required
-                        className="w-64 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
-                      >
-                        {job.lineItems.map((item) => (
-                          <option key={item.id} value={item.id}>
-                            {item.description} ({money(Number(item.quantity) * Number(item.unitPrice))})
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <button
-                      type="submit"
-                      className="inline-flex items-center justify-center rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-500"
-                    >
-                      Submit removal
-                    </button>
-                  </div>
-                </form>
-              </section>
-            )}
-          </>
+          <ChangeOrders
+            jobId={job.id}
+            changeOrders={changeOrderViews}
+            lineItems={changeOrderTargets}
+            pendingExposure={money(pendingExposure)}
+          />
         )}
 
-        {job.changeOrders.length > 0 && (
-          <section>
-            <h2 className="mb-3 text-lg font-semibold text-slate-100">Change order history</h2>
-            <ul className="flex flex-col gap-2">
-              {job.changeOrders.map((co) => (
-                <li key={co.id} className="rounded-md border border-slate-800 bg-slate-900 p-3 text-sm">
-                  <p className="font-medium text-slate-100">
-                    CO #{co.number}: {co.title}
-                  </p>
-                  {co.description && <p className="text-slate-400">{co.description}</p>}
-                  {co.edits.map((edit) => (
-                    <p key={edit.id} className="text-slate-500">
-                      {edit.field}: {edit.oldValue} → {edit.newValue}
-                    </p>
-                  ))}
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
 
         <DailyFieldReports
           jobId={job.id}
@@ -1874,6 +1732,14 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             filedByName: report.filedBy?.name ?? null,
           }))}
         />
+
+        {!isEstimateStage && (
+          <PayApplications
+            jobId={job.id}
+            lineItems={payApplicationLineItemOptions}
+            payApplications={payApplications}
+          />
+        )}
       </div>
     </div>
   );

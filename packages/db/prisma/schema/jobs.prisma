@@ -148,9 +148,11 @@ model JobLineItem {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  edits       ChangeOrderLineItemEdit[]
-  costEntries CostEntry[]
-  timeEntries TimeEntry[]
+  edits             ChangeOrderLineItemEdit[]
+  costEntries       CostEntry[]
+  timeEntries       TimeEntry[]
+  invoiceLineItems  InvoiceLineItem[]
+  proposedChanges   ChangeOrderProposal[]     @relation("ProposedChangeTarget")
 
   @@index([jobId])
   @@index([originChangeOrderId])
@@ -170,11 +172,111 @@ model ChangeOrder {
   description String?
   createdAt   DateTime @default(now())
 
+  /// Nothing before APPROVED touches JobLineItem. See ChangeOrderProposal.
+  status ChangeOrderStatus @default(DRAFT)
+
+  /// Entered, not stamped. A PCO logged after the fact has to record the
+  /// date it actually went to the GC — stamping `now()` would make every
+  /// backfilled change order look same-day, and the turnaround evidence
+  /// that justifies a delay claim would be fiction. Same rule as RFIs.
+  submittedOn DateTime?
+  decidedOn   DateTime?
+
+  /// The GC's stated reason, on an approval or a rejection.
+  decisionNotes String?
+
+  /// When this change order's proposals were written onto JobLineItem.
+  /// Non-null means the scope is live; it is what stops the same change
+  /// order being applied to the budget twice.
+  appliedAt DateTime?
+
   addedLineItems JobLineItem[]             @relation("OriginChangeOrder")
   edits          ChangeOrderLineItemEdit[]
+  proposals      ChangeOrderProposal[]
 
   @@unique([jobId, number])
   @@index([jobId])
+  @@index([jobId, status])
+}
+
+/// Where a change order sits between "we think this is extra work" and
+/// "the GC agreed to pay for it".
+///
+/// Only APPROVED has touched JobLineItem. That matters more than it looks:
+/// contract value, WIP, retainage and pay applications are all
+/// `SUM(job.lineItems WHERE isDeleted = false)`, so if a pending change
+/// order wrote to JobLineItem, every one of those figures would silently
+/// include money the GC has not agreed to pay — across ten separate read
+/// sites that each filter `isDeleted` by hand. Keeping proposals out of
+/// JobLineItem entirely means none of those call sites need to know this
+/// lifecycle exists.
+enum ChangeOrderStatus {
+  /// Being written. Not sent, no dates, freely editable or deleted.
+  DRAFT
+
+  /// Sent to the GC, awaiting a decision. This is the PCO state.
+  SUBMITTED
+
+  /// The GC agreed. Proposals have been applied to JobLineItem and the
+  /// budget has moved. Terminal.
+  APPROVED
+
+  /// The GC declined. Never applied, kept as the record that it was asked
+  /// for and refused — which is exactly the evidence a claim needs.
+  REJECTED
+
+  /// Withdrawn by us before a decision. Distinct from REJECTED: nobody
+  /// said no, we stopped asking.
+  VOID
+}
+
+enum ChangeOrderChangeType {
+  ADD
+  EDIT
+  REMOVE
+}
+
+/// The proposed content of a change order, held here while it is DRAFT or
+/// SUBMITTED so that nothing in the job's live figures can see it.
+///
+/// This is intent, not value. Nothing computes a contract total, a WIP
+/// figure or a pay application from this table — `approveChangeOrder` is
+/// the single place it is read for anything other than display, and all it
+/// does there is apply each row to JobLineItem and write the matching
+/// ChangeOrderLineItemEdit audit rows. After that, JobLineItem is once
+/// again the only place the numbers live, exactly as before this lifecycle
+/// existed.
+///
+/// Deliberately NOT the same table as ChangeOrderLineItemEdit: that one is
+/// an after-the-fact audit log of what a change order did (old -> new),
+/// and it stays audit-only. This one is a before-the-fact statement of
+/// what it would do. Collapsing them would make the audit log load-bearing.
+model ChangeOrderProposal {
+  id            String                @id @default(cuid())
+  changeOrderId String
+  changeOrder   ChangeOrder           @relation(fields: [changeOrderId], references: [id], onDelete: Cascade)
+  changeType    ChangeOrderChangeType
+
+  /// Null for ADD — the line item does not exist yet and is created on
+  /// approval. Set for EDIT and REMOVE.
+  lineItemId String?
+  lineItem   JobLineItem? @relation("ProposedChangeTarget", fields: [lineItemId], references: [id])
+
+  /// ADD: the line item to create. EDIT: the new values, where null means
+  /// "leave this field alone". Unused for REMOVE. Types mirror
+  /// JobLineItem exactly so applying a proposal is a straight copy.
+  description              String?
+  unit                     String?
+  quantity                 Decimal?    @db.Decimal(12, 2)
+  unitPrice                Decimal?    @db.Decimal(12, 2)
+  budgetedUnitCost         Decimal?    @db.Decimal(12, 2)
+  currentEstimatedUnitCost Decimal?    @db.Decimal(12, 2)
+  tradeScope               TradeScope?
+
+  createdAt DateTime @default(now())
+
+  @@index([changeOrderId])
+  @@index([lineItemId])
 }
 
 /// Audit log only. Records what a change order changed on an EXISTING

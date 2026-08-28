@@ -8,7 +8,15 @@ import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@prova/db";
 import { revokeToken, refreshTokens, getCompanyInfo, generateWipNarrative, type QuickBooksCompanyInfo } from "@prova/integrations";
 import { calculateLineItemWip, calculateJobWip } from "@/lib/wip";
-import { assertJobInCompany, assertOwner, decimalFromForm, nullableDecimalFromForm } from "./shared";
+import {
+  assertJobInCompany,
+  assertLineItemOnJob,
+  assertOwner,
+  decimalFromForm,
+  enumFromForm,
+  INVOICE_STATUSES,
+  nullableDecimalFromForm,
+} from "./shared";
 
 /**
  * Creates a client-signing link for a job's contract. Only while ESTIMATE —
@@ -160,6 +168,71 @@ export async function createInvoice(jobId: string, formData: FormData) {
   revalidatePath(`/jobs/${jobId}`);
 }
 
+/** Submits a full AIA-style pay application: one row per active line item
+ * (this period billed + materials stored), rather than a single lump sum.
+ * The invoice amount is computed from the breakdown, not entered directly —
+ * a pay application's total IS the sum of what's billed per SOV line, so
+ * there's nothing to reconcile against a separately-typed number. Rows
+ * where both fields are blank/zero are dropped; at least one line must
+ * have an amount. */
+export async function submitPayApplication(jobId: string, formData: FormData) {
+  const { company } = await requireCompanyContext();
+  const job = await assertJobInCompany(jobId, company.id);
+
+  if (job.status === "ESTIMATE") {
+    throw new Error("Contract this job before invoicing it");
+  }
+
+  const lineItemIds = formData.getAll("lineItemId").map(String);
+  const thisPeriodValues = formData.getAll("thisPeriodBilled").map(String);
+  const materialsStoredValues = formData.getAll("materialsStoredValue").map(String);
+
+  const rows = lineItemIds
+    .map((lineItemId, i) => ({
+      lineItemId,
+      thisPeriodBilled: Number(thisPeriodValues[i] || "0") || 0,
+      materialsStoredValue: Number(materialsStoredValues[i] || "0") || 0,
+    }))
+    .filter((row) => row.thisPeriodBilled > 0 || row.materialsStoredValue > 0);
+
+  if (rows.length === 0) {
+    throw new Error("Enter an amount for at least one line item");
+  }
+
+  for (const row of rows) {
+    await assertLineItemOnJob(row.lineItemId, jobId);
+  }
+
+  const description = String(formData.get("description") ?? "").trim();
+  const dueRaw = String(formData.get("dueAt") ?? "").trim();
+  const dueAt = dueRaw ? new Date(dueRaw) : null;
+
+  const amount = rows.reduce((sum, row) => sum + row.thisPeriodBilled + row.materialsStoredValue, 0);
+  const retainageWithheld =
+    job.retainagePercent != null ? ((amount * Number(job.retainagePercent)) / 100).toFixed(2) : null;
+
+  const number = await nextInvoiceNumber(jobId);
+  await prisma.invoice.create({
+    data: {
+      jobId,
+      number,
+      description: description || null,
+      amount: amount.toFixed(2),
+      dueAt,
+      retainageWithheld,
+      lineItems: {
+        create: rows.map((row) => ({
+          lineItemId: row.lineItemId,
+          thisPeriodBilled: row.thisPeriodBilled.toFixed(2),
+          materialsStoredValue: row.materialsStoredValue.toFixed(2),
+        })),
+      },
+    },
+  });
+
+  revalidatePath(`/jobs/${jobId}`);
+}
+
 /** Sets this job's retainage rate and expected substantial-completion
  * date. Only affects future invoices -- see Invoice.retainageWithheld. */
 export async function updateJobRetainageTerms(jobId: string, formData: FormData) {
@@ -184,6 +257,24 @@ async function assertInvoiceInCompany(invoiceId: string, companyId: string) {
     throw new Error("Invoice not found");
   }
   return invoice;
+}
+
+/** Sets where a pay application stands with the GC — see InvoiceStatus in
+ * schema.prisma for why this is a plain field rather than derived from
+ * payment totals. */
+export async function updateInvoiceStatus(jobId: string, invoiceId: string, formData: FormData) {
+  const { company } = await requireCompanyContext();
+  await assertJobInCompany(jobId, company.id);
+  const invoice = await assertInvoiceInCompany(invoiceId, company.id);
+  if (invoice.jobId !== jobId) {
+    throw new Error("Invoice not found on this job");
+  }
+
+  const status = enumFromForm(formData, "status", INVOICE_STATUSES);
+
+  await prisma.invoice.update({ where: { id: invoiceId }, data: { status } });
+
+  revalidatePath(`/jobs/${jobId}`);
 }
 
 /** Logs a payment received against an invoice. Not a charge — just a
