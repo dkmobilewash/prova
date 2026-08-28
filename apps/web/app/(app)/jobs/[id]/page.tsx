@@ -291,6 +291,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
     decisionNotes: co.decisionNotes,
     reopenBlockers: reopenBlockersByCO.get(co.id) ?? [],
     reopenedAt: co.reopenedAt?.toISOString() ?? null,
+    reopenNote: co.reopenNote,
     supersedesLabel: co.supersedes ? `CO #${co.supersedes.number}` : null,
     revisedByLabels: co.revisions.map((revision) => `CO #${revision.number}`),
     valueDelta: (() => {

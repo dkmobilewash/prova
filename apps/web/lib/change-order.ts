@@ -32,7 +32,23 @@ export type ProposalForCalc = {
   lineItemId: string | null;
   quantity: Prisma.Decimal | null;
   unitPrice: Prisma.Decimal | null;
+  /** Set once the proposal has been applied — see ChangeOrderProposal. */
+  previousQuantity?: Prisma.Decimal | null;
+  previousUnitPrice?: Prisma.Decimal | null;
+  previousIsDeleted?: boolean | null;
 };
+
+/**
+ * Whether this proposal has been written onto its line item.
+ *
+ * It matters for the arithmetic below: after approval the line item already
+ * holds the proposal's values, so measuring the change against the *live*
+ * row compares a number with itself and yields zero. The snapshot taken at
+ * approval is the only record of what the change actually moved.
+ */
+function isApplied(proposal: ProposalForCalc) {
+  return proposal.previousIsDeleted !== null && proposal.previousIsDeleted !== undefined;
+}
 
 /**
  * Revenue value of a line: quantity * unitPrice, with a null unitPrice
@@ -63,11 +79,25 @@ export function proposalValueDelta(
       return lineValue(proposal.quantity, proposal.unitPrice);
 
     case "REMOVE":
-      // Removing scope subtracts whatever that line is currently worth.
+      // Removing scope subtracts whatever that line was worth when it went.
+      if (isApplied(proposal)) {
+        return lineValue(proposal.previousQuantity ?? null, proposal.previousUnitPrice ?? null).neg();
+      }
       if (!target) return ZERO;
       return lineValue(target.quantity, target.unitPrice).neg();
 
     case "EDIT": {
+      // Applied: compare the proposal against what it replaced. Reading the
+      // live line item here instead is what made an approved price change
+      // render as +$0.00 -- the row had already become the proposal.
+      if (isApplied(proposal)) {
+        const wasQuantity = proposal.previousQuantity ?? null;
+        const wasUnitPrice = proposal.previousUnitPrice ?? null;
+        return lineValue(proposal.quantity ?? wasQuantity, proposal.unitPrice ?? wasUnitPrice).sub(
+          lineValue(wasQuantity, wasUnitPrice),
+        );
+      }
+      // Not applied: the live row is still the "before".
       if (!target) return ZERO;
       const before = lineValue(target.quantity, target.unitPrice);
       const after = lineValue(

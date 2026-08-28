@@ -4,12 +4,12 @@ import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@prova/db";
 import { reopenBlockers } from "@/lib/change-order";
+import { Prisma } from "@prova/db";
 import {
   assertEditableViaChangeOrder,
   assertJobInCompany,
   assertLineItemOnJob,
   decimalFromForm,
-  nextChangeOrderNumber,
   nullableDecimalFromForm,
   tradeScopeFromForm,
 } from "./shared";
@@ -57,6 +57,26 @@ function enteredDate(formData: FormData, key: string): Date {
   return date;
 }
 
+/**
+ * Issues the next change order number for a job.
+ *
+ * Never max(number) + 1. That frees a number again as soon as a draft is
+ * discarded, so the next one reissues it and two different documents have
+ * both been called CO #3 — and a change order number is something a GC
+ * quotes back at you. Incremented inside the same transaction as the insert
+ * so two people starting a change order on one job can't collide. Same
+ * mechanism as RfiCounter and SafetyCaseCounter.
+ */
+async function issueChangeOrderNumber(tx: Prisma.TransactionClient, jobId: string) {
+  const counter = await tx.changeOrderCounter.upsert({
+    where: { jobId },
+    create: { jobId, lastNumber: 1 },
+    update: { lastNumber: { increment: 1 } },
+    select: { lastNumber: true },
+  });
+  return counter.lastNumber;
+}
+
 async function assertChangeOrder(changeOrderId: string, companyId: string) {
   const changeOrder = await prisma.changeOrder.findUnique({
     where: { id: changeOrderId },
@@ -97,10 +117,12 @@ export async function createChangeOrder(jobId: string, formData: FormData) {
 
   const title = required(formData, "title", "Change order title");
   const description = text(formData, "description");
-  const number = await nextChangeOrderNumber(jobId);
 
-  await prisma.changeOrder.create({
-    data: { jobId, number, title, description: description || null, status: "DRAFT" },
+  await prisma.$transaction(async (tx) => {
+    const number = await issueChangeOrderNumber(tx, jobId);
+    await tx.changeOrder.create({
+      data: { jobId, number, title, description: description || null, status: "DRAFT" },
+    });
   });
 
   revalidatePath(`/jobs/${jobId}`);
@@ -517,18 +539,20 @@ export async function reviseChangeOrder(changeOrderId: string, formData: FormDat
     );
   }
 
-  const number = await nextChangeOrderNumber(original.jobId);
   const title = text(formData, "title") || `Revision of CO #${original.number}`;
 
-  await prisma.changeOrder.create({
-    data: {
-      jobId: original.jobId,
-      number,
-      title,
-      description: text(formData, "description") || null,
-      status: "DRAFT",
-      supersedesId: original.id,
-    },
+  await prisma.$transaction(async (tx) => {
+    const number = await issueChangeOrderNumber(tx, original.jobId);
+    await tx.changeOrder.create({
+      data: {
+        jobId: original.jobId,
+        number,
+        title,
+        description: text(formData, "description") || null,
+        status: "DRAFT",
+        supersedesId: original.id,
+      },
+    });
   });
 
   revalidatePath(`/jobs/${original.jobId}`);

@@ -58,6 +58,7 @@ model Job {
 
   lineItems                    JobLineItem[]
   changeOrders                 ChangeOrder[]
+  changeOrderCounter           ChangeOrderCounter?
   assignments                  JobAssignment[]
   signatureRequests            SignatureRequest[]
   invoices                     Invoice[]
@@ -252,6 +253,19 @@ enum ChangeOrderStatus {
   /// Withdrawn by us before a decision. Distinct from REJECTED: nobody
   /// said no, we stopped asking.
   VOID
+}
+
+/// Issues change order numbers per job. Same reasoning as RfiCounter and
+/// SafetyCaseCounter: a number computed from the change orders that still
+/// exist (max+1) is freed again when one is discarded, so the next draft
+/// reissues it -- and two different documents end up having been called
+/// CO #3. This row only increments.
+model ChangeOrderCounter {
+  jobId      String @id
+  job        Job    @relation(fields: [jobId], references: [id])
+  lastNumber Int    @default(0)
+
+  updatedAt DateTime @updatedAt
 }
 
 enum ChangeOrderChangeType {
