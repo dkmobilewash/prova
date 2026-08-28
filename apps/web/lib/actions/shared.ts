@@ -63,14 +63,6 @@ export function assertEditableViaChangeOrder(job: { status: string }) {
   }
 }
 
-export async function nextChangeOrderNumber(jobId: string) {
-  const last = await prisma.changeOrder.findFirst({
-    where: { jobId },
-    orderBy: { number: "desc" },
-  });
-  return (last?.number ?? 0) + 1;
-}
-
 export async function assertLineItemOnJob(lineItemId: string, jobId: string) {
   const lineItem = await prisma.jobLineItem.findUnique({ where: { id: lineItemId } });
   if (!lineItem || lineItem.jobId !== jobId) {

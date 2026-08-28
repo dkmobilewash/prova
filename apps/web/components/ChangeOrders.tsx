@@ -43,6 +43,7 @@ export type ChangeOrderView = {
    * can't, ready to show without the user having to click and get an error. */
   reopenBlockers: string[];
   reopenedAt: string | null;
+  reopenNote: string | null;
   /** "CO #3", when this change order was raised to correct one. */
   supersedesLabel: string | null;
   /** "CO #7", when a later change order corrects this one. */
@@ -63,6 +64,26 @@ function formatDate(iso: string | null) {
     year: "numeric",
     timeZone: "UTC",
   });
+}
+
+/** The audit log stores the schema's field name and raw values. Neither is
+ * something to put in front of a PM. */
+const EDIT_FIELD_LABEL: Record<string, string> = {
+  quantity: "Quantity",
+  unitPrice: "Unit price",
+  deleted: "Removed from the contract",
+};
+
+function formatEditValue(field: string, value: string) {
+  if (field === "deleted") return value === "true" ? "yes" : "no";
+  if (value === "(none)") return "none";
+  if (field === "unitPrice") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed)
+      ? parsed.toLocaleString("en-US", { style: "currency", currency: "USD" })
+      : value;
+  }
+  return value;
 }
 
 const STATUS_STYLE: Record<ChangeOrderView["status"], string> = {
@@ -255,8 +276,9 @@ function Correction({ changeOrder }: { changeOrder: ChangeOrderView }) {
             Reopen
           </button>
           <p className="w-full text-xs text-slate-500">
-            Takes this change order back to a draft and removes its effect on the contract value. Nothing
-            has been costed or billed against it yet, so this is safe.
+            Takes this change order back to a draft and undoes its effect on the contract value. Nothing
+            depends on what it changed, so there is nothing to break — reversing an edit restores the
+            previous values and leaves any costs or hours on that line untouched.
           </p>
         </form>
       ) : (
@@ -358,9 +380,10 @@ export function ChangeOrders({
                   contract value at the time.
                 </p>
               )}
-              {co.reopenedAt && co.status !== "APPROVED" && (
+              {co.reopenedAt && (
                 <p className="mt-1 text-xs text-amber-300">
-                  Was approved and reopened on {formatDate(co.reopenedAt)}.
+                  Approved, then reopened on {formatDate(co.reopenedAt)}
+                  {co.reopenNote ? `: "${co.reopenNote}"` : ""}.
                 </p>
               )}
 
@@ -396,7 +419,9 @@ export function ChangeOrders({
                 <ul className="mt-2 flex flex-col gap-0.5">
                   {co.edits.map((edit) => (
                     <li key={edit.id} className="text-xs text-slate-500">
-                      {edit.field}: {edit.oldValue} → {edit.newValue}
+                      {EDIT_FIELD_LABEL[edit.field] ?? edit.field}:{" "}
+                      {formatEditValue(edit.field, edit.oldValue)} →{" "}
+                      {formatEditValue(edit.field, edit.newValue)}
                     </li>
                   ))}
                 </ul>

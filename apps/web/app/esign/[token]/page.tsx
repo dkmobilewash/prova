@@ -53,7 +53,11 @@ export default async function EsignPage({ params }: { params: Promise<{ token: s
         <ContractSummary
           companyName={snapshot.companyName}
           jobName={snapshot.jobName}
-          status="CONTRACTED"
+          // The client signing does not contract the job -- markJobContracted
+          // is still a separate, deliberate step by the contractor. Showing
+          // "Contracted" here claimed something that hadn't happened, and
+          // disagreed with the job page, which still read "Estimate".
+          status="SIGNED"
           clientName={snapshot.clientName}
           scope={snapshot.scope}
           lineItems={snapshot.lineItems.map((item, i) => ({
