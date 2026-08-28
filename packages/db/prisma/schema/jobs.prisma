@@ -76,6 +76,8 @@ model Job {
   toolboxTalks                 ToolboxTalk[]
   rfis                         Rfi[]
   rfiCounter                   RfiCounter?
+  submittals                   Submittal[]
+  submittalCounter             SubmittalCounter?
 
   @@index([companyId])
   @@index([contactId])

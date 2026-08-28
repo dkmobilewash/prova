@@ -3,14 +3,73 @@
 What actually changed, in plain English, newest first.
 
 **Rule: update this in the same PR as the work.** A changelog maintained
-separately from the code drifts away from it within a week — the same way
-FEATURE-AUDIT.md on `main` currently claims five features that aren't on
-`main`. If a PR changes behaviour, it edits this file too.
+separately from the code drifts away from it within a week — exactly how
+FEATURE-AUDIT.md on `main` twice ended up claiming features that weren't
+there. If a PR changes behaviour, it edits this file too.
 
 Entries say what changed and why it mattered, not which functions moved.
 `git log` already covers the functions.
 
 ---
+
+## 2026-08-27
+
+### Production redacts thrown Server Action messages — settled by result (Cyrus)
+`cyrus/submittals`
+
+Ran a real production build locally (`pnpm build` + `next start`) and
+tripped the RFI answered-before-sent guard. Dev shows the plain sentence;
+production rendered the generic "An error occurred in the Server
+Components render… omitted in production builds" text. So every
+`throw new Error("plain language")` in the app degrades to boilerplate
+for a real user while reading perfectly in dev. Open question 2 from the
+08-26 review entry is no longer open.
+
+The check that catches it: a production build run locally, then clicking
+a guard. Neither typecheck, lint, dev-mode clicking, nor a green deploy
+would ever show it.
+
+### Submittals — first module written in the returned-error shape (Cyrus)
+`cyrus/submittals` — FEATURE-AUDIT category 16
+
+- New `/submittals` page. `Submittal` + `SubmittalRevision` +
+  `SubmittalCounter` in `operations.prisma`, new
+  `lib/actions/submittals.ts`. One line each in `middleware.ts`,
+  `Sidebar.tsx` and the actions barrel.
+- **Because of the redaction finding above, these actions RETURN their
+  failures** — `{ ok: true } | { ok: false, error }` — and the forms
+  render `error` from the result. `throw` is reserved for genuine bugs,
+  which should be redacted. The type is module-local until both lanes
+  agree on a shared one in `shared.ts`; converting the older
+  throw-based modules is its own piece of work.
+- **The submittal's status is derived from its latest revision on every
+  render, never stored.** A stored status can disagree with the revision
+  that produced it, and that contradiction is how someone builds from a
+  superseded drawing. States: not sent / with the GC / revise-and-resubmit
+  (our court) / approved.
+- **Each round trip to the GC is its own revision row** with entered —
+  never stamped — sent/due/returned dates, because the turnaround per
+  revision is the delay-claim evidence. Revision numbers come from a
+  counter on the submittal row, incremented in the sending transaction;
+  submittal numbers come from `SubmittalCounter` per job. Same rule as
+  RFI and safety case numbers: nothing derived from surviving rows.
+- **A sent package can never be deleted** — it is correspondence the GC
+  also holds. Only a registered-but-never-sent one can.
+- Ordering guards: a response can't predate its revision's send; a
+  resubmission can't predate the response that caused it; a second
+  revision can't go out while the GC still has the first. The send
+  guards read the latest revision inside the sending transaction —
+  checked outside it, two people resubmitting at once would strand a
+  revision no form could ever respond to.
+- An approved package can still take a new revision (a design change
+  after approval is normal); what it can never do is have its recorded
+  stamp falsified to get there.
+
+### `/rfis` list header no longer calls every visible row "open" (Cyrus)
+The header said "N open" but counted drafts and answered RFIs — the
+tiles' `isOpen` means awaiting an answer, so the two disagreed on the
+same screen. The list header now says "in play"; the open tile keeps its
+stricter meaning.
 
 ## 2026-08-26
 
