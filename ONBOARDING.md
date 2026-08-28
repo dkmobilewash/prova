@@ -203,7 +203,8 @@ prova/
    installs everything for every package in the monorepo at once.
 5. **Get your env vars from Diego.** He'll send you, over a secure
    channel (not email, not committed to the repo — see his message):
-   - A `DATABASE_URL` (a Postgres connection string)
+   - A `DATABASE_URL` (a Postgres connection string) and a
+     `DIRECT_URL` (the same database, unpooled — migrations need it)
    - `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY`
    - `ANTHROPIC_API_KEY`
    - `BLOB_READ_WRITE_TOKEN`
@@ -211,7 +212,8 @@ prova/
    packages/db/.env` and `cp apps/web/.env.example apps/web/.env`, then
    fill in the real values in both `.env` files (yes, `DATABASE_URL` goes
    in both — Prisma CLI commands run from `packages/db`, Next.js reads
-   its own `.env` from `apps/web`).
+   its own `.env` from `apps/web`). `DIRECT_URL` only goes in
+   `packages/db/.env`; nothing but the Prisma CLI reads it.
 6. **Run migrations:** from the repo root, `pnpm db:migrate`. This
    creates every table in your database.
 7. **Start the dev server:** `pnpm dev` from the repo root.
