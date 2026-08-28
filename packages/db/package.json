@@ -8,7 +8,7 @@
     "postinstall": "prisma generate",
     "generate": "prisma generate",
     "migrate:dev": "prisma migrate dev",
-    "migrate:deploy": "prisma migrate deploy",
+    "migrate:deploy": "node scripts/check-migrate-env.mjs && prisma migrate deploy",
     "studio": "prisma studio",
     "lint": "echo 'no lint for db package'",
     "typecheck": "tsc --noEmit"

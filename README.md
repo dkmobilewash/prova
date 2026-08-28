@@ -45,7 +45,8 @@ Fill in:
 
 | Variable | Where | Description |
 | --- | --- | --- |
-| `DATABASE_URL` | both `.env` files | Postgres connection string (a Neon pooled connection string works) |
+| `DATABASE_URL` | both `.env` files | Postgres connection string — the Neon *pooled* one (host ends `-pooler`) |
+| `DIRECT_URL` | `packages/db/.env` | The Neon *direct* (unpooled) connection string. Only `prisma migrate` uses it; a connection pooler can't hold the session-level advisory locks migrations take |
 | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | `apps/web/.env` | From your Clerk app's API Keys page |
 | `CLERK_SECRET_KEY` | `apps/web/.env` | From your Clerk app's API Keys page |
 | `QUICKBOOKS_CLIENT_ID` | `apps/web/.env` | From your Intuit Developer app's Keys page — only needed to use the `/settings` QuickBooks connection |
@@ -63,6 +64,8 @@ to `production` only once you're using a production Intuit app.
 `packages/db/.env` and `apps/web/.env` can point at the same
 `DATABASE_URL`; they're separate files because Prisma CLI commands run
 from `packages/db` and Next.js reads its own `.env` from `apps/web`.
+`DIRECT_URL` is only read by the Prisma CLI, so it belongs in
+`packages/db/.env` alone.
 
 ### 3. Run migrations
 
@@ -109,8 +112,17 @@ so no secrets are required in the repo for CI to pass.
 
 ## Deploying
 
-- **apps/web** → Vercel. Set the same env vars from `apps/web/.env.example`
-  as Vercel project environment variables (with real values), and set
-  `DATABASE_URL` to your Neon connection string.
-- **Database** → run `pnpm db:migrate` (or `prisma migrate deploy` in a
-  release step) against production `DATABASE_URL` before/during deploy.
+- **apps/web** → Vercel, with the project's Root Directory set to
+  `apps/web`. Set the same env vars from `apps/web/.env.example` as Vercel
+  project environment variables (with real values), plus `DATABASE_URL` and
+  `DIRECT_URL` from Neon.
+- **Tick every environment for `DATABASE_URL` and `DIRECT_URL`, not just
+  Production.** Prisma resolves `directUrl = env("DIRECT_URL")` while loading
+  the schema, so a Preview build that can't see it fails with a P1012 schema
+  validation error before it connects to anything — and any branch that isn't
+  the project's Production Branch builds as a Preview.
+- **Database** → migrations run during the deploy. `apps/web/vercel.json`
+  sets the build command to `pnpm --filter @prova/db run migrate:deploy &&
+  pnpm turbo run build --filter=@prova/web`; keep it there rather than in the
+  Vercel dashboard, so a schema change that needs a new env var is visible in
+  code review.
