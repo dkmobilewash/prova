@@ -144,3 +144,26 @@ export function enumFromForm<T extends readonly string[]>(formData: FormData, ke
 export const BID_INVITATION_STATUSES = ["INVITED", "SUBMITTED", "WON", "LOST", "DECLINED"] as const;
 
 export const INVOICE_STATUSES = ["SUBMITTED", "APPROVED", "PARTIALLY_PAID", "PAID", "DISPUTED"] as const;
+
+/** The return shape for expected, user-readable action failures.
+ *
+ * Next.js redacts the message of any error thrown from a Server Action in
+ * a production build — verified 2026-08-27 against a real production
+ * build, not inferred. A thrown guard message reads perfectly in dev and
+ * degrades to an opaque digest for a real user, which is the worst
+ * possible way to fail. So: expected failures come back as
+ * `{ ok: false, error }` and the form renders `error`; `throw` is
+ * reserved for genuine bugs, which SHOULD be redacted in production.
+ *
+ * Lives here rather than in one feature module so two features can't hold
+ * two structurally identical copies of it and drift. It is a type and a
+ * pure helper, so it stays out of the "use server" modules and out of the
+ * barrel — see the note at the top of this file.
+ */
+export type ActionResult = { ok: true } | { ok: false; error: string };
+
+export const actionOk: ActionResult = { ok: true };
+
+export function actionFail(error: string): ActionResult {
+  return { ok: false, error };
+}

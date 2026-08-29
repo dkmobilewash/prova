@@ -77,6 +77,8 @@ model Job {
   rfiCounter                   RfiCounter?
   submittals                   Submittal[]
   submittalCounter             SubmittalCounter?
+  materialOrders               MaterialOrder[]
+  materialOrderCounter         MaterialOrderCounter?
 
   @@index([companyId])
   @@index([contactId])
