@@ -12,6 +12,15 @@ import {
 import { QuickBooksTestConnectionButton } from "@/components/QuickBooksTestConnectionButton";
 import { money } from "@/lib/money";
 import { SubmitButton } from "@/components/SubmitButton";
+import { ConfirmDeleteButton } from "@/components/ConfirmDeleteButton";
+import { CompanyLicenses } from "@/components/CompanyLicenses";
+import {
+  classifyRenewal,
+  renewalTiming,
+  toIsoDate,
+  type RenewalKind,
+} from "@/lib/compliance-expiry";
+import { serverToday } from "@/lib/serverToday";
 
 const QB_ERROR_MESSAGES: Record<string, string> = {
   access_denied: "You declined the QuickBooks connection request.",
@@ -47,13 +56,39 @@ function formatDate(date: Date | null) {
   return date ? date.toLocaleDateString() : "—";
 }
 
-/** Expired/upcoming status computed at read time from a stored date —
- * never cached, same rule as every other expiration field in this app. */
-function dateStatus(date: Date | null, dueWord: string) {
+/**
+ * Expired/upcoming status, computed at read time and worded by the same
+ * function the renewals panel uses.
+ *
+ * It used to do its own arithmetic: floor((date - Date.now()) / a day).
+ * That compares a date stored at UTC midnight against the current instant,
+ * so from mid-morning onward it lost a day — a policy expiring in twelve
+ * days read "Expires in 11d" here while /compliance correctly said "due in
+ * 12 days". Browser testing caught both numbers on screen for one record.
+ * Two answers for the same fact is worse than either being wrong, because
+ * now neither can be trusted.
+ *
+ * It also warned at a flat 60 days for both policies and bonds, which
+ * disagreed with the per-kind horizons the renewals panel ranks by.
+ */
+function dateStatus(date: Date | null, kind: RenewalKind) {
   if (!date) return null;
-  const daysUntil = Math.floor((date.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-  if (daysUntil < 0) return { text: "Expired", className: "text-red-400" };
-  if (daysUntil <= 60) return { text: `${dueWord} in ${daysUntil}d`, className: "text-amber-400" };
+  const renewal = classifyRenewal(
+    {
+      id: "",
+      kind,
+      title: "",
+      detail: null,
+      date: toIsoDate(date),
+      expectsDate: true,
+      href: "",
+    },
+    serverToday(),
+  );
+  if (renewal.urgency === "EXPIRED") return { text: "Expired", className: "text-red-400" };
+  if (renewal.urgency === "DUE_SOON") {
+    return { text: renewalTiming(renewal), className: "text-amber-400" };
+  }
   return null;
 }
 
@@ -80,7 +115,7 @@ export default async function SettingsPage({
     );
   }
 
-  const [connection, locations, insurancePolicies, bonds] = await Promise.all([
+  const [connection, locations, insurancePolicies, bonds, licences, classifications] = await Promise.all([
     prisma.quickBooksConnection.findUnique({
       where: { companyId: company.id },
       include: { connectedByUser: true },
@@ -88,6 +123,18 @@ export default async function SettingsPage({
     prisma.companyLocation.findMany({ where: { companyId: company.id }, orderBy: { createdAt: "asc" } }),
     prisma.companyInsurancePolicy.findMany({ where: { companyId: company.id }, orderBy: { createdAt: "asc" } }),
     prisma.companyBond.findMany({ where: { companyId: company.id }, orderBy: { createdAt: "asc" } }),
+    prisma.companyLicense.findMany({
+      where: { companyId: company.id },
+      orderBy: [{ jurisdictionName: "asc" }, { licenseNumber: "asc" }],
+    }),
+    // A global lookup, not scoped to a company. Empty today — deliberately
+    // seeded only for jurisdictions with a real, verified code list, since
+    // the schema is explicit that a wrong code here is worse than none. The
+    // form falls back to free text, which is correct for Colorado anyway.
+    prisma.licenseClassificationReference.findMany({
+      orderBy: [{ jurisdictionName: "asc" }, { code: "asc" }],
+      select: { jurisdictionName: true, code: true, label: true },
+    }),
   ]);
 
   return (
@@ -170,11 +217,7 @@ export default async function SettingsPage({
                     </p>
                   )}
                 </div>
-                <form action={deleteCompanyLocation.bind(null, location.id)}>
-                  <SubmitButton type="submit" className="text-sm text-red-400 hover:underline">
-                    Delete
-                  </SubmitButton>
-                </form>
+                <ConfirmDeleteButton action={deleteCompanyLocation.bind(null, location.id)} />
               </li>
             ))}
           </ul>
@@ -239,6 +282,34 @@ export default async function SettingsPage({
       </section>
 
       <section className="mb-10">
+        <h2 className="mb-3 text-sm font-semibold text-slate-300">Contractor licences</h2>
+        <p className="mb-4 text-sm text-slate-400">
+          One row per licence you hold, not per state — some jurisdictions have no state licence at
+          all, only municipal ones, so working in two Colorado cities means two rows here. These feed
+          the renewals list on Compliance.
+        </p>
+        <CompanyLicenses
+          licences={licences.map((licence) => ({
+            id: licence.id,
+            jurisdictionType: licence.jurisdictionType,
+            jurisdictionName: licence.jurisdictionName,
+            classificationCode: licence.classificationCode,
+            classificationLabel: licence.classificationLabel,
+            licenseNumber: licence.licenseNumber,
+            issueDate: toIsoDate(licence.issueDate),
+            expirationDate: toIsoDate(licence.expirationDate),
+            status: licence.status,
+            bondNumber: licence.bondNumber,
+          }))}
+          classifications={classifications}
+          // Passed down rather than computed in the browser: the client
+          // deciding what day it is would disagree with this render.
+          today={serverToday()}
+          canManage={currentUser.role === "OWNER"}
+        />
+      </section>
+
+      <section className="mb-10">
         <h2 className="mb-3 text-sm font-semibold text-slate-300">Insurance policies</h2>
         <p className="mb-4 text-sm text-slate-400">
           This company&apos;s own coverage — the source data per-job certificates of insurance would
@@ -248,7 +319,7 @@ export default async function SettingsPage({
         {insurancePolicies.length > 0 && (
           <ul className="mb-4 divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900">
             {insurancePolicies.map((policy) => {
-              const status = dateStatus(policy.expirationDate, "Expires");
+              const status = dateStatus(policy.expirationDate, "INSURANCE_POLICY");
               return (
                 <li key={policy.id} className="flex items-start justify-between gap-4 p-4">
                   <div>
@@ -264,11 +335,7 @@ export default async function SettingsPage({
                       {status && <span className={`ml-2 ${status.className}`}>{status.text}</span>}
                     </p>
                   </div>
-                  <form action={deleteInsurancePolicy.bind(null, policy.id)}>
-                    <SubmitButton type="submit" className="text-sm text-red-400 hover:underline">
-                      Delete
-                    </SubmitButton>
-                  </form>
+                  <ConfirmDeleteButton action={deleteInsurancePolicy.bind(null, policy.id)} />
                 </li>
               );
             })}
@@ -333,7 +400,7 @@ export default async function SettingsPage({
         {bonds.length > 0 && (
           <ul className="mb-4 divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900">
             {bonds.map((bond) => {
-              const status = dateStatus(bond.renewalDate, "Renewal due");
+              const status = dateStatus(bond.renewalDate, "BOND");
               return (
                 <li key={bond.id} className="flex items-start justify-between gap-4 p-4">
                   <div>
@@ -358,11 +425,7 @@ export default async function SettingsPage({
                       {status && <span className={`ml-2 ${status.className}`}>{status.text}</span>}
                     </p>
                   </div>
-                  <form action={deleteBond.bind(null, bond.id)}>
-                    <SubmitButton type="submit" className="text-sm text-red-400 hover:underline">
-                      Delete
-                    </SubmitButton>
-                  </form>
+                  <ConfirmDeleteButton action={deleteBond.bind(null, bond.id)} />
                 </li>
               );
             })}

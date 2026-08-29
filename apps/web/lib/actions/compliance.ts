@@ -5,7 +5,7 @@ import { put } from "@vercel/blob";
 import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@prova/db";
 import { extractComplianceDocument } from "@prova/integrations";
-import { BOND_TYPES, COMPLIANCE_DOCUMENT_TYPES, INSURANCE_POLICY_TYPES, assertOwner, enumFromForm, nullableDecimalFromForm } from "./shared";
+import { BOND_TYPES, COMPLIANCE_DOCUMENT_TYPES, INSURANCE_POLICY_TYPES, JURISDICTION_TYPES, SETTABLE_LICENSE_STATUSES, type ActionResult, actionFail, actionOk, assertOwner, enumFromForm, nullableDecimalFromForm } from "./shared";
 
 /** Adds a company insurance policy record (GL, workers' comp, auto, umbrella). */
 export async function createInsurancePolicy(formData: FormData) {
@@ -245,3 +245,145 @@ export async function deleteComplianceDocument(documentId: string) {
 // Vendors (Cyrus's lane — WORK-SPLIT.md task 2). Appended at the end of the
 // file per WORK-SPLIT.md's shared-file rule.
 // ---------------------------------------------------------------------------
+
+/* ------------------------------------------------------------------ */
+/* Contractor licences                                                 */
+/* ------------------------------------------------------------------ */
+
+/**
+ * A licence a company holds, per jurisdiction.
+ *
+ * One row per licence HELD, not per state — the schema is explicit about
+ * why: Colorado has no state licence at all, only municipal ones, so a
+ * company working in two Colorado cities holds two rows here and no
+ * "Colorado" row exists.
+ *
+ * These actions return ActionResult rather than throwing. Production
+ * redacts thrown Server Action messages, so "That licence number is
+ * already recorded" would reach a user as an unexplained failure.
+ */
+
+/** A yyyy-mm-dd from a date input, at UTC midnight — or null when blank.
+ * Returns undefined when the text is present but not a date, so the caller
+ * can say so rather than storing an Invalid Date. */
+function dateFromForm(formData: FormData, key: string): Date | null | undefined {
+  const raw = String(formData.get(key) ?? "").trim();
+  if (!raw) return null;
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+}
+
+function licenceFieldsFromForm(formData: FormData) {
+  const jurisdictionName = String(formData.get("jurisdictionName") ?? "").trim();
+  const licenseNumber = String(formData.get("licenseNumber") ?? "").trim();
+  const classificationCode = String(formData.get("classificationCode") ?? "").trim();
+  const classificationLabel = String(formData.get("classificationLabel") ?? "").trim();
+  const bondNumber = String(formData.get("bondNumber") ?? "").trim();
+
+  if (!jurisdictionName) return actionFail("Which jurisdiction issued it?");
+  if (!licenseNumber) return actionFail("A licence number is required.");
+
+  const issueDate = dateFromForm(formData, "issueDate");
+  if (issueDate === undefined) return actionFail("That issue date isn't a date.");
+  const expirationDate = dateFromForm(formData, "expirationDate");
+  if (expirationDate === undefined) return actionFail("That expiration date isn't a date.");
+
+  // An expiry before the issue date is always a typo, and it would show up
+  // in the renewals panel as an already-expired licence you just added.
+  if (issueDate && expirationDate && expirationDate < issueDate) {
+    return actionFail("The expiration date is before the issue date.");
+  }
+
+  return {
+    jurisdictionType: enumFromForm(formData, "jurisdictionType", JURISDICTION_TYPES),
+    jurisdictionName,
+    licenseNumber,
+    classificationCode: classificationCode || null,
+    classificationLabel: classificationLabel || null,
+    issueDate,
+    expirationDate,
+    status: enumFromForm(formData, "status", SETTABLE_LICENSE_STATUSES),
+    bondNumber: bondNumber || null,
+  };
+}
+
+export async function createCompanyLicense(formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  assertOwner(context, "Only the account owner can add a licence");
+  const { company } = context;
+
+  const fields = licenceFieldsFromForm(formData);
+  if ("ok" in fields) return fields;
+
+  // The same licence entered twice in two jurisdictions is legitimate (a
+  // number is only unique within the body that issued it), so this checks
+  // the pair, not the number alone.
+  const existing = await prisma.companyLicense.findFirst({
+    where: {
+      companyId: company.id,
+      licenseNumber: fields.licenseNumber,
+      jurisdictionName: fields.jurisdictionName,
+    },
+  });
+  if (existing) {
+    return actionFail(`${fields.jurisdictionName} licence ${fields.licenseNumber} is already recorded.`);
+  }
+
+  await prisma.companyLicense.create({ data: { companyId: company.id, ...fields } });
+
+  revalidatePath("/settings");
+  revalidatePath("/compliance");
+  return actionOk;
+}
+
+export async function updateCompanyLicense(
+  licenseId: string,
+  formData: FormData,
+): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  assertOwner(context, "Only the account owner can edit a licence");
+  const { company } = context;
+
+  const licence = await prisma.companyLicense.findUnique({ where: { id: licenseId } });
+  if (!licence || licence.companyId !== company.id) {
+    return actionFail("That licence no longer exists.");
+  }
+
+  const fields = licenceFieldsFromForm(formData);
+  if ("ok" in fields) return fields;
+
+  const clash = await prisma.companyLicense.findFirst({
+    where: {
+      companyId: company.id,
+      licenseNumber: fields.licenseNumber,
+      jurisdictionName: fields.jurisdictionName,
+      id: { not: licenseId },
+    },
+  });
+  if (clash) {
+    return actionFail(`${fields.jurisdictionName} licence ${fields.licenseNumber} is already recorded.`);
+  }
+
+  await prisma.companyLicense.update({ where: { id: licenseId }, data: fields });
+
+  revalidatePath("/settings");
+  revalidatePath("/compliance");
+  return actionOk;
+}
+
+export async function deleteCompanyLicense(licenseId: string): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  assertOwner(context, "Only the account owner can remove a licence");
+  const { company } = context;
+
+  const licence = await prisma.companyLicense.findUnique({ where: { id: licenseId } });
+  if (!licence || licence.companyId !== company.id) {
+    return actionFail("That licence no longer exists.");
+  }
+
+  await prisma.companyLicense.delete({ where: { id: licenseId } });
+
+  revalidatePath("/settings");
+  revalidatePath("/compliance");
+  return actionOk;
+}
