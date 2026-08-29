@@ -6,6 +6,7 @@ import {
   updateCatalogDefaultsFromActuals,
 } from "@/lib/actions";
 import { catalogActuals } from "@/lib/catalog-actuals";
+import { CatalogImport } from "@/components/CatalogImport";
 import { money } from "@/lib/money";
 import { SubmitButton } from "@/components/SubmitButton";
 
@@ -134,6 +135,10 @@ export default async function CatalogPage() {
         (&quot;Save as catalog item&quot;), then pull it into a new estimate with &quot;Add from
         catalog&quot; on any ESTIMATE-stage job.
       </p>
+
+      <div className="mb-6">
+        <CatalogImport existingDescriptions={entries.map((entry) => entry.description)} />
+      </div>
 
       <section className="mb-8">
         {entries.length === 0 ? (

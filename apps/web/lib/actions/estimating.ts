@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@prova/db";
+import { parseCatalogImport, splitAgainstExisting } from "@/lib/catalog-import";
 import { BID_INVITATION_STATUSES, assertEditableDirectly, assertJobInCompany, assertOwner, craftClassificationIdFromForm, decimalFromForm, enumFromForm, nullableDecimalFromForm, tradeScopeFromForm } from "./shared";
 
 /** Logs a GC inviting this company to bid — tracked independent of Job,
@@ -275,6 +276,63 @@ export async function updateCatalogDefaultsFromActuals(entryId: string, formData
   }
 
   await prisma.lineItemCatalogEntry.update({ where: { id: entryId }, data });
+
+  revalidatePath("/catalog");
+}
+
+/**
+ * Creates catalog entries from a pasted price list.
+ *
+ * The text is re-parsed here rather than trusting rows the browser sends.
+ * The client parses the same text with the same function to render a
+ * preview, but a preview is a courtesy — what gets written is decided from
+ * the raw text on the server, so a tampered or stale payload can't put
+ * numbers into the catalog that nobody saw.
+ *
+ * Existing entries are never overwritten and never silently duplicated.
+ * Re-importing an updated price list is the normal case, and a catalog with
+ * two "5/8in Type X board" rows at different prices is worse than one that
+ * refused the second. Updating a price stays where it already lives: the
+ * entry's own controls, and the actuals loop.
+ */
+export async function importCatalogEntries(formData: FormData) {
+  const { company, ...user } = await requireCompanyContext();
+  assertOwner(user, "Only the account owner can import a price list");
+
+  const text = String(formData.get("csv") ?? "");
+  if (!text.trim()) {
+    throw new Error("Paste a price list, or choose a CSV file, before importing");
+  }
+
+  const { rows } = parseCatalogImport(text);
+  if (rows.length === 0) {
+    throw new Error("Nothing readable to import — check the preview for what went wrong");
+  }
+
+  const existing = await prisma.lineItemCatalogEntry.findMany({
+    where: { companyId: company.id },
+    select: { description: true },
+  });
+  const { fresh } = splitAgainstExisting(
+    rows,
+    existing.map((entry) => entry.description),
+  );
+
+  if (fresh.length === 0) {
+    throw new Error("Every item in that list is already in the catalog — nothing to add");
+  }
+
+  await prisma.lineItemCatalogEntry.createMany({
+    data: fresh.map((row) => ({
+      companyId: company.id,
+      description: row.description,
+      unit: row.unit,
+      defaultUnitPrice: row.unitPrice != null ? row.unitPrice.toString() : null,
+      defaultBudgetedUnitCost: row.budgetedUnitCost != null ? row.budgetedUnitCost.toString() : null,
+      defaultLaborHours: row.laborHours != null ? row.laborHours.toString() : null,
+      tradeScope: row.tradeScope,
+    })),
+  });
 
   revalidatePath("/catalog");
 }
