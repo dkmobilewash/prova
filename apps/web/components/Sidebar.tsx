@@ -7,7 +7,7 @@ import type { ReactNode } from "react";
 const NAV_ITEMS: { href: string; label: string; icon: ReactNode }[] = [
   {
     href: "/dashboard",
-    label: "Jobs",
+    label: "Jobs & Estimates",
     icon: (
       <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5">
         <path
@@ -18,21 +18,6 @@ const NAV_ITEMS: { href: string; label: string; icon: ReactNode }[] = [
           strokeLinejoin="round"
         />
         <path d="M4 10.5h12" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-      </svg>
-    ),
-  },
-  {
-    href: "/estimating",
-    label: "Estimating",
-    icon: (
-      <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5">
-        <path
-          d="M6 3.5h8A1.5 1.5 0 0 1 15.5 5v10A1.5 1.5 0 0 1 14 16.5H6A1.5 1.5 0 0 1 4.5 15V5A1.5 1.5 0 0 1 6 3.5Z"
-          stroke="currentColor"
-          strokeWidth="1.4"
-          strokeLinejoin="round"
-        />
-        <path d="M7.2 7h5.6M7.2 10h5.6M7.2 13h3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
       </svg>
     ),
   },
