@@ -2,25 +2,14 @@ import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import {
   createLineItemCatalogEntry,
-  deleteLineItemCatalogEntry,
   updateCatalogDefaultsFromActuals,
 } from "@/lib/actions";
 import { catalogActuals } from "@/lib/catalog-actuals";
 import { CatalogImport } from "@/components/CatalogImport";
+import { CatalogEntryRow } from "@/components/CatalogEntryRow";
+import { TRADE_SCOPE_OPTIONS, tradeScopeLabel } from "@/lib/trade-scopes";
 import { money } from "@/lib/money";
 import { SubmitButton } from "@/components/SubmitButton";
-
-const TRADE_SCOPE_OPTIONS = [
-  { value: "METAL_FRAMING_DRYWALL", label: "Metal framing / drywall" },
-  { value: "LATH_PLASTER", label: "Lath & plaster" },
-  { value: "EIFS", label: "EIFS" },
-  { value: "ACOUSTICAL_CEILINGS", label: "Acoustical ceilings" },
-  { value: "FIREPROOFING", label: "Fireproofing" },
-] as const;
-
-function labelFor(value: string | null) {
-  return TRADE_SCOPE_OPTIONS.find((t) => t.value === value)?.label ?? null;
-}
 
 type CatalogEntryWithLines = {
   id: string;
@@ -146,8 +135,12 @@ export default async function CatalogPage() {
         ) : (
           <ul className="divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900">
             {entries.map((entry) => (
-              <li key={entry.id} className="flex flex-wrap items-center justify-between gap-3 p-4">
-                <div>
+              <CatalogEntryRow
+                key={entry.id}
+                entryId={entry.id}
+                linkedLineCount={entry.jobLineItems.length}
+              >
+                <>
                   <p className="font-medium text-slate-100">{entry.description}</p>
                   <p className="text-sm text-slate-400">
                     {entry.unit && <>{entry.unit} · </>}
@@ -155,7 +148,7 @@ export default async function CatalogPage() {
                     {entry.defaultBudgetedUnitCost != null && (
                       <>{money(Number(entry.defaultBudgetedUnitCost))} cost · </>
                     )}
-                    {labelFor(entry.tradeScope) ?? "No trade tag"}
+                    {tradeScopeLabel(entry.tradeScope) ?? "No trade tag"}
                     {entry.craftClassification && (
                       <>
                         {" "}
@@ -166,13 +159,8 @@ export default async function CatalogPage() {
                     {entry.defaultLaborHours != null && <> · {entry.defaultLaborHours.toString()} hrs</>}
                   </p>
                   <ActualsLine entry={entry} />
-                </div>
-                <form action={deleteLineItemCatalogEntry.bind(null, entry.id)}>
-                  <SubmitButton type="submit" className="text-xs text-red-400 hover:underline">
-                    Delete
-                  </SubmitButton>
-                </form>
-              </li>
+                </>
+              </CatalogEntryRow>
             ))}
           </ul>
         )}

@@ -12,6 +12,38 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### Deleting a catalog entry now asks twice (Diego)
+
+Browser testing found it: four deletions, four rows gone on the next
+render, no confirm anywhere. Every other list in the app already asks
+twice — this one was written with a bare form posting straight to the
+action, and neither typecheck, lint, tests nor the build has any opinion
+about that.
+
+Worse than an ordinary misclick, because of something invisible on the
+row. A `JobLineItem` records the catalog entry it was priced from, and
+that relation is optional — so Prisma's default is to NULL the link
+rather than refuse the delete. The line items survive intact. What dies
+is the actuals feedback loop for that work, silently, with nothing on
+screen ever mentioning it. So the confirm step names how many costed
+lines are about to be unlinked. That is the number that should make
+someone stop, and it was the number nobody could see.
+
+`deleteLineItemCatalogEntry` now returns `ActionResult` instead of
+throwing. Production redacts thrown Server Action messages, so the old
+`throw new Error("Catalog entry not found")` would have reached a user as
+an unexplained failure.
+
+Two smaller things from the same test run. The import preview derived a
+trade label by lowercasing the enum, so a row previewed as "lath plaster"
+and saved as "Lath & plaster" — nothing wrong with the data, but a
+preview whose wording doesn't match what lands is a preview you stop
+trusting, and that preview is the only thing between a bad file and the
+catalog. Both now read from one `trade-scopes.ts`. And the active nav
+link carried its state in colour only; it now also carries
+`aria-current="page"`.
+
+
 ### The app now works on a phone (Diego)
 
 Half a subcontractor's people are in the field, and the app assumed a

@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@prova/db";
 import { parseCatalogImport, splitAgainstExisting } from "@/lib/catalog-import";
-import { BID_INVITATION_STATUSES, assertEditableDirectly, assertJobInCompany, assertOwner, craftClassificationIdFromForm, decimalFromForm, enumFromForm, nullableDecimalFromForm, tradeScopeFromForm } from "./shared";
+import { ActionResult, actionFail, actionOk, BID_INVITATION_STATUSES, assertEditableDirectly, assertJobInCompany, assertOwner, craftClassificationIdFromForm, decimalFromForm, enumFromForm, nullableDecimalFromForm, tradeScopeFromForm } from "./shared";
 
 /** Logs a GC inviting this company to bid — tracked independent of Job,
  * since most invitations are declined or lost and never become one. */
@@ -109,17 +109,20 @@ export async function createLineItemCatalogEntry(formData: FormData) {
   revalidatePath("/catalog");
 }
 
-export async function deleteLineItemCatalogEntry(catalogEntryId: string) {
+export async function deleteLineItemCatalogEntry(catalogEntryId: string): Promise<ActionResult> {
   const { company } = await requireCompanyContext();
 
   const entry = await prisma.lineItemCatalogEntry.findUnique({ where: { id: catalogEntryId } });
   if (!entry || entry.companyId !== company.id) {
-    throw new Error("Catalog entry not found");
+    // Returned, not thrown: production redacts thrown Server Action messages,
+    // so a throw here would surface as an unexplained failure on the row.
+    return actionFail("That catalog entry no longer exists.");
   }
 
   await prisma.lineItemCatalogEntry.delete({ where: { id: catalogEntryId } });
 
   revalidatePath("/catalog");
+  return actionOk;
 }
 
 /** Turns an existing estimate line into a reusable catalog entry — the way

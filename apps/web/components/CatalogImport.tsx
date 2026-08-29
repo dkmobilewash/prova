@@ -4,6 +4,7 @@ import { useMemo, useRef, useState } from "react";
 import { importCatalogEntries } from "@/lib/actions";
 import { MAX_IMPORT_ROWS, parseCatalogImport, splitAgainstExisting } from "@/lib/catalog-import";
 import { money } from "@/lib/money";
+import { tradeScopeLabel } from "@/lib/trade-scopes";
 import { SubmitButton } from "@/components/SubmitButton";
 
 /**
@@ -189,7 +190,7 @@ export function CatalogImport({ existingDescriptions }: { existingDescriptions: 
                         {row.laborHours ?? "—"}
                       </td>
                       <td className="px-3 py-1.5 text-slate-400">
-                        {row.tradeScope ? row.tradeScope.replaceAll("_", " ").toLowerCase() : "—"}
+                        {tradeScopeLabel(row.tradeScope) ?? "—"}
                       </td>
                     </tr>
                   ))}

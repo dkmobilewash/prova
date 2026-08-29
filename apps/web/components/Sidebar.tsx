@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { NAV_ITEMS } from "@/components/navItems";
-import type { ReactNode } from "react";
 
 export function Sidebar({ companyName }: { companyName: string }) {
   const pathname = usePathname();
@@ -24,6 +23,7 @@ export function Sidebar({ companyName }: { companyName: string }) {
             <Link
               key={item.href}
               href={item.href}
+              aria-current={isActive ? "page" : undefined}
               className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
                 isActive
                   ? "bg-blue-500/15 text-blue-300"
