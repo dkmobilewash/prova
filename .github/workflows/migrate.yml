@@ -1,0 +1,79 @@
+# Applies database migrations when a PR merges to main.
+#
+# This used to live in the Vercel build. It moved here after a promoted
+# preview revealed the hole: promoting reuses the preview's already-built
+# output, so the build command never re-runs and its migrations never
+# apply — a deployment could become production carrying code whose schema
+# changes had never reached any database.
+#
+# Merging is the decision to change production. A build is not. So this
+# runs on the merge, once, and verifies the result rather than trusting it.
+#
+# REQUIRED SECRETS — without both, this job fails loudly and migrations do
+# not happen at all:
+#   DATABASE_URL  the pooled Neon endpoint the app queries
+#   DIRECT_URL    the DIRECT endpoint of that SAME Neon branch
+# They must be the same database. The script refuses to run if they are
+# not, which is the check that would have caught the drift that prompted
+# this file: builds migrating one endpoint while both developers read
+# another, for hours, with every log line reporting success.
+
+name: Migrate
+
+on:
+  push:
+    branches: [main]
+  # Re-runnable by hand when a merge landed while the database was
+  # unreachable — a Neon compute waking from idle can outlast the job.
+  workflow_dispatch:
+
+# Never let two merges migrate at once. Prisma takes an advisory lock, so
+# the loser would fail rather than corrupt anything — but a failed migrate
+# on main reads as a broken deploy and costs someone an hour.
+concurrency:
+  group: migrate-production
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    name: Apply pending migrations
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Fail early if the secrets are missing
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+        run: |
+          set -e
+          missing=""
+          [ -z "$DATABASE_URL" ] && missing="$missing DATABASE_URL"
+          [ -z "$DIRECT_URL" ] && missing="$missing DIRECT_URL"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secret(s):$missing"
+            echo "Migrations cannot run. Add them under Settings → Secrets and"
+            echo "variables → Actions. DIRECT_URL must be the direct (non-pooler)"
+            echo "endpoint of the SAME Neon branch DATABASE_URL points at."
+            exit 1
+          fi
+
+      - run: pnpm install --frozen-lockfile
+
+      # Prints which database it is talking to, refuses to run if
+      # DATABASE_URL and DIRECT_URL are different databases, applies, then
+      # reads back `migrate status` to verify rather than trust.
+      - name: Apply and verify
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+        run: pnpm --filter @prova/db run migrate:deploy

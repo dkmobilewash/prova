@@ -115,7 +115,39 @@ Vercel deployment and repo settings). Each drives their own agent.
 - Edit code by reading the actual text and replacing it exactly — a
   structural regex once inserted code into the wrong block and produced
   14 cascading errors.
-- **There is ONE Neon database and it is production.** Previews share it.
+- **How many Neon databases there are is OPEN, and the old answer was
+  wrong.** This file said "there is ONE Neon database and it is
+  production" for weeks. On 2026-08-29 two production build logs showed
+  `prisma migrate deploy` connecting to `ep-little-sea-a6bdnaw2` while both
+  developers' `.env` pointed at `ep-icy-hat-afqau56u`, and Cyrus's
+  `_prisma_migrations` timestamps showed two merged migrations reaching
+  that second database only when he ran Prisma by hand, hours later. So
+  builds and laptops were reading different databases. Which endpoint
+  Vercel's `DATABASE_URL` uses has not been read yet; until it has, do not
+  reason from a count. Treat a merged migration as UNAPPLIED until
+  `prisma migrate status` says otherwise against the database you mean.
+- **Every build now prints which database it is talking to** (host and
+  name, never credentials), and refuses to build if `DATABASE_URL` and
+  `DIRECT_URL` resolve to different databases. That check is
+  `packages/db/scripts/check-schema.mjs`; the parsing behind it is tested
+  in `apps/web/lib/db-target.test.ts` against the two endpoints that
+  actually disagreed. The app logs its own connection target once per cold
+  start.
+- **Migrations are applied by CI on merge to main**
+  (`.github/workflows/migrate.yml`), not by the Vercel build. They used to
+  run in the build, gated to `VERCEL_ENV=production`. That gate was blind
+  to promotion: promoting a preview to production reuses the preview's
+  already-built output, so the build command never re-runs and its
+  migrations never apply — and two deployments were promoted that way. The
+  workflow needs `DATABASE_URL` and `DIRECT_URL` repository secrets; it
+  fails loudly without them rather than skipping. A production Vercel build
+  now REFUSES to build when migrations are pending; a preview only warns,
+  because a branch's own migration legitimately hasn't merged yet.
+- **Do not promote a preview to production.** Merge to `main` instead, so
+  the build actually runs. Previews are public (no deployment protection),
+  carry the branch's latest commit at a stable alias, and are what browser
+  testing should point at.
+- Previews share whatever database Vercel is configured with.
   Until 2026-08-28 every deployment migrated it, so a migration went live
   ON PUSH (`add_submittals` reached production from an unmerged branch);
   #18 gated that to `VERCEL_ENV=production`, so migrations now land when

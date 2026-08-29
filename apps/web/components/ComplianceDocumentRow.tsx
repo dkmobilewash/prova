@@ -60,6 +60,7 @@ export interface ComplianceDocumentRowData {
  * it isn't a lock) as well as for editing a manually-entered record. */
 export function ComplianceDocumentRow({ doc, canDelete }: { doc: ComplianceDocumentRowData; canDelete: boolean }) {
   const [isEditing, setIsEditing] = useState(false);
+  const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -167,8 +168,12 @@ export function ComplianceDocumentRow({ doc, canDelete }: { doc: ComplianceDocum
 
   return (
     <li className="flex flex-col gap-2 p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
+      {/* flex-wrap, and the text column may shrink: this row's action
+          cluster was shrink-0 and unwrappable, so on a 360px screen it ran
+          past the viewport and dragged the whole page sideways. Found by
+          measuring, not by looking — scrollWidth 429 against a 360 client. */}
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <p className="font-medium text-slate-100">{TYPE_LABELS[doc.type] ?? doc.type}</p>
             <span
@@ -212,7 +217,7 @@ export function ComplianceDocumentRow({ doc, canDelete }: { doc: ComplianceDocum
             </a>
           )}
         </div>
-        <div className="flex shrink-0 items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <button
             type="button"
             onClick={() => setIsEditing(true)}
@@ -230,13 +235,37 @@ export function ComplianceDocumentRow({ doc, canDelete }: { doc: ComplianceDocum
               </button>
             </form>
           )}
-          {canDelete && (
-            <form action={deleteComplianceDocument.bind(null, doc.id)}>
-              <button type="submit" className="text-xs text-red-400 hover:underline">
+          {/* Two steps, like every other list. A compliance document is
+              evidence — a signed waiver or a certificate someone sent you —
+              and one stray click should not be able to destroy it. */}
+          {canDelete &&
+            (isConfirmingDelete ? (
+              <>
+                <form action={deleteComplianceDocument.bind(null, doc.id)}>
+                  <button
+                    type="submit"
+                    className="rounded-md border border-red-500 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10"
+                  >
+                    Confirm delete
+                  </button>
+                </form>
+                <button
+                  type="button"
+                  onClick={() => setIsConfirmingDelete(false)}
+                  className="rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:border-slate-500"
+                >
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setIsConfirmingDelete(true)}
+                className="rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:border-red-500 hover:text-red-400"
+              >
                 Delete
               </button>
-            </form>
-          )}
+            ))}
         </div>
       </div>
     </li>

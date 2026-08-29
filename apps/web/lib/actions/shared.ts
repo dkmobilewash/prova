@@ -117,6 +117,22 @@ export const BOND_TYPES = ["LICENSE_BOND", "PERFORMANCE_PAYMENT_CAPACITY"] as co
 
 export const LOCATION_TYPES = ["HQ", "BRANCH_YARD", "WAREHOUSE"] as const;
 
+export const JURISDICTION_TYPES = ["STATE", "COUNTY", "CITY"] as const;
+
+/**
+ * The statuses a licence can be SET to.
+ *
+ * Deliberately not the whole `LicenseStatus` enum: EXPIRED is missing on
+ * purpose. Whether a licence has expired is decided by its expiration
+ * date, and storing that as a status too creates a second copy of a
+ * derived fact — which is exactly the contradiction the renewals panel
+ * has to detect and report ("marked active, but its date has passed").
+ * Rows that already store EXPIRED still render; nothing new can create
+ * one. The four here all describe a board's action on the licence, which
+ * no date can tell you.
+ */
+export const SETTABLE_LICENSE_STATUSES = ["ACTIVE", "SUSPENDED", "PENDING", "INACTIVE"] as const;
+
 export const COMPLIANCE_DOCUMENT_TYPES = [
   "LIEN_WAIVER",
   "CERTIFICATE_OF_INSURANCE",

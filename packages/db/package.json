@@ -11,7 +11,8 @@
     "migrate:deploy": "node scripts/migrate-deploy.mjs",
     "studio": "prisma studio",
     "lint": "echo 'no lint for db package'",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "check:schema": "node scripts/check-schema.mjs"
   },
   "dependencies": {
     "@prisma/client": "^6.1.0"
