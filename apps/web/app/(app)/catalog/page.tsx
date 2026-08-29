@@ -33,6 +33,20 @@ type CatalogEntryWithLines = {
  * generally have no path for actuals to come back, and the two halves have
  * been sitting one table apart here the entire time.
  */
+/**
+ * Variance as a percentage, signed from the number actually shown.
+ *
+ * Taking the sign from the raw value printed "−0%" once actuals matched the
+ * default — technically the sign of a tiny negative, but it reads as a
+ * defect. The sign has to agree with the digits beside it, and a variance
+ * that rounds away is better said in words than as a signed zero.
+ */
+function formatVariancePct(pct: number) {
+  const rounded = Math.round(pct * 100);
+  if (rounded === 0) return "on budget";
+  return `${rounded > 0 ? "+" : "−"}${Math.abs(rounded)}%`;
+}
+
 function ActualsLine({ entry }: { entry: CatalogEntryWithLines }) {
   const actuals = catalogActuals(
     entry.jobLineItems.map((line) => ({
@@ -61,13 +75,7 @@ function ActualsLine({ entry }: { entry: CatalogEntryWithLines }) {
           <>
             {" "}
             vs {money(actuals.defaultBudgetedUnitCost)} budgeted
-            {pct != null && (
-              <>
-                {" "}
-                ({pct > 0 ? "+" : "−"}
-                {Math.abs(pct * 100).toFixed(0)}%)
-              </>
-            )}
+            {pct != null && <> ({formatVariancePct(pct)})</>}
           </>
         )}
         {actuals.isFlagged && " — worth re-pricing"}
@@ -139,6 +147,9 @@ export default async function CatalogPage() {
                   <p className="text-sm text-slate-400">
                     {entry.unit && <>{entry.unit} · </>}
                     {entry.defaultUnitPrice != null && <>{money(Number(entry.defaultUnitPrice))}/unit · </>}
+                    {entry.defaultBudgetedUnitCost != null && (
+                      <>{money(Number(entry.defaultBudgetedUnitCost))} cost · </>
+                    )}
                     {labelFor(entry.tradeScope) ?? "No trade tag"}
                     {entry.craftClassification && (
                       <>
