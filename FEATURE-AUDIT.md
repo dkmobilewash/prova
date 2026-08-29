@@ -27,7 +27,7 @@ against a fresh clone.
 
 | Status | Count |
 | --- | --- |
-| Built | 58 |
+| Built | 59 |
 | Partial | 13 |
 | Missing | 35 |
 | Descoped | 1 |
@@ -53,7 +53,7 @@ contract terms, bid invitations, and payment reliability shipped same-day.*
 | Built | Per-GC contract terms (retainage %, payment terms, standard forms used) | `Contact.defaultRetainagePercent`, `.paymentTermsDays`, `.standardFormsUsed` |
 | Built | Bid invitation tracking (which GCs invite this company to bid, on what) | `BidInvitation` model — trade scope, status, due dates, linked to a `Contact` |
 
-## 03. Estimating & Bidding — 9 built · 0 partial · 0 missing
+## 03. Estimating & Bidding — 10 built · 0 partial · 0 missing
 
 *Updated from the original audit (was 2 built / 1 partial / 5 missing) — the
 catalog, bid tracking, historical bid database, labor hours, and estimate
@@ -67,6 +67,7 @@ versioning all shipped same-day.*
 | Built | Material takeoff quantities per line item (manual entry v1) | `JobLineItem.quantity` / `.unit` — entered directly or via AI draft |
 | Built | Labor hour estimates per line item, by craft classification | `JobLineItem.laborHours` + `.craftClassificationId` |
 | Built | Union fringe/burden rate tables applied to labor cost estimates | `lib/estimate-labor-cost.ts` reuses the same `findEffectiveFringeRateSchedule`/`calculateTimeEntryLaborCost` the actuals use, at straight time, priced at the job's planned start date. Read-only hint beside the hours field — never written into `budgetedUnitCost`, and shows nothing rather than a wrong number when no schedule is effective |
+| Built | Bulk import of a price list into the catalog | Paste from a spreadsheet or upload a CSV; headers matched loosely so an existing price list needs no renaming. Preview shows what will be added, what is already in the catalog, and every row it couldn't read, before anything is written. Existing entries are never overwritten or duplicated |
 | Built | Catalog defaults learn from what jobs actually cost | `JobLineItem.sourceCatalogEntryId` records which template a line came from; `/catalog` reports actual unit cost against the default across every line created from it, flags variance past 15% on 2+ costed lines, and offers a one-click update. Template only — never touches a `JobLineItem`, snapshot or invoice that already exists |
 | Built | Estimate versioning as scope changes pre-award | `EstimateVersion` — manual JSON snapshot checkpoint, not automatic |
 | Built | Estimate-to-contract conversion (winning bid becomes the SOV) | `markJobContracted` — the same line items become the contract, by design |

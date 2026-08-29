@@ -12,6 +12,71 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### Deleting a catalog entry now asks twice (Diego)
+
+Browser testing found it: four deletions, four rows gone on the next
+render, no confirm anywhere. Every other list in the app already asks
+twice — this one was written with a bare form posting straight to the
+action, and neither typecheck, lint, tests nor the build has any opinion
+about that.
+
+Worse than an ordinary misclick, because of something invisible on the
+row. A `JobLineItem` records the catalog entry it was priced from, and
+that relation is optional — so Prisma's default is to NULL the link
+rather than refuse the delete. The line items survive intact. What dies
+is the actuals feedback loop for that work, silently, with nothing on
+screen ever mentioning it. So the confirm step names how many costed
+lines are about to be unlinked. That is the number that should make
+someone stop, and it was the number nobody could see.
+
+`deleteLineItemCatalogEntry` now returns `ActionResult` instead of
+throwing. Production redacts thrown Server Action messages, so the old
+`throw new Error("Catalog entry not found")` would have reached a user as
+an unexplained failure.
+
+Two smaller things from the same test run. The import preview derived a
+trade label by lowercasing the enum, so a row previewed as "lath plaster"
+and saved as "Lath & plaster" — nothing wrong with the data, but a
+preview whose wording doesn't match what lands is a preview you stop
+trusting, and that preview is the only thing between a bad file and the
+catalog. Both now read from one `trade-scopes.ts`. And the active nav
+link carried its state in colour only; it now also carries
+`aria-current="page"`.
+
+
+### The app now works on a phone (Diego)
+
+Half a subcontractor's people are in the field, and the app assumed a
+desktop. The sidebar was a fixed 240px full-height column with no
+responsive rules at all and no drawer — on a 360px screen that left a third
+of the width to work in. Not a cosmetic problem: most of the crew couldn't
+use it.
+
+The rail is now desktop-only (`md:` and up) and gains `sticky top-0`, so it
+stays put instead of scrolling away on a long job page. Below `md` the same
+links live in a drawer opened from the top bar.
+
+Both read from one shared `NAV_ITEMS` list. That is the point of extracting
+it: a route added to the rail and forgotten in the drawer would be a page
+that exists on a laptop and not on a phone, which nobody notices until a
+foreman reports it.
+
+Drawer behaviour worth naming, each because its absence reads as the tap
+not working: navigating closes it, Escape closes it, tapping the backdrop
+closes it, and the link list scrolls on its own so the close button can't be
+pushed off screen.
+
+Also fixed: `ContractSummary`'s table had no scroller of its own, so on a
+phone it dragged the whole page sideways. It renders on `/esign` and the
+client portal — the two places an outside party sees, and the one a client
+signs on their phone. Every other table in the app already had one.
+
+Not fixed here, and worth being straight about: this is the shell, not a
+mobile design pass. Individual pages still lay out for a wide screen, and
+the forms are dense. The app is now usable on a phone; it is not yet good
+on one.
+
+
 ### Duplicate records from an exhausted pool: the half that's fixable (Diego)
 
 Follow-up to the connection-pool finding below, which was documented and

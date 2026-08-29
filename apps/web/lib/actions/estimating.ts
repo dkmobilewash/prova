@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@prova/db";
-import { BID_INVITATION_STATUSES, assertEditableDirectly, assertJobInCompany, assertOwner, craftClassificationIdFromForm, decimalFromForm, enumFromForm, nullableDecimalFromForm, tradeScopeFromForm } from "./shared";
+import { parseCatalogImport, splitAgainstExisting } from "@/lib/catalog-import";
+import { ActionResult, actionFail, actionOk, BID_INVITATION_STATUSES, assertEditableDirectly, assertJobInCompany, assertOwner, craftClassificationIdFromForm, decimalFromForm, enumFromForm, nullableDecimalFromForm, tradeScopeFromForm } from "./shared";
 
 /** Logs a GC inviting this company to bid — tracked independent of Job,
  * since most invitations are declined or lost and never become one. */
@@ -108,17 +109,20 @@ export async function createLineItemCatalogEntry(formData: FormData) {
   revalidatePath("/catalog");
 }
 
-export async function deleteLineItemCatalogEntry(catalogEntryId: string) {
+export async function deleteLineItemCatalogEntry(catalogEntryId: string): Promise<ActionResult> {
   const { company } = await requireCompanyContext();
 
   const entry = await prisma.lineItemCatalogEntry.findUnique({ where: { id: catalogEntryId } });
   if (!entry || entry.companyId !== company.id) {
-    throw new Error("Catalog entry not found");
+    // Returned, not thrown: production redacts thrown Server Action messages,
+    // so a throw here would surface as an unexplained failure on the row.
+    return actionFail("That catalog entry no longer exists.");
   }
 
   await prisma.lineItemCatalogEntry.delete({ where: { id: catalogEntryId } });
 
   revalidatePath("/catalog");
+  return actionOk;
 }
 
 /** Turns an existing estimate line into a reusable catalog entry — the way
@@ -275,6 +279,63 @@ export async function updateCatalogDefaultsFromActuals(entryId: string, formData
   }
 
   await prisma.lineItemCatalogEntry.update({ where: { id: entryId }, data });
+
+  revalidatePath("/catalog");
+}
+
+/**
+ * Creates catalog entries from a pasted price list.
+ *
+ * The text is re-parsed here rather than trusting rows the browser sends.
+ * The client parses the same text with the same function to render a
+ * preview, but a preview is a courtesy — what gets written is decided from
+ * the raw text on the server, so a tampered or stale payload can't put
+ * numbers into the catalog that nobody saw.
+ *
+ * Existing entries are never overwritten and never silently duplicated.
+ * Re-importing an updated price list is the normal case, and a catalog with
+ * two "5/8in Type X board" rows at different prices is worse than one that
+ * refused the second. Updating a price stays where it already lives: the
+ * entry's own controls, and the actuals loop.
+ */
+export async function importCatalogEntries(formData: FormData) {
+  const { company, ...user } = await requireCompanyContext();
+  assertOwner(user, "Only the account owner can import a price list");
+
+  const text = String(formData.get("csv") ?? "");
+  if (!text.trim()) {
+    throw new Error("Paste a price list, or choose a CSV file, before importing");
+  }
+
+  const { rows } = parseCatalogImport(text);
+  if (rows.length === 0) {
+    throw new Error("Nothing readable to import — check the preview for what went wrong");
+  }
+
+  const existing = await prisma.lineItemCatalogEntry.findMany({
+    where: { companyId: company.id },
+    select: { description: true },
+  });
+  const { fresh } = splitAgainstExisting(
+    rows,
+    existing.map((entry) => entry.description),
+  );
+
+  if (fresh.length === 0) {
+    throw new Error("Every item in that list is already in the catalog — nothing to add");
+  }
+
+  await prisma.lineItemCatalogEntry.createMany({
+    data: fresh.map((row) => ({
+      companyId: company.id,
+      description: row.description,
+      unit: row.unit,
+      defaultUnitPrice: row.unitPrice != null ? row.unitPrice.toString() : null,
+      defaultBudgetedUnitCost: row.budgetedUnitCost != null ? row.budgetedUnitCost.toString() : null,
+      defaultLaborHours: row.laborHours != null ? row.laborHours.toString() : null,
+      tradeScope: row.tradeScope,
+    })),
+  });
 
   revalidatePath("/catalog");
 }

@@ -54,7 +54,11 @@ export function ContractSummary({
       <p className="mt-1 text-slate-600">Client: {clientName}</p>
       {scope && <p className="mt-3 text-sm text-slate-700">{scope}</p>}
 
-      <table className="mt-6 w-full text-sm">
+      {/* The client signs this on a phone as often as a desktop. Without a
+          scroller of its own, a five-column table drags the whole page
+          sideways. */}
+      <div className="mt-6 overflow-x-auto">
+      <table className="w-full min-w-[420px] text-sm">
         <thead>
           <tr className="border-b border-slate-200 text-left text-slate-500">
             <th className="py-2">Description</th>
@@ -85,6 +89,7 @@ export function ContractSummary({
           ))}
         </tbody>
       </table>
+      </div>
 
       <p className="mt-4 text-right text-lg font-semibold">Total: {money(total)}</p>
 
