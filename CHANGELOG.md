@@ -12,6 +12,39 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### The app now works on a phone (Diego)
+
+Half a subcontractor's people are in the field, and the app assumed a
+desktop. The sidebar was a fixed 240px full-height column with no
+responsive rules at all and no drawer — on a 360px screen that left a third
+of the width to work in. Not a cosmetic problem: most of the crew couldn't
+use it.
+
+The rail is now desktop-only (`md:` and up) and gains `sticky top-0`, so it
+stays put instead of scrolling away on a long job page. Below `md` the same
+links live in a drawer opened from the top bar.
+
+Both read from one shared `NAV_ITEMS` list. That is the point of extracting
+it: a route added to the rail and forgotten in the drawer would be a page
+that exists on a laptop and not on a phone, which nobody notices until a
+foreman reports it.
+
+Drawer behaviour worth naming, each because its absence reads as the tap
+not working: navigating closes it, Escape closes it, tapping the backdrop
+closes it, and the link list scrolls on its own so the close button can't be
+pushed off screen.
+
+Also fixed: `ContractSummary`'s table had no scroller of its own, so on a
+phone it dragged the whole page sideways. It renders on `/esign` and the
+client portal — the two places an outside party sees, and the one a client
+signs on their phone. Every other table in the app already had one.
+
+Not fixed here, and worth being straight about: this is the shell, not a
+mobile design pass. Individual pages still lay out for a wide screen, and
+the forms are dense. The app is now usable on a phone; it is not yet good
+on one.
+
+
 ### Duplicate records from an exhausted pool: the half that's fixable (Diego)
 
 Follow-up to the connection-pool finding below, which was documented and

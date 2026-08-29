@@ -8,8 +8,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <div className="flex min-h-screen bg-slate-950">
       <Sidebar companyName={company.name} />
-      <div className="flex min-h-screen flex-1 flex-col">
-        <Topbar />
+      <div className="flex min-h-screen min-w-0 flex-1 flex-col">
+        <Topbar companyName={company.name} />
         <main className="flex-1">{children}</main>
       </div>
     </div>
