@@ -269,6 +269,31 @@ The lesson worth keeping is not about pools. A plausible cause sitting in
 the logs next to a real symptom is not a diagnosis, and writing it up as
 one puts a false explanation in the place the next person looks first.
 
+**Measured 2026-08-29, and it narrows things.** Created an order with
+network capture running. The browser reported ONE `POST /material-orders`
+and no separate refresh `GET`. The dev server log, for the same create,
+reported TWO:
+
+    POST /material-orders 200 in 21ms      <- fast
+    POST /material-orders 200 in 5567ms    <- slow
+
+So the refresh is not a `GET`, which is why looking for one found nothing.
+The 21ms/5567ms split is consistent with the first request doing the write
+and the second doing the re-render — meaning **the re-render is a separate
+request with its own failure point, after the write has already
+committed.** That would explain every observation: the write returns 200,
+the second request fails or returns nothing useful, the client keeps the
+stale pre-create render, no 500 anywhere, correct after a manual reload.
+
+Still not a diagnosis. Which POST is which is not confirmed, and the
+failure has not been reproduced — that needs the second request forced to
+fail. Also note the browser tool and the server log disagreed on how many
+requests there were, so neither is trustworthy alone here.
+
+Next step for whoever picks this up: force the second POST to fail (kill
+the pool mid-create) and watch whether the page goes stale rather than
+500ing. That is the experiment that settles it.
+
 ### `ActionResult` moved to `lib/actions/shared.ts` (Cyrus)
 `cyrus/material-orders`
 
