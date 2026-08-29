@@ -1,6 +1,7 @@
 import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { cancelInvite, inviteTeamMember, removeTeamMember } from "@/lib/actions";
+import { SubmitButton } from "@/components/SubmitButton";
 
 export default async function TeamPage() {
   const { company, ...currentUser } = await requireCompanyContext();
@@ -28,9 +29,9 @@ export default async function TeamPage() {
               </div>
               {isOwner && member.role !== "OWNER" && (
                 <form action={removeTeamMember.bind(null, member.id)}>
-                  <button type="submit" className="text-sm text-red-400 hover:underline">
+                  <SubmitButton type="submit" className="text-sm text-red-400 hover:underline">
                     Remove
-                  </button>
+                  </SubmitButton>
                 </form>
               )}
             </li>
@@ -53,12 +54,12 @@ export default async function TeamPage() {
                   className="w-64 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
                 />
               </label>
-              <button
+              <SubmitButton
                 type="submit"
                 className="inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
               >
                 Invite
-              </button>
+              </SubmitButton>
             </form>
             <p className="mt-2 text-xs text-slate-500">
               This doesn&apos;t send an email — share the sign-up link with them yourself. When they
@@ -74,9 +75,9 @@ export default async function TeamPage() {
                   <li key={invite.id} className="flex items-center justify-between p-4">
                     <p className="text-sm text-slate-100">{invite.email}</p>
                     <form action={cancelInvite.bind(null, invite.id)}>
-                      <button type="submit" className="text-sm text-red-400 hover:underline">
+                      <SubmitButton type="submit" className="text-sm text-red-400 hover:underline">
                         Cancel
-                      </button>
+                      </SubmitButton>
                     </form>
                   </li>
                 ))}

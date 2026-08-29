@@ -12,6 +12,60 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### Duplicate records from an exhausted pool: the half that's fixable (Diego)
+
+Follow-up to the connection-pool finding below, which was documented and
+deliberately not fixed. Two halves; one is fixed here, one is not.
+
+**Fixed: the second click.** Whatever makes a page look like it didn't
+save — an exhausted pool, a stale render, a slow request — the duplicate
+record comes from the user submitting again. Every create in the app was a
+plain `<button>` inside a server-rendered `<form action={serverAction}>`,
+which stays clickable for the whole round trip, and no create action is
+idempotent. `components/SubmitButton.tsx` uses `useFormStatus` to disable
+the button while its own form is in flight; 57 buttons across 7 files now
+use it. The one `type="button"` toggle in the change-order UI is left
+alone, since it submits nothing.
+
+This is worth stating plainly: it does not fix the pool. It removes the
+mechanism by which a pool problem becomes a *data* problem.
+
+**Fixed: silence.** The app had no error boundary anywhere, so a failed
+render fell through to Next's default screen, which in production says
+only that a server exception occurred. After pressing Save that answers
+the wrong question. `app/(app)/error.tsx` now says the page failed to
+load, that this does not necessarily mean the save failed, and — the part
+that matters — not to submit again before reloading to check. It surfaces
+`error.digest` so a report can be traced in the Vercel logs.
+
+**Not fixed: the connection strategy.** Deliberately, because it can't be
+verified from here and this is production.
+
+`Error in PostgreSQL connection: Error { kind: Closed }` is the tell. Those
+are connections Prisma still believes it holds, closed underneath it —
+consistent with Neon suspending an idle compute. Prisma's pool then hands
+out dead connections and drains, and the 5-connection budget is exhausted
+by connections that no longer exist. That is why it presents as pool
+exhaustion under load that isn't actually heavy.
+
+Three options, in increasing order of how much they actually fix:
+
+1. `pool_timeout=30` means a request waits **thirty seconds** before
+   failing. Lowering it doesn't prevent anything, but it turns a half-minute
+   stall into a fast, visible failure — which the new error boundary now
+   explains properly.
+2. Prisma sits in front of Neon's pgbouncer with a pool of its own, and
+   every lambda instance holds up to `connection_limit` connections. On
+   serverless a lower limit is the documented guidance, not a higher one.
+3. The real fix is Neon's serverless driver via `@prisma/adapter-neon`:
+   stateless per-query HTTP, so there is no long-lived pool to go stale.
+   It is a data-layer change that needs testing against Neon specifically,
+   not against a local Postgres, so it belongs in its own piece of work.
+
+(1) and (2) are `DATABASE_URL` changes on Vercel and need Diego. (3) needs
+a branch and a real test against Neon.
+
+
 ## 2026-08-28
 
 ### Material order and delivery tracking per job (Cyrus)
