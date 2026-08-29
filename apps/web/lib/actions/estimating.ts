@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@prova/db";
-import { BID_INVITATION_STATUSES, assertEditableDirectly, assertJobInCompany, craftClassificationIdFromForm, decimalFromForm, enumFromForm, nullableDecimalFromForm, tradeScopeFromForm } from "./shared";
+import { BID_INVITATION_STATUSES, assertEditableDirectly, assertJobInCompany, assertOwner, craftClassificationIdFromForm, decimalFromForm, enumFromForm, nullableDecimalFromForm, tradeScopeFromForm } from "./shared";
 
 /** Logs a GC inviting this company to bid — tracked independent of Job,
  * since most invitations are declined or lost and never become one. */
@@ -179,6 +179,11 @@ export async function addLineItemFromCatalog(jobId: string, formData: FormData) 
       tradeScope: entry.tradeScope,
       laborHours: entry.defaultLaborHours,
       craftClassificationId: entry.craftClassificationId,
+      // Records which template this came from, so /catalog can later report
+      // how work priced from it actually costed. A reference, not a live
+      // link: changing the entry's defaults never touches this row.
+      sourceCatalogEntryId: entry.id,
+      priceBasis: "COMPANY_CATALOG",
     },
   });
 
@@ -220,4 +225,56 @@ export async function saveEstimateVersion(jobId: string, formData: FormData) {
   });
 
   revalidatePath(`/jobs/${jobId}`);
+}
+
+/**
+ * Sets a catalog entry's default cost from what work priced off it has
+ * actually cost. Explicit, one click, never automatic.
+ *
+ * The invariant this has to respect is the one that makes the catalog safe:
+ * an entry is a TEMPLATE, not a live link. This updates the template and
+ * nothing else. Every JobLineItem already created from it keeps the numbers
+ * it was created with — as do every EstimateVersion snapshot and every
+ * Invoice drawn from them. A contractor who re-prices their catalog in
+ * March must not find that a job they bid in January silently changed.
+ *
+ * Sale price is a separate, opt-in decision. Cost is a fact the jobs
+ * measured; price is a margin call that belongs to the estimator, so
+ * "our cost went up 20%" does not silently become "we now charge 20% more".
+ */
+export async function updateCatalogDefaultsFromActuals(entryId: string, formData: FormData) {
+  const { company, ...user } = await requireCompanyContext();
+  assertOwner(user, "Only the account owner can re-price the catalog");
+
+  const entry = await prisma.lineItemCatalogEntry.findUnique({ where: { id: entryId } });
+  if (!entry || entry.companyId !== company.id) {
+    throw new Error("Catalog entry not found");
+  }
+
+  const actualUnitCost = nullableDecimalFromForm(formData, "actualUnitCost");
+  if (actualUnitCost === null) {
+    throw new Error("No actual cost to update from");
+  }
+
+  // Only ever the entry's own defaults — no JobLineItem is in scope here.
+  const data: { defaultBudgetedUnitCost: string; defaultUnitPrice?: string } = {
+    defaultBudgetedUnitCost: actualUnitCost,
+  };
+
+  // Opt-in: hold the existing margin over the new cost, so the price moves
+  // by the same proportion rather than collapsing to cost.
+  if (String(formData.get("alsoUpdatePrice") ?? "") === "on") {
+    const oldCost = entry.defaultBudgetedUnitCost != null ? Number(entry.defaultBudgetedUnitCost) : null;
+    const oldPrice = entry.defaultUnitPrice != null ? Number(entry.defaultUnitPrice) : null;
+    if (oldCost && oldCost > 0 && oldPrice != null) {
+      data.defaultUnitPrice = ((oldPrice / oldCost) * Number(actualUnitCost)).toFixed(2);
+    }
+    // With no prior cost or price there is no margin to preserve, and
+    // inventing one would be a pricing decision this action has no business
+    // making — the cost still updates, the price is left alone.
+  }
+
+  await prisma.lineItemCatalogEntry.update({ where: { id: entryId }, data });
+
+  revalidatePath("/catalog");
 }

@@ -27,8 +27,8 @@ against a fresh clone.
 
 | Status | Count |
 | --- | --- |
-| Built | 54 |
-| Partial | 15 |
+| Built | 58 |
+| Partial | 13 |
 | Missing | 35 |
 | Descoped | 1 |
 
@@ -53,7 +53,7 @@ contract terms, bid invitations, and payment reliability shipped same-day.*
 | Built | Per-GC contract terms (retainage %, payment terms, standard forms used) | `Contact.defaultRetainagePercent`, `.paymentTermsDays`, `.standardFormsUsed` |
 | Built | Bid invitation tracking (which GCs invite this company to bid, on what) | `BidInvitation` model — trade scope, status, due dates, linked to a `Contact` |
 
-## 03. Estimating & Bidding — 7 built · 1 partial · 0 missing
+## 03. Estimating & Bidding — 9 built · 0 partial · 0 missing
 
 *Updated from the original audit (was 2 built / 1 partial / 5 missing) — the
 catalog, bid tracking, historical bid database, labor hours, and estimate
@@ -66,7 +66,8 @@ versioning all shipped same-day.*
 | Built | Historical bid database, by project type/GC/trade | `BidInvitation` rows persist regardless of outcome — filterable by trade/status on `/bids` |
 | Built | Material takeoff quantities per line item (manual entry v1) | `JobLineItem.quantity` / `.unit` — entered directly or via AI draft |
 | Built | Labor hour estimates per line item, by craft classification | `JobLineItem.laborHours` + `.craftClassificationId` |
-| Partial | Union fringe/burden rate tables applied to labor cost estimates | `FringeRateSchedule` exists as reference data; nothing yet reads it into a line item's cost |
+| Built | Union fringe/burden rate tables applied to labor cost estimates | `lib/estimate-labor-cost.ts` reuses the same `findEffectiveFringeRateSchedule`/`calculateTimeEntryLaborCost` the actuals use, at straight time, priced at the job's planned start date. Read-only hint beside the hours field — never written into `budgetedUnitCost`, and shows nothing rather than a wrong number when no schedule is effective |
+| Built | Catalog defaults learn from what jobs actually cost | `JobLineItem.sourceCatalogEntryId` records which template a line came from; `/catalog` reports actual unit cost against the default across every line created from it, flags variance past 15% on 2+ costed lines, and offers a one-click update. Template only — never touches a `JobLineItem`, snapshot or invoice that already exists |
 | Built | Estimate versioning as scope changes pre-award | `EstimateVersion` — manual JSON snapshot checkpoint, not automatic |
 | Built | Estimate-to-contract conversion (winning bid becomes the SOV) | `markJobContracted` — the same line items become the contract, by design |
 
@@ -253,13 +254,14 @@ forecasting shipped 26 Aug 2026.*
 | Missing | Final lien waiver and closeout document checklist | not modeled |
 | Missing | Warranty period tracking and post-completion service requests | not modeled — `JobStatus` ends at COMPLETE, no closeout/warranty stage |
 
-## 23. AI Features — 1 built · 2 partial · 1 missing · 1 descoped
+## 23. AI Features — 3 built · 1 partial · 1 missing · 1 descoped
 
 | Status | Feature | Note |
 | --- | --- | --- |
 | Built | WIP over/under-billing variance detection (read-only, per line item/job) | `generateWipNarrative` |
 | Partial | Compliance document extraction into structured records with expiration alerts | extraction shipped (`extractComplianceDocument`) — the alerting half doesn't exist yet (see Sheet 26) |
-| Partial | Draft estimate line items from text, grounded by trade-scope catalogs | `draftEstimateLineItems` drafts from general knowledge; now that `LineItemCatalogEntry` exists (Sheet 03), grounding the draft in it is the natural next step but hasn't been wired up |
+| Built | Draft estimate line items from text, grounded by trade-scope catalogs | `draftEstimateLineItems` now receives this company's `LineItemCatalogEntry` rows and its won `BidInvitation` amounts as reference data, and prefers matching an existing catalog price over inventing one. A matched line is created through the same path as "add from catalog", carrying `sourceCatalogEntryId` and the entry's cost/craft defaults — not just an echoed number |
+| Built | Confidence signal on AI-suggested prices | `JobLineItem.priceBasis` distinguishes a matched catalog price from one informed by past bids from a bare general-knowledge guess, each with its own badge. A returned `catalogEntryId` is verified against the entries actually sent before it becomes a foreign key, and a `COMPANY_CATALOG` claim with no verified entry behind it degrades to `GENERAL_KNOWLEDGE` rather than overstating confidence |
 | Missing | Plan/drawing takeoff via computer vision | explicitly deferred as a later, larger effort — different modality, different accuracy bar |
 | Descoped | Client-facing chatbot | GCs are the customer here, not homeowners — deliberately out of scope for this ICP |
 

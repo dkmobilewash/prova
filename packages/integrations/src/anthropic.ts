@@ -171,6 +171,32 @@ const TRADE_SCOPES = [
   "FIREPROOFING",
 ] as const;
 
+/** Where a drafted price came from — mirrors the PriceBasis enum in the
+ * schema. Kept as a string union here so packages/integrations stays free of
+ * a Prisma dependency. */
+export type DraftPriceBasis = "COMPANY_CATALOG" | "HISTORICAL_BID" | "GENERAL_KNOWLEDGE";
+
+export const DRAFT_PRICE_BASES: DraftPriceBasis[] = [
+  "COMPANY_CATALOG",
+  "HISTORICAL_BID",
+  "GENERAL_KNOWLEDGE",
+];
+
+/** This company's own priced work, passed in so the draft reflects what it
+ * actually charges rather than what the market roughly charges. */
+export interface DraftReferenceData {
+  catalogEntries: {
+    id: string;
+    description: string;
+    unit: string | null;
+    defaultUnitPrice: number | null;
+    tradeScope: string | null;
+  }[];
+  /** Bids this company won, by trade — evidence of what its pricing has
+   * actually cleared at, for scopes the catalog doesn't cover. */
+  wonBids: { projectName: string; tradeScope: string | null; bidAmount: number }[];
+}
+
 export interface DraftLineItem {
   description: string;
   quantity: number;
@@ -181,11 +207,37 @@ export interface DraftLineItem {
    * from, rather than inventing a number. */
   unitPrice: number | null;
   tradeScope: (typeof TRADE_SCOPES)[number] | null;
+  /** The catalog entry this line matched, when the scope clearly described
+   * work this company already has a price for. Lets the caller create the
+   * line through the same path "add from catalog" uses, so it carries a real
+   * provenance link instead of a bare number. */
+  catalogEntryId: string | null;
+  /** How much to trust unitPrice. Null when no price was suggested — an
+   * absent number needs no confidence label. */
+  priceBasis: DraftPriceBasis | null;
 }
+
+/** Caps how much reference data goes into the prompt. A specialty sub's
+ * catalog is small; this is a guard against a pathological one, not a
+ * routine truncation. The caller logs nothing because nothing is silently
+ * dropped in practice — but the cap is here rather than unbounded. */
+const MAX_REFERENCE_CATALOG_ENTRIES = 200;
+const MAX_REFERENCE_WON_BIDS = 40;
 
 const DRAFT_TOOL_NAME = "record_draft_line_items";
 
-const DRAFT_SYSTEM_PROMPT = `You are a construction estimator helping a general contractor turn a plain-language scope of work into a first-draft list of estimate line items. Break the scope into distinct, billable line items the way an experienced GC would structure a proposal — one line per distinct scope of work, not one giant catch-all line. For each line, give a reasonable quantity and unit (sq ft, lin ft, each, lump sum, etc.) based on what the text states or implies. Only set tradeScope when the line item clearly matches one of the five given trade scopes — leave it null otherwise, don't force a fit. unitPrice is optional: give a rough all-in sale price per unit ONLY when you have a reasonable basis to estimate one from the scope text and general market knowledge; set it to null rather than inventing a number when you don't. This is a draft for the PM to review and correct, never a firm quote.`;
+const DRAFT_SYSTEM_PROMPT = `You are helping a specialty-trade construction SUBCONTRACTOR turn a plain-language scope of work into a first-draft list of estimate line items. This company self-performs a narrow family of trades (metal framing/drywall, lath & plaster, EIFS, acoustical ceilings, fireproofing) and bids to general contractors — it does not coordinate other subs. Draft only the work this company would perform itself.
+
+Break the scope into distinct, billable line items the way an experienced estimator would structure a proposal — one line per distinct scope of work, not one giant catch-all line. For each line, give a reasonable quantity and unit (sq ft, lin ft, each, lump sum, etc.) based on what the text states or implies. Only set tradeScope when the line clearly matches one of the five given trade scopes — leave it null otherwise, don't force a fit.
+
+PRICING. You may be given this company's own catalog of previously priced line items, and the amounts of bids it has won by trade. Use them — they are what this company actually charges, which is better evidence than general market rates:
+
+1. If a line clearly matches a catalog entry (same work, same unit), reuse that entry's description wording and its default unit price. Set catalogEntryId to that entry's id and priceBasis to "COMPANY_CATALOG". Match on what the work IS, not on similar words — a catalog entry for 5/8" type X board is not a match for acoustic ceiling tile.
+2. If no catalog entry matches but this company's won bids in the same trade give you a defensible basis, price from that and set priceBasis to "HISTORICAL_BID". Leave catalogEntryId null.
+3. Otherwise estimate from general market knowledge and set priceBasis to "GENERAL_KNOWLEDGE". Leave catalogEntryId null. This is the weakest basis and it will be shown to the user as such, so do not reach for it when option 1 or 2 genuinely applies.
+4. If you have no reasonable basis for a price at all, set unitPrice AND priceBasis to null. A missing price is fine; an invented one is not.
+
+Never set catalogEntryId to an id that was not given to you, and never claim COMPANY_CATALOG for a price you did not take from a catalog entry. This is a draft for the estimator to review and correct, never a firm quote.`;
 
 /**
  * Turns free-text scope of work into a draft list of JobLineItem rows —
@@ -195,8 +247,45 @@ const DRAFT_SYSTEM_PROMPT = `You are a construction estimator helping a general 
  * (draftLineItemsFromScope in apps/web/lib/actions.ts) persists these with
  * aiDrafted: true and never auto-approves them into a contract.
  */
-export async function draftEstimateLineItems(scopeText: string): Promise<DraftLineItem[]> {
+export async function draftEstimateLineItems(
+  scopeText: string,
+  reference: DraftReferenceData = { catalogEntries: [], wonBids: [] },
+): Promise<DraftLineItem[]> {
   const client = new Anthropic();
+
+  const catalogEntries = reference.catalogEntries.slice(0, MAX_REFERENCE_CATALOG_ENTRIES);
+  const wonBids = reference.wonBids.slice(0, MAX_REFERENCE_WON_BIDS);
+
+  // Reference data goes in the user turn, not the system prompt: it changes
+  // per company and per request, and putting it in the system prompt would
+  // sit in front of every cacheable prefix.
+  const referenceBlocks: string[] = [];
+  if (catalogEntries.length > 0) {
+    referenceBlocks.push(
+      `This company's line item catalog (id | description | unit | default unit price | trade):\n` +
+        catalogEntries
+          .map(
+            (entry) =>
+              `${entry.id} | ${entry.description} | ${entry.unit ?? "-"} | ${
+                entry.defaultUnitPrice ?? "-"
+              } | ${entry.tradeScope ?? "-"}`,
+          )
+          .join("\n"),
+    );
+  }
+  if (wonBids.length > 0) {
+    referenceBlocks.push(
+      `Bids this company has WON (project | trade | amount):\n` +
+        wonBids
+          .map((bid) => `${bid.projectName} | ${bid.tradeScope ?? "-"} | ${bid.bidAmount}`)
+          .join("\n"),
+    );
+  }
+
+  const userContent = [
+    ...referenceBlocks,
+    `Scope of work to draft line items from:\n${scopeText}`,
+  ].join("\n\n---\n\n");
 
   const response = await client.messages.create({
     model: "claude-opus-5",
@@ -219,8 +308,27 @@ export async function draftEstimateLineItems(scopeText: string): Promise<DraftLi
                   unit: { type: ["string", "null"] },
                   unitPrice: { type: ["number", "null"] },
                   tradeScope: { type: ["string", "null"], enum: [...TRADE_SCOPES, null] },
+                  catalogEntryId: {
+                    type: ["string", "null"],
+                    description:
+                      "The id of the matched catalog entry, copied exactly from the catalog list provided. Null unless priceBasis is COMPANY_CATALOG.",
+                  },
+                  priceBasis: {
+                    type: ["string", "null"],
+                    enum: [...DRAFT_PRICE_BASES, null],
+                    description:
+                      "Where unitPrice came from. Null when unitPrice is null.",
+                  },
                 },
-                required: ["description", "quantity", "unit", "unitPrice", "tradeScope"],
+                required: [
+                  "description",
+                  "quantity",
+                  "unit",
+                  "unitPrice",
+                  "tradeScope",
+                  "catalogEntryId",
+                  "priceBasis",
+                ],
               },
             },
           },
@@ -229,7 +337,7 @@ export async function draftEstimateLineItems(scopeText: string): Promise<DraftLi
       },
     ],
     tool_choice: { type: "tool", name: DRAFT_TOOL_NAME },
-    messages: [{ role: "user", content: scopeText }],
+    messages: [{ role: "user", content: userContent }],
   });
 
   const toolUse = response.content.find(
@@ -242,5 +350,31 @@ export async function draftEstimateLineItems(scopeText: string): Promise<DraftLi
   if (lineItems.length === 0) {
     throw new Error("Claude couldn't draft any line items from that scope text");
   }
-  return lineItems;
+
+  // Model output is not trusted with a foreign key or with its own
+  // confidence label. A hallucinated catalogEntryId would become a real FK
+  // and then feed a wrong actual cost back into that entry's default, and a
+  // COMPANY_CATALOG badge on an invented number is precisely the false
+  // confidence this basis field exists to prevent. Both are downgraded here
+  // rather than rejected, so one bad row doesn't lose the whole draft.
+  const knownCatalogIds = new Set(catalogEntries.map((entry) => entry.id));
+
+  return lineItems.map((item) => {
+    const catalogEntryId =
+      item.catalogEntryId && knownCatalogIds.has(item.catalogEntryId) ? item.catalogEntryId : null;
+
+    let priceBasis: DraftPriceBasis | null =
+      item.priceBasis && DRAFT_PRICE_BASES.includes(item.priceBasis) ? item.priceBasis : null;
+
+    // No price means no claim about where a price came from.
+    if (item.unitPrice == null) priceBasis = null;
+    // Claiming the catalog without a verified entry behind it is the one
+    // combination that would overstate confidence, so it degrades to the
+    // weakest basis rather than keeping the strongest.
+    else if (priceBasis === "COMPANY_CATALOG" && !catalogEntryId) priceBasis = "GENERAL_KNOWLEDGE";
+    // A price with no stated basis is a guess; label it as one.
+    else if (priceBasis === null) priceBasis = "GENERAL_KNOWLEDGE";
+
+    return { ...item, catalogEntryId, priceBasis };
+  });
 }

@@ -1,6 +1,11 @@
 import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
-import { createLineItemCatalogEntry, deleteLineItemCatalogEntry } from "@/lib/actions";
+import {
+  createLineItemCatalogEntry,
+  deleteLineItemCatalogEntry,
+  updateCatalogDefaultsFromActuals,
+} from "@/lib/actions";
+import { catalogActuals } from "@/lib/catalog-actuals";
 import { money } from "@/lib/money";
 import { SubmitButton } from "@/components/SubmitButton";
 
@@ -16,6 +21,79 @@ function labelFor(value: string | null) {
   return TRADE_SCOPE_OPTIONS.find((t) => t.value === value)?.label ?? null;
 }
 
+type CatalogEntryWithLines = {
+  id: string;
+  defaultBudgetedUnitCost: unknown;
+  jobLineItems: { quantity: unknown; costEntries: { amount: unknown }[] }[];
+};
+
+/**
+ * What this entry's work has actually cost, against what the entry says it
+ * costs. The whole point of recording sourceCatalogEntryId: estimating tools
+ * generally have no path for actuals to come back, and the two halves have
+ * been sitting one table apart here the entire time.
+ */
+function ActualsLine({ entry }: { entry: CatalogEntryWithLines }) {
+  const actuals = catalogActuals(
+    entry.jobLineItems.map((line) => ({
+      quantity: Number(line.quantity),
+      actualCost: line.costEntries.reduce((sum, cost) => sum + Number(cost.amount), 0),
+      hasCosts: line.costEntries.length > 0,
+    })),
+    entry.defaultBudgetedUnitCost != null ? Number(entry.defaultBudgetedUnitCost) : null,
+  );
+
+  if (actuals.actualUnitCost === null) {
+    return (
+      <p className="mt-1 text-xs text-slate-500">
+        No costed jobs have used this entry yet — nothing to compare its default against.
+      </p>
+    );
+  }
+
+  const pct = actuals.variancePct;
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-2">
+      <p className={`text-xs ${actuals.isFlagged ? "text-amber-300" : "text-slate-500"}`}>
+        Actual {money(actuals.actualUnitCost)}/unit across {actuals.linesWithCosts}{" "}
+        {actuals.linesWithCosts === 1 ? "costed line" : "costed lines"}
+        {actuals.defaultBudgetedUnitCost != null && (
+          <>
+            {" "}
+            vs {money(actuals.defaultBudgetedUnitCost)} budgeted
+            {pct != null && (
+              <>
+                {" "}
+                ({pct > 0 ? "+" : "−"}
+                {Math.abs(pct * 100).toFixed(0)}%)
+              </>
+            )}
+          </>
+        )}
+        {actuals.isFlagged && " — worth re-pricing"}
+      </p>
+      {actuals.isFlagged && (
+        <form
+          action={updateCatalogDefaultsFromActuals.bind(null, entry.id)}
+          className="flex flex-wrap items-center gap-2"
+        >
+          <input type="hidden" name="actualUnitCost" value={actuals.actualUnitCost.toFixed(2)} />
+          <label className="flex items-center gap-1 text-xs text-slate-400">
+            <input type="checkbox" name="alsoUpdatePrice" className="accent-blue-500" />
+            also move the sale price, holding margin
+          </label>
+          <SubmitButton
+            type="submit"
+            className="rounded-md border border-amber-700 px-2 py-1 text-xs text-amber-300 hover:bg-amber-950"
+          >
+            Update default from actuals
+          </SubmitButton>
+        </form>
+      )}
+    </div>
+  );
+}
+
 export default async function CatalogPage() {
   const { company } = await requireCompanyContext();
 
@@ -23,7 +101,15 @@ export default async function CatalogPage() {
     prisma.lineItemCatalogEntry.findMany({
       where: { companyId: company.id },
       orderBy: { description: "asc" },
-      include: { craftClassification: { include: { unionLocal: true } } },
+      include: {
+        craftClassification: { include: { unionLocal: true } },
+        // How work priced from this template actually costed. Read-only —
+        // the entry is a template and nothing here writes back to these rows.
+        jobLineItems: {
+          where: { isDeleted: false },
+          select: { quantity: true, costEntries: { select: { amount: true } } },
+        },
+      },
     }),
     prisma.craftClassification.findMany({
       where: { unionLocal: { companyAgreements: { some: { companyId: company.id } } } },
@@ -63,6 +149,7 @@ export default async function CatalogPage() {
                     )}
                     {entry.defaultLaborHours != null && <> · {entry.defaultLaborHours.toString()} hrs</>}
                   </p>
+                  <ActualsLine entry={entry} />
                 </div>
                 <form action={deleteLineItemCatalogEntry.bind(null, entry.id)}>
                   <SubmitButton type="submit" className="text-xs text-red-400 hover:underline">

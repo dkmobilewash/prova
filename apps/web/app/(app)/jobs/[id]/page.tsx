@@ -15,6 +15,7 @@ import { changeOrderValueDelta, pendingChangeOrderExposure, reopenBlockers } fro
 import { money } from "@/lib/money";
 import { calculateLineItemWip, calculateJobWip } from "@/lib/wip";
 import { calculateTimeEntryLaborCost, findEffectiveFringeRateSchedule } from "@/lib/labor-cost";
+import { estimateBurdenedLaborCost, laborRateDateFor } from "@/lib/estimate-labor-cost";
 import { calculateRetainageSummary } from "@/lib/retainage";
 import { SubmitButton } from "@/components/SubmitButton";
 import {
@@ -65,6 +66,61 @@ const TRADE_SCOPE_OPTIONS = [
 
 function dateInputValue(date: Date | null) {
   return date ? date.toISOString().slice(0, 10) : "";
+}
+
+/**
+ * How much to trust a drafted price.
+ *
+ * One "AI-drafted — verify" pill for every machine-produced row said only
+ * that a machine made it, which is the flaw the market research names as
+ * fatal in every competitor's auto-pricing: a well-grounded number and an
+ * invented one look identical. After grounding the draft in this company's
+ * own catalog and won bids, a price can come from three places that deserve
+ * very different confidence, so they get three visibly different badges.
+ */
+function PriceBasisBadge({ basis }: { basis: "COMPANY_CATALOG" | "HISTORICAL_BID" | "GENERAL_KNOWLEDGE" | null }) {
+  if (basis === "COMPANY_CATALOG") {
+    return (
+      <span className="inline-flex items-center rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs font-medium text-emerald-300">
+        Your catalog price
+      </span>
+    );
+  }
+  if (basis === "HISTORICAL_BID") {
+    return (
+      <span className="inline-flex items-center rounded-full bg-blue-500/15 px-2 py-0.5 text-xs font-medium text-blue-300">
+        From your past bids — verify
+      </span>
+    );
+  }
+  if (basis === "GENERAL_KNOWLEDGE") {
+    return (
+      <span className="inline-flex items-center rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-300">
+        AI guess, no company data — check the price
+      </span>
+    );
+  }
+  // Drafted, but no price was suggested. Nothing to be confident or unsure
+  // about; the row still needs reviewing as a drafted row.
+  return (
+    <span className="inline-flex items-center rounded-full bg-slate-700/40 px-2 py-0.5 text-xs font-medium text-slate-300">
+      AI-drafted, unpriced — verify
+    </span>
+  );
+}
+
+/**
+ * "≈ $X labor" beside the hours field. Read-only and informational — never
+ * written into budgetedUnitCost, which stays the estimator's own number, the
+ * same philosophy as the estimatedCostToComplete PM override.
+ */
+function LaborCostHint({ cost }: { cost: number | null }) {
+  if (cost === null) return null;
+  return (
+    <span className="text-xs text-slate-400" title="Burdened labor: base wage plus fringes, at straight time">
+      ≈ {money(cost)} labor
+    </span>
+  );
 }
 
 export default async function JobPage({ params }: { params: Promise<{ id: string }> }) {
@@ -156,6 +212,40 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
       orderBy: { name: "asc" },
     }),
   ]);
+  // Burdened labor cost per line at bid time. The hours and the craft have
+  // been captured since the estimate was built and the burden math has
+  // existed all along for logged time — it just never ran at bid time, which
+  // is where the risk actually is: takeoff quantities in this trade are
+  // ~97-98% accurate while projects still overrun ~28%, and the gap is crew
+  // hours. Priced at the job's planned start where it has one, since union
+  // rates step on scheduled dates.
+  const laborRateDate = laborRateDateFor(job, new Date());
+  const schedulesByCraft = new Map(
+    craftClassifications.map((craft) => [
+      craft.id,
+      craft.fringeRateSchedules.map((schedule) => ({
+        baseWage: Number(schedule.baseWage),
+        pensionRate: schedule.pensionRate != null ? Number(schedule.pensionRate) : null,
+        vacationRate: schedule.vacationRate != null ? Number(schedule.vacationRate) : null,
+        healthWelfareRate:
+          schedule.healthWelfareRate != null ? Number(schedule.healthWelfareRate) : null,
+        trainingRate: schedule.trainingRate != null ? Number(schedule.trainingRate) : null,
+        effectiveFrom: schedule.effectiveFrom,
+        effectiveTo: schedule.effectiveTo,
+      })),
+    ]),
+  );
+  const estimatedLaborCostByLineItem = new Map(
+    job.lineItems.map((item) => [
+      item.id,
+      estimateBurdenedLaborCost(
+        item.laborHours != null ? Number(item.laborHours) : null,
+        item.craftClassificationId ? (schedulesByCraft.get(item.craftClassificationId) ?? []) : [],
+        laborRateDate,
+      ),
+    ]),
+  );
+
   const assignedUserIds = new Set(job.assignments.map((a) => a.userId));
   const unassignedMembers = companyMembers.filter((m) => !assignedUserIds.has(m.id));
 
@@ -1427,11 +1517,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                     className="flex flex-col gap-2"
                   >
                     <div className="flex flex-wrap items-center gap-2">
-                      {item.aiDrafted && (
-                        <span className="inline-flex items-center rounded-full bg-blue-500/15 px-2 py-0.5 text-xs font-medium text-blue-300">
-                          AI-drafted — verify
-                        </span>
-                      )}
+                      {item.aiDrafted && <PriceBasisBadge basis={item.priceBasis} />}
                       <input
                         name="description"
                         defaultValue={item.description}
@@ -1495,6 +1581,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                           className="w-16 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-600 focus:border-blue-500 focus:outline-none"
                         />
                       </label>
+                      <LaborCostHint cost={estimatedLaborCostByLineItem.get(item.id) ?? null} />
                       <select
                         name="craftClassificationId"
                         defaultValue={item.craftClassificationId ?? ""}
