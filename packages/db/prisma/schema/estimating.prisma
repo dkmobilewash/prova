@@ -121,6 +121,11 @@ model LineItemCatalogEntry {
   craftClassificationId   String?
   craftClassification     CraftClassification? @relation(fields: [craftClassificationId], references: [id])
 
+  /// Lines created from this entry. Read-only history for the actuals
+  /// feedback loop on /catalog — how work priced from this template
+  /// actually costed. Never a live link back into those rows.
+  jobLineItems JobLineItem[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

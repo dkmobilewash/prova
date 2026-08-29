@@ -105,19 +105,76 @@ export async function draftLineItemsFromScope(jobId: string, formData: FormData)
     throw new Error("Paste or type a scope of work to draft from");
   }
 
-  const draftLineItems = await draftEstimateLineItems(scopeText);
+  // Ground the draft in what this company actually charges, rather than what
+  // the market roughly charges. Both halves already existed and neither was
+  // ever read at draft time: the catalog is its own priced work, and won
+  // bids are the prices that have actually cleared with a GC.
+  const [catalogEntries, wonBids] = await Promise.all([
+    prisma.lineItemCatalogEntry.findMany({
+      where: { companyId: company.id },
+      orderBy: { description: "asc" },
+      select: { id: true, description: true, unit: true, defaultUnitPrice: true, tradeScope: true },
+    }),
+    prisma.bidInvitation.findMany({
+      where: { companyId: company.id, status: "WON", bidAmount: { not: null } },
+      orderBy: { createdAt: "desc" },
+      take: 40,
+      select: { projectName: true, tradeScope: true, bidAmount: true },
+    }),
+  ]);
 
-  await prisma.jobLineItem.createMany({
-    data: draftLineItems.map((item) => ({
-      jobId,
-      description: item.description,
-      quantity: item.quantity.toString(),
-      unit: item.unit,
-      unitPrice: item.unitPrice != null ? item.unitPrice.toString() : null,
-      tradeScope: item.tradeScope,
-      aiDrafted: true,
+  const draftLineItems = await draftEstimateLineItems(scopeText, {
+    catalogEntries: catalogEntries.map((entry) => ({
+      id: entry.id,
+      description: entry.description,
+      unit: entry.unit,
+      defaultUnitPrice: entry.defaultUnitPrice != null ? Number(entry.defaultUnitPrice) : null,
+      tradeScope: entry.tradeScope,
+    })),
+    wonBids: wonBids.map((bid) => ({
+      projectName: bid.projectName,
+      tradeScope: bid.tradeScope,
+      bidAmount: Number(bid.bidAmount),
     })),
   });
+
+  // A line that matched a catalog entry is created the same way "add from
+  // catalog" creates one — carrying sourceCatalogEntryId, and the entry's own
+  // cost and craft defaults, not just the price Claude echoed back. Anything
+  // else is created from the drafted values alone.
+  const matchedEntries = await prisma.lineItemCatalogEntry.findMany({
+    where: {
+      id: { in: draftLineItems.map((item) => item.catalogEntryId).filter((id): id is string => !!id) },
+    },
+  });
+  const fullEntryById = new Map(matchedEntries.map((entry) => [entry.id, entry]));
+
+  await prisma.jobLineItem.createMany({
+    data: draftLineItems.map((item) => {
+      const entry = item.catalogEntryId ? fullEntryById.get(item.catalogEntryId) : undefined;
+      return {
+        jobId,
+        description: entry?.description ?? item.description,
+        quantity: item.quantity.toString(),
+        unit: entry?.unit ?? item.unit,
+        unitPrice:
+          entry?.defaultUnitPrice != null
+            ? entry.defaultUnitPrice.toString()
+            : item.unitPrice != null
+              ? item.unitPrice.toString()
+              : null,
+        budgetedUnitCost: entry?.defaultBudgetedUnitCost ?? null,
+        currentEstimatedUnitCost: entry?.defaultBudgetedUnitCost ?? null,
+        laborHours: entry?.defaultLaborHours ?? null,
+        craftClassificationId: entry?.craftClassificationId ?? null,
+        tradeScope: entry?.tradeScope ?? item.tradeScope,
+        sourceCatalogEntryId: entry?.id ?? null,
+        priceBasis: item.priceBasis,
+        aiDrafted: true,
+      };
+    }),
+  });
+
 
   revalidatePath(`/jobs/${jobId}`);
 }

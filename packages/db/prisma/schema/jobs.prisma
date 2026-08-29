@@ -145,6 +145,30 @@ model JobLineItem {
   /// aiExtracted — never a lock, and never auto-approved into a contract.
   aiDrafted Boolean @default(false)
 
+  /// Where a suggested price actually came from. `aiDrafted` alone says a
+  /// machine produced the row; it doesn't say whether the number behind it
+  /// is this company's own catalog price or Claude inventing one from
+  /// general market knowledge. Those deserve very different amounts of
+  /// trust, and one undifferentiated "AI-drafted" badge for both is how a
+  /// well-grounded number and a guess end up looking identical.
+  ///
+  /// Null on rows typed in by hand — the contractor's own number needs no
+  /// provenance label.
+  priceBasis PriceBasis?
+
+  /// The catalog entry this line was created from, when it was. Set by
+  /// addLineItemFromCatalog (and by accepting an AI draft that matched a
+  /// catalog entry), null for everything else — including every row that
+  /// predates this field. Deliberately NOT backfilled by fuzzy-matching
+  /// descriptions: a wrong link here would feed a wrong actual cost back
+  /// into the catalog default, which is the one thing this must not do.
+  ///
+  /// A reference for reporting, never a live link: the catalog entry is a
+  /// template, and changing its defaults must never reach back and alter
+  /// this row (see ARCHITECTURE.md).
+  sourceCatalogEntryId String?
+  sourceCatalogEntry   LineItemCatalogEntry? @relation(fields: [sourceCatalogEntryId], references: [id])
+
   /// Set only when this row was created BY a change order (added scope).
   /// Null for line items that were part of the original estimate.
   originChangeOrderId String?
@@ -162,12 +186,30 @@ model JobLineItem {
   @@index([jobId])
   @@index([originChangeOrderId])
   @@index([craftClassificationId])
+  @@index([sourceCatalogEntryId])
 }
 
 /// A change order groups: (a) newly added JobLineItems (via
 /// JobLineItem.originChangeOrderId), and (b) edits to existing JobLineItems
 /// (logged in ChangeOrderLineItemEdit). It never stores its own copy of
 /// line-item data.
+/// Where the price on a line item came from, so the UI can say how much to
+/// trust it. Ordered most to least grounded in this company's own data.
+enum PriceBasis {
+  /// Matched an existing LineItemCatalogEntry — this company's own price
+  /// for work it has priced before.
+  COMPANY_CATALOG
+
+  /// Informed by what this company actually bid on similar past work
+  /// (a won BidInvitation in the same trade scope).
+  HISTORICAL_BID
+
+  /// Claude's own estimate from general market knowledge, with no company
+  /// data behind it. The weakest basis, and the one most in need of a
+  /// visibly weaker badge.
+  GENERAL_KNOWLEDGE
+}
+
 model ChangeOrder {
   id          String   @id @default(cuid())
   jobId       String
