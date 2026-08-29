@@ -19,6 +19,7 @@ export * from "./company";
 export * from "./vendors";
 export * from "./equipment";
 export * from "./punchLists";
+export * from "./quickbooks";
 export * from "./fieldReports";
 export * from "./safety";
 export * from "./rfis";

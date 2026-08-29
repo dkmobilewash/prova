@@ -28,6 +28,9 @@ model Company {
   jobs                    Job[]
   invites                 Invite[]
   quickBooksConnection    QuickBooksConnection?
+  quickBooksEntityLinks   QuickBooksEntityLink[]
+  quickBooksAccountMaps   QuickBooksAccountMapping[]
+  quickBooksSyncAttempts  QuickBooksSyncAttempt[]
   complianceDocuments     ComplianceDocument[]
   licenses                CompanyLicense[]
   tradeScopes             CompanyTradeScope[]
@@ -76,6 +79,7 @@ model User {
 
   assignments                          JobAssignment[]
   connectedQuickBooks                  QuickBooksConnection[]
+  quickBooksSyncAttempts               QuickBooksSyncAttempt[]
   uploadedComplianceDocuments          ComplianceDocument[]
   savedEstimateVersions                EstimateVersion[]
   uploadedContractDocuments            ContractDocument[]

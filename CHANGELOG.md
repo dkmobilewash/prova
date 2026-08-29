@@ -12,6 +12,82 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### QuickBooks actually syncs now — one direction, verified (Diego)
+
+The connection has existed since 23 August. Nothing ever flowed through
+it: OAuth, token refresh, and a test-connection button, and the Settings
+page said so plainly. This is the part that moves money.
+
+Accounting sync is the single most-corroborated failure in the contractor
+software research — six platforms, ten-plus independent sources, always
+the same shape. "Batches transfer with wrong amounts." "Two way sync does
+not work in many areas." "It doesn't work. We ended up just not trying
+anymore and now pay for an outside bookkeeping service." Three design
+commitments come straight out of that:
+
+**One direction, said out loud.** Prova writes to QuickBooks. It does not
+pull. Every platform in that research advertises bidirectional sync and
+gets savaged because it isn't really one, and a sync that quietly loses an
+edit someone made in QuickBooks is worse than one that never claimed to
+carry it. The Settings copy says this rather than implying more.
+
+**A push is not evidence.** Every write is followed by reading the record
+back and comparing totals and document number in cents. "Sent, but
+QuickBooks holds something different" is its own recorded outcome — not a
+success with a footnote — because that state is exactly what every
+competitor reports as success. This project already spent a day on a tool
+reporting "successfully applied" against a database nobody read; money
+deserves the same suspicion.
+
+**A retry can never double-post.** Every push carries an idempotency key
+derived from the invoice id, its total, and a fingerprint of its lines. A
+network timeout and its retry produce the same key and the second one
+no-ops before contacting QuickBooks; a genuine edit produces a different
+key and becomes a real update. Doubled charges are the most-repeated
+symptom in the research and they are always a retry without a key.
+
+Decisions worth keeping:
+
+**Retainage is not deducted from the invoice.** Work completed is earned
+and billed in full; retainage is withheld from payment against it. Netting
+it in would make the ledger disagree with the G702 the GC signed and hide
+retainage in QuickBooks exactly when someone needs to chase it. It rides
+in the memo instead.
+
+**Work completed and materials stored are separate lines**, because they
+are two columns on a G703 and a bookkeeper reconciling stored materials
+needs the same split the GC saw.
+
+**A stale SyncToken is surfaced, never retried.** QuickBooks rejecting an
+update because the record changed there means a person edited it — the
+message says so and stops, rather than overwriting them.
+
+**Nothing about the chart of accounts is guessed.** An accountant has
+opinions about which account labor posts to, and picking one silently
+corrupts books in a way discovered at tax time.
+
+**Customers are matched by name before being created**, so a GC the
+bookkeeper already has doesn't become a second "Turner Construction" with
+the history split between them.
+
+Three additive models, one migration, zero destructive statements:
+`QuickBooksEntityLink` (ours ↔ theirs, with sync token and a separate
+verified-at), `QuickBooksAccountMapping`, and `QuickBooksSyncAttempt` — an
+append-only log of every attempt including the refusals, because a sync
+nobody can audit is one nobody trusts the moment two numbers disagree.
+
+24 new tests over the payload arithmetic, idempotency and verification,
+two of them deliberately mutated first to confirm they fail — including
+the one asserting retainage is not netted out.
+
+**Not verified, and this matters:** nothing here has touched QuickBooks.
+The pure logic is tested; the API calls are not, because testing them
+needs an Intuit sandbox company and pushing invoices at real books to find
+out is not a thing to do. Before this is trusted with a real invoice it
+needs a sandbox run, and the app's Intuit environment needs checking —
+production API access goes through Intuit review.
+
+
 ### There are two Neon projects, and saying otherwise cost a day (Diego)
 
 Settled, with evidence, and written into the three files that were lying

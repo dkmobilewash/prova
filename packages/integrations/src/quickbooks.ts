@@ -257,3 +257,183 @@ export async function getUserInfo(accessToken: string): Promise<QuickBooksUserIn
     familyName: body.familyName,
   };
 }
+
+/* ------------------------------------------------------------------ */
+/* Writing to QuickBooks                                               */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Everything below writes, or reads back something we wrote.
+ *
+ * The payload shapes are built in apps/web/lib/quickbooks-sync.ts, which is
+ * pure and tested. This layer is deliberately thin: it knows how to talk to
+ * Intuit and nothing about what an invoice means, so the part that decides
+ * amounts can be tested without a sandbox.
+ */
+
+/** A QuickBooks API failure, carrying the status and Intuit's own message
+ * so a sync log entry can say something more useful than "it failed". */
+export class QuickBooksApiError extends Error {
+  constructor(
+    readonly status: number,
+    readonly detail: string,
+  ) {
+    super(`QuickBooks returned ${status}: ${detail}`);
+    this.name = "QuickBooksApiError";
+  }
+}
+
+async function accountingRequest<T>(
+  realmId: string,
+  accessToken: string,
+  path: string,
+  init: { method: "GET" | "POST"; body?: unknown } = { method: "GET" },
+): Promise<T> {
+  const config = readQuickBooksConfig();
+  const url = `${accountingApiBase(config.environment)}/v3/company/${realmId}${path}`;
+
+  const response = await fetch(url, {
+    method: init.method,
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      Accept: "application/json",
+      ...(init.body === undefined ? {} : { "Content-Type": "application/json" }),
+    },
+    body: init.body === undefined ? undefined : JSON.stringify(init.body),
+  });
+
+  const text = await response.text();
+  if (!response.ok) {
+    // Intuit puts the useful part in a nested Fault; fall back to the raw
+    // body rather than swallowing it, but never log headers — they carry
+    // the bearer token.
+    let detail = text;
+    try {
+      const parsed = JSON.parse(text) as {
+        Fault?: { Error?: { Message?: string; Detail?: string }[] };
+      };
+      const first = parsed.Fault?.Error?.[0];
+      if (first) detail = [first.Message, first.Detail].filter(Boolean).join(" — ");
+    } catch {
+      // keep the raw text
+    }
+    throw new QuickBooksApiError(response.status, detail);
+  }
+
+  return JSON.parse(text) as T;
+}
+
+export interface QuickBooksAccount {
+  id: string;
+  name: string;
+  accountType: string;
+  accountSubType?: string;
+}
+
+/** The company's chart of accounts, for the mapping UI. Read-only. */
+export async function listAccounts(
+  realmId: string,
+  accessToken: string,
+): Promise<QuickBooksAccount[]> {
+  const query = encodeURIComponent(
+    "select Id, Name, AccountType, AccountSubType from Account where Active = true maxresults 500",
+  );
+  const body = await accountingRequest<{
+    QueryResponse?: {
+      Account?: { Id: string; Name: string; AccountType: string; AccountSubType?: string }[];
+    };
+  }>(realmId, accessToken, `/query?query=${query}`);
+
+  return (body.QueryResponse?.Account ?? []).map((a) => ({
+    id: a.Id,
+    name: a.Name,
+    accountType: a.AccountType,
+    accountSubType: a.AccountSubType,
+  }));
+}
+
+export interface QuickBooksCustomer {
+  id: string;
+  displayName: string;
+}
+
+/** Finds a customer by exact display name. Used to link an existing GC
+ * rather than creating a duplicate of one the bookkeeper already has. */
+export async function findCustomerByName(
+  realmId: string,
+  accessToken: string,
+  displayName: string,
+): Promise<QuickBooksCustomer | null> {
+  // Intuit's query language takes single-quoted literals and has no
+  // parameter binding, so an apostrophe in a company name has to be
+  // doubled or the query is malformed. "O'Brien Construction" is a real
+  // name, not an edge case.
+  const escaped = displayName.replace(/'/g, "''");
+  const query = encodeURIComponent(
+    `select Id, DisplayName from Customer where DisplayName = '${escaped}'`,
+  );
+  const body = await accountingRequest<{
+    QueryResponse?: { Customer?: { Id: string; DisplayName: string }[] };
+  }>(realmId, accessToken, `/query?query=${query}`);
+
+  const found = body.QueryResponse?.Customer?.[0];
+  return found ? { id: found.Id, displayName: found.DisplayName } : null;
+}
+
+export async function createCustomer(
+  realmId: string,
+  accessToken: string,
+  displayName: string,
+): Promise<QuickBooksCustomer> {
+  const body = await accountingRequest<{ Customer: { Id: string; DisplayName: string } }>(
+    realmId,
+    accessToken,
+    "/customer",
+    { method: "POST", body: { DisplayName: displayName } },
+  );
+  return { id: body.Customer.Id, displayName: body.Customer.DisplayName };
+}
+
+export interface QuickBooksInvoice {
+  Id: string;
+  SyncToken?: string;
+  DocNumber?: string;
+  TotalAmt?: number;
+  Line?: { Amount?: number }[];
+}
+
+/** Creates or updates an invoice. QuickBooks uses the same endpoint for
+ * both and distinguishes them by whether Id/SyncToken are present. */
+export async function upsertInvoice(
+  realmId: string,
+  accessToken: string,
+  payload: unknown,
+): Promise<QuickBooksInvoice> {
+  const body = await accountingRequest<{ Invoice: QuickBooksInvoice }>(
+    realmId,
+    accessToken,
+    "/invoice",
+    { method: "POST", body: payload },
+  );
+  return body.Invoice;
+}
+
+/**
+ * Reads an invoice back.
+ *
+ * This is the whole point of the sync design: the response to a write is
+ * not treated as proof the write is correct. This project has already been
+ * burned by a tool reporting success against something nobody read.
+ */
+export async function getInvoice(
+  realmId: string,
+  accessToken: string,
+  qboId: string,
+): Promise<QuickBooksInvoice> {
+  const body = await accountingRequest<{ Invoice: QuickBooksInvoice }>(
+    realmId,
+    accessToken,
+    `/invoice/${encodeURIComponent(qboId)}`,
+  );
+  return body.Invoice;
+}
