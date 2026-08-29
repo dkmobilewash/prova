@@ -12,6 +12,42 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### A wrong database URL creates a new database instead of failing (Diego)
+
+The migrate workflow's first real run failed, and testing the fix found
+something worse than the failure.
+
+**The failure:** `P1002`, a 10-second timeout taking the migration advisory
+lock. Neon suspends an idle compute and the first connection pays for the
+wake, so on a cold database `migrate deploy` can lose that race having
+applied nothing. Nothing was even pending. A migration job that fails for
+reasons unrelated to migrations is one people learn to re-run without
+reading, which is how a real failure gets waved through later — so the
+script now wakes the compute with a trivial query first and retries a lock
+timeout three times with backoff. Only a lock timeout is retried; a genuine
+migration failure stays failed.
+
+**The worse thing.** Testing that fix by pointing at a database name that
+did not exist, the script reported "verified — every migration in this
+commit is applied" and exited 0. It was telling the truth:
+`prisma migrate deploy` CREATED the database and applied all 39 migrations
+to it.
+
+That is the most dangerous behaviour in this pipeline. A wrong URL does not
+fail — it quietly produces a second, empty, fully-migrated database, and
+every later "successfully applied" is true about the wrong one while the
+real data sits untouched somewhere else. Which is indistinguishable from
+what this project just spent a day untangling, and is a live candidate
+explanation for how `ep-little-sea` came to hold every migration and
+nobody's data.
+
+So the applier now refuses to migrate a database with no migration history
+unless `ALLOW_EMPTY_DATABASE=true` is set. Verified: it refuses, and
+critically, no database is created. Setting up a genuinely new database
+costs one environment variable once; the alternative cost has already been
+paid.
+
+
 ### The environment now says which database it is talking to (Diego)
 
 Two people spent a day disagreeing about whether a migration had been
