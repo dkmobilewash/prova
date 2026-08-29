@@ -12,6 +12,72 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### One place that tells you what is about to lapse (Diego)
+
+Sheet 14's last missing row, and the first thing in Sheet 26. Expiration
+was already computed correctly everywhere it was shown — but only where it
+was shown. A COI's expiry sat on `/compliance`; licences, insurance
+policies and bonds sat on `/settings`; none of the four sorted or flagged
+by date. Knowing a renewal was coming meant visiting two pages and reading
+every row, which nobody does weekly. The consequences are not small: a
+lapsed COI turns a crew away at the gate, and an expired licence can void
+the contract you are working under.
+
+No migration. All four models already carry an indexed date and a schema
+comment saying the status is computed at read time and never stored —
+this feature is what those comments were anticipating.
+
+Decisions worth keeping:
+
+**Horizons are per kind, not one number.** 30 days for certificates and
+policies, 60 for licences and bonds. The lead time you need is the lead
+time the renewal takes: a COI is a phone call to a broker, a state licence
+board is not. The round trip proved this does real work — two records
+expiring on the same day, 40 out, and the licence is flagged while the
+policy correctly is not.
+
+**A date expiring today is due, not expired.** Cover runs through the end
+of its last day, and telling someone their still-valid certificate has
+lapsed is how a warning stops being believed.
+
+**A missing date is a gap only where a date is expected.** Lien waivers
+and payroll reports never expire; flagging them would bury four real
+warnings under two hundred permanent ones, which is how alert lists die.
+COIs are the only compliance document filtered in at all.
+
+**A record that contradicts itself is never dropped.** `CompanyLicense`
+stores a `status` AND an `expirationDate`, so it is the one record here
+that can disagree with itself — "marked active, but its date has passed".
+Neither is corrected automatically: a person entered both and which one is
+stale is not knowable from here. It stays on the list whatever the date
+says, because no other page shows the conflict.
+
+**Nothing is dismissible.** An alert you can clear without fixing the
+record makes an empty list mean two different things.
+
+`lib/serverToday.ts` is new and deliberately separate from
+`components/localToday.ts`. That one answers "what day is it where the
+user is" — right for a date input a foreman is filling in, wrong here,
+because calling it during a server render breaks hydration. The tradeoff
+is stated in the file: for a few hours a day the UTC answer runs a day
+ahead of the user's calendar, which is noise on a 30- or 60-day horizon
+and not good enough anywhere the exact day decides something.
+
+Verified by result, not by claim: 19 unit tests (two deliberately mutated
+first to confirm they can fail), then a round trip against a real
+PostgreSQL — ordering by most-overdue, the two horizons splitting
+identical dates, the self-contradicting licence flagged, and the current
+COI, current policy, undated bond and lien waiver all correctly absent.
+
+Not built, and not claimed: delivery. Nothing emails, texts or pushes.
+Sheet 26 stays open, now as Partial — it reaches someone who opens the
+app, and nobody who doesn't.
+
+Also corrected here: the summary line at the top of `FEATURE-AUDIT.md`
+said 51/15/37 while the table under it said 59/13/35. Two answers in one
+file, drifted apart at some point. Recounted to the table.
+
+
 ### Deleting a catalog entry now asks twice (Diego)
 
 Browser testing found it: four deletions, four rows gone on the next

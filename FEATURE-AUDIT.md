@@ -23,13 +23,13 @@ in flight. Left as-is here rather than guessed at from the outside; the next
 update to touch those sheets should come from whoever actually verified them
 against a fresh clone.
 
-**104 items audited — 51 built / 15 partial / 37 missing / 1 descoped**
+**108 items audited — 60 built / 14 partial / 33 missing / 1 descoped**
 
 | Status | Count |
 | --- | --- |
-| Built | 59 |
-| Partial | 13 |
-| Missing | 35 |
+| Built | 60 |
+| Partial | 14 |
+| Missing | 33 |
 | Descoped | 1 |
 
 ## 01. Company / Org Setup — 5 built · 0 partial · 0 missing
@@ -178,7 +178,7 @@ forecasting shipped 26 Aug 2026.*
 | Missing | GC-issued backcharge tracking against a job (damages, cleanup, etc.) | no concept of a backcharge anywhere |
 | Missing | Backcharge disputes/resolution status | not modeled |
 
-## 14. Compliance Document Management — 4 built · 1 partial · 1 missing
+## 14. Compliance Document Management — 5 built · 1 partial · 0 missing
 
 | Status | Feature | Note |
 | --- | --- | --- |
@@ -187,7 +187,7 @@ forecasting shipped 26 Aug 2026.*
 | Built | Certified payroll submissions | type exists, now with AI extraction on upload |
 | Built | Union fringe/benefit filings | `UNION_FRINGE_BENEFIT_FILING` type |
 | Built | License/registration records per state | `CompanyLicense` |
-| Missing | Expiration/renewal alerts across all of the above | status is computed only when a page is viewed — nothing pushes a notification (see Sheet 26) |
+| Built | Expiration/renewal alerts across all of the above | `lib/compliance-expiry.ts` ranks COIs, licences, policies and bonds together; surfaced on `/compliance` in full and on the dashboard as the worst three. Still computed at read time, never stored — delivery (email/SMS) is Sheet 26 |
 
 ## 15. WIP & Financial Reporting — 2 built · 1 partial · 3 missing
 
@@ -282,11 +282,11 @@ forecasting shipped 26 Aug 2026.*
 | Missing | Distinct roles: estimator, PM, foreman/field, payroll/compliance admin, owner/exec, accounting | today's `UserRole` has exactly two values, OWNER and MEMBER |
 | Missing | Field-only mobile access vs. office full access | no access tier below MEMBER, no mobile-specific surface |
 
-## 26. Notifications & Alerts — 0 built · 0 partial · 5 missing
+## 26. Notifications & Alerts — 0 built · 1 partial · 4 missing
 
 | Status | Feature | Note |
 | --- | --- | --- |
-| Missing | COI/license/bond expiration alerts | expiration is computed at read time everywhere it's shown — nothing pushes it to anyone |
+| Partial | COI/license/bond expiration alerts | ranked across all four record types and shown on the dashboard, so it reaches someone who opens the app — but there is still no delivery channel, so it reaches nobody who doesn't |
 | Missing | Certified payroll submission deadline reminders | no reminder system exists |
 | Missing | Retainage release eligibility alerts | the underlying retainage data exists now (Sheet 11), but no alerting/notification system reads it yet |
 | Missing | Apprentice ratio out-of-compliance alerts | blocked on apprentice tracking not existing yet |

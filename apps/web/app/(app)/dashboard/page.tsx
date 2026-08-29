@@ -4,6 +4,10 @@ import { JobStatus, Prisma, prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { estimateStage } from "@/lib/estimate-stage";
 import { money } from "@/lib/money";
+import { RenewalAlerts } from "@/components/RenewalAlerts";
+import { renewalSourcesForCompany } from "@/lib/renewals";
+import { renewalAlerts } from "@/lib/compliance-expiry";
+import { serverToday } from "@/lib/serverToday";
 
 /**
  * Jobs and estimates, in one place.
@@ -94,10 +98,17 @@ export default async function JobsPage({
 
   // The totals describe the whole business, not the current filter — a
   // pipeline figure that changed when you clicked a tab would be useless.
-  const [jobs, allJobs] = await Promise.all([
+  const [jobs, allJobs, renewalSources] = await Promise.all([
     loadJobs(company.id, where),
     loadJobs(company.id, { companyId: company.id }),
+    renewalSourcesForCompany(company.id),
   ]);
+
+  // Expiries surface here because this is the page people open, and a
+  // renewal you only see by visiting /compliance is one you find out about
+  // from the GC instead. Only the worst three, with a count of the rest —
+  // this is a prompt to go and look, not the list itself.
+  const renewals = renewalAlerts(renewalSources, serverToday());
 
   const estimating = allJobs.filter((job) => job.status === "ESTIMATE");
   const won = allJobs.filter((job) => job.status === "CONTRACTED" || job.status === "IN_PROGRESS");
@@ -112,6 +123,12 @@ export default async function JobsPage({
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8">
+      {renewals.length > 0 && (
+        <div className="mb-6">
+          <RenewalAlerts renewals={renewals} limit={3} heading="Needs renewing" />
+        </div>
+      )}
+
       <h1 className="text-xl font-semibold text-slate-100">Jobs &amp; estimates</h1>
       <p className="mt-1 text-sm text-slate-400">
         Every job starts as an estimate, so they live together. Price it, get it signed, and it
