@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { estimateBurdenedLaborCost, laborRateDateFor } from "./estimate-labor-cost";
+import { burdenedHourlyRate, estimateBurdenedLaborCost, laborRateDateFor } from "./estimate-labor-cost";
 
 const schedule = (from: string, to: string | null, baseWage: number) => ({
   baseWage,
@@ -76,5 +76,29 @@ describe("laborRateDateFor", () => {
 
   it("falls back to today when no start date is set", () => {
     expect(laborRateDateFor({ startDate: null }, today)).toEqual(today);
+  });
+});
+
+describe("burdenedHourlyRate", () => {
+  const schedules = [schedule("2026-01-01", "2026-06-30", 50), schedule("2026-07-01", null, 60)];
+
+  it("is the cost of exactly one hour", () => {
+    expect(burdenedHourlyRate(schedules, new Date("2026-03-01"))).toBe(70);
+  });
+
+  it("rate x hours equals the saved line's figure, at every quantity", () => {
+    // The live hint multiplies this rate client-side while the saved row is
+    // priced by estimateBurdenedLaborCost. If those two ever disagreed, the
+    // preview would quote a different number from the row it creates.
+    const asOf = new Date("2026-08-01");
+    const rate = burdenedHourlyRate(schedules, asOf)!;
+    for (const hours of [0.25, 1, 7.5, 80, 1234.56]) {
+      expect(rate * hours).toBeCloseTo(estimateBurdenedLaborCost(hours, schedules, asOf)!, 9);
+    }
+  });
+
+  it("has no rate to give when no schedule is effective", () => {
+    expect(burdenedHourlyRate(schedules, new Date("2025-01-01"))).toBeNull();
+    expect(burdenedHourlyRate([], new Date("2026-03-01"))).toBeNull();
   });
 });

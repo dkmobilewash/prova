@@ -51,3 +51,21 @@ export function estimateBurdenedLaborCost(
 export function laborRateDateFor(job: { startDate: Date | null }, today: Date): Date {
   return job.startDate ?? today;
 }
+
+/**
+ * The burdened cost of one hour for a craft, or null when no schedule is
+ * effective on that date.
+ *
+ * Exists so a live hint can price hours as they're typed without a round
+ * trip: the burden is linear in hours, so the server can send one rate per
+ * craft and the client can multiply. Derived from estimateBurdenedLaborCost
+ * rather than recomputing base + fringes, so the typed-in preview and the
+ * figure shown on the saved line can't drift apart — a preview that quotes a
+ * different number from the row it creates is worse than no preview.
+ */
+export function burdenedHourlyRate(
+  schedules: FringeRateScheduleInput[],
+  asOf: Date,
+): number | null {
+  return estimateBurdenedLaborCost(1, schedules, asOf);
+}

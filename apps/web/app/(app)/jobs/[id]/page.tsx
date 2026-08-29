@@ -15,7 +15,8 @@ import { changeOrderValueDelta, pendingChangeOrderExposure, reopenBlockers } fro
 import { money } from "@/lib/money";
 import { calculateLineItemWip, calculateJobWip } from "@/lib/wip";
 import { calculateTimeEntryLaborCost, findEffectiveFringeRateSchedule } from "@/lib/labor-cost";
-import { estimateBurdenedLaborCost, laborRateDateFor } from "@/lib/estimate-labor-cost";
+import { burdenedHourlyRate, estimateBurdenedLaborCost, laborRateDateFor } from "@/lib/estimate-labor-cost";
+import { LaborHoursField } from "@/components/LaborHoursField";
 import { calculateRetainageSummary } from "@/lib/retainage";
 import { SubmitButton } from "@/components/SubmitButton";
 import {
@@ -235,6 +236,12 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
       })),
     ]),
   );
+  const craftOptions = craftClassifications.map((craft) => ({
+    id: craft.id,
+    label: `${craft.unionLocal.parentInternational} ${craft.unionLocal.localNumber} — ${craft.name}`,
+    hourlyRate: burdenedHourlyRate(schedulesByCraft.get(craft.id) ?? [], laborRateDate),
+  }));
+
   const estimatedLaborCostByLineItem = new Map(
     job.lineItems.map((item) => [
       item.id,
@@ -1682,29 +1689,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                     ))}
                   </select>
                 </label>
-                <label className="flex flex-col gap-1 text-sm text-slate-300">
-                  Labor hrs
-                  <input
-                    name="laborHours"
-                    placeholder="hrs"
-                    className="w-20 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
-                  />
-                </label>
-                <label className="flex flex-col gap-1 text-sm text-slate-300">
-                  Craft
-                  <select
-                    name="craftClassificationId"
-                    defaultValue=""
-                    className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
-                  >
-                    <option value="">No craft tag</option>
-                    {craftClassifications.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.unionLocal.parentInternational} {c.unionLocal.localNumber} — {c.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <LaborHoursField crafts={craftOptions} />
                 <SubmitButton
                   type="submit"
                   className="inline-flex items-center justify-center rounded-md bg-slate-800 px-4 py-2 text-sm font-medium text-slate-100 hover:bg-slate-700"
