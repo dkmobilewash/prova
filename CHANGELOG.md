@@ -12,6 +12,54 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### There are two Neon projects, and saying otherwise cost a day (Diego)
+
+Settled, with evidence, and written into the three files that were lying
+about it.
+
+| Project | Endpoint | Used by | Holds |
+| --- | --- | --- | --- |
+| Diego's | `ep-little-sea-a6bdnaw2` | Vercel — production AND previews | the real data |
+| Cyrus's | `ep-icy-hat-afqau56u` | Cyrus's laptop only | his own test data |
+
+Two production build logs printed `ep-little-sea` as the migrate target;
+the new Migrate workflow printed the same for secrets copied out of Diego's
+Neon project; that project answers `SELECT count(*) FROM "Job"` with 14,
+matching what the deployed app shows; and Cyrus's `_prisma_migrations`
+timestamps show merged migrations reaching `ep-icy-hat` only when he ran
+Prisma by hand.
+
+Everything confusing about 2026-08-29 follows from that table. A build log
+saying "successfully applied" and `migrate status` saying "not yet applied"
+were BOTH TRUE, about different databases. Nobody was wrong. The words "the
+database" meant two things, and no log anyone read named a host.
+
+The second project is not the bug — a developer with their own database is
+the right setup, and it is why `prisma migrate dev` on Cyrus's laptop was
+never the loaded gun this repo told him it was. The bug was the sentence
+"there is ONE Neon database and it is production", which was load-bearing
+for every migration risk call either of us made for weeks after it stopped
+being true.
+
+Corrected in `CLAUDE.md`, `ARCHITECTURE.md` and `ONBOARDING.md` — each now
+names both endpoints and says which is which, rather than saying "the
+database". `ONBOARDING.md` also tells a new developer to point at their own
+project rather than leaving it to be guessed, which is the step that
+created this situation in the first place.
+
+Two follow-ons worth keeping:
+
+**Cyrus's database is supposed to be behind**, and now has a documented
+catch-up: `pnpm --filter @prova/db run migrate:deploy`, which prints the
+host before it changes anything and verifies afterwards. A local 500 saying
+"column does not exist" means his database is behind main, not that the
+code is broken.
+
+**`ALLOW_PREVIEW_MIGRATIONS` is gone** — it left with the build's migrate
+step in #28, and three documents still described it. A documented escape
+hatch that no longer exists is worse than none.
+
+
 ### A wrong database URL creates a new database instead of failing (Diego)
 
 The migrate workflow's first real run failed, and testing the fix found

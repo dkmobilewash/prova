@@ -282,29 +282,58 @@ initial contract. Extending `SignatureRequest` to a change order is the
 natural next increment now that there's a pending state for it to attach
 to.
 
-### Only production migrates
+### Migrations are applied by CI on merge, and only there
 
-There is ONE Neon database, and a Vercel preview build runs the same build
-command a production build does. Without a gate, every push to every branch
-migrates production — an unmerged feature branch changes the live schema the
-moment it is pushed. That is not theoretical: `add_submittals`,
-`add_change_order_lifecycle` and `add_change_order_reopen_and_revision` all
-reached production from preview builds of branches whose PRs had not merged,
-and it is why `prisma migrate dev` on a feature branch has offered to reset
-the production database.
+There are TWO Neon projects, one per developer, and only one of them is
+production. Diego's (`ep-little-sea-a6bdnaw2`) is what Vercel uses for
+production AND previews, and it holds the real data. Cyrus's
+(`ep-icy-hat-afqau56u`) is a dev database reached only from his laptop.
+This document asserted a single database for weeks; that sentence is what
+made a day of confusion possible, because "the database" meant two
+different things to two people reading the same logs.
 
-`packages/db/scripts/migrate-deploy.mjs` runs migrations only when
-`VERCEL_ENV=production`. No `VERCEL_ENV` at all means the build isn't on
-Vercel — local or CI — where the target database is the runner's own, so it
-migrates normally.
+Every Vercel build — preview or production — runs the same build command.
+When that command applied migrations, every push to every branch changed
+production's schema: `add_submittals`, `add_change_order_lifecycle` and
+`add_change_order_reopen_and_revision` all reached production from preview
+builds of branches whose PRs had not merged.
 
-**The cost is real.** A preview of a branch that adds a model now runs
-against a database without those tables, so pages using them fail until the
-branch merges — in a project whose first rule is to verify by clicking, that
-matters. `ALLOW_PREVIEW_MIGRATIONS=true`, set on one preview branch in
-Vercel's environment variables, re-enables migration for that deployment and
-logs loudly that it is migrating production from a branch. It is opt-in so
-that doing it is a decision someone made rather than the default.
+Gating that to `VERCEL_ENV=production` fixed the preview case and missed a
+second door entirely. Promoting a preview to production reuses the
+preview's already-built output, so the build command never re-runs and its
+migrations never apply — a deployment can become production carrying code
+whose schema changes never happened anywhere.
+
+So migrations left the build entirely. `.github/workflows/migrate.yml`
+applies them on push to `main` — tied to the merge, which is the actual
+decision to change production, rather than to whichever build artifact
+happens to become production. It applies, then reads `migrate status` back
+to verify rather than trusting its own success message, because
+"successfully applied" is precisely the claim that turned out not to be a
+result.
+
+What runs in the Vercel build now is `packages/db/scripts/check-schema.mjs`,
+which applies nothing. It prints the host and database it is talking to on
+every build — the thing whose absence made the two-project confusion
+possible — refuses to build if `DATABASE_URL` and `DIRECT_URL` resolve to
+different databases, and refuses a PRODUCTION build when migrations are
+pending, since that means shipping code that reads columns which do not
+exist. A preview only warns: a branch's own migration legitimately has not
+merged yet.
+
+The applier also refuses a database with no migration history unless
+`ALLOW_EMPTY_DATABASE=true`. `prisma migrate deploy` CREATES a database
+that does not exist and applies every migration to it, reporting success —
+so a wrong URL does not fail, it manufactures a second, empty, plausible
+database while the real data sits elsewhere. Which is one candidate
+explanation for how this project came to have two.
+
+**The cost is real.** A preview of a branch that adds a model runs against
+a database without those tables, so pages using them fail until the branch
+merges — in a project whose first rule is to verify by clicking, that
+matters. To verify such a branch before merging, apply its migration to the
+target database yourself and redeploy; it is a deliberate act rather than
+something a push does on its own.
 
 **This is not the destination.** The actual fix is a database branch per
 preview — Neon supports it natively through the Vercel integration — which

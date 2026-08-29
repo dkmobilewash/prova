@@ -204,7 +204,15 @@ prova/
 5. **Get your env vars from Diego.** He'll send you, over a secure
    channel (not email, not committed to the repo — see his message):
    - A `DATABASE_URL` (a Postgres connection string) and a
-     `DIRECT_URL` (the same database, unpooled — migrations need it)
+     `DIRECT_URL` (the SAME database, unpooled — migrations need it).
+
+     Use YOUR OWN Neon project here, not production. There are two, one
+     per developer, and which one your `.env` names decides whether a
+     mistake costs you an afternoon or costs the business its data. Both
+     values must come from the same project: `DIRECT_URL` is that
+     project's direct endpoint, `DATABASE_URL` its `-pooler` one. If they
+     disagree the tooling now refuses to run, which is the check that
+     exists because they once silently didn't match for weeks.
    - `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY`
    - `ANTHROPIC_API_KEY`
    - `BLOB_READ_WRITE_TOKEN`
@@ -216,6 +224,13 @@ prova/
    `packages/db/.env`; nothing but the Prisma CLI reads it.
 6. **Run migrations:** from the repo root, `pnpm db:migrate`. This
    creates every table in your database.
+
+   Your database is a dev database and is SUPPOSED to fall behind `main`
+   — nothing applies migrations to it automatically. When a page 500s
+   locally with "column does not exist", that means your database is
+   behind, not that the code is broken. Catch it up with
+   `pnpm --filter @prova/db run migrate:deploy`, which prints the host it
+   is talking to before it changes anything.
 7. **Start the dev server:** `pnpm dev` from the repo root.
 8. **Open http://localhost:3000.** Click "Sign up," create an account —
    this automatically creates your own `Company` on first sign-in. You
