@@ -176,6 +176,67 @@ which is the other lane's core surface.
   *is* editable — a vendor moving their own commitment is normal and has to
   be recordable.
 
+### Closeout, warranty, and the arithmetic that hides in "one year" (Cyrus)
+`cyrus/drawings`
+
+Sheet 22 closed out. `/closeout` covers what's still owed before final
+payment and what you're still on the hook for after it.
+
+**`JobStatus` deliberately untouched.** The audit note said closeout and
+warranty were missing "because `JobStatus` ends at COMPLETE", which reads
+as an instruction to add lifecycle stages. Two reasons not to: the job
+lifecycle is the other lane's surface, and a stored stage can disagree
+with the dates underneath it — the same reason submittals, drawings and
+material orders have no stored status. A job is in warranty because it has
+a `WarrantyPeriod` whose derived expiry hasn't passed, not because someone
+remembered to move a flag.
+
+**A job with no checklist is NOT closeout-complete.** An empty list
+asserts nothing, and "complete" is the claim someone quotes while chasing
+final payment. Required items decide completeness; optional ones are
+tracked but never hold it open.
+
+**The warranty start is entered, not read from
+`Job.substantialCompletionDate`.** That field already drives retainage
+release forecasting, and the warranty clock and the retainage clock are
+not always the same date — warranty often runs from final completion or
+owner acceptance. Sharing one field would silently move one whenever the
+other was corrected.
+
+**End-of-month clamping, which is the part that would have shipped
+wrong.** A warranty of "6 months from 31 August" expires 28 February.
+JavaScript's `Date` rolls a month overflow forward and would have said
+3 March — quietly extending cover by three days on every job whose
+completion landed on the 29th, 30th or 31st. `addMonths` clamps to the
+last day of the target month, handles leap years, and is tested at both.
+Confirmed in the real UI, not only in the test: entering 2026-08-31 + 6
+renders "runs out 2027-02-28".
+
+**Whether a callback was in warranty is judged by its REPORTED date**, not
+by when it was resolved and not by today. A call raised in warranty stays
+in warranty however long the fix takes — otherwise a slow repair would
+quietly move the cost onto us.
+
+28 new tests. Verified able to fail by injecting two regressions — an
+empty checklist reporting complete, and naive month arithmetic — which
+failed 2 and 2 tests respectively.
+
+### Material orders can point at an SOV line, for attribution only (Cyrus)
+`cyrus/drawings`
+
+`MaterialOrder.lineItem` — nullable, `ON DELETE SET NULL`, and **nothing
+may ever sum money through it.** Material cost stays on `CostEntry`
+against the same `JobLineItem`; this exists so a late delivery can be tied
+to the scope it holds up, not so an order becomes a second source of
+line-item cost. Agreed with Diego on exactly those terms before it was
+written, and the constraint is recorded in the schema comment rather than
+only in Slack, because the schema is what the next person reads.
+
+The line select only offers lines from the order's own job, checked
+server-side too — a line from another job would attribute a delivery to
+scope it has nothing to do with. Deleted (change-ordered-out) lines are
+excluded.
+
 ### Drawing sets, and a guard that had never fired (Cyrus)
 `cyrus/drawings`
 

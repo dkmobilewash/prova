@@ -1,8 +1,13 @@
 "use client";
 
+import { useState } from "react";
 import { inputClass, labelClass, type JobOption } from "@/components/RfiFields";
 
 export type VendorOption = { id: string; name: string };
+
+/** A job's SOV lines, for attribution only. Carries no money — see the
+ * note on `MaterialOrder.lineItem` in the schema. */
+export type LineItemOption = { id: string; jobId: string; description: string };
 
 export type MaterialOrderDefaults = {
   description: string;
@@ -10,6 +15,7 @@ export type MaterialOrderDefaults = {
   vendorReference: string | null;
   notes: string | null;
   promisedFor: string | null;
+  lineItemId: string | null;
 };
 
 /** The order-identity half of a material order, shared by create and edit
@@ -20,18 +26,33 @@ export function MaterialOrderFields({
   vendors,
   jobs,
   defaultJobId,
+  lineItems = [],
+  fixedJobId,
 }: {
   defaults: MaterialOrderDefaults;
   vendors: VendorOption[];
   jobs?: JobOption[];
   defaultJobId?: string;
+  lineItems?: LineItemOption[];
+  fixedJobId?: string;
 }) {
+  // On create the job is chosen here, so the SOV lines on offer have to
+  // follow it. On edit the job is fixed and comes in as a prop.
+  const [selectedJobId, setSelectedJobId] = useState(fixedJobId ?? defaultJobId ?? "");
+  const jobLineItems = lineItems.filter((li) => li.jobId === selectedJobId);
+
   return (
     <>
       {jobs && (
         <label className={labelClass}>
           Job
-          <select name="jobId" required defaultValue={defaultJobId ?? ""} className={inputClass}>
+          <select
+            name="jobId"
+            required
+            defaultValue={defaultJobId ?? ""}
+            onChange={(e) => setSelectedJobId(e.target.value)}
+            className={inputClass}
+          >
             <option value="" disabled>
               Choose a job
             </option>
@@ -72,6 +93,24 @@ export function MaterialOrderFields({
           className={inputClass}
         />
       </label>
+
+      {jobLineItems.length > 0 && (
+        <label className={labelClass}>
+          Against which line of the schedule of values
+          <select name="lineItemId" defaultValue={defaults.lineItemId ?? ""} className={inputClass}>
+            <option value="">Not tied to a specific line</option>
+            {jobLineItems.map((li) => (
+              <option key={li.id} value={li.id}>
+                {li.description}
+              </option>
+            ))}
+          </select>
+          <span className="text-xs text-slate-500">
+            Optional, and for attribution only — it ties a late delivery to the scope it holds up. No
+            cost is carried here; material cost stays on the job&apos;s cost entries.
+          </span>
+        </label>
+      )}
 
       <div className="grid gap-3 sm:grid-cols-2">
         <label className={labelClass}>

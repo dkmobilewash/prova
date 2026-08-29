@@ -23,31 +23,34 @@ model Company {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  users                  User[]
-  contacts               Contact[]
-  jobs                   Job[]
-  invites                Invite[]
-  quickBooksConnection   QuickBooksConnection?
-  complianceDocuments    ComplianceDocument[]
-  licenses               CompanyLicense[]
-  tradeScopes            CompanyTradeScope[]
-  unionAgreements        CompanyUnionAgreement[]
-  insurancePolicies      CompanyInsurancePolicy[]
-  bonds                  CompanyBond[]
-  locations              CompanyLocation[]
-  bidInvitations         BidInvitation[]
-  vendors                Vendor[]
-  equipment              Equipment[]
-  lineItemCatalogEntries LineItemCatalogEntry[]
-  punchListItems         PunchListItem[]
-  dailyFieldReports      DailyFieldReport[]
-  rfis                   Rfi[]
-  submittals             Submittal[]
-  safetyCaseCounters     SafetyCaseCounter[]
-  safetyIncidents        SafetyIncident[]
-  toolboxTalks           ToolboxTalk[]
-  materialOrders         MaterialOrder[]
-  drawingSets            DrawingSet[]
+  users                   User[]
+  contacts                Contact[]
+  jobs                    Job[]
+  invites                 Invite[]
+  quickBooksConnection    QuickBooksConnection?
+  complianceDocuments     ComplianceDocument[]
+  licenses                CompanyLicense[]
+  tradeScopes             CompanyTradeScope[]
+  unionAgreements         CompanyUnionAgreement[]
+  insurancePolicies       CompanyInsurancePolicy[]
+  bonds                   CompanyBond[]
+  locations               CompanyLocation[]
+  bidInvitations          BidInvitation[]
+  vendors                 Vendor[]
+  equipment               Equipment[]
+  lineItemCatalogEntries  LineItemCatalogEntry[]
+  punchListItems          PunchListItem[]
+  dailyFieldReports       DailyFieldReport[]
+  rfis                    Rfi[]
+  submittals              Submittal[]
+  safetyCaseCounters      SafetyCaseCounter[]
+  safetyIncidents         SafetyIncident[]
+  toolboxTalks            ToolboxTalk[]
+  materialOrders          MaterialOrder[]
+  drawingSets             DrawingSet[]
+  closeoutItems           CloseoutItem[]
+  warrantyPeriods         WarrantyPeriod[]
+  warrantyServiceRequests WarrantyServiceRequest[]
 }
 
 enum UserRole {
@@ -88,6 +91,7 @@ model User {
   recordedToolboxTalks                 ToolboxTalk[]
   placedMaterialOrders                 MaterialOrder[]
   recordedDrawingRevisions             DrawingRevision[]
+  recordedWarrantyServiceRequests      WarrantyServiceRequest[]
 
   @@index([companyId])
 }

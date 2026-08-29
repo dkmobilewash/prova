@@ -81,6 +81,9 @@ model Job {
   materialOrders               MaterialOrder[]
   materialOrderCounter         MaterialOrderCounter?
   drawingSets                  DrawingSet[]
+  closeoutItems                CloseoutItem[]
+  warrantyPeriod               WarrantyPeriod?
+  warrantyServiceRequests      WarrantyServiceRequest[]
 
   @@index([companyId])
   @@index([contactId])
@@ -183,6 +186,9 @@ model JobLineItem {
   timeEntries      TimeEntry[]
   invoiceLineItems InvoiceLineItem[]
   proposedChanges  ChangeOrderProposal[]     @relation("ProposedChangeTarget")
+  /// Attribution only — see the note on MaterialOrder.lineItem. No money
+  /// is ever summed through this relation; cost stays on CostEntry.
+  materialOrders   MaterialOrder[]
 
   @@index([jobId])
   @@index([originChangeOrderId])

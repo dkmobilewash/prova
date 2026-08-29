@@ -11,6 +11,7 @@ import type { ActionResult } from "@/lib/actions/shared";
 import { inputClass, labelClass } from "@/components/RfiFields";
 import {
   MaterialOrderFields,
+  type LineItemOption,
   type MaterialOrderDefaults,
   type VendorOption,
 } from "@/components/MaterialOrderFields";
@@ -27,7 +28,9 @@ import { localToday } from "@/components/localToday";
 export type MaterialOrderRowData = MaterialOrderDefaults & {
   id: string;
   number: number;
+  jobId: string;
   jobName: string;
+  lineItemDescription: string | null;
   vendorName: string;
   orderedOn: string;
   orderedByName: string | null;
@@ -43,12 +46,14 @@ export function MaterialOrderRow({
   order,
   today,
   vendors,
+  lineItems,
   canDelete,
   showJob,
 }: {
   order: MaterialOrderRowData;
   today: string;
   vendors: VendorOption[];
+  lineItems: LineItemOption[];
   canDelete: boolean;
   showJob: boolean;
 }) {
@@ -91,7 +96,7 @@ export function MaterialOrderRow({
           <p className="text-sm font-semibold text-slate-300">
             Order {order.number} · {order.jobName} · ordered {order.orderedOn}
           </p>
-          <MaterialOrderFields defaults={order} vendors={vendors} />
+          <MaterialOrderFields defaults={order} vendors={vendors} lineItems={lineItems} fixedJobId={order.jobId} />
           {error && <p className="text-sm text-red-400">{error}</p>}
           <div className="flex gap-2">
             <button type="submit" disabled={isPending} className={primaryBtn}>
@@ -251,6 +256,9 @@ export function MaterialOrderRow({
 
         <p className="mt-1 text-xs text-slate-500">
           {showJob && <span className="text-blue-400">{order.jobName} · </span>}
+          {order.lineItemDescription && (
+            <span className="text-slate-400">for {order.lineItemDescription} · </span>
+          )}
           {order.vendorReference && `their #${order.vendorReference}`}
           {order.orderedByName &&
             `${order.vendorReference ? " · " : ""}ordered by ${order.orderedByName}`}
