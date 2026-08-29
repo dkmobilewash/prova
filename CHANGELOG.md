@@ -12,6 +12,71 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### The environment now says which database it is talking to (Diego)
+
+Two people spent a day disagreeing about whether a migration had been
+applied, and both were right. `prisma migrate deploy` in the Vercel build
+reported success — repeatedly, in logs I quoted back as proof — against
+`ep-little-sea-a6bdnaw2`, while both laptops and (on the evidence) the
+running app read `ep-icy-hat-afqau56u`. Cyrus settled it from
+`_prisma_migrations`: two merged migrations reached that database only when
+he ran Prisma by hand, hours after the builds said they were applied.
+
+Nothing was lying. Nothing printed a hostname either, so there was no way
+to see it. That is the actual defect, and it is what this fixes.
+
+**Every build now prints the database it is talking to**, passing or
+failing — host and database name, never a credential, since build logs
+aren't private. **And it refuses to build** when `DATABASE_URL` and
+`DIRECT_URL` resolve to different databases, which is the exact
+misconfiguration above. Also fatal: a `DIRECT_URL` pointing at a pooler,
+since `prisma migrate` needs session-level advisory locks a pooler can't
+hold. An unpooled `DATABASE_URL` is only a warning — it works, and failing
+a deploy over it would be worse than the problem.
+
+Neon gives one database branch two endpoints, the pooled one being the
+same id with `-pooler` appended, so the comparison normalises that away.
+Non-Neon hosts compare on host and database name outright rather than
+guessing. The parsing is tested against the two endpoint strings that
+actually disagreed, plus a test asserting no credential survives into the
+output.
+
+**The app logs its own connection target once per cold start.** That
+covers the case the build check cannot see: a PROMOTED deployment, where
+no build command runs at all.
+
+**Migrations moved out of the Vercel build into CI on merge to main**
+(`.github/workflows/migrate.yml`). The old gate ran them on
+`VERCEL_ENV=production` and was blind to promotion — promoting a preview
+reuses its already-built output, so the build command never re-runs and
+its migrations never apply. Two deployments were promoted that way.
+Merging is the decision to change production; a build is not.
+
+The workflow needs `DATABASE_URL` and `DIRECT_URL` repository secrets and
+fails loudly without them rather than skipping — a silent skip is how this
+class of bug survives. It also reads back `migrate status` after applying,
+because "successfully applied" is exactly the claim that turned out not to
+be a result.
+
+What the Vercel build does now is assert rather than apply: a production
+build REFUSES to ship when migrations are pending, because that means code
+reading columns that don't exist. A preview only warns — a branch's own
+migration legitimately hasn't merged yet, and failing there would block
+the clicking that catches these bugs.
+
+Verified against a real database rather than reasoned about: the mismatched
+pair and the pooled `DIRECT_URL` both exit 1; a healthy pair passes; with a
+migration row deleted from `_prisma_migrations`, a production build refuses
+and a preview warns and continues; and the CI applier refuses mismatched
+secrets before touching anything. 15 new tests, one deliberately mutated
+first to confirm it fails.
+
+Still open, and deliberately not guessed at: which endpoint Vercel's
+`DATABASE_URL` actually uses. CLAUDE.md's "there is ONE Neon database" is
+marked as the false claim it is rather than replaced with a second
+confident answer.
+
+
 ### Contractor licences can now be created (Diego)
 
 `CompanyLicense` had a model, two indexes, a slot in the renewals ranking

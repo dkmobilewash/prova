@@ -1,4 +1,4 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "pnpm --filter @prova/db run migrate:deploy && pnpm turbo run build --filter=@prova/web"
+  "buildCommand": "pnpm --filter @prova/db run check:schema && pnpm turbo run build --filter=@prova/web"
 }
