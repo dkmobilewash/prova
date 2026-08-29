@@ -16,6 +16,7 @@ import { money } from "@/lib/money";
 import { calculateLineItemWip, calculateJobWip } from "@/lib/wip";
 import { calculateTimeEntryLaborCost, findEffectiveFringeRateSchedule } from "@/lib/labor-cost";
 import { calculateRetainageSummary } from "@/lib/retainage";
+import { SubmitButton } from "@/components/SubmitButton";
 import {
   addCostEntry,
   addLineItem,
@@ -409,12 +410,12 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                   ))}
                 </select>
               </label>
-              <button
+              <SubmitButton
                 type="submit"
                 className="rounded-md bg-slate-800 px-3 py-2 text-sm font-medium text-slate-100 hover:bg-slate-700"
               >
                 Save dates
-              </button>
+              </SubmitButton>
             </form>
 
             <div className="mt-4 border-t border-slate-800 pt-4">
@@ -429,9 +430,9 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                         {assignment.user.name ?? assignment.user.email}
                       </span>
                       <form action={unassignCrewWithId(assignment.userId)}>
-                        <button type="submit" className="text-xs text-red-400 hover:underline">
+                        <SubmitButton type="submit" className="text-xs text-red-400 hover:underline">
                           Remove
-                        </button>
+                        </SubmitButton>
                       </form>
                     </li>
                   ))}
@@ -454,12 +455,12 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                       ))}
                     </select>
                   </label>
-                  <button
+                  <SubmitButton
                     type="submit"
                     className="rounded-md bg-slate-800 px-3 py-2 text-sm font-medium text-slate-100 hover:bg-slate-700"
                   >
                     Assign
-                  </button>
+                  </SubmitButton>
                 </form>
               )}
             </div>
@@ -494,12 +495,12 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                   No signing link yet. Once the client signs, this job can be marked as contracted.
                 </p>
                 <form action={createSignatureRequestWithId}>
-                  <button
+                  <SubmitButton
                     type="submit"
                     className="rounded-md bg-slate-800 px-3 py-2 text-sm font-medium text-slate-100 hover:bg-slate-700"
                   >
                     Create signing link
-                  </button>
+                  </SubmitButton>
                 </form>
               </div>
             )}
@@ -540,9 +541,9 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                   </div>
                   {currentUser.role === "OWNER" && (
                     <form action={deleteContractDocument.bind(null, doc.id)}>
-                      <button type="submit" className="text-xs text-red-400 hover:underline">
+                      <SubmitButton type="submit" className="text-xs text-red-400 hover:underline">
                         Delete
-                      </button>
+                      </SubmitButton>
                     </form>
                   )}
                 </li>
@@ -571,12 +572,12 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                 className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
               />
             </label>
-            <button
+            <SubmitButton
               type="submit"
               className="inline-flex items-center justify-center rounded-md border border-slate-700 px-4 py-2 text-sm font-medium text-slate-200 hover:bg-slate-800"
             >
               Upload
-            </button>
+            </SubmitButton>
           </form>
         </section>
 
@@ -663,13 +664,13 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                           <span className="flex items-center gap-2">
                             <span className="text-slate-100">{money(Number(entry.amount))}</span>
                             <form action={deleteCostEntryWithId(entry.id)}>
-                              <button
+                              <SubmitButton
                                 type="submit"
                                 title="Remove"
                                 className="text-xs text-red-400 hover:underline"
                               >
                                 Remove
-                              </button>
+                              </SubmitButton>
                             </form>
                           </span>
                         </li>
@@ -717,12 +718,12 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                         </option>
                       ))}
                     </select>
-                    <button
+                    <SubmitButton
                       type="submit"
                       className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-100 hover:bg-slate-700"
                     >
                       Log cost
-                    </button>
+                    </SubmitButton>
                   </form>
 
                   <form
@@ -748,12 +749,12 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                         className="w-44 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-600 focus:border-blue-500 focus:outline-none"
                       />
                     </label>
-                    <button
+                    <SubmitButton
                       type="submit"
                       className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-100 hover:bg-slate-700"
                     >
                       Save forecast
-                    </button>
+                    </SubmitButton>
                   </form>
                 </div>
               );
@@ -808,9 +809,9 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                     {entry.note && <span className="text-xs text-slate-500">— {entry.note}</span>}
                   </div>
                   <form action={deleteTimeEntryWithId(entry.id)}>
-                    <button type="submit" title="Remove" className="text-xs text-red-400 hover:underline">
+                    <SubmitButton type="submit" title="Remove" className="text-xs text-red-400 hover:underline">
                       Remove
-                    </button>
+                    </SubmitButton>
                   </form>
                 </li>
               ))}
@@ -915,12 +916,12 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
               placeholder="Note (optional)"
               className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
             />
-            <button
+            <SubmitButton
               type="submit"
               className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-100 hover:bg-slate-700"
             >
               Log time
-            </button>
+            </SubmitButton>
           </form>
         </section>
 
@@ -964,9 +965,9 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                     {slip.note && <span className="text-xs text-slate-500">— {slip.note}</span>}
                   </div>
                   <form action={deleteDispatchSlipWithId(slip.id)}>
-                    <button type="submit" title="Remove" className="text-xs text-red-400 hover:underline">
+                    <SubmitButton type="submit" title="Remove" className="text-xs text-red-400 hover:underline">
                       Remove
-                    </button>
+                    </SubmitButton>
                   </form>
                 </li>
               ))}
@@ -1038,12 +1039,12 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
               placeholder="Note (optional)"
               className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
             />
-            <button
+            <SubmitButton
               type="submit"
               className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-100 hover:bg-slate-700"
             >
               Log dispatch
-            </button>
+            </SubmitButton>
           </form>
         </section>
 
@@ -1087,9 +1088,9 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                     {determination.note && <span className="text-xs text-slate-500">— {determination.note}</span>}
                   </div>
                   <form action={deletePrevailingWageDeterminationWithId(determination.id)}>
-                    <button type="submit" title="Remove" className="text-xs text-red-400 hover:underline">
+                    <SubmitButton type="submit" title="Remove" className="text-xs text-red-400 hover:underline">
                       Remove
-                    </button>
+                    </SubmitButton>
                   </form>
                 </li>
               ))}
@@ -1132,12 +1133,12 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
               placeholder="Note (optional)"
               className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
             />
-            <button
+            <SubmitButton
               type="submit"
               className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-100 hover:bg-slate-700"
             >
               Attach
-            </button>
+            </SubmitButton>
           </form>
         </section>
 
@@ -1196,13 +1197,13 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                             <span className="flex items-center gap-2">
                               <span className="text-slate-100">{money(Number(payment.amount))}</span>
                               <form action={deletePayment.bind(null, job.id, payment.id)}>
-                                <button
+                                <SubmitButton
                                   type="submit"
                                   title="Remove"
                                   className="text-xs text-red-400 hover:underline"
                                 >
                                   Remove
-                                </button>
+                                </SubmitButton>
                               </form>
                             </span>
                           </li>
@@ -1231,12 +1232,12 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                           placeholder="Note (optional)"
                           className="flex-1 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
                         />
-                        <button
+                        <SubmitButton
                           type="submit"
                           className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-100 hover:bg-slate-700"
                         >
                           Log payment
-                        </button>
+                        </SubmitButton>
                       </form>
                     )}
                   </div>
@@ -1272,12 +1273,12 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                   className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
                 />
               </label>
-              <button
+              <SubmitButton
                 type="submit"
                 className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
               >
                 Create invoice
-              </button>
+              </SubmitButton>
             </form>
           </section>
         )}
@@ -1312,12 +1313,12 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                   className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
                 />
               </label>
-              <button
+              <SubmitButton
                 type="submit"
                 className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-100 hover:bg-slate-700"
               >
                 Save
-              </button>
+              </SubmitButton>
             </form>
 
             <div className="mb-4 grid grid-cols-2 gap-3 rounded-lg border border-slate-800 bg-slate-900 p-4 sm:grid-cols-3">
@@ -1365,9 +1366,9 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                       {release.note && <span className="text-xs text-slate-500">— {release.note}</span>}
                     </div>
                     <form action={deleteRetainageReleaseWithId(release.id)}>
-                      <button type="submit" title="Remove" className="text-xs text-red-400 hover:underline">
+                      <SubmitButton type="submit" title="Remove" className="text-xs text-red-400 hover:underline">
                         Remove
-                      </button>
+                      </SubmitButton>
                     </form>
                   </li>
                 ))}
@@ -1400,12 +1401,12 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                 placeholder="Note (optional)"
                 className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
               />
-              <button
+              <SubmitButton
                 type="submit"
                 className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-100 hover:bg-slate-700"
               >
                 Log release
-              </button>
+              </SubmitButton>
             </form>
           </section>
         )}
@@ -1507,27 +1508,27 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                           </option>
                         ))}
                       </select>
-                      <button
+                      <SubmitButton
                         type="submit"
                         title="Save"
                         className="rounded-md bg-slate-800 px-2 py-1 text-xs font-medium text-slate-100 hover:bg-slate-700"
                       >
                         Save
-                      </button>
-                      <button
+                      </SubmitButton>
+                      <SubmitButton
                         type="submit"
                         formAction={deleteLineItemWithId(item.id)}
                         title="Remove"
                         className="rounded-md bg-red-950 px-2 py-1 text-xs font-medium text-red-400 hover:bg-red-900"
                       >
                         Remove
-                      </button>
+                      </SubmitButton>
                     </div>
                   </form>
                   <form action={saveLineItemAsCatalogEntry.bind(null, item.id)} className="mt-1">
-                    <button type="submit" className="text-xs text-slate-500 hover:text-slate-300 hover:underline">
+                    <SubmitButton type="submit" className="text-xs text-slate-500 hover:text-slate-300 hover:underline">
                       Save as catalog item
-                    </button>
+                    </SubmitButton>
                   </form>
                   </div>
                 ))}
@@ -1617,12 +1618,12 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                     ))}
                   </select>
                 </label>
-                <button
+                <SubmitButton
                   type="submit"
                   className="inline-flex items-center justify-center rounded-md bg-slate-800 px-4 py-2 text-sm font-medium text-slate-100 hover:bg-slate-700"
                 >
                   Add line item
-                </button>
+                </SubmitButton>
               </form>
 
               {catalogEntries.length > 0 && (
@@ -1650,12 +1651,12 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                       className="w-20 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
                     />
                   </label>
-                  <button
+                  <SubmitButton
                     type="submit"
                     className="inline-flex items-center justify-center rounded-md border border-slate-700 px-4 py-2 text-sm font-medium text-slate-200 hover:bg-slate-800"
                   >
                     Add from catalog
-                  </button>
+                  </SubmitButton>
                 </form>
               )}
             </section>
@@ -1706,12 +1707,12 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                     className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
                   />
                 </label>
-                <button
+                <SubmitButton
                   type="submit"
                   className="inline-flex items-center justify-center rounded-md border border-slate-700 px-4 py-2 text-sm font-medium text-slate-200 hover:bg-slate-800"
                 >
                   Save version
-                </button>
+                </SubmitButton>
               </form>
             </section>
 

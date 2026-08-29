@@ -11,6 +11,7 @@ import {
 } from "@/lib/actions";
 import { QuickBooksTestConnectionButton } from "@/components/QuickBooksTestConnectionButton";
 import { money } from "@/lib/money";
+import { SubmitButton } from "@/components/SubmitButton";
 
 const QB_ERROR_MESSAGES: Record<string, string> = {
   access_denied: "You declined the QuickBooks connection request.",
@@ -124,9 +125,9 @@ export default async function SettingsPage({
             <div className="flex flex-wrap items-center gap-3">
               <QuickBooksTestConnectionButton />
               <form action={disconnectQuickBooks}>
-                <button type="submit" className="text-sm text-red-400 hover:underline">
+                <SubmitButton type="submit" className="text-sm text-red-400 hover:underline">
                   Disconnect
-                </button>
+                </SubmitButton>
               </form>
             </div>
           </div>
@@ -170,9 +171,9 @@ export default async function SettingsPage({
                   )}
                 </div>
                 <form action={deleteCompanyLocation.bind(null, location.id)}>
-                  <button type="submit" className="text-sm text-red-400 hover:underline">
+                  <SubmitButton type="submit" className="text-sm text-red-400 hover:underline">
                     Delete
-                  </button>
+                  </SubmitButton>
                 </form>
               </li>
             ))}
@@ -230,9 +231,9 @@ export default async function SettingsPage({
                 <input name="primaryContactPhone" className={inputClass} />
               </label>
             </div>
-            <button type="submit" className={`self-start ${addButtonClass}`}>
+            <SubmitButton type="submit" className={`self-start ${addButtonClass}`}>
               Add location
-            </button>
+            </SubmitButton>
           </form>
         </details>
       </section>
@@ -264,9 +265,9 @@ export default async function SettingsPage({
                     </p>
                   </div>
                   <form action={deleteInsurancePolicy.bind(null, policy.id)}>
-                    <button type="submit" className="text-sm text-red-400 hover:underline">
+                    <SubmitButton type="submit" className="text-sm text-red-400 hover:underline">
                       Delete
-                    </button>
+                    </SubmitButton>
                   </form>
                 </li>
               );
@@ -315,9 +316,9 @@ export default async function SettingsPage({
                 <input type="date" name="expirationDate" className={inputClass} />
               </label>
             </div>
-            <button type="submit" className={`self-start ${addButtonClass}`}>
+            <SubmitButton type="submit" className={`self-start ${addButtonClass}`}>
               Add policy
-            </button>
+            </SubmitButton>
           </form>
         </details>
       </section>
@@ -358,9 +359,9 @@ export default async function SettingsPage({
                     </p>
                   </div>
                   <form action={deleteBond.bind(null, bond.id)}>
-                    <button type="submit" className="text-sm text-red-400 hover:underline">
+                    <SubmitButton type="submit" className="text-sm text-red-400 hover:underline">
                       Delete
-                    </button>
+                    </SubmitButton>
                   </form>
                 </li>
               );
@@ -415,9 +416,9 @@ export default async function SettingsPage({
                 <input name="agentContactEmail" type="email" className={inputClass} />
               </label>
             </div>
-            <button type="submit" className={`self-start ${addButtonClass}`}>
+            <SubmitButton type="submit" className={`self-start ${addButtonClass}`}>
               Add bond
-            </button>
+            </SubmitButton>
           </form>
         </details>
       </section>

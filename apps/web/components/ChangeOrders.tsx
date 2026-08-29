@@ -16,6 +16,7 @@ import {
   voidChangeOrder,
 } from "@/lib/actions";
 import { TRADE_SCOPES } from "@/lib/actions/shared";
+import { SubmitButton } from "@/components/SubmitButton";
 
 const inputClass =
   "rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none";
@@ -161,9 +162,9 @@ function ProposalForms({ changeOrder, lineItems }: { changeOrder: ChangeOrderVie
               ))}
             </select>
           </label>
-          <button className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500">
+          <SubmitButton className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500">
             Add to CO
-          </button>
+          </SubmitButton>
         </form>
       )}
 
@@ -187,9 +188,9 @@ function ProposalForms({ changeOrder, lineItems }: { changeOrder: ChangeOrderVie
             New unit price
             <input name="unitPrice" type="number" step="0.01" className={`${inputClass} w-28`} />
           </label>
-          <button className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500">
+          <SubmitButton className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500">
             Add to CO
-          </button>
+          </SubmitButton>
           <p className="w-full text-xs text-slate-500">Leave a field blank to leave it unchanged.</p>
         </form>
       )}
@@ -206,9 +207,9 @@ function ProposalForms({ changeOrder, lineItems }: { changeOrder: ChangeOrderVie
               ))}
             </select>
           </label>
-          <button className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500">
+          <SubmitButton className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500">
             Add to CO
-          </button>
+          </SubmitButton>
         </form>
       )}
     </div>
@@ -232,21 +233,21 @@ function Decision({ changeOrder }: { changeOrder: ChangeOrderView }) {
             GC notes
             <input name="decisionNotes" className={`${inputClass} w-56`} placeholder="Approved per PM email" />
           </label>
-          <button className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-500">
+          <SubmitButton className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-500">
             Approve
-          </button>
+          </SubmitButton>
         </form>
         <form action={rejectChangeOrder.bind(null, changeOrder.id)} className="flex items-end gap-2">
           <input type="hidden" name="decidedOn" value={today()} />
-          <button className="rounded-md border border-rose-700 px-3 py-2 text-sm font-medium text-rose-300 hover:bg-rose-950">
+          <SubmitButton className="rounded-md border border-rose-700 px-3 py-2 text-sm font-medium text-rose-300 hover:bg-rose-950">
             Reject
-          </button>
+          </SubmitButton>
         </form>
         <form action={voidChangeOrder.bind(null, changeOrder.id)} className="flex items-end gap-2">
           <input type="hidden" name="decidedOn" value={today()} />
-          <button className="rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-400 hover:bg-slate-800">
+          <SubmitButton className="rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-400 hover:bg-slate-800">
             Withdraw
-          </button>
+          </SubmitButton>
         </form>
       </div>
     </div>
@@ -272,9 +273,9 @@ function Correction({ changeOrder }: { changeOrder: ChangeOrderView }) {
             Reopen to correct it
             <input name="reopenNote" className={`${inputClass} w-64`} placeholder="Priced at the wrong rate" />
           </label>
-          <button className="rounded-md border border-amber-700 px-3 py-2 text-sm font-medium text-amber-300 hover:bg-amber-950">
+          <SubmitButton className="rounded-md border border-amber-700 px-3 py-2 text-sm font-medium text-amber-300 hover:bg-amber-950">
             Reopen
-          </button>
+          </SubmitButton>
           <p className="w-full text-xs text-slate-500">
             Takes this change order back to a draft and undoes its effect on the contract value. Nothing
             depends on what it changed, so there is nothing to break — reversing an edit restores the
@@ -296,9 +297,9 @@ function Correction({ changeOrder }: { changeOrder: ChangeOrderView }) {
                 placeholder={`Revision of CO #${changeOrder.number}`}
               />
             </label>
-            <button className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500">
+            <SubmitButton className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500">
               Revise
-            </button>
+            </SubmitButton>
           </form>
         </div>
       )}
@@ -342,9 +343,9 @@ export function ChangeOrders({
           Notes
           <input name="description" className={`${inputClass} w-64`} />
         </label>
-        <button className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500">
+        <SubmitButton className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500">
           Start draft
-        </button>
+        </SubmitButton>
         <p className="w-full text-xs text-slate-500">
           A draft changes nothing until the GC approves it — the contract value only moves on approval.
         </p>
@@ -406,7 +407,7 @@ export function ChangeOrders({
                       </span>
                       {co.status === "DRAFT" && (
                         <form action={removeProposal.bind(null, proposal.id)}>
-                          <button className="text-xs text-slate-500 hover:text-rose-400">remove</button>
+                          <SubmitButton className="text-xs text-slate-500 hover:text-rose-400">remove</SubmitButton>
                         </form>
                       )}
                     </li>
@@ -436,17 +437,17 @@ export function ChangeOrders({
                         Date sent to GC
                         <input name="submittedOn" type="date" defaultValue={today()} className={`${inputClass} w-40`} />
                       </label>
-                      <button
+                      <SubmitButton
                         disabled={co.proposals.length === 0}
                         className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         Send to GC
-                      </button>
+                      </SubmitButton>
                     </form>
                     <form action={deleteChangeOrderDraft.bind(null, co.id)}>
-                      <button className="rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-400 hover:bg-slate-800">
+                      <SubmitButton className="rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-400 hover:bg-slate-800">
                         Discard draft
-                      </button>
+                      </SubmitButton>
                     </form>
                   </div>
                 </>

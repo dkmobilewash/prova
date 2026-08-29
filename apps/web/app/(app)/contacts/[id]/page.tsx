@@ -13,6 +13,7 @@ import {
 } from "@/lib/actions";
 import { money } from "@/lib/money";
 import { calculatePaymentReliability } from "@/lib/gc-reliability";
+import { SubmitButton } from "@/components/SubmitButton";
 
 const TRADE_SCOPE_OPTIONS = [
   { value: "METAL_FRAMING_DRYWALL", label: "Metal framing / drywall" },
@@ -167,12 +168,12 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
             </label>
           </div>
 
-          <button
+          <SubmitButton
             type="submit"
             className="mt-2 inline-flex w-fit items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
           >
             Save
-          </button>
+          </SubmitButton>
         </form>
       </section>
 
@@ -259,17 +260,17 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
                       title="Amount bid, once known"
                       className="w-24 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-600 focus:border-blue-500 focus:outline-none"
                     />
-                    <button
+                    <SubmitButton
                       type="submit"
                       className="rounded-md bg-slate-800 px-2 py-1 text-xs font-medium text-slate-100 hover:bg-slate-700"
                     >
                       Update
-                    </button>
+                    </SubmitButton>
                   </form>
                   <form action={deleteBidInvitation.bind(null, bid.id)}>
-                    <button type="submit" className="text-xs text-red-400 hover:underline">
+                    <SubmitButton type="submit" className="text-xs text-red-400 hover:underline">
                       Delete
-                    </button>
+                    </SubmitButton>
                   </form>
                 </div>
               </li>
@@ -317,12 +318,12 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
               className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
             />
           </label>
-          <button
+          <SubmitButton
             type="submit"
             className="inline-flex items-center justify-center rounded-md bg-slate-800 px-4 py-2 text-sm font-medium text-slate-100 hover:bg-slate-700"
           >
             Log invitation
-          </button>
+          </SubmitButton>
         </form>
       </section>
 
@@ -344,12 +345,12 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
               — no login required.
             </p>
             <form action={enablePortalWithId}>
-              <button
+              <SubmitButton
                 type="submit"
                 className="rounded-md bg-slate-800 px-3 py-2 text-sm font-medium text-slate-100 hover:bg-slate-700"
               >
                 Enable client portal
-              </button>
+              </SubmitButton>
             </form>
           </div>
         )}

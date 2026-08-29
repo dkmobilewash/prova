@@ -2,6 +2,7 @@ import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { createLineItemCatalogEntry, deleteLineItemCatalogEntry } from "@/lib/actions";
 import { money } from "@/lib/money";
+import { SubmitButton } from "@/components/SubmitButton";
 
 const TRADE_SCOPE_OPTIONS = [
   { value: "METAL_FRAMING_DRYWALL", label: "Metal framing / drywall" },
@@ -64,9 +65,9 @@ export default async function CatalogPage() {
                   </p>
                 </div>
                 <form action={deleteLineItemCatalogEntry.bind(null, entry.id)}>
-                  <button type="submit" className="text-xs text-red-400 hover:underline">
+                  <SubmitButton type="submit" className="text-xs text-red-400 hover:underline">
                     Delete
-                  </button>
+                  </SubmitButton>
                 </form>
               </li>
             ))}
@@ -149,12 +150,12 @@ export default async function CatalogPage() {
               </select>
             </label>
           )}
-          <button
+          <SubmitButton
             type="submit"
             className="inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
           >
             Add entry
-          </button>
+          </SubmitButton>
         </form>
       </section>
     </div>

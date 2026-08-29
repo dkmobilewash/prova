@@ -1,4 +1,5 @@
 import { createJob } from "@/lib/actions";
+import { SubmitButton } from "@/components/SubmitButton";
 
 export default function NewJobPage() {
   return (
@@ -40,12 +41,12 @@ export default function NewJobPage() {
             placeholder="jane@example.com"
           />
         </label>
-        <button
+        <SubmitButton
           type="submit"
           className="mt-2 inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
         >
           Create job
-        </button>
+        </SubmitButton>
       </form>
     </div>
   );
