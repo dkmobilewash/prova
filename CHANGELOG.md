@@ -12,6 +12,64 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### Contractor licences can now be created (Diego)
+
+`CompanyLicense` had a model, two indexes, a slot in the renewals ranking
+and a row in FEATURE-AUDIT marked **Built** — and no way to create one.
+Not a form, not an action, nothing. So a quarter of the renewals feature
+ranked a record type that could not exist, and the audit had said
+otherwise since 25 August.
+
+Worth naming how that was found. It wasn't found by reading the code, and
+it wasn't found by any check: typecheck, lint, tests and the build were
+all green the entire time a documented capability had no data path. It
+came out of a browser run confirming there was no licence form on any of
+the sixteen routes.
+
+`/settings` now has a Contractor licences section: add behind a button,
+inline row edit, two-step delete, real empty state, owner-only — the same
+shape as every other list.
+
+Decisions:
+
+**No "Expired" in the status dropdown.** `LicenseStatus` has one, but
+whether a licence has expired is what its expiration date says. Storing it
+as a status too is a second copy of a derived fact, and it is precisely the
+contradiction the renewals panel has to detect and report. The four
+settable statuses — active, suspended, pending, inactive — all describe a
+board's action on the licence, which no date can tell you. Rows that
+already store EXPIRED still render; nothing new can create one.
+
+**Classification is a datalist, not a select.** Licensing structure isn't
+uniform: CA and AZ split by trade, UT combines several trades into one
+code, Colorado has no classification system at all. Suggestions appear for
+jurisdictions someone has actually seeded into
+`LicenseClassificationReference` and the field stays free text everywhere
+else. That table is still empty, and I did not seed it — the schema is
+explicit that a wrong code there is worse than no row, and I have no
+verified source for those lists.
+
+**Duplicates are checked on jurisdiction + number, not number alone.** A
+licence number is only unique within the body that issued it, so the same
+digits in two jurisdictions are two real licences.
+
+**The expiry-before-issue check exists** because that typo would otherwise
+show up as a licence you just added already sitting in the expired list.
+
+**`today` is passed from the server** into the row component rather than
+computed in the browser, so the two renders can't disagree about what day
+it is.
+
+The actions return `ActionResult` and the forms render it — production
+redacts thrown Server Action messages, so "that licence is already
+recorded" would otherwise arrive as an unexplained failure.
+
+Honest status: typecheck, lint, 106 tests and the build all pass, and the
+ranking logic these rows feed was clicked through against real data
+earlier. The form and its three actions themselves have not been clicked
+yet.
+
+
 ### Two pages, one record, two different day counts (Diego)
 
 Browser testing put both numbers on screen at once. `/settings` said a

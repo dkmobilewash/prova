@@ -13,6 +13,7 @@ import { QuickBooksTestConnectionButton } from "@/components/QuickBooksTestConne
 import { money } from "@/lib/money";
 import { SubmitButton } from "@/components/SubmitButton";
 import { ConfirmDeleteButton } from "@/components/ConfirmDeleteButton";
+import { CompanyLicenses } from "@/components/CompanyLicenses";
 import {
   classifyRenewal,
   renewalTiming,
@@ -114,7 +115,7 @@ export default async function SettingsPage({
     );
   }
 
-  const [connection, locations, insurancePolicies, bonds] = await Promise.all([
+  const [connection, locations, insurancePolicies, bonds, licences, classifications] = await Promise.all([
     prisma.quickBooksConnection.findUnique({
       where: { companyId: company.id },
       include: { connectedByUser: true },
@@ -122,6 +123,18 @@ export default async function SettingsPage({
     prisma.companyLocation.findMany({ where: { companyId: company.id }, orderBy: { createdAt: "asc" } }),
     prisma.companyInsurancePolicy.findMany({ where: { companyId: company.id }, orderBy: { createdAt: "asc" } }),
     prisma.companyBond.findMany({ where: { companyId: company.id }, orderBy: { createdAt: "asc" } }),
+    prisma.companyLicense.findMany({
+      where: { companyId: company.id },
+      orderBy: [{ jurisdictionName: "asc" }, { licenseNumber: "asc" }],
+    }),
+    // A global lookup, not scoped to a company. Empty today — deliberately
+    // seeded only for jurisdictions with a real, verified code list, since
+    // the schema is explicit that a wrong code here is worse than none. The
+    // form falls back to free text, which is correct for Colorado anyway.
+    prisma.licenseClassificationReference.findMany({
+      orderBy: [{ jurisdictionName: "asc" }, { code: "asc" }],
+      select: { jurisdictionName: true, code: true, label: true },
+    }),
   ]);
 
   return (
@@ -266,6 +279,34 @@ export default async function SettingsPage({
             </SubmitButton>
           </form>
         </details>
+      </section>
+
+      <section className="mb-10">
+        <h2 className="mb-3 text-sm font-semibold text-slate-300">Contractor licences</h2>
+        <p className="mb-4 text-sm text-slate-400">
+          One row per licence you hold, not per state — some jurisdictions have no state licence at
+          all, only municipal ones, so working in two Colorado cities means two rows here. These feed
+          the renewals list on Compliance.
+        </p>
+        <CompanyLicenses
+          licences={licences.map((licence) => ({
+            id: licence.id,
+            jurisdictionType: licence.jurisdictionType,
+            jurisdictionName: licence.jurisdictionName,
+            classificationCode: licence.classificationCode,
+            classificationLabel: licence.classificationLabel,
+            licenseNumber: licence.licenseNumber,
+            issueDate: toIsoDate(licence.issueDate),
+            expirationDate: toIsoDate(licence.expirationDate),
+            status: licence.status,
+            bondNumber: licence.bondNumber,
+          }))}
+          classifications={classifications}
+          // Passed down rather than computed in the browser: the client
+          // deciding what day it is would disagree with this render.
+          today={serverToday()}
+          canManage={currentUser.role === "OWNER"}
+        />
       </section>
 
       <section className="mb-10">

@@ -186,7 +186,7 @@ forecasting shipped 26 Aug 2026.*
 | Partial | Lien waivers (conditional/unconditional, progress/final) per pay period | `LIEN_WAIVER` type exists generically — no conditional/unconditional or progress/final sub-typing |
 | Built | Certified payroll submissions | type exists, now with AI extraction on upload |
 | Built | Union fringe/benefit filings | `UNION_FRINGE_BENEFIT_FILING` type |
-| Built | License/registration records per state | `CompanyLicense` |
+| Built | License/registration records per state | `CompanyLicense`, with create/edit/delete on `/settings` — it was marked Built on the model alone from 25 Aug until 29 Aug, during which no licence could be created at all |
 | Built | Expiration/renewal alerts across all of the above | `lib/compliance-expiry.ts` ranks COIs, licences, policies and bonds together; surfaced on `/compliance` in full and on the dashboard as the worst three. Still computed at read time, never stored — delivery (email/SMS) is Sheet 26 |
 
 ## 15. WIP & Financial Reporting — 2 built · 1 partial · 3 missing
