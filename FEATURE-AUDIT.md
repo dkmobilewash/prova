@@ -27,9 +27,9 @@ against a fresh clone.
 
 | Status | Count |
 | --- | --- |
-| Built | 59 |
-| Partial | 13 |
-| Missing | 34 |
+| Built | 68 |
+| Partial | 14 |
+| Missing | 25 |
 | Descoped | 1 |
 
 ## 01. Company / Org Setup — 5 built · 0 partial · 0 missing
