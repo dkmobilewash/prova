@@ -282,6 +282,35 @@ initial contract. Extending `SignatureRequest` to a change order is the
 natural next increment now that there's a pending state for it to attach
 to.
 
+### Only production migrates
+
+There is ONE Neon database, and a Vercel preview build runs the same build
+command a production build does. Without a gate, every push to every branch
+migrates production — an unmerged feature branch changes the live schema the
+moment it is pushed. That is not theoretical: `add_submittals`,
+`add_change_order_lifecycle` and `add_change_order_reopen_and_revision` all
+reached production from preview builds of branches whose PRs had not merged,
+and it is why `prisma migrate dev` on a feature branch has offered to reset
+the production database.
+
+`packages/db/scripts/migrate-deploy.mjs` runs migrations only when
+`VERCEL_ENV=production`. No `VERCEL_ENV` at all means the build isn't on
+Vercel — local or CI — where the target database is the runner's own, so it
+migrates normally.
+
+**The cost is real.** A preview of a branch that adds a model now runs
+against a database without those tables, so pages using them fail until the
+branch merges — in a project whose first rule is to verify by clicking, that
+matters. `ALLOW_PREVIEW_MIGRATIONS=true`, set on one preview branch in
+Vercel's environment variables, re-enables migration for that deployment and
+logs loudly that it is migrating production from a branch. It is opt-in so
+that doing it is a decision someone made rather than the default.
+
+**This is not the destination.** The actual fix is a database branch per
+preview — Neon supports it natively through the Vercel integration — which
+would give previews a real schema to test against without touching
+production at all. This gate stops the bleeding until that is wired up.
+
 ### `CostEntry` — actual cost, referencing the same line item
 
 Job costing follows the identical pattern as change orders: a new table
