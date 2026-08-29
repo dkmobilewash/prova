@@ -115,17 +115,53 @@ Vercel deployment and repo settings). Each drives their own agent.
 - Edit code by reading the actual text and replacing it exactly — a
   structural regex once inserted code into the wrong block and produced
   14 cascading errors.
-- **How many Neon databases there are is OPEN, and the old answer was
-  wrong.** This file said "there is ONE Neon database and it is
-  production" for weeks. On 2026-08-29 two production build logs showed
-  `prisma migrate deploy` connecting to `ep-little-sea-a6bdnaw2` while both
-  developers' `.env` pointed at `ep-icy-hat-afqau56u`, and Cyrus's
-  `_prisma_migrations` timestamps showed two merged migrations reaching
-  that second database only when he ran Prisma by hand, hours later. So
-  builds and laptops were reading different databases. Which endpoint
-  Vercel's `DATABASE_URL` uses has not been read yet; until it has, do not
-  reason from a count. Treat a merged migration as UNAPPLIED until
-  `prisma migrate status` says otherwise against the database you mean.
+- **THERE ARE TWO NEON PROJECTS, ONE PER PERSON. This file said there was
+  one for weeks, and that sentence cost two people a day.**
+
+  | Project | Endpoint | Used by | Holds |
+  | --- | --- | --- | --- |
+  | Diego's | `ep-little-sea-a6bdnaw2` | Vercel — production AND previews | the real data |
+  | Cyrus's | `ep-icy-hat-afqau56u` | Cyrus's laptop only | his own test data |
+
+  Established 2026-08-29 from: two production build logs printing
+  `ep-little-sea` as the migrate target; the `Migrate` workflow printing
+  the same for secrets copied out of Diego's Neon project; that project
+  answering `SELECT count(*) FROM "Job"` with 14, matching what the
+  deployed app shows; and Cyrus's `_prisma_migrations` timestamps showing
+  merged migrations reaching `ep-icy-hat` only when he ran Prisma by hand.
+
+  Everything confusing about that day follows from the table. A build log
+  saying "successfully applied" and `migrate status` saying "not yet
+  applied" were BOTH TRUE, about different databases. Neither person was
+  wrong; the words "the database" meant two things.
+
+  So: name the endpoint, never say "the database". A migration is applied
+  to a HOST, and `prisma migrate status` only answers for the connection
+  string it was given.
+
+- **Cyrus's database is a dev database and is SUPPOSED to be behind.** It
+  gets nothing automatically — not from CI, not from a deploy. To catch it
+  up, from his own checkout with his own `.env`:
+
+  ```
+  pnpm --filter @prova/db run migrate:deploy
+  ```
+
+  That prints the host before it does anything, refuses if the two URLs
+  disagree, applies what is pending, and reads `migrate status` back to
+  verify rather than trusting its own success message. Do this whenever a
+  page 500s locally with "column does not exist" — that error means his
+  database is behind main, not that the code is broken.
+
+- **`prisma migrate dev` offering to reset the database is NOT about
+  production, on Cyrus's machine.** This file used to say it was, in
+  capitals, and that was wrong: his `.env` points at his own project, so
+  the reset offer is about his own dev data. It is still worth reading the
+  prompt rather than reflexively accepting — losing a day's local test data
+  is annoying — but it is not the loaded gun this file made it out to be.
+  On a machine whose `.env` points at `ep-little-sea`, it IS production and
+  the answer is always no. Check the host in the prompt; that is the whole
+  test.
 - **Every build now prints which database it is talking to** (host and
   name, never credentials), and refuses to build if `DATABASE_URL` and
   `DIRECT_URL` resolve to different databases. That check is
@@ -147,21 +183,29 @@ Vercel deployment and repo settings). Each drives their own agent.
   the build actually runs. Previews are public (no deployment protection),
   carry the branch's latest commit at a stable alias, and are what browser
   testing should point at.
-- Previews share whatever database Vercel is configured with.
+- Previews share PRODUCTION's database — they run on Vercel's env vars,
+  so a preview reads and writes `ep-little-sea`, the real data. Browser
+  testing against a preview creates real rows; use an obvious prefix and
+  delete them afterwards.
   Until 2026-08-28 every deployment migrated it, so a migration went live
-  ON PUSH (`add_submittals` reached production from an unmerged branch);
-  #18 gated that to `VERCEL_ENV=production`, so migrations now land when
-  the PR MERGES. Three things still follow. Additive migrations only
-  unless you've pinged first — a drop is irreversible against real data.
-  Never answer yes to `prisma migrate dev` offering to reset the
-  database: that offer is about PRODUCTION. It appears when your branch
-  is missing a migration the DB already has, which is what branching off
-  `main` while another branch's migration is live does — base the branch
-  on the branch that owns the migration instead. And a preview of a
-  branch adding a model now runs against a database WITHOUT those tables,
-  so those pages fail on the preview until it merges; set
-  `ALLOW_PREVIEW_MIGRATIONS=true` on that one branch in Vercel to verify
-  by clicking, and take it off after.
+  ON PUSH (`add_submittals` reached production from an unmerged branch).
+  #18 gated that to `VERCEL_ENV=production`; #28 took it out of the build
+  altogether, because that gate could not see promotion. Migrations now
+  land when the PR MERGES, applied by CI.
+
+  Three things follow. Additive migrations only unless you've pinged first
+  — a drop is irreversible against real data. The `prisma migrate dev`
+  reset offer appears when your branch is missing a migration the database
+  already has, which is what branching off `main` while another branch's
+  migration is live does — base the branch on the branch that owns the
+  migration instead; whether accepting it is catastrophic or merely
+  annoying depends on which host your `.env` points at, per the table
+  above. And a preview of a branch adding a model runs against a database
+  WITHOUT those tables, so those pages fail on the preview until it merges
+  — to click through such a branch first, apply its migration to the
+  target database yourself and redeploy. (`ALLOW_PREVIEW_MIGRATIONS` was
+  the old escape hatch and no longer exists; it left with the build's
+  migrate step.)
 - **A successful write can show up as an empty list — cause NOT
   established.** Observed once: the action returned ok, the row was in
   the database, the page said "Nothing on order", and a manual reload
