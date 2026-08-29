@@ -18,6 +18,7 @@ const isProtectedRoute = createRouteMatcher([
   "/cash-flow(.*)",
   "/estimating(.*)",
   "/submittals(.*)",
+  "/material-orders(.*)",
 ]);
 
 // /api/quickbooks/callback is deliberately NOT protected here — see

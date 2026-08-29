@@ -12,6 +12,101 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+## 2026-08-28
+
+### Material order and delivery tracking per job (Cyrus)
+`cyrus/material-orders`
+
+What's on order, who owes it, and whether it turned up. Material that
+doesn't arrive is a crew standing around, and "the studs were three weeks
+late" is worth nothing in a delay conversation without the date it was
+ordered and the date the vendor promised.
+
+**It deliberately carries no quantity and no unit price.** A
+`MaterialOrderLineItem` with quantity and price would be a second live
+copy of line-item data, which is the one thing ARCHITECTURE.md forbids.
+Material cost already has a home (`CostEntry` against a `JobLineItem`) and
+scope already has a home (`JobLineItem`). This model answers only what
+neither of those can: is it here yet, and if not, who is late. A link from
+an order to a specific `JobLineItem` was considered and deferred — it
+would be a pure addition, but it touches the unified line-item model,
+which is the other lane's core surface.
+
+- **Numbers** come from `MaterialOrderCounter`, incremented in the same
+  transaction as the insert. Never `max(n)+1`. Check: delete the highest
+  order and the next one issued must not reuse its number.
+- **Partial deliveries are their own rows**, not a pair of columns on the
+  order — half the studs Tuesday and the rest whenever is the normal case.
+  A delivery can be marked as closing the order out, and removing that
+  delivery is how a wrongly-closed order reopens.
+- **State is derived, never stored**: awaiting / partly delivered /
+  delivered comes from the deliveries on every render. A stored status can
+  disagree with the deliveries underneath it, and then "still waiting on
+  it" and "it's all here" are both on screen at once.
+- **An order with no promised date is never late.** Nobody committed to
+  anything, so there is nothing to be late against — inventing a date to
+  measure against would manufacture lateness no vendor agreed to.
+- **Guards**: a promised date before the order was placed, a delivery
+  before the order was placed, and a second delivery against an order
+  already closed out. The last reads the closing delivery INSIDE the
+  transaction — checked outside, two people receiving the same truck both
+  pass and the order closes twice with two different completion dates.
+- **The ordered date is not editable after creation.** Every delivery is
+  measured against it, so moving the start of the clock would retroactively
+  rewrite the lateness of deliveries already recorded. The promised date
+  *is* editable — a vendor moving their own commitment is normal and has to
+  be recordable.
+
+### A successful write can render as an empty page (Cyrus)
+`cyrus/material-orders`
+
+Found by driving the browser, not by any check. Created a material order:
+the action returned ok, the form closed, the row was in the database — and
+the page rendered "Nothing on order". The dev server log had the reason:
+
+    Timed out fetching a new connection from the connection pool
+    (Current connection pool timeout: 30, connection limit: 5)
+    prisma:error Error in PostgreSQL connection: Error { kind: Closed }
+
+The write committed; the revalidated re-render couldn't get a connection,
+so the page queried nothing and honestly reported nothing.
+
+**Why this is worse than an error page.** The user sees a successful save
+followed by a list that says the thing isn't there. The natural response
+is to save it again — so the failure mode of an exhausted pool is
+DUPLICATE RECORDS, silently, with no error anywhere the user can see.
+Vercel's serverless functions open a connection per invocation, so
+production is more exposed to this than localhost, not less.
+
+Reproduced and then ruled out as a code bug: after restarting the dev
+server with a healthy pool, the same create refreshed the list correctly.
+Two things that looked like bugs and were not — the "Log an order" button
+appearing dead, and creates never refreshing — were both this plus a
+hydration mismatch from a ColorZilla browser extension injecting
+`cz-shortcut-listen` into `<body>`.
+
+Nothing is fixed here; this is a record of the failure mode. The
+connection budget is worth a look before more concurrent users exist.
+
+### `ActionResult` moved to `lib/actions/shared.ts` (Cyrus)
+`cyrus/material-orders`
+
+Submittals defined `ActionResult` locally as the first module in the
+returned-failure shape. Adding a second such module broke the build:
+`lib/actions/index.ts` does `export *` from every domain file, and two
+modules exporting the same type name is `TS2308`. The type and its `ok`/
+`fail` helpers now live in `shared.ts`, which is deliberately not a
+`"use server"` module and is never re-exported from the barrel — so there
+is exactly one definition and no collision. Both submittals and material
+orders import it from there.
+
+Worth noting the failure mode: two structurally identical copies of a type
+in two feature modules is invisible until a third feature adds a third
+copy. The barrel caught it at `typecheck` this time; it would not have
+caught two copies that had drifted apart in shape.
+
+---
+
 ## 2026-08-27
 
 ### Production redacts thrown Server Action messages — settled by result (Cyrus)

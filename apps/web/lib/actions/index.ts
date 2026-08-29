@@ -24,3 +24,4 @@ export * from "./safety";
 export * from "./rfis";
 export * from "./changeOrders";
 export * from "./submittals";
+export * from "./materialOrders";

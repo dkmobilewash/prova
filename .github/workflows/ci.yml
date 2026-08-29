@@ -32,6 +32,16 @@ jobs:
       - name: Generate Prisma client
         run: pnpm db:generate
 
+      # Runs before lint/typecheck/build because it is by far the fastest
+      # signal here (~0.4s) and it is the only one that checks BEHAVIOUR
+      # rather than shape. Lint, typecheck and a full build have all passed
+      # over real defects in this repo — a reissued case number, a
+      # same-day answer that was impossible, a superseded revision shown
+      # as current. Those live in the derived-state and date logic these
+      # tests cover.
+      - name: Test
+        run: pnpm test
+
       - name: Lint
         run: pnpm lint
 

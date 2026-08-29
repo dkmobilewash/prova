@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
 import { Prisma, prisma } from "@prova/db";
-import { assertOwner } from "./shared";
+import { actionFail as fail, actionOk as ok, assertOwner, type ActionResult } from "./shared";
 
 /** Actions in this module RETURN their failures instead of throwing them.
  *
@@ -15,15 +15,9 @@ import { assertOwner } from "./shared";
  * `{ ok: false, error }` and the form renders `error`; `throw` is
  * reserved for genuine bugs, which SHOULD be redacted in production.
  *
- * This is the first module written in this shape. If the team settles on
- * a shared type in shared.ts, this alias moves there — one line.
+ * This was the first module written in this shape. The type and its
+ * helpers now live in `./shared`, shared with every feature that follows.
  */
-export type ActionResult = { ok: true } | { ok: false; error: string };
-
-const ok: ActionResult = { ok: true };
-function fail(error: string): ActionResult {
-  return { ok: false, error };
-}
 
 /** Thrown by the form parsers below, caught at each action's boundary and
  * converted to a returned failure — parsing stays terse, the wire stays
