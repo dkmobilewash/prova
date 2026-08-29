@@ -25,3 +25,4 @@ export * from "./rfis";
 export * from "./changeOrders";
 export * from "./submittals";
 export * from "./materialOrders";
+export * from "./drawings";

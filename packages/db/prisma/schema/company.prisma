@@ -47,6 +47,7 @@ model Company {
   safetyIncidents        SafetyIncident[]
   toolboxTalks           ToolboxTalk[]
   materialOrders         MaterialOrder[]
+  drawingSets            DrawingSet[]
 }
 
 enum UserRole {
@@ -86,6 +87,7 @@ model User {
   reportedSafetyIncidents              SafetyIncident[]
   recordedToolboxTalks                 ToolboxTalk[]
   placedMaterialOrders                 MaterialOrder[]
+  recordedDrawingRevisions             DrawingRevision[]
 
   @@index([companyId])
 }

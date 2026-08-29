@@ -29,7 +29,7 @@ against a fresh clone.
 | --- | --- |
 | Built | 59 |
 | Partial | 13 |
-| Missing | 35 |
+| Missing | 34 |
 | Descoped | 1 |
 
 ## 01. Company / Org Setup — 5 built · 0 partial · 0 missing
@@ -200,13 +200,13 @@ forecasting shipped 26 Aug 2026.*
 | Missing | Cash flow forecast (AR aging, retainage receivable, pay app cycles) | not built — the underlying retainage data exists now (Sheet 11), but no forecast report reads it yet |
 | Missing | Company-wide backlog report across active jobs | `/dashboard` lists jobs; no aggregated backlog figure |
 
-## 16. Submittals, RFIs, Drawings — 2 built · 0 partial · 1 missing
+## 16. Submittals, RFIs, Drawings — 3 built · 0 partial · 0 missing
 
 | Status | Feature | Note |
 | --- | --- | --- |
 | Built | Shop drawing/submittal tracking and GC approval status | `Submittal` + `SubmittalRevision` + `SubmittalCounter`, `/submittals` — numbers issued per job and never reissued, per-revision sent/due/returned dates, outcome (approved / approved-as-noted / revise-and-resubmit / rejected), current-revision state derived, never stored |
 | Built | RFI log per job | `Rfi` + `RfiCounter`, `/rfis` — number issued per job and never reissued, sent/due/answered dates, overdue derived, cost/schedule impact flags |
-| Missing | Current drawing set storage/versioning per job | not modeled |
+| Built | Current drawing set storage/versioning per job | `DrawingSet` + `DrawingRevision`, `/drawings` — one set per discipline per job, issues recorded under the ARCHITECT'S label (no counter: we don't issue these numbers), issued/received dates entered not stamped, current revision and "issued but never received" both derived per render. The set itself is linked, not uploaded — a Server Action body caps around 1MB and real sets are far larger |
 
 ## 17. Safety & Field Operations — 3 built · 0 partial · 0 missing
 

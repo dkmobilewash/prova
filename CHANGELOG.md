@@ -176,6 +176,65 @@ which is the other lane's core surface.
   *is* editable — a vendor moving their own commitment is normal and has to
   be recordable.
 
+### Drawing sets, and a guard that had never fired (Cyrus)
+`cyrus/drawings`
+
+Sheet 16 closed out. `/drawings` records, per job, which revision of each
+set the architect has issued and whether it is actually in the trailer.
+
+**No counter here, unlike every other numbered record in this app.** RFI,
+submittal, safety case and material order numbers come from a counter row
+we own. "Rev 3", "ASI-12", "Bulletin 5" are the ARCHITECT'S labels,
+printed on a title block we don't control — issuing our own number for
+someone else's document would invent a second identity for a sheet the
+whole job already refers to by its real one.
+
+**Current means most recently ISSUED, not most recently received.** A
+revision supersedes the one before it whether or not it has reached you,
+which is exactly why an unreceived issue is dangerous rather than merely
+pending — the crew is building from paper that is already out of date. The
+page counts those separately and says so in red.
+
+**The set is linked, not uploaded.** Server Action bodies cap around 1MB
+and real drawing sets are tens of megabytes, so an upload here would pass
+for a test file and fail for every real one. The `fileUrl`/`fileName`
+columns exist, so a client-side upload can be added later with no
+migration. Links are validated to http(s) — the string goes into an
+`href`, so a `javascript:` URL would be an injection vector.
+
+### A P2002 guard that never fired anywhere in the app (Cyrus)
+
+Found by clicking, not by any check: recording a duplicate revision label
+returned a 500 instead of the plain-language message written for it.
+
+The catch was the codebase's established pattern —
+`err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002"`.
+Instrumented the real runtime rather than guessing:
+
+    DIAG ctor: PrismaClientKnownRequestError
+    DIAG code: P2002
+    DIAG instanceof: false
+
+The class resolves, the error is the right shape, and the instanceof is
+still false — the client's internal error class and the re-exported
+`Prisma` namespace are different copies under this bundling. `prisma` and
+`Prisma` come from the SAME import, so this is not specific to one file.
+
+**Three existing call sites use the identical pattern and are therefore
+also dead:** `company.ts:29`, `jobs.ts:335`, `fieldReports.ts:59`. On
+field reports that means the "one report per job per day" message — the
+one described in review as turning P2002 into plain language — has never
+once been shown; a foreman filing a second report for a day gets a 500.
+
+Fixed with `isUniqueConstraintError()` in `shared.ts`, which checks the
+`code` property and so cannot be defeated by class identity. Applied here
+and to `fieldReports.ts`. `company.ts` and `jobs.ts` are left alone and
+flagged — `jobs.ts` is claimed by the other lane.
+
+The general form, since it will bite again: **an `instanceof` against a
+class from a re-exported package is a guess about module identity, not a
+check on the value.** Prefer the discriminating property.
+
 ### A successful write can render as an empty page (Cyrus)
 `cyrus/material-orders`
 
