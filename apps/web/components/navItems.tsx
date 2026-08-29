@@ -167,6 +167,21 @@ export const NAV_ITEMS: { href: string; label: string; icon: ReactNode }[] = [
     ),
   },
   {
+    href: "/closeout",
+    label: "Closeout",
+    icon: (
+      <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5">
+        <path
+          d="M5 3.5h10a1.5 1.5 0 0 1 1.5 1.5v11a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 16V5A1.5 1.5 0 0 1 5 3.5Z"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinejoin="round"
+        />
+        <path d="m7 10 2 2 4-4.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+  },
+  {
     href: "/rfis",
     label: "RFIs",
     icon: (
@@ -194,6 +209,21 @@ export const NAV_ITEMS: { href: string; label: string; icon: ReactNode }[] = [
         />
         <path d="M12.5 3.5V7H16" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
         <path d="m7.75 12.25 1.5 1.5 3-3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+  },
+  {
+    href: "/drawings",
+    label: "Drawings",
+    icon: (
+      <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5">
+        <path
+          d="M3 5.5 7.5 4l5 1.5L17 4v10.5L12.5 16l-5-1.5L3 16V5.5Z"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinejoin="round"
+        />
+        <path d="M7.5 4v10.5M12.5 5.5V16" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
       </svg>
     ),
   },

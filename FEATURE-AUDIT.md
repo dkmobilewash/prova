@@ -23,13 +23,13 @@ in flight. Left as-is here rather than guessed at from the outside; the next
 update to touch those sheets should come from whoever actually verified them
 against a fresh clone.
 
-**108 items audited — 60 built / 14 partial / 33 missing / 1 descoped**
+**108 items audited — 71 built / 15 partial / 21 missing / 1 descoped**
 
 | Status | Count |
 | --- | --- |
-| Built | 60 |
-| Partial | 14 |
-| Missing | 33 |
+| Built | 71 |
+| Partial | 15 |
+| Missing | 21 |
 | Descoped | 1 |
 
 ## 01. Company / Org Setup — 5 built · 0 partial · 0 missing
@@ -200,13 +200,13 @@ forecasting shipped 26 Aug 2026.*
 | Missing | Cash flow forecast (AR aging, retainage receivable, pay app cycles) | not built — the underlying retainage data exists now (Sheet 11), but no forecast report reads it yet |
 | Missing | Company-wide backlog report across active jobs | `/dashboard` lists jobs; no aggregated backlog figure |
 
-## 16. Submittals, RFIs, Drawings — 2 built · 0 partial · 1 missing
+## 16. Submittals, RFIs, Drawings — 3 built · 0 partial · 0 missing
 
 | Status | Feature | Note |
 | --- | --- | --- |
 | Built | Shop drawing/submittal tracking and GC approval status | `Submittal` + `SubmittalRevision` + `SubmittalCounter`, `/submittals` — numbers issued per job and never reissued, per-revision sent/due/returned dates, outcome (approved / approved-as-noted / revise-and-resubmit / rejected), current-revision state derived, never stored |
 | Built | RFI log per job | `Rfi` + `RfiCounter`, `/rfis` — number issued per job and never reissued, sent/due/answered dates, overdue derived, cost/schedule impact flags |
-| Missing | Current drawing set storage/versioning per job | not modeled |
+| Built | Current drawing set storage/versioning per job | `DrawingSet` + `DrawingRevision`, `/drawings` — one set per discipline per job, issues recorded under the ARCHITECT'S label (no counter: we don't issue these numbers), issued/received dates entered not stamped, current revision and "issued but never received" both derived per render. The set itself is linked, not uploaded — a Server Action body caps around 1MB and real sets are far larger |
 
 ## 17. Safety & Field Operations — 3 built · 0 partial · 0 missing
 
@@ -247,13 +247,13 @@ forecasting shipped 26 Aug 2026.*
 | Built | State-specific licensing requirement tracking | `CompanyLicense` + `LicenseClassificationReference` (CA/AZ/UT seeded; NV deliberately left unseeded — no verified source) |
 | Partial | Jurisdictional/union-local mapping by project location | the data exists — `Job.operatingLocationId`, `CompanyLocation.state`, `UnionLocal` — but nothing derives one from another yet; flagged as future work in the code itself |
 
-## 22. Closeout & Warranty — 1 built · 0 partial · 2 missing
+## 22. Closeout & Warranty — 3 built · 0 partial · 0 missing
 
 | Status | Feature | Note |
 | --- | --- | --- |
 | Built | Punch list tracking per job | `PunchListItem`, `/punch-lists` |
-| Missing | Final lien waiver and closeout document checklist | not modeled |
-| Missing | Warranty period tracking and post-completion service requests | not modeled — `JobStatus` ends at COMPLETE, no closeout/warranty stage |
+| Built | Final lien waiver and closeout document checklist | `CloseoutItem`, `/closeout` — per-job checklist with a standard set one click away, required vs optional, completion dates entered not stamped, document links. Closeout completeness derived from required items only, never stored; a job with no checklist is deliberately NOT complete |
+| Built | Warranty period tracking and post-completion service requests | `WarrantyPeriod` + `WarrantyServiceRequest`, `/closeout` — start entered separately from `Job.substantialCompletionDate` (the warranty and retainage clocks aren't always the same date), length in months as the contract states it, expiry derived with end-of-month clamping so 31 Aug + 6 months is 28 Feb not 3 Mar. Whether a callback was in warranty is derived from its REPORTED date, so a slow fix can't move the cost. `JobStatus` deliberately untouched — a stored lifecycle stage can disagree with the dates under it |
 
 ## 23. AI Features — 3 built · 1 partial · 1 missing · 1 descoped
 

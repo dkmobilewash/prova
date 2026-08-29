@@ -485,36 +485,184 @@ which is the other lane's core surface.
   *is* editable — a vendor moving their own commitment is normal and has to
   be recordable.
 
-### A successful write can render as an empty page (Cyrus)
-`cyrus/material-orders`
+### Closeout, warranty, and the arithmetic that hides in "one year" (Cyrus)
+`cyrus/drawings`
 
-Found by driving the browser, not by any check. Created a material order:
-the action returned ok, the form closed, the row was in the database — and
-the page rendered "Nothing on order". The dev server log had the reason:
+Sheet 22 closed out. `/closeout` covers what's still owed before final
+payment and what you're still on the hook for after it.
 
-    Timed out fetching a new connection from the connection pool
-    (Current connection pool timeout: 30, connection limit: 5)
-    prisma:error Error in PostgreSQL connection: Error { kind: Closed }
+**`JobStatus` deliberately untouched.** The audit note said closeout and
+warranty were missing "because `JobStatus` ends at COMPLETE", which reads
+as an instruction to add lifecycle stages. Two reasons not to: the job
+lifecycle is the other lane's surface, and a stored stage can disagree
+with the dates underneath it — the same reason submittals, drawings and
+material orders have no stored status. A job is in warranty because it has
+a `WarrantyPeriod` whose derived expiry hasn't passed, not because someone
+remembered to move a flag.
 
-The write committed; the revalidated re-render couldn't get a connection,
-so the page queried nothing and honestly reported nothing.
+**A job with no checklist is NOT closeout-complete.** An empty list
+asserts nothing, and "complete" is the claim someone quotes while chasing
+final payment. Required items decide completeness; optional ones are
+tracked but never hold it open.
 
-**Why this is worse than an error page.** The user sees a successful save
-followed by a list that says the thing isn't there. The natural response
-is to save it again — so the failure mode of an exhausted pool is
-DUPLICATE RECORDS, silently, with no error anywhere the user can see.
-Vercel's serverless functions open a connection per invocation, so
-production is more exposed to this than localhost, not less.
+**The warranty start is entered, not read from
+`Job.substantialCompletionDate`.** That field already drives retainage
+release forecasting, and the warranty clock and the retainage clock are
+not always the same date — warranty often runs from final completion or
+owner acceptance. Sharing one field would silently move one whenever the
+other was corrected.
 
-Reproduced and then ruled out as a code bug: after restarting the dev
-server with a healthy pool, the same create refreshed the list correctly.
-Two things that looked like bugs and were not — the "Log an order" button
-appearing dead, and creates never refreshing — were both this plus a
-hydration mismatch from a ColorZilla browser extension injecting
-`cz-shortcut-listen` into `<body>`.
+**End-of-month clamping, which is the part that would have shipped
+wrong.** A warranty of "6 months from 31 August" expires 28 February.
+JavaScript's `Date` rolls a month overflow forward and would have said
+3 March — quietly extending cover by three days on every job whose
+completion landed on the 29th, 30th or 31st. `addMonths` clamps to the
+last day of the target month, handles leap years, and is tested at both.
+Confirmed in the real UI, not only in the test: entering 2026-08-31 + 6
+renders "runs out 2027-02-28".
 
-Nothing is fixed here; this is a record of the failure mode. The
-connection budget is worth a look before more concurrent users exist.
+**Whether a callback was in warranty is judged by its REPORTED date**, not
+by when it was resolved and not by today. A call raised in warranty stays
+in warranty however long the fix takes — otherwise a slow repair would
+quietly move the cost onto us.
+
+28 new tests. Verified able to fail by injecting two regressions — an
+empty checklist reporting complete, and naive month arithmetic — which
+failed 2 and 2 tests respectively.
+
+### Material orders can point at an SOV line, for attribution only (Cyrus)
+`cyrus/drawings`
+
+`MaterialOrder.lineItem` — nullable, `ON DELETE SET NULL`, and **nothing
+may ever sum money through it.** Material cost stays on `CostEntry`
+against the same `JobLineItem`; this exists so a late delivery can be tied
+to the scope it holds up, not so an order becomes a second source of
+line-item cost. Agreed with Diego on exactly those terms before it was
+written, and the constraint is recorded in the schema comment rather than
+only in Slack, because the schema is what the next person reads.
+
+The line select only offers lines from the order's own job, checked
+server-side too — a line from another job would attribute a delivery to
+scope it has nothing to do with. Deleted (change-ordered-out) lines are
+excluded.
+
+### Drawing sets, and a guard that had never fired (Cyrus)
+`cyrus/drawings`
+
+Sheet 16 closed out. `/drawings` records, per job, which revision of each
+set the architect has issued and whether it is actually in the trailer.
+
+**No counter here, unlike every other numbered record in this app.** RFI,
+submittal, safety case and material order numbers come from a counter row
+we own. "Rev 3", "ASI-12", "Bulletin 5" are the ARCHITECT'S labels,
+printed on a title block we don't control — issuing our own number for
+someone else's document would invent a second identity for a sheet the
+whole job already refers to by its real one.
+
+**Current means most recently ISSUED, not most recently received.** A
+revision supersedes the one before it whether or not it has reached you,
+which is exactly why an unreceived issue is dangerous rather than merely
+pending — the crew is building from paper that is already out of date. The
+page counts those separately and says so in red.
+
+**The set is linked, not uploaded.** Server Action bodies cap around 1MB
+and real drawing sets are tens of megabytes, so an upload here would pass
+for a test file and fail for every real one. The `fileUrl`/`fileName`
+columns exist, so a client-side upload can be added later with no
+migration. Links are validated to http(s) — the string goes into an
+`href`, so a `javascript:` URL would be an injection vector.
+
+### A P2002 guard that never fired anywhere in the app (Cyrus)
+
+Found by clicking, not by any check: recording a duplicate revision label
+returned a 500 instead of the plain-language message written for it.
+
+The catch was the codebase's established pattern —
+`err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002"`.
+Instrumented the real runtime rather than guessing:
+
+    DIAG ctor: PrismaClientKnownRequestError
+    DIAG code: P2002
+    DIAG instanceof: false
+
+The class resolves, the error is the right shape, and the instanceof is
+still false — the client's internal error class and the re-exported
+`Prisma` namespace are different copies under this bundling. `prisma` and
+`Prisma` come from the SAME import, so this is not specific to one file.
+
+**Three existing call sites use the identical pattern and are therefore
+also dead:** `company.ts:29`, `jobs.ts:335`, `fieldReports.ts:59`. On
+field reports that means the "one report per job per day" message — the
+one described in review as turning P2002 into plain language — has never
+once been shown; a foreman filing a second report for a day gets a 500.
+
+Fixed with `isUniqueConstraintError()` in `shared.ts`, which checks the
+`code` property and so cannot be defeated by class identity. Applied here
+and to `fieldReports.ts`. `company.ts` and `jobs.ts` are left alone and
+flagged — `jobs.ts` is claimed by the other lane.
+
+The general form, since it will bite again: **an `instanceof` against a
+class from a re-exported package is a guess about module identity, not a
+check on the value.** Prefer the discriminating property.
+
+### A successful write showed an empty list — cause NOT established (Cyrus)
+`cyrus/material-orders`, corrected on `cyrus/drawings`
+
+**This entry originally blamed the connection pool. That was wrong, and
+the correction matters more than the original claim.**
+
+What was observed, and still stands: creating a material order returned
+ok, the form closed, the row was in the database, and the page rendered
+"Nothing on order". A manual reload showed it correctly.
+
+What was asserted and should not have been: that an exhausted pool made
+the revalidated re-render query nothing. The pool WAS throwing
+`Timed out fetching a new connection` at the time, so the explanation
+looked obvious. It doesn't hold. There was no error boundary in the app
+then, so a query that threw would have produced a 500, not an empty list.
+A ColorZilla browser extension was also injecting a hydration mismatch
+into `<body>` in the same repro. Two candidate causes, neither isolated.
+
+The untested hypothesis that fits all three observations — no 500, empty
+list, correct after reload — is that the router refresh never fired and
+the STALE pre-create render stayed on screen. Falsifiable by watching
+whether the RSC refresh request is made at all after a create. Nobody has
+done that yet. It is not a claim.
+
+**What IS established is the risk it pointed at**, and that got fixed: a
+page that fails after a commit invites a second click, and no create
+action was idempotent. 57 create buttons now disable while their form is
+in flight, plus an error boundary that says not to resubmit before
+reloading.
+
+The lesson worth keeping is not about pools. A plausible cause sitting in
+the logs next to a real symptom is not a diagnosis, and writing it up as
+one puts a false explanation in the place the next person looks first.
+
+**Measured 2026-08-29, and it narrows things.** Created an order with
+network capture running. The browser reported ONE `POST /material-orders`
+and no separate refresh `GET`. The dev server log, for the same create,
+reported TWO:
+
+    POST /material-orders 200 in 21ms      <- fast
+    POST /material-orders 200 in 5567ms    <- slow
+
+So the refresh is not a `GET`, which is why looking for one found nothing.
+The 21ms/5567ms split is consistent with the first request doing the write
+and the second doing the re-render — meaning **the re-render is a separate
+request with its own failure point, after the write has already
+committed.** That would explain every observation: the write returns 200,
+the second request fails or returns nothing useful, the client keeps the
+stale pre-create render, no 500 anywhere, correct after a manual reload.
+
+Still not a diagnosis. Which POST is which is not confirmed, and the
+failure has not been reproduced — that needs the second request forced to
+fail. Also note the browser tool and the server log disagreed on how many
+requests there were, so neither is trustworthy alone here.
+
+Next step for whoever picks this up: force the second POST to fail (kill
+the pool mid-create) and watch whether the page goes stale rather than
+500ing. That is the experiment that settles it.
 
 ### `ActionResult` moved to `lib/actions/shared.ts` (Cyrus)
 `cyrus/material-orders`

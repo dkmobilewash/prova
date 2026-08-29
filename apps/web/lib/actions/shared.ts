@@ -175,3 +175,27 @@ export const actionOk: ActionResult = { ok: true };
 export function actionFail(error: string): ActionResult {
   return { ok: false, error };
 }
+
+/** True when a write failed a unique constraint (Prisma P2002).
+ *
+ * Checks the `code` property rather than `instanceof
+ * Prisma.PrismaClientKnownRequestError`, because that instanceof is FALSE
+ * at runtime in this app. Measured 2026-08-28: a duplicate insert produced
+ * an error whose constructor name was `PrismaClientKnownRequestError` and
+ * whose `code` was `P2002`, while `err instanceof
+ * Prisma.PrismaClientKnownRequestError` evaluated to false — the client's
+ * internal error class and the re-exported namespace are different copies
+ * under this bundling. `prisma` and `Prisma` come from the same import, so
+ * this affects every call site equally, not just one.
+ *
+ * The cost of getting it wrong is not cosmetic: the guard silently never
+ * fires, the error escapes, and the user gets a 500 instead of the
+ * sentence you wrote for them.
+ */
+export function isUniqueConstraintError(err: unknown): boolean {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    (err as { code?: unknown }).code === "P2002"
+  );
+}

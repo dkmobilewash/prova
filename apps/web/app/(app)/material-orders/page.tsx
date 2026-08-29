@@ -22,7 +22,7 @@ export default async function MaterialOrdersPage({
 
   const today = new Date().toISOString().slice(0, 10);
 
-  const [jobs, vendors] = await Promise.all([
+  const [jobs, vendors, lineItems] = await Promise.all([
     prisma.job.findMany({
       where: { companyId: company.id },
       orderBy: { createdAt: "desc" },
@@ -32,6 +32,14 @@ export default async function MaterialOrdersPage({
       where: { companyId: company.id },
       orderBy: { name: "asc" },
       select: { id: true, name: true },
+    }),
+    // Attribution only — see the note on MaterialOrder.lineItem. Deleted
+    // scope is excluded because attributing an order to a line that was
+    // removed by change order would be misleading rather than useful.
+    prisma.jobLineItem.findMany({
+      where: { job: { companyId: company.id }, isDeleted: false },
+      orderBy: { description: "asc" },
+      select: { id: true, jobId: true, description: true },
     }),
   ]);
   const activeJob = jobFilter && jobs.some((j) => j.id === jobFilter) ? jobFilter : null;
@@ -46,6 +54,7 @@ export default async function MaterialOrdersPage({
       job: { select: { name: true } },
       vendor: { select: { name: true } },
       orderedBy: { select: { name: true } },
+      lineItem: { select: { description: true } },
       deliveries: { orderBy: { deliveredOn: "asc" } },
     },
   });
@@ -53,7 +62,10 @@ export default async function MaterialOrdersPage({
   const allRows = orders.map((order) => ({
     id: order.id,
     number: order.number,
+    jobId: order.jobId,
     jobName: order.job.name,
+    lineItemId: order.lineItemId,
+    lineItemDescription: order.lineItem?.description ?? null,
     vendorId: order.vendorId,
     vendorName: order.vendor.name,
     description: order.description,
@@ -111,7 +123,12 @@ export default async function MaterialOrdersPage({
       </p>
 
       <section className="mb-8">
-        <MaterialOrderForm jobs={jobs} vendors={vendors} defaultJobId={activeJob ?? undefined} />
+        <MaterialOrderForm
+          jobs={jobs}
+          vendors={vendors}
+          lineItems={lineItems}
+          defaultJobId={activeJob ?? undefined}
+        />
       </section>
 
       <div className="mb-4 grid gap-3 sm:grid-cols-3">
@@ -167,6 +184,7 @@ export default async function MaterialOrdersPage({
               order={order}
               today={today}
               vendors={vendors}
+              lineItems={lineItems}
               showJob={!activeJob}
               canDelete={currentUser.role === "OWNER"}
             />

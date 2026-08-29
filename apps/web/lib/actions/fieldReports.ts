@@ -2,7 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
-import { Prisma, prisma } from "@prova/db";
+import { prisma } from "@prova/db";
+import { isUniqueConstraintError } from "./shared";
 
 /** Reports are keyed by date with no time component. Everything is written
  * at UTC midnight so the @@unique([jobId, reportDate]) constraint means
@@ -56,7 +57,12 @@ export async function createDailyFieldReport(jobId: string, formData: FormData) 
   } catch (error) {
     // P2002 = the one-per-job-per-day constraint. Say what actually
     // happened rather than surfacing a Prisma error code to a foreman.
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+    //
+    // Checked by `code`, NOT by an instanceof against the Prisma error
+    // class — that instanceof is false at runtime here (measured
+    // 2026-08-28), so this guard never fired and a second report for one
+    // day 500'd instead of saying so. See isUniqueConstraintError.
+    if (isUniqueConstraintError(error)) {
       throw new Error("A report already exists for that date — edit it instead of adding a second one");
     }
     throw error;

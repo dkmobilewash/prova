@@ -507,6 +507,15 @@ model MaterialOrder {
   vendorId String
   vendor   Vendor @relation(fields: [vendorId], references: [id])
 
+  /// Which SOV line this material is for. ATTRIBUTION ONLY — nullable, and
+  /// nothing may ever sum money through it. Material cost lives on
+  /// `CostEntry` against the same `JobLineItem`; this exists so a late
+  /// delivery can be tied to the scope it holds up, not so an order can
+  /// become a second source of line-item cost. Agreed with Diego
+  /// 2026-08-28 on exactly those terms. See ARCHITECTURE.md.
+  lineItemId String?
+  lineItem   JobLineItem? @relation(fields: [lineItemId], references: [id], onDelete: SetNull)
+
   description     String
   /// The vendor's own order/PO number, so a phone call about it can open
   /// with the number they'll recognise rather than ours.
@@ -567,4 +576,197 @@ model MaterialOrderCounter {
   lastNumber Int    @default(0)
 
   updatedAt DateTime @updatedAt
+}
+
+/// A drawing set for a job — "Architectural", "Structural", "Life Safety".
+/// The thing a foreman means by "the drawings".
+///
+/// Sets are per job because the same discipline on two jobs has nothing to
+/// do with each other, and because the question this answers is always
+/// asked about one job: which sheet is it legal to build from today.
+model DrawingSet {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+  jobId     String
+  job       Job     @relation(fields: [jobId], references: [id])
+
+  /// Free text rather than an enum. Disciplines vary by project and by
+  /// architect — "A", "Architectural", "AD-Series", "Life Safety" are all
+  /// real, and an enum would force a wrong choice on the first job that
+  /// doesn't fit.
+  name        String
+  description String?
+
+  revisions DrawingRevision[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([jobId, name])
+  @@index([companyId])
+  @@index([jobId])
+}
+
+/// One issue of a drawing set from the architect or GC.
+///
+/// NOTE THE DIFFERENCE FROM RFIs, SUBMITTALS AND MATERIAL ORDERS: those
+/// carry a number this company issues, from a counter row that only
+/// increments. This one does NOT. "Rev 3", "ASI-12", "Bulletin 5" are the
+/// ARCHITECT'S labels, printed on a title block we don't control. There is
+/// no counter here on purpose — issuing our own number for someone else's
+/// document would invent a second identity for a sheet the whole job
+/// already refers to by its real one.
+model DrawingRevision {
+  id    String     @id @default(cuid())
+  setId String
+  set   DrawingSet @relation(fields: [setId], references: [id], onDelete: Cascade)
+
+  /// Exactly as printed on the title block.
+  label String
+
+  /// The date on the drawing itself — entered, not stamped. Backdating the
+  /// revisions already on site must not record them all as issued today.
+  /// This is what "current" is derived from.
+  issuedOn   DateTime
+  /// When it actually reached us. Null means it hasn't — and that is the
+  /// state worth seeing, because a revision that exists and isn't in the
+  /// trailer means the crew is building from paper that is already
+  /// superseded. The gap between the two dates is the exposure.
+  receivedOn DateTime?
+
+  /// What changed. The reason anyone opens a superseded revision later.
+  description String?
+
+  /// Optional. A record that Rev 3 was issued on a date and reached us on
+  /// another is worth keeping even when nobody has the PDF to hand.
+  fileUrl  String?
+  fileName String?
+
+  recordedByUserId String?
+  recordedBy       User?   @relation(fields: [recordedByUserId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([setId, label])
+  @@index([setId])
+}
+
+/// One line of a job's closeout checklist — final lien waiver, as-builts,
+/// O&M manuals, warranty letter, final certified payroll.
+///
+/// There is no stored "closeout complete" flag anywhere. A job's closeout
+/// is complete when every REQUIRED item has a completion date, derived on
+/// every read. A stored flag can disagree with the items underneath it,
+/// and "we closed that job out" is exactly the claim someone makes when
+/// chasing final payment.
+model CloseoutItem {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+  jobId     String
+  job       Job     @relation(fields: [jobId], references: [id])
+
+  name       String
+  /// Optional items exist — some GCs want as-builts, some don't. Only
+  /// required items decide whether closeout is done.
+  isRequired Boolean @default(true)
+  note       String?
+
+  /// Entered, not stamped. Backfilling a checklist for a job that closed
+  /// out in March must not record every item as done today.
+  completedOn DateTime?
+
+  /// Where the signed document lives. A link rather than an upload, same
+  /// reason as drawing sets: a Server Action body caps around 1MB.
+  documentUrl  String?
+  documentName String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([jobId, name])
+  @@index([companyId])
+  @@index([jobId])
+}
+
+/// The warranty clock on a completed job. One per job.
+///
+/// `startsOn` is entered rather than read from `Job.substantialCompletionDate`
+/// on purpose. That field already drives retainage release forecasting, and
+/// the warranty clock and the retainage clock are not always the same date —
+/// warranty commonly runs from final completion or from owner acceptance.
+/// Reusing one date for both would silently move one whenever the other was
+/// corrected.
+///
+/// Expiry is DERIVED from startsOn + months, never stored. A stored expiry
+/// date is wrong the moment either input is corrected.
+model WarrantyPeriod {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+  jobId     String  @unique
+  job       Job     @relation(fields: [jobId], references: [id])
+
+  startsOn DateTime
+  /// Months rather than an end date, because that is how the contract
+  /// states it ("one year from substantial completion").
+  months   Int
+  note     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+}
+
+/// A callback after completion — a crack, a door that won't latch, water
+/// where there shouldn't be.
+///
+/// Belongs to the Job rather than to the WarrantyPeriod, because calls
+/// arrive whether or not a warranty was ever recorded, and one arriving
+/// AFTER the period expired is the most important kind to have written
+/// down. Whether a call fell inside the warranty is derived by comparing
+/// its reported date to the derived expiry.
+model WarrantyServiceRequest {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+  jobId     String
+  job       Job     @relation(fields: [jobId], references: [id])
+
+  /// Entered, not stamped — logging last month's calls must not date them
+  /// all today.
+  reportedOn  DateTime
+  description String
+  reportedBy  String?
+
+  /// Whose problem it turned out to be. Starts UNDETERMINED because that
+  /// is the honest state when the call comes in, and deciding it later is
+  /// the actual work.
+  responsibility WarrantyResponsibility @default(UNDETERMINED)
+
+  resolvedOn     DateTime?
+  resolutionNote String?
+
+  recordedByUserId String?
+  recordedBy       User?   @relation(fields: [recordedByUserId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([jobId])
+}
+
+enum WarrantyResponsibility {
+  /// Our defect, our cost to put right.
+  OURS
+  /// Someone else's trade, owner damage, or normal wear — recorded so the
+  /// callback history doesn't read as our defect list.
+  NOT_OURS
+  /// Not decided yet. The default, and the honest state on the day the
+  /// call comes in.
+  UNDETERMINED
 }

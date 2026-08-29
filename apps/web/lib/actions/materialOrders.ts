@@ -83,6 +83,19 @@ async function issueOrderNumber(tx: Prisma.TransactionClient, jobId: string) {
   return counter.lastNumber;
 }
 
+
+/** Validates an optional SOV line for attribution. Must belong to the SAME
+ * job as the order — a line from another job would attribute a delivery to
+ * scope it has nothing to do with. Attribution only: no money is read from
+ * or written through this. */
+async function optionalLineItemId(formData: FormData, jobId: string): Promise<string | null> {
+  const id = text(formData, "lineItemId");
+  if (!id) return null;
+  const line = await prisma.jobLineItem.findUnique({ where: { id } });
+  if (!line || line.jobId !== jobId) throw new InputError("That line item isn't on this job");
+  return line.id;
+}
+
 export async function createMaterialOrder(formData: FormData): Promise<ActionResult> {
   const { company, ...user } = await requireCompanyContext();
   return runAction(async () => {
@@ -116,6 +129,7 @@ export async function createMaterialOrder(formData: FormData): Promise<ActionRes
           notes: text(formData, "notes") || null,
           orderedOn,
           promisedFor,
+          lineItemId: await optionalLineItemId(formData, jobId),
           orderedByUserId: user.id,
         },
       });
@@ -155,6 +169,7 @@ export async function updateMaterialOrder(orderId: string, formData: FormData): 
         vendorReference: text(formData, "vendorReference") || null,
         notes: text(formData, "notes") || null,
         promisedFor,
+        lineItemId: await optionalLineItemId(formData, order.jobId),
       },
     });
 

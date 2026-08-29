@@ -4,7 +4,11 @@ import Link from "next/link";
 import { useRef, useState, useTransition } from "react";
 import { createMaterialOrder } from "@/lib/actions";
 import { inputClass, labelClass, type JobOption } from "@/components/RfiFields";
-import { MaterialOrderFields, type VendorOption } from "@/components/MaterialOrderFields";
+import {
+  MaterialOrderFields,
+  type LineItemOption,
+  type VendorOption,
+} from "@/components/MaterialOrderFields";
 import { localToday } from "@/components/localToday";
 
 /** An order needs both a job to belong to and a vendor to be owed by, so
@@ -28,10 +32,12 @@ function EmptyState({ title, body, href, cta }: { title: string; body: string; h
 export function MaterialOrderForm({
   jobs,
   vendors,
+  lineItems,
   defaultJobId,
 }: {
   jobs: JobOption[];
   vendors: VendorOption[];
+  lineItems: LineItemOption[];
   defaultJobId?: string;
 }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -100,8 +106,16 @@ export function MaterialOrderForm({
       <MaterialOrderFields
         jobs={jobs}
         vendors={vendors}
+        lineItems={lineItems}
         defaultJobId={defaultJobId}
-        defaults={{ description: "", vendorId: "", vendorReference: null, notes: null, promisedFor: null }}
+        defaults={{
+          description: "",
+          vendorId: "",
+          vendorReference: null,
+          notes: null,
+          promisedFor: null,
+          lineItemId: null,
+        }}
       />
 
       <label className={labelClass}>
