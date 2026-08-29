@@ -12,6 +12,42 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### Two pages, one record, two different day counts (Diego)
+
+Browser testing put both numbers on screen at once. `/settings` said a
+policy expires "in 11d"; `/compliance` said the same policy is "due in 12
+days". The panel was right.
+
+`/settings` did its own arithmetic — `floor((date - Date.now()) / a day)`
+— which compares a date stored at UTC midnight against the current
+instant, so from mid-morning onward it silently lost a day. It also warned
+at a flat 60 days for both policies and bonds, disagreeing with the
+per-kind horizons the renewals panel ranks by.
+
+Two answers for one fact is worse than either being wrong on its own,
+because now a user can't trust the one that's right. Both pages read from
+`classifyRenewal`/`renewalTiming` now, so a future change to how a day is
+counted can only be made in one place.
+
+Also fixed, from the same test run:
+
+**`/compliance` scrolled sideways on a phone.** Measured, not eyeballed:
+`scrollWidth` 429 against a 360 client. The cause was one row's action
+cluster — `shrink-0` and unwrappable, so Edit / Mark received / Delete ran
+straight past the viewport and dragged the page with it. Now it wraps, and
+the text column beside it may shrink. The mobile shell shipped earlier
+made the app usable on a phone; this is the first page-level thing to fall
+out of actually testing at 360.
+
+**Three more one-click deletes.** Insurance policies, bonds and company
+locations all destroyed a row on a single click, and so did a compliance
+document — a signed waiver or a certificate someone sent you. The catalog
+fix a commit earlier was written into one row component instead of
+something reusable, so the very next test run found the same bug three
+doors down. `ConfirmDeleteButton` is that reusable thing; the next list
+that needs a delete has no excuse to hand-roll a fourth copy.
+
+
 ### One place that tells you what is about to lapse (Diego)
 
 Sheet 14's last missing row, and the first thing in Sheet 26. Expiration
