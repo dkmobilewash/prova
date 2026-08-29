@@ -235,36 +235,39 @@ The general form, since it will bite again: **an `instanceof` against a
 class from a re-exported package is a guess about module identity, not a
 check on the value.** Prefer the discriminating property.
 
-### A successful write can render as an empty page (Cyrus)
-`cyrus/material-orders`
+### A successful write showed an empty list — cause NOT established (Cyrus)
+`cyrus/material-orders`, corrected on `cyrus/drawings`
 
-Found by driving the browser, not by any check. Created a material order:
-the action returned ok, the form closed, the row was in the database — and
-the page rendered "Nothing on order". The dev server log had the reason:
+**This entry originally blamed the connection pool. That was wrong, and
+the correction matters more than the original claim.**
 
-    Timed out fetching a new connection from the connection pool
-    (Current connection pool timeout: 30, connection limit: 5)
-    prisma:error Error in PostgreSQL connection: Error { kind: Closed }
+What was observed, and still stands: creating a material order returned
+ok, the form closed, the row was in the database, and the page rendered
+"Nothing on order". A manual reload showed it correctly.
 
-The write committed; the revalidated re-render couldn't get a connection,
-so the page queried nothing and honestly reported nothing.
+What was asserted and should not have been: that an exhausted pool made
+the revalidated re-render query nothing. The pool WAS throwing
+`Timed out fetching a new connection` at the time, so the explanation
+looked obvious. It doesn't hold. There was no error boundary in the app
+then, so a query that threw would have produced a 500, not an empty list.
+A ColorZilla browser extension was also injecting a hydration mismatch
+into `<body>` in the same repro. Two candidate causes, neither isolated.
 
-**Why this is worse than an error page.** The user sees a successful save
-followed by a list that says the thing isn't there. The natural response
-is to save it again — so the failure mode of an exhausted pool is
-DUPLICATE RECORDS, silently, with no error anywhere the user can see.
-Vercel's serverless functions open a connection per invocation, so
-production is more exposed to this than localhost, not less.
+The untested hypothesis that fits all three observations — no 500, empty
+list, correct after reload — is that the router refresh never fired and
+the STALE pre-create render stayed on screen. Falsifiable by watching
+whether the RSC refresh request is made at all after a create. Nobody has
+done that yet. It is not a claim.
 
-Reproduced and then ruled out as a code bug: after restarting the dev
-server with a healthy pool, the same create refreshed the list correctly.
-Two things that looked like bugs and were not — the "Log an order" button
-appearing dead, and creates never refreshing — were both this plus a
-hydration mismatch from a ColorZilla browser extension injecting
-`cz-shortcut-listen` into `<body>`.
+**What IS established is the risk it pointed at**, and that got fixed: a
+page that fails after a commit invites a second click, and no create
+action was idempotent. 57 create buttons now disable while their form is
+in flight, plus an error boundary that says not to resubmit before
+reloading.
 
-Nothing is fixed here; this is a record of the failure mode. The
-connection budget is worth a look before more concurrent users exist.
+The lesson worth keeping is not about pools. A plausible cause sitting in
+the logs next to a real symptom is not a diagnosis, and writing it up as
+one puts a false explanation in the place the next person looks first.
 
 ### `ActionResult` moved to `lib/actions/shared.ts` (Cyrus)
 `cyrus/material-orders`
