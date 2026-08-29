@@ -42,6 +42,16 @@ Vercel deployment and repo settings). Each drives their own agent.
   public repo. Explicit paths only. Agreed by both sides.
 - Never assume repo state — assert branch, cleanliness, and remote tips
   before acting, and fail loudly.
+- **A merge does not move commits you didn't check.** Both of us stranded
+  commits on 2026-08-28. A stacked PR merges into ITS BASE, not `main` —
+  GitHub only retargets one when the base branch is DELETED after merging,
+  which is not the default. #15 merged into `cyrus/submittals` and left
+  material orders, the CI test step and the CLAUDE.md corrections outside
+  `main` for eight hours, with every check green the whole time. #13
+  merged at its then-head and left two commits behind, one a live
+  money-display bug. So: delete the branch when you merge a stacked PR,
+  and after ANY merge run `git log origin/main..<branch>` — empty output
+  is the only proof it landed. "The PR says Merged" is not.
 - Scripts start with `set -e` AND `set -o pipefail` (a failed build
   piped to `tee` printed ALL GREEN once), and `rm -f .git/index.lock`.
 - Cyrus authenticates through `gh` (token in the macOS keyring; scopes
@@ -105,27 +115,37 @@ Vercel deployment and repo settings). Each drives their own agent.
 - Edit code by reading the actual text and replacing it exactly — a
   structural regex once inserted code into the wrong block and produced
   14 cascading errors.
-- **There is ONE Neon database and it is production.** Vercel runs
-  `prisma migrate deploy` on every deployment, previews included, so a
-  migration goes live WHEN YOU PUSH, not when the PR merges
-  (`add_submittals` reached production from an unmerged branch). Two
-  consequences: additive migrations only unless you've pinged first, and
-  never answer yes to `prisma migrate dev` offering to reset the
-  database — that offer is about production. It appears when your branch
+- **There is ONE Neon database and it is production.** Previews share it.
+  Until 2026-08-28 every deployment migrated it, so a migration went live
+  ON PUSH (`add_submittals` reached production from an unmerged branch);
+  #18 gated that to `VERCEL_ENV=production`, so migrations now land when
+  the PR MERGES. Three things still follow. Additive migrations only
+  unless you've pinged first — a drop is irreversible against real data.
+  Never answer yes to `prisma migrate dev` offering to reset the
+  database: that offer is about PRODUCTION. It appears when your branch
   is missing a migration the DB already has, which is what branching off
-  `main` while another branch's migration is live does. Base the branch
-  on the branch that owns the migration instead.
-- **An exhausted connection pool makes a successful write render as an
-  empty page.** The action commits, the form closes, and the revalidated
-  re-render can't get a connection, so the page queries nothing and
-  honestly reports nothing. The user then saves again — so the failure
-  mode is DUPLICATE RECORDS with no error anywhere visible. Look for
-  `Timed out fetching a new connection from the connection pool` in the
-  server log before believing a "nothing saved" report. Every stray
-  `new PrismaClient()` in a one-off script eats from the same 5.
-
-## Docs — update in the same PR as the work
-
+  `main` while another branch's migration is live does — base the branch
+  on the branch that owns the migration instead. And a preview of a
+  branch adding a model now runs against a database WITHOUT those tables,
+  so those pages fail on the preview until it merges; set
+  `ALLOW_PREVIEW_MIGRATIONS=true` on that one branch in Vercel to verify
+  by clicking, and take it off after.
+- **A successful write can show up as an empty list — cause NOT
+  established.** Observed once: the action returned ok, the row was in
+  the database, the page said "Nothing on order", and a manual reload
+  showed it. The pool was throwing `Timed out fetching a new connection`
+  at the time and that is what this entry originally blamed. That was
+  wrong: there is an error boundary now, but there was none then, so a
+  throwing query would have 500'd rather than rendered an empty list —
+  and a ColorZilla extension was injecting a hydration mismatch into
+  `<body>` in the same repro. Untested hypothesis: the router refresh
+  never fired and the STALE pre-create render stayed on screen, which
+  fits all three observations. Do not repeat the pool explanation as
+  fact. What IS established is the risk it pointed at: a page that fails
+  after a commit invites a second click, and no create action is
+  idempotent. #19 disabled 57 create buttons while their form is in
+  flight and added an error boundary that says not to resubmit before
+  reloading.
 - `FEATURE-AUDIT.md`: the 26-category roadmap and source of truth for
   what's built. It has drifted more than once; don't let it.
 - `CHANGELOG.md`: newest first; says why decisions were made and the
