@@ -12,6 +12,43 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### QuickBooks sync: every claim now verified against the real API
+
+Closing the record. Five browser runs against a sandbox company, each one
+finding something no test found, and the last one leaves nothing unproven.
+
+| Claim | How it was verified |
+| --- | --- |
+| A push creates the invoice | QuickBooks invoice 145, seen in Sales → Invoices |
+| Amount, customer, memo, service item all correct | read in QuickBooks by a person |
+| **Three clicks make ONE invoice** | rows counted in QuickBooks, not inferred |
+| The mapped income account is load-bearing | push refuses without it |
+| Refusals are logged, never swallowed | six log entries including every failure |
+| A re-send actually re-sends | new log entry appears where none did before |
+| **A QuickBooks-side edit is refused, not overwritten** | stale SyncToken path fired |
+
+The last row is the one this design cares most about. The invoice was
+changed to $200.00 inside QuickBooks; Prova's re-send came back with "This
+invoice was changed inside QuickBooks since we last sent it. Open it there
+and decide which version is right before pushing again." A person edited
+that record and we stopped. Every competitor in the research quietly
+overwrites at this moment, or silently diverges.
+
+Worth keeping for whoever reads this next: **every real defect in this
+integration was found by clicking, and none by the test suite.** The suite
+was green through a button that did not exist, a required API parameter
+nothing supplied, and a re-send that permanently did nothing. It is
+genuinely useful against regressions — three of its assertions were written
+by reintroducing a production bug as a mutation and watching them fail —
+but across five rounds it has never once found something new.
+
+The honest limit of what shipped: this is one-directional. An edit made in
+QuickBooks is refused rather than absorbed, and nothing in Prova shows that
+the two have drifted until someone presses the button. That is a real gap,
+deliberately not papered over, and the right fix is a reconciliation view
+rather than pretending to a two-way sync nobody in this market has managed.
+
+
 ### The round trip works, and "Re-send" was a button that did nothing (Diego)
 
 **Verified in QuickBooks, by a person, with their own eyes.** Invoice
