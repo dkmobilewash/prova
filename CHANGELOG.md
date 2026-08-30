@@ -12,6 +12,79 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### A dashboard that tells you something before you ask (Diego)
+
+`/dashboard` was a searchable table of jobs. Every number an owner needs on
+a Monday — what is overdue, what is about to lapse, which job is drifting
+past budget, what retainage is due back this month — already existed in the
+data model and appeared only if you went looking for it on the right
+sub-page. The table is still here, at the bottom, unchanged. What is new is
+everything above it: the same figures, asked on load.
+
+Nothing gained a stored column. Overdue totals, over-budget counts, the
+metric bar's revenue and margin — all derived on read through `lib/wip.ts`,
+`lib/retainage.ts` and `lib/gc-reliability.ts`, per ARCHITECTURE.md. A
+saved "over budget" flag is wrong the moment a cost entry lands.
+
+Decisions worth keeping:
+
+**Over budget means forecast, not spend-to-date.** A job that has spent 90%
+of its money at 90% complete is going to plan; the question is where it
+LANDS. `jobIsOverBudget` compares forecast cost at completion against
+contract value, and returns null rather than false when there is no cost
+estimate — reporting "we don't know" as "on budget" is how a figure stops
+meaning anything.
+
+**Margin is blended by summing both sides, not by averaging job margins.**
+A $2M job and a $20k job are not equal evidence of how the business is
+doing. Averaging their margins says they are: a test asserts the difference
+(20.7% vs a naive 55%).
+
+**Margin only turns green above 35%.** A number that is always green
+teaches people to stop reading the colour. The sample 24.6% renders
+neutral, on purpose.
+
+**Job health reads as a sentence.** "Forecast to finish 12% over contract
+value at 64% complete" is something to act on; a bare variance percentage
+in a table is not.
+
+**The detail panel pushes, it does not cover.** The reason to open an
+invoice from a receivables list is to compare it against the rest of the
+list, so a panel that covered the list would remove what you opened it for.
+That is why it is a context with three parts rather than one component —
+a panel rendered inside the column it should push cannot push it.
+
+**The rail expands as an overlay.** A rail that widens by shifting the page
+reflows everything you were reading the instant your cursor drifts left.
+
+**The two panel actions nobody built are shown disabled, with the reason.**
+"Send a reminder" has no email channel and "log a call" has no activity
+model. Saying so is more useful than a button that looks real and does
+nothing.
+
+**The rail keeps all 18 routes.** The brief for this work assumed eight of
+them — RFIs, submittals, safety, drawings, material orders, cash flow,
+closeout, estimating — had no route and should render disabled with a
+"coming soon" tooltip. All eight shipped during the day that brief was
+written. Disabling them would have removed working features from the nav,
+so they are grouped and live; the disabled branch exists in the rail for
+whenever something genuinely unbuilt is added.
+
+**Theme is half-migrated, deliberately.** `tailwind.config.ts` now carries
+semantic tokens, and `Card`/`Button`/`StatusBadge`/`Sidebar`/`Topbar` plus
+the new dashboard are built on them. Every other page still carries
+hardcoded dark utilities from the previous pass and will look inconsistent
+until a second conversion pass. That is stated rather than hidden — the
+per-file checklist is in the PR description. Roughly 1,000 hardcoded slate
+utilities remain across 29 pages and 47 components; `jobs/[id]` alone has
+448.
+
+19 tests over the new arithmetic. Sheet 15's company-wide backlog moves to
+Built. Sheet 26's expiration and WIP-variance rows move to Partial and NOT
+Built — surfacing something on a screen someone opens is not alerting
+someone who doesn't.
+
+
 ### Finding out that QuickBooks disagrees with you (Diego)
 
 The sync refuses an edit made inside QuickBooks rather than overwriting

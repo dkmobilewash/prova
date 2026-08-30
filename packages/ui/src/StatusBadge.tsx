@@ -1,12 +1,20 @@
+/**
+ * Job status as a tag: light ground, saturated text.
+ *
+ * Replaces the dark theme's translucent ring-inset treatment, which
+ * disappears against a light surface. Deliberately not a solid fill — a
+ * list of solid badges reads as a page of alarms rather than a column of
+ * states.
+ */
 const STYLES: Record<string, string> = {
-  ESTIMATE: "bg-slate-800 text-slate-300 ring-1 ring-inset ring-slate-700",
-  CONTRACTED: "bg-blue-500/15 text-blue-300 ring-1 ring-inset ring-blue-500/30",
-  IN_PROGRESS: "bg-amber-500/15 text-amber-300 ring-1 ring-inset ring-amber-500/30",
-  COMPLETE: "bg-green-500/15 text-green-300 ring-1 ring-inset ring-green-500/30",
-  // Not a JobStatus: the client's signed view of a contract. Signing does not
-  // contract the job -- the contractor still has to accept it -- so this
-  // deliberately reads differently from CONTRACTED.
-  SIGNED: "bg-green-500/15 text-green-300 ring-1 ring-inset ring-green-500/30",
+  ESTIMATE: "bg-tag-slate text-tag-slate-ink",
+  CONTRACTED: "bg-tag-blue text-tag-blue-ink",
+  IN_PROGRESS: "bg-tag-amber text-tag-amber-ink",
+  COMPLETE: "bg-tag-green text-tag-green-ink",
+  // Not a JobStatus: the client's signed view of a contract. Signing does
+  // not contract the job -- the contractor still has to accept it -- so
+  // this deliberately reads differently from CONTRACTED.
+  SIGNED: "bg-tag-green text-tag-green-ink",
 };
 
 const LABELS: Record<string, string> = {
@@ -18,7 +26,7 @@ const LABELS: Record<string, string> = {
 };
 
 export function StatusBadge({ status }: { status: string }) {
-  const style = STYLES[status] ?? "bg-slate-800 text-slate-300 ring-1 ring-inset ring-slate-700";
+  const style = STYLES[status] ?? "bg-tag-slate text-tag-slate-ink";
   const label = LABELS[status] ?? status;
 
   return (

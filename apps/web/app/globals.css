@@ -2,14 +2,18 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Single dark theme, not toggleable — see ARCHITECTURE.md-adjacent design
-   decision: Phase-lettered visual pass, going for a modern SaaS dashboard
-   look (dark sidebar, blue accent) rather than the light default. */
+/* Light canvas, dark nav rail.
+   Replaces the previous single dark theme. The rail stays dark — that
+   split is the point, not an inconsistency.
+
+   Note for anyone re-skinning further: most pages still carry hardcoded
+   slate-950/slate-100 utilities from the dark pass and are NOT driven by
+   these tokens yet. See the theme-migration checklist in CHANGELOG. */
 body {
-  background-color: theme("colors.slate.950");
-  color: theme("colors.slate.100");
+  background-color: theme("colors.canvas");
+  color: theme("colors.ink");
 }
 
 ::selection {
-  background-color: theme("colors.blue.600 / 40%");
+  background-color: theme("colors.brand / 20%");
 }
