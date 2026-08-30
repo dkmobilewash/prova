@@ -8,6 +8,7 @@ import { renewalSourcesForCompany } from "@/lib/renewals";
 import { renewalAlerts, renewalTiming } from "@/lib/compliance-expiry";
 import { serverToday } from "@/lib/serverToday";
 import { loadTodayDashboard } from "@/lib/today-dashboard";
+import { AskPanel } from "@/components/AskPanel";
 import {
   ReceivablesDetailPanel,
   ReceivablesList,
@@ -151,6 +152,13 @@ export default async function TodayPage({
             <p className="mt-1 text-sm text-ink-body">
               What needs a decision, before you go looking for it.
             </p>
+
+            {/* Above the tiles on purpose. The tiles answer the four
+                questions we guessed at; this answers the one they actually
+                have. */}
+            <div className="mt-6">
+              <AskPanel />
+            </div>
 
             {/* ------------------------------------ needs attention --- */}
             <section className="mt-6">
