@@ -12,6 +12,53 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### The message that told you what to do was replaced by a crash (Diego)
+
+Browser testing hit "Mark as contracted" on a job with no line items and
+got: *"An error occurred in the Server Components render. The specific
+message is omitted in production builds."* The real error was
+`Add at least one line item before contracting this job` — one sentence
+that says exactly what to do, redacted into a crash.
+
+The galling part is that `MarkContractedButton` already had a try/catch
+and a slot to render the message. It looked correct. It was written
+believing the catch would work, and in development it does — production
+redacts thrown Server Action messages, so `err.message` was the generic
+string, every time. This trap is written in CLAUDE.md and the code still
+walked into it.
+
+`markJobContracted` returns `ActionResult` now, for all three of its
+guards. The button renders what comes back.
+
+**The wider finding, which is not fixed here.** 136 `throw new Error("…")`
+calls remain across the action modules, against 38 actions that return
+`ActionResult`. Most of those throws are user-fixable validation messages
+— "Description is required", "End date can't be before the start date" —
+and every one of them currently reaches a production user as that same
+generic crash string. Written down rather than fixed in passing: it is a
+systemic conversion across fourteen files and every caller that renders a
+result, not something to do quietly at the end of an unrelated commit.
+
+
+### The QuickBooks link action had no button (Diego)
+
+`linkContactToQuickBooks` shipped an hour ago as an action nobody could
+reach. Found while writing the test that needed it, before anyone ran that
+test — but only because the licence CRUD made exactly this mistake earlier
+today and I went looking for it deliberately.
+
+An action with no UI is a feature that does not exist. It also blocked the
+whole QuickBooks round trip: an invoice cannot be pushed until its GC is
+linked to a customer, so every later step depended on a button that wasn't
+there.
+
+The contact detail page now has a QuickBooks section, shown only when
+QuickBooks is connected — offering a control that cannot work is its own
+small lie. The copy explains the behaviour that matters: an existing
+customer with the same name is reused rather than duplicated, because a
+second copy splits the payment history the bookkeeper already has.
+
+
 ### QuickBooks actually syncs now — one direction, verified (Diego)
 
 The connection has existed since 23 August. Nothing ever flowed through

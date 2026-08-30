@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { requireCompanyContext } from "@/lib/auth";
 import { Prisma, prisma } from "@prova/db";
 import { draftEstimateLineItems } from "@prova/integrations";
-import { COST_CATEGORIES, assertEditableDirectly, assertJobInCompany, assertLineItemOnJob, craftClassificationIdFromForm, decimalFromForm, nullableDecimalFromForm, tradeScopeFromForm } from "./shared";
+import { actionFail, actionOk, type ActionResult, assertEditableDirectly, assertJobInCompany, assertLineItemOnJob, COST_CATEGORIES, craftClassificationIdFromForm, decimalFromForm, nullableDecimalFromForm, tradeScopeFromForm } from "./shared";
 
 /** Creates a Job with a new Contact. This is the start of the estimate. */
 export async function createJob(formData: FormData) {
@@ -266,26 +266,34 @@ export async function deleteLineItem(jobId: string, lineItemId: string) {
  * only editable via change orders (see assertEditableDirectly /
  * assertEditableViaChangeOrder in ./shared, applied by ./changeOrders).
  */
-export async function markJobContracted(jobId: string) {
+export async function markJobContracted(jobId: string): Promise<ActionResult> {
   const { company } = await requireCompanyContext();
   const job = await assertJobInCompany(jobId, company.id);
 
+  // Returned, not thrown. All three of these are things a person can fix,
+  // and production REDACTS thrown Server Action messages — so throwing
+  // "Add at least one line item" reached the user as "An error occurred in
+  // the Server Components render. The specific message is omitted in
+  // production builds." Browser testing caught it: the sentence written to
+  // tell someone what to do was replaced by a crash. The caller already
+  // had a try/catch and a slot to render the message; the message just
+  // never survived the trip.
   if (job.status !== "ESTIMATE") {
-    throw new Error("Job is already contracted");
+    return actionFail("This job is already contracted.");
   }
 
   const lineItemCount = await prisma.jobLineItem.count({
     where: { jobId, isDeleted: false },
   });
   if (lineItemCount === 0) {
-    throw new Error("Add at least one line item before contracting this job");
+    return actionFail("Add at least one line item before contracting this job.");
   }
 
   const signedRequest = await prisma.signatureRequest.findFirst({
     where: { jobId, status: "SIGNED" },
   });
   if (!signedRequest) {
-    throw new Error("The client needs to sign the contract before this job can be contracted");
+    return actionFail("The client needs to sign the contract before this job can be contracted.");
   }
 
   await prisma.job.update({
@@ -295,6 +303,7 @@ export async function markJobContracted(jobId: string) {
 
   revalidatePath(`/jobs/${jobId}`);
   revalidatePath("/dashboard");
+  return actionOk;
 }
 
 /**

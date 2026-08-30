@@ -14,6 +14,7 @@ import {
 import { money } from "@/lib/money";
 import { calculatePaymentReliability } from "@/lib/gc-reliability";
 import { SubmitButton } from "@/components/SubmitButton";
+import { LinkContactToQuickBooks } from "@/components/LinkContactToQuickBooks";
 
 const TRADE_SCOPE_OPTIONS = [
   { value: "METAL_FRAMING_DRYWALL", label: "Metal framing / drywall" },
@@ -87,6 +88,23 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
       }),
     ),
   );
+
+  // Only asked for when QuickBooks is connected — otherwise the control
+  // below would offer something that cannot work.
+  const quickBooksConnected =
+    (await prisma.quickBooksConnection.count({ where: { companyId: company.id } })) > 0;
+  const quickBooksCustomerLink = quickBooksConnected
+    ? await prisma.quickBooksEntityLink.findUnique({
+        where: {
+          companyId_entityType_entityId: {
+            companyId: company.id,
+            entityType: "Contact",
+            entityId: contact.id,
+          },
+        },
+        select: { qboId: true },
+      })
+    : null;
 
   const updateContactWithId = updateContact.bind(null, contact.id);
   const enablePortalWithId = enablePortalAccess.bind(null, contact.id);
@@ -326,6 +344,23 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
           </SubmitButton>
         </form>
       </section>
+
+      {quickBooksConnected && (
+        <section className="mb-10 rounded-lg border border-slate-800 bg-slate-900 p-6">
+          <h2 className="mb-3 text-lg font-semibold text-slate-100">QuickBooks</h2>
+          <p className="mb-3 text-sm text-slate-400">
+            Invoices for this GC&apos;s jobs can only be pushed once they&apos;re linked to a
+            QuickBooks customer. An existing customer with the same name is reused rather than
+            duplicated — a second copy would split the payment history your bookkeeper already
+            has.
+          </p>
+          <LinkContactToQuickBooks
+            contactId={contact.id}
+            contactName={contact.name}
+            linkedQboId={quickBooksCustomerLink?.qboId ?? null}
+          />
+        </section>
+      )}
 
       <section className="mb-10 rounded-lg border border-slate-800 bg-slate-900 p-6">
         <h2 className="mb-3 text-lg font-semibold text-slate-100">Client portal</h2>
