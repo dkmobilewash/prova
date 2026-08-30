@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { SidePanel } from "@prova/ui";
 import { money } from "@/lib/money";
+import { panelCanBeShown } from "@/lib/breakpoints";
 import type { OverdueInvoice } from "@/lib/today-dashboard";
 
 /**
@@ -56,12 +57,6 @@ export function ReceivablesProvider({
  * look real and do nothing. "Open the job" is the one that works, and it
  * goes to the page where a payment can actually be recorded.
  */
-/** The width the panel needs. Below this it is display:none, so a click
- * that tried to open it would do nothing at all — browser testing found
- * exactly that dead band between 768px, where the desktop layout returns,
- * and 1024px. Below it, the row goes to the job instead of nowhere. */
-const PANEL_MIN_WIDTH = "(min-width: 1024px)";
-
 export function ReceivablesList() {
   const { rows, openId, setOpenId } = useReceivables();
   const router = useRouter();
@@ -86,10 +81,7 @@ export function ReceivablesList() {
                 onClick={() => {
                   // Read at click time, not render time — no hydration
                   // mismatch, and it follows a window that was resized.
-                  const canShowPanel =
-                    typeof window === "undefined" ||
-                    window.matchMedia(PANEL_MIN_WIDTH).matches;
-                  if (!canShowPanel) {
+                  if (!panelCanBeShown()) {
                     router.push(`/jobs/${row.jobId}`);
                     return;
                   }
