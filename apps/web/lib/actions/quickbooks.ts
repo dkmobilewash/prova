@@ -18,6 +18,7 @@ import { requireCompanyContext } from "@/lib/auth";
 import {
   buildInvoicePayload,
   idempotencyKeyFor,
+  isAccidentalRepeat,
   pushBlockers,
   verifyPushedInvoice,
   type InvoiceToPush,
@@ -398,10 +399,22 @@ export async function pushInvoiceToQuickBooks(invoiceId: string): Promise<Action
     },
   });
 
-  // A retry of an identical push that already succeeded is a no-op rather
-  // than a second document. This is the double-post defence, and it is
-  // checked BEFORE contacting QuickBooks so a duplicate click costs
-  // nothing.
+  // An ACCIDENTAL repeat — a double-click, or a retry after a timeout — is
+  // a no-op rather than a second document, checked before contacting
+  // QuickBooks so a stray click costs nothing.
+  //
+  // Time-bounded, and that bound is the fix for a real bug. This used to
+  // short-circuit forever on a matching key, which made "Re-send to
+  // QuickBooks" a button that reported success and did nothing for the
+  // life of the invoice. Browser testing found it by editing an invoice
+  // inside QuickBooks to a different amount: Prova said "sent and
+  // verified" and left it wrong, because the short-circuit ran before the
+  // read-back and no later push ever looked at QuickBooks again.
+  //
+  // A deliberate re-send past the window is safe to let through: a link
+  // exists by then, so the payload carries Id and SyncToken and QuickBooks
+  // UPDATES that document. Creating is the only call that can duplicate,
+  // and it only ever happens once.
   if (link) {
     const priorSuccess = await prisma.quickBooksSyncAttempt.findFirst({
       where: {
@@ -411,8 +424,9 @@ export async function pushInvoiceToQuickBooks(invoiceId: string): Promise<Action
         idempotencyKey,
         outcome: "SUCCEEDED",
       },
+      orderBy: { createdAt: "desc" },
     });
-    if (priorSuccess) {
+    if (isAccidentalRepeat(priorSuccess?.createdAt ?? null, new Date())) {
       revalidatePath(`/jobs/${invoice.jobId}`);
       return actionOk;
     }

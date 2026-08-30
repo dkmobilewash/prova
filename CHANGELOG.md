@@ -12,6 +12,53 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### The round trip works, and "Re-send" was a button that did nothing (Diego)
+
+**Verified in QuickBooks, by a person, with their own eyes.** Invoice
+pushed as QuickBooks invoice 145, and after three clicks — two rapid, one
+five seconds later past the browser's pending guard — Sales → Invoices
+holds exactly ONE invoice for $123.45, with the right customer, the right
+memo, and the line booked against the right service item.
+
+That is the claim this integration was designed around and it is the first
+time anyone has confirmed it by counting rather than by trusting our own
+read-back. Worth being precise about why the read-back could never have
+settled it: `getInvoice` asks about one id. It structurally cannot answer
+"how many are there".
+
+**Then the same session found a real bug, by doing the thing nobody had
+done: editing the invoice inside QuickBooks.**
+
+Changed to $200.00 there, then re-sent from Prova. Prova said "Sent to
+QuickBooks and verified." QuickBooks stayed at $200.00.
+
+The idempotency key is derived entirely from OUR data — invoice id, total,
+line fingerprint. An edit made in QuickBooks changes none of it, so the key
+matched a prior success and the push short-circuited before contacting
+Intuit. "Re-send to QuickBooks" was a permanent no-op that reported
+success, for the life of the invoice.
+
+Worse in principle than in effect: the short-circuit ran BEFORE the
+read-back, so once an invoice had been pushed once, nothing ever looked at
+QuickBooks again for it. The verification this integration is proudest of
+was dead code for every state after the first.
+
+The short-circuit is now time-bounded to two minutes. That covers every
+accidental repeat — a double-click, a retry after a timeout — and no
+deliberate one. A re-send past the window goes through, and it is safe to
+let through: by then a link exists, so the payload carries Id and SyncToken
+and QuickBooks UPDATES that document. Creating is the only call that can
+duplicate, and it happens exactly once.
+
+Six tests over the window, verified by reintroducing the exact bug as a
+mutation — short-circuit forever — and confirming two fail.
+
+Still unexercised: the stale-SyncToken path. The re-send now reaches
+QuickBooks, so the next attempt at a QuickBooks-side edit will either
+restore our number or refuse because someone changed theirs. Neither has
+been seen yet.
+
+
 ### Every QuickBooks push failed, and 193 green tests said otherwise (Diego)
 
 The sandbox run got there. Every invoice was rejected:
