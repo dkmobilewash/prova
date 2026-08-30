@@ -39,10 +39,21 @@ export function SidePanel({
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  /* sticky + self-start, NOT a stretched flex child. As a stretched child
+   * the panel took the height of the whole PAGE — on the dashboard that is
+   * ~3400px — which put its own footer button roughly 3000px below the
+   * fold. It rendered correctly and was reachable by scrolling to the
+   * bottom of the page, so nothing failed and no assertion caught it; the
+   * panel's primary action was simply somewhere nobody would look.
+   *
+   * Now it is as tall as its content, stays in view while the page scrolls
+   * under it, and is capped to the scroll port (--shell-port, declared once
+   * in the app layout) so a long panel scrolls inside itself rather than
+   * growing past the viewport. */
   return (
     <aside
       aria-label={title}
-      className="hidden w-[360px] shrink-0 flex-col border-l border-line-card bg-surface lg:flex"
+      className="sticky top-0 hidden max-h-[var(--shell-port,100dvh)] w-[360px] shrink-0 flex-col self-start border-l border-line-card bg-surface lg:flex"
     >
       <div className="flex items-start justify-between gap-3 border-b border-line-card px-5 py-4">
         <div className="min-w-0">
