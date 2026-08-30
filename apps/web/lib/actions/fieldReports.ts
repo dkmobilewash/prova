@@ -3,101 +3,133 @@
 import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@prova/db";
-import { isUniqueConstraintError } from "./shared";
+import {
+  actionFail as fail,
+  actionOk as ok,
+  isUniqueConstraintError,
+  type ActionResult,
+} from "./shared";
+
+/** Actions here RETURN their failures instead of throwing them.
+ *
+ * They used to throw, and one of those throws was the most user-facing
+ * sentence in the module: "A report already exists for that date — edit it
+ * instead of adding a second one." Production redacts a thrown Server
+ * Action message to an opaque digest, so a foreman filing a second report
+ * for the same day got a crash instead of the one sentence that told him
+ * what to do. The guard was correct; it just could never be read.
+ */
+
+class InputError extends Error {}
+
+function text(formData: FormData, key: string) {
+  return String(formData.get(key) ?? "").trim();
+}
 
 /** Reports are keyed by date with no time component. Everything is written
  * at UTC midnight so the @@unique([jobId, reportDate]) constraint means
  * "one per calendar day" rather than "one per instant". */
 function reportDateFromForm(formData: FormData): Date {
-  const raw = String(formData.get("reportDate") ?? "").trim();
-  if (!raw) {
-    throw new Error("Date is required");
-  }
+  const raw = text(formData, "reportDate");
+  if (!raw) throw new InputError("Date is required");
   const date = new Date(`${raw}T00:00:00.000Z`);
-  if (Number.isNaN(date.getTime())) {
-    throw new Error("Date is not valid");
-  }
+  if (Number.isNaN(date.getTime())) throw new InputError("Date is not valid");
   return date;
 }
 
 function fieldsFromForm(formData: FormData) {
-  const workPerformed = String(formData.get("workPerformed") ?? "").trim();
-  if (!workPerformed) {
-    throw new Error("Work performed is required");
-  }
-  const crewPresent = String(formData.get("crewPresent") ?? "").trim();
-  const weather = String(formData.get("weather") ?? "").trim();
-  const delays = String(formData.get("delays") ?? "").trim();
+  const workPerformed = text(formData, "workPerformed");
+  if (!workPerformed) throw new InputError("Work performed is required");
   return {
     workPerformed,
-    crewPresent: crewPresent || null,
-    weather: weather || null,
-    delays: delays || null,
+    crewPresent: text(formData, "crewPresent") || null,
+    weather: text(formData, "weather") || null,
+    delays: text(formData, "delays") || null,
   };
 }
 
-export async function createDailyFieldReport(jobId: string, formData: FormData) {
-  const { company, ...user } = await requireCompanyContext();
-
-  const job = await prisma.job.findUnique({ where: { id: jobId } });
-  if (!job || job.companyId !== company.id) {
-    throw new Error("Job not found");
-  }
-
+async function runAction(fn: () => Promise<ActionResult>): Promise<ActionResult> {
   try {
-    await prisma.dailyFieldReport.create({
-      data: {
-        companyId: company.id,
-        jobId,
-        reportDate: reportDateFromForm(formData),
-        filedByUserId: user.id,
-        ...fieldsFromForm(formData),
-      },
-    });
-  } catch (error) {
-    // P2002 = the one-per-job-per-day constraint. Say what actually
-    // happened rather than surfacing a Prisma error code to a foreman.
-    //
-    // Checked by `code`, NOT by an instanceof against the Prisma error
-    // class — that instanceof is false at runtime here (measured
-    // 2026-08-28), so this guard never fired and a second report for one
-    // day 500'd instead of saying so. See isUniqueConstraintError.
-    if (isUniqueConstraintError(error)) {
-      throw new Error("A report already exists for that date — edit it instead of adding a second one");
-    }
-    throw error;
+    return await fn();
+  } catch (err) {
+    if (err instanceof InputError) return fail(err.message);
+    throw err;
   }
-
-  revalidatePath(`/jobs/${jobId}`);
 }
 
-export async function updateDailyFieldReport(reportId: string, formData: FormData) {
-  const { company } = await requireCompanyContext();
+/** Both surfaces that show reports: the job's own page, and the
+ * company-wide log. Revalidating only the job page left the log showing a
+ * stale week. */
+function revalidateBoth(jobId: string) {
+  revalidatePath(`/jobs/${jobId}`);
+  revalidatePath("/field-reports");
+}
 
-  const report = await prisma.dailyFieldReport.findUnique({ where: { id: reportId } });
-  if (!report || report.companyId !== company.id) {
-    throw new Error("Report not found");
-  }
+export async function createDailyFieldReport(
+  jobId: string,
+  formData: FormData,
+): Promise<ActionResult> {
+  const { company, ...user } = await requireCompanyContext();
+  return runAction(async () => {
+    const job = await prisma.job.findUnique({ where: { id: jobId } });
+    if (!job || job.companyId !== company.id) return fail("Job not found");
 
-  await prisma.dailyFieldReport.update({
-    where: { id: reportId },
-    data: fieldsFromForm(formData),
+    const data = {
+      companyId: company.id,
+      jobId,
+      reportDate: reportDateFromForm(formData),
+      filedByUserId: user.id,
+      ...fieldsFromForm(formData),
+    };
+
+    try {
+      await prisma.dailyFieldReport.create({ data });
+    } catch (error) {
+      // P2002 = the one-per-job-per-day constraint. Checked by `code`, NOT
+      // by an instanceof against the Prisma error class — that instanceof
+      // is false at runtime here (measured 2026-08-28). See
+      // isUniqueConstraintError.
+      if (isUniqueConstraintError(error)) {
+        return fail("A report already exists for that date — edit it instead of adding a second one");
+      }
+      throw error;
+    }
+
+    revalidateBoth(jobId);
+    return ok;
   });
+}
 
-  revalidatePath(`/jobs/${report.jobId}`);
+export async function updateDailyFieldReport(
+  reportId: string,
+  formData: FormData,
+): Promise<ActionResult> {
+  const { company } = await requireCompanyContext();
+  return runAction(async () => {
+    const report = await prisma.dailyFieldReport.findUnique({ where: { id: reportId } });
+    if (!report || report.companyId !== company.id) return fail("Report not found");
+
+    await prisma.dailyFieldReport.update({
+      where: { id: reportId },
+      data: fieldsFromForm(formData),
+    });
+
+    revalidateBoth(report.jobId);
+    return ok;
+  });
 }
 
 /** The date is deliberately not editable: it's the identity of the record.
  * Filed against the wrong day, delete it and file the right one. */
-export async function deleteDailyFieldReport(reportId: string) {
+export async function deleteDailyFieldReport(reportId: string): Promise<ActionResult> {
   const { company } = await requireCompanyContext();
+  return runAction(async () => {
+    const report = await prisma.dailyFieldReport.findUnique({ where: { id: reportId } });
+    if (!report || report.companyId !== company.id) return fail("Report not found");
 
-  const report = await prisma.dailyFieldReport.findUnique({ where: { id: reportId } });
-  if (!report || report.companyId !== company.id) {
-    throw new Error("Report not found");
-  }
+    await prisma.dailyFieldReport.delete({ where: { id: reportId } });
 
-  await prisma.dailyFieldReport.delete({ where: { id: reportId } });
-
-  revalidatePath(`/jobs/${report.jobId}`);
+    revalidateBoth(report.jobId);
+    return ok;
+  });
 }

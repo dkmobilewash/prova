@@ -12,6 +12,82 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### Field reports get their own page, and a week you can hand to a GC (Cyrus)
+`cyrus/field-reports`
+
+Measured before building anything: on the job page, "Daily field reports"
+began at **97% down a 3,382px, 13-section page** — dead last, after
+prevailing wage determinations, union dispatch slips and estimate versions.
+The most field-facing feature in the product sat behind four screens of the
+office's paperwork. That is the exact failure the competitor research names
+— built for the office, handed to the field — and it was ours.
+
+`/field-reports` is the fix. Nothing moved: a job's reports are still on its
+job page. What is new is a way in that doesn't start with a job page, and a
+view of a whole week across every job, which is the unit a schedule dispute
+is actually argued in.
+
+**The gap is the feature.** A week with a day missing from it is worth less
+as evidence than a week that says which day is missing, so the page names
+finished weekdays nothing was filed for. Three exclusions, each a way to be
+quietly wrong:
+
+- **A day that hasn't happened is not missing.** On Wednesday, Friday is not
+  a hole in the record. Flagging it would make every week in progress look
+  negligent.
+- **Today is not missing either.** The day isn't over. Telling a foreman at
+  9am that he has failed to file is how a tool teaches people to ignore it.
+- **A weekend is not missing**, though a weekend report still counts as a
+  day worked. Nobody owes a report for a Saturday they didn't work.
+
+**Coverage is null, not 0%, before any weekday of the week is over.** A week
+nobody has worked yet is not a failed week, and a confident 0% on Monday
+morning is a lie about it — the same reasoning as the delivery rate ignoring
+unconfirmed messages.
+
+**The week summary is what gives the filer something back.** Logging days
+into a system only management reads is the shape of every abandoned
+construction tool. This writes the week out as plain text — plain because it
+has to survive being pasted into an email, a text, or a GC's own portal.
+**Missing days are named in that text rather than left out**: a summary
+listing only the days that exist reads as a complete week, and overstating
+your own record to a GC is worse than showing the hole.
+
+**Two live bugs found while building, both documented traps this repo
+already knew about.**
+
+The actions threw. Production redacts a thrown Server Action message, so
+"A report already exists for that date — edit it instead of adding a second
+one" — the most user-facing sentence in the module — reached a foreman as an
+opaque crash. The guard was correct and could never be read. Now returns
+`ActionResult`, verified rendering on both surfaces.
+
+The date defaulted from `new Date().toISOString()`, the server's UTC date,
+not `localToday()`. After 5pm in California that is already tomorrow, which
+is exactly when a foreman files. Fixed; the divergence itself is not
+observable at the hour it was tested, only the code path.
+
+29 tests, four mutation-checked. Reintroducing the raw `getUTCDay()` — which
+calls Sunday 0 and would start a week on Sunday — fails 15, because Monday
+indexing is load-bearing. Counting today as missing fails 5. Rendering 0%
+coverage for an unstarted week fails 1. Dropping missing days from the
+summary fails 1.
+
+**Then clicking it found what the tests did not.** "Days with no report:
+Mon, Aug 24, Tue, Aug 25, Fri, Aug 28" — each day label already contains a
+comma, so a comma-joined list reads as twice as many days as it names, on a
+line that goes to a GC. Joined with a middot now, with a test.
+
+The composer's primary actions are deliberately larger than the app's
+standard button (py-3 against py-2). Measured: all 15 buttons on the job
+page are under 44px, median 36px, against a 48px floor and 60x60 for gloved
+use. That is a global fix belonging in Diego's design tokens, not 19 files
+edited under an open PR — this one page is a documented local exception on
+the one surface designed for a phone, and the measurement is with him.
+
+`/vendors/pricing` also joined the nav, having been two clicks deep behind
+`/vendors` since yesterday — the same burial, in my own week-old work.
+
 ### What your suppliers actually charge, and which way it is moving (Cyrus)
 `cyrus/vendor-pricing`
 

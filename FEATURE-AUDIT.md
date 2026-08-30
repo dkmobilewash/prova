@@ -214,7 +214,7 @@ forecasting shipped 26 Aug 2026.*
 | --- | --- | --- |
 | Built | Incident/injury tracking, OSHA 300 log | `SafetyIncident` + `SafetyCaseCounter`, `/safety` — case numbers per company per year, recordable derived from outcome |
 | Built | Toolbox talk / safety meeting logs | `ToolboxTalk`, `/safety` |
-| Built | Daily field reports (crew present, work performed, weather, delays) | `DailyFieldReport`, section on the job page — one per job per day, enforced by the database |
+| Built | Daily field reports (crew present, work performed, weather, delays) | `DailyFieldReport`, one per job per day enforced by the database. Filed from the job page or from `/field-reports`, which groups every job's reports into Mon–Sun weeks, derives coverage and NAMES the finished weekdays nothing was filed for (never today, never a day still to come, never a weekend), and writes the week out as plain text to hand a GC — missing days included in that text rather than omitted |
 
 ## 18. Scheduling & Crew Dispatch — 1 built · 1 partial · 1 missing
 
