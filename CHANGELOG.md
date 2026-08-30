@@ -12,6 +12,76 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### The app can now send things, and knows whether they arrived (Cyrus)
+`cyrus/messaging`
+
+Until this, Prova could not send anything to anyone. No email, no SMS —
+every "sent on" date in RFIs, submittals and material orders recorded that
+a human sent something through some other channel. The app was a filing
+cabinet for correspondence it could not deliver.
+
+**The delivery log is the feature, not the sending.** Sending is table
+stakes; knowing whether it arrived is where the competitor research found
+every product failing. Quotes sent from the vendor's own domain go 60%
+unopened. One product shows "sending" forever on mail that never left, and
+a contractor took a formal complaint over three messages a customer never
+received. Silence is the failure mode, so silence is what this models
+against — a message sent yesterday and still unconfirmed is surfaced, not
+assumed fine.
+
+**No stored status.** State is derived from the newest event, same rule as
+every other feature here. Two consequences worth stating because both were
+tested by deliberately breaking them:
+
+- A **complaint after a delivery** must win. Marking spam a day later is
+  the sequence that matters for a sending domain, and an earlier success
+  must not hide it.
+- **OPENED is never a state.** Image-blocking makes a missing open
+  meaningless, so an open can only add information. Letting it become the
+  newest state would let a later open overwrite a bounce — a message can
+  be opened by one recipient and have bounced for another.
+
+**Events are append-only and deduplicated by the provider's event id.**
+Providers retry on any non-2xx. Recording a replayed bounce twice would
+misreport deliverability, which is the one number this exists to get right.
+Verified: the same event posted twice returns "Already recorded".
+
+**`occurredAt` is the provider's timestamp, not ours.** A webhook delayed
+an hour must not make a prompt delivery read as a slow one — the same
+entered-not-stamped rule as every other date in this app.
+
+**The webhook fails closed.** With no secret configured it rejects every
+event with a 503. An unverified "delivered" is worse than no event: the
+entire value of the log is that a delivered in it means something, and
+anything forgeable by whoever knows the URL means nothing.
+
+**The delivery rate ignores unconfirmed messages rather than counting them
+as failures.** A provider outage would otherwise halve the number for a
+reason that has nothing to do with deliverability.
+
+**Sends as the contractor, with no shared-sender fallback.** No verified
+domain, no sending. That is the deliverability complaint the research found
+everywhere, and a fallback would quietly reintroduce it.
+
+Verified against real HTTP, not mocks: valid event recorded, replay
+deduplicated, forged signature rejected 401, stale timestamp rejected 400,
+unknown message and unmodelled event type both 200 so the provider does not
+retry forever. Then confirmed in the UI that a bounce arriving after a
+delivery renders as Bounced with its reason.
+
+24 new tests, verified able to fail by injecting two regressions — letting
+OPENED imply delivery, and counting unconfirmed messages against the rate.
+Four tests failed, two per regression.
+
+**What is NOT verified, and cannot be by me.** The real provider round trip
+— an actual send, a real signed webhook from Resend — needs an API key and
+an account, which I can't create. Everything up to the provider boundary is
+tested; the boundary itself is not. It ships disabled, with a setup state
+naming the three environment variables, rather than pretending to work.
+
+SMS is in the channel enum and deliberately not wired. One channel that
+works beats two that half do.
+
 ### Finding out that QuickBooks disagrees with you (Diego)
 
 The sync refuses an edit made inside QuickBooks rather than overwriting

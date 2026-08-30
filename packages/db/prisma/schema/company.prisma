@@ -54,6 +54,7 @@ model Company {
   closeoutItems           CloseoutItem[]
   warrantyPeriods         WarrantyPeriod[]
   warrantyServiceRequests WarrantyServiceRequest[]
+  outboundMessages        OutboundMessage[]
 }
 
 enum UserRole {
@@ -96,6 +97,7 @@ model User {
   placedMaterialOrders                 MaterialOrder[]
   recordedDrawingRevisions             DrawingRevision[]
   recordedWarrantyServiceRequests      WarrantyServiceRequest[]
+  sentOutboundMessages                 OutboundMessage[]
 
   @@index([companyId])
 }

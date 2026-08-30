@@ -23,11 +23,11 @@ in flight. Left as-is here rather than guessed at from the outside; the next
 update to touch those sheets should come from whoever actually verified them
 against a fresh clone.
 
-**108 items audited — 71 built / 15 partial / 21 missing / 1 descoped**
+**109 items audited — 72 built / 15 partial / 21 missing / 1 descoped**
 
 | Status | Count |
 | --- | --- |
-| Built | 71 |
+| Built | 72 |
 | Partial | 15 |
 | Missing | 21 |
 | Descoped | 1 |
@@ -266,7 +266,7 @@ forecasting shipped 26 Aug 2026.*
 | Missing | Plan/drawing takeoff via computer vision | explicitly deferred as a later, larger effort — different modality, different accuracy bar |
 | Descoped | Client-facing chatbot | GCs are the customer here, not homeowners — deliberately out of scope for this ICP |
 
-## 24. Integrations — 1 built · 2 partial · 1 missing
+## 24. Integrations — 2 built · 2 partial · 1 missing
 
 | Status | Feature | Note |
 | --- | --- | --- |
@@ -274,6 +274,7 @@ forecasting shipped 26 Aug 2026.*
 | Missing | Payroll processor integration (for running actual pay) | not started |
 | Partial | E-signature provider | homegrown token-based e-sign (`SignatureRequest`) covers contract signing only — not a general provider for every doc type |
 | Built | Anthropic API (for the AI features above) | three shipped features now call Claude |
+| Built | Outbound email from the contractor's own domain, with a delivery log | `OutboundMessage` + `OutboundMessageEvent`, `/messages` — provider-agnostic send, signed delivery webhook that fails closed, events deduplicated by provider id, status derived from the newest event and never stored. Sends as the contractor, not as us: mail from a vendor domain is the deliverability complaint the research report found at every competitor. SMS is in the channel enum and not wired |
 
 ## 25. Roles & Permissions — 0 built · 0 partial · 2 missing
 
