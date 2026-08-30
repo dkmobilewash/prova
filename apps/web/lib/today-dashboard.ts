@@ -58,14 +58,6 @@ export type GcReliabilityRow = {
   reliability: PaymentReliability;
 };
 
-/** Whole days between two UTC-midnight dates. Dates in this app are stored
- * at UTC midnight and compared in UTC; anything else drifts by a day for
- * anyone west of it. */
-function daysBetween(from: Date, to: Date): number {
-  return Math.floor((to.getTime() - from.getTime()) / 86_400_000);
-}
-
-
 
 export async function loadTodayDashboard(companyId: string, now: Date) {
   const [invoices, activeJobs, contacts] = await Promise.all([
