@@ -116,7 +116,7 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
   return (
     <div className="mx-auto max-w-3xl px-6 py-8">
       <section className="mb-10 rounded-lg border border-slate-800 bg-slate-900 p-6">
-        <h1 className="mb-4 text-lg font-semibold text-slate-100">Edit contact</h1>
+        <h1 className="mb-4 text-lg font-semibold text-ink">Edit contact</h1>
         <form action={updateContactWithId} className="flex flex-col gap-3">
           <label className="flex flex-col gap-1 text-sm text-slate-300">
             Name

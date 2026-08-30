@@ -102,6 +102,16 @@ export function jobCostVariance(job: WipJobResult): number | null {
  */
 export const HEALTHY_MARGIN_RATE = 0.35;
 
+/**
+ * How much of a job's contract value must carry a cost estimate before a
+ * variance is worth stating.
+ *
+ * Below this, the forecast is mostly made of lines assumed to cost
+ * nothing, and the resulting "X% under budget" is an artefact of missing
+ * data rather than a fact about the job.
+ */
+export const MIN_ESTIMATE_COVERAGE = 0.8;
+
 export function marginIsHealthy(rate: number | null): boolean {
   return rate !== null && rate > HEALTHY_MARGIN_RATE;
 }
@@ -113,12 +123,34 @@ export function marginIsHealthy(rate: number | null): boolean {
 export function jobHealthSentence(job: {
   name: string;
   wip: WipJobResult;
+  /**
+   * Share of contract value sitting on lines that actually carry a cost
+   * estimate, 0..1.
+   *
+   * This exists because of a sentence browser testing caught: a job with
+   * ONE budgeted line out of seven read "forecast to finish 97% under
+   * contract value". calculateJobWip sums estimated cost as
+   * `?? 0`, so six unbudgeted lines contributed no forecast cost while
+   * their contract value still counted — which makes any
+   * partly-estimated job look spectacularly profitable.
+   *
+   * A number that flatters you for not having estimated is worse than no
+   * number.
+   */
+  estimatedCoverage: number;
 }): { tone: "over" | "watch" | "fine" | "unknown"; sentence: string } {
   const variance = jobCostVariance(job.wip);
   if (variance === null) {
     return {
       tone: "unknown",
       sentence: "No cost estimate yet, so there is nothing to compare against.",
+    };
+  }
+
+  if (job.estimatedCoverage < MIN_ESTIMATE_COVERAGE) {
+    return {
+      tone: "unknown",
+      sentence: `Only ${Math.round(job.estimatedCoverage * 100)}% of this job's value has a cost estimate, so a forecast would flatter it. Budget the rest to see where it lands.`,
     };
   }
 

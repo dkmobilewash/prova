@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { NAV_ITEMS } from "@/components/navItems";
+import { NAV_GROUPS } from "@/components/navItems";
 
 /**
  * Navigation on a phone.
@@ -82,8 +82,18 @@ export function MobileNav({ companyName }: { companyName: string }) {
 
             {/* The list is longer than a phone screen, so it scrolls on its
                 own rather than pushing the close button out of reach. */}
-            <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-3 py-4">
-              {NAV_ITEMS.map((item) => {
+            {/* Grouped exactly like the desktop rail. It was a flat list
+                in a different order, which is the same drift this file's
+                shared NAV list exists to prevent — one nav, two shapes. */}
+            <nav className="flex flex-1 flex-col gap-4 overflow-y-auto px-3 py-4">
+              {NAV_GROUPS.flatMap((group) => [
+                <p
+                  key={group.heading}
+                  className="px-3 pt-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500"
+                >
+                  {group.heading}
+                </p>,
+                ...group.items.map((item) => {
                 const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
                 return (
                   <Link
@@ -99,8 +109,9 @@ export function MobileNav({ companyName }: { companyName: string }) {
                     {item.icon}
                     {item.label}
                   </Link>
-                );
-              })}
+                  );
+                }),
+              ])}
             </nav>
           </div>
         </>

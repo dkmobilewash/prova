@@ -28,6 +28,10 @@ export type OverdueInvoice = {
   paid: number;
   outstanding: number;
   dueOn: string | null;
+  /** True when the date came from the GC's payment terms rather than the
+   * invoice. Worth showing: "net 30 from issue" is an inference, and a
+   * bookkeeper should be able to tell it from an agreed date. */
+  dueIsDerived: boolean;
   daysOverdue: number;
 };
 
@@ -60,6 +64,18 @@ function daysBetween(from: Date, to: Date): number {
   return Math.floor((to.getTime() - from.getTime()) / 86_400_000);
 }
 
+/** The date an invoice is actually due. Mirrors lib/cash-flow.ts so the
+ * dashboard and the AR aging table can never disagree again. */
+function effectiveDueDate(
+  dueAt: Date | null,
+  issuedAt: Date,
+  paymentTermsDays: number | null,
+): Date | null {
+  if (dueAt) return dueAt;
+  if (paymentTermsDays === null) return null;
+  return new Date(issuedAt.getTime() + paymentTermsDays * 86_400_000);
+}
+
 export async function loadTodayDashboard(companyId: string, now: Date) {
   const [invoices, activeJobs, contacts] = await Promise.all([
     prisma.invoice.findMany({
@@ -71,7 +87,16 @@ export async function loadTodayDashboard(companyId: string, now: Date) {
         dueAt: true,
         issuedAt: true,
         jobId: true,
-        job: { select: { name: true, contact: { select: { id: true, name: true } } } },
+        job: {
+          select: {
+            name: true,
+            // The GC's stated terms. An invoice with no explicit due date
+            // is still due — net-30 from issue — and treating it as
+            // "no due date" is what made this page disagree with
+            // /cash-flow about which invoices were overdue.
+            contact: { select: { id: true, name: true, paymentTermsDays: true } },
+          },
+        },
         payments: { select: { amount: true, receivedAt: true } },
       },
       orderBy: { issuedAt: "desc" },
@@ -133,20 +158,35 @@ export async function loadTodayDashboard(companyId: string, now: Date) {
     // A rounding cent should not appear as an unpaid invoice.
     .filter((row) => row.outstanding > 0.005);
 
-  const receivables: OverdueInvoice[] = withOutstanding.map((row) => ({
-    id: row.invoice.id,
-    jobId: row.invoice.jobId,
-    jobName: row.invoice.job.name,
-    gcName: row.invoice.job.contact.name,
-    number: row.invoice.number,
-    amount: row.amount,
-    paid: row.paid,
-    outstanding: row.outstanding,
-    dueOn: row.invoice.dueAt ? row.invoice.dueAt.toISOString().slice(0, 10) : null,
-    // No due date means nothing is late yet — an invoice with no agreed
-    // date is not overdue, it is unscheduled.
-    daysOverdue: row.invoice.dueAt ? Math.max(0, daysBetween(row.invoice.dueAt, now)) : 0,
-  }));
+  const receivables: OverdueInvoice[] = withOutstanding.map((row) => {
+    // Same rule as calculateArAgingInvoice in lib/cash-flow.ts: an
+    // explicit due date if there is one, otherwise the GC's payment terms
+    // from the issue date. Browser testing caught these two pages
+    // disagreeing about which invoices were overdue — this page said one,
+    // /cash-flow said three — because this one read only the stored date
+    // and called the rest "no due date". Both now derive it the same way,
+    // and there is one rule rather than two.
+    const effectiveDue = effectiveDueDate(
+      row.invoice.dueAt,
+      row.invoice.issuedAt,
+      row.invoice.job.contact.paymentTermsDays,
+    );
+    return {
+      id: row.invoice.id,
+      jobId: row.invoice.jobId,
+      jobName: row.invoice.job.name,
+      gcName: row.invoice.job.contact.name,
+      number: row.invoice.number,
+      amount: row.amount,
+      paid: row.paid,
+      outstanding: row.outstanding,
+      dueOn: effectiveDue ? effectiveDue.toISOString().slice(0, 10) : null,
+      // Derived rather than stored, so the row says "due in 4 days" where
+      // it used to say "no due date" for an invoice that was already late.
+      dueIsDerived: row.invoice.dueAt === null && effectiveDue !== null,
+      daysOverdue: effectiveDue ? Math.max(0, daysBetween(effectiveDue, now)) : 0,
+    };
+  });
 
   const overdue = receivables
     .filter((row) => row.daysOverdue > 0)
@@ -169,7 +209,18 @@ export async function loadTodayDashboard(companyId: string, now: Date) {
     );
     const billed = job.invoices.reduce((sum, invoice) => sum + Number(invoice.amount), 0);
     const wip = calculateJobWip(lineItems, billed);
-    const health = jobHealthSentence({ name: job.name, wip });
+
+    // What share of this job's contract value sits on lines that actually
+    // carry a cost estimate. A job budgeted on one line out of seven is
+    // not a job forecast to finish under budget; it is a job nobody has
+    // finished estimating.
+    const estimatedValue = lineItems
+      .filter((line) => line.estimatedCostAtCompletion !== null)
+      .reduce((sum, line) => sum + line.contractValue, 0);
+    const estimatedCoverage =
+      wip.contractValue > 0 ? estimatedValue / wip.contractValue : 0;
+
+    const health = jobHealthSentence({ name: job.name, wip, estimatedCoverage });
 
     return {
       job,

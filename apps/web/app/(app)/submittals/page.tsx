@@ -93,8 +93,8 @@ export default async function SubmittalsPage({
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-slate-100">Submittals</h1>
-      <p className="mb-6 text-sm text-slate-400">
+      <h1 className="mb-2 text-xl font-semibold text-ink">Submittals</h1>
+      <p className="mb-6 text-sm text-ink-body">
         Shop drawings and product data sent for approval, and what came back. The one question this
         page answers is &ldquo;which revision is it legal to build from?&rdquo; — work built from a
         superseded or unapproved drawing is rework, and &ldquo;the GC sat on it for five weeks&rdquo;

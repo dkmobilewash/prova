@@ -20,10 +20,10 @@ export default async function ContactsPage() {
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-8">
-      <h1 className="mb-6 text-xl font-semibold text-slate-100">Contacts</h1>
+      <h1 className="mb-6 text-xl font-semibold text-ink">Contacts</h1>
 
       {contacts.length === 0 ? (
-        <p className="text-slate-400">
+        <p className="text-ink-body">
           No contacts yet — they&apos;re created automatically when you start a new job.
         </p>
       ) : (

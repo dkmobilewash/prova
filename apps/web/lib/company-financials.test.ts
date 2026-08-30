@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   HEALTHY_MARGIN_RATE,
+  MIN_ESTIMATE_COVERAGE,
   calculateCompanyFinancials,
   jobCostVariance,
   jobHealthSentence,
@@ -146,8 +147,8 @@ describe("marginIsHealthy — a number that is always green stops being read", (
 });
 
 describe("jobHealthSentence", () => {
-  const sentenceFor = (over: Partial<WipJobResult>) =>
-    jobHealthSentence({ name: "Riverside", wip: job(over) });
+  const sentenceFor = (over: Partial<WipJobResult>, estimatedCoverage = 1) =>
+    jobHealthSentence({ name: "Riverside", wip: job(over), estimatedCoverage });
 
   it("says how far over, in words", () => {
     const result = sentenceFor({ contractValue: 100_000, estimatedCostAtCompletion: 120_000 });
@@ -170,6 +171,28 @@ describe("jobHealthSentence", () => {
     const result = sentenceFor({ estimatedCostAtCompletion: 0 });
     expect(result.tone).toBe("unknown");
     expect(result.sentence).toContain("nothing to compare");
+  });
+
+  it("refuses to forecast a job that is barely estimated", () => {
+    // The real case: one budgeted line out of seven read "97% under
+    // contract value", because the six unbudgeted lines contributed zero
+    // forecast cost while their contract value still counted. A number
+    // that flatters you for not having estimated is worse than none.
+    const result = sentenceFor({ contractValue: 30_625, estimatedCostAtCompletion: 900 }, 0.057);
+    expect(result.tone).toBe("unknown");
+    expect(result.sentence).toContain("6% of this job");
+    expect(result.sentence).not.toContain("under contract value");
+  });
+
+  it("does forecast once most of the value is estimated", () => {
+    expect(sentenceFor({ contractValue: 100_000, estimatedCostAtCompletion: 120_000 }, 0.85).tone).toBe(
+      "over",
+    );
+  });
+
+  it("draws the line exactly at the coverage threshold", () => {
+    expect(sentenceFor({}, MIN_ESTIMATE_COVERAGE).tone).not.toBe("unknown");
+    expect(sentenceFor({}, MIN_ESTIMATE_COVERAGE - 0.001).tone).toBe("unknown");
   });
 
   it("includes progress when it is known and omits it when it is not", () => {

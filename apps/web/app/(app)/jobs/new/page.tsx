@@ -4,7 +4,7 @@ import { SubmitButton } from "@/components/SubmitButton";
 export default function NewJobPage() {
   return (
     <div className="mx-auto max-w-xl px-6 py-8">
-      <h1 className="mb-6 text-xl font-semibold text-slate-100">New job</h1>
+      <h1 className="mb-6 text-xl font-semibold text-ink">New job</h1>
       <form action={createJob} className="flex flex-col gap-4">
         <label className="flex flex-col gap-1 text-sm text-slate-300">
           Job name

@@ -425,7 +425,7 @@ export default async function TodayPage({
                     </>
                   ) : (
                     <>
-                      Nothing in {GROUP_HEADING[activeStatus as JobStatus].toLowerCase()} right now.{" "}
+                      Nothing {GROUP_HEADING[activeStatus as JobStatus].toLowerCase() === "estimating" ? "being estimated" : `marked ${GROUP_HEADING[activeStatus as JobStatus].toLowerCase()}`} right now.{" "}
                       <Link href={filterHref("ALL", q)} className="text-brand hover:underline">
                         Show all jobs
                       </Link>

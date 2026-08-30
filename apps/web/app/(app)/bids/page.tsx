@@ -57,8 +57,8 @@ export default async function BidsPage({
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-slate-100">Bid history</h1>
-      <p className="mb-6 text-sm text-slate-400">
+      <h1 className="mb-2 text-xl font-semibold text-ink">Bid history</h1>
+      <p className="mb-6 text-sm text-ink-body">
         Every bid invitation logged across every GC — filter by trade or outcome to see what similar
         work has priced at before.
       </p>

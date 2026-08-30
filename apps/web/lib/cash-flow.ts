@@ -139,7 +139,12 @@ export function calculateCashFlowForecast(
   }
 
   function targetMonth(date: Date): CashFlowForecastMonth {
-    if (date < asOfMonthStart) return months[0];
+    // Past due is past due, whatever month it falls in. Bucketing only on
+    // "before this month started" filed an invoice due on the 28th, read
+    // on the 30th, under the current month rather than Overdue — so this
+    // page's own forecast disagreed with its own aging table, which is
+    // exactly the kind of thing that makes someone stop trusting both.
+    if (date < asOf || date < asOfMonthStart) return months[0];
     const clamped = date > windowEnd ? windowEnd : date;
     const key = monthKey(clamped);
     return months.find((m) => m.key === key) ?? months[months.length - 1];

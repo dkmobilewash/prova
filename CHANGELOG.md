@@ -12,6 +12,58 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### Six things browser testing found in the new dashboard (Diego)
+
+**The two pages disagreed about which invoices were overdue.** The
+dashboard said one, $1,000; `/cash-flow` said three, $2,100. The dashboard
+read only `Invoice.dueAt` and labelled the rest "no due date";
+`calculateArAgingInvoice` has always derived one from the GC's payment
+terms when the invoice carries none. An invoice with no stated date is
+still due — net 30 from issue — and calling it undated hid two overdue
+invoices. Both now use the same rule, and where a date is inferred the row
+says so ("Due 2026-08-28 (terms)") rather than presenting an inference as
+an agreed date.
+
+**`/cash-flow` also disagreed with itself**, which the same run caught: its
+aging table called an invoice two days past due overdue, while its own
+forecast filed it under the current month, because the forecast bucketed on
+"before this month started". Past due is past due whatever month it falls
+in.
+
+**A job with one budgeted line out of seven read "97% under contract
+value".** `calculateJobWip` sums estimated cost as `?? 0`, so six
+unbudgeted lines contributed no forecast cost while their contract value
+still counted — which makes any partly-estimated job look spectacular. A
+number that flatters you for not having estimated is worse than no number.
+`jobHealthSentence` now refuses to forecast below 80% estimate coverage and
+says what is missing instead.
+
+**Clicking a receivable did nothing between 768px and 1024px.** The panel
+is `hidden lg:flex`, but the desktop layout returns at 768px — so for 256px
+of width the page looked fully functional and the rows were silently dead.
+Below the panel's width a row now opens the job instead. Nothing is ever a
+no-op.
+
+**Twenty-one pages had an invisible heading.** Every unconverted page's
+`<h1>` is `text-slate-100`, which was correct on the old dark body and is
+near-white on the new light canvas. The tester found one; it was systemic.
+Their own brief drew the line — inconsistent is expected, unreadable is a
+bug — so the 21 headings and 15 subtitles that sit directly on the canvas
+are now readable. This is NOT the theme conversion: those pages still carry
+their dark cards and will look inconsistent until a second pass.
+
+**The mobile drawer had gone flat** while the rail gained groups, in
+different orders — the exact drift `navItems.tsx` exists to prevent. Both
+render from `NAV_GROUPS` now.
+
+Also fixed: "Nothing in in progress right now."
+
+Not a defect, recorded because it limits what the run proved: gross margin
+showed "—" throughout, because no job in that dataset has earned revenue.
+The null branch renders neutral correctly; neither side of the 35% colour
+rule has been seen against real data.
+
+
 ### A dashboard that tells you something before you ask (Diego)
 
 `/dashboard` was a searchable table of jobs. Every number an owner needs on

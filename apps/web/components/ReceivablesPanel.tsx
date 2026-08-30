@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { SidePanel } from "@prova/ui";
 import { money } from "@/lib/money";
@@ -55,8 +56,15 @@ export function ReceivablesProvider({
  * look real and do nothing. "Open the job" is the one that works, and it
  * goes to the page where a payment can actually be recorded.
  */
+/** The width the panel needs. Below this it is display:none, so a click
+ * that tried to open it would do nothing at all — browser testing found
+ * exactly that dead band between 768px, where the desktop layout returns,
+ * and 1024px. Below it, the row goes to the job instead of nowhere. */
+const PANEL_MIN_WIDTH = "(min-width: 1024px)";
+
 export function ReceivablesList() {
   const { rows, openId, setOpenId } = useReceivables();
+  const router = useRouter();
 
   if (rows.length === 0) {
     return (
@@ -75,7 +83,18 @@ export function ReceivablesList() {
             <li key={row.id}>
               <button
                 type="button"
-                onClick={() => setOpenId(isOpen ? null : row.id)}
+                onClick={() => {
+                  // Read at click time, not render time — no hydration
+                  // mismatch, and it follows a window that was resized.
+                  const canShowPanel =
+                    typeof window === "undefined" ||
+                    window.matchMedia(PANEL_MIN_WIDTH).matches;
+                  if (!canShowPanel) {
+                    router.push(`/jobs/${row.jobId}`);
+                    return;
+                  }
+                  setOpenId(isOpen ? null : row.id);
+                }}
                 aria-expanded={isOpen}
                 className={`flex w-full items-center justify-between gap-3 px-1 py-2.5 text-left transition-colors hover:bg-tag-slate ${
                   isOpen ? "bg-tag-slate" : ""
@@ -101,7 +120,7 @@ export function ReceivablesList() {
                     {row.daysOverdue > 0
                       ? `${row.daysOverdue} ${row.daysOverdue === 1 ? "day" : "days"} overdue`
                       : row.dueOn
-                        ? `Due ${row.dueOn}`
+                        ? `Due ${row.dueOn}${row.dueIsDerived ? " (terms)" : ""}`
                         : "No due date"}
                   </span>
                 </span>
@@ -145,7 +164,16 @@ export function ReceivablesDetailPanel() {
             <Row label="Invoiced" value={money(open.amount)} />
             <Row label="Paid" value={money(open.paid)} />
             <Row label="Outstanding" value={money(open.outstanding)} emphasis />
-            <Row label="Due" value={open.dueOn ?? "No due date set"} />
+            <Row
+              label="Due"
+              value={
+                open.dueOn === null
+                  ? "No due date, and no payment terms on file for this GC"
+                  : open.dueIsDerived
+                    ? `${open.dueOn} — from this GC's payment terms, not stated on the invoice`
+                    : open.dueOn
+              }
+            />
             <Row
               label="Status"
               value={
