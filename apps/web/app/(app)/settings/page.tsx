@@ -14,6 +14,7 @@ import { money } from "@/lib/money";
 import { SubmitButton } from "@/components/SubmitButton";
 import { ConfirmDeleteButton } from "@/components/ConfirmDeleteButton";
 import { CompanyLicenses } from "@/components/CompanyLicenses";
+import { QuickBooksMapping, QuickBooksSyncLog } from "@/components/QuickBooksMapping";
 import {
   classifyRenewal,
   renewalTiming,
@@ -115,7 +116,7 @@ export default async function SettingsPage({
     );
   }
 
-  const [connection, locations, insurancePolicies, bonds, licences, classifications] = await Promise.all([
+  const [connection, locations, insurancePolicies, bonds, licences, accountMappings, rawSyncAttempts, classifications] = await Promise.all([
     prisma.quickBooksConnection.findUnique({
       where: { companyId: company.id },
       include: { connectedByUser: true },
@@ -131,11 +132,35 @@ export default async function SettingsPage({
     // seeded only for jurisdictions with a real, verified code list, since
     // the schema is explicit that a wrong code here is worse than none. The
     // form falls back to free text, which is correct for Colorado anyway.
+    prisma.quickBooksAccountMapping.findMany({
+      where: { companyId: company.id },
+      select: { purpose: true, qboAccountId: true, qboAccountName: true },
+    }),
+    // Only the recent tail: this is a "what just happened" surface, not an
+    // audit archive, and the table grows one row per push forever.
+    prisma.quickBooksSyncAttempt.findMany({
+      where: { companyId: company.id },
+      orderBy: { createdAt: "desc" },
+      take: 15,
+    }),
     prisma.licenseClassificationReference.findMany({
       orderBy: [{ jurisdictionName: "asc" }, { code: "asc" }],
       select: { jurisdictionName: true, code: true, label: true },
     }),
   ]);
+
+  const syncAttempts = rawSyncAttempts.map((attempt) => ({
+    id: attempt.id,
+    entityType: attempt.entityType,
+    outcome: attempt.outcome,
+    summary: attempt.summary,
+    detail: attempt.detail,
+    // Rendered in UTC like every other date in this app, and as a string
+    // so the server and client can't disagree about the format.
+    createdAt: `${attempt.createdAt.toISOString().slice(0, 10)} ${attempt.createdAt
+      .toISOString()
+      .slice(11, 16)} UTC`,
+  }));
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-8">
@@ -155,8 +180,11 @@ export default async function SettingsPage({
       <section className="mb-10">
         <h2 className="mb-3 text-sm font-semibold text-slate-300">QuickBooks Online</h2>
         <p className="mb-4 text-sm text-slate-400">
-          Connects your QuickBooks Online company for accounting sync. This only establishes the
-          connection today — jobs, contacts, and invoices aren&apos;t pushed to QuickBooks yet.
+          Connects your QuickBooks Online company so invoices can be pushed to it. Deliberately
+          ONE direction: Prova writes to QuickBooks and reads the record back to confirm what
+          landed. It does not pull edits made in QuickBooks back into Prova, and does not
+          pretend to — a sync that quietly loses an edit is worse than one that never claimed
+          to carry it.
         </p>
 
         {connection ? (
@@ -176,6 +204,28 @@ export default async function SettingsPage({
                   Disconnect
                 </SubmitButton>
               </form>
+            </div>
+
+            <div className="mt-6 border-t border-slate-800 pt-4">
+              <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                Chart of accounts
+              </h3>
+              <p className="mb-3 text-xs text-slate-500">
+                Nothing is guessed here. An account picked for you is how books get wrong in a way
+                nobody notices until tax time.
+              </p>
+              <QuickBooksMapping mappings={accountMappings} />
+            </div>
+
+            <div className="mt-6 border-t border-slate-800 pt-4">
+              <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                Recent sync activity
+              </h3>
+              <p className="mb-3 text-xs text-slate-500">
+                Every attempt, including refusals and anything that landed differently from what
+                was sent.
+              </p>
+              <QuickBooksSyncLog attempts={syncAttempts} />
             </div>
           </div>
         ) : (

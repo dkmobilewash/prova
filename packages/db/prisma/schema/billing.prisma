@@ -205,3 +205,132 @@ model QuickBooksConnection {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+
+/// Which of OUR records corresponds to which QuickBooks record.
+///
+/// The single most-corroborated complaint in the contractor-software
+/// research is that accounting sync "silently diverges" — the two systems
+/// stop agreeing about which invoice is which, and nobody can see when it
+/// happened. That is what this table exists to make impossible: a push is
+/// only ever a create when no link exists, and only ever an update when
+/// one does.
+///
+/// entityType/entityId rather than a foreign key per kind: the same
+/// question ("what is this in QuickBooks?") is asked of invoices,
+/// payments, contacts and vendors, and a column per kind would mean a
+/// migration for every new one. The tradeoff is no referential integrity,
+/// which is why deletes on our side must clear the link explicitly.
+model QuickBooksEntityLink {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  /// "Invoice" | "Payment" | "Contact" | "Vendor" — our model name.
+  entityType String
+  /// The cuid of our record.
+  entityId   String
+
+  /// The id QuickBooks assigned. Ours to store, never to invent.
+  qboId String
+
+  /// QuickBooks requires the current SyncToken on every update and rejects
+  /// a stale one. That rejection is a FEATURE — it means someone changed
+  /// the record in QuickBooks and our update would have overwritten them —
+  /// so it is surfaced rather than retried blindly.
+  qboSyncToken String?
+
+  /// When we last pushed, and when we last read the record back and
+  /// confirmed it matched. A push is not evidence; the read-back is.
+  lastPushedAt   DateTime?
+  lastVerifiedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// One link per record, and one QuickBooks record per link — both
+  /// directions, because a duplicate in either is the double-posting bug
+  /// every platform in the research is criticised for.
+  @@unique([companyId, entityType, entityId])
+  @@unique([companyId, entityType, qboId])
+  @@index([companyId])
+}
+
+/// Which QuickBooks account each kind of money posts to.
+///
+/// Deliberately configured, never guessed. A contractor's accountant has
+/// opinions about which account labor hits, and picking one silently is
+/// how you corrupt someone's books in a way they find out about at tax
+/// time.
+model QuickBooksAccountMapping {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  /// What is being posted: a CostCategory value (LABOR, MATERIAL,
+  /// SUBCONTRACTOR, OTHER), or "INCOME" for invoice revenue.
+  purpose String
+
+  /// The QuickBooks account, and its name at the time it was chosen so the
+  /// UI can show something readable without a round trip.
+  qboAccountId   String
+  qboAccountName String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, purpose])
+  @@index([companyId])
+}
+
+enum QuickBooksSyncOutcome {
+  SUCCEEDED
+  FAILED
+  /// Pushed, but reading the record back showed something different. This
+  /// is its own outcome because it is the failure mode that matters most
+  /// and the one every competitor reports as success.
+  VERIFY_MISMATCH
+  /// Refused before contacting QuickBooks — no mapping, no connection, or
+  /// a record that is not in a pushable state.
+  SKIPPED
+}
+
+/// Every attempt to push something to QuickBooks, append-only.
+///
+/// Exists because "successfully applied" is exactly the claim that turned
+/// out not to be a result when this project's migrations were reporting
+/// success against a database nobody read. An accounting integration
+/// deserves the same suspicion: record what was sent, what came back, and
+/// whether reading it back agreed.
+model QuickBooksSyncAttempt {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  entityType String
+  entityId   String
+
+  /// Stable across retries of the same logical push, so a retry can be
+  /// recognised rather than duplicating a document. See
+  /// lib/quickbooks-sync.ts.
+  idempotencyKey String
+
+  outcome QuickBooksSyncOutcome
+
+  /// What we sent and what QuickBooks said, in human-readable summary
+  /// form. Never the raw payload: it carries customer names and amounts
+  /// that do not need a second copy, and tokens must never be logged.
+  summary String
+  /// The mismatch or error detail, when there is one.
+  detail  String?
+
+  /// The QuickBooks id involved, once known.
+  qboId String?
+
+  attemptedByUserId String?
+  attemptedByUser   User?   @relation(fields: [attemptedByUserId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([companyId, createdAt])
+  @@index([companyId, entityType, entityId])
+}

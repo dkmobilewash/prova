@@ -9,6 +9,7 @@ import { WipNarrativeButton } from "@/components/WipNarrativeButton";
 import { DraftLineItemsForm } from "@/components/DraftLineItemsForm";
 import { DailyFieldReports } from "@/components/DailyFieldReports";
 import { PayApplications, StatusForm } from "@/components/PayApplications";
+import { PushInvoiceToQuickBooks } from "@/components/PushInvoiceToQuickBooks";
 import { MarkContractedButton } from "@/components/MarkContractedButton";
 import { ChangeOrders, type ChangeOrderView } from "@/components/ChangeOrders";
 import { changeOrderValueDelta, pendingChangeOrderExposure, reopenBlockers } from "@/lib/change-order";
@@ -311,6 +312,30 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
     releaseAmounts: job.retainageReleases.map((release) => Number(release.amount)),
     substantialCompletionDate: job.substantialCompletionDate,
   });
+
+  // Which invoices are already in QuickBooks, so a row can say so without
+  // being asked — and so re-sending is visibly a re-send rather than a
+  // second document.
+  const quickBooksInvoiceLinks = new Map(
+    (
+      await prisma.quickBooksEntityLink.findMany({
+        where: {
+          companyId: company.id,
+          entityType: "Invoice",
+          entityId: { in: job.invoices.map((invoice) => invoice.id) },
+        },
+        select: { entityId: true, qboId: true, lastVerifiedAt: true },
+      })
+    ).map((link) => [
+      link.entityId,
+      {
+        qboId: link.qboId,
+        lastVerifiedAt: link.lastVerifiedAt
+          ? link.lastVerifiedAt.toISOString().slice(0, 10)
+          : null,
+      },
+    ]),
+  );
 
   const billedToDate = job.invoices.reduce((sum, invoice) => sum + Number(invoice.amount), 0);
   const jobWip = calculateJobWip(
@@ -1261,6 +1286,13 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                           {balance <= 0 ? "Paid in full" : `Balance ${money(balance)}`}
                         </span>
                         <StatusForm jobId={job.id} invoiceId={invoice.id} status={invoice.status} />
+                        <PushInvoiceToQuickBooks
+                          invoiceId={invoice.id}
+                          linkedQboId={quickBooksInvoiceLinks.get(invoice.id)?.qboId ?? null}
+                          lastVerifiedAt={
+                            quickBooksInvoiceLinks.get(invoice.id)?.lastVerifiedAt ?? null
+                          }
+                        />
                       </div>
                     </div>
                     {invoice.lineItems.length > 0 && (
