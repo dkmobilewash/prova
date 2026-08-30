@@ -1,6 +1,16 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
+    // This package renders in a browser: SidePanel binds a keydown handler
+    // on document so Escape closes it. The base config is lib: ["ES2022"]
+    // with no DOM, apps/web overrides it and this package never did, so
+    // `document` and `KeyboardEvent.key` did not typecheck here.
+    //
+    // It went unnoticed because every local check I ran was filtered to
+    // @prova/web, which does not typecheck this package at all. CI runs the
+    // whole monorepo and had been red on this branch since the panel was
+    // added. Run the unfiltered checks.
+    "lib": ["dom", "dom.iterable", "ES2022"],
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "jsx": "react-jsx",
