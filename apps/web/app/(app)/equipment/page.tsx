@@ -20,8 +20,8 @@ export default async function EquipmentPage() {
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-ink">Equipment</h1>
-      <p className="mb-6 text-sm text-ink-body">
+      <h1 className="mb-2 text-xl font-semibold text-slate-100">Equipment</h1>
+      <p className="mb-6 text-sm text-slate-400">
         Company-owned equipment — scaffolding, lifts, mixers — and which job each item is on right now.
         Costing equipment into jobs comes later; step one is knowing what you own and where it is.
       </p>

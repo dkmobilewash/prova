@@ -24,8 +24,8 @@ export default async function CompliancePage() {
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-ink">Compliance</h1>
-      <p className="mb-6 text-sm text-ink-body">
+      <h1 className="mb-2 text-xl font-semibold text-slate-100">Compliance</h1>
+      <p className="mb-6 text-sm text-slate-400">
         Lien waivers, certificates of insurance, certified payroll, and union fringe/benefit filings. Upload a
         scanned document and Claude reads it into the fields below — review and fix anything before it&apos;s final.
       </p>

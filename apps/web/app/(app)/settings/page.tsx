@@ -111,8 +111,8 @@ export default async function SettingsPage({
   if (currentUser.role !== "OWNER") {
     return (
       <div className="mx-auto max-w-3xl px-6 py-8">
-        <h1 className="mb-2 text-xl font-semibold text-ink">Settings</h1>
-        <p className="text-sm text-ink-body">Only the account owner can manage integrations.</p>
+        <h1 className="mb-2 text-xl font-semibold text-slate-100">Settings</h1>
+        <p className="text-sm text-slate-400">Only the account owner can manage integrations.</p>
       </div>
     );
   }

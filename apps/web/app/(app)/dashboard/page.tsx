@@ -140,7 +140,11 @@ export default async function TodayPage({
     <ReceivablesProvider rows={today.receivables}>
       {/* The panel is a sibling of this column, not a child of it — that is
           what lets it push rather than cover. */}
-      <div className="flex min-h-full">
+      {/* The one light surface in the app so far. Scoped here rather than
+          applied to the body, because the pages that have not been
+          converted put tables and buttons directly on the page background
+          and render unreadable on a light one. */}
+      <div className="flex min-h-full bg-canvas">
         <div className="min-w-0 flex-1 px-6 py-8">
           <div className="mx-auto max-w-5xl">
             <h1 className="text-xl font-semibold text-ink">Today</h1>

@@ -2,18 +2,25 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Light canvas, dark nav rail.
-   Replaces the previous single dark theme. The rail stays dark — that
-   split is the point, not an inconsistency.
-
-   Note for anyone re-skinning further: most pages still carry hardcoded
-   slate-950/slate-100 utilities from the dark pass and are NOT driven by
-   these tokens yet. See the theme-migration checklist in CHANGELOG. */
+/* The body stays dark, and that is now a deliberate second decision
+   rather than the original one.
+ 
+   The light theme was meant to land here, with other pages merely looking
+   inconsistent until a follow-up pass converted them. They did not merely
+   look inconsistent: browser testing found unreadable content on 15 of 17
+   pages — most seriously an entire column of money on /cash-flow
+   rendering white-on-white, because that table sits directly on the page
+   background rather than inside a card.
+ 
+   So the light surface is scoped to what has actually been converted. The
+   dashboard opts in; every other page keeps the ground its classes were
+   written against, and converts when someone converts it. See the
+   checklist in the PR. */
 body {
-  background-color: theme("colors.canvas");
-  color: theme("colors.ink");
+  background-color: theme("colors.slate.950");
+  color: theme("colors.slate.100");
 }
 
 ::selection {
-  background-color: theme("colors.brand / 20%");
+  background-color: theme("colors.blue.600 / 40%");
 }

@@ -114,8 +114,8 @@ export default async function MaterialOrdersPage({
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-ink">Material orders</h1>
-      <p className="mb-6 text-sm text-ink-body">
+      <h1 className="mb-2 text-xl font-semibold text-slate-100">Material orders</h1>
+      <p className="mb-6 text-sm text-slate-400">
         What&apos;s on order, who owes it, and whether it actually showed up. Material that
         doesn&apos;t arrive is a crew standing around, and &ldquo;the studs were three weeks
         late&rdquo; is worth nothing in a delay conversation without the date you ordered them and

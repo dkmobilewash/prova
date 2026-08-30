@@ -9,6 +9,7 @@ import {
   marginIsHealthy,
 } from "./company-financials";
 import type { WipJobResult } from "./wip";
+import { daysPastDueFor, effectiveDueDateFor, isOverdue } from "./cash-flow";
 
 const job = (over: Partial<WipJobResult> = {}): WipJobResult => ({
   contractValue: 100_000,
@@ -198,5 +199,48 @@ describe("jobHealthSentence", () => {
   it("includes progress when it is known and omits it when it is not", () => {
     expect(sentenceFor({ percentComplete: 0.42 }).sentence).toContain("42% complete");
     expect(sentenceFor({ percentComplete: null }).sentence).not.toContain("complete.");
+  });
+});
+
+describe("one overdue rule, shared", () => {
+  // These two pages have now disagreed about which invoices are overdue
+  // twice: once because the dashboard read only the stored due date, and
+  // again because a hand-copied version of the rule missed that a GC with
+  // no stated terms is treated as due on issue. Both call the same
+  // functions now; these assert the behaviour that kept slipping.
+  const issued = new Date("2026-08-28T00:00:00.000Z");
+
+  it("treats a GC with no payment terms as due on issue, not as undated", () => {
+    expect(
+      effectiveDueDateFor({ dueAt: null, issuedAt: issued, paymentTermsDays: null }),
+    ).toEqual(issued);
+  });
+
+  it("uses the GC's terms when there is no stated due date", () => {
+    expect(
+      effectiveDueDateFor({ dueAt: null, issuedAt: issued, paymentTermsDays: 30 }),
+    ).toEqual(new Date("2026-09-27T00:00:00.000Z"));
+  });
+
+  it("prefers an explicit due date over the terms", () => {
+    const stated = new Date("2026-09-01T00:00:00.000Z");
+    expect(
+      effectiveDueDateFor({ dueAt: stated, issuedAt: issued, paymentTermsDays: 30 }),
+    ).toEqual(stated);
+  });
+
+  it("an invoice due TODAY is not overdue, at any hour", () => {
+    // The second contradiction: the forecast compared instants and called
+    // a midnight-dated invoice overdue by lunchtime, while the aging table
+    // floored to whole days and still called it current.
+    const due = new Date("2026-08-30T00:00:00.000Z");
+    expect(isOverdue(due, new Date("2026-08-30T00:00:01.000Z"))).toBe(false);
+    expect(isOverdue(due, new Date("2026-08-30T23:59:59.000Z"))).toBe(false);
+  });
+
+  it("is overdue from the next day", () => {
+    const due = new Date("2026-08-30T00:00:00.000Z");
+    expect(isOverdue(due, new Date("2026-08-31T00:00:00.000Z"))).toBe(true);
+    expect(daysPastDueFor(due, new Date("2026-09-01T00:00:00.000Z"))).toBe(2);
   });
 });

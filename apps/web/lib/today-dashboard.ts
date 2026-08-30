@@ -2,6 +2,7 @@ import { prisma } from "@prova/db";
 import { calculateJobWip, calculateLineItemWip, type WipJobResult } from "./wip";
 import { calculateRetainageSummary } from "./retainage";
 import { calculatePaymentReliability, type PaymentReliability } from "./gc-reliability";
+import { daysPastDueFor, effectiveDueDateFor } from "./cash-flow";
 import { jobHealthSentence, jobIsOverBudget } from "./company-financials";
 
 /**
@@ -64,17 +65,7 @@ function daysBetween(from: Date, to: Date): number {
   return Math.floor((to.getTime() - from.getTime()) / 86_400_000);
 }
 
-/** The date an invoice is actually due. Mirrors lib/cash-flow.ts so the
- * dashboard and the AR aging table can never disagree again. */
-function effectiveDueDate(
-  dueAt: Date | null,
-  issuedAt: Date,
-  paymentTermsDays: number | null,
-): Date | null {
-  if (dueAt) return dueAt;
-  if (paymentTermsDays === null) return null;
-  return new Date(issuedAt.getTime() + paymentTermsDays * 86_400_000);
-}
+
 
 export async function loadTodayDashboard(companyId: string, now: Date) {
   const [invoices, activeJobs, contacts] = await Promise.all([
@@ -166,11 +157,15 @@ export async function loadTodayDashboard(companyId: string, now: Date) {
     // /cash-flow said three — because this one read only the stored date
     // and called the rest "no due date". Both now derive it the same way,
     // and there is one rule rather than two.
-    const effectiveDue = effectiveDueDate(
-      row.invoice.dueAt,
-      row.invoice.issuedAt,
-      row.invoice.job.contact.paymentTermsDays,
-    );
+    // The SAME function the AR aging table uses. Mirroring the rule by
+    // hand is what let these two pages disagree twice — the copy missed
+    // that a GC with no stated terms is treated as due on issue rather
+    // than as having no due date at all.
+    const effectiveDue = effectiveDueDateFor({
+      dueAt: row.invoice.dueAt,
+      issuedAt: row.invoice.issuedAt,
+      paymentTermsDays: row.invoice.job.contact.paymentTermsDays,
+    });
     return {
       id: row.invoice.id,
       jobId: row.invoice.jobId,
@@ -180,11 +175,11 @@ export async function loadTodayDashboard(companyId: string, now: Date) {
       amount: row.amount,
       paid: row.paid,
       outstanding: row.outstanding,
-      dueOn: effectiveDue ? effectiveDue.toISOString().slice(0, 10) : null,
+      dueOn: effectiveDue.toISOString().slice(0, 10),
       // Derived rather than stored, so the row says "due in 4 days" where
       // it used to say "no due date" for an invoice that was already late.
-      dueIsDerived: row.invoice.dueAt === null && effectiveDue !== null,
-      daysOverdue: effectiveDue ? Math.max(0, daysBetween(effectiveDue, now)) : 0,
+      dueIsDerived: row.invoice.dueAt === null,
+      daysOverdue: Math.max(0, daysPastDueFor(effectiveDue, now)),
     };
   });
 

@@ -69,8 +69,8 @@ export default async function CloseoutPage() {
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-ink">Closeout &amp; warranty</h1>
-      <p className="mb-6 text-sm text-ink-body">
+      <h1 className="mb-2 text-xl font-semibold text-slate-100">Closeout &amp; warranty</h1>
+      <p className="mb-6 text-sm text-slate-400">
         What&apos;s still owed before final payment, and what you&apos;re still on the hook for after
         it. Retainage is usually released against a closeout package, so a missing lien waiver is
         money sitting with the GC — and a callback logged after the warranty ran out is the

@@ -61,8 +61,8 @@ export default async function SafetyPage({
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-ink">Safety</h1>
-      <p className="mb-6 text-sm text-ink-body">
+      <h1 className="mb-2 text-xl font-semibold text-slate-100">Safety</h1>
+      <p className="mb-6 text-sm text-slate-400">
         The incident log and the toolbox talk record. These are the two things a GC or an OSHA inspector asks
         for by name, and the two things that usually live in a binder in someone&apos;s truck.
       </p>

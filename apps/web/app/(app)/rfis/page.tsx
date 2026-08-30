@@ -92,8 +92,8 @@ export default async function RfisPage({
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-ink">RFIs</h1>
-      <p className="mb-6 text-sm text-ink-body">
+      <h1 className="mb-2 text-xl font-semibold text-slate-100">RFIs</h1>
+      <p className="mb-6 text-sm text-slate-400">
         Questions to the GC or architect, and what came back. This is evidence before it&apos;s a
         to-do list: an RFI sent on a date and answered three weeks later is the documentation behind a
         delay claim, and &ldquo;we asked and nobody got back to us&rdquo; is worth nothing without the

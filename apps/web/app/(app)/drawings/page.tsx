@@ -71,8 +71,8 @@ export default async function DrawingsPage({
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-ink">Drawings</h1>
-      <p className="mb-6 text-sm text-ink-body">
+      <h1 className="mb-2 text-xl font-semibold text-slate-100">Drawings</h1>
+      <p className="mb-6 text-sm text-slate-400">
         Which revision of each set is current, and whether it&apos;s actually in the trailer. A
         revision that has been issued supersedes the one before it whether or not it has reached you
         — so an issue you haven&apos;t received means the crew is building from paper that is already

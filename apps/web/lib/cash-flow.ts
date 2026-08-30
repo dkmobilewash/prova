@@ -48,13 +48,46 @@ function bucketForDaysPastDue(daysPastDue: number): ArAgingBucket {
   return "DAYS_90_PLUS";
 }
 
+/**
+ * The date an invoice is actually due.
+ *
+ * EXPORTED because two pages implementing this rule separately is what
+ * made the dashboard and the AR aging table disagree about which invoices
+ * were overdue — twice. The first attempt copied the rule's shape and
+ * missed that a GC with no stated terms is treated as due on issue, not
+ * as having no due date. There is one implementation now.
+ */
+export function effectiveDueDateFor(input: {
+  dueAt: Date | null;
+  issuedAt: Date;
+  paymentTermsDays: number | null;
+}): Date {
+  return input.dueAt ?? addDays(input.issuedAt, input.paymentTermsDays ?? 0);
+}
+
+/**
+ * Whole days past due. Whole days, not instants — an invoice due today is
+ * due today, all day. Comparing timestamps made the forecast call a
+ * midnight-dated invoice overdue by lunchtime while the aging table on the
+ * same page still called it current.
+ */
+export function daysPastDueFor(dueDate: Date, asOf: Date): number {
+  return Math.floor((asOf.getTime() - dueDate.getTime()) / MS_PER_DAY);
+}
+
+/** Overdue is the one predicate, used by the aging table, the forecast and
+ * the dashboard alike. */
+export function isOverdue(dueDate: Date, asOf: Date): boolean {
+  return daysPastDueFor(dueDate, asOf) > 0;
+}
+
 /** Null when the invoice is fully paid -- it isn't part of AR aging. */
 export function calculateArAgingInvoice(input: ArAgingInvoiceInput, asOf: Date): ArAgingInvoiceResult | null {
   const balance = input.amount - input.paidAmount;
   if (balance <= 0) return null;
 
-  const effectiveDueDate = input.dueAt ?? addDays(input.issuedAt, input.paymentTermsDays ?? 0);
-  const daysPastDue = Math.floor((asOf.getTime() - effectiveDueDate.getTime()) / MS_PER_DAY);
+  const effectiveDueDate = effectiveDueDateFor(input);
+  const daysPastDue = daysPastDueFor(effectiveDueDate, asOf);
 
   return {
     ...input,
@@ -139,12 +172,12 @@ export function calculateCashFlowForecast(
   }
 
   function targetMonth(date: Date): CashFlowForecastMonth {
-    // Past due is past due, whatever month it falls in. Bucketing only on
-    // "before this month started" filed an invoice due on the 28th, read
-    // on the 30th, under the current month rather than Overdue — so this
-    // page's own forecast disagreed with its own aging table, which is
-    // exactly the kind of thing that makes someone stop trusting both.
-    if (date < asOf || date < asOfMonthStart) return months[0];
+    // Past due is past due, whatever month it falls in — but "past due"
+    // has to mean the same thing here as in the aging table above, or this
+    // page contradicts itself. It did, twice: first by filing a two-day-old
+    // invoice under the current month, then by calling a due-TODAY invoice
+    // overdue while the aging table called it current. One predicate now.
+    if (isOverdue(date, asOf) || date < asOfMonthStart) return months[0];
     const clamped = date > windowEnd ? windowEnd : date;
     const key = monthKey(clamped);
     return months.find((m) => m.key === key) ?? months[months.length - 1];

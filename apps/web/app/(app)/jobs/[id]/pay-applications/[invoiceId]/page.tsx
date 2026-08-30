@@ -112,7 +112,7 @@ export default async function PayApplicationPage({
         <PrintButton />
       </div>
 
-      <h1 className="text-xl font-semibold text-ink">
+      <h1 className="text-xl font-semibold text-slate-100">
         Application for payment #{invoice.number} — {job.name}
       </h1>
       <p className="mt-1 text-sm text-slate-500">

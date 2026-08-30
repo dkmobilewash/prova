@@ -12,6 +12,54 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### Three of the six fixes didn't work, and the theme change was wrong (Diego)
+
+The re-test found the first attempt shallow in three places. Recording what
+was actually wrong, because two of them are the same mistake twice.
+
+**The overdue disagreement survived the fix.** Dashboard still said 1
+invoice / $1,000; `/cash-flow` still said 3 / $2,100. I had copied the
+rule's SHAPE and missed its content: `calculateArAgingInvoice` uses
+`paymentTermsDays ?? 0`, so a GC with no stated terms is due ON ISSUE. My
+version returned null for that case and called those invoices undated.
+
+**Then `/cash-flow` contradicted itself again, differently.** My first fix
+made the forecast compare instants (`date < asOf`) while the aging table
+floors to whole days — so an invoice due today was overdue in one table and
+current in the other by lunchtime. I moved the bug rather than removing it.
+
+Both are the same error: two implementations of one rule. `cash-flow.ts`
+now exports `effectiveDueDateFor`, `daysPastDueFor` and `isOverdue`, and
+the aging table, the forecast and the dashboard all call them. Five tests
+pin the two cases that kept slipping, mutation-checked.
+
+**The theme change was wrong, and is scoped back.** The plan was: convert
+the shared components and the dashboard, leave other pages looking
+inconsistent until a follow-up. They did not merely look inconsistent. On a
+light canvas, 15 of 17 pages had content that could not be read — most
+seriously the entire Balance column of `/cash-flow`'s AR aging table
+rendering white-on-white, and buttons like "Add a licence" and "Log a
+toolbox talk" invisible.
+
+My first answer to that was to recolour headings and subtitles, which was
+pattern-matching rather than looking: it fixed 21 h1s and missed h2s,
+buttons and table cells, and missed `/settings` entirely.
+
+So the light surface is now scoped to what has actually been converted. The
+body stays dark, the chrome stays dark, and the dashboard carries its own
+`bg-canvas`. Every other page renders exactly as it did before this branch
+— the diff against main outside the dashboard is now three files.
+
+That is a smaller claim than the brief asked for, and it is the honest one:
+the tokens exist and one screen is built on them, rather than a theme
+half-applied over pages that break under it. The conversion is a page at a
+time, and each page is readable before and after.
+
+Not a defect, still unproven: gross margin renders "—" because no job in
+that dataset has earned revenue, so neither side of the 35% colour rule has
+been exercised.
+
+
 ### Six things browser testing found in the new dashboard (Diego)
 
 **The two pages disagreed about which invoices were overdue.** The

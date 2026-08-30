@@ -110,7 +110,7 @@ export default async function CertifiedPayrollPage({
         <PrintButton />
       </div>
 
-      <h1 className="text-xl font-semibold text-ink">Certified payroll — {job.name}</h1>
+      <h1 className="text-xl font-semibold text-slate-100">Certified payroll — {job.name}</h1>
       <p className="mt-1 text-sm text-slate-500">
         {job.contact.name} · Week of {formatDate(weekStart)} – {formatDate(weekEnd)}
       </p>

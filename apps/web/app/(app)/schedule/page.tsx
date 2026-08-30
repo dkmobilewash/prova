@@ -25,12 +25,12 @@ export default async function SchedulePage() {
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-8">
-      <h1 className="mb-6 text-xl font-semibold text-ink">Schedule</h1>
+      <h1 className="mb-6 text-xl font-semibold text-slate-100">Schedule</h1>
 
       <section className="mb-10">
         <h2 className="mb-3 text-sm font-semibold text-slate-300">Scheduled</h2>
         {scheduled.length === 0 ? (
-          <p className="text-ink-body">No jobs scheduled yet.</p>
+          <p className="text-slate-400">No jobs scheduled yet.</p>
         ) : (
           <ul className="divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900">
             {scheduled.map((job) => (

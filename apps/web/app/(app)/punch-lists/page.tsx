@@ -51,8 +51,8 @@ export default async function PunchListsPage({
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-ink">Punch lists</h1>
-      <p className="mb-6 text-sm text-ink-body">
+      <h1 className="mb-2 text-xl font-semibold text-slate-100">Punch lists</h1>
+      <p className="mb-6 text-sm text-slate-400">
         What still has to be fixed before a job closes out. Jobs currently go straight from in-progress to
         complete with nothing tracking the walkthrough, so this is the list that used to live on someone&apos;s
         memory.

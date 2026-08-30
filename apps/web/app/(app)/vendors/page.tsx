@@ -13,8 +13,8 @@ export default async function VendorsPage() {
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-ink">Vendors</h1>
-      <p className="mb-6 text-sm text-ink-body">
+      <h1 className="mb-2 text-xl font-semibold text-slate-100">Vendors</h1>
+      <p className="mb-6 text-sm text-slate-400">
         Suppliers and service vendors you buy from — board and steel suppliers, equipment rental, scaffolding.
         A directory for now; linking vendors to material costs and pricing history comes later.
       </p>

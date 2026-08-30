@@ -78,7 +78,7 @@ export default async function CashFlowPage() {
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8">
-      <h1 className="mb-1 text-xl font-semibold text-ink">Cash flow forecast</h1>
+      <h1 className="mb-1 text-xl font-semibold text-slate-100">Cash flow forecast</h1>
       <p className="mb-6 max-w-2xl text-sm text-slate-500">
         AR aging on outstanding invoice balances, retainage receivable, and a forward monthly projection built
         strictly from due dates, payment terms, and substantial completion dates already on file — nothing here is a
