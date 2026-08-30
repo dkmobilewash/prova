@@ -12,6 +12,60 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### Finding out that QuickBooks disagrees with you (Diego)
+
+The sync refuses an edit made inside QuickBooks rather than overwriting
+it. That is right — overwriting a person's edit is how every platform in
+the research ends up "silently diverging". But refusing and then never
+mentioning it is half an answer. An invoice sat at $200.00 in QuickBooks
+while Prova showed $123.45, and nothing anywhere said so until someone
+happened to press a button.
+
+Settings now has "Does QuickBooks still agree?" — one call, on demand,
+listing every invoice where the two sides disagree, worst first.
+
+Decisions:
+
+**It reads and never writes.** There is deliberately no "fix this" button.
+Which side is right is a judgement about someone's books, and a machine
+picking between two humans' numbers is exactly the behaviour that makes a
+bookkeeper stop trusting an integration. The row says what differs and
+tells you re-sending overwrites QuickBooks — then stops.
+
+**Nothing is stored.** A saved "in sync" flag is wrong the instant either
+side changes, the same rule this schema applies to every other derived
+value.
+
+**Compared on money and existence only.** Total, and whether QuickBooks
+still has the record. Not line counts, not descriptions, not the document
+number — QuickBooks legitimately adds tax and discount lines and a
+bookkeeper may retitle something. A reconciliation view people learn to
+scroll past is worse than none, and that is what noise does to one.
+
+**A voided invoice is a difference, not a disappearance.** QuickBooks
+keeps voided invoices at zero rather than deleting them, and marks them in
+the private note rather than a field — so "it's gone" would be the wrong
+thing to tell someone.
+
+**Order is the feature.** Disagreements first, then invoices QuickBooks no
+longer has, then never-sent, then agreeing. Within disagreements, biggest
+money gap first: a $4,000 gap must not sit below a $2 one by accident.
+
+**Fetched in one batched query, not one call per invoice.** A hundred
+invoices would otherwise be a hundred round trips and a good way to meet
+Intuit's rate limits on a page someone refreshes twice. Ids come from our
+own database but are still filtered to digits before being interpolated
+into a query language with no parameter binding.
+
+17 tests, two mutation-checked: removing the total comparison fails four,
+inverting the sort order fails one.
+
+Not verified against a real QuickBooks company yet. The reconciliation
+call itself has never run against Intuit — and given that every real
+defect in this integration was found by clicking rather than by a test,
+that is the gate before this is trusted.
+
+
 ### QuickBooks sync: every claim now verified against the real API
 
 Closing the record. Five browser runs against a sandbox company, each one

@@ -15,6 +15,7 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { ConfirmDeleteButton } from "@/components/ConfirmDeleteButton";
 import { CompanyLicenses } from "@/components/CompanyLicenses";
 import { QuickBooksMapping, QuickBooksSyncLog } from "@/components/QuickBooksMapping";
+import { QuickBooksReconcile } from "@/components/QuickBooksReconcile";
 import {
   classifyRenewal,
   renewalTiming,
@@ -215,6 +216,18 @@ export default async function SettingsPage({
                 nobody notices until tax time.
               </p>
               <QuickBooksMapping mappings={accountMappings} />
+            </div>
+
+            <div className="mt-6 border-t border-slate-800 pt-4">
+              <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                Does QuickBooks still agree?
+              </h3>
+              <p className="mb-3 text-xs text-slate-500">
+                This sync only writes to QuickBooks — an edit made there is refused rather than
+                absorbed, and nothing here changes until you ask. This is how you find out that
+                someone changed an invoice on the other side.
+              </p>
+              <QuickBooksReconcile />
             </div>
 
             <div className="mt-6 border-t border-slate-800 pt-4">
