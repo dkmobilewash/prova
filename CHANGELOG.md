@@ -12,6 +12,83 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### What your suppliers actually charge, and which way it is moving (Cyrus)
+`cyrus/vendor-pricing`
+
+A material price lived in exactly two places before this, and neither could
+be estimated from. `CostEntry` holds a lump amount after the fact, with no
+vendor and no unit behind it. `MaterialOrder` deliberately carries no price
+at all, because putting one there would make an order a second source of
+line-item cost — the rule ARCHITECTURE.md exists to enforce. So the question
+an estimator actually asks, "what is board going for, from whom, and is it
+moving?", had no answer anywhere in the app.
+
+`/vendors/pricing` answers it. What a vendor quoted, on a date, with what it
+came from — a written quote, an invoice, a price list, or a phone call —
+because those four are not equally trustworthy and whoever is bidding is
+entitled to know which one they are looking at.
+
+**This is reference data and must never become line-item data.** A quote
+belongs to a vendor and a date, never to a job or a `JobLineItem`, and
+nothing sums it into job cost. Job cost keeps its one home. Read it as
+living in the same family as `LineItemCatalogEntry`.
+
+**Nothing is compared across units, ever.** A vendor quoting by the MSF has
+not quoted by the SF, and the factor between them is theirs to state. Invent
+it and a supplier appears a thousand times cheaper than they are, on a
+screen someone bids off. Comparison happens inside a unit bucket or it does
+not happen — which means "cheapest" is only ever cheapest per SF, and the
+badge now says exactly that.
+
+**No stored current price.** Current, expired, stale, cheapest, spread and
+every movement figure are derived on every read, same rule as the delivery
+log and the current drawing revision. A stored current price is wrong the
+instant a newer quote is entered.
+
+Four smaller decisions, each of them a way to be quietly wrong:
+
+- **A vendor's superseded price is not a competing offer.** Only their
+  newest live quote enters a comparison, or one supplier appears twice in a
+  field of three and an old number they have already withdrawn wins.
+- **An expired quote is still history.** It leaves the comparison and stays
+  in the record — dropping it would hide the very rise the page exists to
+  show.
+- **A vendor's own expiry outranks our rule of thumb.** "Worth re-checking"
+  only ever applies where they gave no date. Once theirs lapses, that is the
+  truer answer anyway.
+- **The expiry is inclusive.** A price held "until the 30th" is live ON the
+  30th. An off-by-one here kills a live price on the one day it matters.
+
+The estimating payoff is a warning when a catalog default sits under the
+cheapest live quote in the same unit — you are bidding at a price nobody
+will sell you at. It changes nothing and points at `/catalog`: which number
+is right is a decision about your own pricing, not something to overwrite.
+
+45 tests, four of them mutation-checked by reintroducing the exact bug and
+confirming which test dies: comparing movement across units, letting a
+superseded price compete, killing a quote a day early on its own expiry, and
+comparing the catalog against a quote in another unit. One failure each, and
+each was the test written for that rule.
+
+**Then clicking it found what none of them could.** With a $390/MSF and a
+$0.39/SF quote on one item, both rows badged "cheapest live" — two
+contradictory claims about the same item on one screen. Both were true, each
+within its own unit, but a badge that has to be reconciled against a heading
+is one that gets misread, and misread here means bidding off the wrong
+number. It reads "cheapest per SF" / "cheapest per MSF" now.
+
+Verified by doing it, not by the suite: the guard against an expiry before
+the quote date fired on create AND on edit and rendered as a sentence rather
+than a redacted crash; a per-MSF quote formed its own bucket and left the
+per-SF comparison untouched; expiring a quote dropped it out of the spread
+and left it in the list; and a two-step delete removed a quote and its whole
+unit bucket with it.
+
+Migration additive. Grouping falls back to the vendor's wording when no
+catalog item is linked, which is a weak key — two vendors wording the same
+board differently will not line up, and the page says so rather than
+under-grouping silently.
+
 ### Finding out that QuickBooks disagrees with you (Diego)
 
 The sync refuses an edit made inside QuickBooks rather than overwriting

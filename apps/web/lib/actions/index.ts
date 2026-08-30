@@ -28,3 +28,4 @@ export * from "./submittals";
 export * from "./materialOrders";
 export * from "./drawings";
 export * from "./closeout";
+export * from "./vendorPricing";
