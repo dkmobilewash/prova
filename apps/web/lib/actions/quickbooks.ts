@@ -5,7 +5,9 @@ import { prisma } from "@prova/db";
 import {
   QuickBooksApiError,
   createCustomer,
+  createServiceItem,
   findCustomerByName,
+  findItemByName,
   getInvoice,
   listAccounts,
   refreshTokens,
@@ -240,6 +242,60 @@ export async function linkContactToQuickBooks(contactId: string): Promise<Action
   }
 }
 
+
+/**
+ * The QuickBooks Product/Service item every invoice line is booked against.
+ *
+ * QuickBooks invoice lines reference an ITEM, not an account — the item is
+ * what posts to the account. Getting this wrong is what made every push
+ * fail with "Required parameter Line.SalesItemLineDetail is missing": the
+ * builder had an optional item id, nothing supplied it, and an empty
+ * SalesItemLineDetail reads to Intuit as absent.
+ *
+ * Found by name before being created, and the name is stable, so a second
+ * run reuses the first run's item rather than littering the contractor's
+ * product list. The link is stored so later pushes skip the lookup
+ * entirely.
+ */
+const INCOME_ITEM_NAME = "Prova — Construction services";
+
+async function resolveIncomeItemId(
+  companyId: string,
+  realmId: string,
+  accessToken: string,
+  incomeAccountId: string,
+): Promise<string> {
+  const link = await prisma.quickBooksEntityLink.findFirst({
+    where: { companyId, entityType: "Item", entityId: INCOME_ITEM_NAME },
+  });
+  if (link) return link.qboId;
+
+  const item =
+    (await findItemByName(realmId, accessToken, INCOME_ITEM_NAME)) ??
+    (await createServiceItem(realmId, accessToken, INCOME_ITEM_NAME, incomeAccountId));
+
+  await prisma.quickBooksEntityLink.upsert({
+    where: {
+      companyId_entityType_entityId: {
+        companyId,
+        entityType: "Item",
+        entityId: INCOME_ITEM_NAME,
+      },
+    },
+    create: {
+      companyId,
+      entityType: "Item",
+      entityId: INCOME_ITEM_NAME,
+      qboId: item.id,
+      lastPushedAt: new Date(),
+      lastVerifiedAt: new Date(),
+    },
+    update: { qboId: item.id },
+  });
+
+  return item.id;
+}
+
 /* ------------------------------------------------------------------ */
 /* Invoices                                                            */
 /* ------------------------------------------------------------------ */
@@ -285,6 +341,13 @@ export async function pushInvoiceToQuickBooks(invoiceId: string): Promise<Action
 
   const token = await accessTokenFor(company.id);
 
+  // The chart-of-accounts mapping stopped being decorative here: it is what
+  // the Product/Service item posts to, and without it there is nothing to
+  // book a line against.
+  const incomeMapping = await prisma.quickBooksAccountMapping.findUnique({
+    where: { companyId_purpose: { companyId: company.id, purpose: "INCOME" } },
+  });
+
   const toPush: InvoiceToPush = {
     invoiceId: invoice.id,
     number: invoice.number,
@@ -308,9 +371,10 @@ export async function pushInvoiceToQuickBooks(invoiceId: string): Promise<Action
   const blockers = pushBlockers({
     hasConnection: token !== null,
     customerQboId: customerLink?.qboId ?? null,
+    incomeAccountId: incomeMapping?.qboAccountId ?? null,
     totalCents: toPush.totalCents,
   });
-  if (blockers.length > 0 || !token) {
+  if (blockers.length > 0 || !token || !incomeMapping) {
     await log({
       companyId: company.id,
       userId: user.id,
@@ -354,7 +418,32 @@ export async function pushInvoiceToQuickBooks(invoiceId: string): Promise<Action
     }
   }
 
+  let incomeItemId: string;
+  try {
+    incomeItemId = await resolveIncomeItemId(
+      company.id,
+      token.realmId,
+      token.accessToken,
+      incomeMapping.qboAccountId,
+    );
+  } catch (error) {
+    const detail =
+      error instanceof QuickBooksApiError ? error.detail : "Couldn't reach QuickBooks.";
+    await log({
+      companyId: company.id,
+      userId: user.id,
+      entityType: "Invoice",
+      entityId: invoice.id,
+      idempotencyKey,
+      outcome: "FAILED",
+      summary: `Invoice ${invoice.number} on ${invoice.job.name} was not sent.`,
+      detail: `Could not resolve the QuickBooks service item: ${detail}`,
+    });
+    return actionFail(`QuickBooks refused: ${detail}`);
+  }
+
   const payload = buildInvoicePayload(toPush, {
+    incomeItemId,
     existing:
       link && link.qboSyncToken !== null
         ? { qboId: link.qboId, syncToken: link.qboSyncToken }

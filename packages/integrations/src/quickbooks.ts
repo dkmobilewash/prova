@@ -437,3 +437,61 @@ export async function getInvoice(
   );
   return body.Invoice;
 }
+
+export interface QuickBooksItem {
+  id: string;
+  name: string;
+}
+
+/**
+ * A QuickBooks Product/Service item.
+ *
+ * Distinct from an Account, and the distinction matters: an invoice line
+ * references an ITEM, and the item is what posts to an income account.
+ * Sending an account id where an item id belongs is not a near miss — they
+ * are different objects with different id spaces, and QuickBooks will
+ * either reject it or resolve it to the wrong thing.
+ */
+export async function findItemByName(
+  realmId: string,
+  accessToken: string,
+  name: string,
+): Promise<QuickBooksItem | null> {
+  const escaped = name.replace(/'/g, "''");
+  const query = encodeURIComponent(`select Id, Name from Item where Name = '${escaped}'`);
+  const body = await accountingRequest<{
+    QueryResponse?: { Item?: { Id: string; Name: string }[] };
+  }>(realmId, accessToken, `/query?query=${query}`);
+
+  const found = body.QueryResponse?.Item?.[0];
+  return found ? { id: found.Id, name: found.Name } : null;
+}
+
+/**
+ * Creates a Service item posting to the given income account.
+ *
+ * Service rather than Inventory deliberately: an inventory item needs
+ * quantities, an asset account and a cost of goods account, none of which
+ * describe billing a GC for completed work.
+ */
+export async function createServiceItem(
+  realmId: string,
+  accessToken: string,
+  name: string,
+  incomeAccountId: string,
+): Promise<QuickBooksItem> {
+  const body = await accountingRequest<{ Item: { Id: string; Name: string } }>(
+    realmId,
+    accessToken,
+    "/item",
+    {
+      method: "POST",
+      body: {
+        Name: name,
+        Type: "Service",
+        IncomeAccountRef: { value: incomeAccountId },
+      },
+    },
+  );
+  return { id: body.Item.Id, name: body.Item.Name };
+}

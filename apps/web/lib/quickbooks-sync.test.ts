@@ -24,6 +24,12 @@ const invoice = (over: Partial<InvoiceToPush> = {}): InvoiceToPush => ({
   ...over,
 });
 
+
+/** Every QuickBooks invoice line must reference a Product/Service item.
+ * Passing it explicitly in every test because omitting it is exactly the
+ * bug these tests failed to catch. */
+const ITEM = { incomeItemId: "7" };
+
 const line = (over: Partial<InvoiceToPush["lines"][number]> = {}) => ({
   lineItemId: "line-1",
   description: '5/8" Type X board',
@@ -99,11 +105,47 @@ describe("idempotencyKeyFor — the defence against double-posting", () => {
 });
 
 describe("buildInvoicePayload", () => {
+  it("gives EVERY line a non-empty SalesItemLineDetail with an ItemRef", () => {
+    // The test that was missing, and the reason 193 green tests coexisted
+    // with every real push failing. QuickBooks rejected each invoice with
+    // "Required parameter Line.SalesItemLineDetail is missing" because the
+    // item id was optional, no caller supplied it, and an empty object
+    // reads to Intuit as absent. Asserted across every line shape this
+    // builder can produce: billed, materials-stored, and the lump-sum
+    // fallback.
+    const payloads = [
+      buildInvoicePayload(
+        invoice({ lines: [line({ billedCents: 60_000, materialsStoredCents: 40_000 })] }),
+        ITEM,
+      ),
+      buildInvoicePayload(invoice({ lines: [], totalCents: 500_00 }), ITEM),
+    ];
+    for (const payload of payloads) {
+      expect(payload.Line.length).toBeGreaterThan(0);
+      for (const qboLine of payload.Line) {
+        expect(qboLine.DetailType).toBe("SalesItemLineDetail");
+        expect(qboLine.SalesItemLineDetail.ItemRef.value).toBe("7");
+        expect(Object.keys(qboLine.SalesItemLineDetail).length).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it("books every line against the SAME item", () => {
+    // A split across two items would post one G703 to two accounts.
+    const payload = buildInvoicePayload(
+      invoice({ lines: [line({ billedCents: 60_000, materialsStoredCents: 40_000 })] }),
+      ITEM,
+    );
+    const items = new Set(payload.Line.map((l) => l.SalesItemLineDetail.ItemRef.value));
+    expect(items.size).toBe(1);
+  });
+
   it("bills work completed and materials stored as SEPARATE lines", () => {
     // Two columns on a G703. Folding them together makes the pay
     // application the GC signed and the ledger disagree.
     const payload = buildInvoicePayload(
       invoice({ lines: [line({ billedCents: 60_000, materialsStoredCents: 40_000 })] }),
+      ITEM,
     );
     expect(payload.Line).toHaveLength(2);
     expect(payload.Line[0].Amount).toBe(600);
@@ -114,12 +156,13 @@ describe("buildInvoicePayload", () => {
   it("omits a line that is zero rather than sending a zero line", () => {
     const payload = buildInvoicePayload(
       invoice({ lines: [line({ billedCents: 100_000, materialsStoredCents: 0 })] }),
+      ITEM,
     );
     expect(payload.Line).toHaveLength(1);
   });
 
   it("falls back to one line for a lump-sum invoice with no breakdown", () => {
-    const payload = buildInvoicePayload(invoice({ lines: [], totalCents: 500_00 }));
+    const payload = buildInvoicePayload(invoice({ lines: [], totalCents: 500_00 }), ITEM);
     expect(payload.Line).toHaveLength(1);
     expect(payload.Line[0].Amount).toBe(500);
   });
@@ -134,6 +177,7 @@ describe("buildInvoicePayload", () => {
         retainageWithheldCents: 10_000,
         lines: [line({ billedCents: 100_000 })],
       }),
+      ITEM,
     );
     expect(payload.Line[0].Amount).toBe(1000);
     expect(payload.PrivateNote).toContain("Retainage withheld: $100.00");
@@ -141,16 +185,17 @@ describe("buildInvoicePayload", () => {
   });
 
   it("says nothing about retainage when none is withheld", () => {
-    const payload = buildInvoicePayload(invoice({ lines: [line()] }));
+    const payload = buildInvoicePayload(invoice({ lines: [line()] }), ITEM);
     expect(payload.PrivateNote).not.toContain("Retainage");
   });
 
   it("carries Id and SyncToken only when updating an existing invoice", () => {
-    const create = buildInvoicePayload(invoice({ lines: [line()] }));
+    const create = buildInvoicePayload(invoice({ lines: [line()] }), ITEM);
     expect(create.Id).toBeUndefined();
     expect(create.SyncToken).toBeUndefined();
 
     const update = buildInvoicePayload(invoice({ lines: [line()] }), {
+      ...ITEM,
       existing: { qboId: "142", syncToken: "3" },
     });
     expect(update.Id).toBe("142");
@@ -158,12 +203,12 @@ describe("buildInvoicePayload", () => {
   });
 
   it("leaves DueDate out entirely when the invoice has no due date", () => {
-    expect(buildInvoicePayload(invoice({ dueOn: null, lines: [line()] })).DueDate).toBeUndefined();
+    expect(buildInvoicePayload(invoice({ dueOn: null, lines: [line()] }), ITEM).DueDate).toBeUndefined();
   });
 });
 
 describe("verifyPushedInvoice — a push is not evidence", () => {
-  const sent = buildInvoicePayload(invoice({ lines: [line({ billedCents: 100_000 })] }));
+  const sent = buildInvoicePayload(invoice({ lines: [line({ billedCents: 100_000 })] }), ITEM);
 
   it("passes when what came back matches what went out", () => {
     expect(
@@ -228,19 +273,33 @@ describe("verifyPushedInvoice — a push is not evidence", () => {
 describe("pushBlockers", () => {
   it("names each missing prerequisite separately", () => {
     expect(
-      pushBlockers({ hasConnection: false, customerQboId: null, totalCents: 0 }),
-    ).toHaveLength(3);
+      pushBlockers({ hasConnection: false, customerQboId: null, incomeAccountId: null, totalCents: 0 }),
+    ).toHaveLength(4);
   });
 
   it("is silent when everything is in place", () => {
     expect(
-      pushBlockers({ hasConnection: true, customerQboId: "58", totalCents: 100 }),
+      pushBlockers({ hasConnection: true, customerQboId: "58", incomeAccountId: "42", totalCents: 100 }),
     ).toEqual([]);
+  });
+
+  it("refuses when no income account is mapped", () => {
+    // The chart-of-accounts mapping is what the QuickBooks service item
+    // posts to. Without it there is nothing to book a line against, and
+    // the mapping UI was collecting a value nothing read.
+    expect(
+      pushBlockers({
+        hasConnection: true,
+        customerQboId: "58",
+        incomeAccountId: null,
+        totalCents: 100,
+      })[0],
+    ).toContain("invoice revenue");
   });
 
   it("refuses a zero or negative invoice", () => {
     expect(
-      pushBlockers({ hasConnection: true, customerQboId: "58", totalCents: 0 })[0],
+      pushBlockers({ hasConnection: true, customerQboId: "58", incomeAccountId: "42", totalCents: 0 })[0],
     ).toContain("zero or less");
   });
 });

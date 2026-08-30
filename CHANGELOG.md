@@ -12,6 +12,58 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### Every QuickBooks push failed, and 193 green tests said otherwise (Diego)
+
+The sandbox run got there. Every invoice was rejected:
+
+> Required parameter Line.SalesItemLineDetail is missing in the request
+
+`buildInvoicePayload` took an optional `incomeAccountItemId`, **no caller
+anywhere supplied it**, so every line shipped `SalesItemLineDetail: {}` —
+and QuickBooks reads an empty object as absent.
+
+The part worth sitting with is not the missing parameter. It is that the
+test suite was fully green while every real push failed, because the tests
+asserted on a payload shape I invented and never checked against Intuit.
+`SalesItemLineDetail` appeared nowhere in them. A test that only confirms
+the code does what the code does is a test that cannot fail for the reason
+that matters.
+
+Two consequences the tester found, both worse than the error itself:
+
+**The chart-of-accounts mapping was decorative.** "Invoice revenue →
+Services (Income)" was collected, stored, displayed, and never read when
+building an invoice. It passed a browser test on a feature with no effect.
+
+**Wiring the stored value through would NOT have fixed it.** The mapping
+holds an *Account* id; a QuickBooks invoice line needs a *Product/Service
+Item* id. Different objects, different id spaces. That is a second bug
+hiding behind the first, and it would have produced a different failure
+rather than a fix.
+
+So: `ItemRef` is now **required** in `QboLine`, and `incomeItemId` is a
+required argument. The payload that failed is no longer expressible — the
+compiler refuses it rather than a test having to remember to look. The
+mapped income account is what the service item posts to, so the mapping
+became load-bearing instead of decorative, and `pushBlockers` refuses a
+push when no income account is mapped rather than failing at Intuit.
+
+`resolveIncomeItemId` finds a stable-named service item before creating
+one and stores the link, so a second push reuses the first item rather than
+littering a contractor's product list.
+
+Three new tests, one of them the one that was missing: every line, in
+every shape this builder produces, must carry a non-empty
+`SalesItemLineDetail` with an `ItemRef`. Verified by reintroducing the
+exact production bug as a mutation — the empty object — and confirming two
+tests fail.
+
+Still unproven after two runs: whether a retry creates a second invoice in
+QuickBooks. The client-side pending guard was observed collapsing a fast
+double-click into one attempt, which is the browser half; the server half
+has never been reached because nothing has ever successfully landed.
+
+
 ### The message that told you what to do was replaced by a crash (Diego)
 
 Browser testing hit "Mark as contracted" on a job with no line items and
