@@ -60,7 +60,16 @@ export type QboLine = {
   Description: string;
   Amount: number;
   DetailType: "SalesItemLineDetail";
-  SalesItemLineDetail: { ItemRef?: { value: string }; TaxCodeRef?: { value: string } };
+  /**
+   * ItemRef is REQUIRED, not optional.
+   *
+   * It was optional, every caller omitted it, and QuickBooks rejected every
+   * invoice with "Required parameter Line.SalesItemLineDetail is missing"
+   * — an empty object reads as absent. Making it required means the
+   * compiler refuses the payload that failed, rather than a test having to
+   * remember to check for it.
+   */
+  SalesItemLineDetail: { ItemRef: { value: string }; TaxCodeRef?: { value: string } };
 };
 
 export type QboInvoicePayload = {
@@ -145,11 +154,23 @@ function hash(input: string): string {
  */
 export function buildInvoicePayload(
   invoice: InvoiceToPush,
-  options: { incomeAccountItemId?: string; existing?: { qboId: string; syncToken: string } } = {},
+  options: {
+    /**
+     * The QuickBooks Product/Service ITEM every line is booked against.
+     *
+     * Not an Account id — a distinction that cost a whole test run. The
+     * chart-of-accounts mapping stores an Account; QuickBooks invoice lines
+     * reference an Item, which in turn posts to an account. Passing the
+     * account id here would be a different failure, not a fix.
+     *
+     * Required, because the version where it was optional shipped with no
+     * caller supplying it and every push was rejected.
+     */
+    incomeItemId: string;
+    existing?: { qboId: string; syncToken: string };
+  },
 ): QboInvoicePayload {
-  const itemRef = options.incomeAccountItemId
-    ? { ItemRef: { value: options.incomeAccountItemId } }
-    : {};
+  const itemRef = { ItemRef: { value: options.incomeItemId } };
 
   const lines: QboLine[] = [];
   for (const line of invoice.lines) {
@@ -275,12 +296,18 @@ export function verifyPushedInvoice(
 export function pushBlockers(input: {
   hasConnection: boolean;
   customerQboId: string | null;
+  incomeAccountId: string | null;
   totalCents: Cents;
 }): string[] {
   const blockers: string[] = [];
   if (!input.hasConnection) blockers.push("QuickBooks isn't connected.");
   if (!input.customerQboId) {
     blockers.push("This job's GC isn't linked to a QuickBooks customer yet.");
+  }
+  if (!input.incomeAccountId) {
+    blockers.push(
+      "No QuickBooks account is mapped for invoice revenue — set one under Settings → Chart of accounts.",
+    );
   }
   if (input.totalCents <= 0) {
     blockers.push("An invoice for zero or less can't be pushed.");
