@@ -495,3 +495,45 @@ export async function createServiceItem(
   );
   return { id: body.Item.Id, name: body.Item.Name };
 }
+
+/**
+ * Fetches many invoices in one call.
+ *
+ * Reconciliation compares every linked invoice a company has, and doing
+ * that one GET at a time would be a hundred round trips for a company with
+ * a hundred invoices — slow, and a good way to meet Intuit's rate limits
+ * on a page someone might refresh twice.
+ *
+ * Batched because Intuit's query endpoint caps results, and a very long
+ * IN list is its own problem: the whole query travels in the URL.
+ */
+export async function getInvoicesByIds(
+  realmId: string,
+  accessToken: string,
+  qboIds: string[],
+): Promise<QuickBooksInvoice[]> {
+  const found: QuickBooksInvoice[] = [];
+  const BATCH = 50;
+
+  for (let i = 0; i < qboIds.length; i += BATCH) {
+    const batch = qboIds.slice(i, i + BATCH);
+    // Ids come from our own database, but they are still interpolated into
+    // a query language with no parameter binding — so anything that is not
+    // a plain id is dropped rather than escaped. QuickBooks ids are
+    // numeric strings; nothing legitimate is lost.
+    const safe = batch.filter((id) => /^[0-9]+$/.test(id));
+    if (safe.length === 0) continue;
+
+    const list = safe.map((id) => `'${id}'`).join(",");
+    const query = encodeURIComponent(
+      `select Id, DocNumber, TotalAmt, PrivateNote from Invoice where Id in (${list})`,
+    );
+    const body = await accountingRequest<{
+      QueryResponse?: { Invoice?: QuickBooksInvoice[] };
+    }>(realmId, accessToken, `/query?query=${query}`);
+
+    found.push(...(body.QueryResponse?.Invoice ?? []));
+  }
+
+  return found;
+}

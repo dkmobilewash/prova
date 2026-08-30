@@ -9,12 +9,19 @@ import {
   findCustomerByName,
   findItemByName,
   getInvoice,
+  getInvoicesByIds,
   listAccounts,
   refreshTokens,
   upsertInvoice,
   type QuickBooksAccount,
 } from "@prova/integrations";
 import { requireCompanyContext } from "@/lib/auth";
+import {
+  quickBooksSideFrom,
+  reconcileAll,
+  type ProvaInvoiceSide,
+  type Reconciliation,
+} from "@/lib/quickbooks-reconcile";
 import {
   buildInvoicePayload,
   idempotencyKeyFor,
@@ -537,5 +544,92 @@ export async function pushInvoiceToQuickBooks(invoiceId: string): Promise<Action
       );
     }
     return actionFail(`QuickBooks refused: ${detail}`);
+  }
+}
+
+
+/* ------------------------------------------------------------------ */
+/* Reconciliation                                                      */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Asks QuickBooks what it holds, and reports where it disagrees with us.
+ *
+ * READ ONLY, and that is the whole design. The sync refuses an edit made
+ * inside QuickBooks rather than overwriting it — correct, and the reason
+ * every competitor in the research "silently diverges" is that they do the
+ * opposite. But refusing an edit and then never mentioning it is half an
+ * answer: an invoice sat at $200.00 in QuickBooks while Prova showed
+ * $123.45 and nothing said so.
+ *
+ * This closes that without becoming a two-way sync. It tells a person what
+ * differs; deciding which side is right stays with the person, because a
+ * machine choosing between two humans' numbers is exactly the behaviour
+ * that makes contractors stop trusting an integration.
+ *
+ * Nothing is stored. A saved "in sync" flag would be wrong the moment
+ * either side changed, which is the rule this schema applies everywhere
+ * else.
+ */
+export async function reconcileQuickBooksInvoices(): Promise<
+  { ok: true; rows: Reconciliation[] } | { ok: false; error: string }
+> {
+  const context = await requireCompanyContext();
+  assertOwner(context, "Only the account owner can reconcile QuickBooks");
+  const { company } = context;
+
+  const token = await accessTokenFor(company.id);
+  if (!token) return { ok: false, error: "QuickBooks isn't connected." };
+
+  const [invoices, links] = await Promise.all([
+    prisma.invoice.findMany({
+      where: { job: { companyId: company.id } },
+      select: { id: true, number: true, amount: true, job: { select: { name: true } } },
+      orderBy: { issuedAt: "desc" },
+      // A cap rather than every invoice a company has ever raised: this is
+      // a "is anything wrong right now" screen, and fetching five years of
+      // history to answer it would be slow and mostly noise.
+      take: 200,
+    }),
+    prisma.quickBooksEntityLink.findMany({
+      where: { companyId: company.id, entityType: "Invoice" },
+      select: { entityId: true, qboId: true, lastVerifiedAt: true },
+    }),
+  ]);
+
+  const linkByInvoice = new Map(links.map((link) => [link.entityId, link]));
+
+  const ourSide: ProvaInvoiceSide[] = invoices.map((invoice) => {
+    const link = linkByInvoice.get(invoice.id);
+    return {
+      invoiceId: invoice.id,
+      number: invoice.number,
+      jobName: invoice.job.name,
+      totalCents: toCents(invoice.amount),
+      qboId: link?.qboId ?? null,
+      lastVerifiedAt: link?.lastVerifiedAt ?? null,
+    };
+  });
+
+  const qboIds = ourSide.map((row) => row.qboId).filter((id): id is string => id !== null);
+
+  try {
+    const fetched =
+      qboIds.length === 0 ? [] : await getInvoicesByIds(token.realmId, token.accessToken, qboIds);
+    const theirsById = new Map(
+      fetched.map((raw) => {
+        const side = quickBooksSideFrom(raw);
+        return [side.qboId, side];
+      }),
+    );
+    return { ok: true, rows: reconcileAll(ourSide, theirsById) };
+  } catch (error) {
+    return {
+      ok: false,
+      error:
+        error instanceof QuickBooksApiError
+          ? `QuickBooks refused the request: ${error.detail}`
+          : "Couldn't reach QuickBooks.",
+    };
   }
 }
