@@ -114,11 +114,21 @@ export function ReceivablesList() {
                   </span>
                   <span
                     className={`block text-xs ${
-                      row.daysOverdue > 0 ? "text-tag-rose-ink" : "text-ink-muted"
+                      row.daysOverdue > 0 ? "text-tag-rose-ink" : "text-ink-body"
                     }`}
                   >
+                    {/* The (terms) marker belongs on an overdue row too.
+                        A date we derived from the GC's payment terms is a
+                        weaker claim than one printed on the invoice, and
+                        that matters most at the moment we tell someone
+                        they are late — that is the row they will take to
+                        the GC. It used to appear only while an invoice was
+                        still in date, so the derivation was visible right
+                        up until it mattered. */}
                     {row.daysOverdue > 0
-                      ? `${row.daysOverdue} ${row.daysOverdue === 1 ? "day" : "days"} overdue`
+                      ? `${row.daysOverdue} ${row.daysOverdue === 1 ? "day" : "days"} overdue${
+                          row.dueIsDerived ? " (terms)" : ""
+                        }`
                       : row.dueOn
                         ? `Due ${row.dueOn}${row.dueIsDerived ? " (terms)" : ""}`
                         : "No due date"}
@@ -131,7 +141,7 @@ export function ReceivablesList() {
       </ul>
 
       {rows.length > 8 && (
-        <p className="mt-2 text-xs text-ink-muted">
+        <p className="mt-2 text-xs text-ink-body">
           and {rows.length - 8} more outstanding.
         </p>
       )}
@@ -185,7 +195,7 @@ export function ReceivablesDetailPanel() {
           </dl>
 
           <div className="mt-5 border-t border-line-card pt-4">
-            <p className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
+            <p className="text-xs font-semibold uppercase tracking-wider text-ink-label">
               Actions
             </p>
             <div className="mt-2 flex flex-col gap-2">

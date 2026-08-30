@@ -36,7 +36,19 @@ const config: Config = {
         ink: "#101828",
         "ink-label": "#344054",
         "ink-body": "#667085",
-        "ink-muted": "#98a2b3",
+        // Was #98a2b3, which reads at 2.4:1 on canvas and 2.6:1 on a white
+        // card — below any legibility floor. It was carrying stat-tile
+        // labels and due dates, which are the content, not decoration.
+        // Those moved up to ink-label/ink-body; this level is now for
+        // genuinely optional text only (placeholders, disabled controls)
+        // and is dark enough (4.0:1 on white, 3.7:1 on canvas) that even
+        // those stay readable.
+        //
+        // A light ramp only has room for three informational greys. The
+        // fourth was hierarchy bought with legibility, which is not a
+        // trade this app gets to make: size, weight and case already say
+        // "this is a label".
+        "ink-muted": "#767f91",
 
         brand: "#2563eb",
 

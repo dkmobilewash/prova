@@ -62,7 +62,7 @@ const HEALTH_TONE: Record<string, string> = {
   over: "text-tag-rose-ink",
   watch: "text-tag-amber-ink",
   fine: "text-ink-body",
-  unknown: "text-ink-muted",
+  unknown: "text-ink-body",
 };
 
 type JobRow = Awaited<ReturnType<typeof loadJobs>>[number];
@@ -154,7 +154,7 @@ export default async function TodayPage({
 
             {/* ------------------------------------ needs attention --- */}
             <section className="mt-6">
-              <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-muted">
+              <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-label">
                 Needs attention
               </h2>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -200,7 +200,7 @@ export default async function TodayPage({
 
             {/* -------------------------------- today in the field ---- */}
             <section className="mt-8">
-              <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-muted">
+              <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-label">
                 Today in the field
               </h2>
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -217,7 +217,7 @@ export default async function TodayPage({
                           <Link href={`/jobs/${crew.jobId}`} className="block">
                             <p className="text-sm font-medium text-ink">{crew.name}</p>
                             <p className="text-xs text-ink-body">{crew.gcName}</p>
-                            <p className="mt-0.5 text-xs text-ink-muted">
+                            <p className="mt-0.5 text-xs text-ink-body">
                               {crew.crew.length === 0
                                 ? "Nobody assigned yet"
                                 : crew.crew.join(", ")}
@@ -264,7 +264,7 @@ export default async function TodayPage({
 
             {/* ------------------------------------------------ money -- */}
             <section className="mt-8">
-              <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-muted">
+              <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-label">
                 Money
               </h2>
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -302,7 +302,7 @@ export default async function TodayPage({
                                 ? "—"
                                 : `${Math.round(row.reliability.onTimeRate * 100)}%`}
                             </span>
-                            <span className="block text-xs text-ink-muted">on time</span>
+                            <span className="block text-xs text-ink-body">on time</span>
                           </span>
                         </li>
                       ))}
@@ -314,7 +314,7 @@ export default async function TodayPage({
 
             {/* ------------------------------------------- job health -- */}
             <section className="mt-8">
-              <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-muted">
+              <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-label">
                 Job health
               </h2>
               <Card>
@@ -442,7 +442,7 @@ export default async function TodayPage({
                   {grouped.map((group) => (
                     <div key={group.status}>
                       {!activeStatus && (
-                        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-muted">
+                        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-label">
                           {GROUP_HEADING[group.status]} · {group.rows.length}
                         </h3>
                       )}
@@ -478,7 +478,7 @@ export default async function TodayPage({
                                 </div>
                                 <p className="mt-0.5 text-sm text-ink-body">{job.contact.name}</p>
                                 {stage && (
-                                  <p className="mt-1 text-xs text-ink-muted">{stage.detail}</p>
+                                  <p className="mt-1 text-xs text-ink-body">{stage.detail}</p>
                                 )}
                               </Link>
                             </li>
@@ -516,7 +516,7 @@ function StatCard({
 }) {
   const body = (
     <>
-      <p className="text-[10px] font-semibold uppercase tracking-wider text-ink-muted">{label}</p>
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-ink-label">{label}</p>
       <p className="mt-1 text-2xl font-semibold tabular-nums text-ink">{value}</p>
       <p className="mt-0.5 text-xs text-ink-body">{detail}</p>
     </>
