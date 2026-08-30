@@ -12,6 +12,25 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### The QuickBooks link action had no button (Diego)
+
+`linkContactToQuickBooks` shipped an hour ago as an action nobody could
+reach. Found while writing the test that needed it, before anyone ran that
+test — but only because the licence CRUD made exactly this mistake earlier
+today and I went looking for it deliberately.
+
+An action with no UI is a feature that does not exist. It also blocked the
+whole QuickBooks round trip: an invoice cannot be pushed until its GC is
+linked to a customer, so every later step depended on a button that wasn't
+there.
+
+The contact detail page now has a QuickBooks section, shown only when
+QuickBooks is connected — offering a control that cannot work is its own
+small lie. The copy explains the behaviour that matters: an existing
+customer with the same name is reused rather than duplicated, because a
+second copy splits the payment history the bookkeeper already has.
+
+
 ### QuickBooks actually syncs now — one direction, verified (Diego)
 
 The connection has existed since 23 August. Nothing ever flowed through
