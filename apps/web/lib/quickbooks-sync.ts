@@ -314,3 +314,40 @@ export function pushBlockers(input: {
   }
   return blockers;
 }
+
+/**
+ * How long an identical push is treated as a duplicate rather than a
+ * deliberate re-send.
+ *
+ * The short-circuit exists to stop an accidental second submission — a
+ * double-click, or a retry after a timeout — from creating a second
+ * document. Those happen within seconds. Treating it as permanent turned
+ * "Re-send to QuickBooks" into a button that reported success and did
+ * nothing, forever, which browser testing found by editing an invoice
+ * inside QuickBooks and watching Prova cheerfully leave it wrong.
+ *
+ * Two minutes covers every accidental repeat and no deliberate one.
+ *
+ * Worth stating why a later re-send is safe: by then a link exists, so the
+ * payload carries Id and SyncToken and QuickBooks UPDATES that document
+ * rather than creating one. A duplicate is not possible on that path — the
+ * create is the only risky call, and it only happens once.
+ */
+export const DUPLICATE_PUSH_WINDOW_MS = 2 * 60 * 1000;
+
+/**
+ * Is this push a repeat of one that just succeeded, or a deliberate
+ * re-send of something that may have drifted?
+ */
+export function isAccidentalRepeat(
+  priorSuccessAt: Date | null,
+  now: Date,
+): boolean {
+  if (priorSuccessAt === null) return false;
+  const elapsed = now.getTime() - priorSuccessAt.getTime();
+  // A negative elapsed means clock skew between the database and this
+  // process. Treating it as a repeat is the safe reading: it is certainly
+  // not a considered re-send two minutes later.
+  if (elapsed < 0) return true;
+  return elapsed < DUPLICATE_PUSH_WINDOW_MS;
+}

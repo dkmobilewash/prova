@@ -5,6 +5,8 @@ import {
   centsToAmount,
   docNumberFor,
   idempotencyKeyFor,
+  DUPLICATE_PUSH_WINDOW_MS,
+  isAccidentalRepeat,
   pushBlockers,
   verifyPushedInvoice,
   type InvoiceToPush,
@@ -301,5 +303,38 @@ describe("pushBlockers", () => {
     expect(
       pushBlockers({ hasConnection: true, customerQboId: "58", incomeAccountId: "42", totalCents: 0 })[0],
     ).toContain("zero or less");
+  });
+});
+
+describe("isAccidentalRepeat — a re-send is not a duplicate", () => {
+  const now = new Date("2026-08-30T03:20:00.000Z");
+  const ago = (ms: number) => new Date(now.getTime() - ms);
+
+  it("treats a rapid second click as a repeat", () => {
+    expect(isAccidentalRepeat(ago(800), now)).toBe(true);
+  });
+
+  it("treats a retry seconds later as a repeat", () => {
+    expect(isAccidentalRepeat(ago(30_000), now)).toBe(true);
+  });
+
+  it("treats a deliberate re-send later as REAL", () => {
+    // The bug this replaces: the short-circuit was permanent, so an
+    // invoice edited inside QuickBooks could never be corrected — the
+    // button reported success and never contacted Intuit again.
+    expect(isAccidentalRepeat(ago(10 * 60_000), now)).toBe(false);
+  });
+
+  it("is not a repeat when nothing has ever succeeded", () => {
+    expect(isAccidentalRepeat(null, now)).toBe(false);
+  });
+
+  it("treats clock skew as a repeat, which is the safe reading", () => {
+    expect(isAccidentalRepeat(new Date(now.getTime() + 5_000), now)).toBe(true);
+  });
+
+  it("draws the line exactly at the window", () => {
+    expect(isAccidentalRepeat(ago(DUPLICATE_PUSH_WINDOW_MS - 1), now)).toBe(true);
+    expect(isAccidentalRepeat(ago(DUPLICATE_PUSH_WINDOW_MS), now)).toBe(false);
   });
 });
