@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { connectionProblems } from "./connection-target.mjs";
+import { loadEnvFiles } from "./load-env.mjs";
 
 /**
  * The database check that runs in the Vercel build. It no longer MIGRATES.
@@ -23,6 +24,11 @@ import { connectionProblems } from "./connection-target.mjs";
  * DATABASE_URL and DIRECT_URL had drifted onto different databases and
  * nothing printed either host.
  */
+
+// Same hole as migrate-deploy: this runs under plain `node`, which reads no
+// .env — that is the Prisma CLI's behaviour, not Node's. Set variables
+// always win, so Vercel's own environment is unaffected by any .env file.
+loadEnvFiles();
 
 const vercelEnv = process.env.VERCEL_ENV ?? "";
 const isProduction = vercelEnv === "production";
