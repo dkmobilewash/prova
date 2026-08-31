@@ -90,7 +90,27 @@ export async function* streamToolConversation(
       const stream = client.messages.stream({
         model: options.model ?? DEFAULT_MODEL,
         max_tokens: 4096,
-        system: options.system,
+        // The tools and the system prompt are byte-identical on every pass
+        // of every question, and the loop resends them each time — so they
+        // are the largest stable prefix in the request and the obvious
+        // thing to cache. Caching is a prefix match in the order
+        // tools → system → messages, and everything that varies (the
+        // question, the growing tool results) sits after them, so nothing
+        // here invalidates the cached part.
+        //
+        // Measured cost this is aimed at: 8.1s to first answer text, 11.1s
+        // total on a question that reads eight areas. Most of that is the
+        // database, but the prompt is re-processed on every one of those
+        // passes and does not need to be.
+        // A breakpoint on the system block covers everything before it in
+        // the prefix, which is the tool list.
+        system: [
+          {
+            type: "text",
+            text: options.system,
+            cache_control: { type: "ephemeral" },
+          },
+        ],
         tools: options.tools,
         messages,
       });

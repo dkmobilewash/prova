@@ -129,7 +129,12 @@ export function AskPanel() {
     setAnswer("");
     setCitations([]);
     setError(null);
-    setStatus("Reading your records…");
+    // Deliberately not "Reading your records…". At this point nothing has
+    // been read and nothing may be: a question this app cannot answer
+    // spends its whole wait behind that sentence, which is then a false
+    // claim for the entire time a person is looking at it. The `tools`
+    // event says what is actually being read, once something is.
+    setStatus("Thinking…");
     progressRef.current = "";
     setProgress("");
     provisionalRef.current = true;
