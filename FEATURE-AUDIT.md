@@ -23,13 +23,13 @@ in flight. Left as-is here rather than guessed at from the outside; the next
 update to touch those sheets should come from whoever actually verified them
 against a fresh clone.
 
-**108 items audited — 72 built / 16 partial / 19 missing / 1 descoped**
+**108 items audited — 73 built / 16 partial / 18 missing / 1 descoped**
 
 | Status | Count |
 | --- | --- |
-| Built | 72 |
+| Built | 73 |
 | Partial | 16 |
-| Missing | 19 |
+| Missing | 18 |
 | Descoped | 1 |
 
 ## 01. Company / Org Setup — 5 built · 0 partial · 0 missing
@@ -214,7 +214,7 @@ forecasting shipped 26 Aug 2026.*
 | --- | --- | --- |
 | Built | Incident/injury tracking, OSHA 300 log | `SafetyIncident` + `SafetyCaseCounter`, `/safety` — case numbers per company per year, recordable derived from outcome |
 | Built | Toolbox talk / safety meeting logs | `ToolboxTalk`, `/safety` |
-| Built | Daily field reports (crew present, work performed, weather, delays) | `DailyFieldReport`, section on the job page — one per job per day, enforced by the database |
+| Built | Daily field reports (crew present, work performed, weather, delays) | `DailyFieldReport`, one per job per day enforced by the database. Filed from the job page or from `/field-reports`, which groups every job's reports into Mon–Sun weeks, derives coverage and NAMES the finished weekdays nothing was filed for (never today, never a day still to come, never a weekend), and writes the week out as plain text to hand a GC — missing days included in that text rather than omitted |
 
 ## 18. Scheduling & Crew Dispatch — 1 built · 1 partial · 1 missing
 
@@ -224,13 +224,13 @@ forecasting shipped 26 Aug 2026.*
 | Partial | Multi-job scheduling view (which crews are where, by trade) | `/schedule` lists jobs with dates and crew, and the dashboard's Crews today card shows who is on each in-progress job — both job-first; still no crew-first calendar/board |
 | Missing | Equipment/scaffolding/lift allocation per job | not modeled |
 
-## 19. Materials & Vendor Management — 2 built · 0 partial · 1 missing
+## 19. Materials & Vendor Management — 3 built · 0 partial · 0 missing
 
 | Status | Feature | Note |
 | --- | --- | --- |
 | Built | Vendor/supplier directory per trade | `Vendor`, `/vendors` |
 | Built | Material order tracking and delivery status per job | `MaterialOrder` + `MaterialOrderDelivery` + `MaterialOrderCounter`, `/material-orders` — numbers issued per job and never reissued, ordered/promised/delivered dates all entered, partial deliveries as their own rows, late and delivery state derived and never stored. Carries no quantity or unit price by design: that would be a second copy of line-item data (see ARCHITECTURE.md), and material cost already lives on `CostEntry` |
-| Missing | Vendor pricing history for estimating | not modeled |
+| Built | Vendor pricing history for estimating | `VendorPriceQuote`, `/vendors/pricing` — what a supplier quoted, on a date entered not stamped, with the source (written quote / invoice / price list / verbal) recorded because the four are not equally trustworthy. Current, expired, stale, cheapest and every movement figure are derived per read, never stored. Compared only WITHIN a unit: MSF is never converted to SF, since the factor is the vendor's to state. Carries no job and no line item by design — a quote is reference data for pricing, and job cost has one home, `CostEntry`. Warns when a `LineItemCatalogEntry` default sits under the cheapest live quote in the same unit, and changes nothing |
 
 ## 20. Equipment & Tool Tracking — 1 built · 1 partial · 0 missing
 

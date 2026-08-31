@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { VendorForm } from "@/components/VendorForm";
@@ -16,7 +17,11 @@ export default async function VendorsPage() {
       <h1 className="mb-2 text-xl font-semibold text-slate-100">Vendors</h1>
       <p className="mb-6 text-sm text-slate-400">
         Suppliers and service vendors you buy from — board and steel suppliers, equipment rental, scaffolding.
-        A directory for now; linking vendors to material costs and pricing history comes later.
+        What each of them has quoted, and which way those prices are moving, is on{" "}
+        <Link href="/vendors/pricing" className="text-blue-400 hover:text-blue-300">
+          vendor pricing
+        </Link>
+        .
       </p>
 
       <div className="mb-8">

@@ -12,6 +12,158 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### Field reports get their own page, and a week you can hand to a GC (Cyrus)
+`cyrus/field-reports`
+
+Measured before building anything: on the job page, "Daily field reports"
+began at **97% down a 3,382px, 13-section page** — dead last, after
+prevailing wage determinations, union dispatch slips and estimate versions.
+The most field-facing feature in the product sat behind four screens of the
+office's paperwork. That is the exact failure the competitor research names
+— built for the office, handed to the field — and it was ours.
+
+`/field-reports` is the fix. Nothing moved: a job's reports are still on its
+job page. What is new is a way in that doesn't start with a job page, and a
+view of a whole week across every job, which is the unit a schedule dispute
+is actually argued in.
+
+**The gap is the feature.** A week with a day missing from it is worth less
+as evidence than a week that says which day is missing, so the page names
+finished weekdays nothing was filed for. Three exclusions, each a way to be
+quietly wrong:
+
+- **A day that hasn't happened is not missing.** On Wednesday, Friday is not
+  a hole in the record. Flagging it would make every week in progress look
+  negligent.
+- **Today is not missing either.** The day isn't over. Telling a foreman at
+  9am that he has failed to file is how a tool teaches people to ignore it.
+- **A weekend is not missing**, though a weekend report still counts as a
+  day worked. Nobody owes a report for a Saturday they didn't work.
+
+**Coverage is null, not 0%, before any weekday of the week is over.** A week
+nobody has worked yet is not a failed week, and a confident 0% on Monday
+morning is a lie about it — the same reasoning as the delivery rate ignoring
+unconfirmed messages.
+
+**The week summary is what gives the filer something back.** Logging days
+into a system only management reads is the shape of every abandoned
+construction tool. This writes the week out as plain text — plain because it
+has to survive being pasted into an email, a text, or a GC's own portal.
+**Missing days are named in that text rather than left out**: a summary
+listing only the days that exist reads as a complete week, and overstating
+your own record to a GC is worse than showing the hole.
+
+**Two live bugs found while building, both documented traps this repo
+already knew about.**
+
+The actions threw. Production redacts a thrown Server Action message, so
+"A report already exists for that date — edit it instead of adding a second
+one" — the most user-facing sentence in the module — reached a foreman as an
+opaque crash. The guard was correct and could never be read. Now returns
+`ActionResult`, verified rendering on both surfaces.
+
+The date defaulted from `new Date().toISOString()`, the server's UTC date,
+not `localToday()`. After 5pm in California that is already tomorrow, which
+is exactly when a foreman files. Fixed; the divergence itself is not
+observable at the hour it was tested, only the code path.
+
+29 tests, four mutation-checked. Reintroducing the raw `getUTCDay()` — which
+calls Sunday 0 and would start a week on Sunday — fails 15, because Monday
+indexing is load-bearing. Counting today as missing fails 5. Rendering 0%
+coverage for an unstarted week fails 1. Dropping missing days from the
+summary fails 1.
+
+**Then clicking it found what the tests did not.** "Days with no report:
+Mon, Aug 24, Tue, Aug 25, Fri, Aug 28" — each day label already contains a
+comma, so a comma-joined list reads as twice as many days as it names, on a
+line that goes to a GC. Joined with a middot now, with a test.
+
+The composer's primary actions are deliberately larger than the app's
+standard button (py-3 against py-2). Measured: all 15 buttons on the job
+page are under 44px, median 36px, against a 48px floor and 60x60 for gloved
+use. That is a global fix belonging in Diego's design tokens, not 19 files
+edited under an open PR — this one page is a documented local exception on
+the one surface designed for a phone, and the measurement is with him.
+
+`/vendors/pricing` also joined the nav, having been two clicks deep behind
+`/vendors` since yesterday — the same burial, in my own week-old work.
+
+### What your suppliers actually charge, and which way it is moving (Cyrus)
+`cyrus/vendor-pricing`
+
+A material price lived in exactly two places before this, and neither could
+be estimated from. `CostEntry` holds a lump amount after the fact, with no
+vendor and no unit behind it. `MaterialOrder` deliberately carries no price
+at all, because putting one there would make an order a second source of
+line-item cost — the rule ARCHITECTURE.md exists to enforce. So the question
+an estimator actually asks, "what is board going for, from whom, and is it
+moving?", had no answer anywhere in the app.
+
+`/vendors/pricing` answers it. What a vendor quoted, on a date, with what it
+came from — a written quote, an invoice, a price list, or a phone call —
+because those four are not equally trustworthy and whoever is bidding is
+entitled to know which one they are looking at.
+
+**This is reference data and must never become line-item data.** A quote
+belongs to a vendor and a date, never to a job or a `JobLineItem`, and
+nothing sums it into job cost. Job cost keeps its one home. Read it as
+living in the same family as `LineItemCatalogEntry`.
+
+**Nothing is compared across units, ever.** A vendor quoting by the MSF has
+not quoted by the SF, and the factor between them is theirs to state. Invent
+it and a supplier appears a thousand times cheaper than they are, on a
+screen someone bids off. Comparison happens inside a unit bucket or it does
+not happen — which means "cheapest" is only ever cheapest per SF, and the
+badge now says exactly that.
+
+**No stored current price.** Current, expired, stale, cheapest, spread and
+every movement figure are derived on every read, same rule as the delivery
+log and the current drawing revision. A stored current price is wrong the
+instant a newer quote is entered.
+
+Four smaller decisions, each of them a way to be quietly wrong:
+
+- **A vendor's superseded price is not a competing offer.** Only their
+  newest live quote enters a comparison, or one supplier appears twice in a
+  field of three and an old number they have already withdrawn wins.
+- **An expired quote is still history.** It leaves the comparison and stays
+  in the record — dropping it would hide the very rise the page exists to
+  show.
+- **A vendor's own expiry outranks our rule of thumb.** "Worth re-checking"
+  only ever applies where they gave no date. Once theirs lapses, that is the
+  truer answer anyway.
+- **The expiry is inclusive.** A price held "until the 30th" is live ON the
+  30th. An off-by-one here kills a live price on the one day it matters.
+
+The estimating payoff is a warning when a catalog default sits under the
+cheapest live quote in the same unit — you are bidding at a price nobody
+will sell you at. It changes nothing and points at `/catalog`: which number
+is right is a decision about your own pricing, not something to overwrite.
+
+45 tests, four of them mutation-checked by reintroducing the exact bug and
+confirming which test dies: comparing movement across units, letting a
+superseded price compete, killing a quote a day early on its own expiry, and
+comparing the catalog against a quote in another unit. One failure each, and
+each was the test written for that rule.
+
+**Then clicking it found what none of them could.** With a $390/MSF and a
+$0.39/SF quote on one item, both rows badged "cheapest live" — two
+contradictory claims about the same item on one screen. Both were true, each
+within its own unit, but a badge that has to be reconciled against a heading
+is one that gets misread, and misread here means bidding off the wrong
+number. It reads "cheapest per SF" / "cheapest per MSF" now.
+
+Verified by doing it, not by the suite: the guard against an expiry before
+the quote date fired on create AND on edit and rendered as a sentence rather
+than a redacted crash; a per-MSF quote formed its own bucket and left the
+per-SF comparison untouched; expiring a quote dropped it out of the spread
+and left it in the list; and a two-step delete removed a quote and its whole
+unit bucket with it.
+
+Migration additive. Grouping falls back to the vendor's wording when no
+catalog item is linked, which is a weak key — two vendors wording the same
+board differently will not line up, and the page says so rather than
+under-grouping silently.
 ### Three of the six fixes didn't work, and the theme change was wrong (Diego)
 
 The re-test found the first attempt shallow in three places. Recording what
