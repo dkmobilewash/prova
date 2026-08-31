@@ -23,13 +23,14 @@ in flight. Left as-is here rather than guessed at from the outside; the next
 update to touch those sheets should come from whoever actually verified them
 against a fresh clone.
 
-**109 items audited — 72 built / 15 partial / 21 missing / 1 descoped**
+**109 items audited — 74 built / 16 partial / 18 missing / 1 descoped**
 
 | Status | Count |
 | --- | --- |
-| Built | 72 |
-| Partial | 15 |
-| Missing | 21 |
+| Built | 74 |
+| Partial | 16 |
+| Missing | 18 |
+| Descoped | 1 |
 | Descoped | 1 |
 
 ## 01. Company / Org Setup — 5 built · 0 partial · 0 missing
@@ -189,16 +190,16 @@ forecasting shipped 26 Aug 2026.*
 | Built | License/registration records per state | `CompanyLicense`, with create/edit/delete on `/settings` — it was marked Built on the model alone from 25 Aug until 29 Aug, during which no licence could be created at all |
 | Built | Expiration/renewal alerts across all of the above | `lib/compliance-expiry.ts` ranks COIs, licences, policies and bonds together; surfaced on `/compliance` in full and on the dashboard as the worst three. Still computed at read time, never stored — delivery (email/SMS) is Sheet 26 |
 
-## 15. WIP & Financial Reporting — 2 built · 1 partial · 3 missing
+## 15. WIP & Financial Reporting — 3 built · 1 partial · 2 missing
 
 | Status | Feature | Note |
 | --- | --- | --- |
 | Built | Percent-complete (cost-to-cost method) per line item and per job | `lib/wip.ts` |
 | Built | Revenue earned vs. billed (over/under-billing) report | plus an AI narrative layer over it — `generateWipNarrative` |
 | Missing | WIP schedule export in surety/CPA-expected format | shown on-screen only, no export |
-| Partial | Job profitability report (budget vs. actual vs. forecast margin) | visible per job on `/jobs/[id]`; no dedicated report or portfolio view |
+| Partial | Job profitability report (budget vs. actual vs. forecast margin) | visible per job on `/jobs/[id]`, and every active job's forecast-vs-contract variance now reads as a sentence in the dashboard's Job health section — still no dedicated exportable report |
 | Missing | Cash flow forecast (AR aging, retainage receivable, pay app cycles) | not built — the underlying retainage data exists now (Sheet 11), but no forecast report reads it yet |
-| Missing | Company-wide backlog report across active jobs | `/dashboard` lists jobs; no aggregated backlog figure |
+| Built | Company-wide backlog report across active jobs | `lib/company-financials.ts` sums contract value, blended gross margin, cash collected and retainage held across contracted and in-progress jobs; shown on the metric bar at the bottom of every screen. Derived on read, never stored |
 
 ## 16. Submittals, RFIs, Drawings — 3 built · 0 partial · 0 missing
 
@@ -214,23 +215,23 @@ forecasting shipped 26 Aug 2026.*
 | --- | --- | --- |
 | Built | Incident/injury tracking, OSHA 300 log | `SafetyIncident` + `SafetyCaseCounter`, `/safety` — case numbers per company per year, recordable derived from outcome |
 | Built | Toolbox talk / safety meeting logs | `ToolboxTalk`, `/safety` |
-| Built | Daily field reports (crew present, work performed, weather, delays) | `DailyFieldReport`, section on the job page — one per job per day, enforced by the database |
+| Built | Daily field reports (crew present, work performed, weather, delays) | `DailyFieldReport`, one per job per day enforced by the database. Filed from the job page or from `/field-reports`, which groups every job's reports into Mon–Sun weeks, derives coverage and NAMES the finished weekdays nothing was filed for (never today, never a day still to come, never a weekend), and writes the week out as plain text to hand a GC — missing days included in that text rather than omitted |
 
 ## 18. Scheduling & Crew Dispatch — 1 built · 1 partial · 1 missing
 
 | Status | Feature | Note |
 | --- | --- | --- |
 | Built | Crew assignment across concurrent jobs | `JobAssignment` — assign/unassign a user to a job |
-| Partial | Multi-job scheduling view (which crews are where, by trade) | `/schedule` lists jobs with dates and crew — job-first, not a crew-first calendar/board |
+| Partial | Multi-job scheduling view (which crews are where, by trade) | `/schedule` lists jobs with dates and crew, and the dashboard's Crews today card shows who is on each in-progress job — both job-first; still no crew-first calendar/board |
 | Missing | Equipment/scaffolding/lift allocation per job | not modeled |
 
-## 19. Materials & Vendor Management — 2 built · 0 partial · 1 missing
+## 19. Materials & Vendor Management — 3 built · 0 partial · 0 missing
 
 | Status | Feature | Note |
 | --- | --- | --- |
 | Built | Vendor/supplier directory per trade | `Vendor`, `/vendors` |
 | Built | Material order tracking and delivery status per job | `MaterialOrder` + `MaterialOrderDelivery` + `MaterialOrderCounter`, `/material-orders` — numbers issued per job and never reissued, ordered/promised/delivered dates all entered, partial deliveries as their own rows, late and delivery state derived and never stored. Carries no quantity or unit price by design: that would be a second copy of line-item data (see ARCHITECTURE.md), and material cost already lives on `CostEntry` |
-| Missing | Vendor pricing history for estimating | not modeled |
+| Built | Vendor pricing history for estimating | `VendorPriceQuote`, `/vendors/pricing` — what a supplier quoted, on a date entered not stamped, with the source (written quote / invoice / price list / verbal) recorded because the four are not equally trustworthy. Current, expired, stale, cheapest and every movement figure are derived per read, never stored. Compared only WITHIN a unit: MSF is never converted to SF, since the factor is the vendor's to state. Carries no job and no line item by design — a quote is reference data for pricing, and job cost has one home, `CostEntry`. Warns when a `LineItemCatalogEntry` default sits under the cheapest live quote in the same unit, and changes nothing |
 
 ## 20. Equipment & Tool Tracking — 1 built · 1 partial · 0 missing
 
@@ -283,12 +284,12 @@ forecasting shipped 26 Aug 2026.*
 | Missing | Distinct roles: estimator, PM, foreman/field, payroll/compliance admin, owner/exec, accounting | today's `UserRole` has exactly two values, OWNER and MEMBER |
 | Missing | Field-only mobile access vs. office full access | no access tier below MEMBER, no mobile-specific surface |
 
-## 26. Notifications & Alerts — 0 built · 1 partial · 4 missing
+## 26. Notifications & Alerts — 0 built · 2 partial · 3 missing
 
 | Status | Feature | Note |
 | --- | --- | --- |
-| Partial | COI/license/bond expiration alerts | ranked across all four record types and shown on the dashboard, so it reaches someone who opens the app — but there is still no delivery channel, so it reaches nobody who doesn't |
+| Partial | COI/license/bond expiration alerts | ranked across all four record types, counted in the dashboard's Needs attention tiles and listed in its Compliance card, so it reaches someone who opens the app — still no delivery channel, so it reaches nobody who doesn't. NOT Built until something pushes it |
 | Missing | Certified payroll submission deadline reminders | no reminder system exists |
 | Missing | Retainage release eligibility alerts | the underlying retainage data exists now (Sheet 11), but no alerting/notification system reads it yet |
 | Missing | Apprentice ratio out-of-compliance alerts | blocked on apprentice tracking not existing yet |
-| Missing | WIP variance alerts | the WIP narrative is on-demand only (click a button) — nothing proactive |
+| Partial | WIP variance alerts | jobs forecast past contract value are counted in the dashboard's Needs attention tiles and named in Job health on load, rather than only when someone clicks into a job — but nothing notifies anyone who doesn't open the app, so this is surfacing, not alerting |

@@ -67,6 +67,7 @@ model Vendor {
   updatedAt DateTime @updatedAt
 
   materialOrders MaterialOrder[]
+  priceQuotes    VendorPriceQuote[]
 
   @@index([companyId])
 }
@@ -769,4 +770,93 @@ enum WarrantyResponsibility {
   /// Not decided yet. The default, and the honest state on the day the
   /// call comes in.
   UNDETERMINED
+}
+
+/// What a vendor said something costs, on a date.
+///
+/// The gap this fills: until now a material price existed in exactly two
+/// places, and neither could be estimated from. `CostEntry` holds a lump
+/// amount after the fact, with no vendor and no unit behind it.
+/// `MaterialOrder` deliberately carries no price at all — putting one
+/// there would make an order a second source of line-item cost, which
+/// ARCHITECTURE.md forbids and Diego and I agreed on in those words. So
+/// the question an estimator actually asks — "what is board going for,
+/// from whom, and is it moving?" — had no answer anywhere.
+///
+/// This is not line-item data and must not become it. A quote belongs to
+/// a VENDOR and a DATE, never to a job or a `JobLineItem`. Nothing here
+/// may ever be summed into a job's cost: that is what `CostEntry` is for,
+/// and two places holding job cost is the exact anti-pattern the unified
+/// `JobLineItem` exists to prevent. Read this as reference data for
+/// pricing work, in the same family as `LineItemCatalogEntry`.
+model VendorPriceQuote {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  /// Required. A price with nobody behind it answers none of the
+  /// questions this model exists for — you cannot ring up "the market".
+  vendorId String
+  vendor   Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+
+  /// Optional link to the catalog template this price is for, so an
+  /// estimator pricing that item can see what it really costs. Optional
+  /// because a vendor quotes plenty of things that were never catalog
+  /// items, and refusing to record those would make the history a
+  /// partial one — worse than none, because nobody would know it was
+  /// partial.
+  catalogEntryId String?
+  catalogEntry   LineItemCatalogEntry? @relation(fields: [catalogEntryId], references: [id], onDelete: SetNull)
+
+  /// What was priced, in the VENDOR'S words. Kept even when a catalog
+  /// entry is linked: "5/8 Type X 4x12" and the catalog's wording are
+  /// rarely identical, and when a price is queried it is the vendor's
+  /// description that has to be read back to them.
+  description String
+
+  /// The vendor's unit, never converted to ours. A vendor who quotes by
+  /// the MSF has not quoted by the SF, and inventing the factor between
+  /// them is inventing a price. Comparison across vendors only ever
+  /// happens within one unit — see `bestCurrentPrice` in
+  /// `components/vendorPricing.ts`.
+  unit      String?
+  unitPrice Decimal @db.Decimal(12, 2)
+
+  /// Entered, not stamped. Logging Tuesday's quote on Friday must record
+  /// Tuesday, or every movement calculation over this data is wrong by
+  /// however long the paperwork sat. Same rule as every other date here.
+  quotedOn DateTime
+
+  /// What the vendor said the price holds until. Optional because plenty
+  /// of prices are given with no expiry, and a guessed one is worse than
+  /// none: "expired" would then be our invention presented as theirs.
+  validUntil DateTime?
+
+  source VendorPriceSource @default(QUOTE)
+  notes  String?
+
+  recordedByUserId String?
+  recordedBy       User?   @relation(fields: [recordedByUserId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([vendorId])
+  @@index([catalogEntryId])
+}
+
+/// Where the number came from. Recorded because the four are not equally
+/// trustworthy and an estimator is entitled to know which they are
+/// looking at — a price read off an invoice is what was actually charged,
+/// a number from a phone call is what someone remembers being told.
+enum VendorPriceSource {
+  /// A written quote for this job or this request.
+  QUOTE
+  /// Taken off an invoice — what was actually charged, after the fact.
+  INVOICE
+  /// From a published or emailed price list covering many items.
+  PRICE_LIST
+  /// Told to someone over the phone or at the counter.
+  VERBAL
 }

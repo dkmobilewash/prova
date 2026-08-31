@@ -12,6 +12,330 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### Field reports get their own page, and a week you can hand to a GC (Cyrus)
+`cyrus/field-reports`
+
+Measured before building anything: on the job page, "Daily field reports"
+began at **97% down a 3,382px, 13-section page** — dead last, after
+prevailing wage determinations, union dispatch slips and estimate versions.
+The most field-facing feature in the product sat behind four screens of the
+office's paperwork. That is the exact failure the competitor research names
+— built for the office, handed to the field — and it was ours.
+
+`/field-reports` is the fix. Nothing moved: a job's reports are still on its
+job page. What is new is a way in that doesn't start with a job page, and a
+view of a whole week across every job, which is the unit a schedule dispute
+is actually argued in.
+
+**The gap is the feature.** A week with a day missing from it is worth less
+as evidence than a week that says which day is missing, so the page names
+finished weekdays nothing was filed for. Three exclusions, each a way to be
+quietly wrong:
+
+- **A day that hasn't happened is not missing.** On Wednesday, Friday is not
+  a hole in the record. Flagging it would make every week in progress look
+  negligent.
+- **Today is not missing either.** The day isn't over. Telling a foreman at
+  9am that he has failed to file is how a tool teaches people to ignore it.
+- **A weekend is not missing**, though a weekend report still counts as a
+  day worked. Nobody owes a report for a Saturday they didn't work.
+
+**Coverage is null, not 0%, before any weekday of the week is over.** A week
+nobody has worked yet is not a failed week, and a confident 0% on Monday
+morning is a lie about it — the same reasoning as the delivery rate ignoring
+unconfirmed messages.
+
+**The week summary is what gives the filer something back.** Logging days
+into a system only management reads is the shape of every abandoned
+construction tool. This writes the week out as plain text — plain because it
+has to survive being pasted into an email, a text, or a GC's own portal.
+**Missing days are named in that text rather than left out**: a summary
+listing only the days that exist reads as a complete week, and overstating
+your own record to a GC is worse than showing the hole.
+
+**Two live bugs found while building, both documented traps this repo
+already knew about.**
+
+The actions threw. Production redacts a thrown Server Action message, so
+"A report already exists for that date — edit it instead of adding a second
+one" — the most user-facing sentence in the module — reached a foreman as an
+opaque crash. The guard was correct and could never be read. Now returns
+`ActionResult`, verified rendering on both surfaces.
+
+The date defaulted from `new Date().toISOString()`, the server's UTC date,
+not `localToday()`. After 5pm in California that is already tomorrow, which
+is exactly when a foreman files. Fixed; the divergence itself is not
+observable at the hour it was tested, only the code path.
+
+29 tests, four mutation-checked. Reintroducing the raw `getUTCDay()` — which
+calls Sunday 0 and would start a week on Sunday — fails 15, because Monday
+indexing is load-bearing. Counting today as missing fails 5. Rendering 0%
+coverage for an unstarted week fails 1. Dropping missing days from the
+summary fails 1.
+
+**Then clicking it found what the tests did not.** "Days with no report:
+Mon, Aug 24, Tue, Aug 25, Fri, Aug 28" — each day label already contains a
+comma, so a comma-joined list reads as twice as many days as it names, on a
+line that goes to a GC. Joined with a middot now, with a test.
+
+The composer's primary actions are deliberately larger than the app's
+standard button (py-3 against py-2). Measured: all 15 buttons on the job
+page are under 44px, median 36px, against a 48px floor and 60x60 for gloved
+use. That is a global fix belonging in Diego's design tokens, not 19 files
+edited under an open PR — this one page is a documented local exception on
+the one surface designed for a phone, and the measurement is with him.
+
+`/vendors/pricing` also joined the nav, having been two clicks deep behind
+`/vendors` since yesterday — the same burial, in my own week-old work.
+
+### What your suppliers actually charge, and which way it is moving (Cyrus)
+`cyrus/vendor-pricing`
+
+A material price lived in exactly two places before this, and neither could
+be estimated from. `CostEntry` holds a lump amount after the fact, with no
+vendor and no unit behind it. `MaterialOrder` deliberately carries no price
+at all, because putting one there would make an order a second source of
+line-item cost — the rule ARCHITECTURE.md exists to enforce. So the question
+an estimator actually asks, "what is board going for, from whom, and is it
+moving?", had no answer anywhere in the app.
+
+`/vendors/pricing` answers it. What a vendor quoted, on a date, with what it
+came from — a written quote, an invoice, a price list, or a phone call —
+because those four are not equally trustworthy and whoever is bidding is
+entitled to know which one they are looking at.
+
+**This is reference data and must never become line-item data.** A quote
+belongs to a vendor and a date, never to a job or a `JobLineItem`, and
+nothing sums it into job cost. Job cost keeps its one home. Read it as
+living in the same family as `LineItemCatalogEntry`.
+
+**Nothing is compared across units, ever.** A vendor quoting by the MSF has
+not quoted by the SF, and the factor between them is theirs to state. Invent
+it and a supplier appears a thousand times cheaper than they are, on a
+screen someone bids off. Comparison happens inside a unit bucket or it does
+not happen — which means "cheapest" is only ever cheapest per SF, and the
+badge now says exactly that.
+
+**No stored current price.** Current, expired, stale, cheapest, spread and
+every movement figure are derived on every read, same rule as the delivery
+log and the current drawing revision. A stored current price is wrong the
+instant a newer quote is entered.
+
+Four smaller decisions, each of them a way to be quietly wrong:
+
+- **A vendor's superseded price is not a competing offer.** Only their
+  newest live quote enters a comparison, or one supplier appears twice in a
+  field of three and an old number they have already withdrawn wins.
+- **An expired quote is still history.** It leaves the comparison and stays
+  in the record — dropping it would hide the very rise the page exists to
+  show.
+- **A vendor's own expiry outranks our rule of thumb.** "Worth re-checking"
+  only ever applies where they gave no date. Once theirs lapses, that is the
+  truer answer anyway.
+- **The expiry is inclusive.** A price held "until the 30th" is live ON the
+  30th. An off-by-one here kills a live price on the one day it matters.
+
+The estimating payoff is a warning when a catalog default sits under the
+cheapest live quote in the same unit — you are bidding at a price nobody
+will sell you at. It changes nothing and points at `/catalog`: which number
+is right is a decision about your own pricing, not something to overwrite.
+
+45 tests, four of them mutation-checked by reintroducing the exact bug and
+confirming which test dies: comparing movement across units, letting a
+superseded price compete, killing a quote a day early on its own expiry, and
+comparing the catalog against a quote in another unit. One failure each, and
+each was the test written for that rule.
+
+**Then clicking it found what none of them could.** With a $390/MSF and a
+$0.39/SF quote on one item, both rows badged "cheapest live" — two
+contradictory claims about the same item on one screen. Both were true, each
+within its own unit, but a badge that has to be reconciled against a heading
+is one that gets misread, and misread here means bidding off the wrong
+number. It reads "cheapest per SF" / "cheapest per MSF" now.
+
+Verified by doing it, not by the suite: the guard against an expiry before
+the quote date fired on create AND on edit and rendered as a sentence rather
+than a redacted crash; a per-MSF quote formed its own bucket and left the
+per-SF comparison untouched; expiring a quote dropped it out of the spread
+and left it in the list; and a two-step delete removed a quote and its whole
+unit bucket with it.
+
+Migration additive. Grouping falls back to the vendor's wording when no
+catalog item is linked, which is a weak key — two vendors wording the same
+board differently will not line up, and the page says so rather than
+under-grouping silently.
+### Three of the six fixes didn't work, and the theme change was wrong (Diego)
+
+The re-test found the first attempt shallow in three places. Recording what
+was actually wrong, because two of them are the same mistake twice.
+
+**The overdue disagreement survived the fix.** Dashboard still said 1
+invoice / $1,000; `/cash-flow` still said 3 / $2,100. I had copied the
+rule's SHAPE and missed its content: `calculateArAgingInvoice` uses
+`paymentTermsDays ?? 0`, so a GC with no stated terms is due ON ISSUE. My
+version returned null for that case and called those invoices undated.
+
+**Then `/cash-flow` contradicted itself again, differently.** My first fix
+made the forecast compare instants (`date < asOf`) while the aging table
+floors to whole days — so an invoice due today was overdue in one table and
+current in the other by lunchtime. I moved the bug rather than removing it.
+
+Both are the same error: two implementations of one rule. `cash-flow.ts`
+now exports `effectiveDueDateFor`, `daysPastDueFor` and `isOverdue`, and
+the aging table, the forecast and the dashboard all call them. Five tests
+pin the two cases that kept slipping, mutation-checked.
+
+**The theme change was wrong, and is scoped back.** The plan was: convert
+the shared components and the dashboard, leave other pages looking
+inconsistent until a follow-up. They did not merely look inconsistent. On a
+light canvas, 15 of 17 pages had content that could not be read — most
+seriously the entire Balance column of `/cash-flow`'s AR aging table
+rendering white-on-white, and buttons like "Add a licence" and "Log a
+toolbox talk" invisible.
+
+My first answer to that was to recolour headings and subtitles, which was
+pattern-matching rather than looking: it fixed 21 h1s and missed h2s,
+buttons and table cells, and missed `/settings` entirely.
+
+So the light surface is now scoped to what has actually been converted. The
+body stays dark, the chrome stays dark, and the dashboard carries its own
+`bg-canvas`. Every other page renders exactly as it did before this branch
+— the diff against main outside the dashboard is now three files.
+
+That is a smaller claim than the brief asked for, and it is the honest one:
+the tokens exist and one screen is built on them, rather than a theme
+half-applied over pages that break under it. The conversion is a page at a
+time, and each page is readable before and after.
+
+Not a defect, still unproven: gross margin renders "—" because no job in
+that dataset has earned revenue, so neither side of the 35% colour rule has
+been exercised.
+
+
+### Six things browser testing found in the new dashboard (Diego)
+
+**The two pages disagreed about which invoices were overdue.** The
+dashboard said one, $1,000; `/cash-flow` said three, $2,100. The dashboard
+read only `Invoice.dueAt` and labelled the rest "no due date";
+`calculateArAgingInvoice` has always derived one from the GC's payment
+terms when the invoice carries none. An invoice with no stated date is
+still due — net 30 from issue — and calling it undated hid two overdue
+invoices. Both now use the same rule, and where a date is inferred the row
+says so ("Due 2026-08-28 (terms)") rather than presenting an inference as
+an agreed date.
+
+**`/cash-flow` also disagreed with itself**, which the same run caught: its
+aging table called an invoice two days past due overdue, while its own
+forecast filed it under the current month, because the forecast bucketed on
+"before this month started". Past due is past due whatever month it falls
+in.
+
+**A job with one budgeted line out of seven read "97% under contract
+value".** `calculateJobWip` sums estimated cost as `?? 0`, so six
+unbudgeted lines contributed no forecast cost while their contract value
+still counted — which makes any partly-estimated job look spectacular. A
+number that flatters you for not having estimated is worse than no number.
+`jobHealthSentence` now refuses to forecast below 80% estimate coverage and
+says what is missing instead.
+
+**Clicking a receivable did nothing between 768px and 1024px.** The panel
+is `hidden lg:flex`, but the desktop layout returns at 768px — so for 256px
+of width the page looked fully functional and the rows were silently dead.
+Below the panel's width a row now opens the job instead. Nothing is ever a
+no-op.
+
+**Twenty-one pages had an invisible heading.** Every unconverted page's
+`<h1>` is `text-slate-100`, which was correct on the old dark body and is
+near-white on the new light canvas. The tester found one; it was systemic.
+Their own brief drew the line — inconsistent is expected, unreadable is a
+bug — so the 21 headings and 15 subtitles that sit directly on the canvas
+are now readable. This is NOT the theme conversion: those pages still carry
+their dark cards and will look inconsistent until a second pass.
+
+**The mobile drawer had gone flat** while the rail gained groups, in
+different orders — the exact drift `navItems.tsx` exists to prevent. Both
+render from `NAV_GROUPS` now.
+
+Also fixed: "Nothing in in progress right now."
+
+Not a defect, recorded because it limits what the run proved: gross margin
+showed "—" throughout, because no job in that dataset has earned revenue.
+The null branch renders neutral correctly; neither side of the 35% colour
+rule has been seen against real data.
+
+
+### A dashboard that tells you something before you ask (Diego)
+
+`/dashboard` was a searchable table of jobs. Every number an owner needs on
+a Monday — what is overdue, what is about to lapse, which job is drifting
+past budget, what retainage is due back this month — already existed in the
+data model and appeared only if you went looking for it on the right
+sub-page. The table is still here, at the bottom, unchanged. What is new is
+everything above it: the same figures, asked on load.
+
+Nothing gained a stored column. Overdue totals, over-budget counts, the
+metric bar's revenue and margin — all derived on read through `lib/wip.ts`,
+`lib/retainage.ts` and `lib/gc-reliability.ts`, per ARCHITECTURE.md. A
+saved "over budget" flag is wrong the moment a cost entry lands.
+
+Decisions worth keeping:
+
+**Over budget means forecast, not spend-to-date.** A job that has spent 90%
+of its money at 90% complete is going to plan; the question is where it
+LANDS. `jobIsOverBudget` compares forecast cost at completion against
+contract value, and returns null rather than false when there is no cost
+estimate — reporting "we don't know" as "on budget" is how a figure stops
+meaning anything.
+
+**Margin is blended by summing both sides, not by averaging job margins.**
+A $2M job and a $20k job are not equal evidence of how the business is
+doing. Averaging their margins says they are: a test asserts the difference
+(20.7% vs a naive 55%).
+
+**Margin only turns green above 35%.** A number that is always green
+teaches people to stop reading the colour. The sample 24.6% renders
+neutral, on purpose.
+
+**Job health reads as a sentence.** "Forecast to finish 12% over contract
+value at 64% complete" is something to act on; a bare variance percentage
+in a table is not.
+
+**The detail panel pushes, it does not cover.** The reason to open an
+invoice from a receivables list is to compare it against the rest of the
+list, so a panel that covered the list would remove what you opened it for.
+That is why it is a context with three parts rather than one component —
+a panel rendered inside the column it should push cannot push it.
+
+**The rail expands as an overlay.** A rail that widens by shifting the page
+reflows everything you were reading the instant your cursor drifts left.
+
+**The two panel actions nobody built are shown disabled, with the reason.**
+"Send a reminder" has no email channel and "log a call" has no activity
+model. Saying so is more useful than a button that looks real and does
+nothing.
+
+**The rail keeps all 18 routes.** The brief for this work assumed eight of
+them — RFIs, submittals, safety, drawings, material orders, cash flow,
+closeout, estimating — had no route and should render disabled with a
+"coming soon" tooltip. All eight shipped during the day that brief was
+written. Disabling them would have removed working features from the nav,
+so they are grouped and live; the disabled branch exists in the rail for
+whenever something genuinely unbuilt is added.
+
+**Theme is half-migrated, deliberately.** `tailwind.config.ts` now carries
+semantic tokens, and `Card`/`Button`/`StatusBadge`/`Sidebar`/`Topbar` plus
+the new dashboard are built on them. Every other page still carries
+hardcoded dark utilities from the previous pass and will look inconsistent
+until a second conversion pass. That is stated rather than hidden — the
+per-file checklist is in the PR description. Roughly 1,000 hardcoded slate
+utilities remain across 29 pages and 47 components; `jobs/[id]` alone has
+448.
+
+19 tests over the new arithmetic. Sheet 15's company-wide backlog moves to
+Built. Sheet 26's expiration and WIP-variance rows move to Partial and NOT
+Built — surfacing something on a screen someone opens is not alerting
+someone who doesn't.
+
 ### The send button that was never built, and a guard so it can't happen again (Cyrus)
 `cyrus/messaging`
 

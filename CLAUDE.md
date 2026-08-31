@@ -36,6 +36,25 @@ Vercel deployment and repo settings). Each drives their own agent.
   surgically: schema files, `middleware.ts`, `Sidebar.tsx`,
   `lib/actions/shared.ts`, the actions barrel.
 
+## The working agreement (agreed in Slack 2026-08-29)
+
+Written down here because an agreement that lives only in a Slack
+scrollback gets broken by whoever didn't scroll far enough.
+
+1. **No PR smaller than a finished, clicked-through capability.** Several
+   capabilities in one PR is fine and usually better. No docs-only PRs —
+   documentation rides along with the work it describes.
+2. **Never open a PR based on another PR's branch.** Stacking commits on a
+   branch that already has an open PR is fine; that is a different thing.
+   Stacked PRs stranded commits twice, because GitHub only retargets a
+   base branch when it is DELETED after merging. See the Git rules below.
+3. **A bug in the other person's lane becomes a GitHub issue assigned to
+   them** — not a PR, and not a Slack essay. EXCEPTION: a live money bug,
+   or anything touching the Neon data, gets a ping immediately.
+4. **Anything touching the shared schema or adding a migration is
+   announced in Slack BEFORE the push**, not on merge. Early enough that
+   the other person can object while objecting is still cheap.
+
 ## Git rules (each one is a scar, not a preference)
 
 - NEVER `git add -A` — a wildcard add swept live credentials into a

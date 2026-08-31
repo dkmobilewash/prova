@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { connectionProblems } from "./connection-target.mjs";
+import { loadEnvFiles } from "./load-env.mjs";
 
 /**
  * Applies pending migrations. Run by CI on merge to main — not by a build.
@@ -19,6 +20,16 @@ import { connectionProblems } from "./connection-target.mjs";
  * loudly and repeatedly, against a database nobody was reading.
  */
 
+// Under plain `node`, nothing reads .env — that is the Prisma CLI's doing,
+// not Node's, so this script never saw a developer's local settings and
+// told them to go and fix GitHub Actions secrets instead. Already-set
+// variables always win, so CI is untouched by any .env in its checkout.
+const envFiles = loadEnvFiles();
+const inCI = Boolean(process.env.CI);
+for (const { file, applied } of envFiles) {
+  if (applied > 0) console.log(`db: read ${applied} setting(s) from ${file}`);
+}
+
 const { app, migrate, problems } = connectionProblems(
   process.env.DATABASE_URL,
   process.env.DIRECT_URL,
@@ -35,8 +46,18 @@ for (const problem of problems) {
 if (problems.some((p) => p.level === "fatal")) {
   console.error(
     "\ndb: refusing to migrate. Applying to a database the app does not read is\n" +
-      "db: how the schema and the code silently drift apart. Fix the secrets on\n" +
-      "db: this repository (Settings → Secrets and variables → Actions) and re-run.",
+      "db: how the schema and the code silently drift apart.",
+  );
+  // The fix is in a different place depending on where this is running, and
+  // naming the wrong one costs someone an afternoon in the wrong settings
+  // page. This script used to name the CI one unconditionally.
+  console.error(
+    inCI
+      ? "db: Fix the secrets on this repository (Settings → Secrets and variables\n" +
+          "db: → Actions) and re-run."
+      : `db: Set DATABASE_URL and DIRECT_URL in ${envFiles[0]?.file ?? "packages/db/.env"}\n` +
+          "db: (DATABASE_URL is the pooled endpoint, DIRECT_URL the direct one),\n" +
+          "db: or export them into this shell, and re-run.",
   );
   process.exit(1);
 }

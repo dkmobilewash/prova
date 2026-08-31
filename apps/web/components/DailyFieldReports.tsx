@@ -6,10 +6,12 @@ import {
   deleteDailyFieldReport,
   updateDailyFieldReport,
 } from "@/lib/actions";
+import { localToday } from "@/components/localToday";
+import type { ActionResult } from "@/lib/actions/shared";
 
-const inputClass =
+export const inputClass =
   "rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none";
-const labelClass = "flex flex-col gap-1 text-sm text-slate-300";
+export const labelClass = "flex flex-col gap-1 text-sm text-slate-300";
 
 export type FieldReport = {
   id: string;
@@ -33,7 +35,10 @@ function formatDate(iso: string) {
   });
 }
 
-function Fields({ report }: { report?: FieldReport }) {
+/** One field set, shared by every surface that files a report — the job
+ * page and the company-wide log — so the two can never drift into
+ * accepting different things. */
+export function FieldReportFields({ report }: { report?: FieldReport }) {
   return (
     <>
       <label className={labelClass}>
@@ -99,18 +104,18 @@ export function DailyFieldReports({
   const [error, setError] = useState<string | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
 
-  function run(fn: () => Promise<void>, fallback: string) {
+  /** These actions RETURN their failures — production redacts a thrown
+   * Server Action message, and "a report already exists for that date" is
+   * exactly the sentence a foreman needs to read. `onOk` only runs when the
+   * write actually succeeded. */
+  function run(fn: () => Promise<ActionResult>, fallback: string, onOk?: () => void) {
     setError(null);
     startTransition(async () => {
-      try {
-        await fn();
-      } catch (err) {
-        setError(err instanceof Error ? err.message : fallback);
-      }
+      const result = await fn();
+      if (result.ok) onOk?.();
+      else setError(result.error || fallback);
     });
   }
-
-  const today = new Date().toISOString().slice(0, 10);
 
   return (
     <section>
@@ -133,19 +138,18 @@ export function DailyFieldReports({
           onSubmit={(event) => {
             event.preventDefault();
             const formData = new FormData(event.currentTarget);
-            run(async () => {
-              await createDailyFieldReport(jobId, formData);
+            run(() => createDailyFieldReport(jobId, formData), "Could not save the report", () => {
               formRef.current?.reset();
               setIsOpen(false);
-            }, "Could not save the report");
+            });
           }}
           className="mb-4 flex flex-col gap-3 rounded-lg border border-slate-800 bg-slate-900 p-4"
         >
           <label className={labelClass}>
             Date
-            <input type="date" name="reportDate" required defaultValue={today} className={inputClass} />
+            <input type="date" name="reportDate" required defaultValue={localToday()} className={inputClass} />
           </label>
-          <Fields />
+          <FieldReportFields />
           {error && <p className="text-sm text-red-400">{error}</p>}
           <div className="flex gap-2">
             <button
@@ -184,15 +188,14 @@ export function DailyFieldReports({
                   onSubmit={(event) => {
                     event.preventDefault();
                     const formData = new FormData(event.currentTarget);
-                    run(async () => {
-                      await updateDailyFieldReport(report.id, formData);
-                      setEditingId(null);
-                    }, "Could not save changes");
+                    run(() => updateDailyFieldReport(report.id, formData), "Could not save changes", () =>
+                      setEditingId(null),
+                    );
                   }}
                   className="flex flex-col gap-3"
                 >
                   <p className="text-sm font-medium text-slate-100">{formatDate(report.reportDate)}</p>
-                  <Fields report={report} />
+                  <FieldReportFields report={report} />
                   {error && <p className="text-sm text-red-400">{error}</p>}
                   <div className="flex gap-2">
                     <button
@@ -249,7 +252,10 @@ export function DailyFieldReports({
                             type="button"
                             disabled={isPending}
                             onClick={() =>
-                              run(() => deleteDailyFieldReport(report.id), "Could not delete the report")
+                              run(
+                                () => deleteDailyFieldReport(report.id),
+                                "Could not delete the report",
+                              )
                             }
                             className="rounded-md border border-red-500 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 disabled:opacity-50"
                           >

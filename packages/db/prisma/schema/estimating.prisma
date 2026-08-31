@@ -126,6 +126,11 @@ model LineItemCatalogEntry {
   /// actually costed. Never a live link back into those rows.
   jobLineItems JobLineItem[]
 
+  /// What vendors have quoted for this item. Read-only reference for
+  /// estimating — a quote never writes a price back into this template,
+  /// and nothing here is summed into a job. Cyrus, Sheet 19.
+  priceQuotes VendorPriceQuote[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

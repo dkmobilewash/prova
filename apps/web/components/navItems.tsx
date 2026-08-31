@@ -8,7 +8,9 @@
 
 import type { ReactNode } from "react";
 
-export const NAV_ITEMS: { href: string; label: string; icon: ReactNode }[] = [
+export type NavItem = { href: string; label: string; icon: ReactNode };
+
+export const NAV_ITEMS: NavItem[] = [
   {
     href: "/dashboard",
     label: "Jobs & Estimates",
@@ -272,6 +274,30 @@ export const NAV_ITEMS: { href: string; label: string; icon: ReactNode }[] = [
     ),
   },
   {
+    href: "/field-reports",
+    label: "Field reports",
+    icon: (
+      <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5">
+        <path
+          d="M5.5 3.5h9a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1v-11a1 1 0 0 1 1-1Z"
+          stroke="currentColor"
+          strokeWidth="1.4"
+        />
+        <path d="M7.5 7.5h5M7.5 10.5h5M7.5 13.5h3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      </svg>
+    ),
+  },
+  {
+    href: "/vendors/pricing",
+    label: "Vendor pricing",
+    icon: (
+      <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5">
+        <path d="M4 14.5 8 10l3 3 5-6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M13 7h3v3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+  },
+  {
     href: "/settings",
     label: "Settings",
     icon: (
@@ -285,5 +311,63 @@ export const NAV_ITEMS: { href: string; label: string; icon: ReactNode }[] = [
         />
       </svg>
     ),
+  },
+];
+
+
+/**
+ * The rail's five buckets.
+ *
+ * Eighteen flat links is a list you scan; five groups is a list you read.
+ * The grouping is by when in a job's life you reach for the thing, not by
+ * which table it lives in — a foreman looking for punch lists is thinking
+ * "we're finishing", not "operations".
+ *
+ * Every item here has a live route. An earlier plan for this rail assumed
+ * eight of these were unbuilt and should render disabled with a "coming
+ * soon" tooltip; they all shipped during the day it was written, so
+ * disabling them would have removed working features from the nav. If a
+ * genuinely unbuilt item is ever added, give it `disabled: true` and the
+ * rail already renders it muted and unclickable.
+ */
+export type NavGroup = {
+  heading: string;
+  items: (NavItem & { disabled?: boolean })[];
+};
+
+const byHref = new Map(NAV_ITEMS.map((item) => [item.href, item]));
+const item = (href: string): NavItem => {
+  const found = byHref.get(href);
+  if (!found) throw new Error(`navItems: no item for ${href}`);
+  return found;
+};
+
+export const NAV_GROUPS: NavGroup[] = [
+  {
+    heading: "Pre-construction",
+    items: [item("/dashboard"), item("/bids"), item("/contacts"), item("/catalog")],
+  },
+  {
+    heading: "Operations",
+    items: [
+      item("/schedule"),
+      item("/rfis"),
+      item("/submittals"),
+      item("/drawings"),
+      item("/punch-lists"),
+      item("/closeout"),
+    ],
+  },
+  {
+    heading: "Compliance & safety",
+    items: [item("/compliance"), item("/safety"), item("/team")],
+  },
+  {
+    heading: "Logistics",
+    items: [item("/material-orders"), item("/vendors"), item("/equipment")],
+  },
+  {
+    heading: "Financials",
+    items: [item("/cash-flow"), item("/settings")],
   },
 ];
