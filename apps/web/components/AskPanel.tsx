@@ -35,12 +35,25 @@ export function AskPanel() {
   const [citations, setCitations] = useState<Citation[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
-  // True while nothing has been read yet. Text streamed in that window is
-  // the model talking to itself before it calls a tool — it gets discarded
-  // when results arrive, so it must not be styled as the answer. Browser
-  // testing watched a sentence appear at 2.4s in answer type and vanish at
-  // 3.6s, which reads as a glitch rather than as progress.
-  const [provisional, setProvisional] = useState(true);
+  // Text streamed before any tool has run is the model talking to itself
+  // ("I'll pull the areas that could change your day") and is discarded
+  // when results arrive. It goes in the STATUS slot, never the answer
+  // slot.
+  //
+  // The first attempt at this kept it in the answer element and only
+  // restyled it. That was wrong twice over: the restyle was invisible to a
+  // reader who had already seen a sentence appear where answers appear,
+  // and it was invisible to measurement too, since `text-ink-body`
+  // contains `text-ink` as a substring and the element is identified by
+  // `whitespace-pre-line` either way. Now the answer element simply does
+  // not exist until there is an answer, which nothing can misread.
+  const [progress, setProgress] = useState("");
+  // Refs, not state: `apply` needs to read these synchronously while
+  // handling a stream event, and a state updater must stay pure — doing
+  // the read by calling setState with a side effect inside would
+  // double-append under React's double-invoked updaters.
+  const provisionalRef = useRef(true);
+  const progressRef = useRef("");
   const [isAsking, setIsAsking] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -56,26 +69,43 @@ export function AskPanel() {
         setStatus(readingLabel(event.names as ToolName[]));
         break;
       case "answering":
-        // Tools are done; what streams from here is the answer itself.
-        setProvisional(false);
+        // Tools are done; what streams from here is the answer itself, and
+        // whatever the model said before that is discarded.
+        provisionalRef.current = false;
+        progressRef.current = "";
+        setProgress("");
         break;
       case "reset":
         setAnswer("");
+        progressRef.current = "";
+        setProgress("");
         break;
       case "text":
-        setStatus(null);
-        setAnswer((current) => current + event.delta);
+        if (provisionalRef.current) {
+          progressRef.current += event.delta;
+          setProgress(progressRef.current);
+        } else {
+          setAnswer((current) => current + event.delta);
+        }
         break;
       case "done":
         setCitations(event.citations);
         setStatus(null);
         // An answer that called no tool at all — a refusal, a clarifying
-        // question — never gets an `answering` event, so promote it here
-        // rather than leaving it muted forever.
-        setProvisional(false);
+        // question — never gets `answering`, so everything it said is
+        // sitting in the progress slot. Move it across, or a refusal
+        // renders as a status line that never resolves into an answer.
+        if (provisionalRef.current && progressRef.current) {
+          setAnswer(progressRef.current);
+          progressRef.current = "";
+          setProgress("");
+        }
+        provisionalRef.current = false;
         break;
       case "error":
         setAnswer("");
+        progressRef.current = "";
+        setProgress("");
         setError(event.error);
         setStatus(null);
         break;
@@ -100,7 +130,9 @@ export function AskPanel() {
     setCitations([]);
     setError(null);
     setStatus("Reading your records…");
-    setProvisional(true);
+    progressRef.current = "";
+    setProgress("");
+    provisionalRef.current = true;
     setIsAsking(true);
 
     try {
@@ -213,9 +245,13 @@ export function AskPanel() {
               spanning several areas spends most of its time in the
               database and a static message for eight seconds reads as a
               hang rather than as work. */}
-          {status && (
-            <p className="mt-1 text-sm text-ink-body" aria-live="polite">
-              {status}
+          {(status || progress) && (
+            <p
+              className="mt-1 whitespace-pre-line text-sm text-ink-body"
+              data-ask="progress"
+              aria-live="polite"
+            >
+              {progress || status}
             </p>
           )}
 
@@ -224,11 +260,13 @@ export function AskPanel() {
               prose, and giving it a path to markup would be a hole.
               aria-live is polite so a screen reader is not interrupted on
               every token. */}
+          {/* Only ever the answer. data-ask makes that checkable from a
+              test without depending on Tailwind class names, one of which
+              is a prefix of the other. */}
           {answer && (
             <p
-              className={`mt-1 whitespace-pre-line text-sm ${
-                provisional ? "text-ink-body" : "text-ink"
-              }`}
+              className="mt-1 whitespace-pre-line text-sm text-ink"
+              data-ask="answer"
               aria-live="polite"
             >
               {answer}
