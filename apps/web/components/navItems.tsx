@@ -8,7 +8,9 @@
 
 import type { ReactNode } from "react";
 
-export const NAV_ITEMS: { href: string; label: string; icon: ReactNode }[] = [
+export type NavItem = { href: string; label: string; icon: ReactNode };
+
+export const NAV_ITEMS: NavItem[] = [
   {
     href: "/dashboard",
     label: "Jobs & Estimates",
@@ -294,5 +296,63 @@ export const NAV_ITEMS: { href: string; label: string; icon: ReactNode }[] = [
         />
       </svg>
     ),
+  },
+];
+
+
+/**
+ * The rail's five buckets.
+ *
+ * Eighteen flat links is a list you scan; five groups is a list you read.
+ * The grouping is by when in a job's life you reach for the thing, not by
+ * which table it lives in — a foreman looking for punch lists is thinking
+ * "we're finishing", not "operations".
+ *
+ * Every item here has a live route. An earlier plan for this rail assumed
+ * eight of these were unbuilt and should render disabled with a "coming
+ * soon" tooltip; they all shipped during the day it was written, so
+ * disabling them would have removed working features from the nav. If a
+ * genuinely unbuilt item is ever added, give it `disabled: true` and the
+ * rail already renders it muted and unclickable.
+ */
+export type NavGroup = {
+  heading: string;
+  items: (NavItem & { disabled?: boolean })[];
+};
+
+const byHref = new Map(NAV_ITEMS.map((item) => [item.href, item]));
+const item = (href: string): NavItem => {
+  const found = byHref.get(href);
+  if (!found) throw new Error(`navItems: no item for ${href}`);
+  return found;
+};
+
+export const NAV_GROUPS: NavGroup[] = [
+  {
+    heading: "Pre-construction",
+    items: [item("/dashboard"), item("/bids"), item("/contacts"), item("/catalog")],
+  },
+  {
+    heading: "Operations",
+    items: [
+      item("/schedule"),
+      item("/rfis"),
+      item("/submittals"),
+      item("/drawings"),
+      item("/punch-lists"),
+      item("/closeout"),
+    ],
+  },
+  {
+    heading: "Compliance & safety",
+    items: [item("/compliance"), item("/safety"), item("/team")],
+  },
+  {
+    heading: "Logistics",
+    items: [item("/material-orders"), item("/vendors"), item("/equipment")],
+  },
+  {
+    heading: "Financials",
+    items: [item("/cash-flow"), item("/settings")],
   },
 ];
