@@ -24,13 +24,19 @@ export function contrastRatio(foreground: string, background: string): number {
 
 const colors = (config.theme?.extend?.colors ?? {}) as Record<string, string>;
 
-/** The two grounds light text sits on: the page canvas and a card. */
+/** The two grounds text sits on: the page canvas and a card.
+ *
+ * These were light and are now dark — the tokens were repointed so the
+ * one converted page stops reading as a different application beside the
+ * other 24. The assertions below are unchanged in intent and did not need
+ * relaxing: every level clears the same floor it did before, with more
+ * headroom than the light ramp had. */
 const GROUNDS = [
   ["canvas", colors.canvas],
   ["surface", colors.surface],
 ] as const;
 
-describe("light theme contrast", () => {
+describe("theme contrast", () => {
   it("computes a known ratio correctly", () => {
     // Black on white is 21:1 by definition — a check on the checker.
     expect(contrastRatio("#000000", "#ffffff")).toBeCloseTo(21, 1);
@@ -65,8 +71,33 @@ describe("light theme contrast", () => {
     }
   });
 
-  it("fails when a token is too light, so these assertions can fail", () => {
-    // The value that shipped. If this ever clears 4.5 the maths is wrong.
-    expect(contrastRatio("#98a2b3", colors.canvas)).toBeLessThan(3);
+  it("fails on a value that does not clear the floor, so these can fail", () => {
+    // A mid grey is unreadable on this canvas exactly as it was on the
+    // light one. If this ever clears 3 the maths is wrong.
+    expect(contrastRatio("#3a4354", colors.canvas)).toBeLessThan(3);
+  });
+
+  it("carries a readable white label on the brand fill", () => {
+    // A button label is text, not decoration, so it answers to 4.5:1 —
+    // and this is the assertion that would have caught me picking the
+    // bolder blue by eye. brand is a fill and clears the 3:1 component
+    // floor on the canvas; the label on top of it has to clear 4.5.
+    expect(contrastRatio("#ffffff", colors.brand)).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(colors.brand, colors.canvas)).toBeGreaterThanOrEqual(3);
+  });
+
+  it("keeps all four ink levels distinguishable from each other", () => {
+    // The light ramp could only afford three informational greys; the
+    // fourth was hierarchy bought with legibility. The dark ramp has room
+    // for four, but only if they are actually different — a ramp whose
+    // levels collapse is a ramp that has stopped doing its job.
+    const ramp = ["ink", "ink-label", "ink-body", "ink-muted"] as const;
+    for (let i = 0; i < ramp.length - 1; i += 1) {
+      const brighter = contrastRatio(colors[ramp[i]], colors.canvas);
+      const dimmer = contrastRatio(colors[ramp[i + 1]], colors.canvas);
+      expect(brighter, `${ramp[i]} should read brighter than ${ramp[i + 1]}`).toBeGreaterThan(
+        dimmer,
+      );
+    }
   });
 });
