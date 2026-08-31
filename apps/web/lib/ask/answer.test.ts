@@ -68,6 +68,16 @@ describe("what the model is told", () => {
     expect(SYSTEM_PROMPT).toMatch(/never the number of rows you can see/i);
   });
 
+  it("tells the model not to sweep areas the question did not ask about", () => {
+    // Round 6: "What's overdue?" read invoices, RFIs, material orders AND
+    // compliance — four database round trips to confirm three of them were
+    // fine. Every extra tool is time the person waits.
+    expect(SYSTEM_PROMPT).toMatch(/call the tools the question needs and no more/i);
+    // And the inverse, so this does not turn a genuinely broad question
+    // into a narrow answer.
+    expect(SYSTEM_PROMPT).toMatch(/cast wide only when the question is wide/i);
+  });
+
   it("forbids arithmetic in as many words", () => {
     // The single rule the whole design rests on. If a future edit softens
     // this sentence, every number in every answer becomes suspect.

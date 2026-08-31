@@ -28,9 +28,27 @@ export type AskToolDefinition = {
  * silence. */
 export type AskToolOutcome = { content: string; isError?: boolean };
 
-export type AskConversationResult =
-  | { ok: true; text: string; toolsCalled: string[] }
-  | { ok: false; error: string; reason: "refusal" | "no_text" | "exhausted" | "api" };
+export type AskFailureReason = "refusal" | "no_text" | "exhausted" | "api";
+
+/** What the caller can render while the answer is being built.
+ *
+ * A multi-tool question takes 8-11 seconds against a real database, and a
+ * static "Reading your records…" for that long reads as a hang. These say
+ * what is actually happening.
+ */
+export type AskEvent =
+  /** A round of tool calls has started. `names` is what is being read. */
+  | { type: "tools"; names: string[] }
+  /** Discard any text shown so far: it was preamble before a tool call,
+   * not the answer. Without this a "let me check…" line would sit above
+   * the real answer forever. */
+  | { type: "reset" }
+  /** Tool results are in; what streams from here is the answer, not
+   * preamble. Lets the caller stop styling streamed text as provisional. */
+  | { type: "answering" }
+  | { type: "text"; delta: string }
+  | { type: "done"; toolsCalled: string[] }
+  | { type: "error"; reason: AskFailureReason };
 
 export type AskConversationOptions = {
   system: string;
@@ -51,9 +69,9 @@ export function anthropicIsConfigured(): boolean {
   return Boolean(process.env.ANTHROPIC_API_KEY?.trim());
 }
 
-export async function runToolConversation(
+export async function* streamToolConversation(
   options: AskConversationOptions,
-): Promise<AskConversationResult> {
+): AsyncGenerator<AskEvent> {
   const client = new Anthropic();
   const messages: Anthropic.MessageParam[] = [
     { role: "user", content: options.question },
@@ -63,7 +81,13 @@ export async function runToolConversation(
 
   try {
     for (let pass = 0; pass < maxPasses; pass += 1) {
-      const response = await client.messages.create({
+      // Once a round of tools has run, everything after it is the answer.
+      if (pass > 0) yield { type: "answering" };
+
+      // Streamed so text reaches the screen as it is written. The tool
+      // rounds before it still take as long as the database does; what
+      // changes is that the last few seconds stop being a blank wait.
+      const stream = client.messages.stream({
         model: options.model ?? DEFAULT_MODEL,
         max_tokens: 4096,
         system: options.system,
@@ -71,10 +95,22 @@ export async function runToolConversation(
         messages,
       });
 
+      for await (const event of stream) {
+        if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+          yield { type: "text", delta: event.delta.text };
+        }
+      }
+
+      // finalMessage() collects the whole turn, so stop_reason and the
+      // tool_use blocks are read from one assembled message rather than
+      // reconstructed from deltas.
+      const response = await stream.finalMessage();
+
       // A safety decline arrives as a 200 with no useful content. Reported
       // as itself rather than rendered as a blank answer.
       if (response.stop_reason === "refusal") {
-        return { ok: false, error: "The assistant declined that one.", reason: "refusal" };
+        yield { type: "error", reason: "refusal" };
+        return;
       }
 
       if (response.stop_reason === "tool_use") {
@@ -82,6 +118,12 @@ export async function runToolConversation(
           (block): block is Anthropic.ToolUseBlock => block.type === "tool_use",
         );
         messages.push({ role: "assistant", content: response.content });
+
+        // Anything streamed on this turn was preamble before a tool call,
+        // not the answer. Drop it rather than leaving "let me check…"
+        // sitting above the real answer.
+        yield { type: "reset" };
+        yield { type: "tools", names: calls.map((call) => call.name) };
 
         // Run them together. The model asks for several at once precisely
         // when they are independent, and answering "what needs me today"
@@ -124,32 +166,35 @@ export async function runToolConversation(
         continue;
       }
 
-      const text = response.content
-        .filter((block): block is Anthropic.TextBlock => block.type === "text")
-        .map((block) => block.text)
-        .join("")
-        .trim();
-
-      if (!text) {
-        return { ok: false, error: "No answer came back.", reason: "no_text" };
+      // The text of this turn already streamed above.
+      const hasText = response.content.some(
+        (block) => block.type === "text" && block.text.trim() !== "",
+      );
+      if (!hasText) {
+        yield { type: "error", reason: "no_text" };
+        return;
       }
-      return { ok: true, text, toolsCalled };
+      yield { type: "done", toolsCalled };
+      return;
     }
 
-    // Out of passes. Saying so beats returning a half-formed turn as an
-    // answer.
-    return { ok: false, error: "That needed more steps than allowed.", reason: "exhausted" };
+    // Out of passes. Saying so beats leaving a half-formed turn on screen
+    // as though it were the answer.
+    yield { type: "reset" };
+    yield { type: "error", reason: "exhausted" };
   } catch (err) {
-    if (err instanceof Anthropic.RateLimitError) {
-      return { ok: false, error: "Rate limited.", reason: "api" };
-    }
-    if (err instanceof Anthropic.AuthenticationError) {
-      return { ok: false, error: "The API key was rejected.", reason: "api" };
-    }
-    if (err instanceof Anthropic.APIError) {
+    // Whatever streamed so far is not an answer — clear it before saying
+    // what went wrong, or the error reads as a footnote to a partial one.
+    yield { type: "reset" };
+    if (
+      err instanceof Anthropic.RateLimitError ||
+      err instanceof Anthropic.AuthenticationError ||
+      err instanceof Anthropic.APIError
+    ) {
       // Deliberately not err.message — it can carry request details, and
       // the caller puts this on screen.
-      return { ok: false, error: "The assistant is unavailable.", reason: "api" };
+      yield { type: "error", reason: "api" };
+      return;
     }
     throw err;
   }
