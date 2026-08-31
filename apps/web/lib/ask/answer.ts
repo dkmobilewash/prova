@@ -1,4 +1,8 @@
-import { anthropicIsConfigured, runToolConversation } from "@prova/integrations";
+import {
+  anthropicIsConfigured,
+  streamToolConversation,
+  type AskEvent,
+} from "@prova/integrations";
 import { KNOWN_GAPS, TOOLS, type Citation, type ToolName } from "./tools";
 import { runTool } from "./handlers";
 
@@ -66,19 +70,6 @@ If the question is ambiguous in a way that changes the answer, ask one short que
 
 export type AskCitation = Citation;
 
-export type AskResult =
-  | {
-      ok: true;
-      answer: string;
-      /** The pages the facts came from, deduplicated, in the order the
-       * tools were called — so a claim can be checked rather than trusted. */
-      citations: AskCitation[];
-      /** Which tools ran. Shown in the UI so the answer is auditable, and
-       * the fastest way to see WHY an answer is wrong when it is. */
-      toolsUsed: ToolName[];
-    }
-  | { ok: false; error: string };
-
 /** Trims a tool result to what the model needs to answer.
  *
  * Rows are already scoped to one company, but a company with hundreds of
@@ -128,26 +119,44 @@ function messageFor(reason: "refusal" | "no_text" | "exhausted" | "api"): string
   }
 }
 
-export async function askAboutCompany(
-  companyId: string,
-  question: string,
-): Promise<AskResult> {
-  const trimmed = question.trim();
-  if (!trimmed) return { ok: false, error: "Ask a question first." };
-  if (trimmed.length > 1000) {
-    return { ok: false, error: "That question is too long. Try asking it in a sentence or two." };
+/** What the browser receives, one JSON object per line.
+ *
+ * Citations ride on `done` rather than being sent up front: an answer that
+ * called no tool must carry no links, and that is not known until the
+ * conversation ends. */
+export type AskStreamEvent =
+  | { type: "tools"; names: ToolName[] }
+  | { type: "reset" }
+  | { type: "text"; delta: string }
+  | { type: "done"; citations: AskCitation[]; toolsUsed: ToolName[] }
+  | { type: "error"; error: string };
+
+function invalid(question: string): string | null {
+  if (!question) return "Ask a question first.";
+  if (question.length > 1000) {
+    return "That question is too long. Try asking it in a sentence or two.";
   }
   if (!anthropicIsConfigured()) {
-    return {
-      ok: false,
-      error: "Ask isn't set up yet — it needs an Anthropic API key on the server.",
-    };
+    return "Ask isn't set up yet — it needs an Anthropic API key on the server.";
+  }
+  return null;
+}
+
+export async function* streamAnswer(
+  companyId: string,
+  question: string,
+): AsyncGenerator<AskStreamEvent> {
+  const trimmed = question.trim();
+  const problem = invalid(trimmed);
+  if (problem) {
+    yield { type: "error", error: problem };
+    return;
   }
 
   const citations: AskCitation[] = [];
   const toolsUsed: ToolName[] = [];
 
-  const result = await runToolConversation({
+  const events = streamToolConversation({
     system: SYSTEM_PROMPT,
     question: trimmed,
     tools: TOOLS,
@@ -176,15 +185,28 @@ export async function askAboutCompany(
     },
   });
 
-  if (!result.ok) return { ok: false, error: messageFor(result.reason) };
-
-  // Citations only where a tool actually ran. An answer built from no data
-  // — a refusal to guess, a clarifying question — must not carry links
-  // implying it was sourced from the rows.
-  return {
-    ok: true,
-    answer: result.text,
-    citations: toolsUsed.length ? citations : [],
-    toolsUsed,
-  };
+  for await (const event of events) {
+    switch (event.type) {
+      case "text":
+      case "reset":
+        yield event;
+        break;
+      case "tools":
+        yield { type: "tools", names: event.names as ToolName[] };
+        break;
+      case "error":
+        yield { type: "error", error: messageFor(event.reason) };
+        return;
+      case "done":
+        // Citations only where a tool actually ran. An answer built from
+        // no data — a refusal to guess, a clarifying question — must not
+        // carry links implying it was sourced from the rows.
+        yield {
+          type: "done",
+          citations: toolsUsed.length ? citations : [],
+          toolsUsed,
+        };
+        return;
+    }
+  }
 }
