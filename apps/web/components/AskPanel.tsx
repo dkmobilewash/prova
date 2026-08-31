@@ -15,11 +15,15 @@ import type { AskResult } from "@/lib/ask/answer";
 
 /** Shown until someone types. Each one is a question this app can actually
  * answer — an example that returns "I don't have that" teaches people the
- * feature does not work. */
+ * feature does not work.
+ *
+ * And none of them names a specific job. One did, and the job did not
+ * exist in the data: a chip that asks about a job you do not have is the
+ * same broken promise, dressed as a worked example. */
 const EXAMPLES = [
   "What's overdue and who do I chase first?",
   "Which drawings am I not building to the latest revision of?",
-  "What's left on the punch list at Riverside?",
+  "What's left on the punch list?",
   "Anything expiring I should renew?",
 ];
 
