@@ -2,9 +2,20 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Single dark theme, not toggleable — see ARCHITECTURE.md-adjacent design
-   decision: Phase-lettered visual pass, going for a modern SaaS dashboard
-   look (dark sidebar, blue accent) rather than the light default. */
+/* The body stays dark, and that is now a deliberate second decision
+   rather than the original one.
+ 
+   The light theme was meant to land here, with other pages merely looking
+   inconsistent until a follow-up pass converted them. They did not merely
+   look inconsistent: browser testing found unreadable content on 15 of 17
+   pages — most seriously an entire column of money on /cash-flow
+   rendering white-on-white, because that table sits directly on the page
+   background rather than inside a card.
+ 
+   So the light surface is scoped to what has actually been converted. The
+   dashboard opts in; every other page keeps the ground its classes were
+   written against, and converts when someone converts it. See the
+   checklist in the PR. */
 body {
   background-color: theme("colors.slate.950");
   color: theme("colors.slate.100");

@@ -12,6 +12,179 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### Three of the six fixes didn't work, and the theme change was wrong (Diego)
+
+The re-test found the first attempt shallow in three places. Recording what
+was actually wrong, because two of them are the same mistake twice.
+
+**The overdue disagreement survived the fix.** Dashboard still said 1
+invoice / $1,000; `/cash-flow` still said 3 / $2,100. I had copied the
+rule's SHAPE and missed its content: `calculateArAgingInvoice` uses
+`paymentTermsDays ?? 0`, so a GC with no stated terms is due ON ISSUE. My
+version returned null for that case and called those invoices undated.
+
+**Then `/cash-flow` contradicted itself again, differently.** My first fix
+made the forecast compare instants (`date < asOf`) while the aging table
+floors to whole days — so an invoice due today was overdue in one table and
+current in the other by lunchtime. I moved the bug rather than removing it.
+
+Both are the same error: two implementations of one rule. `cash-flow.ts`
+now exports `effectiveDueDateFor`, `daysPastDueFor` and `isOverdue`, and
+the aging table, the forecast and the dashboard all call them. Five tests
+pin the two cases that kept slipping, mutation-checked.
+
+**The theme change was wrong, and is scoped back.** The plan was: convert
+the shared components and the dashboard, leave other pages looking
+inconsistent until a follow-up. They did not merely look inconsistent. On a
+light canvas, 15 of 17 pages had content that could not be read — most
+seriously the entire Balance column of `/cash-flow`'s AR aging table
+rendering white-on-white, and buttons like "Add a licence" and "Log a
+toolbox talk" invisible.
+
+My first answer to that was to recolour headings and subtitles, which was
+pattern-matching rather than looking: it fixed 21 h1s and missed h2s,
+buttons and table cells, and missed `/settings` entirely.
+
+So the light surface is now scoped to what has actually been converted. The
+body stays dark, the chrome stays dark, and the dashboard carries its own
+`bg-canvas`. Every other page renders exactly as it did before this branch
+— the diff against main outside the dashboard is now three files.
+
+That is a smaller claim than the brief asked for, and it is the honest one:
+the tokens exist and one screen is built on them, rather than a theme
+half-applied over pages that break under it. The conversion is a page at a
+time, and each page is readable before and after.
+
+Not a defect, still unproven: gross margin renders "—" because no job in
+that dataset has earned revenue, so neither side of the 35% colour rule has
+been exercised.
+
+
+### Six things browser testing found in the new dashboard (Diego)
+
+**The two pages disagreed about which invoices were overdue.** The
+dashboard said one, $1,000; `/cash-flow` said three, $2,100. The dashboard
+read only `Invoice.dueAt` and labelled the rest "no due date";
+`calculateArAgingInvoice` has always derived one from the GC's payment
+terms when the invoice carries none. An invoice with no stated date is
+still due — net 30 from issue — and calling it undated hid two overdue
+invoices. Both now use the same rule, and where a date is inferred the row
+says so ("Due 2026-08-28 (terms)") rather than presenting an inference as
+an agreed date.
+
+**`/cash-flow` also disagreed with itself**, which the same run caught: its
+aging table called an invoice two days past due overdue, while its own
+forecast filed it under the current month, because the forecast bucketed on
+"before this month started". Past due is past due whatever month it falls
+in.
+
+**A job with one budgeted line out of seven read "97% under contract
+value".** `calculateJobWip` sums estimated cost as `?? 0`, so six
+unbudgeted lines contributed no forecast cost while their contract value
+still counted — which makes any partly-estimated job look spectacular. A
+number that flatters you for not having estimated is worse than no number.
+`jobHealthSentence` now refuses to forecast below 80% estimate coverage and
+says what is missing instead.
+
+**Clicking a receivable did nothing between 768px and 1024px.** The panel
+is `hidden lg:flex`, but the desktop layout returns at 768px — so for 256px
+of width the page looked fully functional and the rows were silently dead.
+Below the panel's width a row now opens the job instead. Nothing is ever a
+no-op.
+
+**Twenty-one pages had an invisible heading.** Every unconverted page's
+`<h1>` is `text-slate-100`, which was correct on the old dark body and is
+near-white on the new light canvas. The tester found one; it was systemic.
+Their own brief drew the line — inconsistent is expected, unreadable is a
+bug — so the 21 headings and 15 subtitles that sit directly on the canvas
+are now readable. This is NOT the theme conversion: those pages still carry
+their dark cards and will look inconsistent until a second pass.
+
+**The mobile drawer had gone flat** while the rail gained groups, in
+different orders — the exact drift `navItems.tsx` exists to prevent. Both
+render from `NAV_GROUPS` now.
+
+Also fixed: "Nothing in in progress right now."
+
+Not a defect, recorded because it limits what the run proved: gross margin
+showed "—" throughout, because no job in that dataset has earned revenue.
+The null branch renders neutral correctly; neither side of the 35% colour
+rule has been seen against real data.
+
+
+### A dashboard that tells you something before you ask (Diego)
+
+`/dashboard` was a searchable table of jobs. Every number an owner needs on
+a Monday — what is overdue, what is about to lapse, which job is drifting
+past budget, what retainage is due back this month — already existed in the
+data model and appeared only if you went looking for it on the right
+sub-page. The table is still here, at the bottom, unchanged. What is new is
+everything above it: the same figures, asked on load.
+
+Nothing gained a stored column. Overdue totals, over-budget counts, the
+metric bar's revenue and margin — all derived on read through `lib/wip.ts`,
+`lib/retainage.ts` and `lib/gc-reliability.ts`, per ARCHITECTURE.md. A
+saved "over budget" flag is wrong the moment a cost entry lands.
+
+Decisions worth keeping:
+
+**Over budget means forecast, not spend-to-date.** A job that has spent 90%
+of its money at 90% complete is going to plan; the question is where it
+LANDS. `jobIsOverBudget` compares forecast cost at completion against
+contract value, and returns null rather than false when there is no cost
+estimate — reporting "we don't know" as "on budget" is how a figure stops
+meaning anything.
+
+**Margin is blended by summing both sides, not by averaging job margins.**
+A $2M job and a $20k job are not equal evidence of how the business is
+doing. Averaging their margins says they are: a test asserts the difference
+(20.7% vs a naive 55%).
+
+**Margin only turns green above 35%.** A number that is always green
+teaches people to stop reading the colour. The sample 24.6% renders
+neutral, on purpose.
+
+**Job health reads as a sentence.** "Forecast to finish 12% over contract
+value at 64% complete" is something to act on; a bare variance percentage
+in a table is not.
+
+**The detail panel pushes, it does not cover.** The reason to open an
+invoice from a receivables list is to compare it against the rest of the
+list, so a panel that covered the list would remove what you opened it for.
+That is why it is a context with three parts rather than one component —
+a panel rendered inside the column it should push cannot push it.
+
+**The rail expands as an overlay.** A rail that widens by shifting the page
+reflows everything you were reading the instant your cursor drifts left.
+
+**The two panel actions nobody built are shown disabled, with the reason.**
+"Send a reminder" has no email channel and "log a call" has no activity
+model. Saying so is more useful than a button that looks real and does
+nothing.
+
+**The rail keeps all 18 routes.** The brief for this work assumed eight of
+them — RFIs, submittals, safety, drawings, material orders, cash flow,
+closeout, estimating — had no route and should render disabled with a
+"coming soon" tooltip. All eight shipped during the day that brief was
+written. Disabling them would have removed working features from the nav,
+so they are grouped and live; the disabled branch exists in the rail for
+whenever something genuinely unbuilt is added.
+
+**Theme is half-migrated, deliberately.** `tailwind.config.ts` now carries
+semantic tokens, and `Card`/`Button`/`StatusBadge`/`Sidebar`/`Topbar` plus
+the new dashboard are built on them. Every other page still carries
+hardcoded dark utilities from the previous pass and will look inconsistent
+until a second conversion pass. That is stated rather than hidden — the
+per-file checklist is in the PR description. Roughly 1,000 hardcoded slate
+utilities remain across 29 pages and 47 components; `jobs/[id]` alone has
+448.
+
+19 tests over the new arithmetic. Sheet 15's company-wide backlog moves to
+Built. Sheet 26's expiration and WIP-variance rows move to Partial and NOT
+Built — surfacing something on a screen someone opens is not alerting
+someone who doesn't.
+
+
 ### Finding out that QuickBooks disagrees with you (Diego)
 
 The sync refuses an edit made inside QuickBooks rather than overwriting
