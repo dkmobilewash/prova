@@ -43,5 +43,18 @@ export default clerkMiddleware(async (auth, req) => {
 });
 
 export const config = {
-  matcher: ["/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)", "/(api|trpc)(.*)"],
+  matcher: [
+    "/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
+    "/(api|trpc)(.*)",
+    // Clerk's auto-proxy path. On a production *.vercel.app host there is no
+    // clerk.<domain> CNAME to point at — the domain is Vercel's, so no DNS
+    // record can be added to it — and Clerk proxies its Frontend API through
+    // the app's own origin at /__clerk instead. Middleware has to run on
+    // that path for the proxy to be routed.
+    //
+    // Deliberately NOT in isProtectedRoute above: this is the path a person
+    // who is NOT yet signed in uses to sign in. Protecting it would lock
+    // everyone out of the front door.
+    "/__clerk/:path*",
+  ],
 };
