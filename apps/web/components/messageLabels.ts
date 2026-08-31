@@ -144,3 +144,30 @@ export function channelLabel(channel: string) {
 export function recipient(message: MessageData) {
   return message.toName ? `${message.toName} <${message.toAddress}>` : message.toAddress;
 }
+
+/** What a send the provider REFUSED goes down as, versus one it accepted
+ * but returned no id for.
+ *
+ * FAILED means "never reached the provider at all" — see `messageState`.
+ * An accepted send reached it, and the mail has almost certainly gone.
+ * Recording that as FAILED tells someone their email didn't send, they
+ * send it again, and the GC gets two copies. It is QUEUED, which is what
+ * actually happened, and it will surface as unconfirmed after a day
+ * because no webhook can ever match a message with no provider id. */
+export function failureEventType(mayHaveSent: boolean): "QUEUED" | "FAILED" {
+  return mayHaveSent ? "QUEUED" : "FAILED";
+}
+
+/** Did this message get as far as the provider?
+ *
+ * Guards deletion. A provider id is the obvious signal, but not the only
+ * one: a send the provider accepted without returning an id has no id and
+ * still went to a real person, and deleting that record would destroy the
+ * evidence that they received it. Any event other than FAILED means it got
+ * there — FAILED is the only event we record for a send that never did. */
+export function reachedProvider(
+  providerMessageId: string | null,
+  events: { type: string }[],
+): boolean {
+  return providerMessageId !== null || events.some((e) => e.type !== "FAILED");
+}

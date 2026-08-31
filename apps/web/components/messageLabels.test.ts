@@ -5,9 +5,11 @@ import {
   arrived,
   channelLabel,
   deliveryRate,
+  failureEventType,
   messageState,
   needsAttention,
   newestFirst,
+  reachedProvider,
   recipient,
   stale,
   stateLabel,
@@ -216,5 +218,50 @@ describe("presentation helpers", () => {
     const withName = { ...msg([]), toName: "Dana Reyes", toAddress: "dana@gc.example" };
     expect(recipient(withName)).toBe("Dana Reyes <dana@gc.example>");
     expect(recipient(msg([]))).toBe("super@gc.example");
+  });
+});
+
+describe("failureEventType", () => {
+  it("records a refused send as FAILED", () => {
+    expect(failureEventType(false)).toBe("FAILED");
+  });
+
+  it("records an accepted-but-untrackable send as QUEUED, not FAILED", () => {
+    // The provider took it. The mail has gone. Calling that FAILED tells
+    // someone their email didn't send, they send it again, and the GC gets
+    // two copies — which is worse than a late one.
+    expect(failureEventType(true)).toBe("QUEUED");
+  });
+
+  it("leaves an accepted send in a state that reads as unconfirmed", () => {
+    // No provider id means no webhook can ever match it, so it must not
+    // read as delivered — it should sit in flight and go stale.
+    const state = messageState([ev(failureEventType(true), "2026-08-28T10:00:00Z")]);
+    expect(state).toBe("IN_FLIGHT");
+    expect(state).not.toBe("DELIVERED");
+  });
+});
+
+describe("reachedProvider", () => {
+  it("is true once there is a provider id", () => {
+    expect(reachedProvider("re_123", [])).toBe(true);
+  });
+
+  it("is false for a send that never got there", () => {
+    expect(reachedProvider(null, [{ type: "FAILED" }])).toBe(false);
+  });
+
+  it("is false with no id and no events at all", () => {
+    expect(reachedProvider(null, [])).toBe(false);
+  });
+
+  it("is TRUE for an accepted send with no id — the record must not be deletable", () => {
+    // The provider returned no id, so providerMessageId is null, but a real
+    // person received this. Deleting it would destroy the evidence.
+    expect(reachedProvider(null, [{ type: "QUEUED" }])).toBe(true);
+  });
+
+  it("is true once anything at all has been reported about it", () => {
+    expect(reachedProvider(null, [{ type: "FAILED" }, { type: "DELIVERED" }])).toBe(true);
   });
 });

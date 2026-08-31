@@ -3,6 +3,7 @@ import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { emailSetupProblem } from "@prova/integrations";
 import { MessageRow } from "@/components/MessageRow";
+import { MessageComposer } from "@/components/MessageComposer";
 import { deliveryRate, needsAttention, stale } from "@/components/messageLabels";
 
 /** Stored at UTC midnight, rendered in UTC — same rule as every other date
@@ -22,6 +23,12 @@ export default async function MessagesPage({
 
   const today = new Date().toISOString().slice(0, 10);
   const setupProblem = emailSetupProblem();
+
+  const jobs = await prisma.job.findMany({
+    where: { companyId: company.id },
+    select: { id: true, name: true },
+    orderBy: { name: "asc" },
+  });
 
   const messages = await prisma.outboundMessage.findMany({
     where: { companyId: company.id },
@@ -94,6 +101,10 @@ export default async function MessagesPage({
           </p>
         </div>
       )}
+
+      <div className="mb-6">
+        <MessageComposer jobs={jobs} canSend={setupProblem === null} />
+      </div>
 
       <div className="mb-4 grid gap-3 sm:grid-cols-3">
         <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">

@@ -24,7 +24,7 @@ export type EmailSendRequest = {
 
 export type EmailSendResult =
   | { ok: true; providerMessageId: string; from: string }
-  | { ok: false; error: string; configured: boolean };
+  | { ok: false; error: string; configured: boolean; mayHaveSent?: boolean };
 
 export type EmailConfig = {
   provider: "resend";
@@ -145,7 +145,16 @@ export async function sendEmail(request: EmailSendRequest): Promise<EmailSendRes
     // Accepted but unidentifiable. Every later webhook joins on this id, so
     // without it the message could never be reconciled — better to record
     // the failure than to log a message we can never learn anything about.
-    return { ok: false, error: "Email provider accepted it but returned no message id", configured: true };
+    // The provider ACCEPTED this. The mail has almost certainly gone; we
+    // just have no id to match a delivery webhook against. Reporting it as
+    // a plain failure is how a user resends and a GC gets two copies, so
+    // the caller is told it may have sent.
+    return {
+      ok: false,
+      error: "The provider accepted this but returned no message id, so delivery can't be tracked for it",
+      configured: true,
+      mayHaveSent: true,
+    };
   }
 
   return { ok: true, providerMessageId: body.id, from };

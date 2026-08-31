@@ -3,8 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@prova/db";
-import { emailSetupProblem, looksLikeEmail, readEmailConfig, sendEmail } from "@prova/integrations";
+import { looksLikeEmail, readEmailConfig, sendEmail } from "@prova/integrations";
 import { actionFail as fail, actionOk as ok, assertOwner, type ActionResult } from "./shared";
+import { failureEventType, reachedProvider } from "@/components/messageLabels";
 
 /** Actions here RETURN their failures. Production redacts thrown Server
  * Action messages to an opaque digest, and "your email didn't send" is
@@ -31,13 +32,13 @@ async function runAction(fn: () => Promise<ActionResult>): Promise<ActionResult>
   }
 }
 
-/** Is sending set up? Read by the page so it can say so plainly instead of
- * offering a button that always fails. */
-export async function emailSendingStatus(): Promise<{ ready: boolean; problem: string | null }> {
-  await requireCompanyContext();
-  const problem = emailSetupProblem();
-  return { ready: problem === null, problem };
-}
+/* `emailSendingStatus` used to live here and was deleted rather than wired
+ * up. It duplicated what `/messages` already does by calling
+ * `emailSetupProblem()` directly in its server component, so there was
+ * never a caller for it and never going to be one. The reachability guard
+ * in lib/actions/reachable.test.ts flags exactly this, and "delete it" is
+ * half of what that failure means — the other half being "the feature has
+ * no entry point", which was true of sendOutboundEmail. */
 
 /** Sends one email and records it, whatever happens.
  *
@@ -94,18 +95,32 @@ export async function sendOutboundEmail(formData: FormData): Promise<ActionResul
     });
 
     if (!result.ok) {
+      // FAILED means "never reached the provider at all" — see
+      // messageState in components/messageLabels.ts. A send the provider
+      // ACCEPTED but returned no id for did reach it, and the mail has
+      // almost certainly gone out. Recording that as FAILED tells a user
+      // their email didn't send, they send it again, and the GC gets two.
+      // It goes down as QUEUED, which is what actually happened, and it
+      // will surface as unconfirmed after a day because no webhook can
+      // ever match a message with no provider id.
       await prisma.outboundMessageEvent.create({
         data: {
           messageId: message.id,
-          type: "FAILED",
-          // Our own clock is correct here: this failure happened in this
-          // process, not at a provider reporting a past event.
+          type: failureEventType(result.mayHaveSent === true),
+          // Our own clock is correct here: this happened in this process,
+          // not at a provider reporting a past event.
           occurredAt: new Date(),
-          detail: result.error,
+          detail: result.mayHaveSent
+            ? `${result.error}. Treat it as sent — do not send it again without checking with them first.`
+            : result.error,
         },
       });
       revalidatePath("/messages");
-      return fail(result.error);
+      return fail(
+        result.mayHaveSent
+          ? `${result.error}. It has most likely gone out, so check with them before sending it again — a second copy is worse than a late one.`
+          : result.error,
+      );
     }
 
     await prisma.$transaction([
@@ -143,9 +158,13 @@ export async function deleteOutboundMessage(messageId: string): Promise<ActionRe
     });
     if (!message || message.companyId !== context.company.id) return fail("Message not found");
 
-    if (message.providerMessageId) {
+    // Not just providerMessageId: a send the provider accepted without
+    // returning an id has none, and deleting that would destroy the record
+    // of an email a real person received. Any event other than FAILED means
+    // it reached the provider.
+    if (reachedProvider(message.providerMessageId, message.events)) {
       return fail(
-        "This one actually went out, so its record stays. Only a message that never reached the provider can be removed.",
+        "This one reached the provider, so its record stays. Only a message that never got that far can be removed.",
       );
     }
 

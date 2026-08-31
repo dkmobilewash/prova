@@ -12,6 +12,70 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### The send button that was never built, and a guard so it can't happen again (Cyrus)
+`cyrus/messaging`
+
+Diego caught it in review and he was right: **`sendOutboundEmail` was
+defined, exported, re-exported through the barrel, and called from nowhere.**
+There was no form anywhere in the messages feature. `/messages` was a
+delivery log with no way to create an entry — the counters read 0
+permanently and "Nothing sent yet" was the only reachable state.
+
+The part worth sitting with is why nobody noticed. Typecheck passed, because
+the code is correct; it just isn't used. Lint and build passed, because the
+symbol IS consumed — by the barrel. And **it clicked through clean**, which
+is the one that should sting: a feature with no entry point renders as a
+perfectly working empty state. "I clicked through it" is evidence of nothing
+when the button was never built.
+
+So the fix is two things, and the second matters more than the first.
+
+**The form exists now.** To, name, job, subject, body — disabled while in
+flight, because there is no idempotency key on a send and a second click is
+a second email to a real person.
+
+**And `lib/actions/reachable.test.ts` asserts every exported Server Action
+is called from something.** The barrel and the action's own module are
+excluded from counting as a caller, because a barrel re-export is precisely
+what lets an orphan compile — it looks like a use and is the opposite of
+one. Run against the branch before the fix, it failed on exactly the two
+actions Diego found, with 130 others passing. A failure means one of two
+things and both are worth stopping for: the feature has no entry point, or
+the action is dead.
+
+`emailSendingStatus` was the second kind. It duplicated what `/messages`
+already does by calling `emailSetupProblem()` directly in its server
+component, so it never had a caller and was never going to. Deleted rather
+than wired up.
+
+**Two more of Diego's, both real.**
+
+A provider that ACCEPTS a message but returns no id was being recorded as
+FAILED and reported to the user as a failure — but the mail has gone. They
+resend, and the GC gets two copies. FAILED means "never reached the provider
+at all" in this state machine, and that send reached it. It goes down as
+QUEUED now, which is what actually happened, and it surfaces as unconfirmed
+after a day because no webhook can ever match a message with no provider id.
+The user is told it most likely went out and to check before resending.
+
+That has a second consequence worth naming: such a message has no
+`providerMessageId`, so the delete guard would have let someone destroy the
+record of an email a real person received. Deletion now refuses on any event
+other than FAILED, not just on the presence of an id.
+
+Both rules are pure functions in `messageLabels.ts` and mutation-checked:
+recording an accepted send as FAILED fails two tests, and trusting only the
+provider id in the delete guard fails two more.
+
+Verified by running it, not by reading it. With deliberately fake
+credentials in a gitignored `.env.local`, the compose form renders, submits,
+Resend refuses the key, the error reads "API key is invalid" in the form,
+the message is recorded rather than lost, the counters move, and the row
+reads "Never sent". Two-step delete then removed it, which is correct for a
+message that never reached the provider. The file was deleted afterwards.
+
+Still not verified, and still can't be by me: a real send with a real key.
+
 ### The app can now send things, and knows whether they arrived (Cyrus)
 `cyrus/messaging`
 
