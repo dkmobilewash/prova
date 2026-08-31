@@ -30,6 +30,8 @@ Never do arithmetic. Not addition, not percentages, not differences, not "roughl
 
 Say the number the tool gave you, in the tool's own terms. If a tool reports \`daysOverdue: 42\`, the invoice is 42 days overdue. Do not convert it to weeks or months.
 
+A COUNT IS A NUMBER, and counting a list is arithmetic. Every tool result that contains rows also contains a \`count\`. When you say how many of something there are, that figure must be the \`count\` you were given — never the number of rows you can see, never the number of lines you are about to write, and never a subtotal you worked out. If you group several rows onto one line, the count still describes rows, not lines. If you want a count of some subset — how many are overdue, how many are unpaid — and no tool gave you that exact number, do not produce one: describe the subset without counting it, or say the number is not available.
+
 WHAT YOU MUST NOT CLAIM
 
 Read each tool's description before you rely on it. Several report something narrower than the obvious question:
@@ -87,10 +89,26 @@ const MAX_ROWS_PER_TOOL = 40;
 
 export function forModel(data: unknown): unknown {
   if (!Array.isArray(data)) return data;
-  if (data.length <= MAX_ROWS_PER_TOOL) return data;
+
+  // ALWAYS send the count, even for a short list.
+  //
+  // Browser testing caught this: asked what needed attention, it answered
+  // "three overdue invoices" and then listed four, against a tile reading
+  // "4 invoices past due". Asked again it said four. The per-invoice
+  // figures were right every time in fourteen questions — only the
+  // aggregate moved, and an aggregate is what someone skims.
+  //
+  // The cause was mine. The rule is that the model never does arithmetic,
+  // and counting a list is arithmetic; I handed it an array and no count,
+  // so counting was the only way to answer. A number it is given cannot
+  // drift between two runs of the same question. A number it works out
+  // can, and did.
+  const count = data.length;
+  if (count <= MAX_ROWS_PER_TOOL) return { count, rows: data };
   return {
+    count,
     rows: data.slice(0, MAX_ROWS_PER_TOOL),
-    note: `Showing the first ${MAX_ROWS_PER_TOOL} of ${data.length}. Say that the list is longer than what you are showing.`,
+    note: `Showing the first ${MAX_ROWS_PER_TOOL} of ${count}. Say that the list is longer than what you are showing, and use count for how many there are.`,
   };
 }
 
@@ -144,9 +162,15 @@ export async function askAboutCompany(
           citations.push(citation);
         }
       }
+      if (result.unavailable) {
+        return { content: JSON.stringify({ unavailable: result.unavailable }) };
+      }
+      const payload = forModel(result.data);
       return {
         content: JSON.stringify(
-          result.unavailable ? { unavailable: result.unavailable } : forModel(result.data),
+          result.summary && typeof payload === "object" && payload !== null
+            ? { ...result.summary, ...payload }
+            : payload,
         ),
       };
     },

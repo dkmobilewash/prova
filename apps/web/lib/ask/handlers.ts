@@ -464,6 +464,14 @@ async function receivables(companyId: string): Promise<ToolResult> {
 
   return {
     data: outstanding,
+    // The same split the dashboard tile shows. Computed here so the answer
+    // and the tile cannot disagree — which they did, once, in two runs of
+    // the same question.
+    summary: {
+      outstandingInvoiceCount: outstanding.length,
+      overdueInvoiceCount: outstanding.filter((row) => row.daysOverdue > 0).length,
+      notYetDueInvoiceCount: outstanding.filter((row) => row.daysOverdue === 0).length,
+    },
     citations: [
       { label: "Cash flow", href: "/cash-flow" },
       { label: "Today", href: "/dashboard" },

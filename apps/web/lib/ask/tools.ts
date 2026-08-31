@@ -39,6 +39,17 @@ export type Citation = { label: string; href: string };
 export type ToolResult = {
   /** Already-computed values. Numbers here are final. */
   data: unknown;
+  /**
+   * Counts and totals the model would otherwise have to work out for
+   * itself. Anything a person is likely to ask "how many" or "how much"
+   * about belongs here, computed in TypeScript.
+   *
+   * Added after Ask answered "three overdue invoices" and listed four,
+   * against a dashboard tile reading four. It had the rows and no count,
+   * so counting them was the only way to answer, and a number the model
+   * derives can differ between two runs of the same question.
+   */
+  summary?: Record<string, number>;
   citations: Citation[];
   /**
    * Set when the question is reasonable but the data to answer it does not

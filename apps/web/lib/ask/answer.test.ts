@@ -6,14 +6,29 @@ import { KNOWN_GAPS, TOOLS } from "./tools";
  * testable without one is the shape of what the model is handed — which is
  * where this feature's honesty actually lives. */
 describe("forModel", () => {
-  it("passes a short list through untouched", () => {
+  it("sends a count even for a short list", () => {
+    // The bug this exists for: given rows and no count, the model counted
+    // them, said "three overdue invoices" and listed four. A number it is
+    // handed cannot drift between two runs of the same question.
     const rows = [{ a: 1 }, { a: 2 }];
-    expect(forModel(rows)).toBe(rows);
+    expect(forModel(rows)).toEqual({ count: 2, rows });
+  });
+
+  it("counts rows, not the lines an answer might group them into", () => {
+    // The miscount came from grouping two invoices onto one line and then
+    // counting lines. The count is of rows, always.
+    const rows = [{ gc: "A" }, { gc: "B" }, { gc: "B" }, { gc: "C" }];
+    expect((forModel(rows) as { count: number }).count).toBe(4);
   });
 
   it("passes a non-array through untouched", () => {
     const value = { unavailable: "Nothing is overdue." };
     expect(forModel(value)).toBe(value);
+  });
+
+  it("reports the true count when it caps, not the capped length", () => {
+    const rows = Array.from({ length: 200 }, (_, index) => ({ index }));
+    expect((forModel(rows) as { count: number }).count).toBe(200);
   });
 
   it("caps a long list and SAYS it capped it", () => {
@@ -30,7 +45,7 @@ describe("forModel", () => {
 
   it("does not cap a list sitting exactly on the limit", () => {
     const rows = Array.from({ length: 40 }, (_, index) => ({ index }));
-    expect(forModel(rows)).toBe(rows);
+    expect(forModel(rows)).toEqual({ count: 40, rows });
   });
 });
 
@@ -44,6 +59,13 @@ describe("what the model is told", () => {
       expect(SYSTEM_PROMPT, `${gap.topic} is not in the prompt`).toContain(gap.topic);
       expect(SYSTEM_PROMPT, `${gap.topic} has no reason`).toContain(gap.why);
     }
+  });
+
+  it("tells the model a count is a number it must be given", () => {
+    // Supplying `count` is half the fix; the model also has to be told not
+    // to count for itself, or it will keep doing what it already can.
+    expect(SYSTEM_PROMPT).toMatch(/a count is a number/i);
+    expect(SYSTEM_PROMPT).toMatch(/never the number of rows you can see/i);
   });
 
   it("forbids arithmetic in as many words", () => {
