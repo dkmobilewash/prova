@@ -1,9 +1,10 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { askQuestion } from "@/lib/actions";
-import type { AskResult } from "@/lib/ask/answer";
+import type { AskStreamEvent } from "@/lib/ask/answer";
+import type { Citation, ToolName } from "@/lib/ask/tools";
+import { readingLabel } from "@/lib/ask/toolLabels";
 
 /** The ask box on the dashboard.
  *
@@ -29,27 +30,135 @@ const EXAMPLES = [
 
 export function AskPanel() {
   const [question, setQuestion] = useState("");
-  const [result, setResult] = useState<AskResult | null>(null);
   const [asked, setAsked] = useState("");
-  const [isPending, startTransition] = useTransition();
+  const [answer, setAnswer] = useState("");
+  const [citations, setCitations] = useState<Citation[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
+  // True while nothing has been read yet. Text streamed in that window is
+  // the model talking to itself before it calls a tool — it gets discarded
+  // when results arrive, so it must not be styled as the answer. Browser
+  // testing watched a sentence appear at 2.4s in answer type and vanish at
+  // 3.6s, which reads as a glitch rather than as progress.
+  const [provisional, setProvisional] = useState(true);
+  const [isAsking, setIsAsking] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
-  function ask(text: string) {
-    const trimmed = text.trim();
-    if (!trimmed || isPending) return;
-    setAsked(trimmed);
-    setResult(null);
-    startTransition(async () => {
-      setResult(await askQuestion(trimmed));
-    });
+  // Asking something else, or leaving, must stop the request in flight —
+  // otherwise a slow answer to an abandoned question arrives later and
+  // overwrites the one being read.
+  useEffect(() => () => abortRef.current?.abort(), []);
+
+  function apply(event: AskStreamEvent) {
+    switch (event.type) {
+      case "tools":
+        setStatus(readingLabel(event.names as ToolName[]));
+        break;
+      case "answering":
+        // Tools are done; what streams from here is the answer itself.
+        setProvisional(false);
+        break;
+      case "reset":
+        setAnswer("");
+        break;
+      case "text":
+        setStatus(null);
+        setAnswer((current) => current + event.delta);
+        break;
+      case "done":
+        setCitations(event.citations);
+        setStatus(null);
+        // An answer that called no tool at all — a refusal, a clarifying
+        // question — never gets an `answering` event, so promote it here
+        // rather than leaving it muted forever.
+        setProvisional(false);
+        break;
+      case "error":
+        setAnswer("");
+        setError(event.error);
+        setStatus(null);
+        break;
+    }
   }
+
+  async function ask(text: string) {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+
+    // A question already in flight is abandoned rather than blocking this
+    // one. Previously the input stayed enabled while the button was
+    // disabled, so pressing Return mid-answer did nothing at all — no new
+    // question, no feedback. Waiting ten seconds to be allowed to ask
+    // something else is not a feature.
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    setAsked(trimmed);
+    setAnswer("");
+    setCitations([]);
+    setError(null);
+    setStatus("Reading your records…");
+    setProvisional(true);
+    setIsAsking(true);
+
+    try {
+      const response = await fetch("/api/ask", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: trimmed }),
+        signal: controller.signal,
+      });
+      if (!response.ok || !response.body) {
+        setError("The assistant is unavailable right now. Try again shortly.");
+        return;
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        // One JSON object per line. A chunk can split a line anywhere, so
+        // the trailing fragment stays in the buffer until its newline
+        // arrives — parsing it early would throw on valid output.
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            apply(JSON.parse(line) as AskStreamEvent);
+          } catch {
+            // A malformed line is a bug on our side; dropping it beats
+            // killing an answer that is otherwise arriving fine.
+          }
+        }
+      }
+    } catch (err) {
+      // An abort is us, not a failure — the next question is already
+      // running and owns the panel now.
+      if ((err as { name?: string }).name !== "AbortError") {
+        setError("The assistant is unavailable right now. Try again shortly.");
+      }
+    } finally {
+      if (abortRef.current === controller) {
+        setIsAsking(false);
+        setStatus(null);
+      }
+    }
+  }
+
+  const hasResult = answer !== "" || error !== null;
 
   return (
     <section className="rounded-lg border border-line-card bg-surface p-4">
       <form
         onSubmit={(event) => {
           event.preventDefault();
-          ask(question);
+          void ask(question);
         }}
         className="flex gap-2"
       >
@@ -69,14 +178,14 @@ export function AskPanel() {
           // one writes nothing, so a repeat is only a wasted call — but a
           // button that looks live during a slow answer invites the click
           // that makes it slower.
-          disabled={isPending || question.trim() === ""}
+          disabled={question.trim() === "" || (isAsking && question.trim() === asked)}
           className="shrink-0 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {isPending ? "Looking…" : "Ask"}
+          {isAsking && question.trim() === asked ? "Looking…" : "Ask"}
         </button>
       </form>
 
-      {!result && !isPending && (
+      {!hasResult && !isAsking && (
         <ul className="mt-3 flex flex-wrap gap-2">
           {EXAMPLES.map((example) => (
             <li key={example}>
@@ -85,7 +194,7 @@ export function AskPanel() {
                 onClick={() => {
                   setQuestion(example);
                   inputRef.current?.focus();
-                  ask(example);
+                  void ask(example);
                 }}
                 className="rounded-full border border-line-card px-3 py-1 text-xs text-ink-body hover:border-brand hover:text-brand"
               >
@@ -96,53 +205,78 @@ export function AskPanel() {
         </ul>
       )}
 
-      {isPending && (
-        <p className="mt-3 text-sm text-ink-body" aria-live="polite">
-          Reading your {asked ? "records" : "data"}…
-        </p>
-      )}
-
-      {result && (
-        <div className="mt-3" aria-live="polite">
+      {(hasResult || isAsking) && (
+        <div className="mt-3">
           <p className="text-xs text-ink-body">{asked}</p>
-          {result.ok ? (
-            <>
-              {/* whitespace-pre-line so a list the model writes as lines
-                  renders as lines. Nothing here is markdown: the answer is
-                  prose and rendering it as HTML would be a hole. */}
-              <p className="mt-1 whitespace-pre-line text-sm text-ink">{result.answer}</p>
-              {result.citations.length > 0 && (
-                <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-ink-body">
-                  {/* The point of these is that a claim can be checked
-                      rather than trusted. An answer with no tool behind it
-                      carries none. */}
-                  <span>Read from</span>
-                  {result.citations.map((citation) => (
-                    <Link
-                      key={citation.href}
-                      href={citation.href}
-                      className="underline hover:text-brand"
-                    >
-                      {citation.label}
-                    </Link>
-                  ))}
-                </p>
-              )}
-            </>
-          ) : (
-            <p className="mt-1 text-sm text-tag-rose-ink">{result.error}</p>
+
+          {/* The status line names what is being read, because a question
+              spanning several areas spends most of its time in the
+              database and a static message for eight seconds reads as a
+              hang rather than as work. */}
+          {status && (
+            <p className="mt-1 text-sm text-ink-body" aria-live="polite">
+              {status}
+            </p>
           )}
-          <button
-            type="button"
-            onClick={() => {
-              setResult(null);
-              setQuestion("");
-              inputRef.current?.focus();
-            }}
-            className="mt-2 text-xs text-ink-body underline hover:text-brand"
-          >
-            Ask something else
-          </button>
+
+          {/* whitespace-pre-line so a list the model writes as lines
+              renders as lines. Nothing here is markdown: the answer is
+              prose, and giving it a path to markup would be a hole.
+              aria-live is polite so a screen reader is not interrupted on
+              every token. */}
+          {answer && (
+            <p
+              className={`mt-1 whitespace-pre-line text-sm ${
+                provisional ? "text-ink-body" : "text-ink"
+              }`}
+              aria-live="polite"
+            >
+              {answer}
+            </p>
+          )}
+
+          {error && (
+            <p className="mt-1 text-sm text-tag-rose-ink" aria-live="polite">
+              {error}
+            </p>
+          )}
+
+          {/* Citations arrive with the last event, not the first, so they
+              appear once the answer is complete. An answer with no tool
+              behind it carries none — links under a refusal would imply a
+              sourcing that did not happen. */}
+          {citations.length > 0 && (
+            <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-ink-body">
+              <span>Read from</span>
+              {citations.map((citation) => (
+                <Link
+                  key={citation.href}
+                  href={citation.href}
+                  className="underline hover:text-brand"
+                >
+                  {citation.label}
+                </Link>
+              ))}
+            </p>
+          )}
+
+          {!isAsking && hasResult && (
+            <button
+              type="button"
+              onClick={() => {
+                abortRef.current?.abort();
+                setAnswer("");
+                setCitations([]);
+                setError(null);
+                setAsked("");
+                setQuestion("");
+                inputRef.current?.focus();
+              }}
+              className="mt-2 text-xs text-ink-body underline hover:text-brand"
+            >
+              Ask something else
+            </button>
+          )}
         </div>
       )}
     </section>

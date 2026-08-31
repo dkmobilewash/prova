@@ -22,6 +22,11 @@ const isProtectedRoute = createRouteMatcher([
   "/drawings(.*)",
   "/closeout(.*)",
   "/field-reports(.*)",
+  // Ask streams over a route handler rather than a Server Action.
+  // requireCompanyContext already redirects an anonymous caller, but this
+  // list is the allowlist a reader checks, and a data route missing from
+  // it looks public whether or not it is.
+  "/api/ask(.*)",
 ]);
 
 // /api/quickbooks/callback is deliberately NOT protected here — see
