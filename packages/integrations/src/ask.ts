@@ -43,6 +43,9 @@ export type AskEvent =
    * not the answer. Without this a "let me check…" line would sit above
    * the real answer forever. */
   | { type: "reset" }
+  /** Tool results are in; what streams from here is the answer, not
+   * preamble. Lets the caller stop styling streamed text as provisional. */
+  | { type: "answering" }
   | { type: "text"; delta: string }
   | { type: "done"; toolsCalled: string[] }
   | { type: "error"; reason: AskFailureReason };
@@ -78,6 +81,9 @@ export async function* streamToolConversation(
 
   try {
     for (let pass = 0; pass < maxPasses; pass += 1) {
+      // Once a round of tools has run, everything after it is the answer.
+      if (pass > 0) yield { type: "answering" };
+
       // Streamed so text reaches the screen as it is written. The tool
       // rounds before it still take as long as the database does; what
       // changes is that the last few seconds stop being a blank wait.

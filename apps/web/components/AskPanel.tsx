@@ -35,6 +35,12 @@ export function AskPanel() {
   const [citations, setCitations] = useState<Citation[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  // True while nothing has been read yet. Text streamed in that window is
+  // the model talking to itself before it calls a tool — it gets discarded
+  // when results arrive, so it must not be styled as the answer. Browser
+  // testing watched a sentence appear at 2.4s in answer type and vanish at
+  // 3.6s, which reads as a glitch rather than as progress.
+  const [provisional, setProvisional] = useState(true);
   const [isAsking, setIsAsking] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -49,6 +55,10 @@ export function AskPanel() {
       case "tools":
         setStatus(readingLabel(event.names as ToolName[]));
         break;
+      case "answering":
+        // Tools are done; what streams from here is the answer itself.
+        setProvisional(false);
+        break;
       case "reset":
         setAnswer("");
         break;
@@ -59,6 +69,10 @@ export function AskPanel() {
       case "done":
         setCitations(event.citations);
         setStatus(null);
+        // An answer that called no tool at all — a refusal, a clarifying
+        // question — never gets an `answering` event, so promote it here
+        // rather than leaving it muted forever.
+        setProvisional(false);
         break;
       case "error":
         setAnswer("");
@@ -70,8 +84,13 @@ export function AskPanel() {
 
   async function ask(text: string) {
     const trimmed = text.trim();
-    if (!trimmed || isAsking) return;
+    if (!trimmed) return;
 
+    // A question already in flight is abandoned rather than blocking this
+    // one. Previously the input stayed enabled while the button was
+    // disabled, so pressing Return mid-answer did nothing at all — no new
+    // question, no feedback. Waiting ten seconds to be allowed to ask
+    // something else is not a feature.
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -81,6 +100,7 @@ export function AskPanel() {
     setCitations([]);
     setError(null);
     setStatus("Reading your records…");
+    setProvisional(true);
     setIsAsking(true);
 
     try {
@@ -158,10 +178,10 @@ export function AskPanel() {
           // one writes nothing, so a repeat is only a wasted call — but a
           // button that looks live during a slow answer invites the click
           // that makes it slower.
-          disabled={isAsking || question.trim() === ""}
+          disabled={question.trim() === "" || (isAsking && question.trim() === asked)}
           className="shrink-0 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {isAsking ? "Looking…" : "Ask"}
+          {isAsking && question.trim() === asked ? "Looking…" : "Ask"}
         </button>
       </form>
 
@@ -205,7 +225,12 @@ export function AskPanel() {
               aria-live is polite so a screen reader is not interrupted on
               every token. */}
           {answer && (
-            <p className="mt-1 whitespace-pre-line text-sm text-ink" aria-live="polite">
+            <p
+              className={`mt-1 whitespace-pre-line text-sm ${
+                provisional ? "text-ink-body" : "text-ink"
+              }`}
+              aria-live="polite"
+            >
               {answer}
             </p>
           )}

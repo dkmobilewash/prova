@@ -54,6 +54,20 @@ Some questions this app simply does not hold the data for. Say so plainly, say w
 Known gaps, so you recognise them:
 ${KNOWN_GAPS.map((gap) => `- ${gap.topic}: ${gap.why}`).join("\n")}
 
+WHICH TOOLS TO CALL
+
+Call the tools the question needs and no more. Every call is a database
+read the person waits through, so a narrow question deserves a narrow
+answer: "what's overdue?" is about money and needs the receivables tool,
+not a sweep of RFIs, deliveries and certificates to confirm they are fine.
+Nobody asked about those, and "everything else is clean" is not worth four
+seconds.
+
+Cast wide only when the question is wide. "What needs my attention today?"
+and "how are we doing?" genuinely span areas, and there you should read
+broadly. The test is whether an area could change the answer to the
+question actually asked.
+
 HOW TO ANSWER
 
 Lead with the answer. Not a preamble, not a restatement of the question.
@@ -126,6 +140,7 @@ function messageFor(reason: "refusal" | "no_text" | "exhausted" | "api"): string
  * conversation ends. */
 export type AskStreamEvent =
   | { type: "tools"; names: ToolName[] }
+  | { type: "answering" }
   | { type: "reset" }
   | { type: "text"; delta: string }
   | { type: "done"; citations: AskCitation[]; toolsUsed: ToolName[] }
@@ -189,6 +204,7 @@ export async function* streamAnswer(
     switch (event.type) {
       case "text":
       case "reset":
+      case "answering":
         yield event;
         break;
       case "tools":
