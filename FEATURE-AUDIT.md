@@ -23,13 +23,13 @@ in flight. Left as-is here rather than guessed at from the outside; the next
 update to touch those sheets should come from whoever actually verified them
 against a fresh clone.
 
-**108 items audited — 73 built / 16 partial / 18 missing / 1 descoped**
+**108 items audited — 76 built / 14 partial / 17 missing / 1 descoped**
 
 | Status | Count |
 | --- | --- |
-| Built | 73 |
-| Partial | 16 |
-| Missing | 18 |
+| Built | 76 |
+| Partial | 14 |
+| Missing | 17 |
 | Descoped | 1 |
 
 ## 01. Company / Org Setup — 5 built · 0 partial · 0 missing
@@ -216,13 +216,13 @@ forecasting shipped 26 Aug 2026.*
 | Built | Toolbox talk / safety meeting logs | `ToolboxTalk`, `/safety` |
 | Built | Daily field reports (crew present, work performed, weather, delays) | `DailyFieldReport`, one per job per day enforced by the database. Filed from the job page or from `/field-reports`, which groups every job's reports into Mon–Sun weeks, derives coverage and NAMES the finished weekdays nothing was filed for (never today, never a day still to come, never a weekend), and writes the week out as plain text to hand a GC — missing days included in that text rather than omitted |
 
-## 18. Scheduling & Crew Dispatch — 1 built · 1 partial · 1 missing
+## 18. Scheduling & Crew Dispatch — 3 built · 0 partial · 0 missing
 
 | Status | Feature | Note |
 | --- | --- | --- |
 | Built | Crew assignment across concurrent jobs | `JobAssignment` — assign/unassign a user to a job |
-| Partial | Multi-job scheduling view (which crews are where, by trade) | `/schedule` lists jobs with dates and crew, and the dashboard's Crews today card shows who is on each in-progress job — both job-first; still no crew-first calendar/board |
-| Missing | Equipment/scaffolding/lift allocation per job | not modeled |
+| Built | Multi-job scheduling view (which crews are where, by trade) | `/deployment` — crew-first, one row per person naming every active job they're on and flagging anyone split across more than one, plus the inverse by-job view with crew and equipment together. `/schedule` still answers when jobs run; this answers where everybody is |
+| Built | Equipment/scaffolding/lift allocation per job | `EquipmentAssignment` — which piece went to which job, when it left and when it came back, both dates entered not stamped. Shown per job on `/deployment`, with a separate list of gear still recorded as out on a job that isn't running |
 
 ## 19. Materials & Vendor Management — 3 built · 0 partial · 0 missing
 
@@ -232,12 +232,12 @@ forecasting shipped 26 Aug 2026.*
 | Built | Material order tracking and delivery status per job | `MaterialOrder` + `MaterialOrderDelivery` + `MaterialOrderCounter`, `/material-orders` — numbers issued per job and never reissued, ordered/promised/delivered dates all entered, partial deliveries as their own rows, late and delivery state derived and never stored. Carries no quantity or unit price by design: that would be a second copy of line-item data (see ARCHITECTURE.md), and material cost already lives on `CostEntry` |
 | Built | Vendor pricing history for estimating | `VendorPriceQuote`, `/vendors/pricing` — what a supplier quoted, on a date entered not stamped, with the source (written quote / invoice / price list / verbal) recorded because the four are not equally trustworthy. Current, expired, stale, cheapest and every movement figure are derived per read, never stored. Compared only WITHIN a unit: MSF is never converted to SF, since the factor is the vendor's to state. Carries no job and no line item by design — a quote is reference data for pricing, and job cost has one home, `CostEntry`. Warns when a `LineItemCatalogEntry` default sits under the cheapest live quote in the same unit, and changes nothing |
 
-## 20. Equipment & Tool Tracking — 1 built · 1 partial · 0 missing
+## 20. Equipment & Tool Tracking — 2 built · 0 partial · 0 missing
 
 | Status | Feature | Note |
 | --- | --- | --- |
 | Built | Company-owned equipment inventory (scaffolding, lifts, mixers) | `Equipment`, `/equipment` |
-| Partial | Equipment assignment/utilization per job (feeds job costing) | `Equipment.jobId` records where a piece is — nothing computes utilisation or pushes cost into job costing yet |
+| Built | Equipment assignment/utilization per job | `EquipmentAssignment` history — current location and utilisation both derived per read, never stored, so `Equipment.assignedJobId` is no longer consulted by anything. Utilisation is measured over a 90-day window clamped to when the record was created (we have no acquisition date), reads null rather than 0% when that window is empty, and counts distinct days so contradictory records can't push it past 100%. Overlapping stays are refused on write and surfaced on `/deployment`. Pushing equipment cost INTO job costing is deliberately not built — that is job costing's lane |
 
 ## 21. Multi-State / Multi-Jurisdiction Support — 1 built · 1 partial · 1 missing
 

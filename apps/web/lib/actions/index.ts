@@ -30,3 +30,4 @@ export * from "./drawings";
 export * from "./closeout";
 export * from "./ask";
 export * from "./vendorPricing";
+export * from "./equipmentAssignments";

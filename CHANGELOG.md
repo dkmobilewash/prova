@@ -12,6 +12,78 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### Where the lift actually is, and the same bug I'd just built a guard for (Cyrus)
+`cyrus/equipment-deployment`
+
+Neither crew nor equipment had a time dimension. `JobAssignment` is a bare
+join; `Equipment.assignedJobId` is one pointer to where a machine is right
+now. So "was that scaffold on Maple in March?" was unanswerable, and
+utilisation was unanswerable for the same reason — nothing recorded when
+anything went out or came back.
+
+`EquipmentAssignment` records the stay: which piece, which job, when it
+left, when it returned. Both dates **entered, not stamped** — recording on
+Friday that a lift went Tuesday has to say Tuesday, or every figure computed
+over the table is wrong by however long the paperwork sat.
+
+**A machine cannot be in two places at once**, and the check is on
+overlapping date RANGES rather than "is there an open one". A backdated
+entry collides with a stay that already closed just as easily, and only
+looking for an open assignment would let the record hold two places at once
+for a week in the past. It runs inside the same transaction as the insert:
+no unique constraint can express this (Postgres would want an exclusion
+constraint; Prisma can't declare one), so the transaction is all that stands
+between us and two dispatchers sending one lift to two jobs.
+
+**Touching at a boundary is deliberately allowed.** Back to the yard in the
+morning, out again after lunch is an ordinary day. A rule that cries wolf on
+the normal case is one people learn to click past.
+
+**Utilisation is honest about its denominator.** Nothing in the schema
+records when a contractor bought a mixer, so the window is clamped to when
+the record was created — "since we started tracking it" rather than a claim
+about the machine's life. It reads null rather than 0% when that window is
+empty, and counts distinct days so two contradictory records can't show a
+lift at 180%.
+
+`/deployment` answers the inverse of `/schedule`: not when jobs run, but
+where everybody is. Crew-first, flagging anyone split across more than one
+job, plus by-job with crew and equipment together, plus gear still recorded
+as out on a job that is not running.
+
+**`Equipment.assignedJobId` is now a stored copy of derived state, so
+nothing reads it.** It is NOT dropped — that is destructive against
+production and Diego's to run. The migration backfills every current
+assignment into an open stay so nothing is lost, with the inferred date
+written into the row's notes, because the old column only ever recorded
+where, never when. The form no longer offers it either: leaving a control
+that writes a column nothing reads would be the same defect as the
+QuickBooks chart-of-accounts mapping that was collected, stored, displayed
+and never read.
+
+**And then I shipped the exact bug I spent the morning building a guard
+for.** `updateEquipmentAssignment` was written, exported, and called from
+nowhere — no edit form. The reachability check caught it on this branch
+within a minute of being copied across, which is the argument for the check
+better than anything I could write. The edit form exists now; `findOverlap`
+already took an `ignoreId` for exactly that case.
+
+34 tests on the pure module, four mutation-checked: an overlap check that
+only looks at open stays fails two, treating touching boundaries as a clash
+fails one, summing stays instead of counting distinct days fails one, and
+ignoring when tracking began fails one.
+
+**Clicking found two more the tests could not.** A stay dated in the future
+— dispatching ahead, which is ordinary — rendered as "out since today",
+reporting a machine as deployed while it sat in the yard. And the heading
+over gear on inactive jobs said "finished job" when the job in front of me
+was an estimate that never started. Both fixed, the first with tests.
+
+Verified by doing it: the return guard refused a date before the stay began,
+a re-send overlapping a CLOSED stay was refused by name and date, a
+non-overlapping one went through, and the backfilled piece read its location
+from history rather than the column.
+
 ### Field reports get their own page, and a week you can hand to a GC (Cyrus)
 `cyrus/field-reports`
 

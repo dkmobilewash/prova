@@ -55,6 +55,7 @@ model Company {
   warrantyPeriods         WarrantyPeriod[]
   warrantyServiceRequests WarrantyServiceRequest[]
   vendorPriceQuotes       VendorPriceQuote[]
+  equipmentAssignments    EquipmentAssignment[]
 }
 
 enum UserRole {
@@ -98,6 +99,7 @@ model User {
   recordedDrawingRevisions             DrawingRevision[]
   recordedWarrantyServiceRequests      WarrantyServiceRequest[]
   recordedVendorPriceQuotes            VendorPriceQuote[]
+  recordedEquipmentAssignments         EquipmentAssignment[]
 
   @@index([companyId])
 }
