@@ -195,7 +195,10 @@ scrollback gets broken by whoever didn't scroll far enough.
   moment anyone adds a migration, and drift shows up on a preview as
   "column does not exist" — which reads as a code bug and is not one. Fix
   it by running the **Migrate demo database** workflow (Actions tab, Run
-  workflow, type `demo` to confirm). It needs the `DEMO_DATABASE_URL` and
+  workflow, and type the demo endpoint id — `ep-patient-lake` — to confirm;
+  the script compares what you typed against the host the secret actually
+  resolves to and refuses before applying anything, which the old `demo`
+  constant could not do). It needs the `DEMO_DATABASE_URL` and
   `DEMO_DIRECT_URL` repository secrets, which are deliberately not named
   after production's so the two can never be confused.
 

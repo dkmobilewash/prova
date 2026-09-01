@@ -36,3 +36,12 @@ export function connectionProblems(
   migrate: ConnectionTarget | null;
   problems: ConnectionProblem[];
 };
+
+/**
+ * Null when `expected` is blank (the assertion is opt-in) or when every
+ * named target's host contains it. A fatal problem otherwise.
+ */
+export function wrongTarget(
+  expected: string | undefined | null,
+  ...targets: (ConnectionTarget | null)[]
+): ConnectionProblem | null;

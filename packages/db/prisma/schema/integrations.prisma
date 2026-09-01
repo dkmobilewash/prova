@@ -1,0 +1,140 @@
+// Third-party integration connections and their sync history.
+//
+// Part of the multi-file Prisma schema in this folder.
+//
+// WHAT THIS IS, AND WHAT IT IS NOT
+//
+// This is the shelf, not the things that will sit on it. It holds no
+// provider-specific logic and no field mappings: one row says "this company
+// has a connection to that provider, in this state", and one row per sync
+// attempt says what happened. Adding a real provider later should mean a
+// registry entry plus its own connect/sync code, not a schema change.
+//
+// It deliberately does NOT absorb QuickBooks. That integration already
+// exists and is live — QuickBooksConnection, QuickBooksEntityLink,
+// QuickBooksAccountMapping and QuickBooksSyncAttempt in billing.prisma —
+// with an account mapping and an idempotency key this generic shape has no
+// place for. Migrating it here would mean rewriting a working, verified
+// integration to fit a table built for none, and would leave two rows able
+// to disagree about whether QuickBooks is connected while it happened. The
+// Integrations page reads QuickBooks' own tables for that card instead, so
+// there is exactly one answer to "are we connected?" per provider.
+
+enum IntegrationProvider {
+  /// Not a real service. A mock provider that connects and disconnects
+  /// against nothing, so the framework itself can be exercised end to end
+  /// before any real OAuth flow is built on top of it. See the registry.
+  SANDBOX
+  QUICKBOOKS
+  DOCUSIGN
+  PROCORE
+  MYCOI
+}
+
+enum IntegrationConnectionStatus {
+  NOT_CONNECTED
+  CONNECTED
+  /// The credential expired or was revoked at the provider. Distinct from
+  /// ERROR because the fix is a person re-authorising, not a retry.
+  NEEDS_REAUTH
+  ERROR
+}
+
+enum IntegrationSyncDirection {
+  PUSH
+  PULL
+  WEBHOOK_RECEIVED
+}
+
+enum IntegrationSyncStatus {
+  SUCCESS
+  FAILURE
+}
+
+/// One connection per company per provider.
+///
+/// TOKENS ARE NEVER STORED IN PLAINTEXT HERE. There are no `accessToken` or
+/// `refreshToken` columns to write one into by accident — only the two
+/// encrypted envelopes below, which are opaque strings that no query can
+/// usefully return to a browser. See apps/web/lib/crypto.ts for the format
+/// and for why the key is its own env var rather than a reused one.
+///
+/// Nothing in this phase writes them: the sandbox provider has no
+/// credential to hold. They exist now so the first real provider is not
+/// also a migration.
+model IntegrationConnection {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  provider IntegrationProvider
+  status   IntegrationConnectionStatus @default(NOT_CONNECTED)
+
+  /// Which account at the provider this points at — the QuickBooks company
+  /// file, the Procore project. Null until a real provider populates it;
+  /// the label is for showing a person WHICH account they connected, since
+  /// "Connected" on its own does not answer the question that matters when
+  /// somebody has two.
+  externalAccountId    String?
+  externalAccountLabel String?
+
+  scopes String[]
+
+  /// AES-256-GCM envelopes, never the credential itself.
+  encryptedAccessToken  String?
+  encryptedRefreshToken String?
+
+  connectedByUserId String?
+  connectedByUser   User?     @relation(fields: [connectedByUserId], references: [id])
+  connectedAt       DateTime?
+  disconnectedAt    DateTime?
+
+  /// The most recent sync's time and outcome.
+  ///
+  /// This IS derivable from IntegrationSyncLog, which normally means this
+  /// codebase would not store it. Kept deliberately, for two reasons: the
+  /// log is append-only and unbounded, so every card on the page would
+  /// otherwise need a sort over it, and a real provider needs "when did we
+  /// last succeed" to decide whether to refresh a token. The drift this
+  /// project's rule guards against is prevented by writing both in the SAME
+  /// transaction as the log row they summarise — never separately.
+  lastSyncedAt   DateTime?
+  lastSyncStatus IntegrationSyncStatus?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  syncLogs IntegrationSyncLog[]
+
+  /// A company connects a given provider once. Reconnecting after a
+  /// disconnect reuses the row rather than accumulating dead ones, so the
+  /// question "is this connected?" has one row to ask, not a list to sort.
+  @@unique([companyId, provider])
+  @@index([companyId])
+}
+
+/// One row per sync attempt or inbound webhook, append-only.
+///
+/// The point of it is that a failure is visible afterwards. An integration
+/// that fails silently is indistinguishable from one nobody used, and this
+/// codebase has been bitten more than once by a green result that was not a
+/// result — so what happened is written down whether it worked or not.
+model IntegrationSyncLog {
+  id           String                @id @default(cuid())
+  connectionId String
+  connection   IntegrationConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  direction IntegrationSyncDirection
+  status    IntegrationSyncStatus
+
+  /// A short human-readable summary — never a raw payload. A payload
+  /// carries customer names, amounts and sometimes credentials, and none of
+  /// those need a second copy sitting in a log table.
+  message String
+
+  /// Entered as the time the thing happened, not stamped at insert, so a
+  /// webhook recorded late still reads at the time it arrived.
+  occurredAt DateTime @default(now())
+
+  @@index([connectionId, occurredAt])
+}

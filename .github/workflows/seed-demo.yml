@@ -1,0 +1,193 @@
+# Runs the demo dataset scripts against the DEMO database, by hand, on purpose.
+#
+# Sibling of migrate-demo.yml and it exists for the same reason: the person
+# who owns the demo connection strings runs and clicks rather than builds,
+# and the alternative is reading those strings out to a second person over
+# Signal so they can put them in a .env. Fewer copies of a credential is the
+# whole game. This needs no checkout, no Node, no pnpm — it is a button.
+#
+# It never fires on its own. Production's secrets are not in scope for this
+# job at all: only DEMO_DATABASE_URL and DEMO_DIRECT_URL are mapped, and
+# they are named differently on purpose so the two can never be confused.
+#
+# THE ORDER MATTERS, and the scripts enforce it rather than trusting you:
+#
+#   1. list-scratch    see what hand-entered rows are there. Changes nothing.
+#   2. delete-scratch  remove them. Refuses while a [demo] dataset exists,
+#                      because a safety incident carries an employee name,
+#                      not a tag, so seeded and typed rows cannot always be
+#                      told apart — the order is made explicit instead of
+#                      guessed at.
+#   3. seed            build the demo dataset.
+#
+# To rebuild from scratch later: undo, then seed. `undo` removes only rows
+# this repo generated (they carry a [demo] mark); it cannot touch anything a
+# person typed.
+#
+# SIGN IN TO A PREVIEW ONCE BEFORE THE FIRST SEED. The scripts are scoped to
+# ONE company — the oldest, or `company_id` — and a database with no company
+# has nothing to scope to. They stop and say so rather than inventing one.
+#
+# WHY YOU TYPE THE HOST RATHER THAN "demo"
+#
+# migrate-demo.yml asks you to type "demo", which proves you read the button.
+# This asks for the endpoint id, which proves something better: the scripts
+# compare what you typed against the host DEMO_DATABASE_URL actually resolves
+# to, and refuse before a single write if they disagree. A constant could not
+# catch a secret holding the wrong connection string; this does. Deriving it
+# from the secret would make the check a tautology and is exactly what not to
+# do.
+#
+# An endpoint id is not a credential — CLAUDE.md names all three in the open,
+# and the rule there is to name the endpoint rather than say "the database".
+# Connection strings are the secret; hostnames are the whole point.
+#
+# REQUIRED SECRETS:
+#   DEMO_DATABASE_URL  the pooled Neon endpoint for the demo project
+#   DEMO_DIRECT_URL    the DIRECT endpoint of that SAME demo project
+
+name: Seed demo database
+
+on:
+  workflow_dispatch:
+    inputs:
+      expect_host:
+        # No `default:` on a required input. `required: true` with
+        # `default: ""` is contradictory, and GitHub rejects the whole file
+        # for it silently — no error, no failed run, the workflow simply
+        # never appears in the Actions tab. That cost three rounds of
+        # "I don't see a button" on migrate-demo.yml.
+        description: 'Neon endpoint id of the DEMO database, e.g. ep-patient-lake'
+        required: true
+      operation:
+        description: 'What to run'
+        required: true
+        default: seed
+        type: choice
+        options:
+          - seed
+          - undo
+          - list-scratch
+          - delete-scratch
+      company_id:
+        description: 'Optional: company id to scope to. Blank = the oldest company.'
+        required: false
+
+concurrency:
+  group: seed-demo
+  cancel-in-progress: false
+
+jobs:
+  seed-demo:
+    name: Run a demo dataset script against the demo database
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check the typed endpoint id
+        env:
+          EXPECT_HOST: ${{ inputs.expect_host }}
+        run: |
+          set -e
+          set -o pipefail
+          trimmed=$(printf '%s' "$EXPECT_HOST" | tr -d '[:space:]')
+          if [ -z "$trimmed" ]; then
+            echo "::error::No endpoint id given. Nothing ran."
+            exit 1
+          fi
+          case "$trimmed" in
+            postgres://*|postgresql://*|*@*)
+              echo "::error::That looks like a connection string, not an endpoint id."
+              echo "Enter only the host part, e.g. ep-patient-lake. Nothing ran."
+              exit 1
+              ;;
+          esac
+
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Fail early if the demo secrets are missing
+        env:
+          DEMO_DATABASE_URL: ${{ secrets.DEMO_DATABASE_URL }}
+          DEMO_DIRECT_URL: ${{ secrets.DEMO_DIRECT_URL }}
+        run: |
+          set -e
+          missing=""
+          [ -z "$DEMO_DATABASE_URL" ] && missing="$missing DEMO_DATABASE_URL"
+          [ -z "$DEMO_DIRECT_URL" ] && missing="$missing DEMO_DIRECT_URL"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secret(s):$missing"
+            echo "Add them under Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+
+      - run: pnpm install --frozen-lockfile
+
+      # This workflow can land on main before the scripts it calls do — it
+      # was written against an unmerged branch. Without this the failure is
+      # ERR_MODULE_NOT_FOUND, which reads as a broken workflow rather than
+      # as "that PR has not merged yet".
+      - name: Check the scripts are present
+        working-directory: packages/db
+        run: |
+          set -e
+          for f in scripts/seed-demo.mjs scripts/clean-scratch-data.mjs; do
+            if [ ! -f "$f" ]; then
+              echo "::error::packages/db/$f is missing on this branch."
+              echo "The demo dataset scripts arrive with PR #51. Nothing ran."
+              exit 1
+            fi
+          done
+
+      # The demo secrets are mapped onto the names the scripts read, HERE and
+      # nowhere else. Both guard variables get the same typed value because
+      # they are the same assertion: "the database I mean is this one."
+      - name: Run
+        working-directory: packages/db
+        env:
+          DATABASE_URL: ${{ secrets.DEMO_DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.DEMO_DIRECT_URL }}
+          SEED_EXPECT_HOST: ${{ inputs.expect_host }}
+          SCRATCH_EXPECT_HOST: ${{ inputs.expect_host }}
+          SEED_COMPANY_ID: ${{ inputs.company_id }}
+          OPERATION: ${{ inputs.operation }}
+        run: |
+          set -e
+          set -o pipefail
+          case "$OPERATION" in
+            seed)           node scripts/seed-demo.mjs ;;
+            undo)           node scripts/seed-demo.mjs --undo ;;
+            list-scratch)   node scripts/clean-scratch-data.mjs ;;
+            delete-scratch) node scripts/clean-scratch-data.mjs --delete ;;
+            *)
+              echo "::error::Unknown operation '$OPERATION'. Nothing ran."
+              exit 1
+              ;;
+          esac
+
+      # Diego went looking for the migrate-demo result three times before
+      # finding it inside a collapsed step. The outcome belongs on the run's
+      # own page, where the green tick is.
+      - name: Say what happened
+        if: always()
+        env:
+          OPERATION: ${{ inputs.operation }}
+          EXPECT_HOST: ${{ inputs.expect_host }}
+          STATUS: ${{ job.status }}
+        run: |
+          {
+            echo "### $OPERATION — $STATUS"
+            echo ""
+            echo "Target asserted as \`$EXPECT_HOST\`."
+            echo ""
+            if [ "$STATUS" != "success" ]; then
+              echo "Open the **Run** step above for the reason. A refusal there"
+              echo "means nothing was written — the scripts check before they act."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

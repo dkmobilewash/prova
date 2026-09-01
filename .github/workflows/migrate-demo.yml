@@ -26,20 +26,44 @@
 # The script this calls prints the host before it does anything, refuses
 # if the two URLs are different databases, and reads `migrate status` back
 # afterwards rather than trusting its own success message.
+#
+# WHY IT ASKS FOR THE ENDPOINT ID RATHER THAN THE WORD "demo"
+#
+# Every check above asks whether the two URLs agree with EACH OTHER. Two
+# wrong-but-matching URLs pass all of them. That was tolerable while both
+# pointed at a long-established production database and stopped being
+# tolerable the first time they pointed at a brand new empty one: a typo in
+# DEMO_DATABASE_URL gets you a plausible empty database, every migration
+# applied to it, "successfully applied", and `migrate status` reading back
+# up to date. Every signal green and previews pointing somewhere else
+# entirely. Cyrus found that gap while reviewing #50.
+#
+# So you name the endpoint and the script compares it against the host the
+# secret actually resolves to, before applying anything. Deriving that name
+# from the secret would make it a tautology that passes forever.
+#
+# An endpoint id is not a credential — CLAUDE.md names all three in the open
+# and the rule there is to name the endpoint rather than say "the database".
+# The connection strings are the secret; the hostnames are the point.
 
 name: Migrate demo database
 
 on:
   workflow_dispatch:
     inputs:
-      confirm:
+      expect_host:
         # No `default:` here. It was `required: true` with `default: ""`,
         # which is contradictory — a required input cannot have an empty
         # default — and GitHub rejected the whole file for it. The file sat
         # on main looking correct while the Actions tab never showed it,
         # and CI and Migrate ran from the very same push, so nothing looked
         # wrong from the outside.
-        description: 'Type "demo" to confirm you mean the DEMO database, not production'
+        #
+        # This used to ask you to type "demo". That proved you had read the
+        # button and nothing else: a constant cannot notice that the secret
+        # behind it holds the wrong connection string. Naming the endpoint
+        # is checked against reality — see the header above.
+        description: 'Neon endpoint id of the DEMO database, e.g. ep-patient-lake'
         required: true
 
 concurrency:
@@ -51,16 +75,28 @@ jobs:
     name: Apply pending migrations to the demo database
     runs-on: ubuntu-latest
     steps:
-      # A typed confirmation, because the cost of this running against the
-      # wrong database is someone's real job costing data and the cost of
-      # typing four letters is four letters.
-      - name: Confirm the target
+      # The typed endpoint id is both the confirmation and the assertion.
+      # This step only rejects what is obviously not an endpoint id; the
+      # real comparison happens against the live connection string, inside
+      # migrate-deploy.mjs, before a single migration is applied.
+      - name: Check the typed endpoint id
+        env:
+          EXPECT_HOST: ${{ inputs.expect_host }}
         run: |
           set -e
-          if [ "${{ inputs.confirm }}" != "demo" ]; then
-            echo "::error::Confirmation was '${{ inputs.confirm }}', expected 'demo'. Nothing ran."
+          set -o pipefail
+          trimmed=$(printf '%s' "$EXPECT_HOST" | tr -d '[:space:]')
+          if [ -z "$trimmed" ]; then
+            echo "::error::No endpoint id given. Nothing ran."
             exit 1
           fi
+          case "$trimmed" in
+            postgres://*|postgresql://*|*@*)
+              echo "::error::That looks like a connection string, not an endpoint id."
+              echo "Enter only the host part, e.g. ep-patient-lake. Nothing ran."
+              exit 1
+              ;;
+          esac
 
       - uses: actions/checkout@v4
 
@@ -99,4 +135,28 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DEMO_DATABASE_URL }}
           DIRECT_URL: ${{ secrets.DEMO_DIRECT_URL }}
+          MIGRATE_EXPECT_HOST: ${{ inputs.expect_host }}
         run: pnpm --filter @prova/db run migrate:deploy
+
+      # The last run's result was three clicks deep inside a collapsed step
+      # and got looked for three times. The outcome belongs on the run's own
+      # page, next to the green tick.
+      - name: Say what happened
+        if: always()
+        env:
+          EXPECT_HOST: ${{ inputs.expect_host }}
+          STATUS: ${{ job.status }}
+        run: |
+          {
+            echo "### Migrate demo database — $STATUS"
+            echo ""
+            echo "Target asserted as \`$EXPECT_HOST\`."
+            echo ""
+            if [ "$STATUS" = "success" ]; then
+              echo "Open **Apply and verify** for the host it reached and the"
+              echo "\`db: verified\` line. A green tick without that line is not proof."
+            else
+              echo "Open **Apply and verify** for the reason. A refusal there means"
+              echo "nothing was applied — the script checks before it acts."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
