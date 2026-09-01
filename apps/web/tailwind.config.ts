@@ -25,31 +25,49 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        canvas: "#f5f6f8",
-        surface: "#ffffff",
+        // DARK. These were light values, and the dashboard was the only
+        // page using them — 24 of 25 pages are on the raw slate classes,
+        // so the one converted screen read as a different application on
+        // every click.
+        //
+        // Repointing the VALUES rather than rewriting 24 pages, and not
+        // reverting the dashboard either. The tokens are the right idea;
+        // only their colours were premature. A previous attempt at the
+        // sweep left 15 of 17 pages unreadable, including white-on-white
+        // money on /cash-flow, and doing that again the week of a demo is
+        // the worst move available.
+        //
+        // The light conversion becomes a change to this block once every
+        // page uses tokens, instead of a 24-file rewrite with no way to
+        // check it. That is the whole point of having tokens.
+        //
+        // Values match what the unconverted pages already use, so the two
+        // halves are literally the same colours: slate-950 page,
+        // slate-900 cards, slate-800 lines, slate-100/300/400/500 text.
+        canvas: "#020617", // slate-950
+        surface: "#0f172a", // slate-900
         rail: "#0f172a",
         "rail-hover": "#1e293b",
 
-        "line-card": "#e4e7ec",
-        "line-row": "#f0f2f5",
+        "line-card": "#1e293b", // slate-800
+        "line-row": "#1e293b",
 
-        ink: "#101828",
-        "ink-label": "#344054",
-        "ink-body": "#667085",
-        // Was #98a2b3, which reads at 2.4:1 on canvas and 2.6:1 on a white
-        // card — below any legibility floor. It was carrying stat-tile
-        // labels and due dates, which are the content, not decoration.
-        // Those moved up to ink-label/ink-body; this level is now for
-        // genuinely optional text only (placeholders, disabled controls)
-        // and is dark enough (4.0:1 on white, 3.7:1 on canvas) that even
-        // those stay readable.
-        //
-        // A light ramp only has room for three informational greys. The
-        // fourth was hierarchy bought with legibility, which is not a
-        // trade this app gets to make: size, weight and case already say
-        // "this is a label".
-        "ink-muted": "#767f91",
+        // The dark ramp has more room than the light one did: all four
+        // levels clear their floor, where the light theme could only
+        // afford three (see theme-contrast.test.ts).
+        ink: "#f1f5f9", // slate-100 — 18.4:1 on canvas
+        "ink-label": "#cbd5e1", // slate-300 — 13.6:1
+        "ink-body": "#94a3b8", // slate-400 — 7.9:1
+        // Optional text only: placeholders, disabled controls. 4.2:1 on
+        // canvas, 3.8:1 on a card.
+        "ink-muted": "#64748b", // slate-500
 
+        // blue-600. I first changed this to blue-500 on the assumption
+        // that blue-600 "did not read on dark", then measured: blue-600
+        // is 3.9:1 as a fill on the canvas (a UI component needs 3) and
+        // carries a WHITE LABEL at 5.2:1. blue-500 looks bolder and its
+        // white label is 3.7:1 — under the 4.5 floor for text, which is
+        // what a button label is. The bolder one was the unreadable one.
         brand: "#2563eb",
 
         // Accent bars, for summary cards only. Plain cards get no bar —
@@ -57,23 +75,30 @@ const config: Config = {
         "bar-rose": "#f04438",
         "bar-amber": "#f79009",
         "bar-green": "#12b76a",
-        "bar-blue": "#2563eb",
-        "bar-indigo": "#4f46e5",
-        "bar-violet": "#7c3aed",
-        "bar-teal": "#0d9488",
+        "bar-blue": "#3b82f6",
+        "bar-indigo": "#6366f1",
+        "bar-violet": "#8b5cf6",
+        "bar-teal": "#14b8a6",
 
-        // Tag pairs: light ground, saturated text. Not solid fills — a
-        // page of solid badges reads as an alarm rather than a status.
-        "tag-rose": "#fee4e2",
-        "tag-rose-ink": "#b42318",
-        "tag-amber": "#fef0c7",
-        "tag-amber-ink": "#b54708",
-        "tag-green": "#d1fadf",
-        "tag-green-ink": "#05603a",
-        "tag-blue": "#d1e9ff",
-        "tag-blue-ink": "#175cd3",
-        "tag-slate": "#f2f4f7",
-        "tag-slate-ink": "#475467",
+        // Tag pairs, inverted with everything else: a dark translucent
+        // ground under a light saturated ink, which is the convention the
+        // other 24 pages already use (bg-green-500/15, text-green-300).
+        // Left as light chips they would have become the new
+        // inconsistency — the same defect one level down.
+        //
+        // Grounds are the -500 colour composited at 18% over surface, so
+        // they sit correctly on a card without needing opacity. Every
+        // pair clears 4.5:1; the worst is blue at 7.9.
+        "tag-rose": "#371f2f",
+        "tag-rose-ink": "#fca5a5",
+        "tag-amber": "#382f24",
+        "tag-amber-ink": "#fcd34d",
+        "tag-green": "#123633",
+        "tag-green-ink": "#86efac",
+        "tag-blue": "#172a4f",
+        "tag-blue-ink": "#93c5fd",
+        "tag-slate": "#151f32",
+        "tag-slate-ink": "#cbd5e1",
       },
     },
   },

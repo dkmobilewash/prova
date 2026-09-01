@@ -134,6 +134,48 @@ scrollback gets broken by whoever didn't scroll far enough.
 - Edit code by reading the actual text and replacing it exactly — a
   structural regex once inserted code into the wrong block and produced
   14 cascading errors.
+- **THERE ARE TWO CLERK INSTANCES, AND THE DASHBOARD LOOKS IDENTICAL IN
+  BOTH.** Same shape of confusion as the two Neon projects below, so the
+  same rule: name the instance, never say "Clerk" or "the domain".
+
+  | Instance | Primary domain | Keys | Holds |
+  | --- | --- | --- | --- |
+  | Development | `striking-jaybird-….clerk.accounts.dev` | `pk_test_`/`sk_test_` | the original users |
+  | Production | `cstream.ai` (FAPI at `clerk.cstream.ai`) | `pk_live_`/`sk_live_` | the live users |
+
+  The app is at **app.cstream.ai**. Clerk takes the registrable ROOT for
+  its own infrastructure, so its DNS records are `clerk`, `clkmail`,
+  `clk._domainkey`, `clk2._domainkey` at the root — NOT `clerk.app`. Two
+  hours were spent on the assumption that they sat under the subdomain.
+
+  A primary domain CANNOT be changed once set; the dashboard offers
+  "Change domain" and then refuses, and there is no delete-instance
+  button. Clerk support does it. Get the domain right at creation.
+
+  **Switching instances gives the same person a NEW clerkId with the SAME
+  email, and both are unique on User.** That 500'd every page until
+  `requireCompanyContext` learned to adopt a row found by a VERIFIED
+  email. The verification gate is the security of it — without it, signing
+  up as someone else's address inherits their company.
+
+  A vercel.app host cannot be a Clerk production domain via DNS (Vercel
+  owns the domain), only via a proxy at `/__clerk`, and that proxy needs
+  `@clerk/nextjs` v7. We are on 6.x. `/__clerk/:path*` is in the
+  middleware matcher and inert; leave it.
+
+- **A domain change breaks QuickBooks silently.** `QUICKBOOKS_REDIRECT_URI`
+  has to change in Vercel AND the same string must be registered on
+  Intuit's DEVELOPMENT tab (we run `QUICKBOOKS_ENVIRONMENT=sandbox`;
+  a URI on the Production tab does nothing). Intuit compares strings, not
+  URLs — a trailing slash fails.
+
+  The trap is the timing. An existing connection keeps working on token
+  refresh alone, which does not use the redirect URI, so a wrong one stays
+  invisible until someone reconnects or the refresh token rolls (~100
+  days). Test it by DISCONNECTING and reconnecting, which is safe:
+  `disconnectQuickBooks` deletes only the connection row, and the account
+  mapping survives.
+
 - **THERE ARE TWO NEON PROJECTS, ONE PER PERSON. This file said there was
   one for weeks, and that sentence cost two people a day.**
 

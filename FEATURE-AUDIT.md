@@ -270,7 +270,7 @@ forecasting shipped 26 Aug 2026.*
 
 | Status | Feature | Note |
 | --- | --- | --- |
-| Partial | Accounting: QuickBooks, and likely Sage 300 CRE / Foundation | QuickBooks OAuth connection is built; actual data sync is not; Sage/Foundation not started |
+| Partial | Accounting: QuickBooks, and likely Sage 300 CRE / Foundation | QuickBooks is connected, mapped and syncing one direction — invoices push, the record is read back to confirm what landed, and reconciliation reports where the two disagree. Verified end to end against a sandbox company (#31, #33, #34, #36). Deliberately NOT two-way: Prova does not pull QuickBooks edits back, and does not pretend to. Sage/Foundation not started |
 | Missing | Payroll processor integration (for running actual pay) | not started |
 | Partial | E-signature provider | homegrown token-based e-sign (`SignatureRequest`) covers contract signing only — not a general provider for every doc type |
 | Built | Anthropic API (for the AI features above) | three shipped features now call Claude |
