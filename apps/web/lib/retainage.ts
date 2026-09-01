@@ -42,28 +42,40 @@ export type RetainageHeldRow = {
   releaseAmounts: number[];
 };
 
-/** Retainage withheld and not yet released, on jobs that have reached
- * substantial completion.
+/** Retainage withheld and not yet released. All of it.
  *
- * Deliberately not filtered by job status: retainage becomes claimable at
- * substantial completion, by which point a job is usually COMPLETE. The
- * dashboard previously summed this over CONTRACTED and IN_PROGRESS jobs
- * only, so the card could never show anything.
+ * Three filters were tried here and two were wrong.
  *
- * Deliberately not filtered by calendar month either. Retainage is chased
- * for months; a figure that resets on the 1st reports nothing owed on the
+ * Job status was the original bug (#46): summed over CONTRACTED and
+ * IN_PROGRESS only, so a card about money released at the END of a job
+ * could never show anything.
+ *
+ * A calendar month was the first fix's mistake: retainage is chased for
+ * months, and a figure that resets on the 1st reports nothing owed on the
  * day it is most owed.
+ *
+ * Substantial completion was the second, and it is the subtle one.
+ * `Job.substantialCompletionDate` is the date a job is EXPECTED to reach
+ * substantial completion — a forecasting anchor, not a record that it
+ * happened. Requiring it excluded real money held on jobs nobody had
+ * forecast yet, and the caption built on it ("on jobs past substantial
+ * completion") was describing an event the column does not record.
+ *
+ * So: no filter. Withheld minus released is money the GC is holding,
+ * whatever stage the job is at and whether or not anyone has estimated
+ * when it comes back. WHEN it is expected is a separate question, and
+ * /cash-flow already answers it using that date for what it is — a
+ * forecast.
  */
 export function totalRetainageHeld(rows: RetainageHeldRow[]): number {
-  return rows.reduce((sum, row) => {
-    if (row.substantialCompletionDate === null) return sum;
-    return (
+  return rows.reduce(
+    (sum, row) =>
       sum +
       calculateRetainageSummary({
         invoiceRetainageWithheld: row.invoiceRetainageWithheld,
         releaseAmounts: row.releaseAmounts,
         substantialCompletionDate: row.substantialCompletionDate,
-      }).balance
-    );
-  }, 0);
+      }).balance,
+    0,
+  );
 }

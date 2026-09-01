@@ -201,7 +201,7 @@ export default async function TodayPage({
                   accent="teal"
                   label="Retainage held"
                   value={money(today.retainageHeldPastCompletion)}
-                  detail="On jobs past substantial completion"
+                  detail="Withheld and not yet released"
                 />
               </div>
             </section>
