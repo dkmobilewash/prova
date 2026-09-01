@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useTransition } from "react";
 import {
   addCloseoutItem,
@@ -103,7 +104,15 @@ export function CloseoutJobCard({
   return (
     <li className="flex flex-col gap-4 p-5">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-slate-100">{job.name}</span>
+        {/* Closeout is the last thing you do TO a job, so the job is the
+            obvious next click. It was plain text, which made this page a
+            place you could only arrive at from the nav. */}
+        <Link
+          href={`/jobs/${job.id}`}
+          className="text-slate-100 hover:text-blue-300 hover:underline"
+        >
+          {job.name}
+        </Link>
         <span className={`rounded px-1.5 py-0.5 text-xs ${closeoutChip}`}>
           {job.items.length === 0
             ? "No checklist yet"

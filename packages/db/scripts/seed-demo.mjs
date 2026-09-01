@@ -238,14 +238,14 @@ async function main() {
       number: 1,
       description: `Final pay application ${MARK}`,
       amount: "134200",
-      issuedAt: day(-30),
-      dueAt: day(-1),
+      issuedAt: day(-38),
+      dueAt: day(-12),
       status: "PAID",
       retainageWithheld: "13420",
     },
   });
   await prisma.payment.create({
-    data: { invoiceId: cedarInvoice.id, amount: "134200", method: "ACH", receivedAt: day(6) },
+    data: { invoiceId: cedarInvoice.id, amount: "134200", method: "ACH", receivedAt: day(-4) },
   });
 
   // ------------------------------------------------------------- crew on site
