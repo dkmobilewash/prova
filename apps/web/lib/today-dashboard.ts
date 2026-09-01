@@ -1,6 +1,6 @@
 import { prisma } from "@prova/db";
 import { calculateJobWip, calculateLineItemWip, type WipJobResult } from "./wip";
-import { calculateRetainageSummary } from "./retainage";
+import { calculateRetainageSummary, totalRetainageHeld } from "./retainage";
 import { calculatePaymentReliability, type PaymentReliability } from "./gc-reliability";
 import { daysPastDueFor, effectiveDueDateFor } from "./cash-flow";
 import { jobHealthSentence, jobIsOverBudget } from "./company-financials";
@@ -60,7 +60,7 @@ export type GcReliabilityRow = {
 
 
 export async function loadTodayDashboard(companyId: string, now: Date) {
-  const [invoices, activeJobs, contacts] = await Promise.all([
+  const [invoices, activeJobs, retainageJobs, contacts] = await Promise.all([
     prisma.invoice.findMany({
       where: { job: { companyId } },
       select: {
@@ -108,6 +108,25 @@ export async function loadTodayDashboard(companyId: string, now: Date) {
         retainageReleases: { select: { amount: true } },
       },
       orderBy: { createdAt: "desc" },
+    }),
+    // Retainage needs its own query, and the reason is the bug it fixes.
+    // Job health is about jobs still running, so activeJobs is CONTRACTED
+    // and IN_PROGRESS. Retainage is the other end of a job's life: it is
+    // released after substantial completion, by which point the job is
+    // normally COMPLETE — the exact status activeJobs excludes. Reusing
+    // that query made the card structurally incapable of ever showing a
+    // number, and it showed $0.00 while $13,420 was genuinely held.
+    //
+    // Status is not filtered at all here. What makes retainage claimable
+    // is substantial completion, not a pipeline stage.
+    prisma.job.findMany({
+      where: { companyId, substantialCompletionDate: { not: null } },
+      select: {
+        id: true,
+        substantialCompletionDate: true,
+        invoices: { select: { retainageWithheld: true } },
+        retainageReleases: { select: { amount: true } },
+      },
     }),
     prisma.contact.findMany({
       where: { companyId },
@@ -234,22 +253,27 @@ export async function loadTodayDashboard(companyId: string, now: Date) {
 
   /* ---------------------------------------------------- retainage ---- */
 
-  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-  const nextMonthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
-
-  const retainageReleasingThisMonth = jobRows.reduce((sum, entry) => {
-    const completion = entry.job.substantialCompletionDate;
-    if (!completion) return sum;
-    if (completion < monthStart || completion >= nextMonthStart) return sum;
-    const summary = calculateRetainageSummary({
-      invoiceRetainageWithheld: entry.job.invoices.map((invoice) =>
+  // No calendar window, and that is the second half of the fix.
+  //
+  // "Releasing this month" dropped a job that completed on the 28th of
+  // last month with retainage still unpaid — which is not an edge case,
+  // it is the normal one. Retainage is chased for months, and a number
+  // that resets to zero on the 1st is telling a contractor that nothing
+  // is owed on the day it is most owed.
+  //
+  // What is summed is calculateRetainageSummary().balance — withheld
+  // minus released — which is an outstanding balance, not a release
+  // event. The card is renamed to say that: it reports what is HELD past
+  // substantial completion, which is the money a sub can actually chase.
+  const retainageHeldPastCompletion = totalRetainageHeld(
+    retainageJobs.map((job) => ({
+      substantialCompletionDate: job.substantialCompletionDate,
+      invoiceRetainageWithheld: job.invoices.map((invoice) =>
         invoice.retainageWithheld === null ? null : Number(invoice.retainageWithheld),
       ),
-      releaseAmounts: entry.job.retainageReleases.map((release) => Number(release.amount)),
-      substantialCompletionDate: completion,
-    });
-    return sum + summary.balance;
-  }, 0);
+      releaseAmounts: job.retainageReleases.map((release) => Number(release.amount)),
+    })),
+  );
 
   /* -------------------------------------------------------- crews ---- */
 
@@ -300,7 +324,7 @@ export async function loadTodayDashboard(companyId: string, now: Date) {
     overdueTotal: overdue.reduce((sum, row) => sum + row.outstanding, 0),
     jobHealth,
     jobsOverBudget,
-    retainageReleasingThisMonth,
+    retainageHeldPastCompletion,
     crews,
     gcReliability,
   };

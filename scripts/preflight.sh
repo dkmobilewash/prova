@@ -3,15 +3,23 @@
 # One command to run before you push. Replaces running test, typecheck,
 # lint and build by hand and hoping you remembered all four.
 #
-# The important part is not the checks — CI runs three of them. It's the
+# The important part is not the checks — CI runs all four. It's the
 # MIGRATION REPORT at the end.
 #
-# There is ONE Neon database, and Vercel runs `prisma migrate deploy` on
-# every deployment, previews included. A migration therefore goes live
-# against production WHEN YOU PUSH, not when the PR merges. That is not
-# obvious from anything in the repo, it has already happened once
-# (add_submittals reached production from an unmerged branch), and there
-# was no warning anywhere before this script.
+# THIS HEADER WAS WRONG until now, and wrong in the direction that gets
+# someone hurt. It said there is one Neon database and that Vercel runs
+# `prisma migrate deploy` on every deployment, so a migration goes live
+# when you PUSH. Neither has been true for weeks:
+#
+#   - There are TWO Neon projects, one per person. See CLAUDE.md.
+#   - Migrations are applied by .github/workflows/migrate.yml on merge to
+#     main (#28). They no longer run in the Vercel build at all, because
+#     that gate could not see a promoted preview.
+#
+# So a migration reaches production when the PR MERGES. The report below
+# still earns its place — it names what a merge will apply and refuses
+# destructive statements — but the timing it warns about had drifted from
+# the thing it warns about, in the one file whose job is preventing drift.
 #
 # Usage:
 #   ./scripts/preflight.sh          # checks + migration report
@@ -48,6 +56,20 @@ fi
 # room up front instead of rediscovering it.
 export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=6144}"
 
+# Regenerate the Prisma client before anything reads it.
+#
+# The generated client lives in node_modules and does NOT follow a branch
+# switch. Check out a branch whose schema has a model yours doesn't and
+# typecheck fails with "Property 'equipmentAssignment' does not exist"
+# while the schema is perfectly fine — two confusing runs for Cyrus.
+#
+# The failing direction is merely annoying. The other one is not: switch
+# from a branch WITH a model to one without, and a stale client still has
+# it, so code referencing a model this branch cannot see typechecks
+# green. A check that can pass spuriously is worth less than no check.
+bold "== prisma generate =="
+pnpm --filter @prova/db exec prisma generate
+
 bold "== test =="
 pnpm test
 
@@ -61,8 +83,10 @@ if [ "$QUICK" = "1" ]; then
   echo "(skipping build — --quick)"
 else
   bold "== build =="
-  # CI does NOT run build, and build is the only thing that catches the
-  # `export *` inside a "use server" file class of breakage.
+  # CI DOES run build — 32ea10a added it with the workflow itself, and
+  # CLAUDE.md corrected this claim once already. It stays here because
+  # build is the only thing that catches `export *` inside a "use server"
+  # file, and finding that before you push beats finding it in CI.
   pnpm build
 fi
 
