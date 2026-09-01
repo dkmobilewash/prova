@@ -362,7 +362,270 @@ async function main() {
     });
   }
 
-  console.log("seed: jobs, line items, costs, crew, invoices and compliance written");
+  // ------------------------------------------------------------ change orders
+  // A mid-flight job with no change orders is not believable to anyone who
+  // has run one. Two here, deliberately in different states: one approved
+  // and applied — its scope IS in the contract value above — and one still
+  // submitted, whose money must NOT appear anywhere until the GC decides.
+  const co1 = await prisma.changeOrder.create({
+    data: {
+      jobId: riverside.id,
+      number: 1,
+      title: "Added corridor soffits, level 2",
+      description: "Architect's ASI 14 — soffits at corridor bulkheads not on the bid set.",
+      status: "APPROVED",
+      submittedOn: day(-34),
+      decidedOn: day(-27),
+      decisionNotes: "Approved at owner meeting, proceed.",
+      appliedAt: day(-27),
+    },
+  });
+  await prisma.changeOrderProposal.create({
+    data: {
+      changeOrderId: co1.id,
+      changeType: "ADD",
+      description: "Corridor soffits, framed and finished — level 2",
+      unit: "LF",
+      quantity: "310",
+      unitPrice: "24.5",
+      budgetedUnitCost: "16.8",
+      currentEstimatedUnitCost: "16.8",
+    },
+  });
+
+  const co2 = await prisma.changeOrder.create({
+    data: {
+      jobId: riverside.id,
+      number: 2,
+      title: "Upgrade to Type X at mechanical rooms",
+      description: "RFI 3 response requires 2-hour rated assembly not shown on the bid drawings.",
+      status: "SUBMITTED",
+      submittedOn: day(-5),
+    },
+  });
+  await prisma.changeOrderProposal.create({
+    data: {
+      changeOrderId: co2.id,
+      changeType: "ADD",
+      description: "2-hour rated assembly, mechanical rooms 2A and 2B",
+      unit: "SF",
+      quantity: "1850",
+      unitPrice: "6.4",
+      budgetedUnitCost: "4.35",
+      currentEstimatedUnitCost: "4.35",
+    },
+  });
+
+  // --------------------------------------------------------------- submittals
+  // Numbers come from the counter row, never from a count of surviving
+  // rows — the same rule the app enforces, and a seed that fakes them would
+  // hand the next real submittal a number this one already used.
+  const subCounter = await prisma.submittalCounter.upsert({
+    where: { jobId: riverside.id },
+    create: { jobId: riverside.id, lastNumber: 2 },
+    update: { lastNumber: 2 },
+  });
+  const sub1 = await prisma.submittal.create({
+    data: {
+      companyId: company.id,
+      jobId: riverside.id,
+      number: 1,
+      title: "Gypsum board and joint treatment",
+      specSection: "09 29 00",
+      submittedByUserId: user?.id ?? null,
+    },
+  });
+  await prisma.submittalRevision.create({
+    data: {
+      submittalId: sub1.id,
+      revisionNumber: 1,
+      sentOn: day(-40),
+      dueBack: day(-26),
+      returnedOn: day(-24),
+      outcome: "APPROVED_AS_NOTED",
+      responseNotes: "Approved as noted — use Type X at rated assemblies only.",
+    },
+  });
+  const sub2 = await prisma.submittal.create({
+    data: {
+      companyId: company.id,
+      jobId: riverside.id,
+      number: 2,
+      title: "Acoustical ceiling tile and grid",
+      specSection: "09 51 13",
+      submittedByUserId: user?.id ?? null,
+    },
+  });
+  // Revise-and-resubmit, still open: the ball is in our court and the page
+  // should say so.
+  await prisma.submittalRevision.create({
+    data: {
+      submittalId: sub2.id,
+      revisionNumber: 1,
+      sentOn: day(-19),
+      dueBack: day(-5),
+      returnedOn: day(-7),
+      outcome: "REVISE_AND_RESUBMIT",
+      responseNotes: "Substitute tile not equal to specified. Resubmit with basis of design.",
+    },
+  });
+  await prisma.submittalCounter.update({
+    where: { jobId: riverside.id },
+    data: { lastNumber: 2 },
+  });
+
+  // -------------------------------------------------------------- punch list
+  const punch = [
+    ["Corridor 2-14: drywall corner bead damaged, repair and repaint", true, -6],
+    ["Room 214: ceiling tile stained near VAV, replace", true, -3],
+    ["Stair 2: fire caulk missing at top of wall penetration", false, null],
+    ["Room 227: door frame out of plumb, adjust", false, null],
+    ["Corridor 2-02: touch-up paint at return air grille", false, null],
+  ];
+  for (const [description, isDone, doneAt] of punch) {
+    await prisma.punchListItem.create({
+      data: {
+        companyId: company.id,
+        jobId: riverside.id,
+        description,
+        isDone,
+        completedAt: doneAt === null ? null : day(doneAt),
+        raisedByUserId: user?.id ?? null,
+      },
+    });
+  }
+
+  // ------------------------------------------------- closeout and warranty
+  // On the finished job, so the checklist has a job whose closeout is real.
+  const closeout = [
+    ["Final unconditional lien waiver", true, -18],
+    ["As-built drawings delivered", true, -16],
+    ["O&M manuals delivered", true, -15],
+    ["Warranty letter issued", true, -14],
+    ["Final cleaning sign-off", false, null],
+    ["Punch list sign-off from GC", false, null],
+  ];
+  for (const [name, done, at] of closeout) {
+    await prisma.closeoutItem.create({
+      data: {
+        companyId: company.id,
+        jobId: cedar.id,
+        name,
+        isRequired: true,
+        completedOn: done ? day(at) : null,
+      },
+    });
+  }
+  await prisma.warrantyPeriod.create({
+    data: {
+      companyId: company.id,
+      jobId: cedar.id,
+      startsOn: day(-21),
+      months: 12,
+      note: "One-year workmanship warranty from substantial completion.",
+    },
+  });
+
+  // ------------------------------------------------------------ toolbox talks
+  const talks = [
+    [-2, "Silica dust control when cutting board", "Hector Ramirez", "9 attended"],
+    [-9, "Ladder safety and three points of contact", "Hector Ramirez", "11 attended"],
+    [-16, "Fall protection at leading edge, level 3", "Dana Whitfield", "12 attended"],
+  ];
+  for (const [at, topic, presenter, attendees] of talks) {
+    await prisma.toolboxTalk.create({
+      data: {
+        companyId: company.id,
+        jobId: riverside.id,
+        heldOn: day(at),
+        topic,
+        presenter,
+        attendees,
+        recordedByUserId: user?.id ?? null,
+      },
+    });
+  }
+
+  // ----------------------------------------------------------- material orders
+  const supplier = await prisma.vendor.create({
+    data: {
+      companyId: company.id,
+      name: `Bolt Building Supply ${MARK}`,
+      tradeScope: "METAL_FRAMING_DRYWALL",
+      contactName: "Marta Feld",
+      phone: "(503) 555-0119",
+      email: "orders@boltbuilding.example",
+    },
+  });
+  await prisma.materialOrderCounter.upsert({
+    where: { jobId: riverside.id },
+    create: { jobId: riverside.id, lastNumber: 2 },
+    update: { lastNumber: 2 },
+  });
+  const orders = [
+    [1, "Level 2 board — 5/8 Type X, 4x12", -30, -22, -21],
+    [2, "ACT grid and tile, level 2 north", -8, -1, null],
+  ];
+  for (const [number, description, ordered, promised, delivered] of orders) {
+    const mo = await prisma.materialOrder.create({
+      data: {
+        companyId: company.id,
+        jobId: riverside.id,
+        number,
+        vendorId: supplier.id,
+        description,
+        orderedOn: day(ordered),
+        promisedFor: day(promised),
+        orderedByUserId: user?.id ?? null,
+      },
+    });
+    if (delivered !== null) {
+      await prisma.materialOrderDelivery.create({
+        data: {
+          orderId: mo.id,
+          deliveredOn: day(delivered),
+          completesOrder: true,
+          notes: "Full quantity received.",
+        },
+      });
+    }
+  }
+
+  // ------------------------------------------------------------- drawing sets
+  const archSet = await prisma.drawingSet.create({
+    data: {
+      companyId: company.id,
+      jobId: riverside.id,
+      name: "Architectural",
+      description: "Issued by Vollmer Architects.",
+    },
+  });
+  await prisma.drawingRevision.createMany({
+    data: [
+      { setId: archSet.id, label: "Rev 2 — Permit set", issuedOn: day(-95), receivedOn: day(-93) },
+      { setId: archSet.id, label: "Rev 3 — ASI 14, corridor soffits", issuedOn: day(-36), receivedOn: day(-34) },
+      // Issued but never received: the state that page exists to surface.
+      { setId: archSet.id, label: "Rev 4 — ASI 18, mechanical room ratings", issuedOn: day(-4), receivedOn: null },
+    ],
+  });
+
+  // -------------------------------------------------------------- time entries
+  if (user) {
+    for (let i = 1; i <= 8; i += 1) {
+      await prisma.timeEntry.create({
+        data: {
+          jobId: riverside.id,
+          lineItemId: riversideLines[1].id,
+          employeeUserId: user.id,
+          date: day(-i),
+          hours: i % 5 === 0 ? "10" : "8",
+          payType: i % 5 === 0 ? "OVERTIME" : "STRAIGHT",
+        },
+      });
+    }
+  }
+
+  console.log("seed: change orders, submittals, punch list, closeout, talks, orders, drawings and time written");
   return { company, user, gc, riverside, northgate, lakeshore, riversideLines };
 }
 
@@ -375,12 +638,24 @@ async function undo(companyId) {
   const jobIds = jobs.map((j) => j.id);
 
   const counts = {};
+  const failed = [];
   const del = async (label, fn) => {
     try {
       const r = await fn();
       counts[label] = r.count ?? 0;
     } catch (e) {
-      counts[label] = `skipped (${e.message.split("\n")[0].slice(0, 60)})`;
+      const msg = e.message.split("\n")[0];
+      // A model that doesn't exist on this branch is not a failed delete —
+      // EquipmentAssignment lives on an unmerged branch, and there is
+      // nothing of it here to remove.
+      if (/reading 'deleteMany'/.test(msg)) {
+        counts[label] = "n/a on this branch";
+        return;
+      }
+      // Everything else is loud on purpose. A swallowed failure here left
+      // two of every job behind and the next seed built a second set on top.
+      counts[label] = `FAILED (${msg.slice(0, 70)})`;
+      failed.push(label);
     }
   };
 
@@ -397,6 +672,58 @@ async function undo(companyId) {
     await del("dailyFieldReport", () =>
       prisma.dailyFieldReport.deleteMany({ where: { jobId: { in: jobIds } } }),
     );
+    // Children first, in dependency order. Adding rows without extending
+    // this is how the second run left two of every job behind: the delete
+    // failed on a foreign key, `del` swallowed it as "skipped", and the
+    // next seed created a duplicate set. Anything added above must be
+    // added here.
+    await del("changeOrderProposal", () =>
+      prisma.changeOrderProposal.deleteMany({ where: { changeOrder: { jobId: { in: jobIds } } } }),
+    );
+    await del("changeOrderLineItemEdit", () =>
+      prisma.changeOrderLineItemEdit.deleteMany({ where: { changeOrder: { jobId: { in: jobIds } } } }),
+    );
+    await del("changeOrder", () =>
+      prisma.changeOrder.deleteMany({ where: { jobId: { in: jobIds } } }),
+    );
+    await del("submittalRevision", () =>
+      prisma.submittalRevision.deleteMany({ where: { submittal: { jobId: { in: jobIds } } } }),
+    );
+    await del("submittal", () => prisma.submittal.deleteMany({ where: { jobId: { in: jobIds } } }));
+    await del("submittalCounter", () =>
+      prisma.submittalCounter.deleteMany({ where: { jobId: { in: jobIds } } }),
+    );
+    await del("punchListItem", () =>
+      prisma.punchListItem.deleteMany({ where: { jobId: { in: jobIds } } }),
+    );
+    await del("closeoutItem", () =>
+      prisma.closeoutItem.deleteMany({ where: { jobId: { in: jobIds } } }),
+    );
+    await del("warrantyServiceRequest", () =>
+      prisma.warrantyServiceRequest.deleteMany({ where: { jobId: { in: jobIds } } }),
+    );
+    await del("warrantyPeriod", () =>
+      prisma.warrantyPeriod.deleteMany({ where: { jobId: { in: jobIds } } }),
+    );
+    await del("toolboxTalk", () =>
+      prisma.toolboxTalk.deleteMany({ where: { jobId: { in: jobIds } } }),
+    );
+    await del("materialOrderDelivery", () =>
+      prisma.materialOrderDelivery.deleteMany({ where: { order: { jobId: { in: jobIds } } } }),
+    );
+    await del("materialOrder", () =>
+      prisma.materialOrder.deleteMany({ where: { jobId: { in: jobIds } } }),
+    );
+    await del("materialOrderCounter", () =>
+      prisma.materialOrderCounter.deleteMany({ where: { jobId: { in: jobIds } } }),
+    );
+    await del("drawingRevision", () =>
+      prisma.drawingRevision.deleteMany({ where: { set: { jobId: { in: jobIds } } } }),
+    );
+    await del("drawingSet", () => prisma.drawingSet.deleteMany({ where: { jobId: { in: jobIds } } }));
+    await del("timeEntry", () => prisma.timeEntry.deleteMany({ where: { jobId: { in: jobIds } } }));
+    await del("rfi", () => prisma.rfi.deleteMany({ where: { jobId: { in: jobIds } } }));
+    await del("rfiCounter", () => prisma.rfiCounter.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("payment", () =>
       prisma.payment.deleteMany({ where: { invoice: { jobId: { in: jobIds } } } }),
     );
@@ -427,6 +754,14 @@ async function undo(companyId) {
   await del("contact", () => prisma.contact.deleteMany({ where: { companyId, name: { contains: MARK } } }));
 
   console.log("seed: removed —", JSON.stringify(counts));
+  if (failed.length) {
+    console.error(
+      `\nseed: ${failed.length} delete(s) FAILED: ${failed.join(", ")}.\n` +
+        "seed: rows are still there. Re-seeding now would DUPLICATE them.\n" +
+        "seed: extend undo() to cover whatever was added, then run --undo again.",
+    );
+    process.exitCode = 1;
+  }
 }
 
 main()
