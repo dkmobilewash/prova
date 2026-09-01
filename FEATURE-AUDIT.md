@@ -23,14 +23,21 @@ in flight. Left as-is here rather than guessed at from the outside; the next
 update to touch those sheets should come from whoever actually verified them
 against a fresh clone.
 
-**110 items audited — 74 built / 16 partial / 19 missing / 1 descoped**
+**110 items audited — 76 built / 16 partial / 17 missing / 1 descoped**
 
 | Status | Count |
 | --- | --- |
-| Built | 73 |
+| Built | 75 |
 | Partial | 16 |
-| Missing | 18 |
+| Missing | 16 |
 | Descoped | 1 |
+
+These two tallies have disagreed with each other, and with the sheets'
+own headers, since before this edit. Sheet 13's +2 built / −2 missing is
+applied to both rather than recomputing everything, because recomputing
+every header from its rows is already in flight on another branch and two
+people rewriting the same totals is how they got out of step in the first
+place.
 
 ## 01. Company / Org Setup — 5 built · 0 partial · 0 missing
 
@@ -171,12 +178,15 @@ forecasting shipped 26 Aug 2026.*
 | Built | Change order approval workflow with the GC | `submitChangeOrder` / `approveChangeOrder` / `rejectChangeOrder` / `voidChangeOrder` in `lib/actions/changeOrders.ts`. Sent and decided dates are entered rather than stamped, so a backdated PCO records real turnaround. A rejected CO keeps its proposals as evidence it was priced and refused |
 | Built | Approved COs flow into new/modified `JobLineItem` rows and update contract value | `approveChangeOrder` applies every proposal in one transaction and writes the `ChangeOrderLineItemEdit` audit rows; `appliedAt` stops the same CO reaching the budget twice |
 
-## 13. Backcharges & Deductions — 0 built · 0 partial · 2 missing
+## 13. Backcharges & Deductions — 2 built · 0 partial · 0 missing
+
+*Updated — backcharge tracking and the dispute/resolution lifecycle shipped
+1 Sep 2026.*
 
 | Status | Feature | Note |
 | --- | --- | --- |
-| Missing | GC-issued backcharge tracking against a job (damages, cleanup, etc.) | no concept of a backcharge anywhere |
-| Missing | Backcharge disputes/resolution status | not modeled |
+| Built | GC-issued backcharge tracking against a job (damages, cleanup, etc.) | `Backcharge` + `BackchargeCounter`, `/backcharges` — numbers issued per job and never reissued, eight categories so "what do cleanup backcharges cost us a year" is answerable, issue/receipt/respond-by dates all ENTERED not stamped. The claimed amount locks the moment we answer, so a savings figure can't be computed against a number nobody claimed |
+| Built | Backcharge disputes/resolution status | `BackchargeStatus` RECEIVED → DISPUTED → ACCEPTED / SETTLED / WITHDRAWN, with the objection's own date and grounds. Only a settlement stores a figure: accepting concedes the claim and a withdrawal concedes nothing, both derived from the status in `lib/backcharges.ts`. Past the deadline to object is derived per render, never stored. Deliberately does NOT net against a pay application — see the note on the page and in ARCHITECTURE.md |
 
 ## 14. Compliance Document Management — 5 built · 1 partial · 0 missing
 

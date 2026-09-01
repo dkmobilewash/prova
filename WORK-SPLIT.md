@@ -36,6 +36,40 @@ page.tsx` as your template for any list-plus-create-form page.
   Low collision risk, but check `git pull` before editing since it's a
   short file where two additions on the same line would conflict.
 
+## A third lane, claimed 1 Sep 2026
+
+A third session is running alongside the two above, on
+`claude/prova-contractor-os-e3f0iz`. It owns the following, in this order,
+one at a time:
+
+1. **Backcharges & Deductions** — Sheet 13. *Shipped 1 Sep.*
+   `/backcharges`, `backcharges.prisma`, `lib/actions/backcharges.ts`,
+   `lib/backcharges.ts`.
+2. **Closeout & Warranty** — the remaining gaps in Sheet 22.
+3. **Notifications & Alerts** — Sheet 26, where two items are Partial
+   ("it reaches someone who opens the app") and three are Missing.
+4. **Roles & Permissions** — Sheet 25, still `OWNER`/`MEMBER` only.
+5. **Multi-state prevailing wage rules** — Sheet 21.
+6. **Apprentice / fringe remittance reporting** — Sheet 09.
+
+It does NOT touch estimating, billing/AIA pay applications,
+`jobs/[id]/page.tsx`, safety, materials/vendors, equipment or RFIs. Where
+one of the six genuinely needs a shared file, the change is the smallest
+one that works and is called out explicitly rather than restructured —
+backcharges needed exactly three such lines: one route in `middleware.ts`,
+one entry in `navItems.tsx`, and one `export *` in the actions barrel,
+plus the back-relation fields Prisma requires on `Job`, `Company` and
+`User`.
+
+**Note that this file is otherwise out of date.** It describes a single
+`packages/db/prisma/schema.prisma` and a single `apps/web/lib/actions.ts`;
+both were split by domain some time ago — the schema into
+`packages/db/prisma/schema/*.prisma` and the actions into
+`apps/web/lib/actions/*.ts` behind a barrel. New work adds a new file per
+domain rather than appending to an existing one, which is also why the
+"only add at the very end of the file" advice below no longer applies the
+way it reads.
+
 ## Cyrus's first five tasks
 
 **1. (Do this first — should take under an hour.) Add a "Trailer" location

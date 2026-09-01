@@ -84,6 +84,8 @@ model Job {
   closeoutItems                CloseoutItem[]
   warrantyPeriod               WarrantyPeriod?
   warrantyServiceRequests      WarrantyServiceRequest[]
+  backcharges                  Backcharge[]
+  backchargeCounter            BackchargeCounter?
 
   @@index([companyId])
   @@index([contactId])

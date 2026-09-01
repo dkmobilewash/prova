@@ -1,0 +1,135 @@
+// Backcharges and deductions — money the GC asserts against us.
+//
+// Part of the multi-file Prisma schema in this folder.
+//
+// This is the mirror image of a change order. A change order is us asking
+// the GC for more money; a backcharge is the GC taking money off what they
+// owe us — for cleanup we didn't do, damage to another trade's work, a
+// crew they had to bring in to finish our scope. Nothing in this schema
+// modelled that before, which meant the only record of a five-figure
+// deduction was the short-pay on a cheque nobody could explain months
+// later.
+//
+// It deliberately does NOT touch Invoice. Netting an accepted backcharge
+// against a pay application is real work in the billing lane, and a half
+// version of it — a nullable invoiceId nobody sums — would look built
+// while changing no number anywhere. See ARCHITECTURE.md.
+
+/// What the GC says the money is for. Free text would make "how much do
+/// cleanup backcharges cost us a year" unanswerable, and that is the one
+/// question this log exists to answer; a fixed list of the categories
+/// that actually recur in this trade is the tradeoff.
+enum BackchargeCategory {
+  CLEANUP
+  DAMAGE_TO_OTHER_TRADES
+  COMPLETION_BY_OTHERS
+  MATERIAL_OR_EQUIPMENT_SUPPLIED
+  SUPERVISION
+  SAFETY_VIOLATION
+  SCHEDULE_DELAY
+  OTHER
+}
+
+/// Where a backcharge sits between "the GC sent us a bill" and "we know
+/// what it finally cost".
+///
+/// RECEIVED and DISPUTED are both unresolved — the difference is whether
+/// we have answered, which is what a notice deadline turns on. The three
+/// terminal states differ in what we conceded, and NONE of them stores
+/// that figure except SETTLED: accepting in full concedes
+/// `claimedAmount`, a withdrawal concedes nothing, and writing either of
+/// those into a column would be a second copy of a number the row
+/// already holds. See concededAmount() in apps/web/lib/backcharges.ts.
+enum BackchargeStatus {
+  RECEIVED
+  DISPUTED
+  ACCEPTED
+  SETTLED
+  WITHDRAWN
+}
+
+/// One backcharge the GC has issued against a job.
+///
+/// An evidence record, same rules as RFIs and submittals: the identity
+/// fields (job, number, the GC's own reference) are locked after
+/// creation, the dates that matter are ENTERED rather than stamped —
+/// entering the three backcharges you got last month must not record
+/// them as arriving today — and once we have answered one it can be
+/// resolved but never deleted, because the GC holds the other copy.
+model Backcharge {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  /// Required. A backcharge is always a deduction from a specific job's
+  /// money; a company-wide one has nothing to be deducted from.
+  jobId String
+  job   Job    @relation(fields: [jobId], references: [id])
+
+  /// Sequential per job, issued by BackchargeCounter and never reissued —
+  /// same reasoning as RfiCounter and SafetyCaseCounter. Ours, for
+  /// referring to one internally.
+  number Int
+
+  /// The GC's own document number for it, which is what they will quote
+  /// back at us. Free text and nullable: plenty of backcharges arrive as
+  /// a line on a pay-application deduction sheet with no number at all.
+  gcReference String?
+
+  category    BackchargeCategory @default(OTHER)
+  description String
+
+  /// What the GC says we owe. Locked once we have responded (see
+  /// BackchargeStatus): after that it is what they put in writing, and a
+  /// row where it can still be edited is a row whose "we argued them down
+  /// from X" is unprovable.
+  claimedAmount Decimal @db.Decimal(12, 2)
+
+  /// The date on the GC's notice, and the date it reached us. Both
+  /// entered. They differ often enough to matter — a notice dated the 3rd
+  /// that arrives on the 20th is most of a response window gone.
+  issuedOn   DateTime
+  receivedOn DateTime?
+
+  /// The contractual deadline to object in writing. Nullable because most
+  /// subcontracts state one and some don't; a missing deadline reads as
+  /// "not recorded", never as "no deadline". Whether we are past it is
+  /// derived at read time from this and the status, never stored.
+  respondByDate DateTime?
+
+  status BackchargeStatus @default(RECEIVED)
+
+  /// Our written objection: when it went out and what we said. The date
+  /// is the evidence — "we disputed this" without one is worth nothing
+  /// against a GC holding a signed notice.
+  disputedOn    DateTime?
+  disputeReason String?
+
+  /// How it ended. `resolvedAmount` is the negotiated figure and is only
+  /// meaningful for SETTLED — a number two parties agreed on, which no
+  /// other column can produce. ACCEPTED and WITHDRAWN leave it null on
+  /// purpose; their conceded amount is derivable from the status.
+  resolvedOn     DateTime?
+  resolvedAmount Decimal?  @db.Decimal(12, 2)
+  resolutionNote String?
+
+  loggedByUserId String?
+  loggedByUser   User?   @relation(fields: [loggedByUserId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([jobId, number])
+  @@index([companyId])
+  @@index([jobId])
+}
+
+/// Issues backcharge numbers per job. Only ever increments — a number
+/// derived from the rows that still exist is freed again when one is
+/// deleted, and then two different deductions have both been called
+/// "backcharge 3".
+model BackchargeCounter {
+  jobId      String @id
+  job        Job    @relation(fields: [jobId], references: [id])
+  lastNumber Int    @default(0)
+}

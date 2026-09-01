@@ -12,6 +12,69 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### Backcharges: the money the GC takes back (Diego)
+`claude/prova-contractor-os-e3f0iz`
+
+Sheet 13 of FEATURE-AUDIT was the only one still reading **0 built · 0
+partial · 2 missing**, and the gap it named was not a small one. This app
+had `ChangeOrder` — us asking the GC for more money — modelled four ways
+down to a reopen/revise distinction, and no concept at all of the same
+conversation running the other way. A GC deducting $4,200 for cleanup left
+no record anywhere except an unexplained short-pay on a cheque, and
+"unexplained short-pay, months later" is precisely the shape of thing this
+product exists to stop.
+
+`/backcharges` is the log. New domain file `backcharges.prisma`
+(`Backcharge`, `BackchargeCounter`, and the two enums), one additive
+migration, `lib/actions/backcharges.ts`, and the page.
+
+**The dispute half is the point, not a status field bolted on.** RECEIVED →
+DISPUTED → ACCEPTED / SETTLED / WITHDRAWN, with the objection carrying its
+own date and grounds. "We disputed this" without a date is worth nothing
+against a GC holding a signed notice with one.
+
+**Only a settlement stores a figure.** Accepting concedes exactly what was
+claimed — a number the row already holds — and a withdrawal concedes
+nothing. Copying either into `resolvedAmount` would be a second home for a
+fact already stated, so `concededAmount()` derives it from the status, and
+returns *unknown* rather than 0 or the claim when a settlement has no
+figure recorded. The page counts those separately and says so on the tile
+instead of quietly reading low.
+
+**`claimedAmount` locks the moment we answer.** Without that, the "argued
+off" figure is computed against an amount anyone could have moved
+afterwards — it would be reporting a claim nobody ever made. The edit form
+renders the three locked fields as text and the action refuses them
+independently, because a form that hides a control is not a rule.
+
+**What it does not do, said on the page rather than left to be discovered.**
+Nothing here nets against a pay application, an invoice, a contract value
+or a WIP figure, and nothing pushes an accepted backcharge into job
+costing. Both are real work in the billing/costing lane. A nullable
+`invoiceId` nobody sums would have looked built and changed no number
+anywhere — the same defect as a settings card that connects nothing, which
+this repo has now shipped twice.
+
+**Verified against a real Postgres, not against a return value.** A scratch
+database was stood up, all 46 migrations applied, and `lib/actions/
+backcharges.dbtest.ts` runs the whole lifecycle through the actual actions
+and asserts the ROWS: that deleting backcharge 2 makes the next one 3 and
+not 2, that a locked claim survives an update trying to move it, that
+another company's job and another company's backcharge are refused by every
+one of the five actions, that a non-owner can log one and cannot delete
+one, and that an accepted backcharge stores no conceded figure. 14 tests,
+plus 18 unit tests on the exposure math. `pnpm test` is 426 → 444, and
+typecheck, lint and a full build are clean.
+
+**One note on FEATURE-AUDIT.** Its top-line tally and its per-sheet headers
+already disagreed with the rows underneath them before this edit. Sheet
+13's +2 built / −2 missing is applied to both totals rather than
+recomputing everything, because a full recomputation is in flight on
+another branch and two people rewriting the same totals is how they drifted
+apart in the first place.
+
+---
+
 ### Field reports get their own page, and a week you can hand to a GC (Cyrus)
 `cyrus/field-reports`
 

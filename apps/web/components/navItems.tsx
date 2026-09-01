@@ -184,6 +184,16 @@ export const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
+    href: "/backcharges",
+    label: "Backcharges",
+    icon: (
+      <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5">
+        <circle cx="10" cy="10" r="6.5" stroke="currentColor" strokeWidth="1.4" />
+        <path d="M7 10h6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      </svg>
+    ),
+  },
+  {
     href: "/rfis",
     label: "RFIs",
     icon: (
@@ -353,6 +363,6 @@ export const NAV_GROUPS: NavGroup[] = [
   },
   {
     heading: "Financials",
-    items: [item("/cash-flow"), item("/settings")],
+    items: [item("/cash-flow"), item("/backcharges"), item("/settings")],
   },
 ];

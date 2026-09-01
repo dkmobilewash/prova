@@ -818,6 +818,61 @@ Release *forecasting* is a plain field
 system — there's no closeout/warranty stage in `JobStatus` yet for a
 forecast to hook into more precisely than that.
 
+## Backcharges — the change order running the other way
+
+A `ChangeOrder` is us asking the GC for more money. A `Backcharge` is the
+GC taking money off what they already owe us: cleanup we didn't do, damage
+to another trade's work, a crew they brought in to finish our scope. The
+two are the same conversation in opposite directions, and until this
+landed only one of them existed in the schema — so the entire record of a
+five-figure deduction was an unexplained short-pay on a cheque months
+later.
+
+It follows the evidence-record rules the RFI and submittal logs already
+set. Numbers come from `BackchargeCounter`, which only increments, for the
+same reason `RfiCounter` does: a number derived from the rows that still
+exist is freed again by a delete, and then two different deductions have
+both been "backcharge 3" in writing. Dates are ENTERED, not stamped —
+`issuedOn` is the date on the GC's notice and `receivedOn` is when it
+reached us, and those differ often enough to matter, because a notice
+dated the 3rd that arrives on the 20th is most of a response window gone.
+Whether we are past `respondByDate` is derived per render from that date
+and the status, never stored.
+
+**The one number that is stored, and the three that are not.** The
+lifecycle is `RECEIVED` → `DISPUTED` → one of `ACCEPTED`, `SETTLED`,
+`WITHDRAWN`. Only `SETTLED` carries `resolvedAmount`, because a negotiated
+figure is the one outcome no other column can produce. Accepting concedes
+exactly `claimedAmount`, which the row already holds; a withdrawal
+concedes nothing. Writing either into `resolvedAmount` would be a second
+copy of a fact the row already states, free to drift from it —
+`concededAmount()` in `apps/web/lib/backcharges.ts` derives it from the
+status instead, and returns null rather than guessing when a settlement
+has no figure recorded.
+
+**`claimedAmount` locks the moment we respond**, along with `issuedOn` and
+the GC's own reference. Those three are what the GC put in writing, and
+the page's "argued off" figure is `claimed − conceded`: if the claimed
+amount stayed editable after a settlement, that figure would be reporting
+a claim nobody ever made. Before we answer, the row is only our own
+transcription of a letter, so a typo in it is worth fixing — which is also
+the only window in which one can be deleted. After that it is half of an
+exchange the GC also holds; the exit is resolving it as withdrawn, which
+is what actually happened if they dropped it.
+
+**It deliberately does not touch `Invoice`.** Netting an accepted
+backcharge against a pay application is real work in the billing lane —
+it changes what a pay application asks for, which the GC sees. A nullable
+`invoiceId` nobody sums would look built while changing no number
+anywhere, which is the exact failure mode this codebase has now shipped
+several times (a settings card that connected nothing, an action with no
+caller). So `/backcharges` says on the page that these figures are a log
+of what the GC has charged us and not a deduction from any invoice,
+contract value or WIP number. The same applies to job costing: an accepted
+backcharge is a real cost, but `CostEntry` hangs off a `JobLineItem` and
+picking which line a GC's cleanup charge lands on is a decision this phase
+does not make.
+
 ## Multi-tenancy and roles
 
 Every `Contact` and `Job` belongs to a `Company`. Every `User` belongs to
