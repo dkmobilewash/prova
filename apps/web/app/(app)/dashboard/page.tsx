@@ -199,9 +199,9 @@ export default async function TodayPage({
                 />
                 <StatCard
                   accent="teal"
-                  label="Retainage releasing"
-                  value={money(today.retainageReleasingThisMonth)}
-                  detail="Held on jobs completing this month"
+                  label="Retainage held"
+                  value={money(today.retainageHeldPastCompletion)}
+                  detail="Withheld and not yet released"
                 />
               </div>
             </section>

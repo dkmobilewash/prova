@@ -42,17 +42,30 @@ export function ContractSummary({
     0,
   );
 
+  // Dark on screen, white on paper.
+  //
+  // This is a document — it has print: rules and is meant to read as one —
+  // but it was white on screen too, which made it the ONE light surface in
+  // the whole product and the worst visual break in it: clicking a job
+  // from the dashboard dropped a bright slab into a dark app, on the page
+  // you spend the most time on when walking the money. The document
+  // metaphor is worth something when it comes out of a printer and nothing
+  // at all on screen.
+  //
+  // Its footnote had also inherited slate-400, which is 2.56:1 on white —
+  // the lowest contrast anywhere in the app, found in a pre-demo
+  // walkthrough rather than by any check.
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-6 text-slate-900 print:border-0 print:shadow-none">
+    <section className="rounded-lg border border-line-card bg-surface p-6 text-ink print:border-0 print:bg-white print:text-slate-900 print:shadow-none">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-sm font-medium text-slate-500">{companyName}</p>
+          <p className="text-sm font-medium text-ink-body print:text-slate-500">{companyName}</p>
           <h1 className="text-2xl font-semibold">{jobName}</h1>
         </div>
         <StatusBadge status={status} />
       </div>
-      <p className="mt-1 text-slate-600">Client: {clientName}</p>
-      {scope && <p className="mt-3 text-sm text-slate-700">{scope}</p>}
+      <p className="mt-1 text-ink-body print:text-slate-600">Client: {clientName}</p>
+      {scope && <p className="mt-3 text-sm text-ink-label print:text-slate-700">{scope}</p>}
 
       {/* The client signs this on a phone as often as a desktop. Without a
           scroller of its own, a five-column table drags the whole page
@@ -60,7 +73,7 @@ export function ContractSummary({
       <div className="mt-6 overflow-x-auto">
       <table className="w-full min-w-[420px] text-sm">
         <thead>
-          <tr className="border-b border-slate-200 text-left text-slate-500">
+          <tr className="border-b border-line-card text-left text-ink-body print:border-slate-200 print:text-slate-500">
             <th className="py-2">Description</th>
             <th className="py-2">Qty</th>
             <th className="py-2">Unit</th>
@@ -70,11 +83,11 @@ export function ContractSummary({
         </thead>
         <tbody>
           {lineItems.map((item) => (
-            <tr key={item.id} className="border-b border-slate-100">
+            <tr key={item.id} className="border-b border-line-row print:border-slate-100">
               <td className="py-2">
                 {item.description}
                 {item.changeOrderNumber != null && (
-                  <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800">
+                  <span className="ml-2 rounded bg-tag-amber px-1.5 py-0.5 text-xs text-tag-amber-ink print:bg-amber-100 print:text-amber-800">
                     CO #{item.changeOrderNumber}
                   </span>
                 )}
@@ -93,7 +106,7 @@ export function ContractSummary({
 
       <p className="mt-4 text-right text-lg font-semibold">Total: {money(total)}</p>
 
-      <p className="mt-6 text-xs text-slate-400 print:mt-16">
+      <p className="mt-6 text-xs text-ink-body print:mt-16 print:text-slate-500">
         This reflects the current agreed scope and pricing for this job, including any approved
         change orders.
       </p>

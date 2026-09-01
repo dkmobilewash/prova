@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import {
@@ -165,7 +166,19 @@ export default async function SettingsPage({
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-8">
-      <h1 className="mb-6 text-xl font-semibold text-slate-100">Settings</h1>
+      <h1 className="mb-2 text-xl font-semibold text-slate-100">Settings</h1>
+
+      {/* The Integrations page is the framework's own surface; QuickBooks
+          keeps its section below because it predates that framework and has
+          an account mapping and reconciliation the generic page has no place
+          for. The link exists so there is one route to look for connections
+          from, rather than two pages neither of which mentions the other. */}
+      <p className="mb-6 text-sm text-slate-400">
+        <Link href="/settings/integrations" className="text-blue-400 hover:text-blue-300">
+          Integrations
+        </Link>{" "}
+        — connect and disconnect third-party services.
+      </p>
 
       {qb === "connected" && (
         <p className="mb-6 rounded-md border border-green-900 bg-green-950/50 px-4 py-3 text-sm text-green-400">

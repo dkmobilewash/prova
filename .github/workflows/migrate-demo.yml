@@ -1,0 +1,162 @@
+# Applies migrations to the DEMO database, by hand, on purpose.
+#
+# Separate from migrate.yml for one reason: that one fires on every merge
+# to main and targets production. This one never fires on its own. The
+# demo database is not production and must not be migrated by accident,
+# and production must not be migrated by a button somebody found.
+#
+# WHY THIS EXISTS AT ALL, rather than "run the script locally":
+#
+#   - It needs no checkout, no Node, no pnpm. Diego runs and clicks; this
+#     is a button.
+#   - The demo URLs go into GitHub's secret store rather than being read
+#     out to a second person over Signal so they can put them in a file.
+#     Fewer copies of a credential is the whole game.
+#   - It is repeatable. Migrations reach production automatically on merge
+#     and the demo database gets NOTHING, so it drifts the moment anyone
+#     adds a migration — and drift surfaces as "column does not exist" on
+#     a preview, which reads as a code bug. Re-running this is the fix,
+#     and it needs to be one click or it will not happen.
+#
+# REQUIRED SECRETS — deliberately NOT named DATABASE_URL/DIRECT_URL, so
+# there is no way to confuse them with production's:
+#   DEMO_DATABASE_URL  the pooled Neon endpoint for the demo project
+#   DEMO_DIRECT_URL    the DIRECT endpoint of that SAME demo project
+#
+# The script this calls prints the host before it does anything, refuses
+# if the two URLs are different databases, and reads `migrate status` back
+# afterwards rather than trusting its own success message.
+#
+# WHY IT ASKS FOR THE ENDPOINT ID RATHER THAN THE WORD "demo"
+#
+# Every check above asks whether the two URLs agree with EACH OTHER. Two
+# wrong-but-matching URLs pass all of them. That was tolerable while both
+# pointed at a long-established production database and stopped being
+# tolerable the first time they pointed at a brand new empty one: a typo in
+# DEMO_DATABASE_URL gets you a plausible empty database, every migration
+# applied to it, "successfully applied", and `migrate status` reading back
+# up to date. Every signal green and previews pointing somewhere else
+# entirely. Cyrus found that gap while reviewing #50.
+#
+# So you name the endpoint and the script compares it against the host the
+# secret actually resolves to, before applying anything. Deriving that name
+# from the secret would make it a tautology that passes forever.
+#
+# An endpoint id is not a credential — CLAUDE.md names all three in the open
+# and the rule there is to name the endpoint rather than say "the database".
+# The connection strings are the secret; the hostnames are the point.
+
+name: Migrate demo database
+
+on:
+  workflow_dispatch:
+    inputs:
+      expect_host:
+        # No `default:` here. It was `required: true` with `default: ""`,
+        # which is contradictory — a required input cannot have an empty
+        # default — and GitHub rejected the whole file for it. The file sat
+        # on main looking correct while the Actions tab never showed it,
+        # and CI and Migrate ran from the very same push, so nothing looked
+        # wrong from the outside.
+        #
+        # This used to ask you to type "demo". That proved you had read the
+        # button and nothing else: a constant cannot notice that the secret
+        # behind it holds the wrong connection string. Naming the endpoint
+        # is checked against reality — see the header above.
+        description: 'Neon endpoint id of the DEMO database, e.g. ep-patient-lake'
+        required: true
+
+concurrency:
+  group: migrate-demo
+  cancel-in-progress: false
+
+jobs:
+  migrate-demo:
+    name: Apply pending migrations to the demo database
+    runs-on: ubuntu-latest
+    steps:
+      # The typed endpoint id is both the confirmation and the assertion.
+      # This step only rejects what is obviously not an endpoint id; the
+      # real comparison happens against the live connection string, inside
+      # migrate-deploy.mjs, before a single migration is applied.
+      - name: Check the typed endpoint id
+        env:
+          EXPECT_HOST: ${{ inputs.expect_host }}
+        run: |
+          set -e
+          set -o pipefail
+          trimmed=$(printf '%s' "$EXPECT_HOST" | tr -d '[:space:]')
+          if [ -z "$trimmed" ]; then
+            echo "::error::No endpoint id given. Nothing ran."
+            exit 1
+          fi
+          case "$trimmed" in
+            postgres://*|postgresql://*|*@*)
+              echo "::error::That looks like a connection string, not an endpoint id."
+              echo "Enter only the host part, e.g. ep-patient-lake. Nothing ran."
+              exit 1
+              ;;
+          esac
+
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Fail early if the demo secrets are missing
+        env:
+          DEMO_DATABASE_URL: ${{ secrets.DEMO_DATABASE_URL }}
+          DEMO_DIRECT_URL: ${{ secrets.DEMO_DIRECT_URL }}
+        run: |
+          set -e
+          missing=""
+          [ -z "$DEMO_DATABASE_URL" ] && missing="$missing DEMO_DATABASE_URL"
+          [ -z "$DEMO_DIRECT_URL" ] && missing="$missing DEMO_DIRECT_URL"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secret(s):$missing"
+            echo "Add them under Settings → Secrets and variables → Actions."
+            echo "DEMO_DIRECT_URL must be the direct (non-pooler) endpoint of"
+            echo "the SAME Neon project DEMO_DATABASE_URL points at."
+            exit 1
+          fi
+
+      - run: pnpm install --frozen-lockfile
+
+      # The demo secrets are mapped onto the names the script reads. That
+      # mapping happens HERE and nowhere else, so production's secrets are
+      # never in scope for this job at all — it cannot reach them.
+      - name: Apply and verify
+        env:
+          DATABASE_URL: ${{ secrets.DEMO_DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.DEMO_DIRECT_URL }}
+          MIGRATE_EXPECT_HOST: ${{ inputs.expect_host }}
+        run: pnpm --filter @prova/db run migrate:deploy
+
+      # The last run's result was three clicks deep inside a collapsed step
+      # and got looked for three times. The outcome belongs on the run's own
+      # page, next to the green tick.
+      - name: Say what happened
+        if: always()
+        env:
+          EXPECT_HOST: ${{ inputs.expect_host }}
+          STATUS: ${{ job.status }}
+        run: |
+          {
+            echo "### Migrate demo database — $STATUS"
+            echo ""
+            echo "Target asserted as \`$EXPECT_HOST\`."
+            echo ""
+            if [ "$STATUS" = "success" ]; then
+              echo "Open **Apply and verify** for the host it reached and the"
+              echo "\`db: verified\` line. A green tick without that line is not proof."
+            else
+              echo "Open **Apply and verify** for the reason. A refusal there means"
+              echo "nothing was applied — the script checks before it acts."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -29,4 +29,5 @@ export * from "./materialOrders";
 export * from "./drawings";
 export * from "./closeout";
 export * from "./vendorPricing";
+export * from "./integrations";
 export * from "./messages";

@@ -134,13 +134,73 @@ scrollback gets broken by whoever didn't scroll far enough.
 - Edit code by reading the actual text and replacing it exactly — a
   structural regex once inserted code into the wrong block and produced
   14 cascading errors.
+- **THERE ARE TWO CLERK INSTANCES, AND THE DASHBOARD LOOKS IDENTICAL IN
+  BOTH.** Same shape of confusion as the two Neon projects below, so the
+  same rule: name the instance, never say "Clerk" or "the domain".
+
+  | Instance | Primary domain | Keys | Holds |
+  | --- | --- | --- | --- |
+  | Development | `striking-jaybird-….clerk.accounts.dev` | `pk_test_`/`sk_test_` | the original users |
+  | Production | `cstream.ai` (FAPI at `clerk.cstream.ai`) | `pk_live_`/`sk_live_` | the live users |
+
+  The app is at **app.cstream.ai**. Clerk takes the registrable ROOT for
+  its own infrastructure, so its DNS records are `clerk`, `clkmail`,
+  `clk._domainkey`, `clk2._domainkey` at the root — NOT `clerk.app`. Two
+  hours were spent on the assumption that they sat under the subdomain.
+
+  A primary domain CANNOT be changed once set; the dashboard offers
+  "Change domain" and then refuses, and there is no delete-instance
+  button. Clerk support does it. Get the domain right at creation.
+
+  **Switching instances gives the same person a NEW clerkId with the SAME
+  email, and both are unique on User.** That 500'd every page until
+  `requireCompanyContext` learned to adopt a row found by a VERIFIED
+  email. The verification gate is the security of it — without it, signing
+  up as someone else's address inherits their company.
+
+  A vercel.app host cannot be a Clerk production domain via DNS (Vercel
+  owns the domain), only via a proxy at `/__clerk`, and that proxy needs
+  `@clerk/nextjs` v7. We are on 6.x. `/__clerk/:path*` is in the
+  middleware matcher and inert; leave it.
+
+- **A domain change breaks QuickBooks silently.** `QUICKBOOKS_REDIRECT_URI`
+  has to change in Vercel AND the same string must be registered on
+  Intuit's DEVELOPMENT tab (we run `QUICKBOOKS_ENVIRONMENT=sandbox`;
+  a URI on the Production tab does nothing). Intuit compares strings, not
+  URLs — a trailing slash fails.
+
+  The trap is the timing. An existing connection keeps working on token
+  refresh alone, which does not use the redirect URI, so a wrong one stays
+  invisible until someone reconnects or the refresh token rolls (~100
+  days). Test it by DISCONNECTING and reconnecting, which is safe:
+  `disconnectQuickBooks` deletes only the connection row, and the account
+  mapping survives.
+
 - **THERE ARE TWO NEON PROJECTS, ONE PER PERSON. This file said there was
   one for weeks, and that sentence cost two people a day.**
 
   | Project | Endpoint | Used by | Holds |
   | --- | --- | --- | --- |
-  | Diego's | `ep-little-sea-a6bdnaw2` | Vercel — production AND previews | the real data |
+  | Diego's | `ep-little-sea-a6bdnaw2` | Vercel PRODUCTION only | the real data |
+  | Demo | `prova-demo` (its own project) | Vercel PREVIEWS — every one | the demo dataset |
   | Cyrus's | `ep-icy-hat-afqau56u` | Cyrus's laptop only | his own test data |
+
+  THREE now, not two. Previews used to run on production's database, which
+  meant browser testing wrote real rows and every round of it needed
+  cleaning up afterwards. Preview's `DATABASE_URL`/`DIRECT_URL` point at
+  the demo project instead, so that is no longer true.
+
+  The cost of that split: migrations reach production automatically on
+  merge (`migrate.yml`) and the demo database gets NOTHING. It drifts the
+  moment anyone adds a migration, and drift shows up on a preview as
+  "column does not exist" — which reads as a code bug and is not one. Fix
+  it by running the **Migrate demo database** workflow (Actions tab, Run
+  workflow, and type the demo endpoint id — `ep-patient-lake` — to confirm;
+  the script compares what you typed against the host the secret actually
+  resolves to and refuses before applying anything, which the old `demo`
+  constant could not do). It needs the `DEMO_DATABASE_URL` and
+  `DEMO_DIRECT_URL` repository secrets, which are deliberately not named
+  after production's so the two can never be confused.
 
   Established 2026-08-29 from: two production build logs printing
   `ep-little-sea` as the migrate target; the `Migrate` workflow printing
@@ -198,6 +258,23 @@ scrollback gets broken by whoever didn't scroll far enough.
   fails loudly without them rather than skipping. A production Vercel build
   now REFUSES to build when migrations are pending; a preview only warns,
   because a branch's own migration legitimately hasn't merged yet.
+- **`migrate.yml` and the Vercel build race, and the build usually loses.**
+  Both fire on push to main, concurrently, and neither knows the other
+  exists — so a merge carrying a migration reaches `check:schema` before the
+  migration lands and the whole deployment goes red for a change that was
+  fine. It has bitten twice: Cyrus's #40 (16 seconds) and #53 (19 seconds —
+  build refused 18:37:47, migration verified 18:38:06).
+  `check-schema.mjs` now WAITS up to 90s on a production build, polling
+  every 5s, before refusing; `MIGRATE_WAIT_SECONDS` overrides it. Previews
+  do not wait at all, because a pending migration is the normal state of an
+  unmerged branch. Verified against a scratch database by applying a
+  migration mid-wait and watching the build continue.
+  Worth knowing that this was CLAIMED as done on 2026-08-30, in Slack, and
+  was not built — the check refused four seconds in with no polling
+  anywhere in the file. If a red production deploy on a merge still says
+  "missing this commit's migrations", read the log for the wait lines
+  before assuming the race: without them, you are on a build that predates
+  this fix.
 - **Do not promote a preview to production.** Merge to `main` instead, so
   the build actually runs. Previews are public (no deployment protection),
   carry the branch's latest commit at a stable alias, and are what browser

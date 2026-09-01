@@ -23,13 +23,13 @@ in flight. Left as-is here rather than guessed at from the outside; the next
 update to touch those sheets should come from whoever actually verified them
 against a fresh clone.
 
-**109 items audited — 74 built / 16 partial / 18 missing / 1 descoped**
+**111 items audited — 75 built / 16 partial / 19 missing / 1 descoped**
 
 | Status | Count |
 | --- | --- |
-| Built | 74 |
+| Built | 75 |
 | Partial | 16 |
-| Missing | 18 |
+| Missing | 19 |
 | Descoped | 1 |
 | Descoped | 1 |
 
@@ -267,12 +267,14 @@ forecasting shipped 26 Aug 2026.*
 | Missing | Plan/drawing takeoff via computer vision | explicitly deferred as a later, larger effort — different modality, different accuracy bar |
 | Descoped | Client-facing chatbot | GCs are the customer here, not homeowners — deliberately out of scope for this ICP |
 
-## 24. Integrations — 2 built · 2 partial · 1 missing
+## 24. Integrations — 3 built · 2 partial · 2 missing
 
 | Status | Feature | Note |
 | --- | --- | --- |
-| Partial | Accounting: QuickBooks, and likely Sage 300 CRE / Foundation | QuickBooks OAuth connection is built; actual data sync is not; Sage/Foundation not started |
+| Built | Integration framework (the shelf, not the things on it) | `IntegrationConnection` + append-only `IntegrationSyncLog`, a provider registry, an owner-only Settings → Integrations page, encrypted-at-rest credential columns (`lib/crypto.ts`, AES-256-GCM), and a generic inbound webhook route. Proven end to end against a scratch Postgres: 45 migrations applied clean, connect/disconnect verified by row rather than by return value, webhook exercised across all six branches. NO REAL PROVIDER SHIPPED WITH IT — the only thing it connects is a mock called Sandbox, which talks to nothing. QuickBooks predates this and still runs on its own tables |
+| Partial | Accounting: QuickBooks, and likely Sage 300 CRE / Foundation | QuickBooks is connected, mapped and syncing one direction — invoices push, the record is read back to confirm what landed, and reconciliation reports where the two disagree. Verified end to end against a sandbox company (#31, #33, #34, #36). Deliberately NOT two-way: Prova does not pull QuickBooks edits back, and does not pretend to. Sage/Foundation not started |
 | Missing | Payroll processor integration (for running actual pay) | not started |
+| Missing | DocuSign, Procore, myCOI | 0 built. Each has a registry entry so the page can render it, and each renders DISABLED with a "Coming soon" label. A card on a settings page is not an integration |
 | Partial | E-signature provider | homegrown token-based e-sign (`SignatureRequest`) covers contract signing only — not a general provider for every doc type |
 | Built | Anthropic API (for the AI features above) | three shipped features now call Claude |
 | Built | Outbound email from the contractor's own domain, with a delivery log | `OutboundMessage` + `OutboundMessageEvent`, `/messages` — provider-agnostic send, signed delivery webhook that fails closed, events deduplicated by provider id, status derived from the newest event and never stored. Sends as the contractor, not as us: mail from a vendor domain is the deliverability complaint the research report found at every competitor. SMS is in the channel enum and not wired |
