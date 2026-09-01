@@ -183,7 +183,10 @@ async function main() {
 
   // ------------------------------------------------------- costs on the live job
   // Enough that WIP, percent-complete and margin all have something real to
-  // say. Under-billed on purpose: it is the more interesting state to show.
+  // say. The job lands OVERBILLED by about $10k against 48% complete, which
+  // is the more interesting state to show: billed ahead of work in place is
+  // good cash flow and a real exposure, and it is the number a GC's auditor
+  // asks about.
   const costRows = [
     { line: 0, d: "Stud and track delivery — Bolt Building Supply", a: 31200, cat: "MATERIAL", at: -44 },
     { line: 0, d: "Framing labor, weeks 1–4", a: 21800, cat: "LABOR", at: -30 },
@@ -242,7 +245,7 @@ async function main() {
     },
   });
   await prisma.payment.create({
-    data: { invoiceId: cedarInvoice.id, amount: "134200", method: "ACH", receivedAt: day(-3) },
+    data: { invoiceId: cedarInvoice.id, amount: "134200", method: "ACH", receivedAt: day(6) },
   });
 
   // ------------------------------------------------------------- crew on site
@@ -273,6 +276,14 @@ async function main() {
   await prisma.payment.create({
     data: { invoiceId: inv1.id, amount: "86450", method: "ACH", receivedAt: day(-11) },
   });
+  // Billed per SOV line, which is what makes it a pay application rather
+  // than a lump sum — without these the G702/G703 report renders nothing.
+  await prisma.invoiceLineItem.createMany({
+    data: [
+      { invoiceId: inv1.id, lineItemId: riversideLines[0].id, thisPeriodBilled: "52000", materialsStoredValue: "0" },
+      { invoiceId: inv1.id, lineItemId: riversideLines[1].id, thisPeriodBilled: "34450", materialsStoredValue: "8200" },
+    ],
+  });
 
   const inv2 = await prisma.invoice.create({
     data: {
@@ -289,6 +300,44 @@ async function main() {
   await prisma.payment.create({
     data: { invoiceId: inv2.id, amount: "30000", method: "Check", receivedAt: day(-4) },
   });
+  await prisma.invoiceLineItem.createMany({
+    data: [
+      { invoiceId: inv2.id, lineItemId: riversideLines[1].id, thisPeriodBilled: "48300", materialsStoredValue: "-4000" },
+      { invoiceId: inv2.id, lineItemId: riversideLines[3].id, thisPeriodBilled: "14000", materialsStoredValue: "0" },
+    ],
+  });
+
+  // ---------------------------------------------------------- field reports
+  // A fortnight of days with a deliberate gap: the missing-day banner and
+  // the week summary are the whole point of that page and both need holes
+  // to show. Weekends skipped, one weekday left unfiled.
+  const reportDays = [-13, -12, -11, -10, -6, -5, -3, -2, -1];
+  const work = [
+    ["4 framers, 2 apprentices", "Layout and track, level 2 north", "Clear, 71F", null],
+    ["4 framers, 2 apprentices", "Stud framing level 2 north complete", "Clear", null],
+    ["5 framers", "Level 2 south framing, in-wall blocking", "Overcast", null],
+    ["5 framers", "Framing inspection passed, level 2", "Rain pm", "Inspector 2h late, crew stood down"],
+    ["6 hangers", "Board hung level 2 north", "Clear", null],
+    ["6 hangers", "Board hung level 2 south", "Clear, windy", null],
+    ["3 tapers", "Tape and first coat, level 2 north", "Clear", null],
+    ["3 tapers", "Second coat level 2 north, first coat south", "Clear", null],
+    ["3 tapers, 1 framer", "Sanding level 2 north; punch framing at corridor", "Rain am", "Board delivery 3h late"],
+  ];
+  for (let i = 0; i < reportDays.length; i += 1) {
+    const [crew, performed, weather, delays] = work[i];
+    await prisma.dailyFieldReport.create({
+      data: {
+        companyId: company.id,
+        jobId: riverside.id,
+        reportDate: day(reportDays[i]),
+        crewPresent: crew,
+        workPerformed: performed,
+        weather,
+        delays,
+        filedByUserId: user?.id ?? null,
+      },
+    });
+  }
 
   // -------------------------------------------------------------- compliance
   // Spread across the urgency ladder deliberately: one lapsed, one inside a
@@ -350,6 +399,10 @@ async function undo(companyId) {
     );
     await del("payment", () =>
       prisma.payment.deleteMany({ where: { invoice: { jobId: { in: jobIds } } } }),
+    );
+    // Before the invoices themselves, or the FK blocks the delete.
+    await del("invoiceLineItem", () =>
+      prisma.invoiceLineItem.deleteMany({ where: { invoice: { jobId: { in: jobIds } } } }),
     );
     await del("invoice", () => prisma.invoice.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("complianceDocument", () =>
