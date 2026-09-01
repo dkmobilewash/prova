@@ -9,6 +9,19 @@
 // OpenID Connect endpoints — nothing here is invented.
 // https://developer.intuit.com/app/developer/qbo/docs/develop/authentication-and-authorization/oauth-2.0
 
+import {
+  MAX_ATTEMPTS,
+  backoffMs,
+  isRetryableStatus,
+  parseRetryAfter,
+  type RequestKind,
+} from "./quickbooks-retry";
+
+/** Waits, so a retry is a retry rather than a second burst. */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export const QUICKBOOKS_SCOPES = "com.intuit.quickbooks.accounting openid profile email phone address";
 
 const AUTHORIZE_URL = "https://appcenter.intuit.com/connect/oauth2";
@@ -291,18 +304,54 @@ async function accountingRequest<T>(
 ): Promise<T> {
   const config = readQuickBooksConfig();
   const url = `${accountingApiBase(config.environment)}/v3/company/${realmId}${path}`;
+  // A POST here is a write, and the retry rules differ sharply — see
+  // apps/web/lib/quickbooks-retry.ts. The short version: a write is retried
+  // only on a status that proves QuickBooks did no work, because retrying
+  // one that may already have landed makes a second document.
+  const kind: RequestKind = init.method === "GET" ? "read" : "write";
 
-  const response = await fetch(url, {
-    method: init.method,
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      Accept: "application/json",
-      ...(init.body === undefined ? {} : { "Content-Type": "application/json" }),
-    },
-    body: init.body === undefined ? undefined : JSON.stringify(init.body),
-  });
+  let response: Response;
+  let text: string;
+  let attempt = 1;
 
-  const text = await response.text();
+  for (;;) {
+    try {
+      response = await fetch(url, {
+        method: init.method,
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          Accept: "application/json",
+          ...(init.body === undefined ? {} : { "Content-Type": "application/json" }),
+        },
+        body: init.body === undefined ? undefined : JSON.stringify(init.body),
+      });
+    } catch (error) {
+      // No response at all, so no round trip completed and QuickBooks
+      // cannot have created something whose id we then lost. Safe to repeat
+      // even for a write — narrowly, and only this case.
+      if (attempt < MAX_ATTEMPTS) {
+        await sleep(backoffMs(attempt));
+        attempt += 1;
+        continue;
+      }
+      throw error;
+    }
+
+    text = await response.text();
+    if (response.ok) break;
+
+    if (attempt < MAX_ATTEMPTS && isRetryableStatus(response.status, kind)) {
+      await sleep(
+        backoffMs(attempt, {
+          retryAfterSeconds: parseRetryAfter(response.headers.get("Retry-After")),
+        }),
+      );
+      attempt += 1;
+      continue;
+    }
+    break;
+  }
+
   if (!response.ok) {
     // Intuit puts the useful part in a nested Fault; fall back to the raw
     // body rather than swallowing it, but never log headers — they carry

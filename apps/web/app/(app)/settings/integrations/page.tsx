@@ -85,13 +85,13 @@ export default async function IntegrationsPage() {
     const planned = impl.kind === "planned";
     const connection = byProvider.get(entry.provider);
 
-    // What the pill says, per implementation kind. QuickBooks answers from
-    // its own row; the framework's providers answer from theirs; a planned
-    // provider has no status because it has no connection to have one.
-    // QuickBooks answers from its own row — including when that row says the
-    // connection is broken. Until QuickBooksConnection.status existed this
-    // could only say CONNECTED or NOT_CONNECTED, so a dead refresh token
-    // read as perfectly healthy right up until someone tried to push.
+    // What the pill says, per implementation kind. The framework's providers
+    // answer from their own row; a planned provider has no status because it
+    // has no connection to have one; and QuickBooks answers from ITS row —
+    // including when that row says the connection is broken. Until
+    // QuickBooksConnection.status existed this could only say CONNECTED or
+    // NOT_CONNECTED, so a dead refresh token read as perfectly healthy right
+    // up until someone tried to push.
     const status =
       impl.kind === "external"
         ? (quickBooks?.status ?? "NOT_CONNECTED")
