@@ -625,7 +625,122 @@ async function main() {
     }
   }
 
-  console.log("seed: change orders, submittals, punch list, closeout, talks, orders, drawings and time written");
+  // ------------------------------------------------------- catalog + pricing
+  // Both exist so the estimating story has something to show: a catalog
+  // default that is UNDER what anyone will actually sell at, which is the
+  // warning /vendors/pricing exists to raise.
+  const catalogBoard = await prisma.lineItemCatalogEntry.create({
+    data: {
+      companyId: company.id,
+      description: `5/8" Type X gypsum board, hung and finished ${MARK}`,
+      unit: "SF",
+      tradeScope: "METAL_FRAMING_DRYWALL",
+      defaultUnitPrice: "3.40",
+      defaultBudgetedUnitCost: "2.30",
+    },
+  });
+  await prisma.lineItemCatalogEntry.create({
+    data: {
+      companyId: company.id,
+      description: `20ga 3-5/8 metal stud framing, interior partitions ${MARK}`,
+      unit: "SF",
+      tradeScope: "METAL_FRAMING_DRYWALL",
+      defaultUnitPrice: "4.15",
+      defaultBudgetedUnitCost: "2.85",
+    },
+  });
+
+  const rival = await prisma.vendor.create({
+    data: {
+      companyId: company.id,
+      name: `Cascade Interior Supply ${MARK}`,
+      tradeScope: "METAL_FRAMING_DRYWALL",
+      contactName: "Ray Okonkwo",
+      phone: "(503) 555-0164",
+    },
+  });
+  // A rise from one supplier across two quotes, and a second supplier
+  // cheaper today — so movement, spread and the catalog gap all render.
+  const quotes = [
+    [supplier.id, "5/8\" Type X, 4x12", "2.42", -95, "INVOICE"],
+    [supplier.id, "5/8\" Type X, 4x12", "2.71", -12, "QUOTE"],
+    [rival.id, "5/8 Type X board 4x12", "2.63", -6, "QUOTE"],
+  ];
+  for (const [vendorId, description, unitPrice, at, source] of quotes) {
+    await prisma.vendorPriceQuote.create({
+      data: {
+        companyId: company.id,
+        vendorId,
+        catalogEntryId: catalogBoard.id,
+        description: `${description} ${MARK}`,
+        unit: "SF",
+        unitPrice,
+        quotedOn: day(at),
+        source,
+        recordedByUserId: user?.id ?? null,
+      },
+    });
+  }
+
+  // ---------------------------------------------------------------- RFIs
+  await prisma.rfiCounter.upsert({
+    where: { jobId: riverside.id },
+    create: { jobId: riverside.id, lastNumber: 3 },
+    update: { lastNumber: 3 },
+  });
+  const rfis = [
+    [1, "Head-of-wall detail at level 2 corridor", "Detail 4/A502 shows a rigid connection at a rated wall. Confirm deflection track type.", -44, -37, "Use slotted deflection track, 2in movement. See ASI 12."],
+    [2, "Ceiling height at reception", "RCP shows 9'-6\"; sections show 10'-0\". Which governs?", -21, -14, "10'-0\" governs. RCP to be revised."],
+    [3, "Rated assembly at mechanical rooms 2A/2B", "No UL assembly called out. Confirm required rating.", -9, null, null],
+  ];
+  for (const [number, subject, question, sent, answered, answer] of rfis) {
+    await prisma.rfi.create({
+      data: {
+        companyId: company.id,
+        jobId: riverside.id,
+        number,
+        subject,
+        question,
+        status: answered === null ? "SENT" : "ANSWERED",
+        sentOn: day(sent),
+        answeredOn: answered === null ? null : day(answered),
+        answer,
+        askedByUserId: user?.id ?? null,
+      },
+    });
+  }
+
+  // ------------------------------------------------------------- safety
+  const year = new Date().getUTCFullYear();
+  await prisma.safetyCaseCounter.upsert({
+    where: { companyId_caseYear: { companyId: company.id, caseYear: year } },
+    create: { companyId: company.id, caseYear: year, lastCaseNumber: 2 },
+    update: { lastCaseNumber: 2 },
+  });
+  const incidents = [
+    [1, -63, "Luis Arredondo", "Laceration to forearm from track edge while loading", "INJURY", "FIRST_AID_ONLY", null],
+    [2, -28, "Dane Whitfield", "Slip on wet deck, twisted ankle; two days off", "INJURY", "DAYS_AWAY", 2],
+  ];
+  for (const [caseNumber, at, employeeName, description, classification, outcome, daysAway] of incidents) {
+    await prisma.safetyIncident.create({
+      data: {
+        companyId: company.id,
+        jobId: riverside.id,
+        caseNumber,
+        caseYear: year,
+        occurredAt: day(at),
+        employeeName,
+        location: "Level 2 north",
+        description,
+        classification,
+        outcome,
+        daysAway,
+        reportedByUserId: user?.id ?? null,
+      },
+    });
+  }
+
+  console.log("seed: change orders, submittals, punch list, closeout, talks, orders, drawings, time, catalog, pricing, RFIs and safety written");
   return { company, user, gc, riverside, northgate, lakeshore, riversideLines };
 }
 
@@ -722,6 +837,9 @@ async function undo(companyId) {
     );
     await del("drawingSet", () => prisma.drawingSet.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("timeEntry", () => prisma.timeEntry.deleteMany({ where: { jobId: { in: jobIds } } }));
+    await del("safetyIncident", () =>
+      prisma.safetyIncident.deleteMany({ where: { jobId: { in: jobIds } } }),
+    );
     await del("rfi", () => prisma.rfi.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("rfiCounter", () => prisma.rfiCounter.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("payment", () =>
@@ -741,6 +859,9 @@ async function undo(companyId) {
     await del("jobLineItem", () => prisma.jobLineItem.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("job", () => prisma.job.deleteMany({ where: { id: { in: jobIds } } }));
   }
+  await del("safetyCaseCounter", () =>
+    prisma.safetyCaseCounter.deleteMany({ where: { companyId } }),
+  );
   await del("vendorPriceQuote", () =>
     prisma.vendorPriceQuote.deleteMany({ where: { companyId, description: { contains: MARK } } }),
   );
