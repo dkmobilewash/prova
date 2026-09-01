@@ -1,0 +1,97 @@
+# Applies migrations to the DEMO database, by hand, on purpose.
+#
+# Separate from migrate.yml for one reason: that one fires on every merge
+# to main and targets production. This one never fires on its own. The
+# demo database is not production and must not be migrated by accident,
+# and production must not be migrated by a button somebody found.
+#
+# WHY THIS EXISTS AT ALL, rather than "run the script locally":
+#
+#   - It needs no checkout, no Node, no pnpm. Diego runs and clicks; this
+#     is a button.
+#   - The demo URLs go into GitHub's secret store rather than being read
+#     out to a second person over Signal so they can put them in a file.
+#     Fewer copies of a credential is the whole game.
+#   - It is repeatable. Migrations reach production automatically on merge
+#     and the demo database gets NOTHING, so it drifts the moment anyone
+#     adds a migration — and drift surfaces as "column does not exist" on
+#     a preview, which reads as a code bug. Re-running this is the fix,
+#     and it needs to be one click or it will not happen.
+#
+# REQUIRED SECRETS — deliberately NOT named DATABASE_URL/DIRECT_URL, so
+# there is no way to confuse them with production's:
+#   DEMO_DATABASE_URL  the pooled Neon endpoint for the demo project
+#   DEMO_DIRECT_URL    the DIRECT endpoint of that SAME demo project
+#
+# The script this calls prints the host before it does anything, refuses
+# if the two URLs are different databases, and reads `migrate status` back
+# afterwards rather than trusting its own success message.
+
+name: Migrate demo database
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "demo" to confirm you mean the DEMO database, not production'
+        required: true
+        default: ""
+
+concurrency:
+  group: migrate-demo
+  cancel-in-progress: false
+
+jobs:
+  migrate-demo:
+    name: Apply pending migrations to the demo database
+    runs-on: ubuntu-latest
+    steps:
+      # A typed confirmation, because the cost of this running against the
+      # wrong database is someone's real job costing data and the cost of
+      # typing four letters is four letters.
+      - name: Confirm the target
+        run: |
+          set -e
+          if [ "${{ inputs.confirm }}" != "demo" ]; then
+            echo "::error::Confirmation was '${{ inputs.confirm }}', expected 'demo'. Nothing ran."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Fail early if the demo secrets are missing
+        env:
+          DEMO_DATABASE_URL: ${{ secrets.DEMO_DATABASE_URL }}
+          DEMO_DIRECT_URL: ${{ secrets.DEMO_DIRECT_URL }}
+        run: |
+          set -e
+          missing=""
+          [ -z "$DEMO_DATABASE_URL" ] && missing="$missing DEMO_DATABASE_URL"
+          [ -z "$DEMO_DIRECT_URL" ] && missing="$missing DEMO_DIRECT_URL"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secret(s):$missing"
+            echo "Add them under Settings → Secrets and variables → Actions."
+            echo "DEMO_DIRECT_URL must be the direct (non-pooler) endpoint of"
+            echo "the SAME Neon project DEMO_DATABASE_URL points at."
+            exit 1
+          fi
+
+      - run: pnpm install --frozen-lockfile
+
+      # The demo secrets are mapped onto the names the script reads. That
+      # mapping happens HERE and nowhere else, so production's secrets are
+      # never in scope for this job at all — it cannot reach them.
+      - name: Apply and verify
+        env:
+          DATABASE_URL: ${{ secrets.DEMO_DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.DEMO_DIRECT_URL }}
+        run: pnpm --filter @prova/db run migrate:deploy

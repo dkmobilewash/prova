@@ -181,8 +181,23 @@ scrollback gets broken by whoever didn't scroll far enough.
 
   | Project | Endpoint | Used by | Holds |
   | --- | --- | --- | --- |
-  | Diego's | `ep-little-sea-a6bdnaw2` | Vercel — production AND previews | the real data |
+  | Diego's | `ep-little-sea-a6bdnaw2` | Vercel PRODUCTION only | the real data |
+  | Demo | `prova-demo` (its own project) | Vercel PREVIEWS — every one | the demo dataset |
   | Cyrus's | `ep-icy-hat-afqau56u` | Cyrus's laptop only | his own test data |
+
+  THREE now, not two. Previews used to run on production's database, which
+  meant browser testing wrote real rows and every round of it needed
+  cleaning up afterwards. Preview's `DATABASE_URL`/`DIRECT_URL` point at
+  the demo project instead, so that is no longer true.
+
+  The cost of that split: migrations reach production automatically on
+  merge (`migrate.yml`) and the demo database gets NOTHING. It drifts the
+  moment anyone adds a migration, and drift shows up on a preview as
+  "column does not exist" — which reads as a code bug and is not one. Fix
+  it by running the **Migrate demo database** workflow (Actions tab, Run
+  workflow, type `demo` to confirm). It needs the `DEMO_DATABASE_URL` and
+  `DEMO_DIRECT_URL` repository secrets, which are deliberately not named
+  after production's so the two can never be confused.
 
   Established 2026-08-29 from: two production build logs printing
   `ep-little-sea` as the migrate target; the `Migrate` workflow printing
