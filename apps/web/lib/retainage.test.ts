@@ -75,14 +75,28 @@ describe("totalRetainageHeld", () => {
     ).toBe(9420);
   });
 
-  it("ignores a job that has not reached substantial completion", () => {
-    // Retainage withheld on a running job is held but not yet claimable,
-    // and this card is about money that can be chased today.
+  it("counts a job with NO completion date at all", () => {
+    // Reversed after the dry run. substantialCompletionDate is the date a
+    // job is EXPECTED to reach substantial completion — a forecasting
+    // anchor, not a record that it happened. Requiring it dropped real
+    // money held on jobs nobody had forecast yet, and it let a caption
+    // claim an event the column does not record.
     expect(
       totalRetainageHeld([
         { substantialCompletionDate: null, invoiceRetainageWithheld: [8000], releaseAmounts: [] },
       ]),
-    ).toBe(0);
+    ).toBe(8000);
+  });
+
+  it("counts a job whose expected completion is in the FUTURE", () => {
+    // The dry-run case exactly: $300 held on a Contracted job expecting
+    // completion eight weeks out. The GC is holding that money today.
+    const future = new Date(Date.UTC(2026, 9, 28));
+    expect(
+      totalRetainageHeld([
+        { substantialCompletionDate: future, invoiceRetainageWithheld: [100, 200], releaseAmounts: [] },
+      ]),
+    ).toBe(300);
   });
 
   it("sums across jobs and returns zero for none", () => {

@@ -98,7 +98,7 @@ export function CloseoutJobCard({
       ? "bg-blue-500/15 text-blue-300"
       : wState === "EXPIRED"
         ? "bg-slate-800 text-slate-400"
-        : "bg-slate-800 text-slate-500";
+        : "bg-slate-800 text-slate-400";
 
   return (
     <li className="flex flex-col gap-4 p-5">

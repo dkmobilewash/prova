@@ -110,6 +110,9 @@ export async function loadTodayDashboard(companyId: string, now: Date) {
       orderBy: { createdAt: "desc" },
     }),
     // Retainage needs its own query, and the reason is the bug it fixes.
+    // No substantialCompletionDate filter: that column is the date a job
+    // is EXPECTED to reach completion, so requiring it dropped real money
+    // held on jobs nobody had forecast yet.
     // Job health is about jobs still running, so activeJobs is CONTRACTED
     // and IN_PROGRESS. Retainage is the other end of a job's life: it is
     // released after substantial completion, by which point the job is
@@ -120,7 +123,7 @@ export async function loadTodayDashboard(companyId: string, now: Date) {
     // Status is not filtered at all here. What makes retainage claimable
     // is substantial completion, not a pipeline stage.
     prisma.job.findMany({
-      where: { companyId, substantialCompletionDate: { not: null } },
+      where: { companyId },
       select: {
         id: true,
         substantialCompletionDate: true,
