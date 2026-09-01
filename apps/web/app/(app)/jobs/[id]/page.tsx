@@ -9,6 +9,7 @@ import { WipNarrativeButton } from "@/components/WipNarrativeButton";
 import { DraftLineItemsForm } from "@/components/DraftLineItemsForm";
 import { DailyFieldReports } from "@/components/DailyFieldReports";
 import { PayApplications, StatusForm } from "@/components/PayApplications";
+import { PushPaymentToQuickBooks } from "@/components/PushPaymentToQuickBooks";
 import { PushInvoiceToQuickBooks } from "@/components/PushInvoiceToQuickBooks";
 import { MarkContractedButton } from "@/components/MarkContractedButton";
 import { ChangeOrders, type ChangeOrderView } from "@/components/ChangeOrders";
@@ -323,6 +324,32 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
           companyId: company.id,
           entityType: "Invoice",
           entityId: { in: job.invoices.map((invoice) => invoice.id) },
+        },
+        select: { entityId: true, qboId: true, lastVerifiedAt: true },
+      })
+    ).map((link) => [
+      link.entityId,
+      {
+        qboId: link.qboId,
+        lastVerifiedAt: link.lastVerifiedAt
+          ? link.lastVerifiedAt.toISOString().slice(0, 10)
+          : null,
+      },
+    ]),
+  );
+
+  // The same for payments. Without it a payment row cannot say whether it
+  // reached QuickBooks, and "Send" would look identical on a payment that
+  // is already there — which is how a second document gets created.
+  const quickBooksPaymentLinks = new Map(
+    (
+      await prisma.quickBooksEntityLink.findMany({
+        where: {
+          companyId: company.id,
+          entityType: "Payment",
+          entityId: {
+            in: job.invoices.flatMap((invoice) => invoice.payments.map((p) => p.id)),
+          },
         },
         select: { entityId: true, qboId: true, lastVerifiedAt: true },
       })
@@ -1325,6 +1352,13 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                             </span>
                             <span className="flex items-center gap-2">
                               <span className="text-slate-100">{money(Number(payment.amount))}</span>
+                              <PushPaymentToQuickBooks
+                                paymentId={payment.id}
+                                linkedQboId={quickBooksPaymentLinks.get(payment.id)?.qboId ?? null}
+                                lastVerifiedAt={
+                                  quickBooksPaymentLinks.get(payment.id)?.lastVerifiedAt ?? null
+                                }
+                              />
                               <form action={deletePayment.bind(null, job.id, payment.id)}>
                                 <SubmitButton
                                   type="submit"

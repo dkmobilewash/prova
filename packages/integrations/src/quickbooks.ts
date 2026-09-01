@@ -438,6 +438,53 @@ export async function getInvoice(
   return body.Invoice;
 }
 
+export interface QuickBooksPayment {
+  Id: string;
+  SyncToken?: string;
+  TotalAmt?: number;
+  Line?: { Amount?: number; LinkedTxn?: { TxnId?: string; TxnType?: string }[] }[];
+}
+
+/**
+ * Creates or updates a Payment applied to an invoice.
+ *
+ * Same endpoint for both, same rule as the invoice: Id and SyncToken present
+ * means update, absent means create.
+ *
+ * This is the Payment ENTITY in the Accounting API, not Intuit's
+ * card-processing product — see the scope note at the top of this file. The
+ * accounting scope this connection already holds covers it, so adding this
+ * costs nobody a re-consent.
+ */
+export async function upsertPayment(
+  realmId: string,
+  accessToken: string,
+  payload: unknown,
+): Promise<QuickBooksPayment> {
+  const body = await accountingRequest<{ Payment: QuickBooksPayment }>(
+    realmId,
+    accessToken,
+    "/payment",
+    { method: "POST", body: payload },
+  );
+  return body.Payment;
+}
+
+/** Reads a payment back, for the same reason getInvoice exists: the
+ * response to a write is not proof the write is correct. */
+export async function getPayment(
+  realmId: string,
+  accessToken: string,
+  qboId: string,
+): Promise<QuickBooksPayment> {
+  const body = await accountingRequest<{ Payment: QuickBooksPayment }>(
+    realmId,
+    accessToken,
+    `/payment/${encodeURIComponent(qboId)}`,
+  );
+  return body.Payment;
+}
+
 export interface QuickBooksItem {
   id: string;
   name: string;
