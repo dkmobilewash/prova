@@ -76,7 +76,32 @@ async function accessTokenFor(companyId: string) {
     return { accessToken: connection.accessToken, realmId: connection.realmId };
   }
 
-  const refreshed = await refreshTokens(connection.refreshToken);
+  // A refresh that fails is not a transient error and no retry fixes it:
+  // Intuit rolls refresh tokens roughly every 100 days, and a person can
+  // revoke the connection from inside QuickBooks at any moment. Either way
+  // the only cure is somebody reconnecting.
+  //
+  // This used to throw straight out of here. In a production build Next
+  // redacts a thrown Server Action message to a digest, so the person got
+  // an opaque error on whatever page they were on and NOTHING anywhere said
+  // the QuickBooks connection was the reason. Recording the state and
+  // returning null turns a mystery into a sentence on the Integrations
+  // page.
+  let refreshed;
+  try {
+    refreshed = await refreshTokens(connection.refreshToken);
+  } catch (error) {
+    const detail =
+      error instanceof QuickBooksApiError
+        ? error.detail
+        : "QuickBooks refused to renew the connection.";
+    await prisma.quickBooksConnection.update({
+      where: { companyId },
+      data: { status: "NEEDS_REAUTH", statusDetail: detail, statusAt: new Date() },
+    });
+    return null;
+  }
+
   await prisma.quickBooksConnection.update({
     where: { companyId },
     data: {
@@ -84,6 +109,12 @@ async function accessTokenFor(companyId: string) {
       refreshToken: refreshed.refreshToken,
       accessTokenExpiresAt: refreshed.accessTokenExpiresAt,
       refreshTokenExpiresAt: refreshed.refreshTokenExpiresAt,
+      // A successful refresh clears it. Leaving a stale NEEDS_REAUTH on a
+      // working connection would be its own lie, and this codebase has been
+      // bitten by exactly that shape more than once.
+      status: "CONNECTED",
+      statusDetail: null,
+      statusAt: new Date(),
     },
   });
   return { accessToken: refreshed.accessToken, realmId: connection.realmId };

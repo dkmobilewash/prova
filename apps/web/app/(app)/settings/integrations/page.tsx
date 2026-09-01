@@ -70,10 +70,10 @@ export default async function IntegrationsPage() {
     // QuickBooks' own table is the single source of truth for that card.
     prisma.quickBooksConnection.findUnique({
       where: { companyId: company.id },
-      // realmId and a date. QuickBooksConnection stores its tokens as plain
-      // columns, so reading the whole row into a page is exactly what not to
-      // do here.
-      select: { realmId: true, createdAt: true },
+      // realmId, a date, and the connection's own health. Never the tokens:
+      // QuickBooksConnection stores those as plain columns, so reading the
+      // whole row into a page is exactly what not to do here.
+      select: { realmId: true, createdAt: true, status: true, statusDetail: true },
     }),
   ]);
 
@@ -88,11 +88,13 @@ export default async function IntegrationsPage() {
     // What the pill says, per implementation kind. QuickBooks answers from
     // its own row; the framework's providers answer from theirs; a planned
     // provider has no status because it has no connection to have one.
+    // QuickBooks answers from its own row — including when that row says the
+    // connection is broken. Until QuickBooksConnection.status existed this
+    // could only say CONNECTED or NOT_CONNECTED, so a dead refresh token
+    // read as perfectly healthy right up until someone tried to push.
     const status =
       impl.kind === "external"
-        ? quickBooks
-          ? "CONNECTED"
-          : "NOT_CONNECTED"
+        ? (quickBooks?.status ?? "NOT_CONNECTED")
         : (connection?.status ?? "NOT_CONNECTED");
 
     const isConnected = status === "CONNECTED";
@@ -151,6 +153,11 @@ export default async function IntegrationsPage() {
               label="History"
               value="Push attempts are logged on the Settings page"
             />
+            {quickBooks.statusDetail && (
+              <div className="sm:col-span-3">
+                <DetailRow label="Needs attention" value={quickBooks.statusDetail} />
+              </div>
+            )}
           </dl>
         )}
 
