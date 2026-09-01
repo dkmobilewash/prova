@@ -3,10 +3,17 @@ import { Sidebar } from "@/components/Sidebar";
 import { Topbar } from "@/components/Topbar";
 import { MetricBar } from "@/components/MetricBar";
 import { loadCompanyFinancials } from "@/lib/company-financials-query";
+import { countVisibleAlerts } from "@/lib/alerts-query";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const { company } = await requireCompanyContext();
-  const financials = await loadCompanyFinancials(company.id);
+  const { company, ...currentUser } = await requireCompanyContext();
+  const [financials, alertCount] = await Promise.all([
+    loadCompanyFinancials(company.id),
+    // In the layout, so the count is on every screen. Derived on each
+    // render like everything else here — there is no stored unread count
+    // to go stale against the records it is counting.
+    countVisibleAlerts(company.id, currentUser.id, new Date().toISOString().slice(0, 10)),
+  ]);
 
   return (
     // h-screen with the content column scrolling inside it, so the metric
@@ -20,7 +27,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <div className="flex h-screen bg-slate-950 [--shell-metricbar:52px] [--shell-topbar:56px]">
       <Sidebar companyName={company.name} />
       <div className="flex min-w-0 flex-1 flex-col">
-        <Topbar companyName={company.name} />
+        <Topbar companyName={company.name} alertCount={alertCount} />
         {/* No background of its own: each page brings its own ground, so a
             page still written against the dark theme keeps it and a
             converted one opts into the light canvas. */}

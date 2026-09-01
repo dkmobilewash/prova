@@ -23,18 +23,19 @@ in flight. Left as-is here rather than guessed at from the outside; the next
 update to touch those sheets should come from whoever actually verified them
 against a fresh clone.
 
-**111 items audited — 77 built / 16 partial / 17 missing / 1 descoped**
+**112 items audited — 78 built / 18 partial / 15 missing / 1 descoped**
 
 | Status | Count |
 | --- | --- |
-| Built | 76 |
-| Partial | 16 |
-| Missing | 16 |
+| Built | 77 |
+| Partial | 18 |
+| Missing | 14 |
 | Descoped | 1 |
 
 These two tallies have disagreed with each other, and with the sheets'
-own headers, since before this edit. Sheet 13's +2 built / −2 missing and
-Sheet 22's +1 built are applied to both rather than recomputing
+own headers, since before this edit. Sheet 13's +2 built / −2 missing,
+Sheet 22's +1 built and Sheet 26's +1 built / +2 partial / −2 missing are
+applied to both rather than recomputing
 everything, because recomputing every header from its rows is already in
 flight on another branch and two people rewriting the same totals is how
 they got out of step in the first place.
@@ -299,12 +300,20 @@ rows below were already Built and are unchanged.*
 | Missing | Distinct roles: estimator, PM, foreman/field, payroll/compliance admin, owner/exec, accounting | today's `UserRole` has exactly two values, OWNER and MEMBER |
 | Missing | Field-only mobile access vs. office full access | no access tier below MEMBER, no mobile-specific surface |
 
-## 26. Notifications & Alerts — 0 built · 2 partial · 3 missing
+## 26. Notifications & Alerts — 1 built · 4 partial · 1 missing
+
+*Updated 1 Sep 2026 — the alert engine shipped. Four of these rows moved,
+and NONE of them moved to Built, because the bar this sheet set for itself
+("NOT Built until something pushes it") has not been met: there is still no
+email or SMS sender anywhere on main. What changed is that every one of
+these is now derived, ranked against the others, acknowledgeable, and
+visible from every screen instead of from one page.*
 
 | Status | Feature | Note |
 | --- | --- | --- |
-| Partial | COI/license/bond expiration alerts | ranked across all four record types, counted in the dashboard's Needs attention tiles and listed in its Compliance card, so it reaches someone who opens the app — still no delivery channel, so it reaches nobody who doesn't. NOT Built until something pushes it |
-| Missing | Certified payroll submission deadline reminders | no reminder system exists |
-| Missing | Retainage release eligibility alerts | the underlying retainage data exists now (Sheet 11), but no alerting/notification system reads it yet |
-| Missing | Apprentice ratio out-of-compliance alerts | blocked on apprentice tracking not existing yet |
-| Partial | WIP variance alerts | jobs forecast past contract value are counted in the dashboard's Needs attention tiles and named in Job health on load, rather than only when someone clicks into a job — but nothing notifies anyone who doesn't open the app, so this is surfacing, not alerting |
+| Built | In-app alert delivery: one ranked list, acknowledgement, and a count in the chrome | `lib/alerts.ts` (derivation and ranking), `lib/alerts-query.ts` (assembly), `AlertAcknowledgement` (the ONLY stored part — a person deciding they have seen one), `/alerts`, and a bell with a live count in the top bar on every screen. Alerts are never stored: each is derived from the record it is about on every render, so fixing the thing removes it. An alert's key carries the fact that would change it (`RENEWAL:lic_1:2026-11-30`), so a dismissal lapses by itself when the situation moves — no expiry logic. Per-user, not per-company: dismissing on a colleague's behalf is the worse of the two failures. **This is not push** — it reaches whoever opens the app, and that is the whole claim |
+| Partial | COI/license/bond expiration alerts | now an alert with an identity, a severity comparable against everything else, and a place reachable from every page — through `lib/compliance-expiry.ts`'s existing ranking, not a second expiry rule. Still no channel that reaches someone who doesn't open the app |
+| Partial | Certified payroll submission deadline reminders | derived: a job carrying a `PrevailingWageDetermination`, a finished week with `TimeEntry` rows, and no `CERTIFIED_PAYROLL` document whose period covers that whole week. Gated on the determination on purpose — certified payroll isn't required on private work, and a job where nobody recorded one raises nothing rather than a guess. Still no push |
+| Partial | Retainage release eligibility alerts | derived from `lib/retainage.ts`'s balance plus the closeout package's state. An ACCEPTED package is an event and reads as collectable; `Job.substantialCompletionDate` is a FORECAST and reads as "worth confirming", never as money owed. Still no push |
+| Missing | Apprentice ratio out-of-compliance alerts | still blocked on apprentice tracking not existing. `ApprenticeRatioRule` holds the ratio and nothing holds the daily headcount to check it against — the engine above will raise it the day that data exists |
+| Partial | WIP variance alerts | jobs forecast past contract value now appear in the one alert list alongside everything else, through `jobIsOverBudget` rather than a second threshold, and can be acknowledged. Deliberately a STANDING severity with no date: it is true today and tomorrow, and escalating it with the calendar would invent urgency the data doesn't have. Still no push |

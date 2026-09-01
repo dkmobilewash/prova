@@ -52,8 +52,13 @@ one at a time:
    (`lib/closeout-readiness.ts`). Reads `PunchListItem`, never writes it.
    Two lines added to `CloseoutJobCard.tsx` (a `packageSlot` prop) and a
    query plus a band on `/closeout/page.tsx`.
-3. **Notifications & Alerts** — Sheet 26, where two items are Partial
-   ("it reaches someone who opens the app") and three are Missing.
+3. **Notifications & Alerts** — Sheet 26. *Engine shipped 1 Sep.*
+   `lib/alerts.ts`, `lib/alerts-query.ts`, `notifications.prisma`
+   (`AlertAcknowledgement` only — alerts themselves are never stored),
+   `/alerts`, and a count in `Topbar`. NOT push: no email sender exists on
+   main, so four of Sheet 26's rows stay Partial on purpose. If the
+   `sendOutboundEmail` work lands in the other lane, it feeds from
+   `loadAlerts` rather than growing its own rules.
 4. **Roles & Permissions** — Sheet 25, still `OWNER`/`MEMBER` only.
 5. **Multi-state prevailing wage rules** — Sheet 21.
 6. **Apprentice / fringe remittance reporting** — Sheet 09.

@@ -184,6 +184,21 @@ export const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
+    href: "/alerts",
+    label: "Alerts",
+    icon: (
+      <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5">
+        <path
+          d="M10 3.5a4.5 4.5 0 0 0-4.5 4.5c0 3-1.5 4-1.5 4h12s-1.5-1-1.5-4A4.5 4.5 0 0 0 10 3.5Z"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinejoin="round"
+        />
+        <path d="M8.5 14.5a1.6 1.6 0 0 0 3 0" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      </svg>
+    ),
+  },
+  {
     href: "/backcharges",
     label: "Backcharges",
     icon: (
@@ -340,7 +355,7 @@ const item = (href: string): NavItem => {
 export const NAV_GROUPS: NavGroup[] = [
   {
     heading: "Pre-construction",
-    items: [item("/dashboard"), item("/bids"), item("/contacts"), item("/catalog")],
+    items: [item("/dashboard"), item("/alerts"), item("/bids"), item("/contacts"), item("/catalog")],
   },
   {
     heading: "Operations",

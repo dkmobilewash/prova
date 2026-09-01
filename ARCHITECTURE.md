@@ -818,6 +818,93 @@ Release *forecasting* is a plain field
 system — there's no closeout/warranty stage in `JobStatus` yet for a
 forecast to hook into more precisely than that.
 
+## Alerts — derived, ranked, and acknowledgeable
+
+There is no `Alert` table, and there is not going to be one. Every alert
+this app raises already exists as a fact somewhere: a COI expiring is its
+`expiresAt` against today, a backcharge going unanswered is its
+`respondByDate` against its status, retainage coming due is withheld minus
+released against an accepted `CloseoutSubmission`. Storing those would
+create a second copy of a fact free to disagree with the first, which is
+the rule this document opens with — and it is why
+`lib/compliance-expiry.ts` was built with no migration at all.
+
+`lib/alerts.ts` is the derivation and the ranking; `lib/alerts-query.ts`
+assembles the inputs from real rows. Same split as
+`renewals.ts`/`compliance-expiry.ts` and for the same reason: the deciding
+half is where the bugs live and it has to be testable without a database.
+Six sources feed it — renewals (through `compliance-expiry.ts`'s existing
+ranking, not a second expiry rule), unanswered backcharges, retainage
+release, a closeout package the GC is sitting on, certified payroll on a
+prevailing-wage week, and jobs forecast over contract value (through
+`jobIsOverBudget`, so the alert and the dashboard's Job health card can
+never disagree about the same job).
+
+### The one thing that IS stored, and why the key is shaped as it is
+
+`AlertAcknowledgement` records a person deciding they have seen one. That
+is not derivable from any row: "the office manager has dealt with this and
+does not want to be told again until March" is a fact about a human.
+
+The mechanism that keeps it honest is the key. An alert's key includes the
+FACT that would change what it says, not just the row it is about:
+
+```
+RENEWAL:license_abc:2026-11-30      not   RENEWAL:license_abc
+```
+
+Renew that licence and the key changes, so an acknowledgement written
+against the old one stops matching and the alert returns when the new date
+comes round. Without that, "dismiss" would mean "never tell me about this
+licence again", which is how an alert list becomes furniture. There is no
+expiry logic beyond this; `alertKey()` is the only thing allowed to build
+one, precisely so no call site can forget the third segment.
+
+Acknowledgements are **per user**, not per company. Dismissing on a
+colleague's behalf is the worse of the two failures available: the real
+fix — renewing the licence, answering the backcharge — clears the alert
+for everybody automatically, so a per-user acknowledgement can only ever
+cause someone to see something twice, while a company-wide one can cause
+the only person who would have acted to never see it.
+
+### Three severities, and why a standing condition is not low priority
+
+`OVERDUE` is a date that has passed, `DUE_SOON` a date coming, `STANDING`
+a condition with no date attached at all. A job forecast over its contract
+value is true today and will be true tomorrow; giving it a deadline would
+make it indistinguishable from a COI lapsing on the 14th, which is the
+distinction the list exists to draw. Within a severity, ordering is by
+money first and date second — two overdue items are not equally urgent
+when one is holding up $42,000 and the other a $400 cleanup charge.
+
+Horizons are per kind (`ALERT_HORIZON_DAYS`, `CLOSEOUT_CHASE_DAYS`), the
+same reasoning as `RENEWAL_HORIZON_DAYS`: the lead time you need is the
+lead time the thing takes. `CLOSEOUT_CHASE_DAYS` is explicitly named a
+chasing threshold rather than a deadline, because most subcontracts say
+nothing about how long acceptance may take and asserting a contractual
+date we do not have would be exactly the guess this codebase refuses.
+
+### What it is not
+
+**It is not push.** Nothing here emails, texts, or notifies anyone who is
+not looking at the app. What it adds over the dashboard tiles that came
+before is that an alert now has an identity, a severity comparable across
+kinds, a place of its own reachable from every screen (the bell in
+`Topbar`), and a record of whether a person has dealt with it. A delivery
+channel needs an email sender, which does not exist on main, and Sheet 26
+of FEATURE-AUDIT therefore keeps four of its rows at Partial rather than
+flipping them to Built. The engine is the half that was actually missing;
+when a sender lands, it feeds from here rather than replacing it.
+
+Two alerts are also deliberately quieter than they could be. Certified
+payroll is raised only for a job carrying a `PrevailingWageDetermination`
+— it is not required on private work, and nagging about every job would
+train people to ignore the one that matters. Retainage grounded on
+`Job.substantialCompletionDate` is worded as "worth confirming" rather
+than as money owed, because that column records when a job is EXPECTED to
+reach substantial completion, not that it did (`lib/retainage.ts` learned
+that the hard way and says so).
+
 ## Closeout: the package, and what is holding it up
 
 `CloseoutItem`, `WarrantyPeriod` and `WarrantyServiceRequest` already

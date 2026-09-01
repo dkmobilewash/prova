@@ -12,6 +12,62 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### Alerts: derived, ranked, and possible to acknowledge (Diego)
+`claude/prova-contractor-os-e3f0iz`
+
+Sheet 26 was the last section reading 0 built, and its own notes said why:
+"it reaches someone who opens the app — still no delivery channel, so it
+reaches nobody who doesn't. NOT Built until something pushes it."
+
+**That bar is not met and I did not pretend otherwise.** There is no email
+sender on main, so nothing here pushes anything, and four of the five
+existing rows stay Partial. What shipped is the half that was actually
+missing underneath the delivery question: alerts with an identity, one
+ranking across every kind, a place reachable from every screen, and a
+record of whether a person has dealt with one.
+
+**There is no `Alert` table and there is not going to be one.** Every alert
+is derived from the record it is about, on every render — a COI expiring
+is its `expiresAt`, a backcharge going unanswered is its `respondByDate`
+against its status, retainage coming due is withheld-minus-released
+against an accepted closeout package. Six sources, all through the
+existing implementations rather than second copies: renewals via
+`compliance-expiry.ts`'s ranking, WIP variance via `jobIsOverBudget`,
+retainage via `calculateRetainageSummary`.
+
+**The one stored thing is a person saying they have seen one**, and the key
+is what keeps that honest. An alert's key carries the fact that would
+change it — `RENEWAL:license_abc:2026-11-30`, not `RENEWAL:license_abc`.
+Renew the licence and the key moves, so the dismissal stops matching and
+the alert comes back when the new date does. No expiry logic, no sweeper
+job. Acknowledgements are per USER: dismissing on a colleague's behalf is
+the worse failure, since the real fix clears it for everyone anyway.
+
+**Two alerts are deliberately quieter than they could be.** Certified
+payroll is raised only for a job carrying a `PrevailingWageDetermination`
+— it is not required on private work, and nagging about every job trains
+people to ignore the one that matters. Retainage grounded on
+`Job.substantialCompletionDate` says "worth confirming the job actually
+reached it" rather than asserting money is owed, because that column is a
+forecast, not a record that substantial completion happened.
+
+**A bell in the top bar, on every screen, that renders at zero.** A control
+that disappears when it has nothing to say cannot be trusted to appear
+when it does.
+
+Verified against real rows: `alerts-query.dbtest.ts` drives the whole
+engine through Postgres — the backcharge alert appearing and then dropping
+the moment it is answered, retainage becoming collectable only once the GC
+accepts the package and falling away as it is released, certified payroll
+silent until a wage determination exists and cleared only by a report
+whose period covers the WHOLE week (a clipping one is not evidence), a
+dismissal silencing one user's list and not another's, and that same
+dismissal failing to silence the next deadline on the same backcharge. 14
+db tests plus 29 unit tests on the engine. `pnpm test` 444 → 473;
+typecheck, lint and build clean.
+
+---
+
 ### Closeout that names what is holding it up (Diego)
 `claude/prova-contractor-os-e3f0iz`
 

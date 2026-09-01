@@ -22,6 +22,7 @@ const isProtectedRoute = createRouteMatcher([
   "/drawings(.*)",
   "/closeout(.*)",
   "/backcharges(.*)",
+  "/alerts(.*)",
   "/field-reports(.*)",
   // Ask streams over a route handler rather than a Server Action.
   // requireCompanyContext already redirects an anonymous caller, but this
