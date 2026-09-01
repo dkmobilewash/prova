@@ -29,6 +29,14 @@ const isProtectedRoute = createRouteMatcher([
   "/api/ask(.*)",
 ]);
 
+// /api/integrations/webhooks/[provider] is deliberately NOT protected here.
+// A provider's servers have no Clerk session, so requiring one would reject
+// every real delivery. That route is written on the assumption that anyone
+// can reach it: it stores no payload, changes no connection's status, and
+// only writes a log row for a payload naming an account an existing
+// connection already claims. Signature verification arrives with the first
+// provider that has one.
+//
 // /api/quickbooks/callback is deliberately NOT protected here — see
 // QuickBooksOAuthCookiePayload in lib/quickbooks-constants.ts. Intuit's
 // redirect back to that route is a third-party-initiated navigation;

@@ -15,6 +15,14 @@ const STYLES: Record<string, string> = {
   // not contract the job -- the contractor still has to accept it -- so
   // this deliberately reads differently from CONTRACTED.
   SIGNED: "bg-tag-green text-tag-green-ink",
+  // Integration connection states. Additive: this component already keys off
+  // a plain string with a slate fallback, and already carried SIGNED, which
+  // is not a JobStatus either. NEEDS_REAUTH is amber rather than red on
+  // purpose — somebody has to re-authorise, which is a task, not a fault.
+  CONNECTED: "bg-tag-green text-tag-green-ink",
+  NOT_CONNECTED: "bg-tag-slate text-tag-slate-ink",
+  NEEDS_REAUTH: "bg-tag-amber text-tag-amber-ink",
+  ERROR: "bg-tag-rose text-tag-rose-ink",
 };
 
 const LABELS: Record<string, string> = {
@@ -23,6 +31,10 @@ const LABELS: Record<string, string> = {
   IN_PROGRESS: "In progress",
   COMPLETE: "Complete",
   SIGNED: "Signed",
+  CONNECTED: "Connected",
+  NOT_CONNECTED: "Not connected",
+  NEEDS_REAUTH: "Needs reauth",
+  ERROR: "Error",
 };
 
 export function StatusBadge({ status }: { status: string }) {
