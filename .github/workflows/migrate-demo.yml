@@ -33,9 +33,14 @@ on:
   workflow_dispatch:
     inputs:
       confirm:
+        # No `default:` here. It was `required: true` with `default: ""`,
+        # which is contradictory — a required input cannot have an empty
+        # default — and GitHub rejected the whole file for it. The file sat
+        # on main looking correct while the Actions tab never showed it,
+        # and CI and Migrate ran from the very same push, so nothing looked
+        # wrong from the outside.
         description: 'Type "demo" to confirm you mean the DEMO database, not production'
         required: true
-        default: ""
 
 concurrency:
   group: migrate-demo
