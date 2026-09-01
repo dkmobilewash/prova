@@ -818,6 +818,65 @@ Release *forecasting* is a plain field
 system — there's no closeout/warranty stage in `JobStatus` yet for a
 forecast to hook into more precisely than that.
 
+## Closeout: the package, and what is holding it up
+
+`CloseoutItem`, `WarrantyPeriod` and `WarrantyServiceRequest` already
+covered the checklist, the warranty clock and the callbacks. What sat
+between "every required document is signed" and "retainage came back" was
+the event that actually connects them — the package going to the GC — and
+nothing recorded it. So a job could show a complete checklist next to a
+retainage balance for four months with no way to tell whether nobody had
+sent the package or the GC was sitting on it. Those have opposite fixes,
+and the page could not tell them apart.
+
+`CloseoutSubmission` is one attempt at handing that package over.
+Deliberately several rows per job, exactly like `SubmittalRevision`: a
+package that comes back short a lien waiver goes again, and collapsing
+that into one row with an editable date would erase the fact that we sent
+it on time the first time — which is the whole argument when retainage is
+late. Attempts are numbered by `CloseoutSubmissionCounter`, which only
+increments, for the reason every other counter here does. Dates are
+entered; how long the GC has had it is derived per render.
+
+**Submitting is not gated on a complete checklist.** Packages go out short
+a document all the time, with the missing one promised to follow, and
+refusing to record that would make the log stop matching what happened —
+which is the one thing it is for. The blockers are shown next to the
+submission instead, so an incomplete package that went anyway is visible
+rather than impossible.
+
+### `lib/closeout-readiness.ts` — whose move it is
+
+Pure derivation, same family as `lib/retainage.ts` and `lib/wip.ts`. It
+takes the required-item counts, open punch items, open callbacks, the
+retainage balance and the latest attempt, and returns a stage —
+`NOT_READY` / `READY_TO_SUBMIT` / `AWAITING_GC` / `REJECTED` /
+`ACCEPTED` — plus an ordered blocker list and the money at stake. Nothing
+is stored; there is no "ready" or "submitted" flag anywhere in this
+feature.
+
+Three decisions in it are load-bearing:
+
+- **An open punch item blocks closeout, whether or not "punch list
+  sign-off" is ticked.** The checklist is somebody's assertion and the
+  punch rows are what can contradict it. `/closeout` reads
+  `PunchListItem` and never writes it — punch lists are their own
+  feature, and readiness only needs to know open ones exist.
+- **Once the GC has answered, the submission decides the stage, not the
+  blockers.** A callback logged the week after acceptance is warranty
+  work, not something that un-closes the closeout. Reading it the other
+  way round would put an accepted job back into `NOT_READY` the first time
+  someone rang about a sticking door, and nobody would trust the column
+  again. Blockers are still reported; they just stop deciding.
+- **An empty checklist is a blocker, not a pass** — the same rule
+  `isCloseoutComplete` already follows. Nothing has been asserted about
+  that job, which is a different thing from nothing being wrong.
+
+Retainage at stake comes from `calculateRetainageSummary`, the existing
+implementation, rather than a second sum written here — the page's own
+opening sentence has always said a missing lien waiver is money sitting
+with the GC, and it had never shown the number.
+
 ## Backcharges — the change order running the other way
 
 A `ChangeOrder` is us asking the GC for more money. A `Backcharge` is the

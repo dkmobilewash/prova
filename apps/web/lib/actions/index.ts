@@ -31,3 +31,4 @@ export * from "./closeout";
 export * from "./vendorPricing";
 export * from "./integrations";
 export * from "./backcharges";
+export * from "./closeoutSubmissions";

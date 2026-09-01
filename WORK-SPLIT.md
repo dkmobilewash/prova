@@ -45,7 +45,13 @@ one at a time:
 1. **Backcharges & Deductions** — Sheet 13. *Shipped 1 Sep.*
    `/backcharges`, `backcharges.prisma`, `lib/actions/backcharges.ts`,
    `lib/backcharges.ts`.
-2. **Closeout & Warranty** — the remaining gaps in Sheet 22.
+2. **Closeout & Warranty** — Sheet 22. *Shipped 1 Sep.* The closeout
+   package's trip to the GC (`closeout.prisma`,
+   `lib/actions/closeoutSubmissions.ts`) and readiness derived across the
+   checklist, punch items, callbacks and retainage
+   (`lib/closeout-readiness.ts`). Reads `PunchListItem`, never writes it.
+   Two lines added to `CloseoutJobCard.tsx` (a `packageSlot` prop) and a
+   query plus a band on `/closeout/page.tsx`.
 3. **Notifications & Alerts** — Sheet 26, where two items are Partial
    ("it reaches someone who opens the app") and three are Missing.
 4. **Roles & Permissions** — Sheet 25, still `OWNER`/`MEMBER` only.

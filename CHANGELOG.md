@@ -12,6 +12,63 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### Closeout that names what is holding it up (Diego)
+`claude/prova-contractor-os-e3f0iz`
+
+Sheet 22 read 3 built / 0 partial / 0 missing and was, for what it listed,
+correct — punch lists, the checklist, warranty periods and callbacks all
+shipped in August. The gap was between two rows rather than inside one. A
+job could show a complete checklist and a $13,420 retainage balance for
+four months, and the page had no way to say whether that was because
+nobody had sent the package or because the GC was sitting on it. Those are
+opposite problems with opposite fixes.
+
+`CloseoutSubmission` (+ its counter) records the package going over and
+coming back — several attempts per job on purpose, like `SubmittalRevision`,
+because a package that bounces goes again and collapsing that into one
+editable row erases the fact that we sent it on time the first time.
+Attempts never reissue a number. Sent and answered dates are entered. A
+rejection must record what was missing: whoever assembles the next package
+needs it, and that is the difference between one more attempt and two.
+
+**Submitting is deliberately not gated on a complete checklist.** Packages
+go out short a document with the missing one promised to follow, and a log
+that refuses to record what happened stops being a log. The blockers show
+next to the submission instead — "the package went anyway" is worth
+knowing before the GC comes back asking.
+
+**`lib/closeout-readiness.ts` derives whose move it is.** Not ready →
+ready to submit → with the GC → sent back → accepted, plus an ordered
+blocker list and the retainage each job is holding up. Three calls in it
+matter: an open punch item blocks closeout even when "punch list sign-off"
+is ticked (the checklist is an assertion, the punch rows are what
+contradict it); once the GC has answered, the submission decides the stage
+so a callback the week after acceptance is warranty work rather than
+something that un-closes the closeout; and an empty checklist is a
+blocker, not a pass.
+
+The page now opens with **What to do next** — every job that needs
+something, most money first, naming the blocker and the retainage behind
+it. The retainage figure goes through `calculateRetainageSummary`, the
+existing implementation, not a second sum. This page's own first sentence
+has always said a missing lien waiver is money sitting with the GC; it had
+never once shown the number.
+
+**Files touched outside my own:** `CloseoutJobCard.tsx` gained a
+`packageSlot` prop and one line rendering it, and `/closeout/page.tsx`
+gained the query and the band. Everything else is new files. `PunchListItem`,
+`punchLists.ts` and `/punch-lists` are read and not modified.
+
+Verified the same way as backcharges: `closeoutSubmissions.dbtest.ts` runs
+the lifecycle against a real Postgres and asserts the rows — no second
+package while the GC has the first, no attempt dated before the previous
+one came back, no reopening or deleting an older attempt while a newer one
+exists, and deleting attempt 2 makes the next one 3. 14 db tests plus 18
+unit tests on the readiness math. `pnpm test` 444, typecheck/lint/build
+clean.
+
+---
+
 ### Backcharges: the money the GC takes back (Diego)
 `claude/prova-contractor-os-e3f0iz`
 

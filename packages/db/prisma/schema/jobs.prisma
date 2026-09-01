@@ -86,6 +86,8 @@ model Job {
   warrantyServiceRequests      WarrantyServiceRequest[]
   backcharges                  Backcharge[]
   backchargeCounter            BackchargeCounter?
+  closeoutSubmissions          CloseoutSubmission[]
+  closeoutSubmissionCounter    CloseoutSubmissionCounter?
 
   @@index([companyId])
   @@index([contactId])

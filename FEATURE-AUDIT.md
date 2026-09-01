@@ -23,21 +23,21 @@ in flight. Left as-is here rather than guessed at from the outside; the next
 update to touch those sheets should come from whoever actually verified them
 against a fresh clone.
 
-**110 items audited — 76 built / 16 partial / 17 missing / 1 descoped**
+**111 items audited — 77 built / 16 partial / 17 missing / 1 descoped**
 
 | Status | Count |
 | --- | --- |
-| Built | 75 |
+| Built | 76 |
 | Partial | 16 |
 | Missing | 16 |
 | Descoped | 1 |
 
 These two tallies have disagreed with each other, and with the sheets'
-own headers, since before this edit. Sheet 13's +2 built / −2 missing is
-applied to both rather than recomputing everything, because recomputing
-every header from its rows is already in flight on another branch and two
-people rewriting the same totals is how they got out of step in the first
-place.
+own headers, since before this edit. Sheet 13's +2 built / −2 missing and
+Sheet 22's +1 built are applied to both rather than recomputing
+everything, because recomputing every header from its rows is already in
+flight on another branch and two people rewriting the same totals is how
+they got out of step in the first place.
 
 ## 01. Company / Org Setup — 5 built · 0 partial · 0 missing
 
@@ -257,10 +257,15 @@ forecasting shipped 26 Aug 2026.*
 | Built | State-specific licensing requirement tracking | `CompanyLicense` + `LicenseClassificationReference` (CA/AZ/UT seeded; NV deliberately left unseeded — no verified source) |
 | Partial | Jurisdictional/union-local mapping by project location | the data exists — `Job.operatingLocationId`, `CompanyLocation.state`, `UnionLocal` — but nothing derives one from another yet; flagged as future work in the code itself |
 
-## 22. Closeout & Warranty — 3 built · 0 partial · 0 missing
+## 22. Closeout & Warranty — 4 built · 0 partial · 0 missing
+
+*Updated 1 Sep 2026 — the closeout package's trip to the GC, and readiness
+derived across everything that holds it up, shipped that day. The three
+rows below were already Built and are unchanged.*
 
 | Status | Feature | Note |
 | --- | --- | --- |
+| Built | Closeout package submission to the GC, and readiness across what blocks it | `CloseoutSubmission` + `CloseoutSubmissionCounter`, on `/closeout` — attempts numbered per job and never reissued, sent/answered dates entered not stamped, a rejection required to record what was missing. `lib/closeout-readiness.ts` derives whose move it is (not ready / ready to submit / with the GC / sent back / accepted) from the checklist, OPEN PUNCH ITEMS, open callbacks and the latest attempt, and names the retainage each one is holding up via `lib/retainage.ts`. An open punch item blocks closeout whether or not anyone ticked "punch list sign-off" — the checklist is an assertion, the punch rows are what contradict it |
 | Built | Punch list tracking per job | `PunchListItem`, `/punch-lists` |
 | Built | Final lien waiver and closeout document checklist | `CloseoutItem`, `/closeout` — per-job checklist with a standard set one click away, required vs optional, completion dates entered not stamped, document links. Closeout completeness derived from required items only, never stored; a job with no checklist is deliberately NOT complete |
 | Built | Warranty period tracking and post-completion service requests | `WarrantyPeriod` + `WarrantyServiceRequest`, `/closeout` — start entered separately from `Job.substantialCompletionDate` (the warranty and retainage clocks aren't always the same date), length in months as the contract states it, expiry derived with end-of-month clamping so 31 Aug + 6 months is 28 Feb not 3 Mar. Whether a callback was in warranty is derived from its REPORTED date, so a slow fix can't move the cost. `JobStatus` deliberately untouched — a stored lifecycle stage can disagree with the dates under it |

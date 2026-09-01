@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, type ReactNode } from "react";
 import {
   addCloseoutItem,
   addStandardCloseoutChecklist,
@@ -50,10 +50,16 @@ export function CloseoutJobCard({
   job,
   today,
   canDelete,
+  /** Rendered above the checklist. The closeout-package section lives in
+   * its own component (CloseoutPackagePanel) and is passed in rather than
+   * built here, so this card stays the checklist/warranty/callbacks card
+   * it already was. */
+  packageSlot,
 }: {
   job: CloseoutJobData;
   today: string;
   canDelete: boolean;
+  packageSlot?: ReactNode;
 }) {
   const [openForm, setOpenForm] = useState<"none" | "item" | "warranty" | "request">("none");
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
@@ -121,6 +127,8 @@ export function CloseoutJobCard({
           </span>
         )}
       </div>
+
+      {packageSlot}
 
       {/* ------------------------------------------------------ checklist */}
       <section>
