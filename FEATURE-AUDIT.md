@@ -23,14 +23,14 @@ in flight. Left as-is here rather than guessed at from the outside; the next
 update to touch those sheets should come from whoever actually verified them
 against a fresh clone.
 
-**114 items audited — 84 built / 21 partial / 8 missing / 1 descoped**
+**118 items audited — 85 built / 22 partial / 9 missing / 2 descoped**
 
 | Status | Count |
 | --- | --- |
-| Built | 84 |
-| Partial | 21 |
-| Missing | 8 |
-| Descoped | 1 |
+| Built | 85 |
+| Partial | 22 |
+| Missing | 9 |
+| Descoped | 2 |
 
 
 ## 01. Company / Org Setup — 6 built · 0 partial · 0 missing

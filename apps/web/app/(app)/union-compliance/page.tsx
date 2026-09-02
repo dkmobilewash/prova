@@ -6,6 +6,7 @@ import { UnionLocalForm } from "@/components/UnionLocalForm";
 import { UnionLocalCard } from "@/components/UnionLocalCard";
 import { ratioLabel } from "@/lib/apprentice-ratio";
 import { money } from "@/lib/money";
+import { isWhollyUnpriced } from "@/lib/fringe-remittance";
 
 const STATUS_TONE: Record<string, string> = {
   WITHIN: "text-green-300",
@@ -102,6 +103,13 @@ export default async function UnionCompliancePage({
           </span>
         </div>
 
+        <p className="mb-3 text-xs text-slate-500">
+          A rate hangs off the <span className="text-slate-400">classification</span>, not its tier,
+          so hours can be priced here on a day the ratio below can&apos;t judge. The two answer
+          different questions — what is owed to the funds, and whether the crew was within ratio —
+          and one being unanswerable doesn&apos;t make the other so.
+        </p>
+
         {remittance.locals.length === 0 ? (
           <p className="text-sm text-slate-400">
             No hours logged this month against a craft classification, so there is nothing to remit.
@@ -128,7 +136,15 @@ export default async function UnionCompliancePage({
                       </tr>
                     </thead>
                     <tbody className="text-slate-300">
-                      {local.crafts.map((craft) => (
+                      {local.crafts.map((craft) => {
+                        // Nothing on this row could be priced. Printing
+                        // $0.00 five times reads as "nothing owed", which
+                        // is the opposite of what is known — see
+                        // isWhollyUnpriced.
+                        const blank = isWhollyUnpriced(craft);
+                        const cell = (value: number) =>
+                          blank ? <span className="text-slate-600">—</span> : money(value);
+                        return (
                         <tr key={craft.craftClassificationId} className="border-t border-slate-800">
                           <td className="py-1.5">
                             {craft.craftLabel}
@@ -139,15 +155,16 @@ export default async function UnionCompliancePage({
                             )}
                           </td>
                           <td className="py-1.5 text-right tabular-nums">{craft.hours}</td>
-                          <td className="py-1.5 text-right tabular-nums">{money(craft.components.pension)}</td>
-                          <td className="py-1.5 text-right tabular-nums">{money(craft.components.vacation)}</td>
+                          <td className="py-1.5 text-right tabular-nums">{cell(craft.components.pension)}</td>
+                          <td className="py-1.5 text-right tabular-nums">{cell(craft.components.vacation)}</td>
                           <td className="py-1.5 text-right tabular-nums">
-                            {money(craft.components.healthWelfare)}
+                            {cell(craft.components.healthWelfare)}
                           </td>
-                          <td className="py-1.5 text-right tabular-nums">{money(craft.components.training)}</td>
-                          <td className="py-1.5 text-right font-medium tabular-nums">{money(craft.total)}</td>
+                          <td className="py-1.5 text-right tabular-nums">{cell(craft.components.training)}</td>
+                          <td className="py-1.5 text-right font-medium tabular-nums">{cell(craft.total)}</td>
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { createPrevailingWageRuleSet } from "@/lib/actions";
 import { RuleSetFields } from "@/components/RuleSetFields";
 import { localToday } from "@/components/localToday";
@@ -8,6 +9,7 @@ import { localToday } from "@/components/localToday";
 export function RuleSetForm() {
   const [isOpen, setIsOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
+  const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
 
@@ -36,6 +38,15 @@ export function RuleSetForm() {
             setError(result.error);
             return;
           }
+          // On top of the action's own revalidatePath. Browser testing found
+      // two union-compliance forms leaving the page stale until a manual
+      // reload while others updated live; every action revalidates and
+      // every form calls them the same way, so this is NOT a root-cause
+      // fix. It is applied here because these components share that exact
+      // pattern, and the same bug would sit unseen until someone hit it.
+      // A save that looks like it did nothing gets clicked again, and no
+      // create action here is idempotent.
+          router.refresh();
           formRef.current?.reset();
           setIsOpen(false);
         });

@@ -242,6 +242,25 @@ export function buildRemittanceReport(
   };
 }
 
+/**
+ * True when NONE of a row's hours could be priced.
+ *
+ * The table must not print $0.00 across five fund columns for these. The
+ * report already counts them as `uncomputedHours` and the copy promises
+ * twice that they are "reported as unpriced rather than as $0" — and then
+ * rendered five zeroes anyway, which is what anyone reading the column, or
+ * exporting it, or adding it up in their head actually takes away. Caught
+ * by a browser test; no unit test could see it, because the numbers were
+ * right and only the rendering lied.
+ *
+ * A row with SOME priced hours keeps its money: that money is genuinely
+ * owed on the hours that were priced, and blanking it would swing the
+ * error the other way.
+ */
+export function isWhollyUnpriced(row: { hours: number; uncomputedHours: number }): boolean {
+  return row.hours > 0 && row.uncomputedHours >= row.hours;
+}
+
 /** Whether a filed UNION_FRINGE_BENEFIT_FILING covers the whole period.
  *
  * A document whose period merely overlaps is not evidence the period was

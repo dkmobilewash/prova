@@ -64,6 +64,150 @@ Verified on a preview against `ep-patient-lake`: files land, and all six
 credential field names return zero matches in the JSON — with a positive
 control searched first, so the zero means something.
 
+### Carry the stale-save fix to the other eight forms (Diego)
+`claude/prova-contractor-os-e3f0iz`
+
+When the browser found two union-compliance forms leaving the page stale
+until a manual reload, I fixed those four components and deliberately did
+not touch the rest: I had not root-caused the difference, and blind-
+changing eight more on a hunch seemed worse than learning which ones
+actually exhibited it.
+
+That was the right call then and the wrong one to keep. Tests 1-5 exercise
+`/backcharges`, `/closeout`, `/alerts` and `/prevailing-wage`, and every
+client component behind them uses the identical pattern — action returns,
+`revalidatePath` fires, component sets its own state — with **no**
+`router.refresh()`. Waiting so the test could tell me whether the bug is
+universal puts my curiosity above a defect a user will hit; and
+`router.refresh()` is idempotent where `revalidatePath` already worked, so
+the downside is a wasted round trip and the upside is a save that visibly
+saved.
+
+All twelve write paths now refresh: backcharges (row + form), closeout
+(panel + job card), alerts, prevailing wage (form, row, determination
+picker) and the four union ones from last time.
+
+Still not a diagnosis, and the comment in each file says so. If a stale
+save is reported after this, that is a much sharper signal than before,
+because the obvious remedy is now in place everywhere.
+
+A note on how this was applied, since the first attempt failed usefully:
+the patch script anchored on a guessed list of import lines,
+`CloseoutJobCard` carries `type ReactNode` in its React import, and the
+assertion fired **after** three files had already been written — leaving
+them with an unused `router`. Reverted and redone anchoring on each file's
+actual import line by regex. The scar this repo already records — "edit
+code by reading the actual text and replacing it exactly" — applies to the
+list of anchors as much as to the anchor itself.
+
+814 unit tests, typecheck, lint and a build without `NODE_OPTIONS`, all
+clean. No schema change.
+
+---
+
+### Five things the browser found that no test could (Diego)
+`claude/prova-contractor-os-e3f0iz`
+
+Test 6 of the click-list passed 12 for 12 — the first of the six features
+to be genuinely exercised rather than argued for. The value was in the
+section it was asked to add at the end: *anything that looked wrong that I
+did not ask about*. Five of six findings were real, and not one of them
+was reachable by a unit or database test, because in every case **the
+numbers were right and the rendering or the wording lied**.
+
+**The apprentice row printed `$0.00` in all five fund columns.** The copy
+promises, twice and emphatically, that unpriced hours are "reported as
+unpriced rather than as $0". The word "unpriced" was on the row — beside
+five zeroes. Anyone reading the column, exporting it, or adding it up
+takes away "nothing owed", which is the exact opposite of what is known.
+`isWhollyUnpriced` now blanks those cells to em-dashes. A row with SOME
+priced hours keeps its money: that money is genuinely owed on the hours
+that priced, and blanking it would swing the error the other way. No
+figure changed; only the claim the table was making.
+
+**Two forms left the page stale until a manual reload** — a saved local
+still reading "No locals recorded", an ended rate still badged "in force"
+— while the others updated live. Every one of these actions calls
+`revalidatePath` and every form invokes them identically, so I could not
+root-cause the difference without a browser, and **this is not a
+diagnosis**: `router.refresh()` after a successful write is the fix that
+holds whatever the cause. It matters more than tidiness — a save that
+looks like it did nothing gets clicked again, and no create action here is
+idempotent, which is the same reasoning behind #19's disabled buttons.
+
+**"1 time entries".** The one message an inspector-facing user reads
+carefully. Pluralised, and now pinned by a test rather than trusted.
+
+**A day can read "can't be judged" and still be priced**, which looked
+like the page contradicting itself. It is not, and the behaviour is
+unchanged: a rate hangs off the classification, a ratio needs the tier,
+and those are different facts — hours whose rate is known are genuinely
+owed to the fund whatever the tier says. What was missing was anywhere
+saying so, so the remittance section now does. The report was right that
+it reads as a contradiction; it was wrong that the number was.
+
+**The CBA date fields defaulted to today.** Nearly every real agreement
+and rate started in the past, so a default there is wrong more often than
+right — a soft version of the stamping this codebase refuses everywhere
+else. Blanked, with the reason on screen. The "end it" dates keep today,
+because ending something IS a do-it-now action.
+
+**One finding was a false alarm, and checking it was still worth it.** An
+agreement ended today still shows "Current". `effectiveTo >= today` is
+date-derived and inclusive, consistent with `findEffectiveRuleSet` — it
+flips tomorrow on its own, and an agreement in force through today is
+current today.
+
+814 unit tests, 105 db tests, typecheck, lint and a build without
+`NODE_OPTIONS`, all clean. No schema change.
+
+---
+
+### Two click-list assertions that no test could reach (Diego)
+`claude/prova-contractor-os-e3f0iz`
+
+Asked to run the browser click-lists and unable to — the agent proxy
+refuses CONNECT to `app.cstream.ai` with a 403, and there is no Clerk
+session here — I went looking for which of their assertions were not
+proven anywhere. Two were not, and both were the headline claim of their
+feature.
+
+**`reviewJobWeek` had no test at all.** Not a unit test, not a database
+one. It is the function behind "entered 10 straight, rules imply 8
+straight, 2 OT", and it is where the parts that can silently disagree
+meet: the rule set reached through the job's wage determination, the
+entries grouped per employee, the week window. It now has seven, including
+the one worth executing rather than reasoning about — **two people each
+working eight hours is not a sixteen-hour day**, and pooling them would
+manufacture overtime nobody worked.
+
+**The closeout page composed readiness inline**, so the step that turns
+real punch rows into readiness inputs could not be run. The unit suite
+covered `closeoutReadiness` with inputs a test wrote by hand; nothing
+covered the part that produces them. That is exactly where the feature's
+headline claim lives — an open punch item holds closeout open even when
+"punch list sign-off" is ticked — and it was the one thing untested.
+Extracted to `lib/closeout-query.ts`, which is the fetch/decide split
+every other feature here already follows and the reason those halves are
+testable. The page is 80 lines shorter and does no composition.
+
+Seven more db tests there, including the contradiction stated directly:
+the checklist still reads complete while the punch rows say otherwise, and
+the real data wins.
+
+105 db tests (was 91), 811 unit tests, typecheck, lint, and a build run
+without `NODE_OPTIONS` all clean. No schema change.
+
+**What this does NOT do, plainly: it is not the browser test.** Tests 1
+and 3 were already covered at this level; test 4's real assertion —
+typing `/cash-flow` as a field user and getting "Not part of your access"
+— cannot be executed without a browser, and neither can any claim about
+what a page actually renders. These close the gap between "the logic is
+right" and "the query reads what it claims to". The gap between that and
+"the screen does the right thing" is still open and still needs a person.
+
+---
+
 ### The union compliance page had no way to enter its own data (Diego)
 `claude/prova-contractor-os-e3f0iz`
 

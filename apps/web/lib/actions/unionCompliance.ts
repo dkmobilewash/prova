@@ -100,6 +100,12 @@ export async function setCraftTier(craftId: string, formData: FormData): Promise
 
 class SetupError extends Error {}
 
+/** "1 time entry" / "2 time entries". This message is the one an
+ * inspector-facing user reads carefully, and it read "1 time entries". */
+function plural(count: number, one: string, many: string) {
+  return `${count} ${count === 1 ? one : many}`;
+}
+
 function setupText(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();
 }
@@ -338,7 +344,7 @@ export async function deleteCraftClassification(craftId: string): Promise<Action
     const used = timeEntries + lineItems + catalogEntries + dispatchSlips;
     if (used > 0) {
       return fail(
-        `${used} record${used === 1 ? " is" : "s are"} tagged with this classification (${timeEntries} time entries, ${lineItems} line items, ${catalogEntries} catalog entries, ${dispatchSlips} dispatch slips). Deleting it would strip the craft off work that has already been costed.`,
+        `${used} record${used === 1 ? " is" : "s are"} tagged with this classification (${plural(timeEntries, "time entry", "time entries")}, ${plural(lineItems, "line item", "line items")}, ${plural(catalogEntries, "catalog entry", "catalog entries")}, ${plural(dispatchSlips, "dispatch slip", "dispatch slips")}). Deleting it would strip the craft off work that has already been costed.`,
       );
     }
 

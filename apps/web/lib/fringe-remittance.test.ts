@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { buildRemittanceReport, periodIsFiled, type RemittanceEntryInput } from "./fringe-remittance";
+import {
+  buildRemittanceReport,
+  isWhollyUnpriced,
+  periodIsFiled,
+  type RemittanceEntryInput,
+} from "./fringe-remittance";
 import type { FringeRateScheduleInput } from "./labor-cost";
 
 const schedule = (over: Partial<FringeRateScheduleInput> = {}): FringeRateScheduleInput => ({
@@ -165,5 +170,26 @@ describe("periodIsFiled", () => {
 
   it("ignores a filing with no period recorded", () => {
     expect(periodIsFiled([{ periodStart: null, periodEnd: null }], "2026-08-01", "2026-08-31")).toBe(false);
+  });
+});
+
+describe("isWhollyUnpriced", () => {
+  it("is true when no hour on the row could be priced", () => {
+    // The table renders em-dashes for these instead of five $0.00 cells.
+    // The copy promised "unpriced rather than as $0" and the rendering
+    // said $0.00 five times — found in a browser, invisible to a unit
+    // test, because the numbers were right and only the display lied.
+    expect(isWhollyUnpriced({ hours: 8, uncomputedHours: 8 })).toBe(true);
+  });
+
+  it("is false when some hours WERE priced", () => {
+    // That money is genuinely owed on the hours that priced. Blanking it
+    // would swing the error the other way.
+    expect(isWhollyUnpriced({ hours: 10, uncomputedHours: 2 })).toBe(false);
+  });
+
+  it("is false for a fully priced row and for an empty one", () => {
+    expect(isWhollyUnpriced({ hours: 8, uncomputedHours: 0 })).toBe(false);
+    expect(isWhollyUnpriced({ hours: 0, uncomputedHours: 0 })).toBe(false);
   });
 });

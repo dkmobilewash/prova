@@ -1,4 +1,3 @@
-import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { CloseoutJobCard } from "@/components/CloseoutJobCard";
 import { CloseoutPackagePanel } from "@/components/CloseoutPackagePanel";
@@ -7,125 +6,19 @@ import {
   isCloseoutComplete,
   isOpen,
   outstandingRequired,
-  requiredItems,
   warrantyState,
 } from "@/components/closeoutLabels";
-import { closeoutReadiness, needsAttention } from "@/lib/closeout-readiness";
-import { calculateRetainageSummary } from "@/lib/retainage";
+import { needsAttention } from "@/lib/closeout-readiness";
+import { loadCloseoutJobs } from "@/lib/closeout-query";
 import { money } from "@/lib/money";
 import { can } from "@/lib/permissions";
-
-/** Stored at UTC midnight, rendered in UTC — same rule as every other
- * dated record in this app. */
-function isoDate(date: Date | null) {
-  return date ? date.toISOString().slice(0, 10) : null;
-}
 
 export default async function CloseoutPage() {
   const { company, ...currentUser } = await requireCompanyContext();
   const today = new Date().toISOString().slice(0, 10);
 
-  const jobs = await prisma.job.findMany({
-    where: { companyId: company.id },
-    orderBy: { createdAt: "desc" },
-    select: {
-      id: true,
-      name: true,
-      closeoutItems: { orderBy: [{ isRequired: "desc" }, { name: "asc" }] },
-      warrantyPeriod: true,
-      warrantyServiceRequests: { orderBy: { reportedOn: "desc" } },
-
-      // Read, never written, by this page. Punch items belong to
-      // /punch-lists and retainage to the billing lane; readiness only
-      // needs to know they exist, and an open punch item holds closeout
-      // open whether or not anyone ticked "punch list sign-off".
-      punchListItems: { where: { isDone: false }, select: { id: true } },
-      invoices: { select: { retainageWithheld: true } },
-      retainageReleases: { select: { amount: true } },
-      substantialCompletionDate: true,
-
-      closeoutSubmissions: {
-        orderBy: { attempt: "desc" },
-        include: { submittedByUser: { select: { name: true } } },
-      },
-    },
-  });
-
-  const rows = jobs.map((job) => ({
-    id: job.id,
-    name: job.name,
-    items: job.closeoutItems.map((i) => ({
-      id: i.id,
-      name: i.name,
-      isRequired: i.isRequired,
-      completedOn: isoDate(i.completedOn),
-      note: i.note,
-      documentUrl: i.documentUrl,
-      documentName: i.documentName,
-    })),
-    warranty: job.warrantyPeriod
-      ? {
-          startsOn: isoDate(job.warrantyPeriod.startsOn) as string,
-          months: job.warrantyPeriod.months,
-          note: job.warrantyPeriod.note,
-        }
-      : null,
-    requests: job.warrantyServiceRequests.map((r) => ({
-      id: r.id,
-      reportedOn: isoDate(r.reportedOn) as string,
-      description: r.description,
-      reportedBy: r.reportedBy,
-      responsibility: r.responsibility,
-      resolvedOn: isoDate(r.resolvedOn),
-      resolutionNote: r.resolutionNote,
-    })),
-    submissions: job.closeoutSubmissions.map((s) => ({
-      id: s.id,
-      attempt: s.attempt,
-      submittedOn: isoDate(s.submittedOn) as string,
-      method: s.method,
-      status: s.status as string,
-      respondedOn: isoDate(s.respondedOn),
-      gcResponse: s.gcResponse,
-      note: s.note,
-      submittedByName: s.submittedByUser?.name ?? null,
-    })),
-    openPunchItems: job.punchListItems.length,
-    // Withheld minus released, through the one implementation of that sum
-    // — recomputing it here would be a second copy free to disagree with
-    // /cash-flow and the metric bar.
-    retainageBalance: calculateRetainageSummary({
-      invoiceRetainageWithheld: job.invoices.map((i) =>
-        i.retainageWithheld != null ? Number(i.retainageWithheld) : null,
-      ),
-      releaseAmounts: job.retainageReleases.map((r) => Number(r.amount)),
-      substantialCompletionDate: job.substantialCompletionDate,
-    }).balance,
-  }));
-
-  // Whose move it is on each job, derived — there is no stored "ready" or
-  // "submitted" flag anywhere in this feature, same rule as closeout
-  // completeness and warranty expiry above.
-  const withReadiness = rows.map((job) => ({
-    ...job,
-    readiness: closeoutReadiness(
-      {
-        requiredItemsTotal: requiredItems(job.items).length,
-        requiredItemsOutstanding: outstandingRequired(job.items).length,
-        openPunchItems: job.openPunchItems,
-        openCallbacks: job.requests.filter(isOpen).length,
-        retainageBalance: job.retainageBalance,
-        latestSubmission: job.submissions[0]
-          ? {
-              status: job.submissions[0].status,
-              submittedOn: job.submissions[0].submittedOn,
-              respondedOn: job.submissions[0].respondedOn,
-            }
-          : null,
-      },
-      today,
-    ),
-  }));
+  const withReadiness = await loadCloseoutJobs(company.id, today);
+  const rows = withReadiness;
 
   // Retainage is the company's money, not everyone's business. A foreman
   // needs to know the package is stuck; what it is holding up in dollars
