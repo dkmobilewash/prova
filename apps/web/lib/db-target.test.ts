@@ -7,6 +7,7 @@ import {
   isPooled,
   neonEndpointId,
   sameDatabase,
+  wrongTarget,
 } from "../../../packages/db/scripts/connection-target.mjs";
 
 // The two real endpoints from the incident this exists to prevent. Passwords
@@ -117,5 +118,48 @@ group("connectionProblems", () => {
   it("says nothing about pooling for a local database", () => {
     const local = "postgresql://u:p@localhost:5433/prova";
     expect(connectionProblems(local, local).problems).toEqual([]);
+  });
+});
+
+// The assertion that answers "is this the database you SAID you meant?" —
+// a different question from "do these two URLs agree", which is all the
+// checks above ask. Two wrong-but-matching URLs pass every one of them.
+group("asserting the named target", () => {
+  const demo = describeTarget(
+    "postgresql://u:p@ep-patient-lake-afizorh1-pooler.c-2.us-west-2.aws.neon.tech/neondb",
+  );
+  const demoDirect = describeTarget(
+    "postgresql://u:p@ep-patient-lake-afizorh1.c-2.us-west-2.aws.neon.tech/neondb",
+  );
+  const production = describeTarget(OTHER_DIRECT);
+
+  it("accepts the endpoint through its -pooler twin", () => {
+    // Both doors onto one database, so naming the endpoint must accept both
+    // or the pooled URL could never be asserted at all.
+    expect(wrongTarget("ep-patient-lake", demo, demoDirect)).toBeNull();
+  });
+
+  it("refuses when the secret holds production instead", () => {
+    // The whole point. These two URLs would agree with each other perfectly.
+    const problem = wrongTarget("ep-patient-lake", production, production);
+    expect(problem?.level).toBe("fatal");
+    expect(problem?.message).toContain("ep-little-sea");
+  });
+
+  it("refuses when only ONE of the pair is wrong", () => {
+    expect(wrongTarget("ep-patient-lake", demo, production)).not.toBeNull();
+  });
+
+  it("is opt-in: blank or whitespace asserts nothing", () => {
+    // Production's migrate job predates this and must keep working untouched.
+    expect(wrongTarget(undefined, production)).toBeNull();
+    expect(wrongTarget("", production)).toBeNull();
+    expect(wrongTarget("   ", production)).toBeNull();
+  });
+
+  it("does not leak the credential into the refusal", () => {
+    const problem = wrongTarget("ep-patient-lake", describeTarget(OTHER_DIRECT));
+    expect(JSON.stringify(problem)).not.toContain("hunter2");
+    expect(problem?.message).not.toContain(":p@");
   });
 });

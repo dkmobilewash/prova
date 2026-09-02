@@ -181,8 +181,26 @@ scrollback gets broken by whoever didn't scroll far enough.
 
   | Project | Endpoint | Used by | Holds |
   | --- | --- | --- | --- |
-  | Diego's | `ep-little-sea-a6bdnaw2` | Vercel — production AND previews | the real data |
+  | Diego's | `ep-little-sea-a6bdnaw2` | Vercel PRODUCTION only | the real data |
+  | Demo | `prova-demo` (its own project) | Vercel PREVIEWS — every one | the demo dataset |
   | Cyrus's | `ep-icy-hat-afqau56u` | Cyrus's laptop only | his own test data |
+
+  THREE now, not two. Previews used to run on production's database, which
+  meant browser testing wrote real rows and every round of it needed
+  cleaning up afterwards. Preview's `DATABASE_URL`/`DIRECT_URL` point at
+  the demo project instead, so that is no longer true.
+
+  The cost of that split: migrations reach production automatically on
+  merge (`migrate.yml`) and the demo database gets NOTHING. It drifts the
+  moment anyone adds a migration, and drift shows up on a preview as
+  "column does not exist" — which reads as a code bug and is not one. Fix
+  it by running the **Migrate demo database** workflow (Actions tab, Run
+  workflow, and type the demo endpoint id — `ep-patient-lake` — to confirm;
+  the script compares what you typed against the host the secret actually
+  resolves to and refuses before applying anything, which the old `demo`
+  constant could not do). It needs the `DEMO_DATABASE_URL` and
+  `DEMO_DIRECT_URL` repository secrets, which are deliberately not named
+  after production's so the two can never be confused.
 
   Established 2026-08-29 from: two production build logs printing
   `ep-little-sea` as the migrate target; the `Migrate` workflow printing
@@ -240,6 +258,23 @@ scrollback gets broken by whoever didn't scroll far enough.
   fails loudly without them rather than skipping. A production Vercel build
   now REFUSES to build when migrations are pending; a preview only warns,
   because a branch's own migration legitimately hasn't merged yet.
+- **`migrate.yml` and the Vercel build race, and the build usually loses.**
+  Both fire on push to main, concurrently, and neither knows the other
+  exists — so a merge carrying a migration reaches `check:schema` before the
+  migration lands and the whole deployment goes red for a change that was
+  fine. It has bitten twice: Cyrus's #40 (16 seconds) and #53 (19 seconds —
+  build refused 18:37:47, migration verified 18:38:06).
+  `check-schema.mjs` now WAITS up to 90s on a production build, polling
+  every 5s, before refusing; `MIGRATE_WAIT_SECONDS` overrides it. Previews
+  do not wait at all, because a pending migration is the normal state of an
+  unmerged branch. Verified against a scratch database by applying a
+  migration mid-wait and watching the build continue.
+  Worth knowing that this was CLAIMED as done on 2026-08-30, in Slack, and
+  was not built — the check refused four seconds in with no polling
+  anywhere in the file. If a red production deploy on a merge still says
+  "missing this commit's migrations", read the log for the wait lines
+  before assuming the race: without them, you are on a build that predates
+  this fix.
 - **Do not promote a preview to production.** Merge to `main` instead, so
   the build actually runs. Previews are public (no deployment protection),
   carry the branch's latest commit at a stable alias, and are what browser

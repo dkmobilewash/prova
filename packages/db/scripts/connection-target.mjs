@@ -82,6 +82,47 @@ export function sameDatabase(a, b) {
 }
 
 /**
+ * Does this pair actually reach the database the operator NAMED?
+ *
+ * `connectionProblems` only asks whether the two URLs agree with EACH OTHER.
+ * Two wrong-but-matching URLs pass it completely. That was tolerable while
+ * both pointed at a long-established production database, and stopped being
+ * tolerable the first time they pointed at a brand new empty one: `migrate
+ * deploy` will happily build a plausible schema in a database nobody meant,
+ * report success, and read back up to date. Every signal green and nothing
+ * where it was supposed to go — the failure that cost two people a day, in
+ * the situation where it is most likely. Cyrus found the gap; this is it.
+ *
+ * Identity is a different question from internal agreement, and it can only
+ * be answered by a human naming the target INDEPENDENTLY of the secret that
+ * supplies it. Deriving `expected` from the connection string would make
+ * this a tautology that passes forever, which is worse than no check.
+ *
+ * Substring match on the host, so `ep-patient-lake` accepts both the direct
+ * endpoint and its `-pooler` twin — they are the same database by design.
+ * Returns null when `expected` is blank: the assertion is opt-in, because
+ * production's migrate job predates it and silently breaking that to add a
+ * guard would be a poor trade.
+ */
+export function wrongTarget(expected, ...targets) {
+  const want = expected?.trim();
+  if (!want) return null;
+  const named = targets.filter(Boolean);
+  if (named.length === 0) return null;
+  const missed = named.filter((t) => !t.host.includes(want));
+  if (missed.length === 0) return null;
+  return {
+    level: "fatal",
+    message:
+      `you named "${want}" as the target, but this is pointing at\n` +
+      missed.map((t) => `db:   ${t.label}`).join("\n") +
+      "\ndb: Nothing has been applied. Either the secret holds the wrong connection\n" +
+      "db: string or the name typed was wrong — both are worth knowing BEFORE a\n" +
+      "db: migration runs, because afterwards both look like success.",
+  };
+}
+
+/**
  * Everything wrong with a DATABASE_URL / DIRECT_URL pair, worst first.
  *
  * Severity matters here. A mismatch is fatal because it silently splits
