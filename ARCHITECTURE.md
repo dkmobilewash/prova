@@ -849,6 +849,50 @@ Access is gated by the company actually holding a `CompanyUnionAgreement`
 with that local — the same join `craftClassificationIdFromForm` already
 uses as its access check.
 
+### The setup this reads from, and why it was missing
+
+Both reports read five tables — `UnionLocal`, `CompanyUnionAgreement`,
+`CraftClassification`, `FringeRateSchedule`, `ApprenticeRatioRule` — and
+for a week none of them had a create action anywhere in the app. The
+engines were verified against a database only a test could populate, so on
+a real account both sections rendered empty with no way in. That is the
+"a control that looks like it works and cannot" shape this codebase keeps
+catching, and it was found by writing the browser click-list and noticing
+step one was impossible.
+
+The CRUD lives on `/union-compliance` itself rather than `/settings`,
+beside the reports that consume it, so the gap between "no rate recorded"
+and the place to record one is one screen.
+
+Three of those tables are GLOBAL. A union local, its classifications and
+its apprentice ratio describe the union, not the contractor, and the same
+local applies to everyone working under it — so access is gated on holding
+a `CompanyUnionAgreement` with the local, the same join
+`craftClassificationIdFromForm` already uses. Two consequences follow:
+
+- **A local another company already recorded is ADOPTED, not rejected.**
+  The unique key is (`parentInternational`, `localNumber`); two
+  contractors under Carpenters Local 300 are under the same real local. A
+  duplicate-key error there would be the app telling someone a true fact
+  is already taken.
+- **The local and the agreement are created together.** A local with no
+  agreement is invisible to the company that just typed it in, which reads
+  as the save having failed.
+
+Agreements and rate schedules are **ended, never deleted**: certified
+payroll and remittances already filed under them have to keep computing to
+the same figures. A classification with work tagged to it refuses deletion
+and says how much — checked explicitly rather than left to the foreign
+key, because the FK throws a raw error production redacts to a digest,
+which tells the person nothing at all.
+
+`setApprenticeRatioRule` **replaces** rather than adds. The schema permits
+several rules per local and `loadRatioReviews` keys a Map on
+`unionLocalId`, so a second rule would have decided the ratio by whichever
+row sorted last — an answer that could change between reads with nothing
+to explain it. The query now also orders deterministically, so the read is
+safe regardless of what is in the table.
+
 ### The ratio is checked per day, and unclassified is never a pass
 
 `lib/apprentice-ratio.ts` measures per job, per local, **per day**,
