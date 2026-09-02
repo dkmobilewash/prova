@@ -12,6 +12,47 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### Carry the stale-save fix to the other eight forms (Diego)
+`claude/prova-contractor-os-e3f0iz`
+
+When the browser found two union-compliance forms leaving the page stale
+until a manual reload, I fixed those four components and deliberately did
+not touch the rest: I had not root-caused the difference, and blind-
+changing eight more on a hunch seemed worse than learning which ones
+actually exhibited it.
+
+That was the right call then and the wrong one to keep. Tests 1-5 exercise
+`/backcharges`, `/closeout`, `/alerts` and `/prevailing-wage`, and every
+client component behind them uses the identical pattern — action returns,
+`revalidatePath` fires, component sets its own state — with **no**
+`router.refresh()`. Waiting so the test could tell me whether the bug is
+universal puts my curiosity above a defect a user will hit; and
+`router.refresh()` is idempotent where `revalidatePath` already worked, so
+the downside is a wasted round trip and the upside is a save that visibly
+saved.
+
+All twelve write paths now refresh: backcharges (row + form), closeout
+(panel + job card), alerts, prevailing wage (form, row, determination
+picker) and the four union ones from last time.
+
+Still not a diagnosis, and the comment in each file says so. If a stale
+save is reported after this, that is a much sharper signal than before,
+because the obvious remedy is now in place everywhere.
+
+A note on how this was applied, since the first attempt failed usefully:
+the patch script anchored on a guessed list of import lines,
+`CloseoutJobCard` carries `type ReactNode` in its React import, and the
+assertion fired **after** three files had already been written — leaving
+them with an unused `router`. Reverted and redone anchoring on each file's
+actual import line by regex. The scar this repo already records — "edit
+code by reading the actual text and replacing it exactly" — applies to the
+list of anchors as much as to the anchor itself.
+
+814 unit tests, typecheck, lint and a build without `NODE_OPTIONS`, all
+clean. No schema change.
+
+---
+
 ### Five things the browser found that no test could (Diego)
 `claude/prova-contractor-os-e3f0iz`
 

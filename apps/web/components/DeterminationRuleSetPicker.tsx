@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { setDeterminationRuleSet } from "@/lib/actions";
 
 /** Attaches a rule set to a job's wage determination.
@@ -19,6 +20,7 @@ export function DeterminationRuleSetPicker({
 }) {
   const [value, setValue] = useState(current ?? "");
   const [isPending, startTransition] = useTransition();
+  const router = useRouter();
   const [error, setError] = useState<string | null>(null);
 
   return (
@@ -38,6 +40,16 @@ export function DeterminationRuleSetPicker({
             if (!result.ok) {
               setError(result.error);
               setValue(previous);
+            } else {
+              // On top of the action's own revalidatePath. Browser testing found
+      // two union-compliance forms leaving the page stale until a manual
+      // reload while others updated live; every action revalidates and
+      // every form calls them the same way, so this is NOT a root-cause
+      // fix. It is applied here because these components share that exact
+      // pattern, and the same bug would sit unseen until someone hit it.
+      // A save that looks like it did nothing gets clicked again, and no
+      // create action here is idempotent.
+              router.refresh();
             }
           });
         }}
