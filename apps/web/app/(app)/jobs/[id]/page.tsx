@@ -7,6 +7,7 @@ import { PrintButton } from "@/components/PrintButton";
 import { ContractSummary } from "@/components/ContractSummary";
 import { WipNarrativeButton } from "@/components/WipNarrativeButton";
 import { DraftLineItemsForm } from "@/components/DraftLineItemsForm";
+import { TakeoffForm } from "@/components/TakeoffForm";
 import { DailyFieldReports } from "@/components/DailyFieldReports";
 import { PayApplications, StatusForm } from "@/components/PayApplications";
 import { PushPaymentToQuickBooks } from "@/components/PushPaymentToQuickBooks";
@@ -1579,6 +1580,12 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             <section className="mb-10">
               <h2 className="mb-3 text-lg font-semibold text-slate-100">Line items (estimate)</h2>
               <DraftLineItemsForm jobId={job.id} initialScope={job.scope ?? ""} />
+              {/* Beside the scope drafter rather than below the list: both
+                  answer "where do line items come from", and the two ways in
+                  belong in the same place. Gated by the same
+                  assertEditableDirectly, so it only appears where lines can
+                  actually be added. */}
+              <TakeoffForm jobId={job.id} />
               <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
                 {job.lineItems.length === 0 && (
                   <p className="py-2 text-sm text-slate-400">No line items yet — add one below.</p>

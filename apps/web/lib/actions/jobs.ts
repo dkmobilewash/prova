@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { takeoffCeiling, takeoffWall } from "@/lib/takeoff";
 import { redirect } from "next/navigation";
 import { requireCompanyContext } from "@/lib/auth";
 import { Prisma, prisma } from "@prova/db";
@@ -417,4 +418,87 @@ export async function unassignCrewMember(jobId: string, userId: string) {
 
   revalidatePath(`/jobs/${jobId}`);
   revalidatePath("/schedule");
+}
+
+/**
+ * Creates line items from a measured takeoff.
+ *
+ * THE QUANTITIES ARE RECOMPUTED HERE, from the dimensions, and never taken
+ * from the form. The screen shows a live preview so an estimator can see the
+ * numbers before committing them — that preview runs the same pure functions
+ * in the browser — but a quantity posted from a client is a number a client
+ * chose. These end up in a bid; the arithmetic happens on this side.
+ *
+ * Lines are created UNPRICED. A takeoff produces quantities, not prices, and
+ * filling in a unit price nobody entered is the guess this codebase refuses
+ * everywhere else — the estimator prices them, or pulls a price across from
+ * the catalog. They are ordinary line items from the moment they exist.
+ *
+ * Gated by assertEditableDirectly like every other way of adding a line, so
+ * a contracted job still only changes through a change order.
+ */
+export async function addTakeoffLineItems(jobId: string, formData: FormData) {
+  const { company } = await requireCompanyContext();
+  const job = await assertJobInCompany(jobId, company.id);
+  assertEditableDirectly(job);
+
+  const surface = String(formData.get("surface") ?? "wall");
+  const num = (key: string): number => {
+    const raw = Number(String(formData.get(key) ?? ""));
+    return Number.isFinite(raw) && raw > 0 ? raw : 0;
+  };
+
+  const options = {
+    wastePercent: Number.isFinite(Number(formData.get("wastePercent")))
+      ? Number(formData.get("wastePercent"))
+      : undefined,
+    spacingFt: num("spacingIn") > 0 ? num("spacingIn") / 12 : undefined,
+  };
+
+  // Openings arrive as parallel arrays from repeated inputs. A pair with
+  // either side missing is dropped rather than treated as zero: a half-typed
+  // opening is an unfinished thought, and deducting it as 0 x height would
+  // silently do nothing while looking like it counted.
+  const widths = formData.getAll("openingWidth").map((v) => Number(v));
+  const heights = formData.getAll("openingHeight").map((v) => Number(v));
+  const openings = widths
+    .map((widthFt, i) => ({ widthFt, heightFt: heights[i] }))
+    .filter((o) => Number.isFinite(o.widthFt) && Number.isFinite(o.heightFt) && o.widthFt > 0 && o.heightFt > 0);
+
+  const label = String(formData.get("label") ?? "").trim();
+  const lines =
+    surface === "ceiling"
+      ? takeoffCeiling({ lengthFt: num("lengthFt"), widthFt: num("widthFt") }, options)
+      : takeoffWall(
+          {
+            lengthFt: num("lengthFt"),
+            heightFt: num("heightFt"),
+            sides: String(formData.get("sides")) === "1" ? 1 : 2,
+            openings,
+          },
+          options,
+        );
+
+  const usable = lines.filter((line) => line.quantity > 0);
+  if (usable.length === 0) {
+    throw new Error("Those dimensions produce no quantities — check the measurements.");
+  }
+
+  await prisma.$transaction(
+    usable.map((line) =>
+      prisma.jobLineItem.create({
+        data: {
+          jobId,
+          // The label names WHERE it was measured. Without it a bid with four
+          // takeoffs on it has four lines called "Drywall sheets" and no way
+          // to tell which wall any of them came from.
+          description: label ? `${label} — ${line.label}` : line.label,
+          unit: line.unit,
+          quantity: line.quantity,
+        },
+      }),
+    ),
+  );
+
+  revalidatePath(`/jobs/${jobId}`);
 }
