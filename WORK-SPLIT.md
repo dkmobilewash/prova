@@ -74,7 +74,18 @@ one at a time:
    `/prevailing-wage`. Rules only — no wage-rate dataset, nothing seeded,
    blank means unchecked. One additive column on
    `PrevailingWageDetermination` (`ruleSetId`, ON DELETE SET NULL).
-6. **Apprentice / fringe remittance reporting** — Sheet 09.
+6. **Apprentice / fringe remittance reporting** — Sheet 09. *Shipped
+   1 Sep.* `CraftClassification.tier` + `apprenticePeriod` (two nullable
+   columns, no backfill), `lib/apprentice-ratio.ts`,
+   `lib/fringe-remittance.ts`, `lib/union-compliance-query.ts`,
+   `lib/actions/unionCompliance.ts`, `/union-compliance`. Also raises the
+   apprentice-ratio alert Sheet 26 had listed as blocked. Program
+   enrolment tracking is deliberately still Partial — it needs the
+   program's own data model and cannot be derived from hours logged.
+
+**All six items in this lane are now shipped and unmerged on the branch.
+None has been browser-tested.** That is the outstanding risk, not the
+remaining work.
 
 It does NOT touch estimating, billing/AIA pay applications,
 `jobs/[id]/page.tsx`, safety, materials/vendors, equipment or RFIs. Where

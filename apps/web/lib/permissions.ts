@@ -158,6 +158,7 @@ export const ROUTE_CAPABILITY: Record<string, Capability> = {
   "/compliance": "MANAGE_COMPLIANCE",
   "/settings": "MANAGE_COMPLIANCE",
   "/prevailing-wage": "MANAGE_COMPLIANCE",
+  "/union-compliance": "MANAGE_COMPLIANCE",
 };
 
 export function capabilityForRoute(href: string): Capability | null {

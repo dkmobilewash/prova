@@ -507,10 +507,10 @@ changed mid-project.
   standard across CBAs in this trade, and typed columns are easier to sum
   and report on than a flexible blob would be.
 - `ApprenticeRatioRule` — captures the ratio itself (e.g. 1 apprentice per
-  3 journeymen). **Does not implement the actual daily compliance
-  check** — ratios are enforced daily, not on a monthly rollup, which
-  needs a labor/time-entry data model that doesn't exist anywhere in this
-  schema yet. That's real future work this table alone can't drive.
+  3 journeymen). This bullet used to say the daily compliance check could
+  not be built without a labor/time-entry data model. `TimeEntry` landed
+  and `CraftClassification.tier` supplied the rest, so **the check now
+  exists** — see the union fringe and apprenticeship section below.
 
 **Non-overlapping `FringeRateSchedule` ranges are enforced at the
 database level**, not just assumed correct by the application:
@@ -823,6 +823,83 @@ Release *forecasting* is a plain field
 ("expected release around this date"), not a scheduling or notification
 system — there's no closeout/warranty stage in `JobStatus` yet for a
 forecast to hook into more precisely than that.
+
+## Union fringe and apprenticeship — two reports over hours already logged
+
+Both halves of this were blocked on the same thing, and both comments
+saying so are now corrected rather than left standing: there was no
+time-entry data model. `TimeEntry` closed half of it. `CraftClassification.tier`
+closes the other half.
+
+### Why a tier column, rather than reading the name
+
+An apprentice-to-journeyman ratio cannot be checked against a list of
+names. "Drywall Finisher Apprentice Period 3" is only an apprentice to a
+human reader, and deriving the tier by searching the name for "apprentice"
+would be a guess that fails silently on the first local that words it
+differently. `tier` is nullable with **no backfill**, for the usual
+reason, and `FOREMAN` counts on the journeyman side — a judgement, so it
+is stated in the enum rather than left implicit.
+
+It sits on `CraftClassification`, which is a **global** reference table,
+so setting a tier is visible to every company under that local. That is
+correct rather than a leak: whether a classification is an apprentice
+classification is a fact about the classification, the same as its name.
+Access is gated by the company actually holding a `CompanyUnionAgreement`
+with that local — the same join `craftClassificationIdFromForm` already
+uses as its access check.
+
+### The ratio is checked per day, and unclassified is never a pass
+
+`lib/apprentice-ratio.ts` measures per job, per local, **per day**,
+because that is how the rule is written and enforced. A crew that runs two
+apprentices to one journeyman on Monday is out of ratio on Monday, and a
+weekly or monthly average would hide precisely the day an inspector asks
+about. It measures in HOURS, which is what `TimeEntry` holds; a headcount
+derived from it would count a two-hour visit the same as a full shift, and
+`programStandardReference` on the rule is where the company records which
+convention its own standard states.
+
+The load-bearing rule: **hours on a craft with no tier recorded are never
+counted as journeyman hours.** The day reads `INCOMPLETE`. Counting them
+would make a job look compliant because nobody had finished tagging its
+crafts — turning a setup gap into a false clean bill of health on the
+exact record an inspector asks for, which is the worst failure available
+here. A day with apprentice hours and no ratio rule recorded is
+`INCOMPLETE` for the same reason, and a day with no apprentice hours is
+`NOT_APPLICABLE` rather than counted as evidence of compliance.
+
+Hours that cannot be attributed to any local (no craft tag at all) are
+folded into **every** local's review as unclassified. On a job running two
+locals that makes both read `INCOMPLETE`, which is the conservative answer
+and the correct one: the fix is to tag the entry, not to pick a local for
+it.
+
+### The remittance breaks the money out by fund
+
+`lib/fringe-remittance.ts` rolls a month up per local, per classification,
+with pension, vacation, health & welfare and training as separate figures
+— because that is how the form is filled in and how the cheques are
+written. A single "fringe" total would have to be taken apart again by
+hand, which is the manual re-entry this product exists to remove.
+
+It reuses `findEffectiveFringeRateSchedule` rather than a second copy: the
+rate that applies to an hour is one question with one answer, and two
+implementations would eventually disagree about a historical month. Fringe
+is paid at the flat per-hour rate **regardless of pay type** — an overtime
+hour earns time-and-a-half on the base wage and the same fringe as any
+other — which is the Davis-Bacon convention `lib/labor-cost.ts` already
+follows, and getting it wrong would overstate every remittance in a month
+containing overtime.
+
+Hours it cannot price (no craft tag, or no schedule effective on the day)
+are counted in `uncomputedHours` with the workers named, and contribute
+nothing to the money. Valuing them at zero would under-report a real
+liability to a trust fund, which is the expensive direction to be wrong
+in. Whether a month was filed is derived from a
+`UNION_FRINGE_BENEFIT_FILING` document covering the **whole** period — a
+filing that merely overlaps is not evidence, the same rule the
+certified-payroll alert applies to a week.
 
 ## Prevailing wage rule sets — the rules, never the rates
 

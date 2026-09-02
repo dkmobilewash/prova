@@ -12,6 +12,74 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### Union fringe remittance and the apprentice ratio, both unblocked (Diego)
+`claude/prova-contractor-os-e3f0iz`
+
+Sheet 09 had three Missing rows, and Sheet 26's last Missing row said the
+apprentice-ratio alert was "blocked on apprentice tracking not existing
+yet". `ApprenticeRatioRule`'s own schema comment said the daily check
+could not be built because there was no labor/time-entry data model.
+
+`TimeEntry` landed weeks ago and closed half of that. The other half was
+that nothing said which side of a ratio a classification sits on —
+`CraftClassification` had a name and nothing else. **Deriving the tier by
+looking for the word "apprentice" in a free-text name would be a guess
+that fails silently on the first local that words it differently**, so it
+is a column: `tier`, nullable, no backfill. Both stale comments are
+corrected rather than left standing.
+
+**The rule that makes the ratio check trustworthy: unclassified is never a
+pass.** Hours on a craft with no tier are not counted as journeyman hours
+— the day reads "can't be judged". Counting them would make a job look
+compliant because nobody had finished tagging its crafts, turning a setup
+gap into a false clean bill of health on the exact record an inspector
+asks for. Same for a day with apprentice hours and no ratio rule recorded,
+and a day with no apprentice hours is "not applicable" rather than
+evidence of compliance.
+
+**Checked per day, never averaged.** A crew running two apprentices to one
+journeyman on Monday is out of ratio on Monday; a weekly average hides
+exactly the day that gets asked about. Measured in hours, which is what
+`TimeEntry` holds — a headcount derived from it would count a two-hour
+visit the same as a full shift.
+
+**The remittance breaks the money out by fund** — pension, vacation, H&W,
+training as separate figures, because that is how the form is filled in
+and how the cheques are written. A single "fringe" total would have to be
+taken apart by hand, which is the re-entry this product exists to remove.
+It reuses `findEffectiveFringeRateSchedule` rather than a second copy of
+that lookup, and pays fringe at the flat rate regardless of pay type
+(Davis-Bacon) — getting that wrong would overstate every month containing
+overtime. Hours it cannot price are counted and the workers named, never
+valued at $0: under-reporting a trust fund is the expensive direction to
+be wrong in.
+
+**Sheet 26's last Missing row is now Partial**, not Built — the alert
+exists and finds the days, and there is still no push, like every other
+row on that sheet. It is STANDING rather than dated: the day is past and
+cannot be fixed by acting sooner, so a severity that escalated with the
+calendar would invent a deadline that does not exist. What can change is
+tomorrow's crew.
+
+**Sheet 09's third row is Partial, not Built.** `apprenticePeriod`
+identifies the step and hours per apprentice are derivable, but the
+program side — registered enrolment, the sponsor, classroom hours,
+progression sign-off — needs the program's own data model and cannot be
+derived from hours logged. Calling that Built would be the claim this
+audit keeps catching.
+
+Two failures worth recording. `UnionLocal` is a GLOBAL table unique on
+(parentInternational, localNumber), so a fixed test local collided with
+leftovers from an earlier run — stamped per run now. And the typed
+`Record<AlertKind, string>` on the alert labels refused to compile when
+the new kind had no label, which is the type system catching a gap that
+would otherwise have shipped as a blank badge.
+
+24 unit tests across the two engines, 9 db tests. `pnpm test` 524 → 548,
+79 db tests, typecheck/lint/build clean.
+
+---
+
 ### Prevailing wage rule sets — the rules, never the rates (Diego)
 `claude/prova-contractor-os-e3f0iz`
 

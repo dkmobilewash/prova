@@ -38,6 +38,7 @@ export type AlertKind =
   | "RETAINAGE_RELEASE"
   | "CLOSEOUT_WITH_GC"
   | "CERTIFIED_PAYROLL"
+  | "APPRENTICE_RATIO"
   | "WIP_VARIANCE";
 
 /** Three levels, not five. OVERDUE is "a date has passed"; DUE_SOON is "a
@@ -89,6 +90,7 @@ export const ALERT_CAPABILITY: Record<AlertKind, Capability> = {
   // operational, and the money on it is dropped separately below.
   CLOSEOUT_WITH_GC: "MANAGE_JOBS",
   CERTIFIED_PAYROLL: "MANAGE_COMPLIANCE",
+  APPRENTICE_RATIO: "MANAGE_COMPLIANCE",
   WIP_VARIANCE: "VIEW_JOB_COSTS",
 };
 
@@ -425,6 +427,54 @@ function addDays(iso: string, days: number): string {
   return new Date(Date.parse(`${iso}T00:00:00.000Z`) + days * 86_400_000)
     .toISOString()
     .slice(0, 10);
+}
+
+/* ---------------------------------------------------- apprentice ratio */
+
+export type ApprenticeRatioAlertSource = {
+  jobId: string;
+  jobName: string;
+  unionLocalLabel: string;
+  /** Days in the period that broke the ratio. */
+  offendingDates: string[];
+  worstExcessHours: number;
+};
+
+/**
+ * A job that ran over its apprentice-to-journeyman ratio.
+ *
+ * STANDING rather than dated, even though each breach happened on a
+ * specific day: the day is in the past and cannot be fixed by acting
+ * sooner, so an OVERDUE severity that grew more urgent with the calendar
+ * would be inventing a deadline that does not exist. What CAN be acted on
+ * is the crew composition tomorrow, and the count of days is the size of
+ * the problem.
+ *
+ * Keyed on the offending dates, so a dismissal lapses the moment another
+ * day breaches — the same mechanism every other alert here uses, applied
+ * to a set rather than a single date.
+ */
+export function apprenticeRatioAlerts(sources: ApprenticeRatioAlertSource[]): Alert[] {
+  const alerts: Alert[] = [];
+
+  for (const job of sources) {
+    if (job.offendingDates.length === 0) continue;
+    const count = job.offendingDates.length;
+
+    alerts.push({
+      key: alertKey("APPRENTICE_RATIO", job.jobId, job.offendingDates.join(",")),
+      kind: "APPRENTICE_RATIO",
+      severity: "STANDING",
+      title: `${job.jobName} ran over its apprentice ratio`,
+      detail: `${count} ${count === 1 ? "day" : "days"} over the ratio for ${job.unionLocalLabel}, worst by ${job.worstExcessHours} ${job.worstExcessHours === 1 ? "hour" : "hours"}. Ratios are enforced per day, so a compliant week does not undo one.`,
+      href: "/union-compliance",
+      dueOn: null,
+      daysUntil: null,
+      amount: null,
+    });
+  }
+
+  return alerts;
 }
 
 /* --------------------------------------------------------- WIP variance */

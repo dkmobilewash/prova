@@ -10,6 +10,7 @@ export const ALERT_KIND_LABELS: Record<AlertKind, string> = {
   RETAINAGE_RELEASE: "Retainage",
   CLOSEOUT_WITH_GC: "Closeout",
   CERTIFIED_PAYROLL: "Certified payroll",
+  APPRENTICE_RATIO: "Apprentice ratio",
   WIP_VARIANCE: "Job health",
 };
 

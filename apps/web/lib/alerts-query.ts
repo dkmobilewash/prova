@@ -1,5 +1,6 @@
 import { prisma } from "@prova/db";
 import {
+  apprenticeRatioAlerts,
   backchargeAlerts,
   certifiedPayrollAlerts,
   closeoutAlerts,
@@ -19,6 +20,7 @@ import { calculateJobWip, calculateLineItemWip } from "@/lib/wip";
 import { jobIsOverBudget } from "@/lib/company-financials";
 import { weekStart } from "@/components/fieldReportWeeks";
 import { can, type Principal } from "@/lib/permissions";
+import { loadRatioReviews } from "@/lib/union-compliance-query";
 
 /**
  * Every alert one company currently has, assembled from the rows that
@@ -52,7 +54,12 @@ export async function loadAlerts(
    * and an unset member both get anyway. */
   principal: Principal = { role: "OWNER", jobFunction: null },
 ): Promise<PartitionedAlerts> {
-  const [renewalSources, backcharges, jobs, acknowledgements] = await Promise.all([
+  // The apprentice ratio for the month the date falls in. Ratios are
+  // enforced per day, so this is a rolling look at the current month
+  // rather than a window of our own choosing.
+  const currentMonth = todayIso.slice(0, 7);
+
+  const [renewalSources, backcharges, jobs, acknowledgements, ratioReviews] = await Promise.all([
     renewalSourcesForCompany(companyId),
 
     prisma.backcharge.findMany({
@@ -118,6 +125,8 @@ export async function loadAlerts(
       where: { userId },
       select: { alertKey: true, snoozedUntil: true },
     }),
+
+    loadRatioReviews(companyId, currentMonth),
   ]);
 
   const alerts: Alert[] = [];
@@ -242,6 +251,17 @@ export async function loadAlerts(
   alerts.push(...retainageAlerts(retainageSources, todayIso));
   alerts.push(...closeoutAlerts(closeoutSources, todayIso));
   alerts.push(...certifiedPayrollAlerts(payrollSources, todayIso));
+  alerts.push(
+    ...apprenticeRatioAlerts(
+      ratioReviews.map((review) => ({
+        jobId: review.jobId,
+        jobName: review.jobName,
+        unionLocalLabel: review.unionLocalLabel,
+        offendingDates: review.summary.offendingDates,
+        worstExcessHours: review.summary.worstExcessHours,
+      })),
+    ),
+  );
   alerts.push(...wipAlerts(wipSources));
 
   const permitted = visibleToPrincipal(alerts, (capability) => can(principal, capability));

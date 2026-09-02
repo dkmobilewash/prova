@@ -23,20 +23,21 @@ in flight. Left as-is here rather than guessed at from the outside; the next
 update to touch those sheets should come from whoever actually verified them
 against a fresh clone.
 
-**112 items audited — 80 built / 19 partial / 12 missing / 1 descoped**
+**112 items audited — 82 built / 21 partial / 8 missing / 1 descoped**
 
 | Status | Count |
 | --- | --- |
-| Built | 79 |
-| Partial | 19 |
-| Missing | 11 |
+| Built | 81 |
+| Partial | 21 |
+| Missing | 7 |
 | Descoped | 1 |
 
 These two tallies have disagreed with each other, and with the sheets'
 own headers, since before this edit. Sheet 13's +2 built / −2 missing,
 Sheet 22's +1 built, Sheet 26's +1 built / +2 partial / −2 missing and
 Sheet 25's +1 built / +1 partial / −2 missing and Sheet 21's +1 built /
-−1 missing are applied to both rather than recomputing
+−1 missing and Sheet 09's +2 built / +1 partial / −3 missing (with Sheet 26's
+apprentice row moving Missing → Partial) are applied to both rather than recomputing
 everything, because recomputing every header from its rows is already in
 flight on another branch and two people rewriting the same totals is how
 they got out of step in the first place.
@@ -138,13 +139,17 @@ costing, and prevailing wage attachment shipped 26 Aug 2026.*
 | Missing | Multi-state prevailing wage rule variation support | not built as a rules engine — no real government wage-rate dataset to vary across states with; a job is already jurisdiction-scoped via `operatingLocationId` |
 | Partial | Certified payroll document storage/history per job, per pay period | `ComplianceDocument.type = CERTIFIED_PAYROLL` stores/tracks a submission, with AI extraction; not structured strictly by pay period |
 
-## 09. Union Fringe & Apprenticeship Compliance — 1 built · 0 partial · 3 missing
+## 09. Union Fringe & Apprenticeship Compliance — 3 built · 1 partial · 0 missing
+
+*Updated 1 Sep 2026 — the remittance generator and the daily ratio check
+shipped. Both were blocked on there being no time-entry data; `TimeEntry`
+landed, and `CraftClassification.tier` supplied the other missing half.*
 
 | Status | Feature | Note |
 | --- | --- | --- |
-| Missing | Union fringe/benefit remittance report generation (pension, vacation, H&W, training) | no generator built over `FringeRateSchedule` |
-| Missing | Apprentice-to-journeyman ratio tracking per crew/job | not modeled |
-| Missing | Apprenticeship program enrollment/hours tracking | not modeled |
+| Built | Union fringe/benefit remittance report generation (pension, vacation, H&W, training) | `lib/fringe-remittance.ts`, on `/union-compliance` — a month's logged hours rolled up per local, per classification, with the four funds broken out separately because that is how the form is filled in and how the cheques are written. Uses the rate in force on each entry's own date through `findEffectiveFringeRateSchedule`, not a second copy of that lookup. Fringe is paid at the flat per-hour rate regardless of pay type (Davis-Bacon), so overtime does not inflate it. Hours it cannot price — no craft tag, or no schedule effective that day — are counted and named, never valued at $0: under-reporting a trust fund is the expensive direction to be wrong in. Whether the month was filed is derived from a `UNION_FRINGE_BENEFIT_FILING` document covering the WHOLE period |
+| Built | Apprentice-to-journeyman ratio tracking per crew/job | `lib/apprentice-ratio.ts` — per job, per union local, **per day**, because that is how the rule is enforced and a monthly average would hide the exact day an inspector asks about. Measured in hours (what `TimeEntry` holds). Hours on a craft with no tier are NEVER counted as journeyman hours: the day reads "can't be judged", so a half-configured company never gets a clean bill of health. Also raises the Sheet 26 alert that was blocked on this existing |
+| Partial | Apprenticeship program enrollment/hours tracking | `CraftClassification.apprenticePeriod` identifies the step, and hours per apprentice per period are derivable from `TimeEntry` and shown in the ratio review. What is NOT built is the program side of it — a registered enrolment record, the sponsor, required classroom hours, or progression sign-off. That needs the program's own data model, and none of it can be derived from hours logged |
 | Built | Multi-CBA support (a company may run crews under more than one agreement) | `CompanyUnionAgreement` is a list per company, not a single field |
 
 ## 10. Billing — AIA-Style Pay Applications — 5 built · 0 partial · 0 missing
@@ -325,5 +330,5 @@ visible from every screen instead of from one page.*
 | Partial | COI/license/bond expiration alerts | now an alert with an identity, a severity comparable against everything else, and a place reachable from every page — through `lib/compliance-expiry.ts`'s existing ranking, not a second expiry rule. Still no channel that reaches someone who doesn't open the app |
 | Partial | Certified payroll submission deadline reminders | derived: a job carrying a `PrevailingWageDetermination`, a finished week with `TimeEntry` rows, and no `CERTIFIED_PAYROLL` document whose period covers that whole week. Gated on the determination on purpose — certified payroll isn't required on private work, and a job where nobody recorded one raises nothing rather than a guess. Still no push |
 | Partial | Retainage release eligibility alerts | derived from `lib/retainage.ts`'s balance plus the closeout package's state. An ACCEPTED package is an event and reads as collectable; `Job.substantialCompletionDate` is a FORECAST and reads as "worth confirming", never as money owed. Still no push |
-| Missing | Apprentice ratio out-of-compliance alerts | still blocked on apprentice tracking not existing. `ApprenticeRatioRule` holds the ratio and nothing holds the daily headcount to check it against — the engine above will raise it the day that data exists |
+| Partial | Apprentice ratio out-of-compliance alerts | no longer blocked — `lib/apprentice-ratio.ts` finds the days a job ran over, and the alert engine raises them (STANDING, not dated: the day is past and cannot be fixed by acting sooner; what can change is tomorrow's crew). Keyed on the offending dates, so a dismissal lapses the moment another day breaches. Still no push, like every other row on this sheet |
 | Partial | WIP variance alerts | jobs forecast past contract value now appear in the one alert list alongside everything else, through `jobIsOverBudget` rather than a second threshold, and can be acknowledged. Deliberately a STANDING severity with no date: it is true today and tomorrow, and escalating it with the calendar would invent urgency the data doesn't have. Still no push |

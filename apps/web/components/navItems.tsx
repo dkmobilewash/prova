@@ -184,6 +184,22 @@ export const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
+    href: "/union-compliance",
+    label: "Union & fringe",
+    icon: (
+      <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5">
+        <circle cx="7" cy="7" r="2.4" stroke="currentColor" strokeWidth="1.4" />
+        <circle cx="13.5" cy="8.5" r="1.8" stroke="currentColor" strokeWidth="1.4" />
+        <path
+          d="M2.8 16c0-2.4 2-4 4.2-4s4.2 1.6 4.2 4M12.2 12.6c1.7.1 3.2 1.4 3.2 3.4"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinecap="round"
+        />
+      </svg>
+    ),
+  },
+  {
     href: "/prevailing-wage",
     label: "Prevailing wage",
     icon: (
@@ -387,7 +403,7 @@ export const NAV_GROUPS: NavGroup[] = [
   },
   {
     heading: "Compliance & safety",
-    items: [item("/compliance"), item("/prevailing-wage"), item("/safety"), item("/team")],
+    items: [item("/compliance"), item("/prevailing-wage"), item("/union-compliance"), item("/safety"), item("/team")],
   },
   {
     heading: "Logistics",
