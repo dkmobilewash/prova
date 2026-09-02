@@ -324,6 +324,13 @@ nothing, so the bar is still unmet — but it is now unmet for want of a
 TRIGGER, not for want of a channel. Anything that closes these rows calls
 the existing sender from `loadAlerts`; it does not build a second one.*
 
+*And this correction has its own expiry date, which is the point. Checked
+against `main` at 21133db: `cyrus/notifications` (#59) is building exactly
+that trigger -- an alert digest with a delivery ledger -- and is not merged
+yet. When it lands, these rows move and this paragraph is stale in turn.
+State what you checked and when, or the next reader inherits a confident
+sentence about a repository that has moved on.*
+
 | Status | Feature | Note |
 | --- | --- | --- |
 | Built | In-app alert delivery: one ranked list, acknowledgement, and a count in the chrome | `lib/alerts.ts` (derivation and ranking), `lib/alerts-query.ts` (assembly), `AlertAcknowledgement` (the ONLY stored part — a person deciding they have seen one), `/alerts`, and a bell with a live count in the top bar on every screen. Alerts are never stored: each is derived from the record it is about on every render, so fixing the thing removes it. An alert's key carries the fact that would change it (`RENEWAL:lic_1:2026-11-30`), so a dismissal lapses by itself when the situation moves — no expiry logic. Per-user, not per-company: dismissing on a colleague's behalf is the worse of the two failures. **This is not push** — it reaches whoever opens the app, and that is the whole claim |

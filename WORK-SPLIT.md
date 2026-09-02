@@ -67,7 +67,9 @@ one at a time:
    trigger, not for want of a transport. Whoever builds it feeds from
    `loadAlerts` rather than growing its own rules, and must decide what
    happens when `emailSetupProblem()` is non-null — a silently dropped
-   alert is worse than no alert.
+   alert is worse than no alert. Checked against `main` at 21133db;
+   `cyrus/notifications` (#59) is building that trigger and had not merged
+   at the time of writing, so re-check before relying on this.
 4. **Roles & Permissions** — Sheet 25. *Shipped 1 Sep.*
    `permissions.prisma` (`JobFunction`, a nullable column on `User` —
    `UserRole` untouched), `lib/permissions.ts`, `lib/authz.ts`,
