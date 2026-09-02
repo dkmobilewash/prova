@@ -16,6 +16,9 @@ const context = { company: { id: "" }, id: "", role: "OWNER" as string };
 
 vi.mock("@/lib/auth", () => ({ requireCompanyContext: async () => context }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
+// Never exercised by these cases (none attach a file), but the module
+// imports it at load.
+vi.mock("@vercel/blob", () => ({ put: async () => ({ url: "https://blob.test/x" }) }));
 
 const {
   createPrevailingWageRuleSet,
@@ -23,6 +26,8 @@ const {
   setDeterminationRuleSet,
   updatePrevailingWageRuleSet,
 } = await import("./prevailingWage");
+
+const { uploadPrevailingWageDetermination } = await import("./labor");
 
 let jobId = "";
 let determinationId = "";
@@ -239,4 +244,56 @@ describe("prevailing wage rule sets against a real database", () => {
       context.role = "OWNER";
     }
   });
+
+  /**
+   * The crash browser testing found: both "Document" and "Or source link"
+   * are labelled optional, one of them is required, and the action used to
+   * `throw` that rule. Production redacts a thrown Server Action message to
+   * a digest, so the whole page fell into the error boundary with a
+   * reference number -- three times in a row, reasonably read as data loss.
+   *
+   * These assert the SHAPE, not just the text: an expected refusal comes
+   * back as a value. If anyone reintroduces a throw, `.rejects` is what
+   * changes and these fail.
+   */
+  describe("attaching a wage determination", () => {
+    it("refuses an empty file AND link by returning, never by throwing", async () => {
+      const before = await prisma.prevailingWageDetermination.count({ where: { jobId } });
+
+      const result = await uploadPrevailingWageDetermination(
+        jobId,
+        form({ jurisdiction: "Nevada", sourceUrl: "", note: "" }),
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).toMatch(/attach the determination document/i);
+      // and nothing was written on the way to refusing
+      expect(await prisma.prevailingWageDetermination.count({ where: { jobId } })).toBe(before);
+    });
+
+    it("refuses a missing jurisdiction the same way", async () => {
+      const result = await uploadPrevailingWageDetermination(
+        jobId,
+        form({ jurisdiction: "   ", sourceUrl: "https://sam.gov/zz" }),
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).toMatch(/jurisdiction/i);
+    });
+
+    it("accepts a source link with no file, which is the case that was crashing", async () => {
+      const result = await uploadPrevailingWageDetermination(
+        jobId,
+        form({ jurisdiction: "Nevada", sourceUrl: "https://sam.gov/zztest" }),
+      );
+
+      expect(result.ok).toBe(true);
+      const row = await prisma.prevailingWageDetermination.findFirst({
+        where: { jobId, jurisdiction: "Nevada" },
+      });
+      expect(row?.sourceUrl).toBe("https://sam.gov/zztest");
+      expect(row?.fileUrl).toBeNull();
+    });
+  });
+
 });

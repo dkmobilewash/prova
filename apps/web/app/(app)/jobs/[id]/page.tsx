@@ -4,6 +4,7 @@ import Link from "next/link";
 import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { PrintButton } from "@/components/PrintButton";
+import { PrevailingWageDeterminationForm } from "@/components/PrevailingWageDeterminationForm";
 import { ContractSummary } from "@/components/ContractSummary";
 import { WipNarrativeButton } from "@/components/WipNarrativeButton";
 import { DraftLineItemsForm } from "@/components/DraftLineItemsForm";
@@ -42,7 +43,6 @@ import {
   logTimeEntry,
   updateJobRetainageTerms,
   uploadDispatchSlip,
-  uploadPrevailingWageDetermination,
   markJobContracted,
   deleteContractDocument,
   saveEstimateVersion,
@@ -486,7 +486,6 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
   const deleteTimeEntryWithId = (timeEntryId: string) => deleteTimeEntry.bind(null, job.id, timeEntryId);
   const uploadDispatchSlipWithId = uploadDispatchSlip.bind(null, job.id);
   const deleteDispatchSlipWithId = (dispatchSlipId: string) => deleteDispatchSlip.bind(null, job.id, dispatchSlipId);
-  const uploadPrevailingWageDeterminationWithId = uploadPrevailingWageDetermination.bind(null, job.id);
   const deletePrevailingWageDeterminationWithId = (determinationId: string) =>
     deletePrevailingWageDetermination.bind(null, job.id, determinationId);
   const updateJobRetainageTermsWithId = updateJobRetainageTerms.bind(null, job.id);
@@ -1273,49 +1272,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             </ul>
           )}
 
-          <form
-            action={uploadPrevailingWageDeterminationWithId}
-            encType="multipart/form-data"
-            className="flex flex-wrap items-end gap-2 rounded-lg border border-slate-800 bg-slate-900 p-3"
-          >
-            <label className="flex flex-col gap-1 text-xs text-slate-400">
-              Jurisdiction
-              <input
-                name="jurisdiction"
-                placeholder="e.g. California, federal (Davis-Bacon)"
-                required
-                className="w-56 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-600 focus:border-blue-500 focus:outline-none"
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-xs text-slate-400">
-              Document (optional)
-              <input
-                type="file"
-                name="file"
-                accept="application/pdf,image/png,image/jpeg,image/webp"
-                className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 file:mr-2 file:rounded file:border-0 file:bg-slate-800 file:px-2 file:py-1 file:text-slate-200 focus:border-blue-500 focus:outline-none"
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-xs text-slate-400">
-              Or source link
-              <input
-                name="sourceUrl"
-                placeholder="https://sam.gov/..."
-                className="w-48 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-600 focus:border-blue-500 focus:outline-none"
-              />
-            </label>
-            <input
-              name="note"
-              placeholder="Note (optional)"
-              className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
-            />
-            <SubmitButton
-              type="submit"
-              className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-100 hover:bg-slate-700"
-            >
-              Attach
-            </SubmitButton>
-          </form>
+          <PrevailingWageDeterminationForm jobId={job.id} />
         </section>
 
         {!isEstimateStage && showsBilling && (
