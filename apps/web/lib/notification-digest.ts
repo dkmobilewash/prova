@@ -21,11 +21,7 @@
  * avoid, arriving faster.
  */
 
-import {
-  STANDING_RUNG,
-  type DueNotice,
-  type Rung,
-} from "@/lib/notification-milestones";
+import type { DueNotice, Rung } from "@/lib/notification-milestones";
 
 /** How a rung reads to a person — about TIMING only, and vaguely at that.
  *
