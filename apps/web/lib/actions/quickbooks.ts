@@ -14,6 +14,8 @@ import {
   refreshTokens,
   upsertInvoice,
   type QuickBooksAccount,
+  upsertPayment,
+  getPayment,
 } from "@prova/integrations";
 import { requireCompanyContext } from "@/lib/auth";
 import {
@@ -24,12 +26,20 @@ import {
 } from "@/lib/quickbooks-reconcile";
 import {
   buildInvoicePayload,
+  formatUsd,
   idempotencyKeyFor,
   isAccidentalRepeat,
   pushBlockers,
   verifyPushedInvoice,
   type InvoiceToPush,
 } from "@/lib/quickbooks-sync";
+import {
+  buildPaymentPayload,
+  paymentIdempotencyKeyFor,
+  paymentPushBlockers,
+  verifyPushedPayment,
+  type PaymentToPush,
+} from "@/lib/quickbooks-payment-sync";
 import { type ActionResult, actionFail, actionOk, assertOwner } from "./shared";
 
 /**
@@ -66,7 +76,32 @@ async function accessTokenFor(companyId: string) {
     return { accessToken: connection.accessToken, realmId: connection.realmId };
   }
 
-  const refreshed = await refreshTokens(connection.refreshToken);
+  // A refresh that fails is not a transient error and no retry fixes it:
+  // Intuit rolls refresh tokens roughly every 100 days, and a person can
+  // revoke the connection from inside QuickBooks at any moment. Either way
+  // the only cure is somebody reconnecting.
+  //
+  // This used to throw straight out of here. In a production build Next
+  // redacts a thrown Server Action message to a digest, so the person got
+  // an opaque error on whatever page they were on and NOTHING anywhere said
+  // the QuickBooks connection was the reason. Recording the state and
+  // returning null turns a mystery into a sentence on the Integrations
+  // page.
+  let refreshed;
+  try {
+    refreshed = await refreshTokens(connection.refreshToken);
+  } catch (error) {
+    const detail =
+      error instanceof QuickBooksApiError
+        ? error.detail
+        : "QuickBooks refused to renew the connection.";
+    await prisma.quickBooksConnection.update({
+      where: { companyId },
+      data: { status: "NEEDS_REAUTH", statusDetail: detail, statusAt: new Date() },
+    });
+    return null;
+  }
+
   await prisma.quickBooksConnection.update({
     where: { companyId },
     data: {
@@ -74,6 +109,12 @@ async function accessTokenFor(companyId: string) {
       refreshToken: refreshed.refreshToken,
       accessTokenExpiresAt: refreshed.accessTokenExpiresAt,
       refreshTokenExpiresAt: refreshed.refreshTokenExpiresAt,
+      // A successful refresh clears it. Leaving a stale NEEDS_REAUTH on a
+      // working connection would be its own lie, and this codebase has been
+      // bitten by exactly that shape more than once.
+      status: "CONNECTED",
+      statusDetail: null,
+      statusAt: new Date(),
     },
   });
   return { accessToken: refreshed.accessToken, realmId: connection.realmId };
@@ -632,4 +673,234 @@ export async function reconcileQuickBooksInvoices(): Promise<
           : "Couldn't reach QuickBooks.",
     };
   }
+}
+
+/**
+ * Pushes a recorded Payment to QuickBooks, applied to its invoice.
+ *
+ * Mirrors pushInvoiceToQuickBooks deliberately — same blockers-first shape,
+ * same time-bounded repeat guard, same write-then-read-back verification,
+ * same append-only attempt log. A second sync that behaved differently from
+ * the first would be a second thing to reason about at month end.
+ *
+ * The one structural difference is the precondition: this refuses unless the
+ * invoice already carries a QuickBooks link, because a payment is APPLIED to
+ * a document and QuickBooks has to be holding that document first.
+ */
+export async function pushPaymentToQuickBooks(paymentId: string): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  assertOwner(context, "Only the account owner can push to QuickBooks");
+  const { company, ...user } = context;
+
+  const payment = await prisma.payment.findUnique({
+    where: { id: paymentId },
+    include: { invoice: { include: { job: { include: { contact: true } } } } },
+  });
+  if (!payment || payment.invoice.job.companyId !== company.id) {
+    return actionFail("That payment no longer exists.");
+  }
+
+  const token = await accessTokenFor(company.id);
+  const contactId = payment.invoice.job.contactId;
+
+  const [customerLink, invoiceLink, depositMapping] = await Promise.all([
+    contactId
+      ? prisma.quickBooksEntityLink.findUnique({
+          where: {
+            companyId_entityType_entityId: {
+              companyId: company.id,
+              entityType: "Contact",
+              entityId: contactId,
+            },
+          },
+        })
+      : Promise.resolve(null),
+    prisma.quickBooksEntityLink.findUnique({
+      where: {
+        companyId_entityType_entityId: {
+          companyId: company.id,
+          entityType: "Invoice",
+          entityId: payment.invoiceId,
+        },
+      },
+    }),
+    prisma.quickBooksAccountMapping.findUnique({
+      where: { companyId_purpose: { companyId: company.id, purpose: "DEPOSIT" } },
+    }),
+  ]);
+
+  const toPush: PaymentToPush = {
+    paymentId: payment.id,
+    invoiceId: payment.invoiceId,
+    amountCents: toCents(payment.amount),
+    receivedAt: payment.receivedAt,
+    method: payment.method,
+    note: payment.note,
+    customerQboId: customerLink?.qboId ?? "",
+    invoiceQboId: invoiceLink?.qboId ?? "",
+  };
+  const idempotencyKey = paymentIdempotencyKeyFor(toPush);
+
+  const blockers = paymentPushBlockers({
+    hasConnection: token !== null,
+    customerQboId: customerLink?.qboId ?? null,
+    invoiceQboId: invoiceLink?.qboId ?? null,
+    amountCents: toPush.amountCents,
+  });
+  if (blockers.length > 0 || token === null) {
+    // SKIPPED, not FAILED. Nothing was attempted and nothing is wrong with
+    // QuickBooks — a setup step is missing, and calling that a failure
+    // trains people to ignore the failures that matter.
+    await log({
+      companyId: company.id,
+      userId: user.id,
+      entityType: "Payment",
+      entityId: payment.id,
+      idempotencyKey,
+      outcome: "SKIPPED",
+      summary: `Payment on invoice ${payment.invoice.number} was not sent.`,
+      detail: blockers.join(" ") || "QuickBooks isn't connected.",
+    });
+    return actionFail(blockers.join(" ") || "QuickBooks isn't connected.");
+  }
+
+  const link = await prisma.quickBooksEntityLink.findUnique({
+    where: {
+      companyId_entityType_entityId: {
+        companyId: company.id,
+        entityType: "Payment",
+        entityId: payment.id,
+      },
+    },
+  });
+
+  if (link) {
+    const priorSuccess = await prisma.quickBooksSyncAttempt.findFirst({
+      where: {
+        companyId: company.id,
+        entityType: "Payment",
+        entityId: payment.id,
+        idempotencyKey,
+        outcome: "SUCCEEDED",
+      },
+      orderBy: { createdAt: "desc" },
+    });
+    if (isAccidentalRepeat(priorSuccess?.createdAt ?? null, new Date())) {
+      revalidatePath(`/jobs/${payment.invoice.job.id}`);
+      return actionOk;
+    }
+  }
+
+  const payload = buildPaymentPayload(toPush, {
+    depositAccountId: depositMapping?.qboAccountId ?? null,
+    existing:
+      link && link.qboSyncToken !== null
+        ? { qboId: link.qboId, syncToken: link.qboSyncToken }
+        : undefined,
+  });
+
+  let written;
+  try {
+    written = await upsertPayment(token.realmId, token.accessToken, payload);
+  } catch (error) {
+    const detail =
+      error instanceof QuickBooksApiError ? error.detail : "Couldn't reach QuickBooks.";
+    await log({
+      companyId: company.id,
+      userId: user.id,
+      entityType: "Payment",
+      entityId: payment.id,
+      idempotencyKey,
+      outcome: "FAILED",
+      summary: `Payment on invoice ${payment.invoice.number} was not sent.`,
+      detail,
+    });
+    return actionFail(`QuickBooks refused: ${detail}`);
+  }
+
+  await prisma.quickBooksEntityLink.upsert({
+    where: {
+      companyId_entityType_entityId: {
+        companyId: company.id,
+        entityType: "Payment",
+        entityId: payment.id,
+      },
+    },
+    create: {
+      companyId: company.id,
+      entityType: "Payment",
+      entityId: payment.id,
+      qboId: written.Id,
+      qboSyncToken: written.SyncToken ?? null,
+      lastPushedAt: new Date(),
+    },
+    update: {
+      qboId: written.Id,
+      qboSyncToken: written.SyncToken ?? null,
+      lastPushedAt: new Date(),
+    },
+  });
+
+  // Read it back. The response to a write is not proof the write is right —
+  // this project has been burned by exactly that claim.
+  let verification;
+  try {
+    const readback = await getPayment(token.realmId, token.accessToken, written.Id);
+    verification = verifyPushedPayment(payload, readback);
+    await prisma.quickBooksEntityLink.update({
+      where: {
+        companyId_entityType_entityId: {
+          companyId: company.id,
+          entityType: "Payment",
+          entityId: payment.id,
+        },
+      },
+      data: { qboSyncToken: readback.SyncToken ?? written.SyncToken ?? null, lastVerifiedAt: new Date() },
+    });
+  } catch (error) {
+    const detail =
+      error instanceof QuickBooksApiError ? error.detail : "Couldn't read the payment back.";
+    await log({
+      companyId: company.id,
+      userId: user.id,
+      entityType: "Payment",
+      entityId: payment.id,
+      idempotencyKey,
+      outcome: "VERIFY_MISMATCH",
+      summary: `Payment on invoice ${payment.invoice.number} reached QuickBooks but could not be verified.`,
+      detail,
+      qboId: written.Id,
+    });
+    revalidatePath(`/jobs/${payment.invoice.job.id}`);
+    return actionFail(`Sent, but couldn't confirm it landed correctly: ${detail}`);
+  }
+
+  if (!verification.ok) {
+    await log({
+      companyId: company.id,
+      userId: user.id,
+      entityType: "Payment",
+      entityId: payment.id,
+      idempotencyKey,
+      outcome: "VERIFY_MISMATCH",
+      summary: `Payment on invoice ${payment.invoice.number} landed differently than sent.`,
+      detail: verification.problems.join(" "),
+      qboId: written.Id,
+    });
+    revalidatePath(`/jobs/${payment.invoice.job.id}`);
+    return actionFail(`QuickBooks holds something different: ${verification.problems.join(" ")}`);
+  }
+
+  await log({
+    companyId: company.id,
+    userId: user.id,
+    entityType: "Payment",
+    entityId: payment.id,
+    idempotencyKey,
+    outcome: "SUCCEEDED",
+    summary: `Payment of ${formatUsd(toPush.amountCents)} applied to invoice ${payment.invoice.number} in QuickBooks.`,
+    qboId: written.Id,
+  });
+  revalidatePath(`/jobs/${payment.invoice.job.id}`);
+  return actionOk;
 }
