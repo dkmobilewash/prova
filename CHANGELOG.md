@@ -146,6 +146,58 @@ Migration is additive — one `CREATE TABLE`, its indexes, three FKs, no
 `ALTER` and no `DROP`. Generated with `migrate diff` against main's schema
 rather than `migrate dev`, which offered to reset.
 
+### You can now take all your data out, without asking anyone (Diego)
+`claude/prova-vercel-direct-url-hg1acx`
+
+There was no export in this codebase at all. CSV came IN through the catalog
+importer and nothing ever went out — a grep for `text/csv` or
+`Content-Disposition` returned exactly one file, and it was the importer.
+
+Competitor research found the same complaint at four separate vendors: no
+clean way to get your history out when you leave. One put a 50% price rise in
+front of the door and then locked the account; another's sales team promised a
+full export that never arrived. That is a retention mechanism rather than an
+oversight, which makes it a business-model choice to be better at rather than
+an engineering problem — and it was the cheapest item on that whole list.
+
+`/settings/export` shows all 18 tables with a **row count beside each, before
+anything is downloaded**. That matters more than it sounds: "here is a file,
+trust us" is what the incumbents do, and a number somebody can check against
+what they see on screen is the difference between an export and a promise of
+one. The page also states what is deliberately NOT in the file, and the JSON
+repeats it inside the file, because the file is what outlives the account.
+
+**The column lists are an allowlist, and that is the security of the feature.**
+A denylist of fields-not-to-export is correct exactly until somebody adds a
+column, and then it leaks silently with every check green. An allowlist fails
+the other way: a new column is simply absent until a person adds it, and
+absence is visible where a leak is not. There are six credential columns in
+this schema and two are PLAINTEXT (`QuickBooksConnection.accessToken` and
+`.refreshToken`); `Contact.portalToken` and `SignatureRequest.token` are live
+bearer keys. `export.test.ts` reads the .prisma files, collects every field
+matching a credential pattern, and fails if one reaches a column list — and
+asserts it found the known six first, so it cannot pass by finding nothing.
+
+Two formats, deliberately not the same file twice. CSV neutralises leading
+`=` `+` `-` `@` so a description reading `=1+1` is shown by a spreadsheet
+rather than run by it; those values arrive from CSV imports and GC documents,
+so "only what our own users typed" is not a defence. That makes the CSV not
+byte-faithful, which is why the JSON exists beside it and does not do it.
+
+Three things only running it caught. Prisma returns `Decimal` objects for
+every money and quantity column, so the JSON branch turned 4200 into
+`"""4200"""`. The db-test's isolation check first PASSED against a database
+the file had already emptied — vitest runs a describe's `afterAll` before the
+next describe, so "contains no other company's rows" was true of nothing at
+all; the non-vacuity test beside it is what told the two apart. And the
+browser test reported HTTP 503 on every download while the runtime logs showed
+six 200s: the extension cannot follow a `Content-Disposition: attachment`
+response and reports that as a server error. The files had downloaded fine.
+
+Verified on a preview against `ep-patient-lake`: files land, and all six
+credential field names return zero matches in the JSON — with a positive
+control searched first, so the zero means something.
+
 ### Carry the stale-save fix to the other eight forms (Diego)
 `claude/prova-contractor-os-e3f0iz`
 
@@ -1009,7 +1061,6 @@ Not a defect, still unproven: gross margin renders "—" because no job in
 that dataset has earned revenue, so neither side of the 35% colour rule has
 been exercised.
 
-
 ### Six things browser testing found in the new dashboard (Diego)
 
 **The two pages disagreed about which invoices were overdue.** The
@@ -1060,7 +1111,6 @@ Not a defect, recorded because it limits what the run proved: gross margin
 showed "—" throughout, because no job in that dataset has earned revenue.
 The null branch renders neutral correctly; neither side of the 35% colour
 rule has been seen against real data.
-
 
 ### A dashboard that tells you something before you ask (Diego)
 
@@ -1321,7 +1371,6 @@ call itself has never run against Intuit — and given that every real
 defect in this integration was found by clicking rather than by a test,
 that is the gate before this is trusted.
 
-
 ### QuickBooks sync: every claim now verified against the real API
 
 Closing the record. Five browser runs against a sandbox company, each one
@@ -1357,7 +1406,6 @@ QuickBooks is refused rather than absorbed, and nothing in Prova shows that
 the two have drifted until someone presses the button. That is a real gap,
 deliberately not papered over, and the right fix is a reconciliation view
 rather than pretending to a two-way sync nobody in this market has managed.
-
 
 ### The round trip works, and "Re-send" was a button that did nothing (Diego)
 
@@ -1404,7 +1452,6 @@ Still unexercised: the stale-SyncToken path. The re-send now reaches
 QuickBooks, so the next attempt at a QuickBooks-side edit will either
 restore our number or refuse because someone changed theirs. Neither has
 been seen yet.
-
 
 ### Every QuickBooks push failed, and 193 green tests said otherwise (Diego)
 
@@ -1457,7 +1504,6 @@ QuickBooks. The client-side pending guard was observed collapsing a fast
 double-click into one attempt, which is the browser half; the server half
 has never been reached because nothing has ever successfully landed.
 
-
 ### The message that told you what to do was replaced by a crash (Diego)
 
 Browser testing hit "Mark as contracted" on a job with no line items and
@@ -1485,7 +1531,6 @@ generic crash string. Written down rather than fixed in passing: it is a
 systemic conversion across fourteen files and every caller that renders a
 result, not something to do quietly at the end of an unrelated commit.
 
-
 ### The QuickBooks link action had no button (Diego)
 
 `linkContactToQuickBooks` shipped an hour ago as an action nobody could
@@ -1503,7 +1548,6 @@ QuickBooks is connected — offering a control that cannot work is its own
 small lie. The copy explains the behaviour that matters: an existing
 customer with the same name is reused rather than duplicated, because a
 second copy splits the payment history the bookkeeper already has.
-
 
 ### QuickBooks actually syncs now — one direction, verified (Diego)
 
@@ -1580,7 +1624,6 @@ out is not a thing to do. Before this is trusted with a real invoice it
 needs a sandbox run, and the app's Intuit environment needs checking —
 production API access goes through Intuit review.
 
-
 ### There are two Neon projects, and saying otherwise cost a day (Diego)
 
 Settled, with evidence, and written into the three files that were lying
@@ -1628,7 +1671,6 @@ code is broken.
 step in #28, and three documents still described it. A documented escape
 hatch that no longer exists is worse than none.
 
-
 ### A wrong database URL creates a new database instead of failing (Diego)
 
 The migrate workflow's first real run failed, and testing the fix found
@@ -1663,7 +1705,6 @@ unless `ALLOW_EMPTY_DATABASE=true` is set. Verified: it refuses, and
 critically, no database is created. Setting up a genuinely new database
 costs one environment variable once; the alternative cost has already been
 paid.
-
 
 ### The environment now says which database it is talking to (Diego)
 
@@ -1729,7 +1770,6 @@ Still open, and deliberately not guessed at: which endpoint Vercel's
 marked as the false claim it is rather than replaced with a second
 confident answer.
 
-
 ### Contractor licences can now be created (Diego)
 
 `CompanyLicense` had a model, two indexes, a slot in the renewals ranking
@@ -1787,7 +1827,6 @@ ranking logic these rows feed was clicked through against real data
 earlier. The form and its three actions themselves have not been clicked
 yet.
 
-
 ### Two pages, one record, two different day counts (Diego)
 
 Browser testing put both numbers on screen at once. `/settings` said a
@@ -1822,7 +1861,6 @@ fix a commit earlier was written into one row component instead of
 something reusable, so the very next test run found the same bug three
 doors down. `ConfirmDeleteButton` is that reusable thing; the next list
 that needs a delete has no excuse to hand-roll a fourth copy.
-
 
 ### One place that tells you what is about to lapse (Diego)
 
@@ -1889,7 +1927,6 @@ Also corrected here: the summary line at the top of `FEATURE-AUDIT.md`
 said 51/15/37 while the table under it said 59/13/35. Two answers in one
 file, drifted apart at some point. Recounted to the table.
 
-
 ### Deleting a catalog entry now asks twice (Diego)
 
 Browser testing found it: four deletions, four rows gone on the next
@@ -1920,7 +1957,6 @@ trusting, and that preview is the only thing between a bad file and the
 catalog. Both now read from one `trade-scopes.ts`. And the active nav
 link carried its state in colour only; it now also carries
 `aria-current="page"`.
-
 
 ### The app now works on a phone (Diego)
 
@@ -1953,7 +1989,6 @@ Not fixed here, and worth being straight about: this is the shell, not a
 mobile design pass. Individual pages still lay out for a wide screen, and
 the forms are dense. The app is now usable on a phone; it is not yet good
 on one.
-
 
 ### Duplicate records from an exhausted pool: the half that's fixable (Diego)
 
@@ -2007,7 +2042,6 @@ Three options, in increasing order of how much they actually fix:
 
 (1) and (2) are `DATABASE_URL` changes on Vercel and need Diego. (3) needs
 a branch and a real test against Neon.
-
 
 ## 2026-08-28
 
