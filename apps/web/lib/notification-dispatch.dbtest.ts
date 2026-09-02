@@ -149,6 +149,16 @@ describe("dispatching a digest", () => {
     expect(rows.length).toBeGreaterThan(0);
     // Every rung the licence passed is spent, not just the one that fired.
     expect(rows.every((row) => row.alertKey.startsWith("RENEWAL:"))).toBe(true);
+
+    // And every row describes ITSELF. `rung` is never matched on — only
+    // `dispatchKey` is — so a wrong value here sends nothing wrong and
+    // shows up in no test that checks behaviour. It is stored so that "why
+    // did this person get this email" is a query rather than string
+    // surgery, and it was written as the rung that FIRED for all of them,
+    // filing every burned `@approaching` under `week`.
+    for (const row of rows) {
+      expect(row.dispatchKey).toBe(`${row.alertKey}@${row.rung}`);
+    }
   });
 
   it("links the notice to the message it went out as", async () => {

@@ -3,6 +3,7 @@ import type { Alert, AlertKind, AlertSeverity } from "@/lib/alerts";
 import {
   DATED_RUNGS,
   STANDING_RUNG,
+  consumed,
   dispatchKey,
   keysConsumed,
   noticesDue,
@@ -404,5 +405,59 @@ describe("keysConsumed", () => {
     ];
     const sent = new Set(noticesDue(alerts, nothingSent).flatMap(keysConsumed));
     expect(noticesDue(alerts, sent)).toEqual([]);
+  });
+});
+
+describe("consumed", () => {
+  /** The bug this pins: every row used to carry the rung that FIRED, so a
+   * burned `@approaching` was recorded as a `week`. `dispatchKey` is the
+   * only column matched on, so nothing sent wrong — which is why the suite
+   * was green through it. What broke was the column that exists to answer
+   * "why did this person get this email" without parsing keys apart. */
+  it("gives each key the rung that key names, not the one that fired", () => {
+    const due = noticesDue(
+      [alert({ key: "RENEWAL:lic_1:2026-11-30", daysUntil: 5 })],
+      nothingSent,
+    );
+    // A licence entered five days out crosses approaching and week at once,
+    // fires week, and burns approaching.
+    expect(due[0].rung).toBe("week");
+    expect(consumed(due[0]).sort((a, b) => a.rung.localeCompare(b.rung))).toEqual([
+      {
+        dispatchKey: "RENEWAL:lic_1:2026-11-30@approaching",
+        rung: "approaching",
+      },
+      { dispatchKey: "RENEWAL:lic_1:2026-11-30@week", rung: "week" },
+    ]);
+  });
+
+  it("agrees with its own keys for every notice, dated or standing", () => {
+    const due = noticesDue(
+      [
+        alert({ key: "RENEWAL:lic_1:2026-11-30", daysUntil: 5 }),
+        alert({ key: "RENEWAL:lic_2:2026-09-01", daysUntil: -3 }),
+        alert({ key: "WIP_VARIANCE:job_1:over", kind: "WIP_VARIANCE" }),
+      ],
+      nothingSent,
+    );
+    // Whatever the ladder does, a row must never describe itself as a rung
+    // its own key does not name — that is the only invariant the `rung`
+    // column has to hold to be worth storing.
+    for (const notice of due) {
+      for (const row of consumed(notice)) {
+        expect(row.dispatchKey).toBe(dispatchKey(notice.alert.key, row.rung));
+      }
+    }
+    expect(due.flatMap(consumed).length).toBeGreaterThan(due.length);
+  });
+
+  it("still yields exactly the keys keysConsumed does", () => {
+    const due = noticesDue(
+      [alert({ key: "RENEWAL:lic_1:2026-11-30", daysUntil: -1 })],
+      nothingSent,
+    );
+    expect(consumed(due[0]).map((row) => row.dispatchKey)).toEqual(
+      keysConsumed(due[0]),
+    );
   });
 });

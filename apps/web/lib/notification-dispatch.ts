@@ -7,6 +7,7 @@ import {
 import { loadAlerts } from "@/lib/alerts-query";
 import { digestBody, digestSubject } from "@/lib/notification-digest";
 import {
+  consumed,
   keysConsumed,
   noticesDue,
   type DueNotice,
@@ -243,13 +244,20 @@ async function claim(
   recipient: Recipient,
   notices: DueNotice[],
 ): Promise<number> {
+  // Each row records the rung ITS OWN key names, not the one that fired.
+  // Writing `notice.rung` across all of them put every burned rung in the
+  // ledger under the wrong name — a row keyed `…@approaching` saying it was
+  // a `week`. Nothing sent wrong, because `dispatchKey` is the only column
+  // ever matched on; but `rung` exists so somebody can ask why a person got
+  // an email without parsing keys apart, and it answered wrongly for
+  // exactly the rows whose answer is not obvious from the key.
   const rows = notices.flatMap((notice) =>
-    keysConsumed(notice).map((dispatchKey) => ({
+    consumed(notice).map(({ dispatchKey, rung }) => ({
       companyId: recipient.companyId,
       userId: recipient.id,
       dispatchKey,
       alertKey: notice.alert.key,
-      rung: String(notice.rung),
+      rung: String(rung),
     })),
   );
 
@@ -268,7 +276,10 @@ async function claim(
  * and saying they were in this email would be a small lie in the one place
  * somebody looks to find out what happened.
  *
- * `messageId` is unique on the table, so this is one row per message.
+ * `messageId` is deliberately NOT unique — a digest is one email covering
+ * many notices, so this writes one id across every rung that fired in it.
+ * Making it unique breaks the second notice in any digest, which is a bug
+ * this feature already shipped once and caught before merge.
  */
 async function linkClaimsToMessage(
   userId: string,

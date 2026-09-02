@@ -201,11 +201,31 @@ function mostUrgentFirst(a: DueNotice, b: DueNotice): number {
   return a.alert.title.localeCompare(b.alert.title);
 }
 
-/** Every key a notice consumes — the rung that fired plus the ones it
- * passed. All of them are written together, or none are: a partially
- * recorded notice fires its unrecorded rungs again tomorrow. */
+/** Every rung a notice consumes, each paired with its own key — the rung
+ * that fired plus the ones it passed. All of them are written together, or
+ * none are: a partially recorded notice fires its unrecorded rungs again
+ * tomorrow.
+ *
+ * The PAIR is what callers need, not the keys alone. `NotificationDispatch`
+ * stores the rung in its own column so that "why did this person get this
+ * email" is answerable with a query instead of by parsing a composite
+ * string, and a caller that has only the keys has to either parse them back
+ * apart or write one rung across all of them. The second is what happened:
+ * every burned rung was recorded under the rung that FIRED, so a row keyed
+ * `…@approaching` claimed to be a `week`. Nothing sent wrong — `dispatchKey`
+ * is the only column matched on — but the column that exists to explain the
+ * ledger disagreed with the ledger.
+ */
+export function consumed(
+  notice: DueNotice,
+): { dispatchKey: string; rung: Rung }[] {
+  return [notice.rung, ...notice.alsoSpent].map((rung) => ({
+    dispatchKey: dispatchKey(notice.alert.key, rung),
+    rung,
+  }));
+}
+
+/** The keys alone, for callers that match on them and record nothing. */
 export function keysConsumed(notice: DueNotice): string[] {
-  return [notice.rung, ...notice.alsoSpent].map((rung) =>
-    dispatchKey(notice.alert.key, rung),
-  );
+  return consumed(notice).map((row) => row.dispatchKey);
 }
