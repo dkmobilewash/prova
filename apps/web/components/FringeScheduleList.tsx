@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import {
   createFringeRateSchedule,
   deleteFringeRateSchedule,
@@ -37,14 +38,26 @@ export function FringeScheduleList({
   const [endingId, setEndingId] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const router = useRouter();
   const [error, setError] = useState<string | null>(null);
 
   function run(fn: () => Promise<ActionResult>, onOk?: () => void) {
     setError(null);
     startTransition(async () => {
       const result = await fn();
-      if (result.ok) onOk?.();
-      else setError(result.error);
+      if (result.ok) {
+      // On top of the action's own revalidatePath. Browser testing found
+      // two of these forms leaving the page stale until a manual reload
+      // while the others updated live; every action revalidates and every
+      // form calls them the same way, so this is NOT a root-cause fix, it
+      // is the one that holds whatever the cause. A save that looks like
+      // it did nothing gets clicked again, and no create here is
+      // idempotent.
+        router.refresh();
+        onOk?.();
+      } else {
+        setError(result.error);
+      }
     });
   }
 
@@ -206,13 +219,10 @@ export function FringeScheduleList({
           <div className="grid gap-2 sm:grid-cols-2">
             <label className={labelClass}>
               <span className="text-xs">In force from</span>
-              <input
-                type="date"
-                name="effectiveFrom"
-                required
-                defaultValue={localToday()}
-                className={`${inputClass} py-1 text-xs`}
-              />
+              <input type="date" name="effectiveFrom" required className={`${inputClass} py-1 text-xs`} />
+              <span className="text-xs text-slate-500">
+                Not pre-filled — a rate usually took effect on a date the CBA names, not today.
+              </span>
             </label>
             <label className={labelClass}>
               <span className="text-xs">In force until</span>

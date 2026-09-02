@@ -534,6 +534,11 @@ describe("union setup CRUD, from an empty company", () => {
     expect(result.ok).toBe(false);
     // The FK alone would throw a raw error production redacts to a digest.
     expect(result.ok === false && result.error).toContain("1 record is tagged");
+    // "1 time entries" shipped. This is the message an inspector-facing
+    // user reads carefully, so the plural is pinned rather than trusted.
+    expect(result.ok === false && result.error).toContain("1 time entry");
+    expect(result.ok === false && result.error).not.toContain("1 time entries");
+    expect(result.ok === false && result.error).toContain("0 line items");
   });
 
   it("deletes an unused classification along with its rates", async () => {
