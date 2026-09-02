@@ -437,7 +437,10 @@ export async function unassignCrewMember(jobId: string, userId: string) {
  * Gated by assertEditableDirectly like every other way of adding a line, so
  * a contracted job still only changes through a change order.
  */
-export async function addTakeoffLineItems(jobId: string, formData: FormData) {
+export async function addTakeoffLineItems(
+  jobId: string,
+  formData: FormData,
+): Promise<ActionResult> {
   const { company } = await requireCompanyContext();
   const job = await assertJobInCompany(jobId, company.id);
   assertEditableDirectly(job);
@@ -481,7 +484,12 @@ export async function addTakeoffLineItems(jobId: string, formData: FormData) {
 
   const usable = lines.filter((line) => line.quantity > 0);
   if (usable.length === 0) {
-    throw new Error("Those dimensions produce no quantities — check the measurements.");
+    // RETURNED, not thrown. A production build redacts a thrown Server Action
+    // message to a digest, so throwing here would put "an error occurred" on
+    // screen for a person who simply left a field blank. The submit button is
+    // disabled in this state, but that is a client-side attribute and a form
+    // that hides a control is not a rule.
+    return actionFail("Those dimensions produce no quantities — check the measurements.");
   }
 
   await prisma.$transaction(
@@ -501,4 +509,5 @@ export async function addTakeoffLineItems(jobId: string, formData: FormData) {
   );
 
   revalidatePath(`/jobs/${jobId}`);
+  return actionOk;
 }

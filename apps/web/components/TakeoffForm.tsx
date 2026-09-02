@@ -97,7 +97,15 @@ export function TakeoffForm({ jobId }: { jobId: string }) {
         const formData = new FormData(event.currentTarget);
         startTransition(async () => {
           try {
-            await addTakeoffLineItems(jobId, formData);
+            const result = await addTakeoffLineItems(jobId, formData);
+            // The action RETURNS a refusal rather than throwing one, because
+            // production redacts a thrown message to a digest. Rendering the
+            // returned reason is the other half of that; ignoring it would
+            // close the panel on a failure and look like it worked.
+            if (!result.ok) {
+              setError(result.error);
+              return;
+            }
             setIsOpen(false);
             setLabel("");
             setLengthFt("");
@@ -105,6 +113,8 @@ export function TakeoffForm({ jobId }: { jobId: string }) {
             setWidthFt("");
             setOpenings([]);
           } catch (err) {
+            // Still caught: the auth and stage guards above it throw, and
+            // those are genuine bugs rather than anything a person typed.
             setError(err instanceof Error ? err.message : "Couldn't add those line items.");
           }
         });
