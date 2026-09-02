@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import {
   deleteCloseoutSubmission,
   recordCloseoutResponse,
@@ -60,14 +61,27 @@ export function CloseoutPackagePanel({
   const [outcome, setOutcome] = useState("ACCEPTED");
   const [confirming, setConfirming] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const router = useRouter();
   const [error, setError] = useState<string | null>(null);
 
   function run(fn: () => Promise<ActionResult>, onOk?: () => void) {
     setError(null);
     startTransition(async () => {
       const result = await fn();
-      if (result.ok) onOk?.();
-      else setError(result.error);
+      if (result.ok) {
+        // On top of the action's own revalidatePath. Browser testing found
+      // two union-compliance forms leaving the page stale until a manual
+      // reload while others updated live; every action revalidates and
+      // every form calls them the same way, so this is NOT a root-cause
+      // fix. It is applied here because these components share that exact
+      // pattern, and the same bug would sit unseen until someone hit it.
+      // A save that looks like it did nothing gets clicked again, and no
+      // create action here is idempotent.
+        router.refresh();
+        onOk?.();
+      } else {
+        setError(result.error);
+      }
     });
   }
 

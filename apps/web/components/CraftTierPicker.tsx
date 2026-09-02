@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { setCraftTier } from "@/lib/actions";
 
 const TIER_LABELS: Record<string, string> = {
@@ -27,6 +28,7 @@ export function CraftTierPicker({
   const [value, setValue] = useState(tier ?? "");
   const [period, setPeriod] = useState(apprenticePeriod === null ? "" : String(apprenticePeriod));
   const [isPending, startTransition] = useTransition();
+  const router = useRouter();
   const [error, setError] = useState<string | null>(null);
 
   function save(nextTier: string, nextPeriod: string) {
@@ -36,7 +38,18 @@ export function CraftTierPicker({
     formData.set("apprenticePeriod", nextPeriod);
     startTransition(async () => {
       const result = await setCraftTier(craftId, formData);
-      if (!result.ok) setError(result.error);
+      if (result.ok) {
+      // On top of the action's own revalidatePath. Browser testing found
+      // two of these forms leaving the page stale until a manual reload
+      // while the others updated live; every action revalidates and every
+      // form calls them the same way, so this is NOT a root-cause fix, it
+      // is the one that holds whatever the cause. A save that looks like
+      // it did nothing gets clicked again, and no create here is
+      // idempotent.
+        router.refresh();
+      } else {
+        setError(result.error);
+      }
     });
   }
 
