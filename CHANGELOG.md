@@ -12,6 +12,55 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### The production build was out of memory, and the heap was not the lever (Diego)
+`claude/prova-contractor-os-e3f0iz`
+
+#56's production deployment died `out_of_memory`, exit **137**. #57 raised
+`NODE_OPTIONS` to 6144 and it died the same way, exit 137 again. Recorded
+because the second failure is the informative one.
+
+**134 and 137 are different failures.** 134 is V8 reaching its own heap
+limit; 137 is SIGKILL — the container ran out of RAM and the kernel killed
+the process. Raising `--max-old-space-size` only helps the first. Against
+the second it makes things worse, because it tells Node it may grow
+further into memory the container does not have. Reproduced locally: the
+build OOMs at 4096 AND at 6144, and the stack is in
+`String::SlowFlatten` / `NewProperSubString` during NFT's trace step —
+not during compile, which finishes in 23 seconds.
+
+The cause is in `next.config.mjs`, and it predates this work:
+
+```
+"/**": ["../../node_modules/.pnpm/**/node_modules/.prisma/client/**"]
+```
+
+That leading `**` makes the tracer walk every one of the ~473 package
+directories in the pnpm store, and `"/**"` asks for that on EVERY route.
+The cost is routes × store size. It was survivable at 30 routes and stopped
+being survivable when this branch and `cyrus/messaging` added their pages
+in the same afternoon — which is why it looks like #56 broke it and is
+really #56 tipping something already loaded.
+
+Anchoring the first segment at `@prisma+client@*` turns 473 directory
+walks per route into one. The build now completes at **4096**, below even
+Vercel's default, and the engine binary is still force-included — verified
+by grepping the `.nft.json` traces for `libquery_engine-rhel`, which is the
+one the deployed function actually loads. That check matters more than the
+build passing: losing it fails at RUNTIME with "could not locate the Query
+Engine", which is a worse outcome than a red build and is exactly what the
+comment above that entry warns about.
+
+#57's `NODE_OPTIONS` is left in place. It is not what fixed this, but with
+peak memory down it is harmless headroom against the 134 failure mode.
+
+**My own part in this, plainly:** every local build I ran during the six
+features had `NODE_OPTIONS=--max-old-space-size=8192` exported, so I never
+saw what Vercel sees. Cyrus flagged this exact shape about `preflight.sh`
+in Slack — a check that passes on a laptop while the real one fails — and
+I then did the inverted version of it to myself.
+
+---
+
 ### Union fringe remittance and the apprentice ratio, both unblocked (Diego)
 `claude/prova-contractor-os-e3f0iz`
 

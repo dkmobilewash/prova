@@ -34,8 +34,18 @@ const nextConfig = {
   // runtime, which Next's static file tracer can't follow — so the binary
   // has to be force-included explicitly or it's silently dropped from the
   // deployed function. See https://pris.ly/d/engine-not-found-nextjs
+  // NARROWED, and the narrowing is the point. This used to read
+  // `.pnpm/**/node_modules/.prisma/client/**`: that leading `**` makes the
+  // tracer expand every one of the ~473 package directories in the pnpm
+  // store, and `"/**"` asks it to do that for EVERY route. The cost grows
+  // with routes × store size, and it is what killed the production build
+  // for #56 — exit 137, the container out of memory, in NFT's trace step.
+  //
+  // Anchoring the first segment at @prisma+client turns 473 directory
+  // walks per route into one. The engine binary is still force-included,
+  // which is the whole reason this entry exists (see the note above).
   outputFileTracingIncludes: {
-    "/**": ["../../node_modules/.pnpm/**/node_modules/.prisma/client/**"],
+    "/**": ["../../node_modules/.pnpm/@prisma+client@*/node_modules/.prisma/client/**"],
   },
 };
 
