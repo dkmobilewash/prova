@@ -3,7 +3,51 @@
 import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
 import { Prisma, prisma } from "@prova/db";
-import { LOCATION_TYPES, assertOwner, enumFromForm, nullableDecimalFromForm } from "./shared";
+import {
+  CONTACT_STATUSES,
+  CONTACT_TYPES,
+  LOCATION_TYPES,
+  type ActionResult,
+  actionFail as fail,
+  actionOk as ok,
+  assertOwner,
+  enumFromForm,
+  nullableDecimalFromForm,
+  optionalEnumFromForm,
+} from "./shared";
+
+/** Thrown by the form parsers below, caught at each action's boundary and
+ * converted to a returned failure — same shape as submittals.ts, the
+ * reference implementation for this pattern. */
+class InputError extends Error {}
+
+function text(formData: FormData, key: string) {
+  return String(formData.get(key) ?? "").trim();
+}
+
+function required(formData: FormData, key: string, label: string) {
+  const value = text(formData, key);
+  if (!value) throw new InputError(`${label} is required`);
+  return value;
+}
+
+/** Stored at UTC midnight, same rule as every other date in this app. */
+function optionalDate(formData: FormData, key: string): Date | null {
+  const raw = text(formData, key);
+  if (!raw) return null;
+  const date = new Date(`${raw}T00:00:00.000Z`);
+  if (Number.isNaN(date.getTime())) throw new InputError("Date is not valid");
+  return date;
+}
+
+async function runAction(fn: () => Promise<ActionResult>): Promise<ActionResult> {
+  try {
+    return await fn();
+  } catch (err) {
+    if (err instanceof InputError) return fail(err.message);
+    throw err;
+  }
+}
 
 /** Invites a teammate by email. They join the OWNER's Company as a MEMBER
  * the next time they sign up with that email — see requireCompanyContext(). */
@@ -68,45 +112,112 @@ export async function removeTeamMember(memberUserId: string) {
   revalidatePath("/team");
 }
 
-/** Direct edit of a contact's details. */
-export async function updateContact(contactId: string, formData: FormData) {
+/** Adds a new GC/developer/vendor contact directly — not tied to opening a
+ * job, so a lead can be recorded the moment a conversation starts, not just
+ * once they've actually given us work. Defaults to PROSPECT: a contact
+ * created this way has no history yet by definition. */
+export async function createContact(formData: FormData): Promise<ActionResult> {
   const { company } = await requireCompanyContext();
+  return runAction(async () => {
+    const name = required(formData, "name", "Name");
+    const email = text(formData, "email");
+    const phone = text(formData, "phone");
+    const address = text(formData, "address");
+    const status = optionalEnumFromForm(formData, "status", CONTACT_STATUSES) ?? "PROSPECT";
+    const accountType = optionalEnumFromForm(formData, "accountType", CONTACT_TYPES);
 
-  const contact = await prisma.contact.findUnique({ where: { id: contactId } });
-  if (!contact || contact.companyId !== company.id) {
-    throw new Error("Contact not found");
-  }
+    await prisma.contact.create({
+      data: {
+        companyId: company.id,
+        name,
+        email: email || null,
+        phone: phone || null,
+        address: address || null,
+        status,
+        accountType,
+      },
+    });
 
-  const name = String(formData.get("name") ?? "").trim();
-  const email = String(formData.get("email") ?? "").trim();
-  const phone = String(formData.get("phone") ?? "").trim();
-  const address = String(formData.get("address") ?? "").trim();
-  const defaultRetainagePercent = nullableDecimalFromForm(formData, "defaultRetainagePercent");
-  const paymentTermsDaysRaw = String(formData.get("paymentTermsDays") ?? "").trim();
-  const standardFormsUsed = String(formData.get("standardFormsUsed") ?? "").trim();
-
-  if (!name) {
-    throw new Error("Name is required");
-  }
-  if (paymentTermsDaysRaw && Number.isNaN(Number(paymentTermsDaysRaw))) {
-    throw new Error('"paymentTermsDays" must be a number');
-  }
-
-  await prisma.contact.update({
-    where: { id: contactId },
-    data: {
-      name,
-      email: email || null,
-      phone: phone || null,
-      address: address || null,
-      defaultRetainagePercent,
-      paymentTermsDays: paymentTermsDaysRaw ? Number(paymentTermsDaysRaw) : null,
-      standardFormsUsed: standardFormsUsed || null,
-    },
+    revalidatePath("/contacts");
+    return ok;
   });
+}
 
-  revalidatePath(`/contacts/${contactId}`);
-  revalidatePath("/contacts");
+/** Deletes a contact with no history. A contact that has jobs or bid
+ * invitations stays — same reasoning as deleteSubmittal refusing to delete
+ * a sent package: there's real correspondence/work on record, and deleting
+ * the contact would strand it with nothing to point at. */
+export async function deleteContact(contactId: string): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  return runAction(async () => {
+    try {
+      assertOwner(context, "Only the account owner can delete a contact");
+    } catch (err) {
+      return fail(err instanceof Error ? err.message : "Only the account owner can do that");
+    }
+
+    const contact = await prisma.contact.findUnique({
+      where: { id: contactId },
+      include: { _count: { select: { jobs: true, bidInvitations: true } } },
+    });
+    if (!contact || contact.companyId !== context.company.id) return fail("Contact not found");
+
+    if (contact._count.jobs > 0 || contact._count.bidInvitations > 0) {
+      return fail(
+        `${contact.name} has ${contact._count.jobs} job(s) and ${contact._count.bidInvitations} bid invitation(s) on file, so its record stays. Only a contact with no history can be deleted.`,
+      );
+    }
+
+    await prisma.contact.delete({ where: { id: contactId } });
+    revalidatePath("/contacts");
+    return ok;
+  });
+}
+
+/** Direct edit of a contact's details. */
+export async function updateContact(contactId: string, formData: FormData): Promise<ActionResult> {
+  const { company } = await requireCompanyContext();
+  return runAction(async () => {
+    const contact = await prisma.contact.findUnique({ where: { id: contactId } });
+    if (!contact || contact.companyId !== company.id) return fail("Contact not found");
+
+    const name = required(formData, "name", "Name");
+    const email = text(formData, "email");
+    const phone = text(formData, "phone");
+    const address = text(formData, "address");
+    const status = optionalEnumFromForm(formData, "status", CONTACT_STATUSES) ?? contact.status;
+    const accountType = optionalEnumFromForm(formData, "accountType", CONTACT_TYPES);
+    const defaultRetainagePercent = nullableDecimalFromForm(formData, "defaultRetainagePercent");
+    const paymentTermsDaysRaw = text(formData, "paymentTermsDays");
+    const standardFormsUsed = text(formData, "standardFormsUsed");
+    const msaExpirationDate = optionalDate(formData, "msaExpirationDate");
+    const prequalificationExpiresAt = optionalDate(formData, "prequalificationExpiresAt");
+
+    if (paymentTermsDaysRaw && Number.isNaN(Number(paymentTermsDaysRaw))) {
+      return fail('"paymentTermsDays" must be a number');
+    }
+
+    await prisma.contact.update({
+      where: { id: contactId },
+      data: {
+        name,
+        email: email || null,
+        phone: phone || null,
+        address: address || null,
+        status,
+        accountType,
+        defaultRetainagePercent,
+        paymentTermsDays: paymentTermsDaysRaw ? Number(paymentTermsDaysRaw) : null,
+        standardFormsUsed: standardFormsUsed || null,
+        msaExpirationDate,
+        prequalificationExpiresAt,
+      },
+    });
+
+    revalidatePath(`/contacts/${contactId}`);
+    revalidatePath("/contacts");
+    return ok;
+  });
 }
 
 /** Adds a company location (HQ / branch yard / warehouse). */

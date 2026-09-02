@@ -670,6 +670,41 @@ outstanding, on-time rate, average days to pay — never stored on
 `Contact`. Same rule as `lib/wip.ts`: a number like this has to be
 exactly reproducible from source data, not cached and left to go stale.
 
+### Contact create/delete, prospect status, account type, MSA/prequalification
+
+Every existing `Contact` was created as a side effect of opening a job with
+them — there was no way to enter a GC you're only talking to, and no way
+to remove one added by mistake. `createContact`/`deleteContact`
+(`lib/actions/company.ts`) close that. Deletion refuses once a `Job` or
+`BidInvitation` references the contact — same reasoning as
+`deleteSubmittal` refusing to delete a sent package: there's real
+correspondence on record, and deleting the contact would strand it.
+
+`ContactStatus` (PROSPECT/ACTIVE/INACTIVE) answers "are we engaging with
+this account at all," independent of the read-only pipeline-stage view a
+later phase derives from `Job`/`BidInvitation`/`EstimateVersion` state
+("how far along is their most advanced opportunity"). Existing rows
+backfill to `ACTIVE` — not a guess, since every one of them already has a
+`Job`. `createContact` defaults a new row to `PROSPECT` instead: a
+contact created this way has no history by definition.
+
+`ContactType` (GENERAL_CONTRACTOR/DEVELOPER/VENDOR/SUBCONTRACTOR) is
+nullable with **no backfill** — nobody has classified any existing
+`Contact`, and defaulting them all to GC would be wrong the moment an
+existing row turns out to be a developer, the same reasoning
+`User.jobFunction` and `CraftClassification.tier` already use.
+
+`msaExpirationDate`/`prequalificationExpiresAt` are both nullable dates,
+null meaning "none on file" rather than a separate boolean — whether one
+is active, expiring, or lapsed is derived at read time through
+`lib/compliance-expiry.ts`'s existing `RenewalKind`/`classifyRenewal`
+machinery (two new kinds, `MSA` and `PREQUALIFICATION`, added to that
+shared type), not a second copy of the day-counting arithmetic that shared
+module exists specifically to avoid duplicating. Rendered today only on
+`/contacts/[id]`; wiring these into the company-wide `/compliance` ranking
+and the `/alerts` engine is future work (see the interaction-log/follow-up
+phase), not guessed at here.
+
 ## What proves this works (Phase 00's CRUD flow)
 
 The minimal CRUD flow in `apps/web` exists specifically to demonstrate the
