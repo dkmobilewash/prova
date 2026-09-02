@@ -36,6 +36,75 @@ page.tsx` as your template for any list-plus-create-form page.
   Low collision risk, but check `git pull` before editing since it's a
   short file where two additions on the same line would conflict.
 
+## A third lane, claimed 1 Sep 2026
+
+A third session is running alongside the two above, on
+`claude/prova-contractor-os-e3f0iz`. It owns the following, in this order,
+one at a time:
+
+1. **Backcharges & Deductions** — Sheet 13. *Shipped 1 Sep.*
+   `/backcharges`, `backcharges.prisma`, `lib/actions/backcharges.ts`,
+   `lib/backcharges.ts`.
+2. **Closeout & Warranty** — Sheet 22. *Shipped 1 Sep.* The closeout
+   package's trip to the GC (`closeout.prisma`,
+   `lib/actions/closeoutSubmissions.ts`) and readiness derived across the
+   checklist, punch items, callbacks and retainage
+   (`lib/closeout-readiness.ts`). Reads `PunchListItem`, never writes it.
+   Two lines added to `CloseoutJobCard.tsx` (a `packageSlot` prop) and a
+   query plus a band on `/closeout/page.tsx`.
+3. **Notifications & Alerts** — Sheet 26. *Engine shipped 1 Sep.*
+   `lib/alerts.ts`, `lib/alerts-query.ts`, `notifications.prisma`
+   (`AlertAcknowledgement` only — alerts themselves are never stored),
+   `/alerts`, and a count in `Topbar`. NOT push: no email sender exists on
+   main, so four of Sheet 26's rows stay Partial on purpose. If the
+   `sendOutboundEmail` work lands in the other lane, it feeds from
+   `loadAlerts` rather than growing its own rules.
+4. **Roles & Permissions** — Sheet 25. *Shipped 1 Sep.*
+   `permissions.prisma` (`JobFunction`, a nullable column on `User` —
+   `UserRole` untouched), `lib/permissions.ts`, `lib/authz.ts`,
+   `lib/actions/permissions.ts`, a picker on `/team`. `/jobs/[id]`,
+   `/dashboard` and `/contacts/[id]` were left alone at first and then
+   done at Diego's request: each computes `showsJobMoney`/`showsBilling`
+   once at the top and withholds whole sections. Sheet 25's second row
+   stays Partial only because there is no mobile SURFACE.
+5. **Multi-state prevailing wage rules** — Sheet 21. *Shipped 1 Sep.*
+   `prevailing-wage.prisma` (`PrevailingWageRuleSet`, effective-dated with
+   a Postgres exclusion constraint), `lib/prevailing-wage.ts`,
+   `lib/prevailing-wage-query.ts`, `lib/actions/prevailingWage.ts`,
+   `/prevailing-wage`. Rules only — no wage-rate dataset, nothing seeded,
+   blank means unchecked. One additive column on
+   `PrevailingWageDetermination` (`ruleSetId`, ON DELETE SET NULL).
+6. **Apprentice / fringe remittance reporting** — Sheet 09. *Shipped
+   1 Sep.* `CraftClassification.tier` + `apprenticePeriod` (two nullable
+   columns, no backfill), `lib/apprentice-ratio.ts`,
+   `lib/fringe-remittance.ts`, `lib/union-compliance-query.ts`,
+   `lib/actions/unionCompliance.ts`, `/union-compliance`. Also raises the
+   apprentice-ratio alert Sheet 26 had listed as blocked. Program
+   enrolment tracking is deliberately still Partial — it needs the
+   program's own data model and cannot be derived from hours logged.
+
+**All six items in this lane are now shipped and unmerged on the branch.
+None has been browser-tested.** That is the outstanding risk, not the
+remaining work.
+
+It does NOT touch estimating, billing/AIA pay applications,
+`jobs/[id]/page.tsx`, safety, materials/vendors, equipment or RFIs. Where
+one of the six genuinely needs a shared file, the change is the smallest
+one that works and is called out explicitly rather than restructured —
+backcharges needed exactly three such lines: one route in `middleware.ts`,
+one entry in `navItems.tsx`, and one `export *` in the actions barrel,
+plus the back-relation fields Prisma requires on `Job`, `Company` and
+`User`.
+
+**Note that this file is otherwise out of date.** It describes a single
+`packages/db/prisma/schema.prisma` and a single `apps/web/lib/actions.ts`;
+both were split by domain some time ago — the schema into
+`packages/db/prisma/schema/*.prisma` and the actions into
+`apps/web/lib/actions/*.ts` behind a barrel. New work adds a new file per
+domain rather than appending to an existing one, which is also why the
+"only add at the very end of the file" advice below no longer applies the
+way it reads.
+
 ## Cyrus's first five tasks
 
 **1. (Do this first — should take under an hour.) Add a "Trailer" location

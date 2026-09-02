@@ -1,0 +1,56 @@
+// Alerts: the one thing about them that can be stored.
+//
+// Part of the multi-file Prisma schema in this folder.
+//
+// There is no Alert table here and there is not going to be one. Every
+// alert this app raises is DERIVED — a COI expiring is its expiresAt
+// against today, a backcharge going unanswered is its respondByDate
+// against its status, retainage coming due is withheld minus released
+// against an accepted closeout package. Storing those would create a
+// second copy of a fact that already exists, free to disagree with it,
+// which is the rule ARCHITECTURE.md opens with and the reason
+// lib/compliance-expiry.ts could be built with no migration at all.
+//
+// What is NOT derivable is a person deciding they have seen something.
+// "The office manager has dealt with this and does not want to be told
+// again until March" is a fact about a human, not about a COI, and no
+// amount of reading the source rows produces it. That is this table, and
+// that is all of it.
+
+/// One person saying "I have seen this one".
+///
+/// Per USER rather than per company, deliberately. Dismissing an alert on
+/// a colleague's behalf is the worse failure of the two: the underlying
+/// fix — renewing the licence, answering the backcharge — clears the
+/// alert for everybody automatically, so a per-user acknowledgement can
+/// only ever cause someone to see something twice, while a company-wide
+/// one can cause the only person who would have acted to never see it.
+model AlertAcknowledgement {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+  userId    String
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// The alert's identity, which deliberately INCLUDES the fact that would
+  /// change what it says — "LICENSE_EXPIRING:abc123:2026-11-30", not
+  /// "LICENSE_EXPIRING:abc123". Renew that licence to 2027 and the key no
+  /// longer matches, so the acknowledgement stops applying and the alert
+  /// comes back when it next matters. That is the whole mechanism for
+  /// keeping a dismissal from silencing a DIFFERENT situation later, and
+  /// it needs no expiry logic of its own. See alertKey() in
+  /// apps/web/lib/alerts.ts, which is the only thing allowed to build one.
+  alertKey String
+
+  acknowledgedAt DateTime @default(now())
+
+  /// Null means dismissed — quiet until the underlying fact changes. A
+  /// date means quiet until then, at UTC midnight like every other date
+  /// here. Both are the same act; the difference is only how long the
+  /// person wanted.
+  snoozedUntil DateTime?
+
+  @@unique([userId, alertKey])
+  @@index([companyId])
+  @@index([userId])
+}

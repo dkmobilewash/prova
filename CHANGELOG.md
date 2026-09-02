@@ -12,6 +12,420 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### Union fringe remittance and the apprentice ratio, both unblocked (Diego)
+`claude/prova-contractor-os-e3f0iz`
+
+Sheet 09 had three Missing rows, and Sheet 26's last Missing row said the
+apprentice-ratio alert was "blocked on apprentice tracking not existing
+yet". `ApprenticeRatioRule`'s own schema comment said the daily check
+could not be built because there was no labor/time-entry data model.
+
+`TimeEntry` landed weeks ago and closed half of that. The other half was
+that nothing said which side of a ratio a classification sits on —
+`CraftClassification` had a name and nothing else. **Deriving the tier by
+looking for the word "apprentice" in a free-text name would be a guess
+that fails silently on the first local that words it differently**, so it
+is a column: `tier`, nullable, no backfill. Both stale comments are
+corrected rather than left standing.
+
+**The rule that makes the ratio check trustworthy: unclassified is never a
+pass.** Hours on a craft with no tier are not counted as journeyman hours
+— the day reads "can't be judged". Counting them would make a job look
+compliant because nobody had finished tagging its crafts, turning a setup
+gap into a false clean bill of health on the exact record an inspector
+asks for. Same for a day with apprentice hours and no ratio rule recorded,
+and a day with no apprentice hours is "not applicable" rather than
+evidence of compliance.
+
+**Checked per day, never averaged.** A crew running two apprentices to one
+journeyman on Monday is out of ratio on Monday; a weekly average hides
+exactly the day that gets asked about. Measured in hours, which is what
+`TimeEntry` holds — a headcount derived from it would count a two-hour
+visit the same as a full shift.
+
+**The remittance breaks the money out by fund** — pension, vacation, H&W,
+training as separate figures, because that is how the form is filled in
+and how the cheques are written. A single "fringe" total would have to be
+taken apart by hand, which is the re-entry this product exists to remove.
+It reuses `findEffectiveFringeRateSchedule` rather than a second copy of
+that lookup, and pays fringe at the flat rate regardless of pay type
+(Davis-Bacon) — getting that wrong would overstate every month containing
+overtime. Hours it cannot price are counted and the workers named, never
+valued at $0: under-reporting a trust fund is the expensive direction to
+be wrong in.
+
+**Sheet 26's last Missing row is now Partial**, not Built — the alert
+exists and finds the days, and there is still no push, like every other
+row on that sheet. It is STANDING rather than dated: the day is past and
+cannot be fixed by acting sooner, so a severity that escalated with the
+calendar would invent a deadline that does not exist. What can change is
+tomorrow's crew.
+
+**Sheet 09's third row is Partial, not Built.** `apprenticePeriod`
+identifies the step and hours per apprentice are derivable, but the
+program side — registered enrolment, the sponsor, classroom hours,
+progression sign-off — needs the program's own data model and cannot be
+derived from hours logged. Calling that Built would be the claim this
+audit keeps catching.
+
+Two failures worth recording. `UnionLocal` is a GLOBAL table unique on
+(parentInternational, localNumber), so a fixed test local collided with
+leftovers from an earlier run — stamped per run now. And the typed
+`Record<AlertKind, string>` on the alert labels refused to compile when
+the new kind had no label, which is the type system catching a gap that
+would otherwise have shipped as a blank badge.
+
+24 unit tests across the two engines, 9 db tests. `pnpm test` 524 → 548,
+79 db tests, typecheck/lint/build clean.
+
+---
+
+### Prevailing wage rule sets — the rules, never the rates (Diego)
+`claude/prova-contractor-os-e3f0iz`
+
+Sheet 21's missing row was "state-specific prevailing wage rule sets", and
+ARCHITECTURE.md had explicitly ruled a rules engine out: no licensed
+wage-rate dataset, same reason NV licensing was left unseeded. That
+reasoning is still right and this does not overturn it. It corrects a
+conflation in it.
+
+A wage DETERMINATION says what a classification pays. A jurisdiction's
+RULES say when an hour becomes overtime, when it becomes double time, what
+the seventh straight day does, and how soon the report is due. The second
+is not a rate and never needed a dataset — it needed somebody to write it
+down. `PrevailingWageRuleSet` is where they write it down, with the
+citation next to it.
+
+**Null and zero are different, and the whole honesty of the feature is in
+that gap.** A blank threshold means nobody looked it up, and the review
+reports that week as *unchecked* — never as compliant, never assuming
+eight. Zero means the premium starts at the first hour, which is how a
+seventh-day rule is usually written. An app that filled in "California is
+8 and 12" from nowhere would be asserting law it was never told.
+
+Effective-dated, for the same hard reason `FringeRateSchedule` is:
+reviewing last year's timesheet has to use last year's rules. Non-overlap
+is enforced by a **Postgres exclusion constraint**, hand-written raw SQL
+like `FringeRateSchedule`'s, because two overlapping rule sets would make
+"the rules that applied that week" depend on row order. Prisma does not
+know that constraint exists, so the action catches the untyped P2010 and
+returns a sentence.
+
+**What the review does.** Per employee — never pooled per job, because two
+people each working eight hours is not a sixteen-hour day and pooling them
+would manufacture overtime nobody worked. Daily rules first, then the
+weekly threshold converting straight hours from the LATEST days: you cross
+forty at the end of a week, not at the start. It **never rewrites a
+`TimeEntry`** — it reports where the entered pay types and the recorded
+rules disagree, exactly as `compliance-expiry.ts` reports a stored licence
+status contradicting its own date, and a person decides which is wrong.
+
+**One field earns its keep elsewhere.** `filingDueDays` replaces the
+certified-payroll alert's hardcoded seven days when a jurisdiction has
+recorded a real one — and the alert says which of the two it used, because
+"due in 7 days" from a citation and "due in 7 days" from our own default
+are not the same claim.
+
+**A failing test caught a real defect in my own process.** The exclusion
+constraint was appended to the migration file after `prisma migrate dev`
+had already recorded it, so the scratch database never got it and the
+overlap test passed an insert that should have been refused. Fixed by
+dropping and rebuilding the scratch database from the committed migrations
+— which is the only thing that actually proves the file as committed
+produces the schema claimed. 50 migrations, constraint present, overlap
+refused, adjacent ranges and other jurisdictions allowed.
+
+21 unit tests on the rule engine, 12 db tests, `pnpm test` 500 → 524, 70
+db tests, typecheck/lint/build clean.
+
+---
+
+### The three pages that were leaking cost to the field tier (Diego)
+`claude/prova-contractor-os-e3f0iz`
+
+The permissions commit shipped with a named gap: `/jobs/[id]`,
+`/dashboard` and `/contacts/[id]` still showed a FIELD user cost, margin,
+invoiced totals and payment reliability. They are in the other lanes, so
+they were listed rather than half-edited. Diego said do them, so they are
+done.
+
+All three are reachable by everyone — a foreman needs the job, the
+schedule and the GC's phone number — so they are narrowed, not refused.
+Each computes two flags once at the top (`showsJobMoney`, `showsBilling`)
+rather than per section, so the contract summary, the WIP table and the
+change-order log cannot end up disagreeing about whether this reader may
+see a price. Both are true for an owner and for a member with no job
+function set: all three pages render exactly as they always have for
+everyone who has ever used them.
+
+Withheld from a job function without `VIEW_JOB_COSTS`: the contract
+summary, the subcontract agreement and signing link, job costing & WIP,
+the estimate line items and the change-order log, job health, pipeline
+value, per-job contract value. Without `MANAGE_BILLING`: invoices,
+retainage, pay applications, the overdue and retainage-held tiles, the
+whole Money section, and a GC's payment reliability.
+
+**Whole sections, never filtered ones.** A WIP table with the money taken
+out is still a WIP table, and half a screen of blanks reads as broken
+rather than as withheld.
+
+**The one that was a data question rather than a markup question.**
+`ReceivablesProvider` is a client component, so everything handed to it
+reaches the browser whether or not a list renders it. Hiding the panel
+while still shipping the rows would have been exactly the "looks enforced,
+is not" failure this pass exists to close, so it now receives
+`rows={showsBilling ? today.receivables : []}`. Everything else on these
+pages is a server component, where an unrendered section never reaches the
+browser at all.
+
+`lib/page-money-guards.test.ts` is a static regression guard and is honest
+about it in its own header: it asserts each page still consults `can()`
+and still references its flags. It cannot tell you a guard wraps the right
+section — the click-list does that. What it catches is a refactor dropping
+the import and restoring the hole with every test still green.
+
+Sheet 25's second row stays **Partial**, now for one reason instead of
+four: there is no mobile SURFACE. This is the same responsive site,
+narrowed, and an offline-capable field app with camera capture is a
+separate build, not a permission.
+
+`pnpm test` 493 → 500, 58 db tests, typecheck/lint/build clean.
+
+---
+
+### Roles that mean something, and the holes they do not close yet (Diego)
+`claude/prova-contractor-os-e3f0iz`
+
+Sheet 25 was 0 built: two values in `UserRole`, no tier below MEMBER.
+
+**`UserRole` is untouched.** It still has two values and still answers one
+question — can this person administer the account. Every `assertOwner()` in
+`lib/actions/*` keeps meaning exactly what it meant. Job function is a
+second, orthogonal column, because folding "estimator" and "foreman" into
+the same enum would have made every existing owner-only guard ambiguous
+overnight.
+
+`User.jobFunction` is nullable with **no backfill**, and that null is the
+whole safety argument: it means nobody has said, and the person keeps the
+access every member has always had. Nobody loses anything the day this
+ships. An OWNER holds every capability regardless of it — an owner locked
+out of their own books by a dropdown has nobody to undo it on a
+single-owner company. An unrecognised value falls back to full access
+rather than none, since it is far more likely a newer enum member than an
+attack.
+
+**`requireCapability()` on the page is the boundary; the nav filter is
+decoration and says so in its own comment.** Hiding a link hides nothing.
+A test asserts `canReach()` and `can()` agree on every guarded route for
+every principal, so a link can never point at a door that will not open —
+nor, far worse, a door be left unlisted and unguarded.
+
+**Auditing my own claim found real holes, and closing the ones I own
+changed the shape of the work.** A FIELD user could still be told, by name
+and to the dollar, that a $42,000 backcharge was unanswered — because
+alerts had no notion of permission. They now carry the capability their
+SUBJECT needs, and money figures are stripped from the ones a restricted
+person may otherwise see: that the GC has sat on the closeout package for
+six weeks is operational, what it holds up in dollars is not. `/closeout`
+hides retainage the same way, and the company metric bar — money along the
+bottom of *every* screen — is withheld entirely. A permission enforced on
+`/cash-flow` and then rendered on every other page is not enforced.
+
+**What it still does not close, said here rather than found later.**
+`/jobs/[id]`, `/dashboard` and `/contacts/[id]` show a FIELD user cost,
+margin, invoiced totals and payment reliability. All three are in another
+session's lane. Half-editing someone else's page to close a permissions
+hole is worse than naming it — a page that filters in one place and not
+another reads as enforced when it is not. Sheet 25's second row stays
+**Partial** for that reason, plus there being no mobile surface, only the
+same responsive site narrowed.
+
+Verified: 15 unit tests on the capability map (including the exhaustive
+nav-versus-guard agreement check), 5 on the alert filter, and 8 db tests —
+the column arriving null and costing an existing member nothing, a
+non-owner refused outright, another company's member refused, an owner
+refused a job function with a reason, and an owner still holding
+everything even if the column somehow says FIELD. `pnpm test` 473 → 493,
+58 db tests, typecheck/lint/build clean.
+
+---
+
+### Alerts: derived, ranked, and possible to acknowledge (Diego)
+`claude/prova-contractor-os-e3f0iz`
+
+Sheet 26 was the last section reading 0 built, and its own notes said why:
+"it reaches someone who opens the app — still no delivery channel, so it
+reaches nobody who doesn't. NOT Built until something pushes it."
+
+**That bar is not met and I did not pretend otherwise.** There is no email
+sender on main, so nothing here pushes anything, and four of the five
+existing rows stay Partial. What shipped is the half that was actually
+missing underneath the delivery question: alerts with an identity, one
+ranking across every kind, a place reachable from every screen, and a
+record of whether a person has dealt with one.
+
+**There is no `Alert` table and there is not going to be one.** Every alert
+is derived from the record it is about, on every render — a COI expiring
+is its `expiresAt`, a backcharge going unanswered is its `respondByDate`
+against its status, retainage coming due is withheld-minus-released
+against an accepted closeout package. Six sources, all through the
+existing implementations rather than second copies: renewals via
+`compliance-expiry.ts`'s ranking, WIP variance via `jobIsOverBudget`,
+retainage via `calculateRetainageSummary`.
+
+**The one stored thing is a person saying they have seen one**, and the key
+is what keeps that honest. An alert's key carries the fact that would
+change it — `RENEWAL:license_abc:2026-11-30`, not `RENEWAL:license_abc`.
+Renew the licence and the key moves, so the dismissal stops matching and
+the alert comes back when the new date does. No expiry logic, no sweeper
+job. Acknowledgements are per USER: dismissing on a colleague's behalf is
+the worse failure, since the real fix clears it for everyone anyway.
+
+**Two alerts are deliberately quieter than they could be.** Certified
+payroll is raised only for a job carrying a `PrevailingWageDetermination`
+— it is not required on private work, and nagging about every job trains
+people to ignore the one that matters. Retainage grounded on
+`Job.substantialCompletionDate` says "worth confirming the job actually
+reached it" rather than asserting money is owed, because that column is a
+forecast, not a record that substantial completion happened.
+
+**A bell in the top bar, on every screen, that renders at zero.** A control
+that disappears when it has nothing to say cannot be trusted to appear
+when it does.
+
+Verified against real rows: `alerts-query.dbtest.ts` drives the whole
+engine through Postgres — the backcharge alert appearing and then dropping
+the moment it is answered, retainage becoming collectable only once the GC
+accepts the package and falling away as it is released, certified payroll
+silent until a wage determination exists and cleared only by a report
+whose period covers the WHOLE week (a clipping one is not evidence), a
+dismissal silencing one user's list and not another's, and that same
+dismissal failing to silence the next deadline on the same backcharge. 14
+db tests plus 29 unit tests on the engine. `pnpm test` 444 → 473;
+typecheck, lint and build clean.
+
+---
+
+### Closeout that names what is holding it up (Diego)
+`claude/prova-contractor-os-e3f0iz`
+
+Sheet 22 read 3 built / 0 partial / 0 missing and was, for what it listed,
+correct — punch lists, the checklist, warranty periods and callbacks all
+shipped in August. The gap was between two rows rather than inside one. A
+job could show a complete checklist and a $13,420 retainage balance for
+four months, and the page had no way to say whether that was because
+nobody had sent the package or because the GC was sitting on it. Those are
+opposite problems with opposite fixes.
+
+`CloseoutSubmission` (+ its counter) records the package going over and
+coming back — several attempts per job on purpose, like `SubmittalRevision`,
+because a package that bounces goes again and collapsing that into one
+editable row erases the fact that we sent it on time the first time.
+Attempts never reissue a number. Sent and answered dates are entered. A
+rejection must record what was missing: whoever assembles the next package
+needs it, and that is the difference between one more attempt and two.
+
+**Submitting is deliberately not gated on a complete checklist.** Packages
+go out short a document with the missing one promised to follow, and a log
+that refuses to record what happened stops being a log. The blockers show
+next to the submission instead — "the package went anyway" is worth
+knowing before the GC comes back asking.
+
+**`lib/closeout-readiness.ts` derives whose move it is.** Not ready →
+ready to submit → with the GC → sent back → accepted, plus an ordered
+blocker list and the retainage each job is holding up. Three calls in it
+matter: an open punch item blocks closeout even when "punch list sign-off"
+is ticked (the checklist is an assertion, the punch rows are what
+contradict it); once the GC has answered, the submission decides the stage
+so a callback the week after acceptance is warranty work rather than
+something that un-closes the closeout; and an empty checklist is a
+blocker, not a pass.
+
+The page now opens with **What to do next** — every job that needs
+something, most money first, naming the blocker and the retainage behind
+it. The retainage figure goes through `calculateRetainageSummary`, the
+existing implementation, not a second sum. This page's own first sentence
+has always said a missing lien waiver is money sitting with the GC; it had
+never once shown the number.
+
+**Files touched outside my own:** `CloseoutJobCard.tsx` gained a
+`packageSlot` prop and one line rendering it, and `/closeout/page.tsx`
+gained the query and the band. Everything else is new files. `PunchListItem`,
+`punchLists.ts` and `/punch-lists` are read and not modified.
+
+Verified the same way as backcharges: `closeoutSubmissions.dbtest.ts` runs
+the lifecycle against a real Postgres and asserts the rows — no second
+package while the GC has the first, no attempt dated before the previous
+one came back, no reopening or deleting an older attempt while a newer one
+exists, and deleting attempt 2 makes the next one 3. 14 db tests plus 18
+unit tests on the readiness math. `pnpm test` 444, typecheck/lint/build
+clean.
+
+---
+
+### Backcharges: the money the GC takes back (Diego)
+`claude/prova-contractor-os-e3f0iz`
+
+Sheet 13 of FEATURE-AUDIT was the only one still reading **0 built · 0
+partial · 2 missing**, and the gap it named was not a small one. This app
+had `ChangeOrder` — us asking the GC for more money — modelled four ways
+down to a reopen/revise distinction, and no concept at all of the same
+conversation running the other way. A GC deducting $4,200 for cleanup left
+no record anywhere except an unexplained short-pay on a cheque, and
+"unexplained short-pay, months later" is precisely the shape of thing this
+product exists to stop.
+
+`/backcharges` is the log. New domain file `backcharges.prisma`
+(`Backcharge`, `BackchargeCounter`, and the two enums), one additive
+migration, `lib/actions/backcharges.ts`, and the page.
+
+**The dispute half is the point, not a status field bolted on.** RECEIVED →
+DISPUTED → ACCEPTED / SETTLED / WITHDRAWN, with the objection carrying its
+own date and grounds. "We disputed this" without a date is worth nothing
+against a GC holding a signed notice with one.
+
+**Only a settlement stores a figure.** Accepting concedes exactly what was
+claimed — a number the row already holds — and a withdrawal concedes
+nothing. Copying either into `resolvedAmount` would be a second home for a
+fact already stated, so `concededAmount()` derives it from the status, and
+returns *unknown* rather than 0 or the claim when a settlement has no
+figure recorded. The page counts those separately and says so on the tile
+instead of quietly reading low.
+
+**`claimedAmount` locks the moment we answer.** Without that, the "argued
+off" figure is computed against an amount anyone could have moved
+afterwards — it would be reporting a claim nobody ever made. The edit form
+renders the three locked fields as text and the action refuses them
+independently, because a form that hides a control is not a rule.
+
+**What it does not do, said on the page rather than left to be discovered.**
+Nothing here nets against a pay application, an invoice, a contract value
+or a WIP figure, and nothing pushes an accepted backcharge into job
+costing. Both are real work in the billing/costing lane. A nullable
+`invoiceId` nobody sums would have looked built and changed no number
+anywhere — the same defect as a settings card that connects nothing, which
+this repo has now shipped twice.
+
+**Verified against a real Postgres, not against a return value.** A scratch
+database was stood up, all 46 migrations applied, and `lib/actions/
+backcharges.dbtest.ts` runs the whole lifecycle through the actual actions
+and asserts the ROWS: that deleting backcharge 2 makes the next one 3 and
+not 2, that a locked claim survives an update trying to move it, that
+another company's job and another company's backcharge are refused by every
+one of the five actions, that a non-owner can log one and cannot delete
+one, and that an accepted backcharge stores no conceded figure. 14 tests,
+plus 18 unit tests on the exposure math. `pnpm test` is 426 → 444, and
+typecheck, lint and a full build are clean.
+
+**One note on FEATURE-AUDIT.** Its top-line tally and its per-sheet headers
+already disagreed with the rows underneath them before this edit. Sheet
+13's +2 built / −2 missing is applied to both totals rather than
+recomputing everything, because a full recomputation is in flight on
+another branch and two people rewriting the same totals is how they drifted
+apart in the first place.
+
+---
+
 ### Field reports get their own page, and a week you can hand to a GC (Cyrus)
 `cyrus/field-reports`
 

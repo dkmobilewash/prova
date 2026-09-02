@@ -507,10 +507,10 @@ changed mid-project.
   standard across CBAs in this trade, and typed columns are easier to sum
   and report on than a flexible blob would be.
 - `ApprenticeRatioRule` — captures the ratio itself (e.g. 1 apprentice per
-  3 journeymen). **Does not implement the actual daily compliance
-  check** — ratios are enforced daily, not on a monthly rollup, which
-  needs a labor/time-entry data model that doesn't exist anywhere in this
-  schema yet. That's real future work this table alone can't drive.
+  3 journeymen). This bullet used to say the daily compliance check could
+  not be built without a labor/time-entry data model. `TimeEntry` landed
+  and `CraftClassification.tier` supplied the rest, so **the check now
+  exists** — see the union fringe and apprenticeship section below.
 
 **Non-overlapping `FringeRateSchedule` ranges are enforced at the
 database level**, not just assumed correct by the application:
@@ -787,13 +787,19 @@ export: replicating that exact form layout is a distinct, larger effort
 this phase doesn't take on.
 
 `PrevailingWageDetermination` is attached storage for the actual
-government wage-determination document (or a link to one) per job —
-not a lookup. There's no licensed or scraped prevailing-wage dataset in
-this app to query automatically from, the same reason NV licensing data
-was left unseeded in `LicenseClassificationReference`. Multi-state
-variation isn't built as a rules engine for the same reason; a job is
-already jurisdiction-scoped via `operatingLocationId`, which is as far
-as this can honestly go without a real government wage-rate dataset.
+government wage-determination document (or a link to one) per job — not a
+lookup. There's no licensed or scraped prevailing-wage dataset in this app
+to query automatically from, the same reason NV licensing data was left
+unseeded in `LicenseClassificationReference`. **That has not changed and is
+not going to until a licensed source exists.**
+
+What HAS changed is the half of "multi-state variation" that never needed a
+dataset. This paragraph used to say a rules engine was not built "for the
+same reason", and that conflated two different things: a wage
+DETERMINATION says what a classification pays, while a jurisdiction's
+RULES say when an hour becomes overtime and how soon the report is due.
+The second is not a rate, and it is now modelled — see the prevailing wage
+rule sets section below.
 
 ## Retainage
 
@@ -817,6 +823,458 @@ Release *forecasting* is a plain field
 ("expected release around this date"), not a scheduling or notification
 system — there's no closeout/warranty stage in `JobStatus` yet for a
 forecast to hook into more precisely than that.
+
+## Union fringe and apprenticeship — two reports over hours already logged
+
+Both halves of this were blocked on the same thing, and both comments
+saying so are now corrected rather than left standing: there was no
+time-entry data model. `TimeEntry` closed half of it. `CraftClassification.tier`
+closes the other half.
+
+### Why a tier column, rather than reading the name
+
+An apprentice-to-journeyman ratio cannot be checked against a list of
+names. "Drywall Finisher Apprentice Period 3" is only an apprentice to a
+human reader, and deriving the tier by searching the name for "apprentice"
+would be a guess that fails silently on the first local that words it
+differently. `tier` is nullable with **no backfill**, for the usual
+reason, and `FOREMAN` counts on the journeyman side — a judgement, so it
+is stated in the enum rather than left implicit.
+
+It sits on `CraftClassification`, which is a **global** reference table,
+so setting a tier is visible to every company under that local. That is
+correct rather than a leak: whether a classification is an apprentice
+classification is a fact about the classification, the same as its name.
+Access is gated by the company actually holding a `CompanyUnionAgreement`
+with that local — the same join `craftClassificationIdFromForm` already
+uses as its access check.
+
+### The ratio is checked per day, and unclassified is never a pass
+
+`lib/apprentice-ratio.ts` measures per job, per local, **per day**,
+because that is how the rule is written and enforced. A crew that runs two
+apprentices to one journeyman on Monday is out of ratio on Monday, and a
+weekly or monthly average would hide precisely the day an inspector asks
+about. It measures in HOURS, which is what `TimeEntry` holds; a headcount
+derived from it would count a two-hour visit the same as a full shift, and
+`programStandardReference` on the rule is where the company records which
+convention its own standard states.
+
+The load-bearing rule: **hours on a craft with no tier recorded are never
+counted as journeyman hours.** The day reads `INCOMPLETE`. Counting them
+would make a job look compliant because nobody had finished tagging its
+crafts — turning a setup gap into a false clean bill of health on the
+exact record an inspector asks for, which is the worst failure available
+here. A day with apprentice hours and no ratio rule recorded is
+`INCOMPLETE` for the same reason, and a day with no apprentice hours is
+`NOT_APPLICABLE` rather than counted as evidence of compliance.
+
+Hours that cannot be attributed to any local (no craft tag at all) are
+folded into **every** local's review as unclassified. On a job running two
+locals that makes both read `INCOMPLETE`, which is the conservative answer
+and the correct one: the fix is to tag the entry, not to pick a local for
+it.
+
+### The remittance breaks the money out by fund
+
+`lib/fringe-remittance.ts` rolls a month up per local, per classification,
+with pension, vacation, health & welfare and training as separate figures
+— because that is how the form is filled in and how the cheques are
+written. A single "fringe" total would have to be taken apart again by
+hand, which is the manual re-entry this product exists to remove.
+
+It reuses `findEffectiveFringeRateSchedule` rather than a second copy: the
+rate that applies to an hour is one question with one answer, and two
+implementations would eventually disagree about a historical month. Fringe
+is paid at the flat per-hour rate **regardless of pay type** — an overtime
+hour earns time-and-a-half on the base wage and the same fringe as any
+other — which is the Davis-Bacon convention `lib/labor-cost.ts` already
+follows, and getting it wrong would overstate every remittance in a month
+containing overtime.
+
+Hours it cannot price (no craft tag, or no schedule effective on the day)
+are counted in `uncomputedHours` with the workers named, and contribute
+nothing to the money. Valuing them at zero would under-report a real
+liability to a trust fund, which is the expensive direction to be wrong
+in. Whether a month was filed is derived from a
+`UNION_FRINGE_BENEFIT_FILING` document covering the **whole** period — a
+filing that merely overlaps is not evidence, the same rule the
+certified-payroll alert applies to a week.
+
+## Prevailing wage rule sets — the rules, never the rates
+
+There is still no wage-rate dataset in this app, nothing here is seeded,
+and nothing here invents a wage. What `PrevailingWageRuleSet` records is
+the other thing a jurisdiction sets: when an hour becomes overtime, when
+it becomes double time, what the seventh consecutive worked day does, how
+often certified payroll is filed and how soon. None of those is a rate,
+and they genuinely differ — a jurisdiction with an eight-hour daily
+threshold classifies the same timesheet differently from one with a
+forty-hour weekly threshold.
+
+Every value is **entered by the company** from the awarding body's own
+documents, with `sourceUrl` for the citation. The row-level rule that
+makes this honest rather than an assertion of law:
+
+- **Null means no rule recorded.** `lib/prevailing-wage.ts` reports such a
+  week as *unchecked*, never as compliant, and never assumes eight.
+- **Zero is a different, meaningful value** — the premium applies from the
+  first hour, which is how a seventh-day rule is usually written.
+  Collapsing the two would erase exactly the distinction the review needs.
+
+Effective-dated for the same hard reason `FringeRateSchedule` is:
+reviewing last year's timesheet has to use last year's rules, and a
+legislature amending a threshold must not silently rewrite how a closed
+week reads. Non-overlap is enforced at the **database** level, hand-written
+raw SQL in the migration exactly like `FringeRateSchedule`'s constraint,
+because Prisma's DSL cannot express a Postgres exclusion constraint. If
+two rule sets overlapped, "the rules that applied that week" would depend
+on row order. Prisma Client does not know the constraint exists, so a
+violation arrives as an untyped `P2010`; `lib/actions/prevailingWage.ts`
+matches on the constraint NAME (not the word "exclusion", which would
+swallow unrelated raw errors) and returns a sentence.
+
+A rule set reaches a job through `PrevailingWageDetermination.ruleSetId` —
+nullable, `ON DELETE SET NULL`. The determination is already the per-job
+record saying "this job is prevailing wage in jurisdiction X", so nothing
+new has to be joined, and deleting our own notes about the rules must
+never take the awarding body's document with them.
+
+### What the review does, and what it refuses to do
+
+`reviewDays` splits each day by the daily rule (or the seventh-day rule
+when it applies), then converts straight hours past the weekly threshold
+into overtime **taking them from the latest days first** — you cross forty
+at the end of a week, not at the start, and converting the earliest hours
+would report Monday as overtime because of Friday.
+
+It is reviewed **per employee**, never pooled per job. Two people each
+working eight hours is not a sixteen-hour day, and pooling them would
+manufacture overtime nobody worked — the single most damaging thing this
+feature could get wrong.
+
+It **never rewrites a `TimeEntry`.** `payType` is still entered by a
+person; this reports where the entered split and the recorded rules
+disagree, and a human decides which is wrong. Same shape as
+`compliance-expiry.ts` reporting a stored licence status that contradicts
+its own date: two human-entered facts, and which one is stale is not
+knowable from here.
+
+Days carrying shift-differential hours are shown and not judged — that
+premium is for when the shift ran, not how long it was, so no hours-based
+rule has anything to say about it. And `consecutiveDay` counts only within
+the range passed in, so a seventh consecutive day spanning two weeks is
+not detected; stated plainly rather than half-implemented.
+
+One rule set field is load-bearing elsewhere: `filingDueDays` replaces the
+certified-payroll alert's hardcoded seven-day horizon when a jurisdiction
+has recorded one, and the alert says which of the two it used — "due in 7
+days" from a citation and "due in 7 days" from our own default are not the
+same claim.
+
+## Roles: two orthogonal questions, not one enum
+
+`UserRole` has two values and answers one question — can this person
+ADMINISTER the company (invite, remove, connect an integration). This
+feature does not touch it. Every `assertOwner()` in `lib/actions/*`
+already means that and still does.
+
+Job function is the second, orthogonal question: what does this person DO,
+and therefore what do they need to see. Folding "estimator" and "foreman"
+into `UserRole` would have made every existing owner-only guard ambiguous
+overnight, and a permissions guard that means two things is a security bug
+waiting for its first Monday.
+
+`User.jobFunction` is nullable with **no backfill**, and that null is the
+whole migration-safety argument. It means nobody has said, and the person
+keeps exactly the access every `MEMBER` has had since multi-user companies
+existed. Shipping this takes nothing from anyone until an owner chooses to.
+`capabilitiesFor()` applies three rules in order: an OWNER holds
+everything always; an unset (or unrecognised) function grants the full
+member set; otherwise the function's list. The owner rule is not a
+convenience — an owner locked out of their own books by a dropdown has
+nobody to undo it on a single-owner company, which is most of them. The
+unrecognised-value rule falls back to full access rather than none, because
+a value this build does not know is far more likely to be a newer enum
+member than an attack.
+
+### Where it is enforced, and where it is only decorated
+
+`requireCapability()` in `lib/authz.ts` is the boundary. Guarded pages call
+it and render `<NoAccess>` — not a 404 and not a redirect, both of which
+tell a foreman following a colleague's link that the app is broken and
+produce a phone call.
+
+`navGroupsFor()` filtering the rail is **cosmetic and says so in its own
+comment**. Hiding a link hides nothing: the URL still exists and can be
+typed or pasted. The two read the same `ROUTE_CAPABILITY` map, and a test
+asserts `canReach()` and `can()` agree on every route for every principal,
+so a link can never be shown to a door that will not open — nor, far worse,
+a door left unlisted and unguarded.
+
+Alerts carry the capability their SUBJECT needs (`ALERT_CAPABILITY`).
+Without that the alert list would be a hole straight through the job
+functions: a foreman with no billing access would still be told, by name
+and to the dollar, that a $42,000 backcharge was unanswered. Money figures
+are also stripped from alerts a restricted person may otherwise see — that
+the GC has sat on the closeout package for six weeks is operational; what
+it is holding up in dollars is a margin conversation.
+
+### The three pages that render job money
+
+`/jobs/[id]`, `/dashboard` and `/contacts/[id]` are reachable by everyone
+— a foreman needs the job, the schedule and the GC's phone number — so
+they are narrowed rather than refused. Each computes two flags once, at
+the top, from the signed-in person:
+
+```ts
+const principal = { role: currentUser.role, jobFunction: currentUser.jobFunction };
+const showsJobMoney = can(principal, "VIEW_JOB_COSTS");
+const showsBilling  = can(principal, "MANAGE_BILLING");
+```
+
+Computed once rather than per section, so the contract summary, the WIP
+table and the change-order log cannot end up disagreeing about whether
+this reader may see a price. Both are TRUE for an owner and for a member
+with no job function set, so all three pages render exactly as they always
+have for everyone who has ever used them.
+
+`showsJobMoney` gates the contract summary (which IS the prices), the
+subcontract agreement and signing link (both carry the contract value),
+job costing & WIP, the estimate line items and change-order log, job
+health on the dashboard, pipeline and per-job contract value, and the
+per-job total on a contact. `showsBilling` gates invoices, retainage, pay
+applications, the overdue and retainage tiles, the whole Money section and
+a GC's payment reliability.
+
+**Whole sections, never filtered ones.** A WIP table with the money taken
+out is still a WIP table, and half a screen of blanks reads as broken
+rather than as withheld.
+
+**One of these is a data question, not a markup question.**
+`ReceivablesProvider` on the dashboard is a client component, so anything
+handed to it reaches the browser whether or not a list renders it. It gets
+`rows={showsBilling ? today.receivables : []}` — hiding the panel while
+still shipping the rows would be the exact "looks enforced, is not"
+failure this pass exists to close. Everything else on these pages is a
+server component, so an unrendered section never reaches the browser at
+all.
+
+`lib/page-money-guards.test.ts` is a static regression guard: it asserts
+each page still consults `can()` and still references its flags. It cannot
+tell you a guard wraps the right section — only that a refactor has not
+silently dropped the import and restored the hole with every test green.
+
+What remains genuinely unbuilt is a mobile SURFACE. This is the same
+responsive site, narrowed; an offline-capable field app with camera
+capture is a separate build, not a permission, and FEATURE-AUDIT Sheet 25
+keeps that row at Partial for that reason alone.
+
+Per-company overrides of the capability map are not built. A settings page
+editing a map nothing reads would be worse than the honest absence; where a
+default was genuinely arguable (a PM holding `MANAGE_BILLING`, an estimator
+holding `VIEW_JOB_COSTS`) the reasoning is written at the mapping itself.
+
+## Alerts — derived, ranked, and acknowledgeable
+
+There is no `Alert` table, and there is not going to be one. Every alert
+this app raises already exists as a fact somewhere: a COI expiring is its
+`expiresAt` against today, a backcharge going unanswered is its
+`respondByDate` against its status, retainage coming due is withheld minus
+released against an accepted `CloseoutSubmission`. Storing those would
+create a second copy of a fact free to disagree with the first, which is
+the rule this document opens with — and it is why
+`lib/compliance-expiry.ts` was built with no migration at all.
+
+`lib/alerts.ts` is the derivation and the ranking; `lib/alerts-query.ts`
+assembles the inputs from real rows. Same split as
+`renewals.ts`/`compliance-expiry.ts` and for the same reason: the deciding
+half is where the bugs live and it has to be testable without a database.
+Six sources feed it — renewals (through `compliance-expiry.ts`'s existing
+ranking, not a second expiry rule), unanswered backcharges, retainage
+release, a closeout package the GC is sitting on, certified payroll on a
+prevailing-wage week, and jobs forecast over contract value (through
+`jobIsOverBudget`, so the alert and the dashboard's Job health card can
+never disagree about the same job).
+
+### The one thing that IS stored, and why the key is shaped as it is
+
+`AlertAcknowledgement` records a person deciding they have seen one. That
+is not derivable from any row: "the office manager has dealt with this and
+does not want to be told again until March" is a fact about a human.
+
+The mechanism that keeps it honest is the key. An alert's key includes the
+FACT that would change what it says, not just the row it is about:
+
+```
+RENEWAL:license_abc:2026-11-30      not   RENEWAL:license_abc
+```
+
+Renew that licence and the key changes, so an acknowledgement written
+against the old one stops matching and the alert returns when the new date
+comes round. Without that, "dismiss" would mean "never tell me about this
+licence again", which is how an alert list becomes furniture. There is no
+expiry logic beyond this; `alertKey()` is the only thing allowed to build
+one, precisely so no call site can forget the third segment.
+
+Acknowledgements are **per user**, not per company. Dismissing on a
+colleague's behalf is the worse of the two failures available: the real
+fix — renewing the licence, answering the backcharge — clears the alert
+for everybody automatically, so a per-user acknowledgement can only ever
+cause someone to see something twice, while a company-wide one can cause
+the only person who would have acted to never see it.
+
+### Three severities, and why a standing condition is not low priority
+
+`OVERDUE` is a date that has passed, `DUE_SOON` a date coming, `STANDING`
+a condition with no date attached at all. A job forecast over its contract
+value is true today and will be true tomorrow; giving it a deadline would
+make it indistinguishable from a COI lapsing on the 14th, which is the
+distinction the list exists to draw. Within a severity, ordering is by
+money first and date second — two overdue items are not equally urgent
+when one is holding up $42,000 and the other a $400 cleanup charge.
+
+Horizons are per kind (`ALERT_HORIZON_DAYS`, `CLOSEOUT_CHASE_DAYS`), the
+same reasoning as `RENEWAL_HORIZON_DAYS`: the lead time you need is the
+lead time the thing takes. `CLOSEOUT_CHASE_DAYS` is explicitly named a
+chasing threshold rather than a deadline, because most subcontracts say
+nothing about how long acceptance may take and asserting a contractual
+date we do not have would be exactly the guess this codebase refuses.
+
+### What it is not
+
+**It is not push.** Nothing here emails, texts, or notifies anyone who is
+not looking at the app. What it adds over the dashboard tiles that came
+before is that an alert now has an identity, a severity comparable across
+kinds, a place of its own reachable from every screen (the bell in
+`Topbar`), and a record of whether a person has dealt with it. A delivery
+channel needs an email sender, which does not exist on main, and Sheet 26
+of FEATURE-AUDIT therefore keeps four of its rows at Partial rather than
+flipping them to Built. The engine is the half that was actually missing;
+when a sender lands, it feeds from here rather than replacing it.
+
+Two alerts are also deliberately quieter than they could be. Certified
+payroll is raised only for a job carrying a `PrevailingWageDetermination`
+— it is not required on private work, and nagging about every job would
+train people to ignore the one that matters. Retainage grounded on
+`Job.substantialCompletionDate` is worded as "worth confirming" rather
+than as money owed, because that column records when a job is EXPECTED to
+reach substantial completion, not that it did (`lib/retainage.ts` learned
+that the hard way and says so).
+
+## Closeout: the package, and what is holding it up
+
+`CloseoutItem`, `WarrantyPeriod` and `WarrantyServiceRequest` already
+covered the checklist, the warranty clock and the callbacks. What sat
+between "every required document is signed" and "retainage came back" was
+the event that actually connects them — the package going to the GC — and
+nothing recorded it. So a job could show a complete checklist next to a
+retainage balance for four months with no way to tell whether nobody had
+sent the package or the GC was sitting on it. Those have opposite fixes,
+and the page could not tell them apart.
+
+`CloseoutSubmission` is one attempt at handing that package over.
+Deliberately several rows per job, exactly like `SubmittalRevision`: a
+package that comes back short a lien waiver goes again, and collapsing
+that into one row with an editable date would erase the fact that we sent
+it on time the first time — which is the whole argument when retainage is
+late. Attempts are numbered by `CloseoutSubmissionCounter`, which only
+increments, for the reason every other counter here does. Dates are
+entered; how long the GC has had it is derived per render.
+
+**Submitting is not gated on a complete checklist.** Packages go out short
+a document all the time, with the missing one promised to follow, and
+refusing to record that would make the log stop matching what happened —
+which is the one thing it is for. The blockers are shown next to the
+submission instead, so an incomplete package that went anyway is visible
+rather than impossible.
+
+### `lib/closeout-readiness.ts` — whose move it is
+
+Pure derivation, same family as `lib/retainage.ts` and `lib/wip.ts`. It
+takes the required-item counts, open punch items, open callbacks, the
+retainage balance and the latest attempt, and returns a stage —
+`NOT_READY` / `READY_TO_SUBMIT` / `AWAITING_GC` / `REJECTED` /
+`ACCEPTED` — plus an ordered blocker list and the money at stake. Nothing
+is stored; there is no "ready" or "submitted" flag anywhere in this
+feature.
+
+Three decisions in it are load-bearing:
+
+- **An open punch item blocks closeout, whether or not "punch list
+  sign-off" is ticked.** The checklist is somebody's assertion and the
+  punch rows are what can contradict it. `/closeout` reads
+  `PunchListItem` and never writes it — punch lists are their own
+  feature, and readiness only needs to know open ones exist.
+- **Once the GC has answered, the submission decides the stage, not the
+  blockers.** A callback logged the week after acceptance is warranty
+  work, not something that un-closes the closeout. Reading it the other
+  way round would put an accepted job back into `NOT_READY` the first time
+  someone rang about a sticking door, and nobody would trust the column
+  again. Blockers are still reported; they just stop deciding.
+- **An empty checklist is a blocker, not a pass** — the same rule
+  `isCloseoutComplete` already follows. Nothing has been asserted about
+  that job, which is a different thing from nothing being wrong.
+
+Retainage at stake comes from `calculateRetainageSummary`, the existing
+implementation, rather than a second sum written here — the page's own
+opening sentence has always said a missing lien waiver is money sitting
+with the GC, and it had never shown the number.
+
+## Backcharges — the change order running the other way
+
+A `ChangeOrder` is us asking the GC for more money. A `Backcharge` is the
+GC taking money off what they already owe us: cleanup we didn't do, damage
+to another trade's work, a crew they brought in to finish our scope. The
+two are the same conversation in opposite directions, and until this
+landed only one of them existed in the schema — so the entire record of a
+five-figure deduction was an unexplained short-pay on a cheque months
+later.
+
+It follows the evidence-record rules the RFI and submittal logs already
+set. Numbers come from `BackchargeCounter`, which only increments, for the
+same reason `RfiCounter` does: a number derived from the rows that still
+exist is freed again by a delete, and then two different deductions have
+both been "backcharge 3" in writing. Dates are ENTERED, not stamped —
+`issuedOn` is the date on the GC's notice and `receivedOn` is when it
+reached us, and those differ often enough to matter, because a notice
+dated the 3rd that arrives on the 20th is most of a response window gone.
+Whether we are past `respondByDate` is derived per render from that date
+and the status, never stored.
+
+**The one number that is stored, and the three that are not.** The
+lifecycle is `RECEIVED` → `DISPUTED` → one of `ACCEPTED`, `SETTLED`,
+`WITHDRAWN`. Only `SETTLED` carries `resolvedAmount`, because a negotiated
+figure is the one outcome no other column can produce. Accepting concedes
+exactly `claimedAmount`, which the row already holds; a withdrawal
+concedes nothing. Writing either into `resolvedAmount` would be a second
+copy of a fact the row already states, free to drift from it —
+`concededAmount()` in `apps/web/lib/backcharges.ts` derives it from the
+status instead, and returns null rather than guessing when a settlement
+has no figure recorded.
+
+**`claimedAmount` locks the moment we respond**, along with `issuedOn` and
+the GC's own reference. Those three are what the GC put in writing, and
+the page's "argued off" figure is `claimed − conceded`: if the claimed
+amount stayed editable after a settlement, that figure would be reporting
+a claim nobody ever made. Before we answer, the row is only our own
+transcription of a letter, so a typo in it is worth fixing — which is also
+the only window in which one can be deleted. After that it is half of an
+exchange the GC also holds; the exit is resolving it as withdrawn, which
+is what actually happened if they dropped it.
+
+**It deliberately does not touch `Invoice`.** Netting an accepted
+backcharge against a pay application is real work in the billing lane —
+it changes what a pay application asks for, which the GC sees. A nullable
+`invoiceId` nobody sums would look built while changing no number
+anywhere, which is the exact failure mode this codebase has now shipped
+several times (a settings card that connected nothing, an action with no
+caller). So `/backcharges` says on the page that these figures are a log
+of what the GC has charged us and not a deduction from any invoice,
+contract value or WIP number. The same applies to job costing: an accepted
+backcharge is a real cost, but `CostEntry` hangs off a `JobLineItem` and
+picking which line a GC's cleanup charge lands on is a decision this phase
+does not make.
 
 ## Multi-tenancy and roles
 

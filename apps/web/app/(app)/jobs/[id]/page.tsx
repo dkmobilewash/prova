@@ -15,6 +15,7 @@ import { PushInvoiceToQuickBooks } from "@/components/PushInvoiceToQuickBooks";
 import { MarkContractedButton } from "@/components/MarkContractedButton";
 import { ChangeOrders, type ChangeOrderView } from "@/components/ChangeOrders";
 import { changeOrderValueDelta, pendingChangeOrderExposure, reopenBlockers } from "@/lib/change-order";
+import { can } from "@/lib/permissions";
 import { money } from "@/lib/money";
 import { calculateLineItemWip, calculateJobWip } from "@/lib/wip";
 import { calculateTimeEntryLaborCost, findEffectiveFringeRateSchedule } from "@/lib/labor-cost";
@@ -492,6 +493,18 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
   const createRetainageReleaseWithId = createRetainageRelease.bind(null, job.id);
   const deleteRetainageReleaseWithId = (releaseId: string) => deleteRetainageRelease.bind(null, job.id, releaseId);
 
+  // What this person's job function lets them see of the job's money.
+  // Computed once rather than per section, so the contract summary, the
+  // WIP table and the change-order log cannot end up disagreeing about
+  // whether this reader may see a price.
+  //
+  // Both are TRUE for an owner and for a member with no job function set,
+  // so this page renders exactly as it always has for everyone who has
+  // ever used it. Only a narrowed function loses anything.
+  const principal = { role: currentUser.role, jobFunction: currentUser.jobFunction };
+  const showsJobMoney = can(principal, "VIEW_JOB_COSTS");
+  const showsBilling = can(principal, "MANAGE_BILLING");
+
   const headerList = await headers();
   const origin = `${headerList.get("x-forwarded-proto") ?? "https"}://${headerList.get("host")}`;
   const pendingSignature = job.signatureRequests.find((r) => r.status === "PENDING");
@@ -503,6 +516,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
           estimate are rendered here as contract content, via the shared
           ContractSummary component also used by the public /esign/[token]
           signing page. Nothing below this heading is retyped anywhere. */}
+      {showsJobMoney && (
       <div className="mb-10">
         <ContractSummary
           companyName={company.name}
@@ -521,6 +535,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
           footer={<PrintButton />}
         />
       </div>
+      )}
 
       <div className="print:hidden">
         <section className="mb-10">
@@ -617,6 +632,8 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
           </div>
         </section>
 
+        {/* The signing link renders the priced contract. */}
+        {showsJobMoney && (
         <section className="mb-10">
           <h2 className="mb-3 text-lg font-semibold text-slate-100">Contract signature</h2>
           <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
@@ -656,7 +673,10 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             )}
           </div>
         </section>
+        )}
 
+        {/* The subcontract PDF states the contract value. */}
+        {showsJobMoney && (
         <section className="mb-10">
           <h2 className="mb-1 text-lg font-semibold text-slate-100">Subcontract agreement</h2>
           <p className="mb-3 text-sm text-slate-400">
@@ -730,7 +750,12 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             </SubmitButton>
           </form>
         </section>
+        )}
 
+        {/* Actual cost, forecast and margin. The whole section, not a
+            filtered version of it: a WIP table with the money taken out is
+            still a WIP table, and half a screen of blanks reads as broken. */}
+        {showsJobMoney && (
         <section className="mb-10">
           <h2 className="mb-3 text-lg font-semibold text-slate-100">Job costing &amp; WIP</h2>
 
@@ -911,6 +936,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             })}
           </div>
         </section>
+        )}
 
         <section className="mb-10">
           <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
@@ -1292,7 +1318,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
           </form>
         </section>
 
-        {!isEstimateStage && (
+        {!isEstimateStage && showsBilling && (
           <section className="mb-10">
             <h2 className="mb-3 text-lg font-semibold text-slate-100">Invoices</h2>
             <div className="flex flex-col gap-4">
@@ -1447,7 +1473,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
           </section>
         )}
 
-        {!isEstimateStage && (
+        {!isEstimateStage && showsBilling && (
           <section className="mb-10">
             <h2 className="mb-1 text-lg font-semibold text-slate-100">Retainage</h2>
             <p className="mb-3 text-sm text-slate-500">
@@ -1575,7 +1601,11 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
           </section>
         )}
 
-        {isEstimateStage ? (
+        {/* Prices, change-order value deltas and estimate versions. Withheld
+            from a job function without VIEW_JOB_COSTS — the field tier reads
+            the schedule and files reports above without being handed the
+            job's commercial terms. */}
+        {!showsJobMoney ? null : isEstimateStage ? (
           <>
             <section className="mb-10">
               <h2 className="mb-3 text-lg font-semibold text-slate-100">Line items (estimate)</h2>
@@ -1900,7 +1930,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
           }))}
         />
 
-        {!isEstimateStage && (
+        {!isEstimateStage && showsBilling && (
           <PayApplications
             jobId={job.id}
             lineItems={payApplicationLineItemOptions}

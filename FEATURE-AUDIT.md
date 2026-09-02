@@ -23,15 +23,15 @@ in flight. Left as-is here rather than guessed at from the outside; the next
 update to touch those sheets should come from whoever actually verified them
 against a fresh clone.
 
-**111 items audited — 75 built / 16 partial / 19 missing / 1 descoped**
+**113 items audited — 83 built / 21 partial / 8 missing / 1 descoped**
 
 | Status | Count |
 | --- | --- |
-| Built | 75 |
-| Partial | 16 |
-| Missing | 19 |
+| Built | 83 |
+| Partial | 21 |
+| Missing | 8 |
 | Descoped | 1 |
-| Descoped | 1 |
+
 
 ## 01. Company / Org Setup — 5 built · 0 partial · 0 missing
 
@@ -130,13 +130,17 @@ costing, and prevailing wage attachment shipped 26 Aug 2026.*
 | Missing | Multi-state prevailing wage rule variation support | not built as a rules engine — no real government wage-rate dataset to vary across states with; a job is already jurisdiction-scoped via `operatingLocationId` |
 | Partial | Certified payroll document storage/history per job, per pay period | `ComplianceDocument.type = CERTIFIED_PAYROLL` stores/tracks a submission, with AI extraction; not structured strictly by pay period |
 
-## 09. Union Fringe & Apprenticeship Compliance — 1 built · 0 partial · 3 missing
+## 09. Union Fringe & Apprenticeship Compliance — 3 built · 1 partial · 0 missing
+
+*Updated 1 Sep 2026 — the remittance generator and the daily ratio check
+shipped. Both were blocked on there being no time-entry data; `TimeEntry`
+landed, and `CraftClassification.tier` supplied the other missing half.*
 
 | Status | Feature | Note |
 | --- | --- | --- |
-| Missing | Union fringe/benefit remittance report generation (pension, vacation, H&W, training) | no generator built over `FringeRateSchedule` |
-| Missing | Apprentice-to-journeyman ratio tracking per crew/job | not modeled |
-| Missing | Apprenticeship program enrollment/hours tracking | not modeled |
+| Built | Union fringe/benefit remittance report generation (pension, vacation, H&W, training) | `lib/fringe-remittance.ts`, on `/union-compliance` — a month's logged hours rolled up per local, per classification, with the four funds broken out separately because that is how the form is filled in and how the cheques are written. Uses the rate in force on each entry's own date through `findEffectiveFringeRateSchedule`, not a second copy of that lookup. Fringe is paid at the flat per-hour rate regardless of pay type (Davis-Bacon), so overtime does not inflate it. Hours it cannot price — no craft tag, or no schedule effective that day — are counted and named, never valued at $0: under-reporting a trust fund is the expensive direction to be wrong in. Whether the month was filed is derived from a `UNION_FRINGE_BENEFIT_FILING` document covering the WHOLE period |
+| Built | Apprentice-to-journeyman ratio tracking per crew/job | `lib/apprentice-ratio.ts` — per job, per union local, **per day**, because that is how the rule is enforced and a monthly average would hide the exact day an inspector asks about. Measured in hours (what `TimeEntry` holds). Hours on a craft with no tier are NEVER counted as journeyman hours: the day reads "can't be judged", so a half-configured company never gets a clean bill of health. Also raises the Sheet 26 alert that was blocked on this existing |
+| Partial | Apprenticeship program enrollment/hours tracking | `CraftClassification.apprenticePeriod` identifies the step, and hours per apprentice per period are derivable from `TimeEntry` and shown in the ratio review. What is NOT built is the program side of it — a registered enrolment record, the sponsor, required classroom hours, or progression sign-off. That needs the program's own data model, and none of it can be derived from hours logged |
 | Built | Multi-CBA support (a company may run crews under more than one agreement) | `CompanyUnionAgreement` is a list per company, not a single field |
 
 ## 10. Billing — AIA-Style Pay Applications — 5 built · 0 partial · 0 missing
@@ -172,12 +176,15 @@ forecasting shipped 26 Aug 2026.*
 | Built | Change order approval workflow with the GC | `submitChangeOrder` / `approveChangeOrder` / `rejectChangeOrder` / `voidChangeOrder` in `lib/actions/changeOrders.ts`. Sent and decided dates are entered rather than stamped, so a backdated PCO records real turnaround. A rejected CO keeps its proposals as evidence it was priced and refused |
 | Built | Approved COs flow into new/modified `JobLineItem` rows and update contract value | `approveChangeOrder` applies every proposal in one transaction and writes the `ChangeOrderLineItemEdit` audit rows; `appliedAt` stops the same CO reaching the budget twice |
 
-## 13. Backcharges & Deductions — 0 built · 0 partial · 2 missing
+## 13. Backcharges & Deductions — 2 built · 0 partial · 0 missing
+
+*Updated — backcharge tracking and the dispute/resolution lifecycle shipped
+1 Sep 2026.*
 
 | Status | Feature | Note |
 | --- | --- | --- |
-| Missing | GC-issued backcharge tracking against a job (damages, cleanup, etc.) | no concept of a backcharge anywhere |
-| Missing | Backcharge disputes/resolution status | not modeled |
+| Built | GC-issued backcharge tracking against a job (damages, cleanup, etc.) | `Backcharge` + `BackchargeCounter`, `/backcharges` — numbers issued per job and never reissued, eight categories so "what do cleanup backcharges cost us a year" is answerable, issue/receipt/respond-by dates all ENTERED not stamped. The claimed amount locks the moment we answer, so a savings figure can't be computed against a number nobody claimed |
+| Built | Backcharge disputes/resolution status | `BackchargeStatus` RECEIVED → DISPUTED → ACCEPTED / SETTLED / WITHDRAWN, with the objection's own date and grounds. Only a settlement stores a figure: accepting concedes the claim and a withdrawal concedes nothing, both derived from the status in `lib/backcharges.ts`. Past the deadline to object is derived per render, never stored. Deliberately does NOT net against a pay application — see the note on the page and in ARCHITECTURE.md |
 
 ## 14. Compliance Document Management — 5 built · 1 partial · 0 missing
 
@@ -240,18 +247,27 @@ forecasting shipped 26 Aug 2026.*
 | Built | Company-owned equipment inventory (scaffolding, lifts, mixers) | `Equipment`, `/equipment` |
 | Partial | Equipment assignment/utilization per job (feeds job costing) | `Equipment.jobId` records where a piece is — nothing computes utilisation or pushes cost into job costing yet |
 
-## 21. Multi-State / Multi-Jurisdiction Support — 1 built · 1 partial · 1 missing
+## 21. Multi-State / Multi-Jurisdiction Support — 2 built · 1 partial · 0 missing
+
+*Updated 1 Sep 2026 — prevailing wage RULE SETS shipped. Still no wage-rate
+dataset, and there is not going to be one until a licensed source exists;
+what shipped is the half that never needed one.*
 
 | Status | Feature | Note |
 | --- | --- | --- |
-| Missing | State-specific prevailing wage rule sets | not modeled |
+| Built | State-specific prevailing wage rule sets | `PrevailingWageRuleSet`, `/prevailing-wage` — per jurisdiction, effective-dated, with non-overlap enforced by a Postgres exclusion constraint (raw SQL, same as `FringeRateSchedule`; the action catches the untyped P2010 and says it in words). Records daily/weekly/seventh-day overtime and double-time thresholds, filing frequency, due days, form and portal. **Nothing is seeded and nothing is defaulted**: a blank threshold means nobody looked it up, and `lib/prevailing-wage.ts` reports that week as *unchecked* rather than assuming eight — zero is a distinct, meaningful value (premium from the first hour). Applied to real logged hours per employee per week, reporting where the ENTERED pay types and the recorded rules disagree; it never rewrites a `TimeEntry`. Also feeds the certified-payroll alert its jurisdiction's real filing window, replacing a hardcoded 7 days, and the alert says which of the two it used |
 | Built | State-specific licensing requirement tracking | `CompanyLicense` + `LicenseClassificationReference` (CA/AZ/UT seeded; NV deliberately left unseeded — no verified source) |
 | Partial | Jurisdictional/union-local mapping by project location | the data exists — `Job.operatingLocationId`, `CompanyLocation.state`, `UnionLocal` — but nothing derives one from another yet; flagged as future work in the code itself |
 
-## 22. Closeout & Warranty — 3 built · 0 partial · 0 missing
+## 22. Closeout & Warranty — 4 built · 0 partial · 0 missing
+
+*Updated 1 Sep 2026 — the closeout package's trip to the GC, and readiness
+derived across everything that holds it up, shipped that day. The three
+rows below were already Built and are unchanged.*
 
 | Status | Feature | Note |
 | --- | --- | --- |
+| Built | Closeout package submission to the GC, and readiness across what blocks it | `CloseoutSubmission` + `CloseoutSubmissionCounter`, on `/closeout` — attempts numbered per job and never reissued, sent/answered dates entered not stamped, a rejection required to record what was missing. `lib/closeout-readiness.ts` derives whose move it is (not ready / ready to submit / with the GC / sent back / accepted) from the checklist, OPEN PUNCH ITEMS, open callbacks and the latest attempt, and names the retainage each one is holding up via `lib/retainage.ts`. An open punch item blocks closeout whether or not anyone ticked "punch list sign-off" — the checklist is an assertion, the punch rows are what contradict it |
 | Built | Punch list tracking per job | `PunchListItem`, `/punch-lists` |
 | Built | Final lien waiver and closeout document checklist | `CloseoutItem`, `/closeout` — per-job checklist with a standard set one click away, required vs optional, completion dates entered not stamped, document links. Closeout completeness derived from required items only, never stored; a job with no checklist is deliberately NOT complete |
 | Built | Warranty period tracking and post-completion service requests | `WarrantyPeriod` + `WarrantyServiceRequest`, `/closeout` — start entered separately from `Job.substantialCompletionDate` (the warranty and retainage clocks aren't always the same date), length in months as the contract states it, expiry derived with end-of-month clamping so 31 Aug + 6 months is 28 Feb not 3 Mar. Whether a callback was in warranty is derived from its REPORTED date, so a slow fix can't move the cost. `JobStatus` deliberately untouched — a stored lifecycle stage can disagree with the dates under it |
@@ -279,19 +295,32 @@ forecasting shipped 26 Aug 2026.*
 | Built | Anthropic API (for the AI features above) | three shipped features now call Claude |
 | Built | Outbound email from the contractor's own domain, with a delivery log | `OutboundMessage` + `OutboundMessageEvent`, `/messages` — provider-agnostic send, signed delivery webhook that fails closed, events deduplicated by provider id, status derived from the newest event and never stored. Sends as the contractor, not as us: mail from a vendor domain is the deliverability complaint the research report found at every competitor. SMS is in the channel enum and not wired |
 
-## 25. Roles & Permissions — 0 built · 0 partial · 2 missing
+## 25. Roles & Permissions — 1 built · 1 partial · 0 missing
+
+*Updated 1 Sep 2026 — job functions shipped. `UserRole` is deliberately
+unchanged: it still has two values and still answers only "can this person
+administer the account", so every `assertOwner()` in `lib/actions/*` keeps
+meaning exactly what it meant.*
 
 | Status | Feature | Note |
 | --- | --- | --- |
-| Missing | Distinct roles: estimator, PM, foreman/field, payroll/compliance admin, owner/exec, accounting | today's `UserRole` has exactly two values, OWNER and MEMBER |
-| Missing | Field-only mobile access vs. office full access | no access tier below MEMBER, no mobile-specific surface |
+| Built | Distinct roles: estimator, PM, foreman/field, payroll/compliance admin, owner/exec, accounting | `JobFunction` — a second, orthogonal column to `UserRole` — plus `lib/permissions.ts` mapping each to a capability set, set by the owner on `/team`. NULL is a real value meaning "nobody has said", and grants exactly the access every MEMBER has always had, so no existing row loses anything. An OWNER holds every capability regardless, because an owner locked out by a dropdown has nobody to undo it. Enforced server-side by `requireCapability()` on the page; the nav filter is cosmetic and says so in its own comment |
+| Partial | Field-only mobile access vs. office full access | the FIELD tier is enforced everywhere the app shows money. Whole pages refuse it (`/cash-flow`, `/catalog`, `/bids`, `/vendors/pricing`, `/backcharges`, `/compliance`, `/settings`); the company metric bar is withheld from every screen; alerts are filtered by the capability their subject needs and stripped of figures they may not see; `/closeout` hides retainage; and `/jobs/[id]`, `/dashboard` and `/contacts/[id]` now withhold the contract summary, job costing & WIP, invoices, retainage, change orders, estimate line items, receivables, job health and per-job contract value. The dashboard withholds the receivables ROWS, not just the list, since the provider is a client component. **Still Partial for one honest reason: there is no mobile SURFACE.** It is the same responsive site, narrowed — the audit row asks for field-only *mobile* access, and an offline-capable field app with camera capture is a separate build, not a permission |
 
-## 26. Notifications & Alerts — 0 built · 2 partial · 3 missing
+## 26. Notifications & Alerts — 1 built · 5 partial · 0 missing
+
+*Updated 1 Sep 2026 — the alert engine shipped. Four of these rows moved,
+and NONE of them moved to Built, because the bar this sheet set for itself
+("NOT Built until something pushes it") has not been met: there is still no
+email or SMS sender anywhere on main. What changed is that every one of
+these is now derived, ranked against the others, acknowledgeable, and
+visible from every screen instead of from one page.*
 
 | Status | Feature | Note |
 | --- | --- | --- |
-| Partial | COI/license/bond expiration alerts | ranked across all four record types, counted in the dashboard's Needs attention tiles and listed in its Compliance card, so it reaches someone who opens the app — still no delivery channel, so it reaches nobody who doesn't. NOT Built until something pushes it |
-| Missing | Certified payroll submission deadline reminders | no reminder system exists |
-| Missing | Retainage release eligibility alerts | the underlying retainage data exists now (Sheet 11), but no alerting/notification system reads it yet |
-| Missing | Apprentice ratio out-of-compliance alerts | blocked on apprentice tracking not existing yet |
-| Partial | WIP variance alerts | jobs forecast past contract value are counted in the dashboard's Needs attention tiles and named in Job health on load, rather than only when someone clicks into a job — but nothing notifies anyone who doesn't open the app, so this is surfacing, not alerting |
+| Built | In-app alert delivery: one ranked list, acknowledgement, and a count in the chrome | `lib/alerts.ts` (derivation and ranking), `lib/alerts-query.ts` (assembly), `AlertAcknowledgement` (the ONLY stored part — a person deciding they have seen one), `/alerts`, and a bell with a live count in the top bar on every screen. Alerts are never stored: each is derived from the record it is about on every render, so fixing the thing removes it. An alert's key carries the fact that would change it (`RENEWAL:lic_1:2026-11-30`), so a dismissal lapses by itself when the situation moves — no expiry logic. Per-user, not per-company: dismissing on a colleague's behalf is the worse of the two failures. **This is not push** — it reaches whoever opens the app, and that is the whole claim |
+| Partial | COI/license/bond expiration alerts | now an alert with an identity, a severity comparable against everything else, and a place reachable from every page — through `lib/compliance-expiry.ts`'s existing ranking, not a second expiry rule. Still no channel that reaches someone who doesn't open the app |
+| Partial | Certified payroll submission deadline reminders | derived: a job carrying a `PrevailingWageDetermination`, a finished week with `TimeEntry` rows, and no `CERTIFIED_PAYROLL` document whose period covers that whole week. Gated on the determination on purpose — certified payroll isn't required on private work, and a job where nobody recorded one raises nothing rather than a guess. Still no push |
+| Partial | Retainage release eligibility alerts | derived from `lib/retainage.ts`'s balance plus the closeout package's state. An ACCEPTED package is an event and reads as collectable; `Job.substantialCompletionDate` is a FORECAST and reads as "worth confirming", never as money owed. Still no push |
+| Partial | Apprentice ratio out-of-compliance alerts | no longer blocked — `lib/apprentice-ratio.ts` finds the days a job ran over, and the alert engine raises them (STANDING, not dated: the day is past and cannot be fixed by acting sooner; what can change is tomorrow's crew). Keyed on the offending dates, so a dismissal lapses the moment another day breaches. Still no push, like every other row on this sheet |
+| Partial | WIP variance alerts | jobs forecast past contract value now appear in the one alert list alongside everything else, through `jobIsOverBudget` rather than a second threshold, and can be acknowledged. Deliberately a STANDING severity with no date: it is true today and tomorrow, and escalating it with the calendar would invent urgency the data doesn't have. Still no push |

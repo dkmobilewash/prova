@@ -1,0 +1,47 @@
+// What someone's job is, as distinct from whether they own the account.
+//
+// Part of the multi-file Prisma schema in this folder.
+//
+// UserRole is deliberately NOT touched. It has exactly two values and
+// answers exactly one question — can this person administer the company
+// (invite, remove, delete, connect integrations). Every assertOwner() call
+// site in lib/actions/* means that and keeps meaning it. Folding
+// "estimator" and "foreman" into the same enum would have made every one
+// of those guards ambiguous overnight, and a permissions guard that means
+// two things is a security bug waiting for its first Monday.
+//
+// So this is a second, orthogonal column. Ownership says who administers;
+// job function says what the person does, and what they therefore need to
+// see. The two compose: an OWNER always has every capability regardless of
+// job function, because an owner locked out of their own books by a
+// dropdown is a support call nobody can resolve from inside the app.
+
+/// The jobs people actually hold at a specialty subcontractor, which is
+/// not the same list as a generic CRM's.
+///
+/// NULL is a real and important value: it means nobody has said, and the
+/// person keeps exactly the access every MEMBER has had until now — full
+/// office access below owner-only administration. That is what makes this
+/// migration safe on a company already using the app. There is no backfill
+/// guess here; guessing that the quiet member is a foreman would silently
+/// take the books away from a bookkeeper.
+enum JobFunction {
+  /// Runs the business. Same capabilities as an owner, without the
+  /// account administration — a partner or a general manager.
+  EXECUTIVE
+  /// Prices work. Estimating, the catalog, bids, vendor pricing.
+  ESTIMATOR
+  /// Runs jobs. Everything operational plus job cost, which is how a PM
+  /// knows whether the job is working.
+  PROJECT_MANAGER
+  /// Foreman or field lead. Jobs, field reports, safety, punch lists,
+  /// time — and deliberately NOT margin, cost, billing or company
+  /// financials. This is the tier the audit calls "field-only access",
+  /// and it is the only one that removes anything.
+  FIELD
+  /// Certified payroll, union fringe, licences, insurance, bonds.
+  PAYROLL_COMPLIANCE
+  /// Invoices, pay applications, retainage, backcharges, the accounting
+  /// sync.
+  ACCOUNTING
+}

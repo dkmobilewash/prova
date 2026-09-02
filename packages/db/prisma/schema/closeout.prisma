@@ -1,0 +1,87 @@
+// The closeout package: handing the paperwork to the GC and hearing back.
+//
+// Part of the multi-file Prisma schema in this folder.
+//
+// What was already here: CloseoutItem (the checklist), WarrantyPeriod and
+// WarrantyServiceRequest (the clock and the callbacks), all in
+// operations.prisma. Between "every required document is signed" and
+// "retainage came back" sat the event that actually connects them — the
+// package going to the GC — and nothing recorded it. So a job could show
+// a complete checklist and a retainage balance for months with no way to
+// tell whether that was because nobody had sent the package or because
+// the GC was sitting on it. Those are opposite problems with opposite
+// fixes, and the closeout page could not tell them apart.
+//
+// Same rules as every other correspondence record here: dates ENTERED
+// rather than stamped, attempts numbered by a counter that only
+// increments, and how long the GC has had it derived per render.
+
+/// Where one submission of the closeout package stands.
+///
+/// SUBMITTED is "the GC has it and hasn't answered" — the state a
+/// turnaround figure is measured against. REJECTED is the ball back in
+/// our court and is what makes a second attempt legitimate.
+enum CloseoutSubmissionStatus {
+  SUBMITTED
+  ACCEPTED
+  REJECTED
+}
+
+/// One attempt at handing the closeout package to the GC.
+///
+/// Several rows per job on purpose, exactly like SubmittalRevision: a
+/// package that comes back short a lien waiver goes again, and collapsing
+/// that into one row with an editable date would erase the fact that we
+/// sent it on time the first time. That "we sent it, they bounced it, we
+/// sent it again" history is the whole argument when retainage is late.
+model CloseoutSubmission {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+  jobId     String
+  job       Job     @relation(fields: [jobId], references: [id])
+
+  /// 1-based, issued by CloseoutSubmissionCounter and never reissued.
+  attempt Int
+
+  /// The date the package left our hands, entered. Backfilling the
+  /// packages sent over the last quarter must not record them all as sent
+  /// today — that turnaround is the evidence this table exists to hold.
+  submittedOn DateTime
+
+  /// How it went out (email, the GC's portal, hand-delivered). Free text:
+  /// every GC has a different one and a fixed list would be wrong for the
+  /// next one.
+  method String?
+
+  status CloseoutSubmissionStatus @default(SUBMITTED)
+
+  /// When they answered, and what they said. Null while it is still with
+  /// them, which is exactly the state the days-outstanding figure counts.
+  respondedOn DateTime?
+  gcResponse  String?
+
+  note String?
+
+  submittedByUserId String?
+  submittedByUser   User?   @relation(fields: [submittedByUserId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([jobId, attempt])
+  @@index([companyId])
+  @@index([jobId])
+}
+
+/// Issues closeout submission attempt numbers per job. Same shape and
+/// reason as RfiCounter and SubmittalCounter: a number derived from the
+/// rows that still exist is freed again by a delete, and then two
+/// different packages have both been "attempt 2".
+model CloseoutSubmissionCounter {
+  jobId       String @id
+  job         Job    @relation(fields: [jobId], references: [id])
+  lastAttempt Int    @default(0)
+
+  updatedAt DateTime @updatedAt
+}

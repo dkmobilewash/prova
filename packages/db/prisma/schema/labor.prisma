@@ -102,6 +102,13 @@ model PrevailingWageDetermination {
 
   jurisdiction String
 
+  /// The rules in force where this job is, if the company has recorded
+  /// them. Nullable and additive: every determination that exists today
+  /// predates rule sets, and a determination is perfectly useful without
+  /// one — it is the wage document either way. See prevailing-wage.prisma.
+  ruleSetId String?
+  ruleSet   PrevailingWageRuleSet? @relation(fields: [ruleSetId], references: [id], onDelete: SetNull)
+
   fileUrl   String?
   fileName  String?
   sourceUrl String?
@@ -160,11 +167,43 @@ model CompanyUnionAgreement {
 /// locals (journeyman, apprentice period 1-5, foreman — the exact steps
 /// vary), so this is tied to a specific UnionLocal rather than a shared
 /// list.
+/// Whether a classification is journeyman-side or apprentice-side.
+///
+/// Needed because an apprentice-to-journeyman ratio cannot be checked
+/// against a list of names: "Drywall Finisher Apprentice Period 3" is only
+/// an apprentice to a human reader, and deriving the tier by looking for
+/// the word "apprentice" in a free-text name would be a guess that fails
+/// silently on the first local that words it differently.
+///
+/// FOREMAN counts on the journeyman side of a ratio — a foreman is a
+/// journeyman-level worker by definition — which is stated here because it
+/// is a judgement, not an obvious fact.
+enum CraftTier {
+  JOURNEYMAN
+  APPRENTICE
+  FOREMAN
+}
+
 model CraftClassification {
   id           String     @id @default(cuid())
   unionLocalId String
   unionLocal   UnionLocal @relation(fields: [unionLocalId], references: [id])
   name         String
+
+  /// Nullable with NO backfill. Existing rows predate this, and inferring
+  /// a tier from the name string would be exactly the guess this column
+  /// exists to replace. Hours logged against an unclassified craft are
+  /// reported as unclassified by the ratio check — never counted as
+  /// journeyman hours, which would make a job look compliant because
+  /// nobody had finished setting it up.
+  tier CraftTier?
+
+  /// 1-5 for an apprentice, null otherwise. Only meaningful when `tier` is
+  /// APPRENTICE; the period drives the wage step, which FringeRateSchedule
+  /// already carries per classification, so this is here to identify the
+  /// step rather than to price it.
+  apprenticePeriod Int?
+
   createdAt    DateTime   @default(now())
 
   fringeRateSchedules FringeRateSchedule[]
@@ -208,10 +247,13 @@ model FringeRateSchedule {
 }
 
 /// Captures the ratio rule itself (e.g. 1 apprentice per 3 journeymen).
-/// Does NOT implement the actual daily compliance check — ratios are
-/// enforced daily, not on a monthly rollup, which needs a labor/time-entry
-/// data model that doesn't exist anywhere in this schema yet. That check
-/// is real future work, not something this table alone can drive.
+///
+/// This comment used to say the daily compliance check could not be built
+/// because there was no labor/time-entry data model. TimeEntry landed, and
+/// CraftClassification.tier above supplies the other missing half, so the
+/// check now exists: lib/apprentice-ratio.ts measures it per job per day
+/// against these counts. Nothing is stored — a day's compliance is derived
+/// from the hours logged for it, every time it is read.
 model ApprenticeRatioRule {
   id                       String     @id @default(cuid())
   unionLocalId             String

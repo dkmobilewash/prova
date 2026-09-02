@@ -2,6 +2,8 @@ import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { cancelInvite, inviteTeamMember, removeTeamMember } from "@/lib/actions";
 import { SubmitButton } from "@/components/SubmitButton";
+import { JobFunctionPicker } from "@/components/JobFunctionPicker";
+import { capabilityCount, jobFunctionLabel } from "@/components/permissionLabels";
 
 export default async function TeamPage() {
   const { company, ...currentUser } = await requireCompanyContext();
@@ -14,26 +16,53 @@ export default async function TeamPage() {
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-8">
-      <h1 className="mb-6 text-xl font-semibold text-slate-100">Team</h1>
+      <h1 className="mb-2 text-xl font-semibold text-slate-100">Team</h1>
+      <p className="mb-6 text-sm text-slate-400">
+        Two separate things. <span className="text-slate-300">Owner</span> decides who can
+        administer the account — invite, remove, connect an integration. A{" "}
+        <span className="text-slate-300">job function</span> decides what someone sees, and leaving
+        it unset gives the full office access every member has always had. An owner always has
+        everything, whatever else is set.
+      </p>
 
       <section className="mb-10">
         <h2 className="mb-3 text-sm font-semibold text-slate-300">Team members</h2>
         <ul className="divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900">
           {members.map((member) => (
-            <li key={member.id} className="flex items-center justify-between p-4">
-              <div>
+            <li key={member.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
                 <p className="font-medium text-slate-100">{member.name ?? member.email}</p>
                 <p className="text-sm text-slate-400">
                   {member.email} · {member.role}
                 </p>
+                {/* Role and job function are two different questions —
+                    who administers the account, and what the person does.
+                    Shown as two lines so the Team page can't imply they
+                    are one setting. An owner's access never depends on
+                    the second, so it isn't shown for one. */}
+                {member.role !== "OWNER" && (
+                  <p className="text-sm text-slate-500">
+                    {jobFunctionLabel(member.jobFunction)}
+                    {(() => {
+                      const { held, total } = capabilityCount(member.jobFunction);
+                      return held < total ? ` · ${held} of ${total} areas` : "";
+                    })()}
+                  </p>
+                )}
               </div>
-              {isOwner && member.role !== "OWNER" && (
-                <form action={removeTeamMember.bind(null, member.id)}>
-                  <SubmitButton type="submit" className="text-sm text-red-400 hover:underline">
-                    Remove
-                  </SubmitButton>
-                </form>
-              )}
+
+              <div className="flex shrink-0 flex-col items-end gap-2">
+                {isOwner && member.role !== "OWNER" && (
+                  <JobFunctionPicker userId={member.id} current={member.jobFunction} />
+                )}
+                {isOwner && member.role !== "OWNER" && (
+                  <form action={removeTeamMember.bind(null, member.id)}>
+                    <SubmitButton type="submit" className="text-sm text-red-400 hover:underline">
+                      Remove
+                    </SubmitButton>
+                  </form>
+                )}
+              </div>
             </li>
           ))}
         </ul>
