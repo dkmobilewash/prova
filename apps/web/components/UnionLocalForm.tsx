@@ -1,9 +1,9 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { createUnionLocalAndAgreement } from "@/lib/actions";
 import { inputClass, labelClass } from "@/components/RfiFields";
-import { localToday } from "@/components/localToday";
 
 /** Records a local and this company's agreement with it in one step.
  *
@@ -12,6 +12,7 @@ import { localToday } from "@/components/localToday";
 export function UnionLocalForm() {
   const [isOpen, setIsOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
+  const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
 
@@ -40,6 +41,14 @@ export function UnionLocalForm() {
             setError(result.error);
             return;
           }
+      // On top of the action's own revalidatePath. Browser testing found
+      // two of these forms leaving the page stale until a manual reload
+      // while the others updated live; every action revalidates and every
+      // form calls them the same way, so this is NOT a root-cause fix, it
+      // is the one that holds whatever the cause. A save that looks like
+      // it did nothing gets clicked again, and no create here is
+      // idempotent.
+      router.refresh();
           formRef.current?.reset();
           setIsOpen(false);
         });
@@ -92,7 +101,11 @@ export function UnionLocalForm() {
       <div className="grid gap-3 sm:grid-cols-2">
         <label className={labelClass}>
           Agreement in force from
-          <input type="date" name="effectiveFrom" required defaultValue={localToday()} className={inputClass} />
+          <input type="date" name="effectiveFrom" required className={inputClass} />
+          <span className="text-xs text-slate-500">
+            The date on the CBA. Deliberately not pre-filled with today: nearly every real agreement
+            started in the past, so a default here is wrong more often than right.
+          </span>
         </label>
         <label className={labelClass}>
           In force until
