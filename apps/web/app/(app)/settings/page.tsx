@@ -183,6 +183,16 @@ export default async function SettingsPage({
         — connect and disconnect third-party services.
       </p>
 
+      {/* Findable without asking anyone, which is most of the point: the
+          research found four vendors where getting your history out meant a
+          support ticket, a sales call, or nothing at all. */}
+      <p className="mb-6 text-sm text-slate-400">
+        <Link href="/settings/export" className="text-blue-400 hover:text-blue-300">
+          Export your data
+        </Link>{" "}
+        — every job, price, cost and hour, as CSV or one JSON file.
+      </p>
+
       {qb === "connected" && (
         <p className="mb-6 rounded-md border border-green-900 bg-green-950/50 px-4 py-3 text-sm text-green-400">
           QuickBooks connected successfully.
