@@ -1,159 +1,211 @@
-import {
-  RENEWAL_HORIZON_DAYS,
-  type Renewal,
-  type RenewalKind,
-} from "@/lib/compliance-expiry";
-
 /**
- * Deciding what is worth telling somebody, and — the harder half — what we
- * have already told them.
+ * Deciding what is worth telling somebody who is not looking at the app,
+ * and — the harder half — what we have already told them.
  *
- * The detection problem was solved by `compliance-expiry.ts`: it knows what
- * is expiring and how urgently. Nothing here re-derives that. What this adds
- * is the thing that separates an alert from a nag.
+ * Detection is not here and must never be. `lib/alerts.ts` decides what is
+ * true, how urgent it is, and who is allowed to see it; this decides only
+ * what has already been said. Two modules deciding urgency is two answers
+ * to one question, and the one nobody is reading drifts.
  *
- * **A COI expiring in thirty days is still true tomorrow.** Notify on the
- * state and you send the same sentence thirty mornings running, and the
- * person learns to filter you — which is the 6.3-platforms-and-abandon
- * pattern the competitor research describes, self-inflicted. So nothing here
- * notifies on a state. It notifies on a MILESTONE being crossed, once, ever.
+ * **THE PROBLEM THIS EXISTS FOR.** A COI expiring in thirty days is still
+ * true tomorrow. Notify on the state and you send the same sentence thirty
+ * mornings running, and the person learns to filter you — the
+ * six-platforms-and-abandon pattern from the research report, self-inflicted.
+ * So nothing here notifies on a state. It notifies on a MILESTONE being
+ * crossed, once, ever.
  *
  * The milestone is part of the notice's identity, not the date it was sent.
  * That makes a run idempotent by construction: run it twice, run it at 2am
  * and again at 9am, and the second run has nothing to say.
+ *
+ * **WHY THE ALERT KEY IS NOT ENOUGH BY ITSELF.** An alert key already
+ * carries the fact that would change it — `RENEWAL:lic_1:2026-11-30` — so a
+ * dispatch recorded against it lapses when the licence is renewed, exactly
+ * as a dismissal does. But that key is STABLE as the date approaches. Key a
+ * send on it alone and the sixty-day warning goes out and nothing is ever
+ * said again, including on the day the licence lapses. The rung is what
+ * distinguishes "this is coming" from "this has happened" about one
+ * unchanged fact.
  */
 
-/** The rungs, per kind, most distant first.
- *
- * Anchored on the kind's own horizon rather than a fixed ladder, because
- * `RENEWAL_HORIZON_DAYS` already encodes the thing that matters: a licence
- * renewal goes through a state board and needs sixty days' warning, a COI is
- * a phone call to a broker. Three rungs and no more —
- *
- *   the horizon  → start dealing with this
- *   seven days   → this is now urgent
- *   zero         → you are non-compliant as of today
- *
- * Deliberately not a rung every fortnight. Three emails over the life of a
- * document is a system somebody keeps reading; eight is one they filter.
- */
-export function milestonesFor(kind: RenewalKind): number[] {
-  const horizon = RENEWAL_HORIZON_DAYS[kind];
-  return [...new Set([horizon, 7, 0])].filter((d) => d >= 0).sort((a, b) => b - a);
-}
+import type { Alert } from "@/lib/alerts";
 
-/** Identity of one notice: this record, at this rung.
+/**
+ * The rungs, loosest first.
  *
- * NOT the date. A dispatch keyed on the day it was sent would fire again
- * tomorrow, which is the whole failure this exists to avoid.
+ * Named, not numeric, and that is the whole trick. **The engine has
+ * already applied the right horizon by the time it hands an alert over.**
+ * A licence goes DUE_SOON at sixty days because it goes through a state
+ * board; a COI goes DUE_SOON at thirty because it is a call to a broker;
+ * a backcharge at ten. Reading `severity` picks all of those up for free
+ * and stays right when somebody tunes one of them.
+ *
+ * A numeric ladder here could not be right. `ALERT_HORIZON_DAYS` has no
+ * RENEWAL entry at all — renewal horizons are per RENEWAL kind, in
+ * `RENEWAL_HORIZON_DAYS`, and `Alert` flattens every one of them to the
+ * single kind "RENEWAL". Keying rungs off the alert-kind table looks
+ * reasonable and quietly drops the sixty-day licence warning, which is
+ * the single most useful notice this feature sends. It is only a missing
+ * email, so nothing fails and nobody finds out.
+ *
+ *   APPROACHING → the engine started calling it due soon
+ *   WEEK        → seven days or fewer
+ *   DUE         → the date has passed, or is today
+ *
+ * Three rungs over the life of a document is a system somebody keeps
+ * reading; one a fortnight is one they filter.
  */
-export function dispatchKey(renewalId: string, kind: RenewalKind, milestone: number): string {
-  return `${kind}:${renewalId}:${milestone}`;
+export const DATED_RUNGS = ["approaching", "week", "due"] as const;
+
+/** What a condition with no deadline fires on. It is not a distance from
+ * anything: a job forecast over contract value is true today and will be
+ * true tomorrow, and putting it on the dated ladder would manufacture a
+ * deadline the data does not have — the objection already written into
+ * `AlertSeverity`. Once per key, and the key changes when it changes. */
+export const STANDING_RUNG = "standing";
+
+export type Rung = (typeof DATED_RUNGS)[number] | typeof STANDING_RUNG;
+
+/** Seven days, the one number this file owns.
+ *
+ * It is not a horizon and does not replace one. It is the second look —
+ * far enough out that a person can still act within a working week,
+ * whatever the thing is. */
+export const WEEK_RUNG_DAYS = 7;
+
+/** Identity of one notice: this alert, at this rung.
+ *
+ * Built on the alert's own key, so everything that key already guarantees
+ * comes along — renew the licence and every dispatch recorded against the
+ * old date stops applying, with no expiry logic here.
+ *
+ * NOT the date it was sent. A dispatch keyed on the day would fire again
+ * tomorrow, which is the whole failure this file exists to prevent.
+ */
+export function dispatchKey(alertKey: string, rung: Rung): string {
+  return `${alertKey}@${rung}`;
 }
 
 export type DueNotice = {
-  renewal: Renewal;
+  alert: Alert;
   /** The rung that fired — the tightest one crossed. */
-  milestone: number;
+  rung: Rung;
   /**
    * Looser rungs this notice also passes, which must be recorded as spent.
    *
-   * A record added five days before it lapses has crossed sixty, thirty and
-   * seven all at once. It should produce ONE notice at seven — not three
-   * emails in one run, and not a stale "expires in 60 days" for something
-   * expiring on Friday. Burning the passed rungs is what stops them firing
-   * later, one per day, as the date approaches.
+   * A record entered five days before it lapses has crossed APPROACHING
+   * and WEEK at once. It should produce ONE notice at WEEK — not two
+   * emails in one run, and not a stale "start dealing with this" for
+   * something expiring on Friday. Burning the passed rungs is what stops
+   * them firing later, one per day, as the date approaches.
    */
-  alsoSpent: number[];
+  alsoSpent: Rung[];
 };
 
 /**
- * What to send today, given what has already been sent.
+ * What to send now, given what has already been sent.
  *
- * Two properties worth stating because both are ways to be quietly wrong:
+ * Callers pass the alerts a person can actually SEE and has not silenced —
+ * `partitionAlerts(...).visible`, capability-filtered. Neither of those
+ * judgements is remade here: emailing somebody an alert they dismissed
+ * this morning is precisely the nag, and emailing them one their role
+ * hides is a permission hole with a stamp on it.
  *
- * - **A late-added record still gets a notice.** Add a COI five days before
- *   expiry and you get the seven-day warning. Silence — on the grounds that
- *   the sixty- and thirty-day rungs passed while nobody had told us the
- *   document existed — would be the worst possible behaviour, because the
- *   whole point is catching the one nobody was watching.
- * - **Undated records never notify.** `renewalAlerts` surfaces them, and it
- *   is right to: a COI with no expiry recorded is a gap worth seeing. But
- *   there is no date to cross a rung, so there is nothing to say TODAY, and
- *   an alert with no date in it is one nobody can act on.
+ * Two properties worth naming because both are ways to be quietly wrong:
+ *
+ * - **A late-added record still gets a notice.** Enter a COI five days
+ *   before expiry and the seven-day warning goes out. Silence — on the
+ *   grounds that the looser rungs passed while nobody had told us the
+ *   document existed — would be the worst available behaviour, because the
+ *   one nobody was watching is the one this is for.
+ * - **A dated alert with no days left to count never fires a rung.** See
+ *   the guard below; it is load-bearing, not defensive.
  */
 export function noticesDue(
-  renewals: Renewal[],
+  alerts: Alert[],
   alreadySent: ReadonlySet<string>,
 ): DueNotice[] {
   const due: DueNotice[] = [];
 
-  for (const renewal of renewals) {
-    // Undated: surfaced by renewalAlerts, never notified. This guard is
-    // load-bearing, not defensive — `null <= 0` is TRUE in JavaScript, so
-    // without it every undated record would cross the expiry rung and be
-    // reported as lapsed. A COI with no date recorded is a gap worth
-    // seeing on a page; it is not a document that has expired.
-    const days = renewal.daysUntil;
-    if (days === null) continue;
-
-    const rungs = milestonesFor(renewal.kind);
-    // Crossed means the remaining days have reached or passed the rung.
-    // Expired records (negative days) have crossed every rung including 0.
-    const crossed = rungs.filter((rung) => days <= rung);
+  for (const alert of alerts) {
+    const crossed = crossedRungs(alert);
     const unsent = crossed.filter(
-      (rung) => !alreadySent.has(dispatchKey(renewal.id, renewal.kind, rung)),
+      (rung) => !alreadySent.has(dispatchKey(alert.key, rung)),
     );
     if (unsent.length === 0) continue;
 
     // Tightest rung wins: it is the one that describes the situation now.
     // The looser ones are spent so they can never fire behind it.
-    const milestone = Math.min(...unsent);
-    due.push({
-      renewal,
-      milestone,
-      alsoSpent: unsent.filter((rung) => rung !== milestone),
-    });
+    const rung = tightest(unsent);
+    due.push({ alert, rung, alsoSpent: unsent.filter((r) => r !== rung) });
   }
 
-  // Most urgent first — the order a person should read them in, and the
-  // order they would be listed in a digest.
-  return due.sort((a, b) => {
-    if (a.milestone !== b.milestone) return a.milestone - b.milestone;
-    const ad = a.renewal.daysUntil ?? 0;
-    const bd = b.renewal.daysUntil ?? 0;
+  return due.sort(mostUrgentFirst);
+}
+
+/** Which rungs this alert has reached, tightest last.
+ *
+ * A standing condition has exactly one and reaches it immediately. A dated
+ * one has reached every rung at or above its remaining days — an expired
+ * record (negative days) has crossed all of them, including zero.
+ */
+function crossedRungs(alert: Alert): Rung[] {
+  if (alert.dueOn === null) return [STANDING_RUNG];
+
+  // `null <= 0` is TRUE in JavaScript, so an alert carrying a date but no
+  // computed distance would cross the DUE rung and be reported as lapsed.
+  // The two fields are set independently and this costs nothing to check.
+  const days = alert.daysUntil;
+  if (days === null) return [];
+
+  const crossed: Rung[] = [];
+  // The engine's own judgement, per kind. A dated alert it still calls
+  // STANDING is outside its horizon and has reached nothing yet.
+  if (alert.severity === "DUE_SOON" || alert.severity === "OVERDUE")
+    crossed.push("approaching");
+  if (days <= WEEK_RUNG_DAYS) crossed.push("week");
+  if (days <= 0) crossed.push("due");
+  return crossed;
+}
+
+/** Tightest = furthest along the ladder. A standing rung is alone in its
+ * list, so there is nothing to compare it against. */
+function tightest(rungs: Rung[]): Rung {
+  for (const rung of [...DATED_RUNGS].reverse()) {
+    if (rungs.includes(rung)) return rung;
+  }
+  return STANDING_RUNG;
+}
+
+/** The order a person should read them in, and the order a digest lists
+ * them. Deadlines before standing conditions; nearest deadline first;
+ * money as the tiebreak, then title so the order is total and a run
+ * cannot reorder itself between two identical inputs. */
+function mostUrgentFirst(a: DueNotice, b: DueNotice): number {
+  const aStanding = a.rung === STANDING_RUNG;
+  const bStanding = b.rung === STANDING_RUNG;
+  if (aStanding !== bStanding) return aStanding ? 1 : -1;
+
+  if (!aStanding && !bStanding) {
+    // Later on the ladder is more urgent, so the ladder order is reversed.
+    const rank = (rung: Rung) =>
+      -DATED_RUNGS.indexOf(rung as (typeof DATED_RUNGS)[number]);
+    if (a.rung !== b.rung) return rank(a.rung) - rank(b.rung);
+    const ad = a.alert.daysUntil ?? 0;
+    const bd = b.alert.daysUntil ?? 0;
     if (ad !== bd) return ad - bd;
-    return a.renewal.title.localeCompare(b.renewal.title);
-  });
-}
-
-/** Every key a notice consumes — the rung that fired plus the ones it passed.
- * All of them are written together, or none are: a partially recorded notice
- * would fire its unrecorded rungs again tomorrow. */
-export function keysConsumed(notice: DueNotice): string[] {
-  return [notice.milestone, ...notice.alsoSpent].map((rung) =>
-    dispatchKey(notice.renewal.id, notice.renewal.kind, rung),
-  );
-}
-
-/** How a rung reads to a person. */
-export function milestoneLabel(milestone: number): string {
-  if (milestone === 0) return "expired";
-  return `${milestone} days out`;
-}
-
-/** The subject line for a run. Names the count and the worst thing in it,
- * because a subject that just says "Prova alerts" is one people stop
- * opening. */
-export function digestSubject(notices: DueNotice[]): string {
-  if (notices.length === 0) return "";
-  const expired = notices.filter((n) => n.milestone === 0).length;
-  const noun = notices.length === 1 ? "item" : "items";
-  if (expired > 0) {
-    return `${expired} expired, ${notices.length} compliance ${noun} need attention`;
   }
-  const soonest = notices[0];
-  return notices.length === 1
-    ? `${soonest.renewal.title} expires in ${soonest.renewal.daysUntil} days`
-    : `${notices.length} compliance ${noun} need attention`;
+
+  const amountDiff = (b.alert.amount ?? 0) - (a.alert.amount ?? 0);
+  if (amountDiff !== 0) return amountDiff;
+  return a.alert.title.localeCompare(b.alert.title);
+}
+
+/** Every key a notice consumes — the rung that fired plus the ones it
+ * passed. All of them are written together, or none are: a partially
+ * recorded notice fires its unrecorded rungs again tomorrow. */
+export function keysConsumed(notice: DueNotice): string[] {
+  return [notice.rung, ...notice.alsoSpent].map((rung) =>
+    dispatchKey(notice.alert.key, rung),
+  );
 }
