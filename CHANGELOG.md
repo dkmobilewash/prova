@@ -12,6 +12,140 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### Alerts can now email themselves, once per thing per stage (Cyrus)
+`cyrus/notifications`
+
+Sheet 26's five Partial rows all gave the same reason: **"Still no push."**
+`#38` landed a sender, `#56` landed the alert engine, and neither knew the
+other existed. This is the join, plus the ledger that stops it repeating
+itself — which is the only genuinely hard part of it.
+
+A button on `/alerts` sends one email covering everything you have not
+already been told. Its most useful property looks like a failure: **click
+it twice and the second click says there is nothing new to send.**
+
+**Why a milestone and not a state.** A COI expiring in thirty days is still
+true tomorrow. Notify on the state and you send the same sentence thirty
+mornings running, and the person learns to filter you — the
+six-platforms-and-abandon pattern from the competitor research, self-
+inflicted. So nothing notifies on a state. A notice fires when a milestone
+is crossed, once, ever, and the milestone is part of its identity rather
+than the date it was sent: `RENEWAL:lic_1:2026-11-30@week`. The alert key
+carries the FACT, so renewing the licence changes the key and every
+dispatch against the old date stops applying — the same mechanism that
+makes a dismissal lapse, with no expiry logic anywhere. The rung
+distinguishes "this is coming" from "this has happened" about one
+*unchanged* fact, which the key alone cannot.
+
+**Per user, not per company.** Alerts are capability-filtered, so two
+people legitimately have different lists. A company-wide ledger would let
+the first person's send suppress the second's — and the person suppressed
+is the one whose capability made it their job.
+
+**The digest never composes a sentence about a situation.** An undated COI
+and a job forecast over budget are both `STANDING` with a null date and are
+indistinguishable in the `Alert` shape. The engine already says "no date
+recorded" for one and the right thing for the other. A label generated from
+the rung would email somebody that their certificate has EXPIRED when the
+truth is that nobody typed a date in.
+
+**Rows are claimed before the provider is called**, and
+`@@unique([userId, dispatchKey])` is the lock, so a crash between sending
+and recording is a notice that was sent rather than one that goes again
+tomorrow.
+
+#### Five bugs, and what found each one
+
+The suite was green through every one of these.
+
+**The rungs read the wrong horizon table, and silently dropped the most
+useful notice the feature sends.** My first version read
+`ALERT_HORIZON_DAYS`, which has no `RENEWAL` entry — renewal horizons are
+per renewal kind in `RENEWAL_HORIZON_DAYS` (licence 60, bond 60, COI 30)
+and `Alert` flattens all four to the single kind `"RENEWAL"`. It fell
+through to a 7-day default, so the sixty-day licence warning never went.
+Nothing failed. The fix is better than the bug: the rungs are now NAMED,
+and the loosest is *"the engine started calling this DUE_SOON"* — reading
+`severity`, which already has each kind's horizon baked into it. A licence
+fires at 60 and a COI at 30 with no table on the notifier's side at all.
+
+**`messageId` was `@unique`.** A digest is one email covering many notices,
+so the second notice in any digest would have failed to link. Found by
+writing the probe that inserts three dispatches against one message.
+
+**The delivery log read "sent · about a alert_digest".** Wrong twice in
+four words, found by clicking it. `MessageRow` was rendering
+``about a ${relatedType.toLowerCase()}`` — my own code from #38 — and it had
+been wrong for `"RFI"` the whole time ("about a rfi"); nothing in the
+codebase had ever set that value, so nothing ever displayed it. The
+notifier is the first thing to write `relatedType` from code rather than
+from a form, which is what surfaced it. Fixed with a label that carries its
+own article, because the article is not derivable from the string: "an RFI"
+comes from how the acronym is SPOKEN, and no vowel test on the letters gets
+there. Free text from the composer is still shown as typed.
+
+**An unconfigured provider burned every milestone permanently.** Found by
+an adversarial pass after the click-through, not by clicking. `claim()` ran
+before anything checked whether email was set up, and `sendEmail` only
+discovers that internally — so the sequence was claim the keys, attempt,
+fail, keys spent. Those licence warnings could then never be sent,
+**including after email was configured**, because the ledger said they
+already had been. This is not an edge case: it is the state every company
+is in before somebody sets up a sending domain, so it is the likeliest
+first click this feature will ever get, and it silently destroyed exactly
+what the feature exists to deliver. Config is now checked before claiming,
+and an unconfigured send takes nothing, sends nothing and writes nothing to
+the log. The composer keeps its row on a failed send because a PERSON typed
+that message; a digest regenerates itself exactly from the alerts, so a row
+for mail that was never composed for a provider would record something that
+did not happen.
+
+**A provable non-send also burned the claim.** `sendEmail` fails three ways
+and only one of them sets `mayHaveSent`. A `fetch` that threw never left the
+machine; a provider refusal (bad key, unverified domain, 429) was rejected
+outright. Both were keeping the claim. My own note said "a second copy is
+worse than a late one" — but where nothing was sent, a second copy is
+impossible, so the default was inverted. `mayHaveSent` now decides whether
+the claim stands and it is the only thing that does. This one was worse
+than the unconfigured case for striking long after everything worked: one
+Resend outage during a nightly run and every milestone for every user is
+spent for good, with nothing but FAILED rows to show for it. Releasing
+never erases the FAILED event — the log is the only place anyone can see
+what happened.
+
+Known and accepted: `releaseClaims` is scoped to the keys one call claimed
+and only while unlinked or linked to its own message, so a concurrent run
+that succeeded is untouched. A rare interleaving could still release a
+competing run's spent-but-unsent rung, costing one duplicate email. That is
+better than permanently losing warnings on every transient failure.
+
+#### What this does not do
+
+**Nothing runs unattended.** The digest goes out from a button, so it
+reaches somebody who opens the app — the same reach the list already had.
+That is why Sheet 26's rows stay Partial: the bar that sheet set for itself
+("NOT Built until something pushes it") is met by the sending path and not
+by the trigger. A scheduled run is the whole remaining gap.
+
+Verified: 43 unit tests mutation-tested six ways, 12 database tests for
+what unit tests cannot reach (the constraint really refuses a second claim,
+a colleague's ledger is their own, a silenced alert never mails, and the
+full three-way failure taxonomy including a transient outage followed by a
+successful retry), and an 8-of-8 click-through on the preview against a
+real licence entered through the UI — the run that found the delivery-log
+wording. Step 6, delivery confirmation, is unprovable on a preview by
+construction: a preview-sent message lives in the demo database and Resend
+posts the event to production, which correctly ignores an id it has never
+seen. #38 already proved that path on production.
+
+Also worth recording: **the build type-checks `.dbtest.ts` files**, so a
+type error in a database test breaks `next build` even though CI never runs
+those tests.
+
+Migration is additive — one `CREATE TABLE`, its indexes, three FKs, no
+`ALTER` and no `DROP`. Generated with `migrate diff` against main's schema
+rather than `migrate dev`, which offered to reset.
+
 ### Carry the stale-save fix to the other eight forms (Diego)
 `claude/prova-contractor-os-e3f0iz`
 
