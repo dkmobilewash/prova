@@ -75,6 +75,9 @@ export async function sendMyAlertDigest(): Promise<ActionResult> {
   revalidatePath("/alerts");
   revalidatePath("/messages");
 
+  // An unconfigured provider is a setup problem, not a send failure, and
+  // nothing was consumed — so the message says what to do rather than
+  // implying the notices are gone.
   if (!outcome.ok) return fail(outcome.error);
 
   if (!outcome.sent) {

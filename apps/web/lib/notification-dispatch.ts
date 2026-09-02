@@ -1,5 +1,9 @@
 import { prisma } from "@prova/db";
-import { readEmailConfig, sendEmail } from "@prova/integrations";
+import {
+  emailSetupProblem,
+  readEmailConfig,
+  sendEmail,
+} from "@prova/integrations";
 import { loadAlerts } from "@/lib/alerts-query";
 import { digestBody, digestSubject } from "@/lib/notification-digest";
 import {
@@ -36,6 +40,7 @@ import {
 
 export type DispatchOutcome =
   | { ok: true; sent: false; reason: "nothing-due" | "already-claimed" }
+  | { ok: false; error: string; claimed: 0; unconfigured: true }
   | {
       ok: true;
       sent: true;
@@ -92,6 +97,30 @@ export async function dispatchAlertDigest(
   if (notices.length === 0)
     return { ok: true, sent: false, reason: "nothing-due" };
 
+  // BEFORE claiming anything. Sending that was never set up is not a
+  // failed send — it is a send that was never attempted, and there is no
+  // copy anywhere to worry about duplicating.
+  //
+  // Claiming first here was a real bug, and the worst one this feature
+  // could have: a company with no sending domain yet — which is every
+  // company on day one, so the likeliest first click there is — burned
+  // every milestone permanently. The licence warnings could then never be
+  // sent, not even after email was configured, because the ledger said
+  // they already had been. Nothing failed loudly; the emails simply never
+  // existed.
+  //
+  // This is the one failure that releases nothing because it takes
+  // nothing. Everything below it keeps its claim on purpose.
+  const config = readEmailConfig();
+  if (!config) {
+    return {
+      ok: false,
+      error: emailSetupProblem() ?? "Email sending isn't set up yet.",
+      claimed: 0,
+      unconfigured: true,
+    };
+  }
+
   const claimed = await claim(recipient, notices);
   // Another run got there first. Not an error: the person is being told,
   // just not by us.
@@ -100,7 +129,6 @@ export async function dispatchAlertDigest(
 
   const subject = digestSubject(notices);
   const body = digestBody(notices, baseUrl);
-  const config = readEmailConfig();
 
   const message = await prisma.outboundMessage.create({
     data: {
@@ -110,9 +138,7 @@ export async function dispatchAlertDigest(
       toName: recipient.name,
       subject,
       body,
-      // Recorded even when unconfigured, so the log never shows a blank
-      // sender — the same rule as the composer.
-      fromAddress: config?.from ?? "(not configured)",
+      fromAddress: config.from,
       relatedType: "ALERT_DIGEST",
       // Deliberately no sentByUserId: nobody sent this. Attributing it to
       // the recipient would put their name on mail they did not write.
@@ -129,17 +155,40 @@ export async function dispatchAlertDigest(
   });
 
   if (!result.ok) {
+    const mayHaveSent = result.mayHaveSent === true;
+
     await prisma.outboundMessageEvent.create({
       data: {
         messageId: message.id,
         // Same distinction the composer draws: a send the provider
         // accepted without returning an id DID reach it, and recording
         // that as failed invites a second copy.
-        type: result.mayHaveSent === true ? "QUEUED" : "FAILED",
+        type: mayHaveSent ? "QUEUED" : "FAILED",
         occurredAt: new Date(),
         detail: result.error,
       },
     });
+
+    // `mayHaveSent` decides whether the claim stands, and it is the only
+    // thing that should.
+    //
+    // A copy may be in somebody's inbox → the claim stands, because a
+    // duplicate compliance warning is worse than a late one and that is
+    // the whole judgement this feature is built on.
+    //
+    // Nothing was sent — the network never carried it, or the provider
+    // refused it outright — → the claim is released, because there is no
+    // copy anywhere and a second attempt cannot duplicate one. Keeping it
+    // was a bug of the same shape as claiming before checking config, and
+    // worse for happening in production long after everything worked: one
+    // Resend outage, one expired key, one unverified domain during a
+    // nightly run, and every milestone for every user is spent for good.
+    // Every send fails loudly in the log and the warnings are gone anyway.
+    if (!mayHaveSent) {
+      await releaseClaims(recipient.id, notices, message.id);
+      return { ok: false, error: result.error, claimed: 0 };
+    }
+
     return { ok: false, error: result.error, claimed };
   }
 
@@ -231,5 +280,32 @@ async function linkClaimsToMessage(
   await prisma.notificationDispatch.updateMany({
     where: { userId, dispatchKey: { in: fired }, messageId: null },
     data: { messageId },
+  });
+}
+
+/**
+ * Gives back milestones for a send that provably never went out, so the
+ * next run says the same thing again.
+ *
+ * Scoped to the keys THIS call claimed, and only while they are unlinked
+ * or linked to this call's own message — a concurrent run that succeeded
+ * has linked its fired rung to a different message and is not touched.
+ * The message row and its FAILED event stay: what happened is still what
+ * happened, and the log is the only place anyone can see it.
+ */
+async function releaseClaims(
+  userId: string,
+  notices: DueNotice[],
+  messageId: string,
+): Promise<void> {
+  const keys = notices.flatMap(keysConsumed);
+  if (keys.length === 0) return;
+
+  await prisma.notificationDispatch.deleteMany({
+    where: {
+      userId,
+      dispatchKey: { in: keys },
+      OR: [{ messageId: null }, { messageId }],
+    },
   });
 }

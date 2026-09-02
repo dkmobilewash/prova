@@ -190,7 +190,56 @@ describe("dispatching a digest", () => {
     expect(sendEmail).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps the claim when the provider refuses, rather than re-arming", async () => {
+  it("gives the milestone BACK when the provider was never reached", async () => {
+    // A new fact, so there is something to send.
+    const licence = await prisma.companyLicense.findFirst({
+      where: { companyId: recipient.companyId },
+    });
+    await prisma.companyLicense.update({
+      where: { id: licence!.id },
+      data: { expirationDate: utc("2026-09-05") },
+    });
+
+    sendEmail.mockClear();
+    // A network failure: no mayHaveSent, so nothing went out.
+    sendEmail.mockResolvedValueOnce({
+      ok: false,
+      error: "Couldn't reach the email provider: socket hang up",
+      configured: true,
+    });
+
+    const failed = await dispatchAlertDigest(
+      recipient,
+      TODAY,
+      "https://app.example.test",
+    );
+    expect(failed).toMatchObject({ ok: false });
+
+    // The whole point: a transient outage must not spend the warning. One
+    // Resend blip during a nightly run would otherwise burn every
+    // milestone for every user, permanently and silently.
+    sendEmail.mockClear();
+    sendEmail.mockResolvedValueOnce(accepted("prov_retry"));
+    const retried = await dispatchAlertDigest(
+      recipient,
+      TODAY,
+      "https://app.example.test",
+    );
+
+    expect(retried).toMatchObject({ ok: true, sent: true });
+    expect(sendEmail).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the FAILED record even after giving the milestone back", async () => {
+    // Releasing the claim must not erase what happened. The log is the
+    // only place anyone can see that a send failed.
+    const failures = await prisma.outboundMessageEvent.findMany({
+      where: { message: { companyId: recipient.companyId }, type: "FAILED" },
+    });
+    expect(failures.length).toBeGreaterThan(0);
+  });
+
+  it("keeps the claim when the send MAY have gone out", async () => {
     // A new fact, so there is something to send: renewing the licence
     // changes the alert key and the ladder starts over.
     const licence = await prisma.companyLicense.findFirst({
@@ -204,8 +253,10 @@ describe("dispatching a digest", () => {
     sendEmail.mockClear();
     sendEmail.mockResolvedValueOnce({
       ok: false,
-      error: "Provider refused",
+      error: "The provider accepted this but returned no message id",
       configured: true,
+      // The one failure that keeps its claim: the provider took it.
+      mayHaveSent: true,
     });
 
     const failed = await dispatchAlertDigest(
@@ -213,17 +264,19 @@ describe("dispatching a digest", () => {
       TODAY,
       "https://app.example.test",
     );
-    expect(failed).toMatchObject({ ok: false, error: "Provider refused" });
+    expect(failed).toMatchObject({ ok: false });
 
-    // The failure is in the delivery log, where a person can see it.
-    const events = await prisma.outboundMessageEvent.findMany({
-      where: { message: { companyId: recipient.companyId }, type: "FAILED" },
+    // It goes down as QUEUED, not FAILED: the provider accepted it, so
+    // the mail has almost certainly gone.
+    const queued = await prisma.outboundMessageEvent.findMany({
+      where: { message: { companyId: recipient.companyId }, type: "QUEUED" },
     });
-    expect(events.length).toBe(1);
+    expect(queued.length).toBeGreaterThan(0);
 
-    // And it does NOT try again by itself. A retry loop on a send that may
+    // And it does NOT try again by itself. A retry on a send that may
     // have gone out is how somebody gets the same warning twice.
     sendEmail.mockClear();
+    sendEmail.mockResolvedValue(accepted("prov_should_not_be_used"));
     const again = await dispatchAlertDigest(
       recipient,
       TODAY,
