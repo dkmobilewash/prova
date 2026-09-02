@@ -31,6 +31,7 @@ const isProtectedRoute = createRouteMatcher([
   // list is the allowlist a reader checks, and a data route missing from
   // it looks public whether or not it is.
   "/api/ask(.*)",
+  "/messages(.*)",
 ]);
 
 // /api/integrations/webhooks/[provider] is deliberately NOT protected here.
@@ -41,6 +42,12 @@ const isProtectedRoute = createRouteMatcher([
 // connection already claims. Signature verification arrives with the first
 // provider that has one.
 //
+// /api/messages/webhook is deliberately NOT protected here either. Email
+// delivery events come from the provider, which has no Clerk session and
+// never will. That route authenticates the request itself by verifying the
+// signature over the raw body, and fails closed when no secret is set — an
+// unverified "delivered" is worse than no event, because the whole value of
+// the log is that a delivered in it means something.
 // /api/quickbooks/callback is deliberately NOT protected here — see
 // QuickBooksOAuthCookiePayload in lib/quickbooks-constants.ts. Intuit's
 // redirect back to that route is a third-party-initiated navigation;

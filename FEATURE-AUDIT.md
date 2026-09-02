@@ -23,24 +23,15 @@ in flight. Left as-is here rather than guessed at from the outside; the next
 update to touch those sheets should come from whoever actually verified them
 against a fresh clone.
 
-**112 items audited — 82 built / 21 partial / 8 missing / 1 descoped**
+**113 items audited — 83 built / 21 partial / 8 missing / 1 descoped**
 
 | Status | Count |
 | --- | --- |
-| Built | 81 |
+| Built | 83 |
 | Partial | 21 |
-| Missing | 7 |
+| Missing | 8 |
 | Descoped | 1 |
 
-These two tallies have disagreed with each other, and with the sheets'
-own headers, since before this edit. Sheet 13's +2 built / −2 missing,
-Sheet 22's +1 built, Sheet 26's +1 built / +2 partial / −2 missing and
-Sheet 25's +1 built / +1 partial / −2 missing and Sheet 21's +1 built /
-−1 missing and Sheet 09's +2 built / +1 partial / −3 missing (with Sheet 26's
-apprentice row moving Missing → Partial) are applied to both rather than recomputing
-everything, because recomputing every header from its rows is already in
-flight on another branch and two people rewriting the same totals is how
-they got out of step in the first place.
 
 ## 01. Company / Org Setup — 5 built · 0 partial · 0 missing
 
@@ -292,7 +283,7 @@ rows below were already Built and are unchanged.*
 | Missing | Plan/drawing takeoff via computer vision | explicitly deferred as a later, larger effort — different modality, different accuracy bar |
 | Descoped | Client-facing chatbot | GCs are the customer here, not homeowners — deliberately out of scope for this ICP |
 
-## 24. Integrations — 2 built · 2 partial · 2 missing
+## 24. Integrations — 3 built · 2 partial · 2 missing
 
 | Status | Feature | Note |
 | --- | --- | --- |
@@ -302,6 +293,7 @@ rows below were already Built and are unchanged.*
 | Missing | DocuSign, Procore, myCOI | 0 built. Each has a registry entry so the page can render it, and each renders DISABLED with a "Coming soon" label. A card on a settings page is not an integration |
 | Partial | E-signature provider | homegrown token-based e-sign (`SignatureRequest`) covers contract signing only — not a general provider for every doc type |
 | Built | Anthropic API (for the AI features above) | three shipped features now call Claude |
+| Built | Outbound email from the contractor's own domain, with a delivery log | `OutboundMessage` + `OutboundMessageEvent`, `/messages` — provider-agnostic send, signed delivery webhook that fails closed, events deduplicated by provider id, status derived from the newest event and never stored. Sends as the contractor, not as us: mail from a vendor domain is the deliverability complaint the research report found at every competitor. SMS is in the channel enum and not wired |
 
 ## 25. Roles & Permissions — 1 built · 1 partial · 0 missing
 
@@ -315,7 +307,7 @@ meaning exactly what it meant.*
 | Built | Distinct roles: estimator, PM, foreman/field, payroll/compliance admin, owner/exec, accounting | `JobFunction` — a second, orthogonal column to `UserRole` — plus `lib/permissions.ts` mapping each to a capability set, set by the owner on `/team`. NULL is a real value meaning "nobody has said", and grants exactly the access every MEMBER has always had, so no existing row loses anything. An OWNER holds every capability regardless, because an owner locked out by a dropdown has nobody to undo it. Enforced server-side by `requireCapability()` on the page; the nav filter is cosmetic and says so in its own comment |
 | Partial | Field-only mobile access vs. office full access | the FIELD tier is enforced everywhere the app shows money. Whole pages refuse it (`/cash-flow`, `/catalog`, `/bids`, `/vendors/pricing`, `/backcharges`, `/compliance`, `/settings`); the company metric bar is withheld from every screen; alerts are filtered by the capability their subject needs and stripped of figures they may not see; `/closeout` hides retainage; and `/jobs/[id]`, `/dashboard` and `/contacts/[id]` now withhold the contract summary, job costing & WIP, invoices, retainage, change orders, estimate line items, receivables, job health and per-job contract value. The dashboard withholds the receivables ROWS, not just the list, since the provider is a client component. **Still Partial for one honest reason: there is no mobile SURFACE.** It is the same responsive site, narrowed — the audit row asks for field-only *mobile* access, and an offline-capable field app with camera capture is a separate build, not a permission |
 
-## 26. Notifications & Alerts — 1 built · 4 partial · 1 missing
+## 26. Notifications & Alerts — 1 built · 5 partial · 0 missing
 
 *Updated 1 Sep 2026 — the alert engine shipped. Four of these rows moved,
 and NONE of them moved to Built, because the bar this sheet set for itself

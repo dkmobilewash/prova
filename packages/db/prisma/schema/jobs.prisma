@@ -88,6 +88,7 @@ model Job {
   backchargeCounter            BackchargeCounter?
   closeoutSubmissions          CloseoutSubmission[]
   closeoutSubmissionCounter    CloseoutSubmissionCounter?
+  outboundMessages             OutboundMessage[]
 
   @@index([companyId])
   @@index([contactId])

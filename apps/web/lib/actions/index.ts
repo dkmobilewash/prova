@@ -36,3 +36,4 @@ export * from "./alerts";
 export * from "./permissions";
 export * from "./prevailingWage";
 export * from "./unionCompliance";
+export * from "./messages";
