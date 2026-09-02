@@ -345,6 +345,8 @@ export type NavGroup = {
   items: (NavItem & { disabled?: boolean })[];
 };
 
+import { canReach, type Principal } from "@/lib/permissions";
+
 const byHref = new Map(NAV_ITEMS.map((item) => [item.href, item]));
 const item = (href: string): NavItem => {
   const found = byHref.get(href);
@@ -381,3 +383,25 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [item("/cash-flow"), item("/backcharges"), item("/settings")],
   },
 ];
+
+/**
+ * The rail as one person sees it.
+ *
+ * NOT a security boundary, and it must never be mistaken for one — hiding
+ * a link hides nothing, since the URL still exists and can be typed or
+ * pasted from a colleague. requireCapability() on the page is the
+ * boundary; this only stops the rail advertising doors that will not open,
+ * and drops a group that empties out entirely so nobody gets a heading
+ * with nothing under it.
+ *
+ * One function used by both the desktop rail and the mobile drawer, for
+ * the same reason NAV_GROUPS itself is shared: a filter applied in one and
+ * forgotten in the other is a feature that exists on a phone and not on a
+ * laptop.
+ */
+export function navGroupsFor(user: Principal): NavGroup[] {
+  return NAV_GROUPS.map((group) => ({
+    ...group,
+    items: group.items.filter((item) => canReach(user, item.href)),
+  })).filter((group) => group.items.length > 0);
+}

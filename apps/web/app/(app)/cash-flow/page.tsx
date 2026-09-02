@@ -1,5 +1,6 @@
 import { prisma } from "@prova/db";
-import { requireCompanyContext } from "@/lib/auth";
+import { requireCapability } from "@/lib/authz";
+import { NoAccess } from "@/components/NoAccess";
 import { money } from "@/lib/money";
 import { calculateRetainageSummary } from "@/lib/retainage";
 import {
@@ -21,7 +22,9 @@ const AGING_BUCKET_LABELS: Record<ArAgingBucket, string> = {
 const FORECAST_MONTHS_AHEAD = 6;
 
 export default async function CashFlowPage() {
-  const { company } = await requireCompanyContext();
+  const { context, allowed } = await requireCapability("VIEW_COMPANY_FINANCIALS");
+  if (!allowed) return <NoAccess capability="VIEW_COMPANY_FINANCIALS" />;
+  const { company } = context;
 
   const jobs = await prisma.job.findMany({
     where: { companyId: company.id },

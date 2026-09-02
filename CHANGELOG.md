@@ -12,6 +12,63 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### Roles that mean something, and the holes they do not close yet (Diego)
+`claude/prova-contractor-os-e3f0iz`
+
+Sheet 25 was 0 built: two values in `UserRole`, no tier below MEMBER.
+
+**`UserRole` is untouched.** It still has two values and still answers one
+question — can this person administer the account. Every `assertOwner()` in
+`lib/actions/*` keeps meaning exactly what it meant. Job function is a
+second, orthogonal column, because folding "estimator" and "foreman" into
+the same enum would have made every existing owner-only guard ambiguous
+overnight.
+
+`User.jobFunction` is nullable with **no backfill**, and that null is the
+whole safety argument: it means nobody has said, and the person keeps the
+access every member has always had. Nobody loses anything the day this
+ships. An OWNER holds every capability regardless of it — an owner locked
+out of their own books by a dropdown has nobody to undo it on a
+single-owner company. An unrecognised value falls back to full access
+rather than none, since it is far more likely a newer enum member than an
+attack.
+
+**`requireCapability()` on the page is the boundary; the nav filter is
+decoration and says so in its own comment.** Hiding a link hides nothing.
+A test asserts `canReach()` and `can()` agree on every guarded route for
+every principal, so a link can never point at a door that will not open —
+nor, far worse, a door be left unlisted and unguarded.
+
+**Auditing my own claim found real holes, and closing the ones I own
+changed the shape of the work.** A FIELD user could still be told, by name
+and to the dollar, that a $42,000 backcharge was unanswered — because
+alerts had no notion of permission. They now carry the capability their
+SUBJECT needs, and money figures are stripped from the ones a restricted
+person may otherwise see: that the GC has sat on the closeout package for
+six weeks is operational, what it holds up in dollars is not. `/closeout`
+hides retainage the same way, and the company metric bar — money along the
+bottom of *every* screen — is withheld entirely. A permission enforced on
+`/cash-flow` and then rendered on every other page is not enforced.
+
+**What it still does not close, said here rather than found later.**
+`/jobs/[id]`, `/dashboard` and `/contacts/[id]` show a FIELD user cost,
+margin, invoiced totals and payment reliability. All three are in another
+session's lane. Half-editing someone else's page to close a permissions
+hole is worse than naming it — a page that filters in one place and not
+another reads as enforced when it is not. Sheet 25's second row stays
+**Partial** for that reason, plus there being no mobile surface, only the
+same responsive site narrowed.
+
+Verified: 15 unit tests on the capability map (including the exhaustive
+nav-versus-guard agreement check), 5 on the alert filter, and 8 db tests —
+the column arriving null and costing an existing member nothing, a
+non-owner refused outright, another company's member refused, an owner
+refused a job function with a reason, and an owner still holding
+everything even if the column somehow says FIELD. `pnpm test` 473 → 493,
+58 db tests, typecheck/lint/build clean.
+
+---
+
 ### Alerts: derived, ranked, and possible to acknowledge (Diego)
 `claude/prova-contractor-os-e3f0iz`
 

@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { NAV_GROUPS } from "@/components/navItems";
+import { navGroupsFor } from "@/components/navItems";
+import type { Principal } from "@/lib/permissions";
 
 /**
  * Navigation on a phone.
@@ -17,7 +18,10 @@ import { NAV_GROUPS } from "@/components/navItems";
  * One shared NAV_ITEMS list, so the two can never disagree about what pages
  * exist.
  */
-export function MobileNav({ companyName }: { companyName: string }) {
+export function MobileNav({ companyName, principal }: { companyName: string; principal: Principal }) {
+  // Filtered here rather than in the layout so the desktop rail and
+  // the mobile drawer run the same function on the same input.
+  const groups = navGroupsFor(principal);
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
 
@@ -86,7 +90,7 @@ export function MobileNav({ companyName }: { companyName: string }) {
                 in a different order, which is the same drift this file's
                 shared NAV list exists to prevent — one nav, two shapes. */}
             <nav className="flex flex-1 flex-col gap-4 overflow-y-auto px-3 py-4">
-              {NAV_GROUPS.flatMap((group) => [
+              {groups.flatMap((group) => [
                 <p
                   key={group.heading}
                   className="px-3 pt-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500"

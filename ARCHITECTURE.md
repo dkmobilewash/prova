@@ -818,6 +818,70 @@ Release *forecasting* is a plain field
 system — there's no closeout/warranty stage in `JobStatus` yet for a
 forecast to hook into more precisely than that.
 
+## Roles: two orthogonal questions, not one enum
+
+`UserRole` has two values and answers one question — can this person
+ADMINISTER the company (invite, remove, connect an integration). This
+feature does not touch it. Every `assertOwner()` in `lib/actions/*`
+already means that and still does.
+
+Job function is the second, orthogonal question: what does this person DO,
+and therefore what do they need to see. Folding "estimator" and "foreman"
+into `UserRole` would have made every existing owner-only guard ambiguous
+overnight, and a permissions guard that means two things is a security bug
+waiting for its first Monday.
+
+`User.jobFunction` is nullable with **no backfill**, and that null is the
+whole migration-safety argument. It means nobody has said, and the person
+keeps exactly the access every `MEMBER` has had since multi-user companies
+existed. Shipping this takes nothing from anyone until an owner chooses to.
+`capabilitiesFor()` applies three rules in order: an OWNER holds
+everything always; an unset (or unrecognised) function grants the full
+member set; otherwise the function's list. The owner rule is not a
+convenience — an owner locked out of their own books by a dropdown has
+nobody to undo it on a single-owner company, which is most of them. The
+unrecognised-value rule falls back to full access rather than none, because
+a value this build does not know is far more likely to be a newer enum
+member than an attack.
+
+### Where it is enforced, and where it is only decorated
+
+`requireCapability()` in `lib/authz.ts` is the boundary. Guarded pages call
+it and render `<NoAccess>` — not a 404 and not a redirect, both of which
+tell a foreman following a colleague's link that the app is broken and
+produce a phone call.
+
+`navGroupsFor()` filtering the rail is **cosmetic and says so in its own
+comment**. Hiding a link hides nothing: the URL still exists and can be
+typed or pasted. The two read the same `ROUTE_CAPABILITY` map, and a test
+asserts `canReach()` and `can()` agree on every route for every principal,
+so a link can never be shown to a door that will not open — nor, far worse,
+a door left unlisted and unguarded.
+
+Alerts carry the capability their SUBJECT needs (`ALERT_CAPABILITY`).
+Without that the alert list would be a hole straight through the job
+functions: a foreman with no billing access would still be told, by name
+and to the dollar, that a $42,000 backcharge was unanswered. Money figures
+are also stripped from alerts a restricted person may otherwise see — that
+the GC has sat on the closeout package for six weeks is operational; what
+it is holding up in dollars is a margin conversation.
+
+### What the FIELD tier does not yet withhold
+
+Stated here rather than discovered later. `/jobs/[id]`, `/dashboard` and
+`/contacts/[id]` still render cost, margin, invoiced totals and payment
+reliability to a FIELD user. All three are in another session's lane, and
+half-editing someone else's page to close a permissions hole produces a
+worse outcome than naming it: a page that filters in one place and not
+another reads as enforced when it is not. FEATURE-AUDIT Sheet 25 keeps
+that row at Partial for exactly this reason. There is also no mobile
+SURFACE — it is the same responsive site, narrowed.
+
+Per-company overrides of the capability map are not built. A settings page
+editing a map nothing reads would be worse than the honest absence; where a
+default was genuinely arguable (a PM holding `MANAGE_BILLING`, an estimator
+holding `VIEW_JOB_COSTS`) the reasoning is written at the mapping itself.
+
 ## Alerts — derived, ranked, and acknowledgeable
 
 There is no `Alert` table, and there is not going to be one. Every alert

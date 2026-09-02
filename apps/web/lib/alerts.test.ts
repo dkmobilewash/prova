@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  ALERT_CAPABILITY,
   ALERT_HORIZON_DAYS,
   CLOSEOUT_CHASE_DAYS,
   alertKey,
@@ -11,6 +12,7 @@ import {
   renewalAlert,
   retainageAlerts,
   summarizeAlerts,
+  visibleToPrincipal,
   wipAlerts,
   type Alert,
 } from "./alerts";
@@ -352,5 +354,64 @@ describe("summarizeAlerts", () => {
     expect(summary.standing).toBe(1);
     expect(summary.total).toBe(2);
     expect(summary.amountNamed).toBe(22200);
+  });
+});
+
+describe("visibleToPrincipal", () => {
+  const holdsAll = () => true;
+  const foreman = (capability: string) =>
+    capability === "MANAGE_FIELD" || capability === "MANAGE_JOBS";
+
+  const backcharge = backchargeAlerts(
+    [
+      {
+        id: "bc_1",
+        number: 3,
+        jobName: "Mercy Tower",
+        status: "RECEIVED",
+        claimedAmount: 42000,
+        respondByDate: "2026-08-25",
+      },
+    ],
+    TODAY,
+  );
+  const closeout = closeoutAlerts(
+    [{ jobId: "job_1", jobName: "Mercy Tower", submittedOn: "2026-08-01", retainageBalance: 13420 }],
+    TODAY,
+  );
+
+  it("gives every kind a capability, with no gaps", () => {
+    // A kind added without an entry here would fall through the filter as
+    // undefined and be shown to everybody, which is the failure mode this
+    // whole map exists to close.
+    for (const alert of [...backcharge, ...closeout]) {
+      expect(ALERT_CAPABILITY[alert.kind]).toBeTruthy();
+    }
+  });
+
+  it("passes everything through for someone unrestricted", () => {
+    expect(visibleToPrincipal([...backcharge, ...closeout], holdsAll)).toHaveLength(2);
+  });
+
+  it("keeps a $42,000 backcharge away from a foreman entirely", () => {
+    // Not merely un-priced — a foreman has no business being told a
+    // backcharge exists, and an alert is a summary of the thing it points
+    // at, so it needs that thing's permission.
+    const visible = visibleToPrincipal(backcharge, foreman);
+    expect(visible).toEqual([]);
+  });
+
+  it("lets a foreman see the package is stuck, without the money on it", () => {
+    const [alert] = visibleToPrincipal(closeout, foreman);
+    expect(alert).toBeDefined();
+    expect(alert.detail).toContain("31 days ago");
+    // The stuck package is operational; what it holds up is a margin
+    // conversation.
+    expect(alert.amount).toBeNull();
+  });
+
+  it("keeps the figure for someone who may see billing", () => {
+    const [alert] = visibleToPrincipal(closeout, (c) => c === "MANAGE_JOBS" || c === "MANAGE_BILLING");
+    expect(alert.amount).toBe(13420);
   });
 });

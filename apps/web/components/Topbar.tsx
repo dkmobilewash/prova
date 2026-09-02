@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { UserButton } from "@clerk/nextjs";
 import { MobileNav } from "@/components/MobileNav";
+import type { Principal } from "@/lib/permissions";
 
 /** Chrome stays dark alongside the rail, so the frame is one thing and the
  * page inside it is another. Converts to the light tokens when the pages
@@ -15,14 +16,16 @@ export function Topbar({
    * control that disappears when it has nothing to say cannot be trusted
    * to appear when it does. */
   alertCount,
+  principal,
 }: {
   companyName: string;
   alertCount: number;
+  principal: Principal;
 }) {
   return (
     <div className="print:hidden flex h-14 shrink-0 items-center justify-between gap-3 border-b border-slate-800 bg-slate-900 px-4 sm:px-6">
       {/* Renders nothing above md — the desktop rail is always visible there. */}
-      <MobileNav companyName={companyName} />
+      <MobileNav companyName={companyName} principal={principal} />
       <div className="ml-auto flex items-center gap-3">
         <Link
           href="/alerts"

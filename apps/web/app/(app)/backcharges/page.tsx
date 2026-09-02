@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@prova/db";
-import { requireCompanyContext } from "@/lib/auth";
+import { requireCapability } from "@/lib/authz";
+import { NoAccess } from "@/components/NoAccess";
 import { BackchargeForm } from "@/components/BackchargeForm";
 import { BackchargeRow } from "@/components/BackchargeRow";
 import { isResponseOverdue, summarizeBackcharges } from "@/lib/backcharges";
@@ -18,7 +19,9 @@ export default async function BackchargesPage({
 }: {
   searchParams: Promise<{ job?: string; show?: string }>;
 }) {
-  const { company, ...currentUser } = await requireCompanyContext();
+  const { context, allowed } = await requireCapability("MANAGE_BILLING");
+  if (!allowed) return <NoAccess capability="MANAGE_BILLING" />;
+  const { company, ...currentUser } = context;
   const { job: jobFilter, show } = await searchParams;
   const showResolved = show === "all";
 

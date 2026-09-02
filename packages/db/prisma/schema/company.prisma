@@ -77,6 +77,14 @@ model User {
   // New rows always set this explicitly in code (OWNER on first sign-in,
   // MEMBER on invite acceptance) — this default only matters for backfill.
   role      UserRole @default(OWNER)
+
+  /// What this person does, as distinct from `role` above — see
+  /// permissions.prisma. Nullable, with no backfill: null means nobody
+  /// has said, and the person keeps the full office access every MEMBER
+  /// has always had. Only an OWNER can set it, and an OWNER's own
+  /// capabilities never depend on it.
+  jobFunction JobFunction?
+
   companyId String
   company   Company  @relation(fields: [companyId], references: [id])
   createdAt DateTime @default(now())

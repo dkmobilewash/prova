@@ -23,19 +23,19 @@ in flight. Left as-is here rather than guessed at from the outside; the next
 update to touch those sheets should come from whoever actually verified them
 against a fresh clone.
 
-**112 items audited — 78 built / 18 partial / 15 missing / 1 descoped**
+**112 items audited — 79 built / 19 partial / 13 missing / 1 descoped**
 
 | Status | Count |
 | --- | --- |
-| Built | 77 |
-| Partial | 18 |
-| Missing | 14 |
+| Built | 78 |
+| Partial | 19 |
+| Missing | 12 |
 | Descoped | 1 |
 
 These two tallies have disagreed with each other, and with the sheets'
 own headers, since before this edit. Sheet 13's +2 built / −2 missing,
-Sheet 22's +1 built and Sheet 26's +1 built / +2 partial / −2 missing are
-applied to both rather than recomputing
+Sheet 22's +1 built, Sheet 26's +1 built / +2 partial / −2 missing and
+Sheet 25's +1 built / +1 partial / −2 missing are applied to both rather than recomputing
 everything, because recomputing every header from its rows is already in
 flight on another branch and two people rewriting the same totals is how
 they got out of step in the first place.
@@ -293,12 +293,17 @@ rows below were already Built and are unchanged.*
 | Partial | E-signature provider | homegrown token-based e-sign (`SignatureRequest`) covers contract signing only — not a general provider for every doc type |
 | Built | Anthropic API (for the AI features above) | three shipped features now call Claude |
 
-## 25. Roles & Permissions — 0 built · 0 partial · 2 missing
+## 25. Roles & Permissions — 1 built · 1 partial · 0 missing
+
+*Updated 1 Sep 2026 — job functions shipped. `UserRole` is deliberately
+unchanged: it still has two values and still answers only "can this person
+administer the account", so every `assertOwner()` in `lib/actions/*` keeps
+meaning exactly what it meant.*
 
 | Status | Feature | Note |
 | --- | --- | --- |
-| Missing | Distinct roles: estimator, PM, foreman/field, payroll/compliance admin, owner/exec, accounting | today's `UserRole` has exactly two values, OWNER and MEMBER |
-| Missing | Field-only mobile access vs. office full access | no access tier below MEMBER, no mobile-specific surface |
+| Built | Distinct roles: estimator, PM, foreman/field, payroll/compliance admin, owner/exec, accounting | `JobFunction` — a second, orthogonal column to `UserRole` — plus `lib/permissions.ts` mapping each to a capability set, set by the owner on `/team`. NULL is a real value meaning "nobody has said", and grants exactly the access every MEMBER has always had, so no existing row loses anything. An OWNER holds every capability regardless, because an owner locked out by a dropdown has nobody to undo it. Enforced server-side by `requireCapability()` on the page; the nav filter is cosmetic and says so in its own comment |
+| Partial | Field-only mobile access vs. office full access | the FIELD tier exists and is genuinely enforced: `/cash-flow`, `/catalog`, `/bids`, `/vendors/pricing`, `/backcharges`, `/compliance` and `/settings` refuse it, the company metric bar is withheld from every screen, alerts are filtered by the capability their subject needs (a foreman is never told a $42,000 backcharge exists, and sees a stuck closeout package without the money on it), and `/closeout` hides retainage. **Three pages still show a FIELD user cost or margin** — `/jobs/[id]`, `/dashboard` and `/contacts/[id]` — all in another session's lane and listed here rather than half-edited. There is also no mobile-specific SURFACE: it is the same responsive site, narrowed. Not Built until those three are closed |
 
 ## 26. Notifications & Alerts — 1 built · 4 partial · 1 missing
 

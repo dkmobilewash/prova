@@ -59,7 +59,15 @@ one at a time:
    main, so four of Sheet 26's rows stay Partial on purpose. If the
    `sendOutboundEmail` work lands in the other lane, it feeds from
    `loadAlerts` rather than growing its own rules.
-4. **Roles & Permissions** — Sheet 25, still `OWNER`/`MEMBER` only.
+4. **Roles & Permissions** — Sheet 25. *Shipped 1 Sep, with a named gap.*
+   `permissions.prisma` (`JobFunction`, a nullable column on `User` —
+   `UserRole` untouched), `lib/permissions.ts`, `lib/authz.ts`,
+   `lib/actions/permissions.ts`, a picker on `/team`. **Handoff:**
+   `/jobs/[id]`, `/dashboard` and `/contacts/[id]` still show a FIELD user
+   cost and margin. Each needs the same two lines the guarded pages use —
+   `can(principal, "VIEW_JOB_COSTS")` around the cost/WIP sections — and
+   they are in the other lanes, so they are named here rather than
+   half-edited.
 5. **Multi-state prevailing wage rules** — Sheet 21.
 6. **Apprentice / fringe remittance reporting** — Sheet 09.
 

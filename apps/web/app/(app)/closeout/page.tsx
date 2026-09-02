@@ -13,6 +13,7 @@ import {
 import { closeoutReadiness, needsAttention } from "@/lib/closeout-readiness";
 import { calculateRetainageSummary } from "@/lib/retainage";
 import { money } from "@/lib/money";
+import { can } from "@/lib/permissions";
 
 /** Stored at UTC midnight, rendered in UTC — same rule as every other
  * dated record in this app. */
@@ -126,6 +127,15 @@ export default async function CloseoutPage() {
     ),
   }));
 
+  // Retainage is the company's money, not everyone's business. A foreman
+  // needs to know the package is stuck; what it is holding up in dollars
+  // is a margin conversation. Without this the job-function work would
+  // have a hole straight through it on a page a field tier can reach.
+  const showsMoney = can(
+    { role: currentUser.role, jobFunction: currentUser.jobFunction },
+    "VIEW_COMPANY_FINANCIALS",
+  );
+
   const attention = needsAttention(withReadiness);
   const readyToSubmit = withReadiness.filter((j) => j.readiness.stage === "READY_TO_SUBMIT");
   const retainageBehindCloseout = attention.reduce((sum, j) => sum + j.readiness.retainageAtStake, 0);
@@ -169,10 +179,10 @@ export default async function CloseoutPage() {
         </div>
         <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
           <p className="font-mono text-xl font-semibold text-slate-100">
-            {money(retainageBehindCloseout)}
+            {showsMoney ? money(retainageBehindCloseout) : `${attention.length} jobs`}
           </p>
           <p className="text-xs text-slate-500">
-            Retainage behind an unfinished closeout
+            {showsMoney ? "Retainage behind an unfinished closeout" : "Waiting on something"}
             {readyToSubmit.length > 0 && (
               <span className="text-amber-300"> · {readyToSubmit.length} ready to send today</span>
             )}
@@ -198,7 +208,7 @@ export default async function CloseoutPage() {
                     : {job.readiness.blockers.map(blockerLabel).join(", ")}
                   </span>
                 )}
-                {job.readiness.retainageAtStake > 0 && (
+                {showsMoney && job.readiness.retainageAtStake > 0 && (
                   <span className="font-mono text-slate-400">
                     {" "}
                     · {money(job.readiness.retainageAtStake)} held
@@ -227,7 +237,11 @@ export default async function CloseoutPage() {
               packageSlot={
                 <CloseoutPackagePanel
                   jobId={job.id}
-                  readiness={job.readiness}
+                  readiness={
+                    showsMoney
+                      ? job.readiness
+                      : { ...job.readiness, retainageAtStake: 0 }
+                  }
                   submissions={job.submissions}
                   canDelete={currentUser.role === "OWNER"}
                 />

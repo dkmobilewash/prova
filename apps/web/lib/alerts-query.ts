@@ -5,6 +5,7 @@ import {
   closeoutAlerts,
   partitionAlerts,
   renewalAlert,
+  visibleToPrincipal,
   retainageAlerts,
   wipAlerts,
   type Alert,
@@ -17,6 +18,7 @@ import { calculateRetainageSummary } from "@/lib/retainage";
 import { calculateJobWip, calculateLineItemWip } from "@/lib/wip";
 import { jobIsOverBudget } from "@/lib/company-financials";
 import { weekStart } from "@/components/fieldReportWeeks";
+import { can, type Principal } from "@/lib/permissions";
 
 /**
  * Every alert one company currently has, assembled from the rows that
@@ -44,6 +46,11 @@ export async function loadAlerts(
   companyId: string,
   userId: string,
   todayIso: string,
+  /** Whose list this is. An alert is a summary of the thing it points at,
+   * so it needs the same permission that thing does — see
+   * ALERT_CAPABILITY. Omitted means unrestricted, which is what an owner
+   * and an unset member both get anyway. */
+  principal: Principal = { role: "OWNER", jobFunction: null },
 ): Promise<PartitionedAlerts> {
   const [renewalSources, backcharges, jobs, acknowledgements] = await Promise.all([
     renewalSourcesForCompany(companyId),
@@ -224,12 +231,14 @@ export async function loadAlerts(
   alerts.push(...certifiedPayrollAlerts(payrollSources, todayIso));
   alerts.push(...wipAlerts(wipSources));
 
+  const permitted = visibleToPrincipal(alerts, (capability) => can(principal, capability));
+
   const acks: Acknowledgement[] = acknowledgements.map((a) => ({
     alertKey: a.alertKey,
     snoozedUntil: isoDate(a.snoozedUntil),
   }));
 
-  return partitionAlerts(alerts, acks, todayIso);
+  return partitionAlerts(permitted, acks, todayIso);
 }
 
 /** Just the count, for the bell in the top bar. Runs the same assembly —
@@ -239,7 +248,8 @@ export async function countVisibleAlerts(
   companyId: string,
   userId: string,
   todayIso: string,
+  principal?: Principal,
 ): Promise<number> {
-  const { visible } = await loadAlerts(companyId, userId, todayIso);
+  const { visible } = await loadAlerts(companyId, userId, todayIso, principal);
   return visible.length;
 }

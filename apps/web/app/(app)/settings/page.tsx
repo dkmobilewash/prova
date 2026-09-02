@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@prova/db";
-import { requireCompanyContext } from "@/lib/auth";
+import { requireCapability } from "@/lib/authz";
+import { NoAccess } from "@/components/NoAccess";
 import {
   createBond,
   createCompanyLocation,
@@ -106,7 +107,9 @@ export default async function SettingsPage({
 }: {
   searchParams: Promise<{ qb?: string; qb_detail?: string }>;
 }) {
-  const { company, ...currentUser } = await requireCompanyContext();
+  const { context, allowed } = await requireCapability("MANAGE_COMPLIANCE");
+  if (!allowed) return <NoAccess capability="MANAGE_COMPLIANCE" />;
+  const { company, ...currentUser } = context;
   const { qb, qb_detail } = await searchParams;
 
   if (currentUser.role !== "OWNER") {

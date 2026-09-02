@@ -15,7 +15,10 @@ export default async function AlertsPage({
   const showSilenced = show === "silenced";
 
   const today = new Date().toISOString().slice(0, 10);
-  const { visible, silenced } = await loadAlerts(company.id, currentUser.id, today);
+  const { visible, silenced } = await loadAlerts(company.id, currentUser.id, today, {
+    role: currentUser.role,
+    jobFunction: currentUser.jobFunction,
+  });
   const summary = summarizeAlerts(visible);
 
   const rows = showSilenced ? silenced : visible;

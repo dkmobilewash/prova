@@ -30,6 +30,8 @@ import {
   renewalTiming,
 } from "@/lib/compliance-expiry";
 
+import type { Capability } from "@/lib/permissions";
+
 export type AlertKind =
   | "RENEWAL"
   | "BACKCHARGE_RESPONSE"
@@ -65,6 +67,52 @@ export type Alert = {
    * is holding up $42,000. */
   amount: number | null;
 };
+
+/**
+ * What a person must be able to see for an alert of this kind to reach
+ * them at all.
+ *
+ * Without this, the alert list is a hole straight through the job
+ * functions: a foreman with no access to billing would still be told, by
+ * name and to the dollar, that a $42,000 backcharge is unanswered. An
+ * alert is a summary of the thing it points at, so it needs the same
+ * permission the thing itself does.
+ *
+ * Applied in lib/alerts-query.ts, which is also what the bell counts —
+ * so the badge and the list can never disagree about how many there are.
+ */
+export const ALERT_CAPABILITY: Record<AlertKind, Capability> = {
+  RENEWAL: "MANAGE_COMPLIANCE",
+  BACKCHARGE_RESPONSE: "MANAGE_BILLING",
+  RETAINAGE_RELEASE: "MANAGE_BILLING",
+  // Not billing: whether the GC has answered the closeout package is
+  // operational, and the money on it is dropped separately below.
+  CLOSEOUT_WITH_GC: "MANAGE_JOBS",
+  CERTIFIED_PAYROLL: "MANAGE_COMPLIANCE",
+  WIP_VARIANCE: "VIEW_JOB_COSTS",
+};
+
+/**
+ * Drops alerts this person may not see, and strips the money figure from
+ * the ones they may see but should not be told the value of.
+ *
+ * The second half matters as much as the first. A foreman can legitimately
+ * be told the GC has sat on the closeout package for six weeks; being told
+ * it is holding up $42,000 of retainage is the company's margin
+ * conversation, not theirs.
+ */
+export function visibleToPrincipal(
+  alerts: Alert[],
+  holds: (capability: Capability) => boolean,
+): Alert[] {
+  return alerts
+    .filter((alert) => holds(ALERT_CAPABILITY[alert.kind]))
+    .map((alert) =>
+      alert.amount !== null && !holds("VIEW_COMPANY_FINANCIALS") && !holds("MANAGE_BILLING")
+        ? { ...alert, amount: null }
+        : alert,
+    );
+}
 
 /**
  * How far ahead each kind is worth warning about.
