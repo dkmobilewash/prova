@@ -16,8 +16,25 @@ const context = { company: { id: "" }, id: "", role: "OWNER" as string };
 vi.mock("@/lib/auth", () => ({ requireCompanyContext: async () => context }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 
-const { setCraftTier } = await import("./unionCompliance");
-const { loadCrafts, loadRatioReviews, loadRemittance } = await import("@/lib/union-compliance-query");
+const {
+  createCraftClassification,
+  createFringeRateSchedule,
+  createUnionLocalAndAgreement,
+  deleteCraftClassification,
+  endFringeRateSchedule,
+  endUnionAgreement,
+  setApprenticeRatioRule,
+  setCraftTier,
+} = await import("./unionCompliance");
+const { loadCrafts, loadRatioReviews, loadRemittance, loadUnionSetup } = await import(
+  "@/lib/union-compliance-query"
+);
+
+function form2(values: Record<string, string>) {
+  const fd = new FormData();
+  for (const [k, v] of Object.entries(values)) fd.set(k, v);
+  return fd;
+}
 
 const utc = (iso: string) => new Date(`${iso}T00:00:00.000Z`);
 
@@ -272,5 +289,309 @@ describe("union compliance against a real database", () => {
     await setCraftTier(journeymanCraftId, form("JOURNEYMAN"));
     const [restored] = await loadRatioReviews(context.company.id, "2026-08");
     expect(restored.days.find((d) => d.date === "2026-08-17")?.status).toBe("WITHIN");
+  });
+});
+
+/**
+ * The setup CRUD, end to end.
+ *
+ * This is the gap the feature shipped with: the reports read five tables
+ * and not one of them had a create action, so on a real account both
+ * sections rendered empty with no way in. The test that matters is not
+ * "the action returned ok" — it is that a company starting from NOTHING
+ * can reach a priced remittance and a judged ratio using only these
+ * actions.
+ */
+describe("union setup CRUD, from an empty company", () => {
+  const ctx = { company: { id: "" }, id: "", role: "OWNER" as string };
+  let setupJobId = "";
+  let stamp = 0;
+
+  beforeAll(async () => {
+    stamp = Date.now();
+    const company = await prisma.company.create({ data: { name: "Union Setup Test Co" } });
+    const owner = await prisma.user.create({
+      data: {
+        companyId: company.id,
+        clerkId: `us_${stamp}`,
+        email: `us_${stamp}@example.test`,
+        role: "OWNER",
+      },
+    });
+    const contact = await prisma.contact.create({ data: { companyId: company.id, name: "GC" } });
+    const job = await prisma.job.create({
+      data: { companyId: company.id, contactId: contact.id, name: "Setup Job" },
+    });
+    ctx.company.id = company.id;
+    ctx.id = owner.id;
+    setupJobId = job.id;
+
+    context.company.id = company.id;
+    context.id = owner.id;
+    context.role = "OWNER";
+  });
+
+  afterAll(async () => {
+    const locals = await prisma.unionLocal.findMany({
+      where: { parentInternational: { in: [`ZZ Carpenters ${stamp}`, `ZZ Plasterers ${stamp}`] } },
+      select: { id: true },
+    });
+    const localIds = locals.map((l) => l.id);
+    await prisma.timeEntry.deleteMany({ where: { jobId: setupJobId } });
+    await prisma.fringeRateSchedule.deleteMany({
+      where: { craftClassification: { unionLocalId: { in: localIds } } },
+    });
+    await prisma.apprenticeRatioRule.deleteMany({ where: { unionLocalId: { in: localIds } } });
+    await prisma.craftClassification.deleteMany({ where: { unionLocalId: { in: localIds } } });
+    await prisma.companyUnionAgreement.deleteMany({ where: { companyId: ctx.company.id } });
+    await prisma.job.deleteMany({ where: { companyId: ctx.company.id } });
+    await prisma.contact.deleteMany({ where: { companyId: ctx.company.id } });
+    await prisma.user.deleteMany({ where: { companyId: ctx.company.id } });
+    await prisma.company.deleteMany({ where: { id: ctx.company.id } });
+    await prisma.unionLocal.deleteMany({ where: { id: { in: localIds } } });
+  });
+
+  const localForm = (over: Record<string, string> = {}) =>
+    form2({
+      parentInternational: `ZZ Carpenters ${stamp}`,
+      localNumber: "300",
+      jurisdictionName: "Northern California",
+      effectiveFrom: "2026-01-01",
+      ...over,
+    });
+
+  it("records a local and the agreement together", async () => {
+    expect(await createUnionLocalAndAgreement(localForm())).toEqual({ ok: true });
+    const setup = await loadUnionSetup(ctx.company.id);
+    expect(setup).toHaveLength(1);
+    expect(setup[0].localNumber).toBe("300");
+    // Without the agreement the local would be invisible to this company,
+    // which reads as the save having failed.
+    expect(setup[0].agreementId).toBeTruthy();
+  });
+
+  it("refuses a second current agreement with the same local", async () => {
+    const result = await createUnionLocalAndAgreement(localForm());
+    expect(result.ok).toBe(false);
+  });
+
+  it("adopts a local another company already recorded, rather than rejecting it", async () => {
+    // UnionLocal is global and unique on (parentInternational, localNumber).
+    // Two contractors under the same hall are under the same real local; a
+    // duplicate-key error here would tell someone a true fact is taken.
+    const other = await prisma.company.create({ data: { name: "Other Contractor" } });
+    const before = await prisma.unionLocal.count({
+      where: { parentInternational: `ZZ Carpenters ${stamp}` },
+    });
+
+    context.company.id = other.id;
+    try {
+      expect(await createUnionLocalAndAgreement(localForm())).toEqual({ ok: true });
+    } finally {
+      context.company.id = ctx.company.id;
+    }
+
+    expect(
+      await prisma.unionLocal.count({ where: { parentInternational: `ZZ Carpenters ${stamp}` } }),
+    ).toBe(before);
+    await prisma.companyUnionAgreement.deleteMany({ where: { companyId: other.id } });
+    await prisma.company.delete({ where: { id: other.id } });
+  });
+
+  it("adds classifications and refuses a duplicate name under the same local", async () => {
+    const [local] = await loadUnionSetup(ctx.company.id);
+    const add = (name: string, tier: string, period = "") =>
+      createCraftClassification(
+        form2({ unionLocalId: local.unionLocalId, name, tier, apprenticePeriod: period }),
+      );
+
+    expect(await add("Journeyman Drywall", "JOURNEYMAN")).toEqual({ ok: true });
+    expect(await add("Drywall Apprentice", "APPRENTICE", "3")).toEqual({ ok: true });
+
+    const dup = await add("Journeyman Drywall", "JOURNEYMAN");
+    expect(dup.ok).toBe(false);
+    expect(dup.ok === false && dup.error).toContain("already exists");
+  });
+
+  it("replaces the ratio rule rather than adding a second", async () => {
+    // Several rows per local would make the ratio depend on row order.
+    const [local] = await loadUnionSetup(ctx.company.id);
+    const set = (a: string, j: string) =>
+      setApprenticeRatioRule(
+        form2({ unionLocalId: local.unionLocalId, apprenticeCount: a, journeymenCount: j }),
+      );
+
+    expect(await set("1", "5")).toEqual({ ok: true });
+    expect(await set("1", "3")).toEqual({ ok: true });
+
+    expect(await prisma.apprenticeRatioRule.count({ where: { unionLocalId: local.unionLocalId } })).toBe(1);
+    const [after] = await loadUnionSetup(ctx.company.id);
+    expect(after.ratio).toMatchObject({ apprenticeCount: 1, journeymenCount: 3 });
+  });
+
+  it("records a rate and refuses one that overlaps it, in words", async () => {
+    // The exclusion constraint is raw SQL Prisma knows nothing about, so
+    // without translation this surfaces as an untyped P2010 and 500s.
+    const [local] = await loadUnionSetup(ctx.company.id);
+    const craft = local.crafts.find((c) => c.name === "Journeyman Drywall")!;
+    const rate = (over: Record<string, string> = {}) =>
+      createFringeRateSchedule(
+        form2({
+          craftClassificationId: craft.id,
+          baseWage: "45",
+          pensionRate: "8",
+          vacationRate: "3",
+          healthWelfareRate: "11",
+          trainingRate: "1",
+          effectiveFrom: "2026-01-01",
+          ...over,
+        }),
+      );
+
+    expect(await rate()).toEqual({ ok: true });
+
+    const overlapping = await rate({ effectiveFrom: "2026-06-01", baseWage: "48" });
+    expect(overlapping.ok).toBe(false);
+    expect(overlapping.ok === false && overlapping.error).toContain("already covers part of those dates");
+  });
+
+  it("lets the next rate start once the current one is ended", async () => {
+    const [local] = await loadUnionSetup(ctx.company.id);
+    const craft = local.crafts.find((c) => c.name === "Journeyman Drywall")!;
+    const open = craft.schedules.find((s) => s.effectiveTo === null)!;
+
+    expect(await endFringeRateSchedule(open.id, form2({ effectiveTo: "2026-05-31" }))).toEqual({ ok: true });
+    expect(
+      await createFringeRateSchedule(
+        form2({
+          craftClassificationId: craft.id,
+          baseWage: "48",
+          pensionRate: "9",
+          effectiveFrom: "2026-06-01",
+        }),
+      ),
+    ).toEqual({ ok: true });
+
+    const [after] = await loadUnionSetup(ctx.company.id);
+    expect(after.crafts.find((c) => c.id === craft.id)!.schedules).toHaveLength(2);
+  });
+
+  it("produces a priced remittance and a judged ratio from setup alone", async () => {
+    // The whole point. Before this CRUD existed, a real account could not
+    // reach either of these figures at all.
+    const [local] = await loadUnionSetup(ctx.company.id);
+    const journeyman = local.crafts.find((c) => c.name === "Journeyman Drywall")!;
+    const apprentice = local.crafts.find((c) => c.name === "Drywall Apprentice")!;
+
+    await prisma.timeEntry.createMany({
+      data: [
+        {
+          jobId: setupJobId,
+          employeeUserId: ctx.id,
+          craftClassificationId: journeyman.id,
+          date: new Date("2026-08-17T00:00:00.000Z"),
+          hours: "8",
+        },
+        {
+          jobId: setupJobId,
+          employeeUserId: ctx.id,
+          craftClassificationId: apprentice.id,
+          date: new Date("2026-08-17T00:00:00.000Z"),
+          hours: "8",
+        },
+      ],
+    });
+
+    const remittance = await loadRemittance(ctx.company.id, "2026-08");
+    // The rate in force in AUGUST is the June-onward one created above
+    // (pension 9, the other funds not contributed to), not the January one
+    // that was ended at 31 May. 9 x 8 hours = 72. If this ever reads 184 —
+    // the January rate's total — effective dating has stopped working and
+    // a historical payroll would be recomputing at today's rate.
+    expect(remittance.total).toBe(72);
+    expect(remittance.locals[0].components).toMatchObject({
+      pension: 72,
+      vacation: 0,
+      healthWelfare: 0,
+      training: 0,
+    });
+    // The apprentice has no rate, so its hours are counted and unpriced.
+    expect(remittance.uncomputedHours).toBe(8);
+    expect(remittance.totalHours).toBe(16);
+
+    const [review] = await loadRatioReviews(ctx.company.id, "2026-08");
+    const day = review.days.find((d) => d.date === "2026-08-17")!;
+    // 1:3 allows 2.67 apprentice hours against 8 journeyman hours.
+    expect(day.status).toBe("OVER");
+    expect(day.allowedApprenticeHours).toBe(2.67);
+  });
+
+  it("refuses to delete a classification that work is tagged with, and says how much", async () => {
+    const [local] = await loadUnionSetup(ctx.company.id);
+    const journeyman = local.crafts.find((c) => c.name === "Journeyman Drywall")!;
+
+    const result = await deleteCraftClassification(journeyman.id);
+    expect(result.ok).toBe(false);
+    // The FK alone would throw a raw error production redacts to a digest.
+    expect(result.ok === false && result.error).toContain("1 record is tagged");
+  });
+
+  it("deletes an unused classification along with its rates", async () => {
+    const [local] = await loadUnionSetup(ctx.company.id);
+    expect(
+      await createCraftClassification(
+        form2({ unionLocalId: local.unionLocalId, name: "Unused Classification", tier: "JOURNEYMAN" }),
+      ),
+    ).toEqual({ ok: true });
+
+    const [withUnused] = await loadUnionSetup(ctx.company.id);
+    const unused = withUnused.crafts.find((c) => c.name === "Unused Classification")!;
+    await createFringeRateSchedule(
+      form2({ craftClassificationId: unused.id, baseWage: "40", effectiveFrom: "2026-01-01" }),
+    );
+
+    expect(await deleteCraftClassification(unused.id)).toEqual({ ok: true });
+    expect(await prisma.craftClassification.findUnique({ where: { id: unused.id } })).toBeNull();
+    expect(
+      await prisma.fringeRateSchedule.count({ where: { craftClassificationId: unused.id } }),
+    ).toBe(0);
+  });
+
+  it("refuses a non-owner deleting, and a local nobody holds an agreement with", async () => {
+    const [local] = await loadUnionSetup(ctx.company.id);
+    const craft = local.crafts[0];
+
+    context.role = "MEMBER";
+    try {
+      const result = await deleteCraftClassification(craft.id);
+      expect(result.ok).toBe(false);
+    } finally {
+      context.role = "OWNER";
+    }
+
+    const foreignLocal = await prisma.unionLocal.create({
+      data: {
+        parentInternational: `ZZ Plasterers ${stamp}`,
+        localNumber: "999",
+        jurisdictionName: "Elsewhere",
+      },
+    });
+    const result = await createCraftClassification(
+      form2({ unionLocalId: foreignLocal.id, name: "Nope", tier: "JOURNEYMAN" }),
+    );
+    expect(result).toEqual({
+      ok: false,
+      error: "That local isn't one you hold an agreement with",
+    });
+  });
+
+  it("ends an agreement instead of deleting it", async () => {
+    const [local] = await loadUnionSetup(ctx.company.id);
+    expect(await endUnionAgreement(local.agreementId, form2({ effectiveTo: "2026-12-31" }))).toEqual({
+      ok: true,
+    });
+    const [after] = await loadUnionSetup(ctx.company.id);
+    // Still there — payroll filed under it has to stay explainable.
+    expect(after.effectiveTo).toBe("2026-12-31");
   });
 });

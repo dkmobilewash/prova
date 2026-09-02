@@ -196,8 +196,16 @@ export async function loadRatioReviews(companyId: string, month: string): Promis
     },
   });
 
+  // Ordered oldest first so the Map below ends up holding the NEWEST rule
+  // for each local. The schema permits several rows per local and this Map
+  // keys on unionLocalId, so without an explicit order the ratio would be
+  // decided by whichever row the database happened to return last — an
+  // answer that could change between reads with nothing to explain it.
+  // setApprenticeRatioRule now replaces rather than adds, so in practice
+  // there is one; this makes the read safe regardless.
   const rules = await prisma.apprenticeRatioRule.findMany({
     where: { unionLocal: { companyAgreements: { some: { companyId } } } },
+    orderBy: { createdAt: "asc" },
   });
   const ruleByLocal = new Map<string, RatioRuleInput>(
     rules.map((r) => [
@@ -259,4 +267,120 @@ export async function loadRatioReviews(companyId: string, month: string): Promis
   return reviews.sort(
     (a, b) => b.summary.daysOver - a.summary.daysOver || a.jobName.localeCompare(b.jobName),
   );
+}
+
+export type FringeScheduleRow = {
+  id: string;
+  baseWage: number;
+  pensionRate: number | null;
+  vacationRate: number | null;
+  healthWelfareRate: number | null;
+  trainingRate: number | null;
+  effectiveFrom: string;
+  effectiveTo: string | null;
+};
+
+export type SetupCraftRow = CraftRow & {
+  schedules: FringeScheduleRow[];
+  /** Records tagged with this craft. Deleting it is refused when non-zero,
+   * and the count is what makes that refusal explain itself. */
+  usageCount: number;
+};
+
+export type SetupLocalRow = {
+  unionLocalId: string;
+  label: string;
+  parentInternational: string;
+  localNumber: string;
+  jurisdictionName: string;
+  tradeJurisdiction: string | null;
+  agreementId: string;
+  effectiveFrom: string;
+  effectiveTo: string | null;
+  ratio: { apprenticeCount: number; journeymenCount: number; programStandardReference: string | null } | null;
+  crafts: SetupCraftRow[];
+};
+
+/**
+ * Everything behind the setup section: the locals this company holds an
+ * agreement with, and under each one its ratio rule, classifications and
+ * their rate schedules.
+ *
+ * Driven from the AGREEMENT rather than from UnionLocal, because the local
+ * table is global — listing locals directly would show this company every
+ * hall every other contractor has ever recorded.
+ */
+export async function loadUnionSetup(companyId: string): Promise<SetupLocalRow[]> {
+  const agreements = await prisma.companyUnionAgreement.findMany({
+    where: { companyId },
+    orderBy: { effectiveFrom: "desc" },
+    include: {
+      unionLocal: {
+        include: {
+          apprenticeRatioRules: { orderBy: { createdAt: "desc" }, take: 1 },
+          craftClassifications: {
+            orderBy: { name: "asc" },
+            include: {
+              fringeRateSchedules: { orderBy: { effectiveFrom: "desc" } },
+              _count: {
+                select: {
+                  timeEntries: true,
+                  jobLineItems: true,
+                  catalogEntries: true,
+                  dispatchSlips: true,
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  return agreements.map((agreement) => {
+    const local = agreement.unionLocal;
+    const rule = local.apprenticeRatioRules[0] ?? null;
+
+    return {
+      unionLocalId: local.id,
+      label: localLabel(local),
+      parentInternational: local.parentInternational,
+      localNumber: local.localNumber,
+      jurisdictionName: local.jurisdictionName,
+      tradeJurisdiction: local.tradeJurisdiction,
+      agreementId: agreement.id,
+      effectiveFrom: iso(agreement.effectiveFrom) as string,
+      effectiveTo: iso(agreement.effectiveTo),
+      ratio: rule
+        ? {
+            apprenticeCount: rule.apprenticeCount,
+            journeymenCount: rule.journeymenCount,
+            programStandardReference: rule.programStandardReference,
+          }
+        : null,
+      crafts: local.craftClassifications.map((craft) => ({
+        id: craft.id,
+        name: craft.name,
+        tier: (craft.tier as CraftTier | null) ?? null,
+        apprenticePeriod: craft.apprenticePeriod,
+        unionLocalId: craft.unionLocalId,
+        unionLocalLabel: localLabel(local),
+        usageCount:
+          craft._count.timeEntries +
+          craft._count.jobLineItems +
+          craft._count.catalogEntries +
+          craft._count.dispatchSlips,
+        schedules: craft.fringeRateSchedules.map((schedule) => ({
+          id: schedule.id,
+          baseWage: Number(schedule.baseWage),
+          pensionRate: numberOrNull(schedule.pensionRate),
+          vacationRate: numberOrNull(schedule.vacationRate),
+          healthWelfareRate: numberOrNull(schedule.healthWelfareRate),
+          trainingRate: numberOrNull(schedule.trainingRate),
+          effectiveFrom: iso(schedule.effectiveFrom) as string,
+          effectiveTo: iso(schedule.effectiveTo),
+        })),
+      })),
+    };
+  });
 }

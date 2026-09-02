@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
-import { loadCrafts, loadRatioReviews, loadRemittance, monthBounds } from "@/lib/union-compliance-query";
-import { CraftTierPicker } from "@/components/CraftTierPicker";
+import { loadRatioReviews, loadRemittance, loadUnionSetup, monthBounds } from "@/lib/union-compliance-query";
+import { UnionLocalForm } from "@/components/UnionLocalForm";
+import { UnionLocalCard } from "@/components/UnionLocalCard";
 import { ratioLabel } from "@/lib/apprentice-ratio";
 import { money } from "@/lib/money";
 
@@ -29,7 +30,7 @@ export default async function UnionCompliancePage({
 }) {
   const { context, allowed } = await requireCapability("MANAGE_COMPLIANCE");
   if (!allowed) return <NoAccess capability="MANAGE_COMPLIANCE" />;
-  const { company } = context;
+  const { company, ...currentUser } = context;
 
   const { month: monthParam } = await searchParams;
   const month = /^\d{4}-\d{2}$/.test(monthParam ?? "")
@@ -37,13 +38,16 @@ export default async function UnionCompliancePage({
     : new Date().toISOString().slice(0, 7);
   const { start, end } = monthBounds(month);
 
-  const [crafts, remittance, ratioReviews] = await Promise.all([
-    loadCrafts(company.id),
+  const [setup, remittance, ratioReviews] = await Promise.all([
+    loadUnionSetup(company.id),
     loadRemittance(company.id, month),
     loadRatioReviews(company.id, month),
   ]);
 
+  const crafts = setup.flatMap((local) => local.crafts);
   const untiered = crafts.filter((craft) => craft.tier === null);
+  const unpriced = crafts.filter((craft) => craft.schedules.length === 0);
+  const today = new Date().toISOString().slice(0, 10);
   const flagged = ratioReviews.filter((r) => r.summary.daysOver > 0);
   const incomplete = ratioReviews.filter((r) => r.summary.daysIncomplete > 0);
 
@@ -240,37 +244,50 @@ export default async function UnionCompliancePage({
         )}
       </section>
 
-      {/* ---------------------------------------------------- crafts --- */}
+      {/* ----------------------------------------------------- setup --- */}
       <section>
         <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-sm font-semibold text-slate-300">Classifications</h2>
-          {untiered.length > 0 && (
-            <span className="text-xs text-amber-300">
-              {untiered.length} not classified — their hours can&apos;t be counted either way
-            </span>
-          )}
+          <h2 className="text-sm font-semibold text-slate-300">Locals, classifications and rates</h2>
+          <span className="text-xs text-slate-500">
+            {untiered.length > 0 && (
+              <span className="text-amber-300">
+                {untiered.length} classification{untiered.length === 1 ? "" : "s"} not tiered
+              </span>
+            )}
+            {untiered.length > 0 && unpriced.length > 0 && " · "}
+            {unpriced.length > 0 && (
+              <span className="text-amber-300">
+                {unpriced.length} with no rate
+              </span>
+            )}
+          </span>
         </div>
 
-        {crafts.length === 0 ? (
-          <p className="text-sm text-slate-400">
-            No craft classifications under a local you hold an agreement with. Add the local and its
-            classifications on <Link href="/settings" className="text-blue-400">Settings</Link> first —
-            everything above reads from them.
+        <p className="mb-3 text-xs text-slate-500">
+          Everything above reads from here. A classification with no tier can&apos;t be counted on
+          either side of a ratio, and one with no rate in force on a date can&apos;t be priced — both
+          are reported as such rather than guessed.
+        </p>
+
+        <div className="mb-4">
+          <UnionLocalForm />
+        </div>
+
+        {setup.length === 0 ? (
+          <p className="text-slate-400">
+            No locals recorded. Add the one you work under and its classifications — nothing here is
+            seeded, because there is no verified source for real local numbers and a wrong entry would
+            attribute your CBA to the wrong hall.
           </p>
         ) : (
           <ul className="divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900">
-            {crafts.map((craft) => (
-              <li key={craft.id} className="flex flex-col gap-2 p-4 sm:flex-row sm:items-center sm:justify-between">
-                <div className="min-w-0">
-                  <p className="text-slate-100">{craft.name}</p>
-                  <p className="text-xs text-slate-500">{craft.unionLocalLabel}</p>
-                </div>
-                <CraftTierPicker
-                  craftId={craft.id}
-                  tier={craft.tier}
-                  apprenticePeriod={craft.apprenticePeriod}
-                />
-              </li>
+            {setup.map((local) => (
+              <UnionLocalCard
+                key={local.agreementId}
+                local={local}
+                today={today}
+                canDelete={currentUser.role === "OWNER"}
+              />
             ))}
           </ul>
         )}

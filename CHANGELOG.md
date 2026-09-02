@@ -12,6 +12,63 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### The union compliance page had no way to enter its own data (Diego)
+`claude/prova-contractor-os-e3f0iz`
+
+Found by writing the browser click-list and noticing that step one of test
+six was impossible. `/union-compliance` reads five tables —`UnionLocal`,
+`CompanyUnionAgreement`, `CraftClassification`, `FringeRateSchedule`,
+`ApprenticeRatioRule` — and **not one of them had a create action anywhere
+in the app**. The engines were verified against a database only a test
+could populate. On a real account both sections rendered empty, and the
+empty state helpfully pointed at `/settings`, which does not have that UI
+either.
+
+That is the defect this repo keeps catching in other people's work — a
+control that looks like it works and cannot — and I shipped it, then
+marked the sheet Built. FEATURE-AUDIT already records the same failure
+against the licence row ("Built on the model alone from 25 Aug until 29
+Aug, during which no licence could be created at all"); Sheet 01's union
+row had been in exactly that state since 24 August and now says so.
+
+The CRUD lives on `/union-compliance`, beside the reports that consume it,
+so the distance between "no rate recorded" and the place to record one is
+one screen.
+
+**Three of these tables are global**, and that shapes the behaviour. A
+local another contractor already recorded is **adopted**, not rejected —
+two companies under Carpenters Local 300 are under the same real local,
+and a duplicate-key error would be the app calling a true fact taken. The
+local and the agreement are created **together**, because a local with no
+agreement is invisible to the company that just typed it in.
+
+**Ended, never deleted** for agreements and rate schedules: payroll filed
+under them has to keep computing to the same figures. A classification
+with work tagged to it refuses deletion and says how many records — the
+foreign key alone would throw an error production redacts to a digest,
+telling the person nothing.
+
+**A latent bug fixed on the way past.** `ApprenticeRatioRule` permits
+several rows per local and `loadRatioReviews` keys a Map on
+`unionLocalId`, so a second rule would have decided the ratio by whichever
+row sorted last. `setApprenticeRatioRule` now replaces rather than adds,
+and the query orders deterministically so the read is safe whatever is in
+the table. A ratio check whose answer depends on row order is worse than
+none.
+
+The test that matters is not that the actions return ok: it is that a
+company starting from **nothing** reaches a priced remittance and a judged
+ratio using only these actions. It does. One assertion in it initially
+read 184 and the code returned 72 — and the code was right: an earlier
+step had ended the January rate and started a June one, and the August
+hours correctly priced at the June rate. That is effective dating working,
+proven end to end through the UI's own actions.
+
+12 new db tests (91 total), 811 unit tests, typecheck, lint and a build
+run WITHOUT `NODE_OPTIONS` — the way Vercel runs it — all clean.
+
+---
+
 ### The production build was out of memory, and the heap was not the lever (Diego)
 `claude/prova-contractor-os-e3f0iz`
 
