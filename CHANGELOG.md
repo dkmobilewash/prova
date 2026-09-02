@@ -12,6 +12,51 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### Two click-list assertions that no test could reach (Diego)
+`claude/prova-contractor-os-e3f0iz`
+
+Asked to run the browser click-lists and unable to — the agent proxy
+refuses CONNECT to `app.cstream.ai` with a 403, and there is no Clerk
+session here — I went looking for which of their assertions were not
+proven anywhere. Two were not, and both were the headline claim of their
+feature.
+
+**`reviewJobWeek` had no test at all.** Not a unit test, not a database
+one. It is the function behind "entered 10 straight, rules imply 8
+straight, 2 OT", and it is where the parts that can silently disagree
+meet: the rule set reached through the job's wage determination, the
+entries grouped per employee, the week window. It now has seven, including
+the one worth executing rather than reasoning about — **two people each
+working eight hours is not a sixteen-hour day**, and pooling them would
+manufacture overtime nobody worked.
+
+**The closeout page composed readiness inline**, so the step that turns
+real punch rows into readiness inputs could not be run. The unit suite
+covered `closeoutReadiness` with inputs a test wrote by hand; nothing
+covered the part that produces them. That is exactly where the feature's
+headline claim lives — an open punch item holds closeout open even when
+"punch list sign-off" is ticked — and it was the one thing untested.
+Extracted to `lib/closeout-query.ts`, which is the fetch/decide split
+every other feature here already follows and the reason those halves are
+testable. The page is 80 lines shorter and does no composition.
+
+Seven more db tests there, including the contradiction stated directly:
+the checklist still reads complete while the punch rows say otherwise, and
+the real data wins.
+
+105 db tests (was 91), 811 unit tests, typecheck, lint, and a build run
+without `NODE_OPTIONS` all clean. No schema change.
+
+**What this does NOT do, plainly: it is not the browser test.** Tests 1
+and 3 were already covered at this level; test 4's real assertion —
+typing `/cash-flow` as a field user and getting "Not part of your access"
+— cannot be executed without a browser, and neither can any claim about
+what a page actually renders. These close the gap between "the logic is
+right" and "the query reads what it claims to". The gap between that and
+"the screen does the right thing" is still open and still needs a person.
+
+---
+
 ### The union compliance page had no way to enter its own data (Diego)
 `claude/prova-contractor-os-e3f0iz`
 
