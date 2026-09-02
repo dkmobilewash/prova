@@ -1,4 +1,4 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "NODE_OPTIONS=--max-old-space-size=6144 pnpm --filter @prova/db run check:schema && NODE_OPTIONS=--max-old-space-size=6144 pnpm turbo run build --filter=@prova/web"
+  "buildCommand": "pnpm --filter @prova/db run check:schema && pnpm turbo run build --filter=@prova/web"
 }
