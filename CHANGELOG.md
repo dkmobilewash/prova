@@ -336,6 +336,139 @@ Built. Sheet 26's expiration and WIP-variance rows move to Partial and NOT
 Built — surfacing something on a screen someone opens is not alerting
 someone who doesn't.
 
+### The send button that was never built, and a guard so it can't happen again (Cyrus)
+`cyrus/messaging`
+
+Diego caught it in review and he was right: **`sendOutboundEmail` was
+defined, exported, re-exported through the barrel, and called from nowhere.**
+There was no form anywhere in the messages feature. `/messages` was a
+delivery log with no way to create an entry — the counters read 0
+permanently and "Nothing sent yet" was the only reachable state.
+
+The part worth sitting with is why nobody noticed. Typecheck passed, because
+the code is correct; it just isn't used. Lint and build passed, because the
+symbol IS consumed — by the barrel. And **it clicked through clean**, which
+is the one that should sting: a feature with no entry point renders as a
+perfectly working empty state. "I clicked through it" is evidence of nothing
+when the button was never built.
+
+So the fix is two things, and the second matters more than the first.
+
+**The form exists now.** To, name, job, subject, body — disabled while in
+flight, because there is no idempotency key on a send and a second click is
+a second email to a real person.
+
+**And `lib/actions/reachable.test.ts` asserts every exported Server Action
+is called from something.** The barrel and the action's own module are
+excluded from counting as a caller, because a barrel re-export is precisely
+what lets an orphan compile — it looks like a use and is the opposite of
+one. Run against the branch before the fix, it failed on exactly the two
+actions Diego found, with 130 others passing. A failure means one of two
+things and both are worth stopping for: the feature has no entry point, or
+the action is dead.
+
+`emailSendingStatus` was the second kind. It duplicated what `/messages`
+already does by calling `emailSetupProblem()` directly in its server
+component, so it never had a caller and was never going to. Deleted rather
+than wired up.
+
+**Two more of Diego's, both real.**
+
+A provider that ACCEPTS a message but returns no id was being recorded as
+FAILED and reported to the user as a failure — but the mail has gone. They
+resend, and the GC gets two copies. FAILED means "never reached the provider
+at all" in this state machine, and that send reached it. It goes down as
+QUEUED now, which is what actually happened, and it surfaces as unconfirmed
+after a day because no webhook can ever match a message with no provider id.
+The user is told it most likely went out and to check before resending.
+
+That has a second consequence worth naming: such a message has no
+`providerMessageId`, so the delete guard would have let someone destroy the
+record of an email a real person received. Deletion now refuses on any event
+other than FAILED, not just on the presence of an id.
+
+Both rules are pure functions in `messageLabels.ts` and mutation-checked:
+recording an accepted send as FAILED fails two tests, and trusting only the
+provider id in the delete guard fails two more.
+
+Verified by running it, not by reading it. With deliberately fake
+credentials in a gitignored `.env.local`, the compose form renders, submits,
+Resend refuses the key, the error reads "API key is invalid" in the form,
+the message is recorded rather than lost, the counters move, and the row
+reads "Never sent". Two-step delete then removed it, which is correct for a
+message that never reached the provider. The file was deleted afterwards.
+
+Still not verified, and still can't be by me: a real send with a real key.
+
+### The app can now send things, and knows whether they arrived (Cyrus)
+`cyrus/messaging`
+
+Until this, Prova could not send anything to anyone. No email, no SMS —
+every "sent on" date in RFIs, submittals and material orders recorded that
+a human sent something through some other channel. The app was a filing
+cabinet for correspondence it could not deliver.
+
+**The delivery log is the feature, not the sending.** Sending is table
+stakes; knowing whether it arrived is where the competitor research found
+every product failing. Quotes sent from the vendor's own domain go 60%
+unopened. One product shows "sending" forever on mail that never left, and
+a contractor took a formal complaint over three messages a customer never
+received. Silence is the failure mode, so silence is what this models
+against — a message sent yesterday and still unconfirmed is surfaced, not
+assumed fine.
+
+**No stored status.** State is derived from the newest event, same rule as
+every other feature here. Two consequences worth stating because both were
+tested by deliberately breaking them:
+
+- A **complaint after a delivery** must win. Marking spam a day later is
+  the sequence that matters for a sending domain, and an earlier success
+  must not hide it.
+- **OPENED is never a state.** Image-blocking makes a missing open
+  meaningless, so an open can only add information. Letting it become the
+  newest state would let a later open overwrite a bounce — a message can
+  be opened by one recipient and have bounced for another.
+
+**Events are append-only and deduplicated by the provider's event id.**
+Providers retry on any non-2xx. Recording a replayed bounce twice would
+misreport deliverability, which is the one number this exists to get right.
+Verified: the same event posted twice returns "Already recorded".
+
+**`occurredAt` is the provider's timestamp, not ours.** A webhook delayed
+an hour must not make a prompt delivery read as a slow one — the same
+entered-not-stamped rule as every other date in this app.
+
+**The webhook fails closed.** With no secret configured it rejects every
+event with a 503. An unverified "delivered" is worse than no event: the
+entire value of the log is that a delivered in it means something, and
+anything forgeable by whoever knows the URL means nothing.
+
+**The delivery rate ignores unconfirmed messages rather than counting them
+as failures.** A provider outage would otherwise halve the number for a
+reason that has nothing to do with deliverability.
+
+**Sends as the contractor, with no shared-sender fallback.** No verified
+domain, no sending. That is the deliverability complaint the research found
+everywhere, and a fallback would quietly reintroduce it.
+
+Verified against real HTTP, not mocks: valid event recorded, replay
+deduplicated, forged signature rejected 401, stale timestamp rejected 400,
+unknown message and unmodelled event type both 200 so the provider does not
+retry forever. Then confirmed in the UI that a bounce arriving after a
+delivery renders as Bounced with its reason.
+
+24 new tests, verified able to fail by injecting two regressions — letting
+OPENED imply delivery, and counting unconfirmed messages against the rate.
+Four tests failed, two per regression.
+
+**What is NOT verified, and cannot be by me.** The real provider round trip
+— an actual send, a real signed webhook from Resend — needs an API key and
+an account, which I can't create. Everything up to the provider boundary is
+tested; the boundary itself is not. It ships disabled, with a setup state
+naming the three environment variables, rather than pretending to work.
+
+SMS is in the channel enum and deliberately not wired. One channel that
+works beats two that half do.
 
 ### Finding out that QuickBooks disagrees with you (Diego)
 

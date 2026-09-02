@@ -23,13 +23,14 @@ in flight. Left as-is here rather than guessed at from the outside; the next
 update to touch those sheets should come from whoever actually verified them
 against a fresh clone.
 
-**110 items audited — 74 built / 16 partial / 19 missing / 1 descoped**
+**111 items audited — 75 built / 16 partial / 19 missing / 1 descoped**
 
 | Status | Count |
 | --- | --- |
-| Built | 73 |
+| Built | 75 |
 | Partial | 16 |
-| Missing | 18 |
+| Missing | 19 |
+| Descoped | 1 |
 | Descoped | 1 |
 
 ## 01. Company / Org Setup — 5 built · 0 partial · 0 missing
@@ -266,7 +267,7 @@ forecasting shipped 26 Aug 2026.*
 | Missing | Plan/drawing takeoff via computer vision | explicitly deferred as a later, larger effort — different modality, different accuracy bar |
 | Descoped | Client-facing chatbot | GCs are the customer here, not homeowners — deliberately out of scope for this ICP |
 
-## 24. Integrations — 2 built · 2 partial · 2 missing
+## 24. Integrations — 3 built · 2 partial · 2 missing
 
 | Status | Feature | Note |
 | --- | --- | --- |
@@ -276,6 +277,7 @@ forecasting shipped 26 Aug 2026.*
 | Missing | DocuSign, Procore, myCOI | 0 built. Each has a registry entry so the page can render it, and each renders DISABLED with a "Coming soon" label. A card on a settings page is not an integration |
 | Partial | E-signature provider | homegrown token-based e-sign (`SignatureRequest`) covers contract signing only — not a general provider for every doc type |
 | Built | Anthropic API (for the AI features above) | three shipped features now call Claude |
+| Built | Outbound email from the contractor's own domain, with a delivery log | `OutboundMessage` + `OutboundMessageEvent`, `/messages` — provider-agnostic send, signed delivery webhook that fails closed, events deduplicated by provider id, status derived from the newest event and never stored. Sends as the contractor, not as us: mail from a vendor domain is the deliverability complaint the research report found at every competitor. SMS is in the channel enum and not wired |
 
 ## 25. Roles & Permissions — 0 built · 0 partial · 2 missing
 

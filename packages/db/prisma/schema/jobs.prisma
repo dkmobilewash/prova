@@ -84,6 +84,7 @@ model Job {
   closeoutItems                CloseoutItem[]
   warrantyPeriod               WarrantyPeriod?
   warrantyServiceRequests      WarrantyServiceRequest[]
+  outboundMessages             OutboundMessage[]
 
   @@index([companyId])
   @@index([contactId])
