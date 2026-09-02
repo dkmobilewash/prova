@@ -67,7 +67,13 @@ one at a time:
    done at Diego's request: each computes `showsJobMoney`/`showsBilling`
    once at the top and withholds whole sections. Sheet 25's second row
    stays Partial only because there is no mobile SURFACE.
-5. **Multi-state prevailing wage rules** — Sheet 21.
+5. **Multi-state prevailing wage rules** — Sheet 21. *Shipped 1 Sep.*
+   `prevailing-wage.prisma` (`PrevailingWageRuleSet`, effective-dated with
+   a Postgres exclusion constraint), `lib/prevailing-wage.ts`,
+   `lib/prevailing-wage-query.ts`, `lib/actions/prevailingWage.ts`,
+   `/prevailing-wage`. Rules only — no wage-rate dataset, nothing seeded,
+   blank means unchecked. One additive column on
+   `PrevailingWageDetermination` (`ruleSetId`, ON DELETE SET NULL).
 6. **Apprentice / fringe remittance reporting** — Sheet 09.
 
 It does NOT touch estimating, billing/AIA pay applications,

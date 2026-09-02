@@ -23,19 +23,20 @@ in flight. Left as-is here rather than guessed at from the outside; the next
 update to touch those sheets should come from whoever actually verified them
 against a fresh clone.
 
-**112 items audited — 79 built / 19 partial / 13 missing / 1 descoped**
+**112 items audited — 80 built / 19 partial / 12 missing / 1 descoped**
 
 | Status | Count |
 | --- | --- |
-| Built | 78 |
+| Built | 79 |
 | Partial | 19 |
-| Missing | 12 |
+| Missing | 11 |
 | Descoped | 1 |
 
 These two tallies have disagreed with each other, and with the sheets'
 own headers, since before this edit. Sheet 13's +2 built / −2 missing,
 Sheet 22's +1 built, Sheet 26's +1 built / +2 partial / −2 missing and
-Sheet 25's +1 built / +1 partial / −2 missing are applied to both rather than recomputing
+Sheet 25's +1 built / +1 partial / −2 missing and Sheet 21's +1 built /
+−1 missing are applied to both rather than recomputing
 everything, because recomputing every header from its rows is already in
 flight on another branch and two people rewriting the same totals is how
 they got out of step in the first place.
@@ -250,11 +251,15 @@ forecasting shipped 26 Aug 2026.*
 | Built | Company-owned equipment inventory (scaffolding, lifts, mixers) | `Equipment`, `/equipment` |
 | Partial | Equipment assignment/utilization per job (feeds job costing) | `Equipment.jobId` records where a piece is — nothing computes utilisation or pushes cost into job costing yet |
 
-## 21. Multi-State / Multi-Jurisdiction Support — 1 built · 1 partial · 1 missing
+## 21. Multi-State / Multi-Jurisdiction Support — 2 built · 1 partial · 0 missing
+
+*Updated 1 Sep 2026 — prevailing wage RULE SETS shipped. Still no wage-rate
+dataset, and there is not going to be one until a licensed source exists;
+what shipped is the half that never needed one.*
 
 | Status | Feature | Note |
 | --- | --- | --- |
-| Missing | State-specific prevailing wage rule sets | not modeled |
+| Built | State-specific prevailing wage rule sets | `PrevailingWageRuleSet`, `/prevailing-wage` — per jurisdiction, effective-dated, with non-overlap enforced by a Postgres exclusion constraint (raw SQL, same as `FringeRateSchedule`; the action catches the untyped P2010 and says it in words). Records daily/weekly/seventh-day overtime and double-time thresholds, filing frequency, due days, form and portal. **Nothing is seeded and nothing is defaulted**: a blank threshold means nobody looked it up, and `lib/prevailing-wage.ts` reports that week as *unchecked* rather than assuming eight — zero is a distinct, meaningful value (premium from the first hour). Applied to real logged hours per employee per week, reporting where the ENTERED pay types and the recorded rules disagree; it never rewrites a `TimeEntry`. Also feeds the certified-payroll alert its jurisdiction's real filing window, replacing a hardcoded 7 days, and the alert says which of the two it used |
 | Built | State-specific licensing requirement tracking | `CompanyLicense` + `LicenseClassificationReference` (CA/AZ/UT seeded; NV deliberately left unseeded — no verified source) |
 | Partial | Jurisdictional/union-local mapping by project location | the data exists — `Job.operatingLocationId`, `CompanyLocation.state`, `UnionLocal` — but nothing derives one from another yet; flagged as future work in the code itself |
 

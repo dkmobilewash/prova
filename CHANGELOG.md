@@ -12,6 +12,66 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### Prevailing wage rule sets — the rules, never the rates (Diego)
+`claude/prova-contractor-os-e3f0iz`
+
+Sheet 21's missing row was "state-specific prevailing wage rule sets", and
+ARCHITECTURE.md had explicitly ruled a rules engine out: no licensed
+wage-rate dataset, same reason NV licensing was left unseeded. That
+reasoning is still right and this does not overturn it. It corrects a
+conflation in it.
+
+A wage DETERMINATION says what a classification pays. A jurisdiction's
+RULES say when an hour becomes overtime, when it becomes double time, what
+the seventh straight day does, and how soon the report is due. The second
+is not a rate and never needed a dataset — it needed somebody to write it
+down. `PrevailingWageRuleSet` is where they write it down, with the
+citation next to it.
+
+**Null and zero are different, and the whole honesty of the feature is in
+that gap.** A blank threshold means nobody looked it up, and the review
+reports that week as *unchecked* — never as compliant, never assuming
+eight. Zero means the premium starts at the first hour, which is how a
+seventh-day rule is usually written. An app that filled in "California is
+8 and 12" from nowhere would be asserting law it was never told.
+
+Effective-dated, for the same hard reason `FringeRateSchedule` is:
+reviewing last year's timesheet has to use last year's rules. Non-overlap
+is enforced by a **Postgres exclusion constraint**, hand-written raw SQL
+like `FringeRateSchedule`'s, because two overlapping rule sets would make
+"the rules that applied that week" depend on row order. Prisma does not
+know that constraint exists, so the action catches the untyped P2010 and
+returns a sentence.
+
+**What the review does.** Per employee — never pooled per job, because two
+people each working eight hours is not a sixteen-hour day and pooling them
+would manufacture overtime nobody worked. Daily rules first, then the
+weekly threshold converting straight hours from the LATEST days: you cross
+forty at the end of a week, not at the start. It **never rewrites a
+`TimeEntry`** — it reports where the entered pay types and the recorded
+rules disagree, exactly as `compliance-expiry.ts` reports a stored licence
+status contradicting its own date, and a person decides which is wrong.
+
+**One field earns its keep elsewhere.** `filingDueDays` replaces the
+certified-payroll alert's hardcoded seven days when a jurisdiction has
+recorded a real one — and the alert says which of the two it used, because
+"due in 7 days" from a citation and "due in 7 days" from our own default
+are not the same claim.
+
+**A failing test caught a real defect in my own process.** The exclusion
+constraint was appended to the migration file after `prisma migrate dev`
+had already recorded it, so the scratch database never got it and the
+overlap test passed an insert that should have been refused. Fixed by
+dropping and rebuilding the scratch database from the committed migrations
+— which is the only thing that actually proves the file as committed
+produces the schema claimed. 50 migrations, constraint present, overlap
+refused, adjacent ranges and other jurisdictions allowed.
+
+21 unit tests on the rule engine, 12 db tests, `pnpm test` 500 → 524, 70
+db tests, typecheck/lint/build clean.
+
+---
+
 ### The three pages that were leaking cost to the field tier (Diego)
 `claude/prova-contractor-os-e3f0iz`
 

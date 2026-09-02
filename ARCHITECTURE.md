@@ -787,13 +787,19 @@ export: replicating that exact form layout is a distinct, larger effort
 this phase doesn't take on.
 
 `PrevailingWageDetermination` is attached storage for the actual
-government wage-determination document (or a link to one) per job —
-not a lookup. There's no licensed or scraped prevailing-wage dataset in
-this app to query automatically from, the same reason NV licensing data
-was left unseeded in `LicenseClassificationReference`. Multi-state
-variation isn't built as a rules engine for the same reason; a job is
-already jurisdiction-scoped via `operatingLocationId`, which is as far
-as this can honestly go without a real government wage-rate dataset.
+government wage-determination document (or a link to one) per job — not a
+lookup. There's no licensed or scraped prevailing-wage dataset in this app
+to query automatically from, the same reason NV licensing data was left
+unseeded in `LicenseClassificationReference`. **That has not changed and is
+not going to until a licensed source exists.**
+
+What HAS changed is the half of "multi-state variation" that never needed a
+dataset. This paragraph used to say a rules engine was not built "for the
+same reason", and that conflated two different things: a wage
+DETERMINATION says what a classification pays, while a jurisdiction's
+RULES say when an hour becomes overtime and how soon the report is due.
+The second is not a rate, and it is now modelled — see the prevailing wage
+rule sets section below.
 
 ## Retainage
 
@@ -817,6 +823,77 @@ Release *forecasting* is a plain field
 ("expected release around this date"), not a scheduling or notification
 system — there's no closeout/warranty stage in `JobStatus` yet for a
 forecast to hook into more precisely than that.
+
+## Prevailing wage rule sets — the rules, never the rates
+
+There is still no wage-rate dataset in this app, nothing here is seeded,
+and nothing here invents a wage. What `PrevailingWageRuleSet` records is
+the other thing a jurisdiction sets: when an hour becomes overtime, when
+it becomes double time, what the seventh consecutive worked day does, how
+often certified payroll is filed and how soon. None of those is a rate,
+and they genuinely differ — a jurisdiction with an eight-hour daily
+threshold classifies the same timesheet differently from one with a
+forty-hour weekly threshold.
+
+Every value is **entered by the company** from the awarding body's own
+documents, with `sourceUrl` for the citation. The row-level rule that
+makes this honest rather than an assertion of law:
+
+- **Null means no rule recorded.** `lib/prevailing-wage.ts` reports such a
+  week as *unchecked*, never as compliant, and never assumes eight.
+- **Zero is a different, meaningful value** — the premium applies from the
+  first hour, which is how a seventh-day rule is usually written.
+  Collapsing the two would erase exactly the distinction the review needs.
+
+Effective-dated for the same hard reason `FringeRateSchedule` is:
+reviewing last year's timesheet has to use last year's rules, and a
+legislature amending a threshold must not silently rewrite how a closed
+week reads. Non-overlap is enforced at the **database** level, hand-written
+raw SQL in the migration exactly like `FringeRateSchedule`'s constraint,
+because Prisma's DSL cannot express a Postgres exclusion constraint. If
+two rule sets overlapped, "the rules that applied that week" would depend
+on row order. Prisma Client does not know the constraint exists, so a
+violation arrives as an untyped `P2010`; `lib/actions/prevailingWage.ts`
+matches on the constraint NAME (not the word "exclusion", which would
+swallow unrelated raw errors) and returns a sentence.
+
+A rule set reaches a job through `PrevailingWageDetermination.ruleSetId` —
+nullable, `ON DELETE SET NULL`. The determination is already the per-job
+record saying "this job is prevailing wage in jurisdiction X", so nothing
+new has to be joined, and deleting our own notes about the rules must
+never take the awarding body's document with them.
+
+### What the review does, and what it refuses to do
+
+`reviewDays` splits each day by the daily rule (or the seventh-day rule
+when it applies), then converts straight hours past the weekly threshold
+into overtime **taking them from the latest days first** — you cross forty
+at the end of a week, not at the start, and converting the earliest hours
+would report Monday as overtime because of Friday.
+
+It is reviewed **per employee**, never pooled per job. Two people each
+working eight hours is not a sixteen-hour day, and pooling them would
+manufacture overtime nobody worked — the single most damaging thing this
+feature could get wrong.
+
+It **never rewrites a `TimeEntry`.** `payType` is still entered by a
+person; this reports where the entered split and the recorded rules
+disagree, and a human decides which is wrong. Same shape as
+`compliance-expiry.ts` reporting a stored licence status that contradicts
+its own date: two human-entered facts, and which one is stale is not
+knowable from here.
+
+Days carrying shift-differential hours are shown and not judged — that
+premium is for when the shift ran, not how long it was, so no hours-based
+rule has anything to say about it. And `consecutiveDay` counts only within
+the range passed in, so a seventh consecutive day spanning two weeks is
+not detected; stated plainly rather than half-implemented.
+
+One rule set field is load-bearing elsewhere: `filingDueDays` replaces the
+certified-payroll alert's hardcoded seven-day horizon when a jurisdiction
+has recorded one, and the alert says which of the two it used — "due in 7
+days" from a citation and "due in 7 days" from our own default are not the
+same claim.
 
 ## Roles: two orthogonal questions, not one enum
 

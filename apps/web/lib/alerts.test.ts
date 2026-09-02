@@ -207,6 +207,30 @@ describe("certifiedPayrollAlerts", () => {
     ).toEqual([]);
   });
 
+  it("uses the jurisdiction's own filing window when one has been recorded", () => {
+    // A rule set attached to the job's wage determination replaces the
+    // generic horizon. 23 Aug + 10 days is 2 Sep, still ahead of us.
+    const [alert] = certifiedPayrollAlerts([{ ...week, filingDueDays: 10 }], TODAY);
+    expect(alert.dueOn).toBe("2026-09-02");
+    expect(alert.severity).toBe("DUE_SOON");
+  });
+
+  it("says which window it used, because the two are different claims", () => {
+    // "Due in 7 days" from a citation and "due in 7 days" from our own
+    // default are not the same statement, and a payroll clerk acting on
+    // one should be able to tell it from the other.
+    const [generic] = certifiedPayrollAlerts([week], TODAY);
+    expect(generic.detail).toContain("the usual filing window");
+
+    const [recorded] = certifiedPayrollAlerts([{ ...week, filingDueDays: 3 }], TODAY);
+    expect(recorded.detail).toContain("this jurisdiction's filing window");
+  });
+
+  it("falls back to the generic horizon when no rule set is attached", () => {
+    const [alert] = certifiedPayrollAlerts([{ ...week, filingDueDays: null }], TODAY);
+    expect(alert.dueOn).toBe("2026-08-30");
+  });
+
   it("is merely due, not overdue, inside the filing window", () => {
     const [alert] = certifiedPayrollAlerts(
       [{ ...week, weekStart: "2026-08-24", weekEnd: "2026-08-30" }],

@@ -102,6 +102,13 @@ model PrevailingWageDetermination {
 
   jurisdiction String
 
+  /// The rules in force where this job is, if the company has recorded
+  /// them. Nullable and additive: every determination that exists today
+  /// predates rule sets, and a determination is perfectly useful without
+  /// one — it is the wage document either way. See prevailing-wage.prisma.
+  ruleSetId String?
+  ruleSet   PrevailingWageRuleSet? @relation(fields: [ruleSetId], references: [id], onDelete: SetNull)
+
   fileUrl   String?
   fileName  String?
   sourceUrl String?

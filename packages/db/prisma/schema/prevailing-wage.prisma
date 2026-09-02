@@ -1,0 +1,116 @@
+// State-specific prevailing wage RULE SETS — the rules, never the rates.
+//
+// Part of the multi-file Prisma schema in this folder.
+//
+// ARCHITECTURE.md has said for weeks that multi-state variation is not
+// built "as a rules engine ... without a real government wage-rate
+// dataset", and that stays true: there is no licensed or scraped
+// prevailing-wage dataset in this app, nothing here is seeded, and nothing
+// here invents a wage. The same reasoning left NV licensing unseeded.
+//
+// What this adds is the other half of the sheet's row, which does not need
+// a dataset. A wage DETERMINATION tells you what a classification pays in
+// a jurisdiction; the jurisdiction's RULES tell you when an hour is
+// overtime, when it is double time, and how soon the report has to be
+// filed. Those genuinely differ — a state with an 8-hour daily threshold
+// classifies the same timesheet differently from one with a 40-hour weekly
+// threshold — and none of them is a rate.
+//
+// Every value here is ENTERED by the company from its own counsel or the
+// awarding body's own documents, with `sourceUrl` for the citation.
+// Nothing is seeded and nothing is defaulted to a plausible number: a null
+// threshold means NO RULE RECORDED, and lib/prevailing-wage.ts reports
+// that as "not checked" rather than assuming eight. An app that guessed
+// "California is 8 and 12" from nowhere would be asserting law, which is
+// exactly what the unseeded tables in this schema exist to refuse.
+
+/// Who sets the rules. Deliberately its own enum rather than reusing
+/// JurisdictionType, which is shared with CompanyLicense and has no
+/// FEDERAL member — Davis-Bacon needs one, and adding a value to a shared
+/// enum to get it would make FEDERAL selectable on a contractor's licence,
+/// where it means something else.
+enum PrevailingWageAuthority {
+  FEDERAL
+  STATE
+  COUNTY
+  CITY
+}
+
+/// How often certified payroll has to be filed under this rule set.
+enum PrevailingWageFilingFrequency {
+  WEEKLY
+  BIWEEKLY
+  SEMI_MONTHLY
+  MONTHLY
+}
+
+/// One jurisdiction's prevailing-wage rules, as this company has recorded
+/// them.
+///
+/// Effective-dated for the same hard reason FringeRateSchedule is:
+/// reviewing a timesheet from last year has to use the rule that was in
+/// force then, not the one in force today. A legislature amending a daily
+/// overtime threshold must not silently rewrite how a closed week is
+/// classified. Non-overlap is enforced at the DATABASE level, not assumed
+/// by the application — see the raw SQL in this model's migration.
+model PrevailingWageRuleSet {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  /// What the company calls it. Free text, because "the rules we work
+  /// under in Clark County" is a more useful label than any code.
+  name String
+
+  /// Free text, same reasoning as CompanyLicense.classificationCode: a
+  /// fixed list of jurisdictions would be wrong for the next one.
+  jurisdiction String
+  authority    PrevailingWageAuthority
+
+  /// Hours in a DAY after which the premium applies. Null means no daily
+  /// rule has been recorded, which is not the same as there being none —
+  /// the review reports it as unchecked rather than assuming a figure.
+  /// Zero is meaningful and distinct from null: it means the premium
+  /// applies from the first hour, which is how a seventh-consecutive-day
+  /// rule is usually written.
+  dailyOvertimeAfterHours   Decimal? @db.Decimal(4, 2)
+  dailyDoubleTimeAfterHours Decimal? @db.Decimal(4, 2)
+
+  /// Hours in a WEEK after which straight time becomes overtime. The
+  /// federal Davis-Bacon shape. Applied after the daily rules — see
+  /// lib/prevailing-wage.ts for why that ordering, and why it converts the
+  /// latest hours rather than the earliest.
+  weeklyOvertimeAfterHours Decimal? @db.Decimal(5, 2)
+
+  /// The seventh consecutive worked day, where a jurisdiction treats it
+  /// specially. Same null/zero distinction as above.
+  seventhDayOvertimeAfterHours   Decimal? @db.Decimal(4, 2)
+  seventhDayDoubleTimeAfterHours Decimal? @db.Decimal(4, 2)
+
+  filingFrequency PrevailingWageFilingFrequency @default(WEEKLY)
+
+  /// Days after the period closes that the report is due. Null means
+  /// nobody has looked it up; the certified-payroll alert falls back to
+  /// its own generic horizon and says which it used.
+  filingDueDays Int?
+
+  /// The form and where it goes — "WH-347", a state portal. Free text and
+  /// a URL, not an enum: every awarding body has its own.
+  formName  String?
+  portalUrl String?
+
+  /// Where these rules were read from. The whole honesty of this table:
+  /// a threshold with no citation is somebody's memory.
+  sourceUrl String?
+  note      String?
+
+  effectiveFrom DateTime
+  effectiveTo   DateTime?
+
+  determinations PrevailingWageDetermination[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+}

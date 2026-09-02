@@ -356,6 +356,15 @@ export type CertifiedPayrollAlertSource = {
   weekStart: string;
   /** The Sunday. The report is due after the week closes, not during it. */
   weekEnd: string;
+  /**
+   * Days after the period closes that this jurisdiction actually allows,
+   * from the rule set attached to the job's wage determination. Null when
+   * nobody has recorded one, and the generic horizon below stands in — the
+   * alert says which of the two it used, because "due in 7 days" sourced
+   * from a citation and "due in 7 days" sourced from our own default are
+   * not the same claim.
+   */
+  filingDueDays?: number | null;
 };
 
 /**
@@ -388,8 +397,11 @@ export function certifiedPayrollAlerts(
     // A week still running is not late. The report covers a closed week.
     if (week.weekEnd >= todayIso) continue;
 
-    const dueOn = addDays(week.weekEnd, horizon);
+    const recorded = week.filingDueDays ?? null;
+    const dueOn = addDays(week.weekEnd, recorded ?? horizon);
     const days = daysUntilIso(dueOn, todayIso);
+    const window = recorded === null ? "the usual filing window" : "this jurisdiction's filing window";
+
     alerts.push({
       key: alertKey("CERTIFIED_PAYROLL", week.jobId, week.weekStart),
       kind: "CERTIFIED_PAYROLL",
@@ -397,7 +409,7 @@ export function certifiedPayrollAlerts(
       title: `Certified payroll for ${week.jobName}, week of ${week.weekStart}`,
       detail:
         days < 0
-          ? `Hours were logged that week and nothing covering it has been filed. ${Math.abs(days)} ${Math.abs(days) === 1 ? "day" : "days"} past the usual filing window.`
+          ? `Hours were logged that week and nothing covering it has been filed. ${Math.abs(days)} ${Math.abs(days) === 1 ? "day" : "days"} past ${window}.`
           : "Hours were logged that week and nothing covering it has been filed yet.",
       href: "/compliance",
       dueOn,

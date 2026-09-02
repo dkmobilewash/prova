@@ -34,3 +34,4 @@ export * from "./backcharges";
 export * from "./closeoutSubmissions";
 export * from "./alerts";
 export * from "./permissions";
+export * from "./prevailingWage";

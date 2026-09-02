@@ -86,7 +86,14 @@ export async function loadAlerts(
         // Only jobs carrying a wage determination can raise a certified
         // payroll alert — see certifiedPayrollAlerts. Taking one row is
         // enough: this is a "does one exist" question.
-        prevailingWageDeterminations: { take: 1, select: { id: true } },
+        prevailingWageDeterminations: {
+          take: 1,
+          orderBy: { createdAt: "desc" },
+          // The jurisdiction's own filing window, where it has been
+          // recorded. Without it the alert falls back to its generic
+          // horizon and says so.
+          select: { id: true, ruleSet: { select: { filingDueDays: true } } },
+        },
         timeEntries: { select: { date: true } },
         complianceDocuments: {
           where: { type: "CERTIFIED_PAYROLL" },
@@ -187,7 +194,13 @@ export async function loadAlerts(
         // week was filed, and treating it as such would hide a real gap.
         const isCovered = covered.some((c) => c.start <= start && c.end >= end);
         if (!isCovered) {
-          payrollSources.push({ jobId: job.id, jobName: job.name, weekStart: start, weekEnd: end });
+          payrollSources.push({
+            jobId: job.id,
+            jobName: job.name,
+            weekStart: start,
+            weekEnd: end,
+            filingDueDays: job.prevailingWageDeterminations[0]?.ruleSet?.filingDueDays ?? null,
+          });
         }
       }
     }

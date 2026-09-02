@@ -49,6 +49,7 @@ model Company {
   backcharges             Backcharge[]
   closeoutSubmissions     CloseoutSubmission[]
   alertAcknowledgements   AlertAcknowledgement[]
+  prevailingWageRuleSets  PrevailingWageRuleSet[]
   submittals              Submittal[]
   safetyCaseCounters      SafetyCaseCounter[]
   safetyIncidents         SafetyIncident[]
