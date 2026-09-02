@@ -12,6 +12,59 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### The three pages that were leaking cost to the field tier (Diego)
+`claude/prova-contractor-os-e3f0iz`
+
+The permissions commit shipped with a named gap: `/jobs/[id]`,
+`/dashboard` and `/contacts/[id]` still showed a FIELD user cost, margin,
+invoiced totals and payment reliability. They are in the other lanes, so
+they were listed rather than half-edited. Diego said do them, so they are
+done.
+
+All three are reachable by everyone — a foreman needs the job, the
+schedule and the GC's phone number — so they are narrowed, not refused.
+Each computes two flags once at the top (`showsJobMoney`, `showsBilling`)
+rather than per section, so the contract summary, the WIP table and the
+change-order log cannot end up disagreeing about whether this reader may
+see a price. Both are true for an owner and for a member with no job
+function set: all three pages render exactly as they always have for
+everyone who has ever used them.
+
+Withheld from a job function without `VIEW_JOB_COSTS`: the contract
+summary, the subcontract agreement and signing link, job costing & WIP,
+the estimate line items and the change-order log, job health, pipeline
+value, per-job contract value. Without `MANAGE_BILLING`: invoices,
+retainage, pay applications, the overdue and retainage-held tiles, the
+whole Money section, and a GC's payment reliability.
+
+**Whole sections, never filtered ones.** A WIP table with the money taken
+out is still a WIP table, and half a screen of blanks reads as broken
+rather than as withheld.
+
+**The one that was a data question rather than a markup question.**
+`ReceivablesProvider` is a client component, so everything handed to it
+reaches the browser whether or not a list renders it. Hiding the panel
+while still shipping the rows would have been exactly the "looks enforced,
+is not" failure this pass exists to close, so it now receives
+`rows={showsBilling ? today.receivables : []}`. Everything else on these
+pages is a server component, where an unrendered section never reaches the
+browser at all.
+
+`lib/page-money-guards.test.ts` is a static regression guard and is honest
+about it in its own header: it asserts each page still consults `can()`
+and still references its flags. It cannot tell you a guard wraps the right
+section — the click-list does that. What it catches is a refactor dropping
+the import and restoring the hole with every test still green.
+
+Sheet 25's second row stays **Partial**, now for one reason instead of
+four: there is no mobile SURFACE. This is the same responsive site,
+narrowed, and an offline-capable field app with camera capture is a
+separate build, not a permission.
+
+`pnpm test` 493 → 500, 58 db tests, typecheck/lint/build clean.
+
+---
+
 ### Roles that mean something, and the holes they do not close yet (Diego)
 `claude/prova-contractor-os-e3f0iz`
 

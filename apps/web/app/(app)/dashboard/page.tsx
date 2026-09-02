@@ -3,6 +3,7 @@ import { Card, StatusBadge } from "@prova/ui";
 import { JobStatus, Prisma, prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { estimateStage } from "@/lib/estimate-stage";
+import { can } from "@/lib/permissions";
 import { money } from "@/lib/money";
 import { renewalSourcesForCompany } from "@/lib/renewals";
 import { renewalAlerts, renewalTiming } from "@/lib/compliance-expiry";
@@ -100,7 +101,14 @@ export default async function TodayPage({
 }: {
   searchParams: Promise<{ q?: string; status?: string }>;
 }) {
-  const { company } = await requireCompanyContext();
+  const { company, ...currentUser } = await requireCompanyContext();
+
+  // Both TRUE for an owner and for a member with no job function set, so
+  // this screen is unchanged for everyone who has ever used it. A narrowed
+  // function loses the money and keeps the work.
+  const principal = { role: currentUser.role, jobFunction: currentUser.jobFunction };
+  const showsBilling = can(principal, "MANAGE_BILLING");
+  const showsJobMoney = can(principal, "VIEW_JOB_COSTS");
   const { q, status } = await searchParams;
 
   const activeStatus = ALL_STATUSES.includes(status as JobStatus) ? (status as JobStatus) : null;
@@ -138,7 +146,11 @@ export default async function TodayPage({
       );
 
   return (
-    <ReceivablesProvider rows={today.receivables}>
+    // The rows, not the markup. This is a client provider, so anything
+    // handed to it reaches the browser whether or not a list renders it —
+    // hiding the panel while still shipping the receivables would be the
+    // exact "looks enforced, isn't" failure this work exists to avoid.
+    <ReceivablesProvider rows={showsBilling ? today.receivables : []}>
       {/* The panel is a sibling of this column, not a child of it — that is
           what lets it push rather than cover. */}
       {/* The one light surface in the app so far. Scoped here rather than
@@ -166,16 +178,18 @@ export default async function TodayPage({
                 Needs attention
               </h2>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <StatCard
-                  accent="rose"
-                  label="Overdue invoices"
-                  value={money(today.overdueTotal)}
-                  detail={
-                    today.overdue.length === 0
-                      ? "Nothing past its due date."
-                      : `${today.overdue.length} ${today.overdue.length === 1 ? "invoice" : "invoices"} past due`
-                  }
-                />
+                {showsBilling && (
+                  <StatCard
+                    accent="rose"
+                    label="Overdue invoices"
+                    value={money(today.overdueTotal)}
+                    detail={
+                      today.overdue.length === 0
+                        ? "Nothing past its due date."
+                        : `${today.overdue.length} ${today.overdue.length === 1 ? "invoice" : "invoices"} past due`
+                    }
+                  />
+                )}
                 <StatCard
                   accent="amber"
                   label="Documents expiring"
@@ -187,22 +201,26 @@ export default async function TodayPage({
                   }
                   href="/compliance"
                 />
-                <StatCard
-                  accent="violet"
-                  label="Jobs over budget"
-                  value={String(today.jobsOverBudget)}
-                  detail={
-                    today.jobsOverBudget === 0
-                      ? "No active job is forecast past its contract value."
-                      : "Forecast cost above contract value"
-                  }
-                />
-                <StatCard
-                  accent="teal"
-                  label="Retainage held"
-                  value={money(today.retainageHeldPastCompletion)}
-                  detail="Withheld and not yet released"
-                />
+                {showsJobMoney && (
+                  <StatCard
+                    accent="violet"
+                    label="Jobs over budget"
+                    value={String(today.jobsOverBudget)}
+                    detail={
+                      today.jobsOverBudget === 0
+                        ? "No active job is forecast past its contract value."
+                        : "Forecast cost above contract value"
+                    }
+                  />
+                )}
+                {showsBilling && (
+                  <StatCard
+                    accent="teal"
+                    label="Retainage held"
+                    value={money(today.retainageHeldPastCompletion)}
+                    detail="Withheld and not yet released"
+                  />
+                )}
               </div>
             </section>
 
@@ -271,6 +289,7 @@ export default async function TodayPage({
             </section>
 
             {/* ------------------------------------------------ money -- */}
+            {showsBilling && (
             <section className="mt-8">
               <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-label">
                 Money
@@ -319,8 +338,12 @@ export default async function TodayPage({
                 </Card>
               </div>
             </section>
+            )}
 
             {/* ------------------------------------------- job health -- */}
+            {/* The sentences here ARE the margin — "forecast 8% past
+                contract value" is the number said out loud. */}
+            {showsJobMoney && (
             <section className="mt-8">
               <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-label">
                 Job health
@@ -345,14 +368,16 @@ export default async function TodayPage({
                 )}
               </Card>
             </section>
+            )}
 
             {/* --------------------------------------- browse all jobs - */}
             <section className="mt-10 border-t border-line-card pt-6">
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <h2 className="text-sm font-semibold text-ink">Browse all jobs</h2>
                 <p className="text-xs text-ink-body">
-                  {money(pipelineValue)} still being priced across {estimating.length}{" "}
-                  {estimating.length === 1 ? "estimate" : "estimates"}
+                  {showsJobMoney
+                    ? `${money(pipelineValue)} still being priced across ${estimating.length} ${estimating.length === 1 ? "estimate" : "estimates"}`
+                    : `${estimating.length} ${estimating.length === 1 ? "estimate" : "estimates"} still being priced`}
                 </p>
               </div>
 
@@ -480,9 +505,11 @@ export default async function TodayPage({
                                       </span>
                                     )}
                                   </div>
-                                  <p className="text-sm font-medium tabular-nums text-ink">
-                                    {money(jobValue(job))}
-                                  </p>
+                                  {showsJobMoney && (
+                                    <p className="text-sm font-medium tabular-nums text-ink">
+                                      {money(jobValue(job))}
+                                    </p>
+                                  )}
                                 </div>
                                 <p className="mt-0.5 text-sm text-ink-body">{job.contact.name}</p>
                                 {stage && (

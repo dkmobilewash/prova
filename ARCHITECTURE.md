@@ -866,16 +866,55 @@ are also stripped from alerts a restricted person may otherwise see — that
 the GC has sat on the closeout package for six weeks is operational; what
 it is holding up in dollars is a margin conversation.
 
-### What the FIELD tier does not yet withhold
+### The three pages that render job money
 
-Stated here rather than discovered later. `/jobs/[id]`, `/dashboard` and
-`/contacts/[id]` still render cost, margin, invoiced totals and payment
-reliability to a FIELD user. All three are in another session's lane, and
-half-editing someone else's page to close a permissions hole produces a
-worse outcome than naming it: a page that filters in one place and not
-another reads as enforced when it is not. FEATURE-AUDIT Sheet 25 keeps
-that row at Partial for exactly this reason. There is also no mobile
-SURFACE — it is the same responsive site, narrowed.
+`/jobs/[id]`, `/dashboard` and `/contacts/[id]` are reachable by everyone
+— a foreman needs the job, the schedule and the GC's phone number — so
+they are narrowed rather than refused. Each computes two flags once, at
+the top, from the signed-in person:
+
+```ts
+const principal = { role: currentUser.role, jobFunction: currentUser.jobFunction };
+const showsJobMoney = can(principal, "VIEW_JOB_COSTS");
+const showsBilling  = can(principal, "MANAGE_BILLING");
+```
+
+Computed once rather than per section, so the contract summary, the WIP
+table and the change-order log cannot end up disagreeing about whether
+this reader may see a price. Both are TRUE for an owner and for a member
+with no job function set, so all three pages render exactly as they always
+have for everyone who has ever used them.
+
+`showsJobMoney` gates the contract summary (which IS the prices), the
+subcontract agreement and signing link (both carry the contract value),
+job costing & WIP, the estimate line items and change-order log, job
+health on the dashboard, pipeline and per-job contract value, and the
+per-job total on a contact. `showsBilling` gates invoices, retainage, pay
+applications, the overdue and retainage tiles, the whole Money section and
+a GC's payment reliability.
+
+**Whole sections, never filtered ones.** A WIP table with the money taken
+out is still a WIP table, and half a screen of blanks reads as broken
+rather than as withheld.
+
+**One of these is a data question, not a markup question.**
+`ReceivablesProvider` on the dashboard is a client component, so anything
+handed to it reaches the browser whether or not a list renders it. It gets
+`rows={showsBilling ? today.receivables : []}` — hiding the panel while
+still shipping the rows would be the exact "looks enforced, is not"
+failure this pass exists to close. Everything else on these pages is a
+server component, so an unrendered section never reaches the browser at
+all.
+
+`lib/page-money-guards.test.ts` is a static regression guard: it asserts
+each page still consults `can()` and still references its flags. It cannot
+tell you a guard wraps the right section — only that a refactor has not
+silently dropped the import and restored the hole with every test green.
+
+What remains genuinely unbuilt is a mobile SURFACE. This is the same
+responsive site, narrowed; an offline-capable field app with camera
+capture is a separate build, not a permission, and FEATURE-AUDIT Sheet 25
+keeps that row at Partial for that reason alone.
 
 Per-company overrides of the capability map are not built. A settings page
 editing a map nothing reads would be worse than the honest absence; where a

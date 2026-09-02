@@ -12,6 +12,7 @@ import {
   updateContact,
 } from "@/lib/actions";
 import { money } from "@/lib/money";
+import { can } from "@/lib/permissions";
 import { calculatePaymentReliability } from "@/lib/gc-reliability";
 import { SubmitButton } from "@/components/SubmitButton";
 import { LinkContactToQuickBooks } from "@/components/LinkContactToQuickBooks";
@@ -50,7 +51,14 @@ function percent(value: number) {
 
 export default async function ContactPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const { company } = await requireCompanyContext();
+  const { company, ...currentUser } = await requireCompanyContext();
+
+  // Both TRUE for an owner and for a member with no job function set. A
+  // foreman keeps the GC's phone number and loses their payment history.
+  const principal = { role: currentUser.role, jobFunction: currentUser.jobFunction };
+  const showsBilling = can(principal, "MANAGE_BILLING");
+  const showsJobMoney = can(principal, "VIEW_JOB_COSTS");
+  const showsEstimating = can(principal, "MANAGE_ESTIMATING");
 
   const contact = await prisma.contact.findUnique({
     where: { id },
@@ -195,6 +203,7 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
         </form>
       </section>
 
+      {showsBilling && (
       <section className="mb-10 rounded-lg border border-slate-800 bg-slate-900 p-6">
         <h2 className="mb-1 text-lg font-semibold text-slate-100">Payment reliability</h2>
         <p className="mb-4 text-sm text-slate-400">
@@ -228,7 +237,9 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
           </div>
         )}
       </section>
+      )}
 
+      {showsEstimating && (
       <section className="mb-10 rounded-lg border border-slate-800 bg-slate-900 p-6">
         <h2 className="mb-3 text-lg font-semibold text-slate-100">Bid invitations</h2>
         {contact.bidInvitations.length === 0 ? (
@@ -344,6 +355,7 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
           </SubmitButton>
         </form>
       </section>
+      )}
 
       {quickBooksConnected && (
         <section className="mb-10 rounded-lg border border-slate-800 bg-slate-900 p-6">
@@ -409,7 +421,9 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
                       <p className="font-medium text-slate-100">{job.name}</p>
                       <StatusBadge status={job.status} />
                     </div>
-                    <p className="text-sm font-medium text-slate-100">{money(total)}</p>
+                    {showsJobMoney && (
+                      <p className="text-sm font-medium text-slate-100">{money(total)}</p>
+                    )}
                   </Link>
                 </li>
               );
