@@ -111,8 +111,8 @@ plus the back-relation fields Prisma requires on `Job`, `Company` and
 
 A fourth session is running alongside the three above. It owns the
 customer-facing CRM, Phase A of the CRM spec, one item at a time on a new
-branch per item (previously `claude/prova-crm-contact-lifecycle`, now
-`claude/prova-crm-interaction-log`):
+branch per item (previously `claude/prova-crm-contact-lifecycle`, then
+`claude/prova-crm-interaction-log`, now `claude/prova-crm-contact-people`):
 
 1. **Contact create/delete + prospect status** — Sheet 02. *Shipped 2 Sep.*
    `ContactStatus` (PROSPECT/ACTIVE/INACTIVE), `ContactType` (GC/DEVELOPER/
@@ -133,12 +133,22 @@ branch per item (previously `claude/prova-crm-contact-lifecycle`, now
    behind `MANAGE_ESTIMATING` on `/contacts/[id]` like Bid Invitations.
    `deleteContact`'s guard extended to also block on logged interactions.
    Not wired into `/alerts` yet — that's item 4.
-3. `ContactPerson` — individual people at an account (name/title/email/
-   phone/last-touch) — next.
+3. **`ContactPerson`** — Sheet 02. *Shipped 3 Sep.* Individual people at an
+   account (name/title/email/phone), new model in `crm.prisma`. No stored
+   "last contact" — derived from `ContactInteraction.contactPersonId`
+   (new, optional, `SET NULL` on delete) at read time. `deleteContact`'s
+   guard extended again to count people as account history.
+   `createContactPerson`/`updateContactPerson`/`deleteContactPerson` in
+   `lib/actions/crm.ts`; a "People" section on `/contacts/[id]` above
+   Interactions, and interactions can now optionally name who they were
+   with. No `isDecisionMaker` flag or role-based filter tabs — left out,
+   see ARCHITECTURE.md.
 4. Follow-ups surfaced in the existing `/alerts` engine.
-5. A read-only GC pipeline view over `BidInvitation` (Lead → Bid Invited →
-   Estimate Sent → Awarded → Contracted, derived from `Job`/
-   `BidInvitation`/`EstimateVersion` state, never stored).
+5. ~~A read-only GC pipeline view over `BidInvitation`~~ — already shipped
+   by another lane as `/pipeline` (PR #80, merged before this lane reached
+   it): `lib/bid-pipeline.ts` + `lib/bid-pipeline-query.ts`, reading
+   `BidInvitation` per GC, derived and stored nowhere. Struck rather than
+   duplicated.
 
 Then Phase B: an internal, owner-only sales CRM for selling Prova itself
 (Lead/Opportunity models, its own nav section) — not started until Phase A

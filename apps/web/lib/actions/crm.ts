@@ -61,6 +61,25 @@ async function findInteraction(interactionId: string, companyId: string) {
   return interaction;
 }
 
+async function findContactPerson(personId: string, companyId: string) {
+  const person = await prisma.contactPerson.findUnique({ where: { id: personId } });
+  if (!person || person.companyId !== companyId) return null;
+  return person;
+}
+
+/** Validates an optional "who this was with" against the contact this
+ * interaction is being logged/edited on -- a person from a different
+ * account can't be picked here even if they exist in this company. */
+async function readContactPersonField(formData: FormData, companyId: string, contactId: string) {
+  const contactPersonId = text(formData, "contactPersonId") || null;
+  if (!contactPersonId) return null;
+  const person = await findContactPerson(contactPersonId, companyId);
+  if (!person || person.contactId !== contactId) {
+    throw new InputError("Contact person not found");
+  }
+  return contactPersonId;
+}
+
 /** Validates an optional follow-up assignee belongs to this company, and
  * that a set follow-up date isn't before the interaction it follows from. */
 async function readFollowUpFields(formData: FormData, companyId: string, occurredOn: Date) {
@@ -93,6 +112,7 @@ export async function createContactInteraction(contactId: string, formData: Form
     const occurredOn = requiredDate(formData, "occurredOn", "Date");
     const summary = required(formData, "summary", "Summary");
     const { followUpOn, followUpAssignedToUserId } = await readFollowUpFields(formData, company.id, occurredOn);
+    const contactPersonId = await readContactPersonField(formData, company.id, contactId);
 
     await prisma.contactInteraction.create({
       data: {
@@ -103,6 +123,7 @@ export async function createContactInteraction(contactId: string, formData: Form
         summary,
         followUpOn,
         followUpAssignedToUserId,
+        contactPersonId,
         loggedByUserId: user.id,
       },
     });
@@ -124,10 +145,11 @@ export async function updateContactInteraction(interactionId: string, formData: 
     const occurredOn = requiredDate(formData, "occurredOn", "Date");
     const summary = required(formData, "summary", "Summary");
     const { followUpOn, followUpAssignedToUserId } = await readFollowUpFields(formData, company.id, occurredOn);
+    const contactPersonId = await readContactPersonField(formData, company.id, interaction.contactId);
 
     await prisma.contactInteraction.update({
       where: { id: interactionId },
-      data: { type, occurredOn, summary, followUpOn, followUpAssignedToUserId },
+      data: { type, occurredOn, summary, followUpOn, followUpAssignedToUserId, contactPersonId },
     });
 
     revalidatePath(`/contacts/${interaction.contactId}`);
@@ -144,6 +166,73 @@ export async function deleteContactInteraction(interactionId: string): Promise<A
     await prisma.contactInteraction.delete({ where: { id: interactionId } });
 
     revalidatePath(`/contacts/${interaction.contactId}`);
+    return ok;
+  });
+}
+
+/** Adds a named person at a Contact's company (e.g. their PM or estimator).
+ * Not gated to the account owner -- same reasoning as interactions: anyone
+ * on the team who deals with a GC can keep the list of who's who current. */
+export async function createContactPerson(contactId: string, formData: FormData): Promise<ActionResult> {
+  const { company } = await requireCompanyContext();
+  return runAction(async () => {
+    const contact = await prisma.contact.findUnique({ where: { id: contactId } });
+    if (!contact || contact.companyId !== company.id) return fail("Contact not found");
+
+    const name = required(formData, "name", "Name");
+    const title = text(formData, "title");
+    const email = text(formData, "email");
+    const phone = text(formData, "phone");
+
+    await prisma.contactPerson.create({
+      data: {
+        companyId: company.id,
+        contactId,
+        name,
+        title: title || null,
+        email: email || null,
+        phone: phone || null,
+      },
+    });
+
+    revalidatePath(`/contacts/${contactId}`);
+    return ok;
+  });
+}
+
+export async function updateContactPerson(personId: string, formData: FormData): Promise<ActionResult> {
+  const { company } = await requireCompanyContext();
+  return runAction(async () => {
+    const person = await findContactPerson(personId, company.id);
+    if (!person) return fail("Contact person not found");
+
+    const name = required(formData, "name", "Name");
+    const title = text(formData, "title");
+    const email = text(formData, "email");
+    const phone = text(formData, "phone");
+
+    await prisma.contactPerson.update({
+      where: { id: personId },
+      data: { name, title: title || null, email: email || null, phone: phone || null },
+    });
+
+    revalidatePath(`/contacts/${person.contactId}`);
+    return ok;
+  });
+}
+
+/** Deleting a person never blocks on their interaction history -- see the
+ * onDelete: SetNull on ContactInteraction.contactPersonId in crm.prisma.
+ * Those rows stay, just no longer attributed to a specific person. */
+export async function deleteContactPerson(personId: string): Promise<ActionResult> {
+  const { company } = await requireCompanyContext();
+  return runAction(async () => {
+    const person = await findContactPerson(personId, company.id);
+    if (!person) return fail("Contact person not found");
+
+    await prisma.contactPerson.delete({ where: { id: personId } });
+
+    revalidatePath(`/contacts/${person.contactId}`);
     return ok;
   });
 }

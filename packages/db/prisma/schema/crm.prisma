@@ -41,9 +41,48 @@ model ContactInteraction {
   loggedByUserId String?
   loggedByUser   User?   @relation("ContactInteractionLogger", fields: [loggedByUserId], references: [id])
 
+  /// Which specific person at the Contact this touchpoint was with, if
+  /// named -- optional, since not every logged call bothers to say who
+  /// exactly ("talked to the office" is still a valid entry). SetNull
+  /// (unlike contactId above, which stays RESTRICT) because a
+  /// ContactPerson is a lightweight, disposable record: someone leaving
+  /// their job and getting deleted shouldn't be blocked by old interaction
+  /// history -- those rows just fall back to being attributed to the
+  /// account alone. "Last contact with this person" is derived from here
+  /// at read time; there is deliberately no stored lastContactAt on
+  /// ContactPerson itself.
+  contactPersonId String?
+  contactPerson   ContactPerson? @relation(fields: [contactPersonId], references: [id], onDelete: SetNull)
+
   createdAt DateTime @default(now())
 
   @@index([contactId])
   @@index([companyId])
   @@index([followUpOn])
+  @@index([contactPersonId])
+}
+
+/// An individual person at a Contact's company -- the GC we work for is
+/// Contact; the six people there we actually talk to are ContactPerson.
+/// Not a separate Contact of their own: no jobs, no bid invitations, no
+/// portal access of their own, since none of that is per-person.
+model ContactPerson {
+  id        String   @id @default(cuid())
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id])
+  contactId String
+  contact   Contact  @relation(fields: [contactId], references: [id])
+
+  name  String
+  title String?
+  email String?
+  phone String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  interactions ContactInteraction[]
+
+  @@index([contactId])
+  @@index([companyId])
 }

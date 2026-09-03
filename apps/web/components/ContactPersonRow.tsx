@@ -2,39 +2,24 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { deleteContactInteraction, updateContactInteraction } from "@/lib/actions";
-import {
-  ContactInteractionFields,
-  INTERACTION_TYPE_OPTIONS,
-  type MemberOption,
-  type PersonOption,
-} from "@/components/ContactInteractionFields";
+import { deleteContactPerson, updateContactPerson } from "@/lib/actions";
+import { ContactPersonFields } from "@/components/ContactPersonFields";
 
-export type ContactInteractionRowData = {
+export type ContactPersonRowData = {
   id: string;
-  type: string;
-  occurredOn: string;
-  summary: string;
-  followUpOn: string | null;
-  followUpAssignedToUserId: string | null;
-  followUpAssignedToUserName: string | null;
-  loggedByUserName: string | null;
-  contactPersonId: string | null;
-  contactPersonName: string | null;
+  name: string;
+  title: string | null;
+  email: string | null;
+  phone: string | null;
+  /** Derived at read time from this person's interaction log -- see
+   * lastContactByPersonId in the page. Never a stored field. */
+  lastContactOn: string | null;
 };
 
 const btn =
   "rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:border-slate-500 disabled:opacity-50";
 
-export function ContactInteractionRow({
-  interaction,
-  members,
-  people,
-}: {
-  interaction: ContactInteractionRowData;
-  members: MemberOption[];
-  people: PersonOption[];
-}) {
+export function ContactPersonRow({ person }: { person: ContactPersonRowData }) {
   const [mode, setMode] = useState<"view" | "edit">("view");
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -51,7 +36,7 @@ export function ContactInteractionRow({
             const formData = new FormData(event.currentTarget);
             startTransition(async () => {
               try {
-                const result = await updateContactInteraction(interaction.id, formData);
+                const result = await updateContactPerson(person.id, formData);
                 if (!result.ok) {
                   setError(result.error);
                   return;
@@ -65,7 +50,7 @@ export function ContactInteractionRow({
           }}
           className="flex flex-col gap-3"
         >
-          <ContactInteractionFields members={members} people={people} defaults={interaction} />
+          <ContactPersonFields defaults={person} />
           {error && <p className="text-sm text-red-400">{error}</p>}
           <div className="flex gap-2">
             <button
@@ -89,24 +74,15 @@ export function ContactInteractionRow({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded bg-slate-800 px-1.5 py-0.5 text-xs text-slate-400">
-              {INTERACTION_TYPE_OPTIONS.find((o) => o.value === interaction.type)?.label ?? interaction.type}
-            </span>
-            <span className="text-xs text-slate-500">{interaction.occurredOn}</span>
-            {interaction.contactPersonName && (
-              <span className="text-xs text-slate-500">with {interaction.contactPersonName}</span>
-            )}
+            <p className="font-medium text-slate-100">{person.name}</p>
+            {person.title && <span className="text-xs text-slate-500">{person.title}</span>}
           </div>
-          <p className="mt-1 text-sm text-slate-300">{interaction.summary}</p>
-          {interaction.followUpOn && (
-            <p className="mt-1 text-xs text-amber-300">
-              Follow up {interaction.followUpOn}
-              {interaction.followUpAssignedToUserName && ` — ${interaction.followUpAssignedToUserName}`}
-            </p>
-          )}
-          {interaction.loggedByUserName && (
-            <p className="mt-1 text-xs text-slate-500">logged by {interaction.loggedByUserName}</p>
-          )}
+          <p className="mt-1 text-sm text-slate-400">
+            {[person.email, person.phone].filter(Boolean).join(" · ") || "No email or phone on file"}
+          </p>
+          <p className="mt-1 text-xs text-slate-500">
+            {person.lastContactOn ? `Last contact ${person.lastContactOn}` : "No interactions logged with them yet"}
+          </p>
           {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
         </div>
 
@@ -123,7 +99,7 @@ export function ContactInteractionRow({
                   setError(null);
                   startTransition(async () => {
                     try {
-                      const result = await deleteContactInteraction(interaction.id);
+                      const result = await deleteContactPerson(person.id);
                       if (!result.ok) {
                         setError(result.error);
                         setIsConfirmingDelete(false);
@@ -131,7 +107,7 @@ export function ContactInteractionRow({
                       }
                       router.refresh();
                     } catch {
-                      setError("Could not delete it");
+                      setError("Could not delete them");
                       setIsConfirmingDelete(false);
                     }
                   });
