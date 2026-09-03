@@ -158,13 +158,13 @@ export async function deleteContact(contactId: string): Promise<ActionResult> {
 
     const contact = await prisma.contact.findUnique({
       where: { id: contactId },
-      include: { _count: { select: { jobs: true, bidInvitations: true } } },
+      include: { _count: { select: { jobs: true, bidInvitations: true, interactions: true } } },
     });
     if (!contact || contact.companyId !== context.company.id) return fail("Contact not found");
 
-    if (contact._count.jobs > 0 || contact._count.bidInvitations > 0) {
+    if (contact._count.jobs > 0 || contact._count.bidInvitations > 0 || contact._count.interactions > 0) {
       return fail(
-        `${contact.name} has ${contact._count.jobs} job(s) and ${contact._count.bidInvitations} bid invitation(s) on file, so its record stays. Only a contact with no history can be deleted.`,
+        `${contact.name} has ${contact._count.jobs} job(s), ${contact._count.bidInvitations} bid invitation(s), and ${contact._count.interactions} logged interaction(s) on file, so its record stays. Only a contact with no history can be deleted.`,
       );
     }
 

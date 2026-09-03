@@ -61,6 +61,7 @@ model Company {
   warrantyServiceRequests WarrantyServiceRequest[]
   vendorPriceQuotes       VendorPriceQuote[]
   outboundMessages        OutboundMessage[]
+  contactInteractions     ContactInteraction[]
 }
 
 enum UserRole {
@@ -117,6 +118,8 @@ model User {
   recordedWarrantyServiceRequests      WarrantyServiceRequest[]
   recordedVendorPriceQuotes            VendorPriceQuote[]
   sentOutboundMessages                 OutboundMessage[]
+  loggedContactInteractions            ContactInteraction[] @relation("ContactInteractionLogger")
+  assignedContactFollowUps             ContactInteraction[] @relation("ContactInteractionFollowUp")
 
   @@index([companyId])
 }
@@ -203,6 +206,7 @@ model Contact {
 
   jobs           Job[]
   bidInvitations BidInvitation[]
+  interactions   ContactInteraction[]
 
   @@index([companyId])
 }
