@@ -117,6 +117,89 @@ the thing it describes changed underneath it.
 
 ---
 
+## The alert engine was a day ahead of everyone west of UTC, and went blind the moment a GC bounced a closeout package
+
+Two of the six findings in issue #111.
+
+**"Today" was the server's, not the reader's.** `/alerts` and the top-bar
+bell both computed `new Date().toISOString().slice(0, 10)` and handed it to
+the engine as `todayIso`. At 18:00 in Los Angeles the UTC date is already
+tomorrow, so every evening a follow-up due tomorrow read "Due today", one
+due today flipped to OVERDUE, and the bell counted it. Two to eight hours a
+day, depending on the season, and worse the further west you are.
+
+The tension that kept this unfixed is written down in two comments in the
+code, and one half of it was wrong. Dates here are stored at UTC midnight,
+so UTC "today" looked like the consistent choice. But those stored values
+are **plain calendar days** — the UTC midnight is how a date with no time
+gets into Postgres, not a claim about a moment. "2026-09-04" on a follow-up
+means the fourth of September wherever you are standing, so the day to
+compare it against is the day on the reader's own wall calendar. UTC was
+never the value that compared correctly; `serverToday.ts` said it was, and
+that sentence has been left in place with the correction under it.
+
+The other half of the tension was real and is why `components/localToday.ts`
+could not simply be called: it asks the BROWSER, during render, and
+server-rendered markup built from it breaks hydration. So the zone reaches
+the server as data instead. `components/TimeZoneCookie.tsx` renders nothing
+and writes the browser's IANA zone to a cookie in an effect — no markup, so
+nothing to disagree about — and `lib/viewerToday.ts` reads it back. Cookie
+first, then Vercel's `x-vercel-ip-timezone` for the first render of a new
+browser, then UTC. **The floor is the old behaviour**, not a new way to
+fail: an unknown zone, a blocked cookie or a local dev server all land on
+UTC, which is exactly what the app did before.
+
+The refresh is the part worth checking. The render that mounts the
+component was built without the cookie, so the first visit from a new
+browser shows UTC dates; the component calls `router.refresh()` once to
+correct them. It cannot loop — a ref guards the effect, and it only
+refreshes after reading the cookie back, so a browser refusing cookies gets
+no refresh rather than an endless one.
+
+`/alerts`, the bell, `severityForKey` (which decides what severity a
+dismissal is recorded at, and therefore what it silences forever — see
+#110) and the email digest all moved. The 30- and 60-day renewal horizons
+on `/dashboard`, `/compliance`, `/settings` and `/contacts/[id]` did NOT:
+a day either way there is the noise `serverToday`'s own comment described,
+and moving them is a change worth making deliberately rather than by sweep.
+
+`snoozeAlert`'s "pick a date in the future" refusal also did not move. It
+has the same root cause and it is issue #111 item 4, which is a product
+question rather than a clear bug — the date input has no `min` and no
+default either, so the choice is between refusing later, warning earlier,
+and defaulting the field. Left as it was, with the situation written into
+the code beside it.
+
+**A closeout package the GC REJECTED raised nothing at all.**
+`alerts-query.ts` fed submissions through on `latest?.status ===
+"SUBMITTED"`, against a three-value enum. So the chase alert vanished at the
+exact moment it started mattering: the GC has bounced the package, the ball
+is back in our court, somebody has to assemble a second attempt, and the
+retainage has stopped moving. `/closeout` had it right the whole time —
+`needsAttention` lists a REJECTED job immediately — so the two screens
+disagreed about the same row.
+
+Not the one-line widening it looked like, because the existing wording is
+false about a rejection: "Sent 31 days ago and nothing recorded back" is
+not true of a package they answered. It is a second alert kind,
+`CLOSEOUT_REJECTED`, dated from the day they sent it back rather than the
+day we sent it, with no chase threshold — the 21 days is a courtesy to a GC
+who has not answered yet, and there is nothing to wait for once they have.
+STANDING like its sibling, because no deadline exists to be past: most
+subcontracts say nothing about how fast a bounced package must go back, and
+claiming OVERDUE would be asserting a date that is not in the contract.
+
+A REJECTED row with no response date is bad data rather than a state the app
+can reach (`recordCloseoutResponse` requires the date), so it is raised on
+the submission date and the wording stops claiming to know when. Silence
+would have been the worst of the three answers.
+
+The `alerts-query` database test asserted the old behaviour in its own name
+— "and stops once they answer" — and passed for as long as the bug existed.
+It now asserts the handover: the GC-side chase ends, ours begins.
+
+---
+
 ### Where the lift actually is, and the same bug I'd just built a guard for (Cyrus)
 `cyrus/equipment-deployment`
 
