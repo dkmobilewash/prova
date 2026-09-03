@@ -23,7 +23,7 @@ in flight. Left as-is here rather than guessed at from the outside; the next
 update to touch those sheets should come from whoever actually verified them
 against a fresh clone.
 
-**118 items audited — 88 built / 21 partial / 8 missing / 1 descoped**
+**118 items audited — 89 built / 20 partial / 8 missing / 1 descoped**
 
 These three statements of the same arithmetic — the line above, the table
 below, and the 26 per-sheet headers — are now checked against the rows by
@@ -38,8 +38,8 @@ rows that sit under a `## NN.` sheet header.
 
 | Status | Count |
 | --- | --- |
-| Built | 88 |
-| Partial | 21 |
+| Built | 89 |
+| Partial | 20 |
 | Missing | 8 |
 | Descoped | 1 |
 
@@ -157,7 +157,7 @@ costing, and prevailing wage attachment shipped 26 Aug 2026.*
 | Missing | Multi-state prevailing wage rule variation support | not built as a rules engine — no real government wage-rate dataset to vary across states with; a job is already jurisdiction-scoped via `operatingLocationId` |
 | Partial | Certified payroll document storage/history per job, per pay period | `ComplianceDocument.type = CERTIFIED_PAYROLL` stores/tracks a submission, with AI extraction; not structured strictly by pay period |
 
-## 09. Union Fringe & Apprenticeship Compliance — 3 built · 1 partial · 0 missing
+## 09. Union Fringe & Apprenticeship Compliance — 4 built · 0 partial · 0 missing
 
 *Updated 1 Sep 2026 — the remittance generator and the daily ratio check
 shipped. Both were blocked on there being no time-entry data; `TimeEntry`
@@ -167,7 +167,7 @@ landed, and `CraftClassification.tier` supplied the other missing half.*
 | --- | --- | --- |
 | Built | Union fringe/benefit remittance report generation (pension, vacation, H&W, training) | `lib/fringe-remittance.ts`, on `/union-compliance`, with the setup CRUD that feeds it added 2 Sep — before that the report was correct and unreachable, because nothing in the app could create a local, a classification or a rate. — a month's logged hours rolled up per local, per classification, with the four funds broken out separately because that is how the form is filled in and how the cheques are written. Uses the rate in force on each entry's own date through `findEffectiveFringeRateSchedule`, not a second copy of that lookup. Fringe is paid at the flat per-hour rate regardless of pay type (Davis-Bacon), so overtime does not inflate it. Hours it cannot price — no craft tag, or no schedule effective that day — are counted and named, never valued at $0: under-reporting a trust fund is the expensive direction to be wrong in. Whether the month was filed is derived from a `UNION_FRINGE_BENEFIT_FILING` document covering the WHOLE period |
 | Built | Apprentice-to-journeyman ratio tracking per crew/job | `lib/apprentice-ratio.ts` — per job, per union local, **per day**, because that is how the rule is enforced and a monthly average would hide the exact day an inspector asks about. Measured in hours (what `TimeEntry` holds). Hours on a craft with no tier are NEVER counted as journeyman hours: the day reads "can't be judged", so a half-configured company never gets a clean bill of health. Also raises the Sheet 26 alert that was blocked on this existing |
-| Partial | Apprenticeship program enrollment/hours tracking | `CraftClassification.apprenticePeriod` identifies the step, and hours per apprentice per period are derivable from `TimeEntry` and shown in the ratio review. What is NOT built is the program side of it — a registered enrolment record, the sponsor, required classroom hours, or progression sign-off. That needs the program's own data model, and none of it can be derived from hours logged |
+| Built | Apprenticeship program enrollment/hours tracking | `apprenticeship.prisma` (`ApprenticeshipEnrollment`, `ApprenticeshipPeriodRecord`), `lib/apprenticeship.ts`, `lib/apprenticeship-query.ts`, on `/union-compliance` with create/edit/remove for both. The registration side the ratio work could not derive: sponsor, programme number, indenture date, classroom hours, and the sign-off that closes a period. **On-the-job hours are still never stored** — they are summed from `TimeEntry` over the window from the last sign-off to today, so a corrected timesheet moves them. Classroom hours ARE stored, because related instruction happens at a training centre and there is no `TimeEntry` to sum. A period closes on a SIGNATURE, never on an hour count: the sponsor decides, and recording our arithmetic as their decision would invent a fact about someone else's programme. Nothing defaults the hour requirements — blank reads as "not looked up" and is reported unchecked rather than measured against the conventional 2000 |
 | Built | Multi-CBA support (a company may run crews under more than one agreement) | `CompanyUnionAgreement` is a list per company, not a single field |
 
 ## 10. Billing — AIA-Style Pay Applications — 5 built · 0 partial · 0 missing

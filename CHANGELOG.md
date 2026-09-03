@@ -106,13 +106,74 @@ leaving it out would not have failed loudly the way the last one did. The
 rows would have been silently ORPHANED, jobId nulled, unfindable by job
 forever after. It is scoped by the tag in the body instead.
 
-Separately, `FEATURE-AUDIT.md`'s summary line on `main` was counting the
-four rows of its own summary table as feature rows: it said 121 items /
-88 built where the sheets sum to 117 / 87, while that same table said 86 --
-three numbers, no two agreeing. `main` has since recounted correctly to
-118 / 88 / 21 / 8 / 1 (the ContactPerson row landed in between), and the
-guard now checks all three statements of it per sheet rather than only the
-total, which two errors can cancel out of.
+Separately, `FEATURE-AUDIT.md`'s arithmetic, which three passes had now
+counted and disagreed about. The cause is one mistake made repeatedly:
+recounting by grepping `^| Built |` over the file also matches the summary
+table's OWN four rows, so the total comes out at rows + 4 and the error
+looks like a careful recount. It said 121 items / 88 built where the sheets
+summed to 117 / 87, while that same table said 86 — three numbers, no two
+agreeing.
+
+The guard now checks all three statements of it — the line, the table, and
+every one of the 26 sheet headers — against the rows, per sheet and by
+name, rather than only the total, which two errors can cancel out of. It
+also asserts the sheets parse as 01..26 contiguously: a header that stops
+matching folds its rows into the sheet above and leaves both looking
+self-consistent, which `length > 20` sails straight past.
+
+**It caught the same bug again during the final merge of this branch**, on
+a number written after the note explaining the trap: `main` had recounted
+to 122 / 90 / 21 / 9 / 2 against 118 / 89 / 20 / 8 / 1 of actual rows —
+plus four, exactly, for the third time. Corrected here, and that is now a
+test failure naming the file rather than something the next person counts
+by hand and gets a fourth answer for.
+
+## The apprenticeship programme, as opposed to the apprentice's hours
+
+Sheet 09's last Partial, and the audit had already written the gap: "a
+registered enrolment record, the sponsor, required classroom hours, or
+progression sign-off... none of it can be derived from hours logged."
+
+THE SPLIT THE WHOLE THING RESTS ON. On-the-job hours stay derived: summed
+from `TimeEntry` over the window from the last sign-off to today, stored
+nowhere, so a corrected timesheet moves them. Classroom hours ARE stored,
+because related instruction happens at a training centre and there is no
+`TimeEntry` to sum. Storing what cannot be derived is the other half of
+"derive, don't duplicate", not an exception to it.
+
+A period closes on a SIGNATURE, never on an hour count reaching a line.
+The sponsor decides progression; recording our own arithmetic as though it
+were their decision would be inventing a fact about somebody else's
+programme. `currentPeriod` therefore reads sign-offs and ignores hours
+entirely, and a test pins it.
+
+Nothing defaults the hour requirements. Blank means the programme has not
+told us, and the review says "no requirement recorded" rather than
+measuring against the conventional 2000 — a denominator this app made up
+would turn "we don't know" into a percentage somebody could act on. Null
+and zero stay distinct all the way through: zero classroom hours means
+somebody checked and they attended none, and those two go in different
+columns of a report to a sponsor.
+
+An indenture recorded as both completed AND cancelled is refused, not
+resolved by precedence. Picking one would bury a data-entry error on a
+record somebody may have to defend.
+
+WHAT THE SUITE CAUGHT, which is the argument for that test existing:
+`reachable.test.ts` failed on `updateApprenticeshipPeriod` and
+`deleteApprenticeshipPeriod` — exported, re-exported through the barrel,
+and called from nowhere. The same defect that once shipped
+`sendOutboundEmail` with no form. The fix was not to delete them: a period
+that can be created and never corrected makes a typo in classroom hours
+permanent. They have an edit row now.
+
+Deleting an enrolment cascades its periods and touches no `TimeEntry` —
+the hours belong to the timesheet, not to the registration — and there is
+a db test asserting exactly that.
+
+14 unit tests, 12 db tests. Migration is additive: two CREATE TABLEs, their
+indexes, FKs on the new tables only. No ALTER or DROP on anything existing.
+Announced in Slack before the push, per the working agreement.
 
 ---
 

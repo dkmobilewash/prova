@@ -35,6 +35,7 @@ export * from "./closeoutSubmissions";
 export * from "./alerts";
 export * from "./permissions";
 export * from "./prevailingWage";
+export * from "./apprenticeship";
 export * from "./unionCompliance";
 export * from "./messages";
 export * from "./crm";

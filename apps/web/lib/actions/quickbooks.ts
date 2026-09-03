@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@prova/db";
+import { accountPurpose } from "@/lib/quickbooks-constants";
 import {
   QuickBooksApiError,
   createCustomer,
@@ -394,7 +395,7 @@ export async function pushInvoiceToQuickBooks(invoiceId: string): Promise<Action
   // the Product/Service item posts to, and without it there is nothing to
   // book a line against.
   const incomeMapping = await prisma.quickBooksAccountMapping.findUnique({
-    where: { companyId_purpose: { companyId: company.id, purpose: "INCOME" } },
+    where: { companyId_purpose: { companyId: company.id, purpose: accountPurpose("INCOME") } },
   });
 
   const toPush: InvoiceToPush = {
@@ -725,7 +726,7 @@ export async function pushPaymentToQuickBooks(paymentId: string): Promise<Action
       },
     }),
     prisma.quickBooksAccountMapping.findUnique({
-      where: { companyId_purpose: { companyId: company.id, purpose: "DEPOSIT" } },
+      where: { companyId_purpose: { companyId: company.id, purpose: accountPurpose("DEPOSIT") } },
     }),
   ]);
 
