@@ -76,6 +76,8 @@ model Company {
   salesLeads              SalesLead[]
   salesOpportunities      SalesOpportunity[]
   equipmentAssignments    EquipmentAssignment[]
+  workerCertifications    WorkerCertification[]
+  requiredCertifications  CertificationRequirement[]
 }
 
 enum UserRole {
@@ -133,9 +135,11 @@ model User {
   recordedWarrantyServiceRequests      WarrantyServiceRequest[]
   recordedVendorPriceQuotes            VendorPriceQuote[]
   sentOutboundMessages                 OutboundMessage[]
-  loggedContactInteractions            ContactInteraction[] @relation("ContactInteractionLogger")
-  assignedContactFollowUps             ContactInteraction[] @relation("ContactInteractionFollowUp")
+  loggedContactInteractions            ContactInteraction[]  @relation("ContactInteractionLogger")
+  assignedContactFollowUps             ContactInteraction[]  @relation("ContactInteractionFollowUp")
   recordedEquipmentAssignments         EquipmentAssignment[]
+  certifications                       WorkerCertification[] @relation("WorkerCertificationHolder")
+  recordedCertifications               WorkerCertification[] @relation("WorkerCertificationRecorder")
 
   @@index([companyId])
   apprenticeshipEnrollments ApprenticeshipEnrollment[] @relation("ApprenticeEnrollments")
