@@ -76,6 +76,58 @@ two different things in two places.** Only loading the page catches that.
 
 ---
 
+### You can now take all your data out, without asking anyone (Diego)
+`claude/prova-vercel-direct-url-hg1acx`
+
+There was no export in this codebase at all. CSV came IN through the catalog
+importer and nothing ever went out — a grep for `text/csv` or
+`Content-Disposition` returned exactly one file, and it was the importer.
+
+Competitor research found the same complaint at four separate vendors: no
+clean way to get your history out when you leave. One put a 50% price rise in
+front of the door and then locked the account; another's sales team promised a
+full export that never arrived. That is a retention mechanism rather than an
+oversight, which makes it a business-model choice to be better at rather than
+an engineering problem — and it was the cheapest item on that whole list.
+
+`/settings/export` shows all 18 tables with a **row count beside each, before
+anything is downloaded**. That matters more than it sounds: "here is a file,
+trust us" is what the incumbents do, and a number somebody can check against
+what they see on screen is the difference between an export and a promise of
+one. The page also states what is deliberately NOT in the file, and the JSON
+repeats it inside the file, because the file is what outlives the account.
+
+**The column lists are an allowlist, and that is the security of the feature.**
+A denylist of fields-not-to-export is correct exactly until somebody adds a
+column, and then it leaks silently with every check green. An allowlist fails
+the other way: a new column is simply absent until a person adds it, and
+absence is visible where a leak is not. There are six credential columns in
+this schema and two are PLAINTEXT (`QuickBooksConnection.accessToken` and
+`.refreshToken`); `Contact.portalToken` and `SignatureRequest.token` are live
+bearer keys. `export.test.ts` reads the .prisma files, collects every field
+matching a credential pattern, and fails if one reaches a column list — and
+asserts it found the known six first, so it cannot pass by finding nothing.
+
+Two formats, deliberately not the same file twice. CSV neutralises leading
+`=` `+` `-` `@` so a description reading `=1+1` is shown by a spreadsheet
+rather than run by it; those values arrive from CSV imports and GC documents,
+so "only what our own users typed" is not a defence. That makes the CSV not
+byte-faithful, which is why the JSON exists beside it and does not do it.
+
+Three things only running it caught. Prisma returns `Decimal` objects for
+every money and quantity column, so the JSON branch turned 4200 into
+`"""4200"""`. The db-test's isolation check first PASSED against a database
+the file had already emptied — vitest runs a describe's `afterAll` before the
+next describe, so "contains no other company's rows" was true of nothing at
+all; the non-vacuity test beside it is what told the two apart. And the
+browser test reported HTTP 503 on every download while the runtime logs showed
+six 200s: the extension cannot follow a `Content-Disposition: attachment`
+response and reports that as a server error. The files had downloaded fine.
+
+Verified on a preview against `ep-patient-lake`: files land, and all six
+credential field names return zero matches in the JSON — with a positive
+control searched first, so the zero means something.
+
 ### Carry the stale-save fix to the other eight forms (Diego)
 `claude/prova-contractor-os-e3f0iz`
 
