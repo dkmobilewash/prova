@@ -36,6 +36,144 @@ page.tsx` as your template for any list-plus-create-form page.
   Low collision risk, but check `git pull` before editing since it's a
   short file where two additions on the same line would conflict.
 
+## A third lane, claimed 1 Sep 2026
+
+A third session is running alongside the two above, on
+`claude/prova-contractor-os-e3f0iz`. It owns the following, in this order,
+one at a time:
+
+1. **Backcharges & Deductions** — Sheet 13. *Shipped 1 Sep.*
+   `/backcharges`, `backcharges.prisma`, `lib/actions/backcharges.ts`,
+   `lib/backcharges.ts`.
+2. **Closeout & Warranty** — Sheet 22. *Shipped 1 Sep.* The closeout
+   package's trip to the GC (`closeout.prisma`,
+   `lib/actions/closeoutSubmissions.ts`) and readiness derived across the
+   checklist, punch items, callbacks and retainage
+   (`lib/closeout-readiness.ts`). Reads `PunchListItem`, never writes it.
+   Two lines added to `CloseoutJobCard.tsx` (a `packageSlot` prop) and a
+   query plus a band on `/closeout/page.tsx`.
+3. **Notifications & Alerts** — Sheet 26. *Engine shipped 1 Sep.*
+   `lib/alerts.ts`, `lib/alerts-query.ts`, `notifications.prisma`
+   (`AlertAcknowledgement` only — alerts themselves are never stored),
+   `/alerts`, and a count in `Topbar`. NOT push: four of Sheet 26's rows
+   stay Partial on purpose, but no longer for the reason first written
+   here. This said "no email sender exists on main", which was true on
+   1 Sep and stopped being true when #38 (`cyrus/messaging`) merged: main
+   now has `packages/integrations/src/email.ts` (Resend, with
+   `readEmailConfig`/`emailSetupProblem` degrading to a named setup
+   problem rather than a throw) and `sendOutboundEmail` wired to
+   `MessageComposer`. What is still missing is the WIRING: nothing calls
+   the sender from an alert, so the rows are Partial for want of a
+   trigger, not for want of a transport. Whoever builds it feeds from
+   `loadAlerts` rather than growing its own rules, and must decide what
+   happens when `emailSetupProblem()` is non-null — a silently dropped
+   alert is worse than no alert. Checked against `main` at 21133db;
+   `cyrus/notifications` (#59) is building that trigger and had not merged
+   at the time of writing, so re-check before relying on this.
+4. **Roles & Permissions** — Sheet 25. *Shipped 1 Sep.*
+   `permissions.prisma` (`JobFunction`, a nullable column on `User` —
+   `UserRole` untouched), `lib/permissions.ts`, `lib/authz.ts`,
+   `lib/actions/permissions.ts`, a picker on `/team`. `/jobs/[id]`,
+   `/dashboard` and `/contacts/[id]` were left alone at first and then
+   done at Diego's request: each computes `showsJobMoney`/`showsBilling`
+   once at the top and withholds whole sections. Sheet 25's second row
+   stays Partial only because there is no mobile SURFACE.
+5. **Multi-state prevailing wage rules** — Sheet 21. *Shipped 1 Sep.*
+   `prevailing-wage.prisma` (`PrevailingWageRuleSet`, effective-dated with
+   a Postgres exclusion constraint), `lib/prevailing-wage.ts`,
+   `lib/prevailing-wage-query.ts`, `lib/actions/prevailingWage.ts`,
+   `/prevailing-wage`. Rules only — no wage-rate dataset, nothing seeded,
+   blank means unchecked. One additive column on
+   `PrevailingWageDetermination` (`ruleSetId`, ON DELETE SET NULL).
+6. **Apprentice / fringe remittance reporting** — Sheet 09. *Shipped
+   1 Sep.* `CraftClassification.tier` + `apprenticePeriod` (two nullable
+   columns, no backfill), `lib/apprentice-ratio.ts`,
+   `lib/fringe-remittance.ts`, `lib/union-compliance-query.ts`,
+   `lib/actions/unionCompliance.ts`, `/union-compliance`. Also raises the
+   apprentice-ratio alert Sheet 26 had listed as blocked. Program
+   enrolment tracking is deliberately still Partial — it needs the
+   program's own data model and cannot be derived from hours logged.
+
+**All six items in this lane are now shipped and unmerged on the branch.
+None has been browser-tested.** That is the outstanding risk, not the
+remaining work.
+
+It does NOT touch estimating, billing/AIA pay applications,
+`jobs/[id]/page.tsx`, safety, materials/vendors, equipment or RFIs. Where
+one of the six genuinely needs a shared file, the change is the smallest
+one that works and is called out explicitly rather than restructured —
+backcharges needed exactly three such lines: one route in `middleware.ts`,
+one entry in `navItems.tsx`, and one `export *` in the actions barrel,
+plus the back-relation fields Prisma requires on `Job`, `Company` and
+`User`.
+
+## A fourth lane, claimed 2 Sep 2026
+
+A fourth session is running alongside the three above. It owns the
+customer-facing CRM, Phase A of the CRM spec, one item at a time on a new
+branch per item (previously `claude/prova-crm-contact-lifecycle`, now
+`claude/prova-crm-interaction-log`):
+
+1. **Contact create/delete + prospect status** — Sheet 02. *Shipped 2 Sep.*
+   `ContactStatus` (PROSPECT/ACTIVE/INACTIVE), `ContactType` (GC/DEVELOPER/
+   VENDOR/SUBCONTRACTOR, nullable, no backfill), `Contact.msaExpirationDate`
+   / `.prequalificationExpiresAt` (both nullable, status derived via
+   `lib/compliance-expiry.ts`'s existing `RenewalKind` machinery, not a
+   second copy of the day-counting). `createContact`/`deleteContact` added
+   to `lib/actions/company.ts`, and `updateContact` converted to the
+   `ActionResult` pattern in the same pass. UI: `/contacts` gets a
+   collapsed add-form and two-step delete; `/contacts/[id]`'s edit form
+   gains status/type/MSA/prequal fields.
+2. **Interaction log per contact** — Sheet 02. *Shipped 3 Sep.*
+   `ContactInteraction` (new file `crm.prisma`) — call/email/site-visit/
+   note, dated (entered, not stamped), with an optional follow-up date and
+   a separate follow-up owner (`followUpAssignedToUserId`, distinct from
+   `loggedByUserId`). Not an evidence record: no counter, no locked fields,
+   any team member can log/edit/delete one. `lib/actions/crm.ts`, gated
+   behind `MANAGE_ESTIMATING` on `/contacts/[id]` like Bid Invitations.
+   `deleteContact`'s guard extended to also block on logged interactions.
+   Not wired into `/alerts` yet — that's item 4.
+3. `ContactPerson` — individual people at an account (name/title/email/
+   phone/last-touch) — next.
+4. Follow-ups surfaced in the existing `/alerts` engine.
+5. A read-only GC pipeline view over `BidInvitation` (Lead → Bid Invited →
+   Estimate Sent → Awarded → Contracted, derived from `Job`/
+   `BidInvitation`/`EstimateVersion` state, never stored).
+
+Then Phase B: an internal, owner-only sales CRM for selling Prova itself
+(Lead/Opportunity models, its own nav section) — not started until Phase A
+ships.
+
+It does NOT touch estimating, job costing, billing/AIA, retainage, WIP,
+AI, `jobs/[id]/page.tsx`, safety, materials/vendors, equipment,
+backcharges, closeout, alerts, roles/permissions, prevailing wage, or
+union compliance — those stay in the other three lanes. Where a CRM task
+genuinely needs a shared file, the change is announced in Slack before the
+push and kept to the smallest diff that works, same discipline as the
+third lane's backcharges note above.
+
+**Note that this file is otherwise out of date.** It describes a single
+`packages/db/prisma/schema.prisma` and a single `apps/web/lib/actions.ts`;
+both were split by domain some time ago — the schema into
+`packages/db/prisma/schema/*.prisma` and the actions into
+`apps/web/lib/actions/*.ts` behind a barrel. New work adds a new file per
+domain rather than appending to an existing one, which is also why the
+"only add at the very end of the file" advice below no longer applies the
+way it reads.
+
+## The bid pipeline view, 3 Sep 2026
+
+The third lane also built `/pipeline` — a per-GC read of `BidInvitation`
+(`lib/bid-pipeline.ts`, `lib/bid-pipeline-query.ts`). It is deliberately
+READ-ONLY: `BidInvitation`, its actions in `lib/actions/estimating.ts` and
+the `/bids` page all stay with estimating, and a status is changed there.
+Shared files touched, one line each: `navItems.tsx`, `middleware.ts`, and
+the `ROUTE_CAPABILITY` map in `lib/permissions.ts`.
+
+The CRM lane (`claude/prova-crm-contact-lifecycle`, #72) owns contacts
+themselves — creation, status, MSA/prequal, and whatever comes next on
+`/contacts`. This page links to those pages and edits none of them.
+
 ## Cyrus's first five tasks
 
 **1. (Do this first — should take under an hour.) Add a "Trailer" location

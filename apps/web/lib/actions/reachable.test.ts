@@ -29,6 +29,18 @@ import { describe, expect, it } from "vitest";
  *
  * A failure means one of two things, and both are worth stopping for: the
  * feature has no entry point, or the action is dead and should be deleted.
+ *
+ * Two limits, both raised by Diego reviewing this and both deliberate:
+ *
+ * - It matches `export async function name(` only. An action written as
+ *   `export const name = async (...)` is INVISIBLE to this check and would
+ *   silently opt itself out. Every action in lib/actions/ uses the function
+ *   form today, which is what makes this accurate — if you are about to
+ *   write the arrow form, either don't, or widen the pattern below first.
+ * - Finding the name is a substring match, so a comment mentioning an
+ *   action counts as a caller. That errs towards passing, which is the
+ *   right way for it to be wrong: a check that fails on something real is
+ *   worth far more than one that is precise about dead code.
  */
 
 const ACTIONS_DIR = resolve(__dirname);

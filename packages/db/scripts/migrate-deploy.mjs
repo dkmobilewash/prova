@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { connectionProblems } from "./connection-target.mjs";
+import { connectionProblems, wrongTarget } from "./connection-target.mjs";
 import { loadEnvFiles } from "./load-env.mjs";
 
 /**
@@ -60,6 +60,24 @@ if (problems.some((p) => p.level === "fatal")) {
           "db: or export them into this shell, and re-run.",
   );
   process.exit(1);
+}
+
+/**
+ * Then: is this the database you SAID you meant?
+ *
+ * Everything above checks the two URLs against each other. This checks them
+ * against a name a person typed, which is the only way to catch a secret
+ * holding the wrong connection string. Opt-in via MIGRATE_EXPECT_HOST so
+ * production's job, which predates it, is unaffected until someone wires it
+ * up deliberately.
+ */
+const misnamed = wrongTarget(process.env.MIGRATE_EXPECT_HOST, app, migrate);
+if (misnamed) {
+  console.error(`\ndb: REFUSING — ${misnamed.message}`);
+  process.exit(1);
+}
+if (process.env.MIGRATE_EXPECT_HOST?.trim()) {
+  console.log(`db: target matches   "${process.env.MIGRATE_EXPECT_HOST.trim()}" \u2713`);
 }
 
 const run = (args) => spawnSync("pnpm", ["exec", "prisma", ...args], { stdio: "inherit" });

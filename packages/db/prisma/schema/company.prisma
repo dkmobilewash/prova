@@ -31,6 +31,7 @@ model Company {
   quickBooksEntityLinks   QuickBooksEntityLink[]
   quickBooksAccountMaps   QuickBooksAccountMapping[]
   quickBooksSyncAttempts  QuickBooksSyncAttempt[]
+  integrationConnections  IntegrationConnection[]
   complianceDocuments     ComplianceDocument[]
   licenses                CompanyLicense[]
   tradeScopes             CompanyTradeScope[]
@@ -45,6 +46,10 @@ model Company {
   punchListItems          PunchListItem[]
   dailyFieldReports       DailyFieldReport[]
   rfis                    Rfi[]
+  backcharges             Backcharge[]
+  closeoutSubmissions     CloseoutSubmission[]
+  alertAcknowledgements   AlertAcknowledgement[]
+  prevailingWageRuleSets  PrevailingWageRuleSet[]
   submittals              Submittal[]
   safetyCaseCounters      SafetyCaseCounter[]
   safetyIncidents         SafetyIncident[]
@@ -55,6 +60,8 @@ model Company {
   warrantyPeriods         WarrantyPeriod[]
   warrantyServiceRequests WarrantyServiceRequest[]
   vendorPriceQuotes       VendorPriceQuote[]
+  outboundMessages        OutboundMessage[]
+  contactInteractions     ContactInteraction[]
   equipmentAssignments    EquipmentAssignment[]
 }
 
@@ -74,6 +81,14 @@ model User {
   // New rows always set this explicitly in code (OWNER on first sign-in,
   // MEMBER on invite acceptance) — this default only matters for backfill.
   role      UserRole @default(OWNER)
+
+  /// What this person does, as distinct from `role` above — see
+  /// permissions.prisma. Nullable, with no backfill: null means nobody
+  /// has said, and the person keeps the full office access every MEMBER
+  /// has always had. Only an OWNER can set it, and an OWNER's own
+  /// capabilities never depend on it.
+  jobFunction JobFunction?
+
   companyId String
   company   Company  @relation(fields: [companyId], references: [id])
   createdAt DateTime @default(now())
@@ -82,6 +97,7 @@ model User {
   assignments                          JobAssignment[]
   connectedQuickBooks                  QuickBooksConnection[]
   quickBooksSyncAttempts               QuickBooksSyncAttempt[]
+  connectedIntegrations                IntegrationConnection[]
   uploadedComplianceDocuments          ComplianceDocument[]
   savedEstimateVersions                EstimateVersion[]
   uploadedContractDocuments            ContractDocument[]
@@ -92,6 +108,9 @@ model User {
   raisedPunchListItems                 PunchListItem[]
   filedDailyFieldReports               DailyFieldReport[]
   askedRfis                            Rfi[]
+  loggedBackcharges                    Backcharge[]
+  submittedCloseoutPackages            CloseoutSubmission[]
+  alertAcknowledgements                AlertAcknowledgement[]
   submittedSubmittals                  Submittal[]
   reportedSafetyIncidents              SafetyIncident[]
   recordedToolboxTalks                 ToolboxTalk[]
@@ -99,6 +118,9 @@ model User {
   recordedDrawingRevisions             DrawingRevision[]
   recordedWarrantyServiceRequests      WarrantyServiceRequest[]
   recordedVendorPriceQuotes            VendorPriceQuote[]
+  sentOutboundMessages                 OutboundMessage[]
+  loggedContactInteractions            ContactInteraction[] @relation("ContactInteractionLogger")
+  assignedContactFollowUps             ContactInteraction[] @relation("ContactInteractionFollowUp")
   recordedEquipmentAssignments         EquipmentAssignment[]
 
   @@index([companyId])
@@ -118,16 +140,42 @@ model Invite {
   @@index([companyId])
 }
 
+/// PROSPECT: a GC we're talking to but have no history with yet.
+/// ACTIVE: a GC we've worked for. INACTIVE: gone quiet / not pursuing.
+/// Existing rows backfill to ACTIVE, not a guess — every Contact before
+/// this field existed was created because a Job was opened with them, so
+/// ACTIVE is the fact already on record, not an invented default.
+enum ContactStatus {
+  PROSPECT
+  ACTIVE
+  INACTIVE
+}
+
+/// What kind of company this is, independent of ContactStatus (which
+/// answers "are we engaging with them," not "what are they"). Nullable
+/// with NO backfill: nobody has classified any existing Contact by type,
+/// and guessing GENERAL_CONTRACTOR for all of them would be wrong the
+/// first time an existing row turns out to be a developer or a vendor —
+/// same reasoning as User.jobFunction and CraftClassification.tier.
+enum ContactType {
+  GENERAL_CONTRACTOR
+  DEVELOPER
+  VENDOR
+  SUBCONTRACTOR
+}
+
 model Contact {
-  id        String   @id @default(cuid())
-  companyId String
-  company   Company  @relation(fields: [companyId], references: [id])
-  name      String
-  email     String?
-  phone     String?
-  address   String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String        @id @default(cuid())
+  companyId   String
+  company     Company       @relation(fields: [companyId], references: [id])
+  name        String
+  email       String?
+  phone       String?
+  address     String?
+  status      ContactStatus @default(ACTIVE)
+  accountType ContactType?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
 
   /// Generated on-demand (client portal "enable" action), null until then.
   /// Same access-control pattern as SignatureRequest.token: an unguessable
@@ -148,8 +196,19 @@ model Contact {
   /// subcontract form this GC typically uses.
   standardFormsUsed       String?
 
+  /// Null = no Master Service Agreement on file. Set = the date it expires;
+  /// whether it's active or lapsed is computed at read time from that date,
+  /// never stored as a separate status — same rule as every other
+  /// expiration in this schema (licenses, insurance, bonds).
+  msaExpirationDate DateTime?
+  /// Null = never prequalified with this GC. Set = the date the
+  /// prequalification expires; current/expiring/expired is derived the
+  /// same way as msaExpirationDate, not stored twice.
+  prequalificationExpiresAt DateTime?
+
   jobs           Job[]
   bidInvitations BidInvitation[]
+  interactions   ContactInteraction[]
 
   @@index([companyId])
 }

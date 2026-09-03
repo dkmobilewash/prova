@@ -285,8 +285,10 @@ tagging, union affiliation records, insurance/bonding records,
 multi-location support, the estimate → contract → job-costing flow (one
 set of line items *is* the estimate, the budget, and the contract — see
 `ARCHITECTURE.md` for why), compliance document tracking with AI
-extraction, GC relationship management (standing terms, bid tracking,
-payment reliability), a reusable line-item catalog, labor-hour estimates
+extraction, GC relationship management (create/delete a contact directly,
+prospect/active/inactive status, account type, MSA and prequalification
+tracking, standing terms, bid tracking, payment reliability), a reusable
+line-item catalog, labor-hour estimates
 by craft, estimate versioning, bid history, and the actual subcontract
 agreement file storage with amendment versioning.
 

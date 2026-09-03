@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { NAV_GROUPS } from "@/components/navItems";
+import { navGroupsFor } from "@/components/navItems";
+import type { Principal } from "@/lib/permissions";
 
 /**
  * The nav rail: 64px of icons, expanding to 240px on hover.
@@ -19,7 +20,10 @@ import { NAV_GROUPS } from "@/components/navItems";
  * clusters is already legible by spacing, and a heading you cannot read at
  * 64px is just noise.
  */
-export function Sidebar({ companyName }: { companyName: string }) {
+export function Sidebar({ companyName, principal }: { companyName: string; principal: Principal }) {
+  // Filtered here rather than in the layout so the desktop rail and
+  // the mobile drawer run the same function on the same input.
+  const groups = navGroupsFor(principal);
   const pathname = usePathname();
 
   return (
@@ -41,7 +45,7 @@ export function Sidebar({ companyName }: { companyName: string }) {
         </div>
 
         <div className="flex flex-1 flex-col gap-4 overflow-y-auto overflow-x-hidden py-3">
-          {NAV_GROUPS.map((group) => (
+          {groups.map((group) => (
             <div key={group.heading} className="flex flex-col gap-0.5">
               <p
                 className="h-4 truncate whitespace-nowrap px-4 text-[10px] font-semibold uppercase tracking-wider text-slate-500 opacity-0 transition-opacity duration-150 group-hover/rail:opacity-100"

@@ -4,7 +4,15 @@ import { revalidatePath } from "next/cache";
 import { put } from "@vercel/blob";
 import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@prova/db";
-import { assertJobInCompany, assertLineItemOnJob, craftClassificationIdFromForm, nullableDecimalFromForm } from "./shared";
+import {
+  actionFail,
+  actionOk,
+  assertJobInCompany,
+  assertLineItemOnJob,
+  craftClassificationIdFromForm,
+  nullableDecimalFromForm,
+  type ActionResult,
+} from "./shared";
 
 const TIME_ENTRY_PAY_TYPES = ["STRAIGHT", "OVERTIME", "DOUBLE_TIME", "SHIFT_DIFFERENTIAL"] as const;
 
@@ -174,13 +182,16 @@ const PREVAILING_WAGE_DETERMINATION_MAX_BYTES = 15 * 1024 * 1024;
 /** Attaches a government wage-determination document (or a link to one)
  * for a job's jurisdiction. This is attached storage, not a lookup --
  * there's no licensed prevailing-wage dataset in this app to query. */
-export async function uploadPrevailingWageDetermination(jobId: string, formData: FormData) {
+export async function uploadPrevailingWageDetermination(
+  jobId: string,
+  formData: FormData,
+): Promise<ActionResult> {
   const { company, ...user } = await requireCompanyContext();
   await assertJobInCompany(jobId, company.id);
 
   const jurisdiction = String(formData.get("jurisdiction") ?? "").trim();
   if (!jurisdiction) {
-    throw new Error("Jurisdiction is required");
+    return actionFail("Name the jurisdiction this determination came from.");
   }
 
   const sourceUrl = String(formData.get("sourceUrl") ?? "").trim();
@@ -191,10 +202,10 @@ export async function uploadPrevailingWageDetermination(jobId: string, formData:
   let fileName: string | null = null;
   if (file instanceof File && file.size > 0) {
     if (!(PREVAILING_WAGE_DETERMINATION_MEDIA_TYPES as readonly string[]).includes(file.type)) {
-      throw new Error("Upload a PDF, PNG, JPEG, or WEBP file");
+      return actionFail("That file type isn't supported — upload a PDF, PNG, JPEG, or WEBP.");
     }
     if (file.size > PREVAILING_WAGE_DETERMINATION_MAX_BYTES) {
-      throw new Error("File is too large (max 15MB)");
+      return actionFail("That file is over the 15MB limit. Link to it instead, or upload a smaller scan.");
     }
     const buffer = await file.arrayBuffer().then(Buffer.from);
     const blob = await put(`prevailing-wage/${jobId}/${file.name}`, buffer, {
@@ -205,8 +216,13 @@ export async function uploadPrevailingWageDetermination(jobId: string, formData:
     fileName = file.name;
   }
 
+  // Both inputs are labelled optional because EITHER satisfies this -- but
+  // one of them is required, and that rule lives nowhere the browser can
+  // enforce. It used to `throw`, which production redacts to a digest, so
+  // submitting with both empty took down the whole page through the error
+  // boundary instead of saying this one sentence next to the field.
   if (!fileUrl && !sourceUrl) {
-    throw new Error("Attach a file or a source link");
+    return actionFail("Attach the determination document, or paste a link to it — either one is enough.");
   }
 
   await prisma.prevailingWageDetermination.create({
@@ -222,6 +238,7 @@ export async function uploadPrevailingWageDetermination(jobId: string, formData:
   });
 
   revalidatePath(`/jobs/${jobId}`);
+  return actionOk;
 }
 
 export async function deletePrevailingWageDetermination(jobId: string, determinationId: string) {

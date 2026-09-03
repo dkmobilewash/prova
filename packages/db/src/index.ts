@@ -22,8 +22,21 @@ const globalForPrisma = globalThis as unknown as {
  *
  * Never throws. A logging line that can break a cold start would be a worse
  * bug than the one it reports.
+ *
+ * Server only. This module reaches the browser bundle transitively, and
+ * there `process.env.DATABASE_URL` is naturally undefined — so it printed
+ * "[db] DATABASE_URL is not set" into the console of anyone who opened dev
+ * tools, which is both meaningless and alarming, and was noticed during a
+ * pre-demo walkthrough. The log is about the server's own connection; it
+ * has no business running anywhere else.
  */
 function logConnectionTarget() {
+  // Deliberately not `typeof window`: this package is server-only and its
+  // tsconfig has no DOM lib, so naming `window` does not typecheck — and
+  // adding the DOM lib to claim a global it must never use would be the
+  // wrong fix. packages/ui gets DOM types because it renders in a browser;
+  // this one does not.
+  if ("window" in globalThis) return;
   if (globalForPrisma.provaDbHostLogged) return;
   globalForPrisma.provaDbHostLogged = true;
   try {

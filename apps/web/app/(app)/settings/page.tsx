@@ -1,5 +1,7 @@
+import Link from "next/link";
 import { prisma } from "@prova/db";
-import { requireCompanyContext } from "@/lib/auth";
+import { requireCapability } from "@/lib/authz";
+import { NoAccess } from "@/components/NoAccess";
 import {
   createBond,
   createCompanyLocation,
@@ -105,7 +107,9 @@ export default async function SettingsPage({
 }: {
   searchParams: Promise<{ qb?: string; qb_detail?: string }>;
 }) {
-  const { company, ...currentUser } = await requireCompanyContext();
+  const { context, allowed } = await requireCapability("MANAGE_COMPLIANCE");
+  if (!allowed) return <NoAccess capability="MANAGE_COMPLIANCE" />;
+  const { company, ...currentUser } = context;
   const { qb, qb_detail } = await searchParams;
 
   if (currentUser.role !== "OWNER") {
@@ -165,7 +169,29 @@ export default async function SettingsPage({
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-8">
-      <h1 className="mb-6 text-xl font-semibold text-slate-100">Settings</h1>
+      <h1 className="mb-2 text-xl font-semibold text-slate-100">Settings</h1>
+
+      {/* The Integrations page is the framework's own surface; QuickBooks
+          keeps its section below because it predates that framework and has
+          an account mapping and reconciliation the generic page has no place
+          for. The link exists so there is one route to look for connections
+          from, rather than two pages neither of which mentions the other. */}
+      <p className="mb-6 text-sm text-slate-400">
+        <Link href="/settings/integrations" className="text-blue-400 hover:text-blue-300">
+          Integrations
+        </Link>{" "}
+        — connect and disconnect third-party services.
+      </p>
+
+      {/* Findable without asking anyone, which is most of the point: the
+          research found four vendors where getting your history out meant a
+          support ticket, a sales call, or nothing at all. */}
+      <p className="mb-6 text-sm text-slate-400">
+        <Link href="/settings/export" className="text-blue-400 hover:text-blue-300">
+          Export your data
+        </Link>{" "}
+        — every job, price, cost and hour, as CSV or one JSON file.
+      </p>
 
       {qb === "connected" && (
         <p className="mb-6 rounded-md border border-green-900 bg-green-950/50 px-4 py-3 text-sm text-green-400">

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { BidInvitationStatus, prisma, TradeScope } from "@prova/db";
-import { requireCompanyContext } from "@/lib/auth";
+import { requireCapability } from "@/lib/authz";
+import { NoAccess } from "@/components/NoAccess";
 import { money } from "@/lib/money";
 
 const TRADE_SCOPE_OPTIONS = [
@@ -36,7 +37,9 @@ export default async function BidsPage({
 }: {
   searchParams: Promise<{ trade?: string; status?: string }>;
 }) {
-  const { company } = await requireCompanyContext();
+  const { context, allowed } = await requireCapability("MANAGE_ESTIMATING");
+  if (!allowed) return <NoAccess capability="MANAGE_ESTIMATING" />;
+  const { company } = context;
   const { trade, status } = await searchParams;
 
   const tradeFilter = trade && trade in TradeScope ? (trade as TradeScope) : undefined;
