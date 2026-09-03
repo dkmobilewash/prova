@@ -54,3 +54,85 @@ model AlertAcknowledgement {
   @@index([companyId])
   @@index([userId])
 }
+
+/// One notice we have already sent, so we never send it twice.
+///
+/// The other half of the alert story. `AlertAcknowledgement` records a
+/// person deciding they have seen something; this records US having told
+/// them. Both exist for the same reason: neither is derivable from the
+/// records the alert is about.
+///
+/// **This table is what stops an alert becoming a nag.** A COI expiring in
+/// thirty days is still true tomorrow, so a notifier that reads state and
+/// sends would send the same sentence thirty mornings running, and the
+/// person would learn to filter it. Nothing is sent for a state — it is
+/// sent when a MILESTONE is crossed, and this is the record of which
+/// milestones are spent.
+model NotificationDispatch {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+  userId    String
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// The alert's own key plus the rung that fired:
+  /// "RENEWAL:lic_1:2026-11-30@week".
+  ///
+  /// Both halves are load-bearing. The alert key carries the FACT, so
+  /// renewing the licence changes the key and every dispatch recorded
+  /// against the old date stops applying — the same mechanism that makes a
+  /// dismissal lapse, with no expiry logic. The rung distinguishes "this is
+  /// coming" from "this has happened" about one UNCHANGED fact, which the
+  /// alert key alone cannot: it is stable as the date approaches, so keying
+  /// a send on it by itself would send the sixty-day warning and then stay
+  /// silent through the day the licence lapsed.
+  ///
+  /// What is deliberately NOT in here is the date it was sent. A key
+  /// carrying today's date is a new key tomorrow, which is the whole
+  /// failure this table exists to prevent.
+  dispatchKey String
+
+  /// The alert key on its own, and the rung on its own. Neither is read to
+  /// decide anything — `dispatchKey` is the only thing matched on. They are
+  /// here so that "why did this person get this email" is answerable with a
+  /// query instead of by parsing a composite string.
+  alertKey String
+  rung     String
+
+  /// The message this went out as, when it went out as one.
+  ///
+  /// MANY dispatches to ONE message, not one to one. A digest is
+  /// deliberately a single email covering everything a person has not been
+  /// told — three separate emails about three licences is the nagging this
+  /// feature exists to avoid, arriving faster. A unique constraint here
+  /// would make the second notice in any digest fail to link.
+  ///
+  /// Nullable because the row is written BEFORE the provider is called, so
+  /// a dispatch whose send then failed keeps its claim and has no message.
+  /// That is the state a person needs to see, and deleting the row to tidy
+  /// it up would re-arm the send.
+  messageId String?
+  message   OutboundMessage? @relation(fields: [messageId], references: [id], onDelete: SetNull)
+
+  sentAt DateTime @default(now())
+
+  /// The lock, and the reason this is safe to run twice.
+  ///
+  /// The row is claimed BEFORE the provider call, so a crash between
+  /// sending and recording cannot resend tomorrow. The cost is that a
+  /// failed send does not retry itself — deliberate, and the same judgement
+  /// `sendOutboundEmail` already makes about `mayHaveSent`: a second copy
+  /// is worse than a late one. The failure is visible in the delivery log
+  /// and a person decides.
+  ///
+  /// Per USER, not per company, for the reason above `AlertAcknowledgement`
+  /// and more sharply. Alerts are capability-filtered, so two people
+  /// legitimately have different lists; a company-wide ledger would let the
+  /// first person's send suppress the second's — and the person suppressed
+  /// is the one whose capability made it their job.
+  @@unique([userId, dispatchKey])
+  @@index([companyId])
+  @@index([userId])
+  @@index([alertKey])
+  @@index([messageId])
+}
