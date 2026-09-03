@@ -8,7 +8,6 @@ export type EquipmentFieldValues = {
   name: string;
   type: string | null;
   assetTag: string | null;
-  assignedJobId: string | null;
   notes: string | null;
 };
 
@@ -16,13 +15,7 @@ export type JobOption = { id: string; name: string };
 
 /** Shared by the create form and the inline edit form, same as
  * VendorFields — one definition so the two can't drift apart. */
-export function EquipmentFields({
-  jobs,
-  defaults,
-}: {
-  jobs: JobOption[];
-  defaults?: Partial<EquipmentFieldValues>;
-}) {
+export function EquipmentFields({ defaults }: { defaults?: Partial<EquipmentFieldValues> }) {
   return (
     <>
       <label className={labelClass}>
@@ -53,18 +46,6 @@ export function EquipmentFields({
           <input type="text" name="assetTag" defaultValue={defaults?.assetTag ?? ""} className={inputClass} />
         </label>
       </div>
-
-      <label className={labelClass}>
-        Currently on
-        <select name="assignedJobId" defaultValue={defaults?.assignedJobId ?? ""} className={inputClass}>
-          <option value="">In the yard / unassigned</option>
-          {jobs.map((job) => (
-            <option key={job.id} value={job.id}>
-              {job.name}
-            </option>
-          ))}
-        </select>
-      </label>
 
       <label className={labelClass}>
         Notes

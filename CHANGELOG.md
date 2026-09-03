@@ -12,6 +12,132 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### Where the lift actually is, and the same bug I'd just built a guard for (Cyrus)
+`cyrus/equipment-deployment`
+
+Neither crew nor equipment had a time dimension. `JobAssignment` is a bare
+join; `Equipment.assignedJobId` is one pointer to where a machine is right
+now. So "was that scaffold on Maple in March?" was unanswerable, and
+utilisation was unanswerable for the same reason — nothing recorded when
+anything went out or came back.
+
+`EquipmentAssignment` records the stay: which piece, which job, when it
+left, when it returned. Both dates **entered, not stamped** — recording on
+Friday that a lift went Tuesday has to say Tuesday, or every figure computed
+over the table is wrong by however long the paperwork sat.
+
+**A machine cannot be in two places at once**, and the check is on
+overlapping date RANGES rather than "is there an open one". A backdated
+entry collides with a stay that already closed just as easily, and only
+looking for an open assignment would let the record hold two places at once
+for a week in the past. It runs inside the same transaction as the insert:
+no unique constraint can express this (Postgres would want an exclusion
+constraint; Prisma can't declare one), so the transaction is all that stands
+between us and two dispatchers sending one lift to two jobs.
+
+**Touching at a boundary is deliberately allowed.** Back to the yard in the
+morning, out again after lunch is an ordinary day. A rule that cries wolf on
+the normal case is one people learn to click past.
+
+**Utilisation is honest about its denominator.** Nothing in the schema
+records when a contractor bought a mixer, so the window is clamped to when
+the record was created — "since we started tracking it" rather than a claim
+about the machine's life. It reads null rather than 0% when that window is
+empty, and counts distinct days so two contradictory records can't show a
+lift at 180%.
+
+`/deployment` answers the inverse of `/schedule`: not when jobs run, but
+where everybody is. Crew-first, flagging anyone split across more than one
+job, plus by-job with crew and equipment together, plus gear still recorded
+as out on a job that is not running.
+
+**`Equipment.assignedJobId` is now a stored copy of derived state, so
+nothing reads it.** It is NOT dropped — that is destructive against
+production and Diego's to run. The migration backfills every current
+assignment into an open stay so nothing is lost, with the inferred date
+written into the row's notes, because the old column only ever recorded
+where, never when. The form no longer offers it either: leaving a control
+that writes a column nothing reads would be the same defect as the
+QuickBooks chart-of-accounts mapping that was collected, stored, displayed
+and never read.
+
+**And then I shipped the exact bug I spent the morning building a guard
+for.** `updateEquipmentAssignment` was written, exported, and called from
+nowhere — no edit form. The reachability check caught it on this branch
+within a minute of being copied across, which is the argument for the check
+better than anything I could write. The edit form exists now; `findOverlap`
+already took an `ignoreId` for exactly that case.
+
+34 tests on the pure module, four mutation-checked: an overlap check that
+only looks at open stays fails two, treating touching boundaries as a clash
+fails one, summing stays instead of counting distinct days fails one, and
+ignoring when tracking began fails one.
+
+**Clicking found two more the tests could not.** A stay dated in the future
+— dispatching ahead, which is ordinary — rendered as "out since today",
+reporting a machine as deployed while it sat in the yard. And the heading
+over gear on inactive jobs said "finished job" when the job in front of me
+was an estimate that never started. Both fixed, the first with tests.
+
+Verified by doing it: the return guard refused a date before the stay began,
+a re-send overlapping a CLOSED stay was refused by name and date, a
+non-overlapping one went through, and the backfilled piece read its location
+from history rather than the column.
+
+**Two things above were false when I wrote them, and review caught both.**
+
+"Nothing reads `Equipment.assignedJobId`" was a claim about the whole app
+written from inside one file. Ask's `equipment_location` handler still
+selected the column and reported it as `assignedToJob`/`available`. Since
+nothing writes it any more, that answer was not merely stale — it was frozen
+at the migration and would never have moved again, while `/equipment` and
+`/deployment` showed the truth beside it. Nothing would have flagged the
+disagreement; Ask would simply have named the wrong site to whoever asked
+where the skid steer was. Ask now derives through `currentAssignment()`, the
+same function both pages use, and reports the day it went out as well.
+Three comments and the schema doc asserted the false version; all four now
+say what was actually wrong and point at the grep that settles it, because a
+comment claiming "nothing reads this" is exactly how the next person
+re-introduces the reader.
+
+`/deployment` was registered in `NAV_ITEMS` and put in no `NAV_GROUP`. Both
+the rail and the mobile drawer render `navGroupsFor()` — groups only — so
+the page shipped working, typechecked, and linked from nowhere but the
+address bar. Nothing failed; the absence looked exactly like a link nobody
+wanted. It sits in **Operations, immediately after Schedule**, because the
+grouping is by when in a job's life you reach for the thing rather than
+which table it reads — the "it reads EquipmentAssignment, file it under
+Logistics next to Equipment" argument is the one this rail deliberately does
+not follow, and the page's own first paragraph defines itself against the
+schedule.
+
+Both fixes are mutation-checked. Putting the old handler back fails all four
+`handlers.equipment` tests; the fake prisma in that file honours the
+`select`, so a handler that asks for the frozen column gets the frozen column
+and cannot pass. Removing the nav entry fails all four `navItems` tests.
+That nav test is deliberately scoped to `/deployment`: four other items
+(`/field-reports`, `/messages`, `/pipeline`, `/vendors/pricing`) are orphaned
+the same way and belong to other branches — a blanket assertion would go red
+for work this PR has no business touching. Worth someone picking up.
+
+`EquipmentDeploymentControls` also gained `router.refresh()` on all four
+save paths, joining the 18 components that already do it. Its `history` prop
+decides which button the row offers, so a stale prop does not just show an
+old list — it shows "Send out to a job" for a machine that is already out.
+A second click cannot corrupt anything (the overlap check inside
+`assignEquipment`'s transaction refuses a repeat send), but it tells a
+dispatcher their save failed when it worked, and `BackchargeForm` already
+records that `revalidatePath` alone left structurally identical forms stale
+in this app for reasons nobody has explained.
+
+`scripts/preflight.sh` died on its own third line inside a git worktree:
+`.git` is a FILE there, so `rm -f .git/index.lock` is ENOTDIR, `rm` exits 1
+and `set -e` kills the script before any check runs. It also ran before the
+`cd`, so it was clearing a lock relative to wherever you were standing.
+`git rev-parse --git-path index.lock` resolves both layouts.
+
+---
+
 ## The demo dataset caught up with nine models it had never heard of
 
 The seed was written against a schema that has since gained CRM contact
