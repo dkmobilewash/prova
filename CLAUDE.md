@@ -145,6 +145,16 @@ scrollback gets broken by whoever didn't scroll far enough.
   but together they distinguish "still working" from "died silently",
   which is the question actually worth answering while you wait.
 
+  **For a GitHub job, ask for its STEPS.** `list_workflow_jobs` (REST:
+  `/actions/runs/{run_id}/jobs`) returns every step with its own
+  `started_at`/`completed_at`, and those are not the cached field. On #82
+  the job read `in_progress` while its steps already showed Test ✓ 6s,
+  Lint ✓ 8s, Typecheck ✓ 20s, Build ✓ 57s — a 114-second run that was
+  polled as running long after it finished. Steps tell you WHICH stage is
+  slow, so "the build is hanging" becomes a claim you can check instead of
+  one you guess. Nothing here needed inventing; it was one call away the
+  whole time this file's author was watching a status field.
+
 ## Hard-won technical rules
 
 - **Sequence numbers** (case, RFI, submittal, invoice numbers) come from
