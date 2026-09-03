@@ -307,6 +307,17 @@ export const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
+    href: "/deployment",
+    label: "Deployment",
+    icon: (
+      <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5">
+        <circle cx="6.5" cy="6" r="2" stroke="currentColor" strokeWidth="1.4" />
+        <circle cx="13.5" cy="6" r="2" stroke="currentColor" strokeWidth="1.4" />
+        <path d="M3 16v-1.5A2.5 2.5 0 0 1 5.5 12h2A2.5 2.5 0 0 1 10 14.5V16M10 16v-1.5A2.5 2.5 0 0 1 12.5 12h2a2.5 2.5 0 0 1 2.5 2.5V16" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      </svg>
+    ),
+  },
+  {
     href: "/settings",
     label: "Settings",
     icon: (
@@ -405,7 +416,20 @@ export const NAV_GROUPS: NavGroup[] = [
   },
   {
     heading: "Operations",
-    items: [item("/schedule"), item("/punch-lists"), item("/field-reports")],
+    items: [
+      item("/schedule"),
+      // Next to the schedule on purpose. The schedule answers WHEN jobs
+      // run; deployment answers WHERE everybody and everything is right
+      // now, and the page says so in its own first paragraph. Grouping is
+      // by when in a job's life you reach for the thing, not by which
+      // table it reads — which is the argument for filing it under
+      // Logistics beside Equipment, and the thing this rail deliberately
+      // does not do. A page in NAV_ITEMS but in no group renders nowhere:
+      // both the rail and the mobile drawer draw from navGroupsFor().
+      item("/deployment"),
+      item("/punch-lists"),
+      item("/field-reports"),
+    ],
   },
   {
     heading: "Compliance & safety",
