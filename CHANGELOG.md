@@ -84,6 +84,25 @@ until a decision was written down. Recorded as debt on the same grounds as
 the rest of that module — gating one of six would leave the page
 half-enforced, and it is not this lane's file.
 
+**A second merge caught a whole new module, and that one is fixed rather
+than listed.** `cyrus/equipment-deployment` (#45) landed
+`lib/actions/equipmentAssignments.ts` — four writes recording where a piece
+of equipment went and when it came back — composed only on `/equipment`,
+which this branch guards with MANAGE_FIELD, and asserting nothing. Equipment
+is this lane, so all four now check `can(context, "MANAGE_FIELD")` and
+return the failure rather than throwing it, matching `materialOrders.ts`.
+`deleteEquipmentAssignment` keeps its owner check on top; the two are
+different axes and neither replaces the other. Between them, these two
+merges are the argument for deriving the surface from the filesystem instead
+of a list: neither module existed when this branch was written, and both
+failed the suite by name the moment they arrived.
+
+`/deployment`, the page that arrived with them, is recorded OPEN with its
+reason. It reads where every person and machine is right now — the same data
+`/schedule` shows from the job's end, already open on the same grounds — and
+it composes nothing: every control that writes an assignment is mounted on
+`/equipment`.
+
 At the route level: every guarded route is now asserted against every job
 function that must be refused, rather than the few somebody thought of; a
 route whose capability nobody lacks fails as decoration; and a page that

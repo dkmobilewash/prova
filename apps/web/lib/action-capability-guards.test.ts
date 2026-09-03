@@ -645,6 +645,7 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   safety: () => import("./actions/safety"),
   punchLists: () => import("./actions/punchLists"),
   equipment: () => import("./actions/equipment"),
+  equipmentAssignments: () => import("./actions/equipmentAssignments"),
   fieldReports: () => import("./actions/fieldReports"),
   materialOrders: () => import("./actions/materialOrders"),
   rfis: () => import("./actions/rfis"),

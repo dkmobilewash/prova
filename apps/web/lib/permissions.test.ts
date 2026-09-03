@@ -247,6 +247,8 @@ const OPEN_ROUTES: Record<string, string> = {
   "/alerts":
     "The alert rows are filtered per principal in lib/alerts-query.ts (visibleToPrincipal), so the page is open and its CONTENT is not. Gating the page instead would hide a foreman's own overdue punch items.",
   "/schedule": "Job start dates and who is assigned. No money on it, and everyone needs to know where they are working.",
+  "/deployment":
+    "The same data as /schedule read from the other end — where each person and each machine is right now — and open for the same reason: no money on it, and knowing where the crew and the lift are is what lets anyone plan a day. It is READ-ONLY; the writes it displays are composed on /equipment, which is guarded by MANAGE_FIELD, and lib/actions/equipmentAssignments.ts asserts that capability itself.",
   "/messages": "The correspondence delivery log. Sending is what matters and that is the action's problem, not the page's.",
   "/contacts": "The address book — GCs, developers, vendors. Names and phone numbers are not a tier.",
   "/contacts/[id]":
