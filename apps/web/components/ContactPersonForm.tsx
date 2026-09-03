@@ -2,19 +2,10 @@
 
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { createContactInteraction } from "@/lib/actions";
-import { ContactInteractionFields, type MemberOption, type PersonOption } from "@/components/ContactInteractionFields";
-import { localToday } from "@/components/localToday";
+import { createContactPerson } from "@/lib/actions";
+import { ContactPersonFields } from "@/components/ContactPersonFields";
 
-export function ContactInteractionForm({
-  contactId,
-  members,
-  people,
-}: {
-  contactId: string;
-  members: MemberOption[];
-  people: PersonOption[];
-}) {
+export function ContactPersonForm({ contactId }: { contactId: string }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
@@ -28,7 +19,7 @@ export function ContactInteractionForm({
         onClick={() => setIsOpen(true)}
         className="rounded-md bg-slate-800 px-3 py-2 text-sm font-medium text-slate-100 hover:bg-slate-700"
       >
-        Log an interaction
+        Add a person
       </button>
     );
   }
@@ -42,7 +33,7 @@ export function ContactInteractionForm({
         const formData = new FormData(event.currentTarget);
         startTransition(async () => {
           try {
-            const result = await createContactInteraction(contactId, formData);
+            const result = await createContactPerson(contactId, formData);
             if (!result.ok) {
               setError(result.error);
               return;
@@ -51,26 +42,15 @@ export function ContactInteractionForm({
             formRef.current?.reset();
             setIsOpen(false);
           } catch {
-            setError("Could not log the interaction");
+            setError("Could not add this person");
           }
         });
       }}
       className="flex flex-col gap-3 rounded-lg border border-slate-800 bg-slate-900 p-4"
     >
-      <h3 className="text-sm font-semibold text-slate-300">Log an interaction</h3>
+      <h3 className="text-sm font-semibold text-slate-300">Add a person</h3>
 
-      <ContactInteractionFields
-        members={members}
-        people={people}
-        defaults={{
-          type: "CALL",
-          occurredOn: localToday(),
-          summary: "",
-          followUpOn: null,
-          followUpAssignedToUserId: null,
-          contactPersonId: null,
-        }}
-      />
+      <ContactPersonFields defaults={{ name: "", title: null, email: null, phone: null }} />
 
       {error && <p className="text-sm text-red-400">{error}</p>}
 

@@ -10,6 +10,7 @@ export const INTERACTION_TYPE_OPTIONS = [
 ] as const;
 
 export type MemberOption = { id: string; name: string };
+export type PersonOption = { id: string; name: string };
 
 export type ContactInteractionDefaults = {
   type: string;
@@ -17,6 +18,7 @@ export type ContactInteractionDefaults = {
   summary: string;
   followUpOn: string | null;
   followUpAssignedToUserId: string | null;
+  contactPersonId: string | null;
 };
 
 /** Shared by create and edit so the two can't drift on field names or
@@ -24,9 +26,11 @@ export type ContactInteractionDefaults = {
 export function ContactInteractionFields({
   defaults,
   members,
+  people,
 }: {
   defaults: ContactInteractionDefaults;
   members: MemberOption[];
+  people: PersonOption[];
 }) {
   return (
     <>
@@ -55,6 +59,18 @@ export function ContactInteractionFields({
           </span>
         </label>
       </div>
+
+      <label className={labelClass}>
+        Who this was with (optional)
+        <select name="contactPersonId" defaultValue={defaults.contactPersonId ?? ""} className={inputClass}>
+          <option value="">Not attributed to a specific person</option>
+          {people.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </select>
+      </label>
 
       <label className={labelClass}>
         Summary
