@@ -37,7 +37,14 @@ export default async function CompliancePage() {
           page that is time-sensitive, and it covers licences, policies and
           bonds that live on /settings and were never visible together. */}
       <div className="mb-8">
-        <RenewalAlerts renewals={renewals} heading="Expiring and expired" />
+        <RenewalAlerts
+          renewals={renewals}
+          // Sources, not alerts. `renewalAlerts` drops everything current,
+          // so its length cannot tell "nothing on file" from "all current"
+          // — and the panel said the second for both.
+          trackedCount={renewalSources.length}
+          heading="Expiring and expired"
+        />
       </div>
 
       <section className="mb-8 rounded-lg border border-slate-800 bg-slate-900 p-4">

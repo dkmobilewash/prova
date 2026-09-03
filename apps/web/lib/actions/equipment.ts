@@ -11,18 +11,13 @@ import { assertOwner } from "./shared";
  * endpoint and answers whoever posts to it. */
 const FIELD_ONLY = "Field records aren't part of your job function. The account owner sets who sees what, on the Team page.";
 
-/** Empty job selection means "in the yard", a normal state rather than an
- * error — same shape as tradeScopeFromForm. Validates the job belongs to
- * this company so a stray id can't attach equipment to someone else's job. */
-async function assignedJobIdFromForm(formData: FormData, companyId: string) {
-  const raw = String(formData.get("assignedJobId") ?? "").trim();
-  if (!raw) return null;
-  const job = await prisma.job.findUnique({ where: { id: raw } });
-  if (!job || job.companyId !== companyId) {
-    throw new Error("Job not found");
-  }
-  return job.id;
-}
+/* `assignedJobIdFromForm` used to live here. Where a piece of equipment is
+ * now comes from `EquipmentAssignment` — the newest stay with no return
+ * date — so this no longer writes `Equipment.assignedJobId`, and the form
+ * no longer offers it. Leaving the control in place while nothing read the
+ * column would have shipped a field that looks like it works and does
+ * nothing, which is the same defect as the QuickBooks chart-of-accounts
+ * mapping that was collected, stored, displayed and never read. */
 
 export async function createEquipment(formData: FormData) {
   const { company } = await requireCapabilityForAction("MANAGE_FIELD", FIELD_ONLY);
@@ -42,7 +37,6 @@ export async function createEquipment(formData: FormData) {
       name,
       type: type || null,
       assetTag: assetTag || null,
-      assignedJobId: await assignedJobIdFromForm(formData, company.id),
       notes: notes || null,
     },
   });
@@ -73,7 +67,6 @@ export async function updateEquipment(equipmentId: string, formData: FormData) {
       name,
       type: type || null,
       assetTag: assetTag || null,
-      assignedJobId: await assignedJobIdFromForm(formData, company.id),
       notes: notes || null,
     },
   });
