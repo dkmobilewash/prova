@@ -359,7 +359,7 @@ describe("partitionAlerts", () => {
     // one that got fixed.
     const { visible, silenced } = partitionAlerts(
       [one],
-      [{ alertKey: one.key, snoozedUntil: null }],
+      [{ alertKey: one.key, snoozedUntil: null, acknowledgedSeverity: "DUE_SOON" }],
       TODAY,
     );
     expect(visible).toEqual([]);
@@ -369,7 +369,7 @@ describe("partitionAlerts", () => {
   it("brings back a snooze whose date has passed", () => {
     const { visible } = partitionAlerts(
       [one],
-      [{ alertKey: one.key, snoozedUntil: "2026-08-20" }],
+      [{ alertKey: one.key, snoozedUntil: "2026-08-20", acknowledgedSeverity: "DUE_SOON" }],
       TODAY,
     );
     expect(visible.map((a) => a.key)).toEqual([one.key]);
@@ -378,7 +378,7 @@ describe("partitionAlerts", () => {
   it("keeps a snooze quiet until its date", () => {
     const { silenced } = partitionAlerts(
       [one],
-      [{ alertKey: one.key, snoozedUntil: "2026-09-15" }],
+      [{ alertKey: one.key, snoozedUntil: "2026-09-15", acknowledgedSeverity: "DUE_SOON" }],
       TODAY,
     );
     expect(silenced.map((a) => a.key)).toEqual([one.key]);
@@ -390,10 +390,70 @@ describe("partitionAlerts", () => {
     const renewed: Alert = { ...one, key: "RENEWAL:lic_1:2027-11-30" };
     const { visible } = partitionAlerts(
       [renewed],
-      [{ alertKey: one.key, snoozedUntil: null }],
+      [{ alertKey: one.key, snoozedUntil: null, acknowledgedSeverity: "DUE_SOON" }],
       TODAY,
     );
     expect(visible.map((a) => a.key)).toEqual([renewed.key]);
+  });
+
+  // ---- issue #110: the severity half of the match ----
+  //
+  // The key alone cannot express these. `one` and `overdue` below are
+  // byte-identical keys: same licence, same expiry date, different day.
+
+  const overdue: Alert = { ...one, severity: "OVERDUE", detail: "expired", daysUntil: -3 };
+
+  it("does NOT stay silent once the same alert escalates past what was seen", () => {
+    // The whole of issue #110. Somebody said "seen it" at 90 days out;
+    // that is not a statement about the licence having lapsed.
+    const { visible, silenced } = partitionAlerts(
+      [overdue],
+      [{ alertKey: one.key, snoozedUntil: null, acknowledgedSeverity: "DUE_SOON" }],
+      TODAY,
+    );
+    expect(visible.map((a) => a.key)).toEqual([overdue.key]);
+    expect(silenced).toEqual([]);
+  });
+
+  it("stays silent when the alert gets BETTER than what was seen", () => {
+    // A corrected date, not a met one. They already saw the worse version.
+    const { visible, silenced } = partitionAlerts(
+      [one],
+      [{ alertKey: one.key, snoozedUntil: null, acknowledgedSeverity: "OVERDUE" }],
+      TODAY,
+    );
+    expect(silenced.map((a) => a.key)).toEqual([one.key]);
+    expect(visible).toEqual([]);
+  });
+
+  it("stays silent at exactly the severity that was seen", () => {
+    // Equal is not worse. Guards the boundary the comparison turns on.
+    const { silenced } = partitionAlerts(
+      [one],
+      [{ alertKey: one.key, snoozedUntil: null, acknowledgedSeverity: "DUE_SOON" }],
+      TODAY,
+    );
+    expect(silenced.map((a) => a.key)).toEqual([one.key]);
+  });
+
+  it("reads a row written before the column existed as DUE_SOON, not as a wildcard", () => {
+    // ACK_SEVERITY_WHEN_UNRECORDED. A legacy NULL silences what it was
+    // almost certainly made about...
+    const stillQuiet = partitionAlerts(
+      [one],
+      [{ alertKey: one.key, snoozedUntil: null, acknowledgedSeverity: null }],
+      TODAY,
+    );
+    expect(stillQuiet.silenced.map((a) => a.key)).toEqual([one.key]);
+
+    // ...and stops covering the same alert the day it lapses, which is the
+    // half that makes NULL a fix for those rows rather than an amnesty.
+    const backAgain = partitionAlerts(
+      [overdue],
+      [{ alertKey: one.key, snoozedUntil: null, acknowledgedSeverity: null }],
+      TODAY,
+    );
+    expect(backAgain.visible.map((a) => a.key)).toEqual([overdue.key]);
   });
 });
 

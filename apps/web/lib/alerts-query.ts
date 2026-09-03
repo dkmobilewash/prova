@@ -124,7 +124,11 @@ export async function loadAlerts(
 
     prisma.alertAcknowledgement.findMany({
       where: { userId },
-      select: { alertKey: true, snoozedUntil: true },
+      // acknowledgedSeverity is part of the match, not decoration: an
+      // acknowledgement only covers a situation no worse than the one it
+      // was made about. Omit it here and partitionAlerts silently reads
+      // every row as ACK_SEVERITY_WHEN_UNRECORDED. See issue #110.
+      select: { alertKey: true, snoozedUntil: true, acknowledgedSeverity: true },
     }),
 
     loadRatioReviews(companyId, currentMonth),
@@ -293,6 +297,7 @@ export async function loadAlerts(
   const acks: Acknowledgement[] = acknowledgements.map((a) => ({
     alertKey: a.alertKey,
     snoozedUntil: isoDate(a.snoozedUntil),
+    acknowledgedSeverity: a.acknowledgedSeverity,
   }));
 
   return partitionAlerts(permitted, acks, todayIso);
