@@ -12,6 +12,71 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+## The half that needed a second person, tested instead
+
+The gates above shipped with one half clicked and the other half not. "Lets
+the right people in" was verified by the author as OWNER. "KEEPS THE WRONG
+PEOPLE OUT" was not, because it needs a second account with a different job
+function and this company has one member — and that is the half where being
+wrong is a security hole rather than an annoyance. It is now covered by
+tests instead of waiting on a person who does not exist.
+
+**A PAGE GUARD SAYS NOTHING ABOUT THE ACTION BEHIND IT.** A Server Action
+is its own endpoint with a stable id and it answers whoever posts to it.
+Every one of the 34 newly-gated writes, plus `deleteDailyFieldReport`, is
+now EXECUTED as each job function that should be refused, and has to refuse
+with its own message. `prisma` is replaced by a proxy that throws on the
+first property read, so the claim proved is not "it failed" — an action
+given junk arguments fails for a dozen reasons — but "it refused before
+touching any data at all". Every case has a control: the functions that DO
+hold the capability must fail for some *other* reason, because a guard that
+refuses everybody would satisfy the negative test perfectly.
+
+**Nothing is enumerated from a hand-written list**, for the same reason the
+route check was rewritten to walk the filesystem: a test that iterates a map
+cannot catch an omission from that map. This one walks every page, follows
+each page's own import graph through its components to the actions it can
+reach, resolves each action to the module defining it, and requires every
+action reachable only from pages demanding one capability to assert it.
+Adding an action, or wiring an existing one to a guarded page, fails the
+suite by name without anybody adding a line — verified by doing exactly
+that, and by seeing the count check catch a page whose guard was removed
+(30 actions found where 35 were expected).
+
+**It found a hole the gates opened.** Fifteen actions sit behind pages this
+pass newly closed and answer anyone: thirteen behind `/closeout`
+(`closeout.ts`, `closeoutSubmissions.ts`) and two behind
+`/settings/integrations`. Before the gates, page and action agreed — both
+open. Now the page refuses and the endpoint does not, which is the shape
+every comment in this feature calls the worse one. A further fifty sit
+behind pages guarded since long before any of this (`/settings`,
+`/compliance`, `/union-compliance`, `/prevailing-wage`, `/catalog`,
+`/vendors/pricing`, `/backcharges`). All sixty-five are listed by name with
+their capability, and the list MAY ONLY SHRINK: an entry that acquires a
+guard fails the suite as loudly as a guard that goes missing, so the debt
+cannot quietly grow and cannot rot into fiction. They are listed rather
+than fixed because every one belongs to another lane, and touching another
+lane's file is announced first.
+
+At the route level: every guarded route is now asserted against every job
+function that must be refused, rather than the few somebody thought of; a
+route whose capability nobody lacks fails as decoration; and a page that
+enforces one capability while explaining another fails too.
+
+Every check here was watched failing before being kept — guard removed,
+guard reworded, guard inverted so it looked right and refused everyone,
+page guard reverted, a new ungated action added and wired up. The
+inverted-guard case is the one worth remembering: the source text still
+read `can(context, "MANAGE_FIELD")`, the shape check passed, and only
+executing it caught that it locked out the people it exists to admit.
+
+NOT verified: `pnpm test:db` was not run. This machine has no Postgres, no
+Docker and no way to install either, and its Node is 20.16 — below the
+20.19 where `require(esm)` works, so `vitest.db.config.ts` cannot even load
+here. The suite added is a unit suite by design and needs none of that.
+
+---
+
 ## The guard that could not fail
 
 `MANAGE_FIELD` and `MANAGE_JOBS` were declared in `lib/permissions.ts`,

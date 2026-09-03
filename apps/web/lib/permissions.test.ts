@@ -252,6 +252,9 @@ const OPEN_ROUTES: Record<string, string> = {
   "/contacts/[id]":
     "Same, and its billing/job-cost/estimating sections are already withheld in-page via can() — pinned by lib/page-money-guards.test.ts.",
   "/team": "The roster. Everyone should be able to see who they work with; changing it is owner-only in the actions.",
+  "/sales":
+    "Prova's OWN sales pipeline, not a tenant's. Guarded HARDER than any capability, on two things a Capability cannot express: the page refuses unless Company.isProvaOperator AND the person's role is OWNER. Mapping it to a capability would loosen it, since every owner holds all seven and a non-operator company holds isProvaOperator on nothing.",
+  "/sales/[id]": "Same page, same two checks — isProvaOperator, then OWNER — with notFound() for a non-operator company.",
   "/vendors":
     "The supplier directory. What each vendor has QUOTED is the sensitive half and it lives on /vendors/pricing, which is guarded.",
   "/jobs/[id]":
@@ -363,5 +366,135 @@ describe("every route the app serves has an access decision", () => {
       if (SECTION_ONLY.includes(capability)) continue;
       expect(used.has(capability), `${capability} gates no route at all`).toBe(true);
     }
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * The half that needs a second person, and does not have one
+ * ------------------------------------------------------------------ */
+
+/**
+ * "Lets the right people in" was clicked through by the author. "KEEPS THE
+ * WRONG PEOPLE OUT" was not, and could not be: the company has one member,
+ * an owner holds every capability, and proving that an ACCOUNTING member
+ * cannot open `/safety` needs a second account with a different job
+ * function. That is also the half where being wrong is a security hole
+ * rather than an annoyance.
+ *
+ * So it is asserted here for every guarded route against every job
+ * function, rather than sampled by hand for the few somebody thought of.
+ * The companion file lib/action-capability-guards.test.ts does the same
+ * for the Server Actions behind these pages, which is the half a page
+ * guard says nothing about.
+ */
+describe("the negative half: who each guarded route keeps out", () => {
+  const GUARDED: Record<string, Capability> = { ...ROUTE_CAPABILITY, ...PAGE_ONLY_CAPABILITY };
+
+  /** Job functions that must be refused this route, worked out from the
+   * capability rather than typed out — so a change to BY_FUNCTION moves
+   * these assertions with it instead of leaving them asserting history. */
+  const refusedBy = (capability: Capability) =>
+    JOB_FUNCTIONS.filter((fn) => !can(member(fn), capability));
+
+  it("refuses every job function that lacks the capability, on every guarded route", () => {
+    const wrong: string[] = [];
+
+    for (const [route, capability] of Object.entries(GUARDED)) {
+      for (const fn of refusedBy(capability)) {
+        // PAGE_ONLY routes are absent from ROUTE_CAPABILITY on purpose — a
+        // bracketed key can never match a real URL — so canReach is only
+        // meaningful for the mapped ones. Their refusal is the page's own
+        // requireCapability, asserted against source above.
+        if (route in ROUTE_CAPABILITY && canReach(member(fn), route) !== false) {
+          wrong.push(`${fn} can still reach ${route}, which needs ${capability}`);
+        }
+        if (can(member(fn), capability)) {
+          wrong.push(`${fn} holds ${capability}, so ${route} withholds nothing from them`);
+        }
+      }
+    }
+
+    expect(wrong, `Doors that do not close:\n${wrong.map((w) => `  ${w}`).join("\n")}`).toEqual([]);
+  });
+
+  it("leaves no guarded route that refuses nobody", () => {
+    // The omission-shaped failure at this level, and the reason this is
+    // not just a louder version of the test above: every assertion there
+    // is inside a loop over `refusedBy`, so a route whose capability
+    // everyone happens to hold contributes no iterations and passes
+    // perfectly while gating nothing. That is the same shape as iterating
+    // ROUTE_CAPABILITY to look for a route missing from it.
+    const vacuous = Object.entries(GUARDED)
+      .filter(([, capability]) => refusedBy(capability).length === 0)
+      .map(([route, capability]) => `${route} (${capability})`);
+
+    expect(
+      vacuous,
+      `These routes are listed as guarded and there is nobody they refuse:\n` +
+        vacuous.map((v) => `  ${v}`).join("\n") +
+        `\n\nA guard every job function passes is decoration. Either the capability is on ` +
+        `the wrong routes, or BY_FUNCTION has widened until it means nothing.`,
+    ).toEqual([]);
+  });
+
+  it("names the specific people each new gate keeps out", () => {
+    // The derived checks above would still pass if a mapping were moved to
+    // a capability that happens to exclude somebody — anybody. These spell
+    // out the actual claims this pass was shipped to make, so that changing
+    // one is a visible edit to a sentence rather than a silent change in a
+    // computed set.
+    //
+    // ACCOUNTING and ESTIMATOR are the two functions that hold no
+    // MANAGE_FIELD; ACCOUNTING and PAYROLL_COMPLIANCE hold no MANAGE_JOBS.
+    for (const route of ["/safety", "/punch-lists", "/equipment", "/field-reports", "/material-orders"]) {
+      expect(ROUTE_CAPABILITY[route], `${route} should be gated on MANAGE_FIELD`).toBe("MANAGE_FIELD");
+      expect(canReach(member("ACCOUNTING"), route)).toBe(false);
+      expect(canReach(member("ESTIMATOR"), route)).toBe(false);
+      // And the people whose job this is still get in — a mapping that
+      // locks a foreman out of safety is the expensive mistake here.
+      expect(canReach(member("FIELD"), route)).toBe(true);
+      expect(canReach(member("PROJECT_MANAGER"), route)).toBe(true);
+      expect(canReach(member("PAYROLL_COMPLIANCE"), route)).toBe(true);
+      expect(canReach(owner("ACCOUNTING"), route)).toBe(true);
+    }
+
+    for (const route of ["/rfis", "/submittals", "/drawings", "/closeout"]) {
+      expect(ROUTE_CAPABILITY[route], `${route} should be gated on MANAGE_JOBS`).toBe("MANAGE_JOBS");
+      expect(canReach(member("ACCOUNTING"), route)).toBe(false);
+      expect(canReach(member("PAYROLL_COMPLIANCE"), route)).toBe(false);
+      expect(canReach(member("FIELD"), route)).toBe(true);
+      expect(canReach(member("ESTIMATOR"), route)).toBe(true);
+      expect(canReach(owner("ACCOUNTING"), route)).toBe(true);
+    }
+
+    // The job record itself stays open, and that is a decision rather than
+    // an oversight: ACCOUNTING and PAYROLL_COMPLIANCE hold no MANAGE_JOBS
+    // and both have to open a job. If this ever flips, accounting loses the
+    // pay applications they exist to raise.
+    for (const fn of JOB_FUNCTIONS) {
+      expect(canReach(member(fn), "/jobs/[id]")).toBe(true);
+      expect(canReach(member(fn), "/dashboard")).toBe(true);
+    }
+  });
+
+  it("explains a refusal with the same capability it enforced", () => {
+    // A page that requires one capability and renders <NoAccess> naming
+    // another tells the person to ask for the wrong thing. The check above
+    // only asks that BOTH strings appear somewhere in the file.
+    const mismatched: string[] = [];
+
+    for (const [route, capability] of Object.entries({ ...ROUTE_CAPABILITY, ...PAGE_ONLY_CAPABILITY })) {
+      const source = sourceFor(route);
+      if (!source.includes(`<NoAccess capability="${capability}" />`)) {
+        const rendered = source.match(/<NoAccess capability="([A-Z_]+)"/);
+        mismatched.push(`${route} enforces ${capability} and explains ${rendered?.[1] ?? "nothing"}`);
+      }
+    }
+
+    expect(
+      mismatched,
+      `The refusal names a different capability from the one enforced:\n` +
+        mismatched.map((m) => `  ${m}`).join("\n"),
+    ).toEqual([]);
   });
 });
