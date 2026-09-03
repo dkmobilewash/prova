@@ -298,9 +298,26 @@ async function linkClaimsToMessage(
  * Gives back milestones for a send that provably never went out, so the
  * next run says the same thing again.
  *
- * Scoped to the keys THIS call claimed, and only while they are unlinked
- * or linked to this call's own message — a concurrent run that succeeded
- * has linked its fired rung to a different message and is not touched.
+ * ONLY ROWS CARRYING THIS CALL'S OWN `messageId` ARE RELEASED, and that
+ * exact scoping is the whole safety of it. `linkClaimsToMessage` has
+ * already run by the time we get here, so this call's fired rungs carry
+ * its id and nothing else does.
+ *
+ * It used to also match `messageId: null`, to hand back the looser rungs
+ * this notice spent on the way past. That arm could delete ANOTHER run's
+ * claim: only the rung that FIRED is ever linked, so every `alsoSpent`
+ * row stays null for life, and two runs whose notice sets overlap could
+ * each see the other's. The interleaving is narrow — B has to read before
+ * A claims and still find something of its own to claim — but the cost
+ * when it lands is a duplicate email carrying the LOOSER notice behind a
+ * tighter one already sent, which reads backwards to whoever gets it.
+ *
+ * Dropping the arm costs nothing, which is why this is a fix rather than
+ * a trade. The looser rungs stay spent, and they were never going to be
+ * sent: the retry re-fires the same rung it failed on, with `alsoSpent`
+ * empty because those are already in the ledger. Asserted directly below
+ * in `notification-dispatch.dbtest.ts`.
+ *
  * The message row and its FAILED event stay: what happened is still what
  * happened, and the log is the only place anyone can see it.
  */
@@ -313,10 +330,6 @@ async function releaseClaims(
   if (keys.length === 0) return;
 
   await prisma.notificationDispatch.deleteMany({
-    where: {
-      userId,
-      dispatchKey: { in: keys },
-      OR: [{ messageId: null }, { messageId }],
-    },
+    where: { userId, dispatchKey: { in: keys }, messageId },
   });
 }

@@ -21,6 +21,14 @@ import {
  * isn't one, and inventing one would be a third place the host is
  * configured. `x-forwarded-host` is what Vercel sets behind its proxy;
  * `host` is what a local dev server sets.
+ *
+ * NOT SAFE FOR A SCHEDULED SEND, and the reason is worth reading before
+ * reusing it. This value becomes the host of every link in the email
+ * body, and a request header is something the caller controls. That is
+ * harmless here ONLY because this action mails the person who clicked and
+ * nobody else — the worst they can do is point their own links somewhere
+ * odd. A cron mailing other people must pass a host it knows, from
+ * configuration, not from whatever arrived on a request.
  */
 async function originFromRequest(): Promise<string> {
   const list = await headers();

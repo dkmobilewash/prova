@@ -113,11 +113,20 @@ spent for good, with nothing but FAILED rows to show for it. Releasing
 never erases the FAILED event — the log is the only place anyone can see
 what happened.
 
-Known and accepted: `releaseClaims` is scoped to the keys one call claimed
-and only while unlinked or linked to its own message, so a concurrent run
-that succeeded is untouched. A rare interleaving could still release a
-competing run's spent-but-unsent rung, costing one duplicate email. That is
-better than permanently losing warnings on every transient failure.
+That release used to match `messageId: null` as well as its own message,
+which was raised in review as an accepted risk and turned out not to need
+accepting. Only the rung that FIRED is ever linked to a message, so every
+`alsoSpent` row stays null for life — and two runs whose notice sets
+overlap could each delete the other's. Narrow to hit, but the cost when it
+lands is a duplicate carrying the LOOSER notice behind a tighter one
+already sent, which reads backwards to whoever gets it.
+
+Releasing only this call's own `messageId` closes it, and costs nothing:
+the looser rungs stay spent and were never going to be sent anyway, since
+the retry re-fires the rung it failed on with `alsoSpent` already in the
+ledger. Both halves are pinned — the existing retry test would fail if the
+release were too narrow, and the new one fails against the old code with
+`expected [] to deeply equal [ 'approaching' ]` if it is too wide.
 
 #### What this does not do
 
