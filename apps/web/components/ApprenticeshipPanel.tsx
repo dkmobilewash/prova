@@ -146,6 +146,15 @@ export function ApprenticeshipPanel({
             enrollmentId={row.enrollmentId}
             nextPeriod={row.period}
             canDelete={canDelete}
+            enrollment={{
+              sponsorName: row.sponsorName,
+              programNumber: row.programNumber,
+              completedOn: row.completedOn,
+              cancelledOn: row.cancelledOn,
+              requiredOjtHoursPerPeriod: row.requiredOjtHoursPerPeriod,
+              requiredClassroomHoursPerPeriod: row.requiredClassroomHoursPerPeriod,
+              note: row.note,
+            }}
           />
         </div>
       ))}

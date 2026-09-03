@@ -370,21 +370,112 @@ scrollback gets broken by whoever didn't scroll far enough.
   the old escape hatch and no longer exists; it left with the build's
   migrate step.)
 - **A successful write can show up as an empty list — cause NOT
-  established.** Observed once: the action returned ok, the row was in
-  the database, the page said "Nothing on order", and a manual reload
-  showed it. The pool was throwing `Timed out fetching a new connection`
-  at the time and that is what this entry originally blamed. That was
-  wrong: there is an error boundary now, but there was none then, so a
-  throwing query would have 500'd rather than rendered an empty list —
-  and a ColorZilla extension was injecting a hydration mismatch into
-  `<body>` in the same repro. Untested hypothesis: the router refresh
-  never fired and the STALE pre-create render stayed on screen, which
-  fits all three observations. Do not repeat the pool explanation as
-  fact. What IS established is the risk it pointed at: a page that fails
-  after a commit invites a second click, and no create action is
-  idempotent. #19 disabled 57 create buttons while their form is in
-  flight and added an error boundary that says not to resubmit before
-  reloading.
+  established, and now with TWO dead explanations instead of one.**
+  Observed: the action returned ok, the row was in the database, the page
+  said "Nothing on order", and a manual reload showed it. Issue #61.
+
+  **Dead explanation 1 — the connection pool.** The pool was throwing
+  `Timed out fetching a new connection` at the time and this entry
+  originally blamed it. Wrong: there is an error boundary now, but there
+  was none then, so a throwing query would have 500'd rather than
+  rendered an empty list. A ColorZilla extension was also injecting a
+  hydration mismatch into `<body>` in the same repro, so that run had two
+  confounds in it.
+
+  **Dead explanation 2 — "the router refresh never fired".** This entry
+  carried that as the leading untested hypothesis, on the grounds that it
+  fits all three observations. It does fit, and it is still WRONG. Read
+  out of the INSTALLED Next source on 2026-09-03 (`next 15.5.23` — note
+  `package.json` says `^15.1.3`, which is not what is on disk):
+
+    - `server/web/spec-extension/revalidate.js:156` sets
+      `pathWasRevalidated = true` UNCONDITIONALLY, with a
+      `// TODO: only revalidate if the path matches` still in the source.
+      **The path argument you pass is irrelevant to this mechanism.**
+    - so `skipFlight` is false at `server/app-render/action-handler.js:773`
+      and flight data IS appended to the action's POST response;
+    - and an action POST does not send the `RSC` header, so
+      `flightRouterState` is undefined and the render walks from the root
+      — **action flight is always a root render.**
+
+  So a Server Action that calls `revalidatePath` and RETURNS a value
+  re-renders the client with no `router.refresh()` at all. The call is
+  redundant in the happy path. This app carries its own control proving
+  it: `TakeoffForm` has no `router.refresh()`, its action revalidates at
+  `lib/actions/jobs.ts:511`, and it demonstrably works.
+
+  Every client-side branch that could silently leave a stale page was
+  walked and each is unreachable for this app's action shape, including
+  action forwarding — ruled out from `server-reference-manifest.json`,
+  where all 26 action-carrying pages hold the full manifest, so
+  `selectWorkerForForwarding` can never pick a different worker.
+
+  **Two numbers this entry used to imply, both wrong.** The
+  `router.refresh()` tally is 29 of 98 client components, not "18 of 60".
+  And NO write action in this codebase is missing revalidation — all ten
+  naive grep hits are false positives, `fieldReports.ts` routing through
+  its own `revalidateBoth()` helper. "Somebody forgot to revalidate" is
+  eliminated everywhere, so do not go looking for it.
+
+  **What is left.** The code cannot settle this, and that is itself the
+  finding — do not spend another session reading source for it. Exactly
+  two possibilities survive, neither visible from the repo: the
+  post-action re-render read data that did not yet include the row, or
+  something between Vercel's edge and the function drops the flight half
+  of the response. Settling it needs ONE signed-in click-through with the
+  network tab open, all extensions disabled: on the `POST` carrying
+  `Next-Action`, read the `x-action-revalidated` response header and
+  whether the body carries flight (tens of KB with page copy) or only the
+  action result (a few hundred bytes), check the console for
+  `SERVER ACTION APPLY FAILED`, then REPEAT IT IDENTICALLY on the working
+  `TakeoffForm` in the same tab. The differential is the whole value; a
+  single failing capture with nothing to compare against is how this has
+  already burned several sessions. Top suspect is
+  `components/CompanyLicenses.tsx:368` on `/settings` — reported failing,
+  still has no refresh, list server-rendered on the same route.
+
+  What IS established, and was from the start: a page that fails after a
+  commit invites a second click, and no create action is idempotent. #19
+  disabled 57 create buttons while their form is in flight and added an
+  error boundary that says not to resubmit before reloading.
+- **`./scripts/preflight.sh` used to die on its first line inside a git
+  worktree.** It ran `rm -f .git/index.lock`, but in a worktree `.git` is
+  a FILE, not a directory — so that is `ENOTDIR`, which `rm -f` does NOT
+  suppress, and `set -e` killed the script. The entire output was
+  `rm: .git/index.lock: Not a directory`. Agents work in worktrees, which
+  is why no agent branch was ever preflighted.
+
+  The fix is `rm -f "$(git rev-parse --git-path index.lock)"`, placed
+  BELOW the `cd` to the repo root so the lock cleared is the repo's rather
+  than whatever directory you were standing in. Two branches found this
+  independently on the same day and wrote the same fix, which is its own
+  small signal about how often the worktree path is exercised.
+
+  If you are on a branch that predates that fix and preflight dies with
+  that one line, it is this — run `typecheck`, `lint`, `test` and `build`
+  individually rather than hunting it.
+
+- **A fresh worktree has NO `node_modules`, and that is how unverified
+  work piles up.** `pnpm install --frozen-lockfile` takes seconds and
+  nothing works without it — so an agent that skips it cannot typecheck,
+  test or build, and reports "done" on the strength of having written
+  plausible code. Three WIP branches were found on 2026-09-03 in exactly
+  that state; every one of them failed `typecheck` the moment deps
+  existed. `pnpm build` additionally needs `.env` (Clerk key and
+  `DATABASE_URL`); copy `apps/web/.env` and `packages/db/.env` from the
+  main checkout, and a build failing ONLY on `Missing publishableKey` or
+  `[db] DATABASE_URL is not set` is environmental, not your diff.
+
+- **"Written, documented, and never called" is a recurring shape here,
+  not a one-off.** Three live instances found in a single day: 161
+  `.dbtest.ts` tests no runner referenced; an `acknowledgedSeverity`
+  column that nothing selected and nothing wrote; and a `factDigest`
+  helper whose call site still used the unbounded value it was written to
+  replace. Each one typechecked and tested GREEN throughout, because
+  nothing referenced the dead code. So when reviewing a fix, grep for the
+  new symbol and confirm something CALLS it — the tests passing is not
+  that evidence, and neither is the diff looking complete.
+
 - `FEATURE-AUDIT.md`: the 26-category roadmap and source of truth for
   what's built. It has drifted more than once; don't let it.
 - `CHANGELOG.md`: newest first; says why decisions were made and the

@@ -23,7 +23,7 @@ in flight. Left as-is here rather than guessed at from the outside; the next
 update to touch those sheets should come from whoever actually verified them
 against a fresh clone.
 
-**123 items audited — 91 built / 22 partial / 8 missing / 2 descoped**
+**119 items audited — 90 built / 21 partial / 7 missing / 1 descoped**
 
 (Recomputed 3 Sep 2026 by counting every `| Built |`/`| Partial |`/
 `| Missing |`/`| Descoped |` row across the per-sheet tables below.
@@ -33,14 +33,28 @@ neither number survived the other's. Counting beats arithmetic on a file
 two lanes edit concurrently — third time this exact conflict shape has
 hit this file. Recomputed again the same day for the Sheet 15 Cash flow
 forecast correction: Missing → Built, found already-shipped while
-auditing the nav for NAV-IA-AUDIT.md.)
+auditing the nav for NAV-IA-AUDIT.md.
+
+FOURTH correction, 3 Sep 2026, and this time the METHOD is the bug rather
+than the arithmetic. The header read 123 — 91/22/8/2 while the rows said
+119 — 90/21/7/1: over by exactly one in EVERY status. That is the
+signature of counting with a bare `grep '^| Built |'`, which also matches
+the four rows of the summary table immediately below this note. Every
+status is inflated by precisely its own summary row.
+
+So do not grep the whole file. Count only rows underneath a `## NN.`
+sheet heading, e.g.
+
+    awk '/^## [0-9]+\./{s=1} s && /^\| *(Built|Partial|Missing|Descoped) *\|/{n[$2]++} END{for(k in n) print k, n[k]}' FEATURE-AUDIT.md
+
+and make the summary table below agree with THAT, not with a grep.)
 
 | Status | Count |
 | --- | --- |
-| Built | 91 |
-| Partial | 22 |
-| Missing | 8 |
-| Descoped | 2 |
+| Built | 90 |
+| Partial | 21 |
+| Missing | 7 |
+| Descoped | 1 |
 
 
 ## 01. Company / Org Setup — 6 built · 0 partial · 0 missing
