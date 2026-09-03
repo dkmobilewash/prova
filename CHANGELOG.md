@@ -12,6 +12,99 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### The digest now runs when nobody is looking (Cyrus)
+`cyrus/notification-schedule`
+
+Sheet 26 held five rows at Partial for one narrow reason — **nothing runs
+unattended.** The digest below sends beautifully and only when a person
+clicks a button on `/alerts`, which is the same reach the alert list
+already had. This is the schedule: a route handler at
+`/api/notifications/digest`, hit nightly at 13:00 UTC by a Vercel cron
+(06:00 Pacific, 09:00 Eastern — before either coast's working day).
+
+Nothing under it changed. `dispatchAlertDigest` already took `todayIso`
+and `baseUrl` as parameters precisely so a scheduled caller could supply
+them, and it already claimed each notice before calling the provider, so
+running it twice is silent. This adds a caller with no person behind it,
+and the loop semantics that a caller with no person behind it needs.
+
+**Two ways to fail closed, and neither is a formality.**
+
+`CRON_SECRET` unset → 503, nothing read, nothing sent. Vercel attaches
+`Authorization: Bearer $CRON_SECRET` to a cron request when that variable
+is set and attaches *nothing* when it is not — which is exactly why the
+missing-secret case has to reject. Unset must mean the schedule does not
+work; it must never mean the schedule works for anybody who knows the URL,
+and that URL is a button that mails every user of every company. Compared
+timing-safely, like the Resend webhook: a plain `===` on a secret leaks how
+much of it was right, one byte at a time, and this endpoint can be hit as
+often as anyone likes.
+
+`NOTIFY_BASE_URL` unset or not an origin → 503, nothing sent. Every link
+in the email body is built from it. **The button's host cannot be reused
+here and the docstring on `originFromRequest` says so in advance:** it
+reads `x-forwarded-host`, which the caller controls, and that is harmless
+only because the button mails the person who clicked it. This run mails
+other people. A host taken from whatever request triggered the cron would
+be the host in the links of everybody's email. There is no default either,
+because there is no safe guess — an email that looks right and whose every
+link goes to the wrong deployment is worse than no email.
+
+**Who, in what order, and what one failure costs.** Every user of every
+company with a real mailbox, one at a time, longest-unnotified first.
+
+- *One at a time* is not performance. Two different people never contend —
+  the ledger's key is `(userId, dispatchKey)` — but the same person
+  dispatched twice concurrently does, and the thing never to do is compute
+  one alert list per COMPANY and mail it to everybody in it: alerts are
+  capability-filtered per user, so that both mails people alerts their role
+  hides and collapses every person's claim into one.
+- *Longest-unnotified first* only shows when a run cannot finish, and then
+  it is the whole difference between "today's tail waits until tomorrow"
+  and "the same people are never reached, ever" — which the milestone
+  ledger would make permanent, since a rung nobody was there to fire still
+  passes. Never-mailed first, then oldest, then id so the order is total
+  and two runs cut the list in the same place.
+- *No one person can end the run.* A throw, a refused address, a provider
+  timeout: that person's outcome, and the loop continues. The one
+  exception is an unconfigured email provider, which `dispatchAlertDigest`
+  checks BEFORE claiming anything — it will be the identical answer for
+  everybody, it spends no milestone, and two hundred copies of it in a
+  report hide the one fact worth reading.
+- *The run stops itself at 45s* rather than being killed at the platform's
+  60. A kill lands wherever it lands, including between claiming a notice
+  and sending it, which is the one state the ledger cannot undo: milestone
+  spent, no email. Stopping between two people cannot produce it.
+
+**The status code answers "did this run do its whole job", not "did it
+respond".** A run that mailed forty people and threw on the forty-first
+returns 500, with the full report in the body. A green invocation nobody
+reads the body of is precisely how this repo has been fooled before. Safe
+to retry, for the same reason it is safe to run twice.
+
+Tested by putting each wrong behaviour back and watching the suite go red:
+no try/catch (a throw aborts the run), `break` instead of `continue` on a
+failure, `unconfigured` treated as ordinary, `Promise.all` over the
+recipients, no time budget, order by id, sorting the caller's array in
+place, `configuredBaseUrl` returning its input, and every dispatch handed
+the first recipient. Nine mutations, nine reds, restored green. A tenth —
+reading a null last-dispatch timestamp as the epoch — stayed GREEN, because
+epoch and never sort identically; the guard that claimed to distinguish
+them was removed rather than kept untested.
+
+No schema change. `NotificationDispatch` already carried everything, and
+there is deliberately no subscription column: `/alerts` already lets
+anybody dismiss or snooze anything, and a second, quieter place to be
+unsubscribed would be free to disagree with it. Addresses ending
+`@unknown.local` are skipped — that is `requireCompanyContext`'s
+placeholder for a Clerk account with no address, and it is a nightly bounce
+against our own sending reputation, not a mailbox.
+
+Needs `CRON_SECRET` and `NOTIFY_BASE_URL` on the Vercel project before
+anything sends. Both are in `.env.example` and the README table.
+
+---
+
 ### Alerts can now email themselves, once per thing per stage (Cyrus)
 `cyrus/notifications`
 

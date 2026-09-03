@@ -322,21 +322,30 @@ meaning exactly what it meant.*
 
 ## 26. Notifications & Alerts — 1 built · 5 partial · 0 missing
 
-*Updated 1 Sep 2026 — the alert engine shipped, and then a sender was
-wired to it. Every row below can now be EMAILED, once per thing per stage,
-with a ledger that makes a second run silent. They still are not Built, and
-the reason is now a narrow one worth stating exactly: **nothing runs
-without a person clicking.** The digest goes out from a button on /alerts,
-so it reaches somebody who opens the app — which is the same reach the list
-already had. The bar this sheet set ("NOT Built until something pushes it")
-is met by the sending path and not by the trigger. A scheduled run is the
-whole remaining gap, and it is one job away.*
+*Updated 2 Sep 2026 — the schedule is built. The previous note said
+"nothing runs without a person clicking" and named a scheduled run as the
+whole remaining gap; `/api/notifications/digest` plus a Vercel cron at
+13:00 UTC is that run. It authenticates itself with `CRON_SECRET`, takes
+the host for its links from `NOTIFY_BASE_URL` rather than from the
+request that triggered it, mails every user of every company one at a
+time longest-unnotified-first, and cannot be ended by one person's
+failure. See `lib/notification-run.ts`.*
+
+***These rows stay Partial for a reason that is now purely operational,
+and it is the last one.*** The code path is complete and tested; what has
+not happened is a run in production. `CRON_SECRET` and `NOTIFY_BASE_URL`
+have to exist on the Vercel project — without either, the route returns
+503 and sends nothing, deliberately — and one nightly invocation has to be
+observed doing it. **Flipping these five to Built is a one-line edit after
+that, not more building.** Writing them Built today would be this sheet
+doing the exact thing it has drifted by twice: recording an intention as a
+fact.*
 
 | Status | Feature | Note |
 | --- | --- | --- |
 | Built | In-app alert delivery: one ranked list, acknowledgement, and a count in the chrome | `lib/alerts.ts` (derivation and ranking), `lib/alerts-query.ts` (assembly), `AlertAcknowledgement` (the ONLY stored part — a person deciding they have seen one), `/alerts`, and a bell with a live count in the top bar on every screen. Alerts are never stored: each is derived from the record it is about on every render, so fixing the thing removes it. An alert's key carries the fact that would change it (`RENEWAL:lic_1:2026-11-30`), so a dismissal lapses by itself when the situation moves — no expiry logic. Per-user, not per-company: dismissing on a colleague's behalf is the worse of the two failures. **Not push on its own** — it reaches whoever opens the app. `NotificationDispatch` + `notification-milestones.ts` + `notification-dispatch.ts` add the sending half: one email per person covering what they have not been told, keyed on the alert key PLUS a rung so an unchanged fact goes quiet while a tightening one speaks again. Claimed before the provider call, so a crash cannot resend; a failed send does not retry itself, deliberately |
-| Partial | COI/license/bond expiration alerts | now an alert with an identity, a severity comparable against everything else, and a place reachable from every page — through `lib/compliance-expiry.ts`'s existing ranking, not a second expiry rule. Now emailable: a licence fires at its own 60-day horizon, a COI at 30, because the rung reads `severity` rather than a horizon table of the notifier's own — see `notification-milestones.ts`, where getting that wrong dropped the 60-day warning silently. Still nothing that runs unattended |
-| Partial | Certified payroll submission deadline reminders | derived: a job carrying a `PrevailingWageDetermination`, a finished week with `TimeEntry` rows, and no `CERTIFIED_PAYROLL` document whose period covers that whole week. Gated on the determination on purpose — certified payroll isn't required on private work, and a job where nobody recorded one raises nothing rather than a guess. Now emailable. Still nothing that runs unattended |
-| Partial | Retainage release eligibility alerts | derived from `lib/retainage.ts`'s balance plus the closeout package's state. An ACCEPTED package is an event and reads as collectable; `Job.substantialCompletionDate` is a FORECAST and reads as "worth confirming", never as money owed. Now emailable. Still nothing that runs unattended |
-| Partial | Apprentice ratio out-of-compliance alerts | no longer blocked — `lib/apprentice-ratio.ts` finds the days a job ran over, and the alert engine raises them (STANDING, not dated: the day is past and cannot be fixed by acting sooner; what can change is tomorrow's crew). Keyed on the offending dates, so a dismissal lapses the moment another day breaches. Now emailable — as a STANDING notice, which fires once per key rather than climbing a ladder of deadlines it does not have. Still nothing that runs unattended |
-| Partial | WIP variance alerts | jobs forecast past contract value now appear in the one alert list alongside everything else, through `jobIsOverBudget` rather than a second threshold, and can be acknowledged. Deliberately a STANDING severity with no date: it is true today and tomorrow, and escalating it with the calendar would invent urgency the data doesn't have — the digest respects that and sends it once per key, never on a ladder. Still nothing that runs unattended |
+| Partial | COI/license/bond expiration alerts | now an alert with an identity, a severity comparable against everything else, and a place reachable from every page — through `lib/compliance-expiry.ts`'s existing ranking, not a second expiry rule. Now emailable: a licence fires at its own 60-day horizon, a COI at 30, because the rung reads `severity` rather than a horizon table of the notifier's own — see `notification-milestones.ts`, where getting that wrong dropped the 60-day warning silently. Now also sent unattended, by the nightly cron — pending the two environment variables and one observed run |
+| Partial | Certified payroll submission deadline reminders | derived: a job carrying a `PrevailingWageDetermination`, a finished week with `TimeEntry` rows, and no `CERTIFIED_PAYROLL` document whose period covers that whole week. Gated on the determination on purpose — certified payroll isn't required on private work, and a job where nobody recorded one raises nothing rather than a guess. Now emailable. Now also sent unattended, by the nightly cron — pending the two environment variables and one observed run |
+| Partial | Retainage release eligibility alerts | derived from `lib/retainage.ts`'s balance plus the closeout package's state. An ACCEPTED package is an event and reads as collectable; `Job.substantialCompletionDate` is a FORECAST and reads as "worth confirming", never as money owed. Now emailable. Now also sent unattended, by the nightly cron — pending the two environment variables and one observed run |
+| Partial | Apprentice ratio out-of-compliance alerts | no longer blocked — `lib/apprentice-ratio.ts` finds the days a job ran over, and the alert engine raises them (STANDING, not dated: the day is past and cannot be fixed by acting sooner; what can change is tomorrow's crew). Keyed on the offending dates, so a dismissal lapses the moment another day breaches. Now emailable — as a STANDING notice, which fires once per key rather than climbing a ladder of deadlines it does not have. Now also sent unattended, by the nightly cron — pending the two environment variables and one observed run |
+| Partial | WIP variance alerts | jobs forecast past contract value now appear in the one alert list alongside everything else, through `jobIsOverBudget` rather than a second threshold, and can be acknowledged. Deliberately a STANDING severity with no date: it is true today and tomorrow, and escalating it with the calendar would invent urgency the data doesn't have — the digest respects that and sends it once per key, never on a ladder. Now also sent unattended, by the nightly cron — pending the two environment variables and one observed run |

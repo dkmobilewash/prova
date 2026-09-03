@@ -27,7 +27,13 @@
 
 set -e
 set -o pipefail
-rm -f .git/index.lock
+# Ask git where the index lock actually is rather than assuming `.git` is a
+# directory. IN A WORKTREE IT IS A FILE, so `rm -f .git/index.lock` fails
+# with ENOTDIR — and with `set -e` on the line above, that aborted the whole
+# script before a single check ran. Preflight could not be run from a
+# worktree at all, which reads as "the script is broken" rather than as
+# "you are somewhere it did not expect".
+rm -f "$(git rev-parse --git-path index.lock)"
 
 # A failed build piped to `tee` once printed ALL GREEN. Never drop
 # pipefail from this file.
