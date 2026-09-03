@@ -1,15 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
+  DUPLICATE_PUSH_WINDOW_MS,
   amountToCents,
   buildInvoicePayload,
   centsToAmount,
   docNumberFor,
   idempotencyKeyFor,
-  DUPLICATE_PUSH_WINDOW_MS,
   isAccidentalRepeat,
+  isMissingDocumentError,
   pushBlockers,
-  verifyPushedInvoice,
   type InvoiceToPush,
+  verifyPushedInvoice,
 } from "./quickbooks-sync";
 
 const invoice = (over: Partial<InvoiceToPush> = {}): InvoiceToPush => ({
@@ -336,5 +337,31 @@ describe("isAccidentalRepeat — a re-send is not a duplicate", () => {
   it("draws the line exactly at the window", () => {
     expect(isAccidentalRepeat(ago(DUPLICATE_PUSH_WINDOW_MS - 1), now)).toBe(true);
     expect(isAccidentalRepeat(ago(DUPLICATE_PUSH_WINDOW_MS), now)).toBe(false);
+  });
+});
+
+describe("recognising a document QuickBooks no longer has", () => {
+  it("matches Intuit's Object Not Found", () => {
+    expect(isMissingDocumentError("Object Not Found : Something went wrong")).toBe(true);
+    expect(isMissingDocumentError("object not found")).toBe(true);
+  });
+
+  it("DOES NOT match the deleted Product/Service refusal", () => {
+    // The false positive this function exists to avoid, and a real message
+    // this project met four times in one day. It is about the line ITEM,
+    // not the invoice — treating it as a missing document would throw away
+    // a link that was perfectly correct, and the next push would create a
+    // SECOND invoice in somebody's books.
+    const real =
+      "Invalid Reference Id : Product/Service assigned to this transaction has been deleted. " +
+      "Before you can modify this transaction, you must restore Prova — Construction services (deleted).";
+    expect(isMissingDocumentError(real)).toBe(false);
+  });
+
+  it("does not match the other refusals this codebase already handles", () => {
+    expect(isMissingDocumentError("Stale Object Error : You and Craig Carlson were working on this")).toBe(false);
+    expect(isMissingDocumentError("Required parameter Line.SalesItemLineDetail is missing")).toBe(false);
+    expect(isMissingDocumentError("Duplicate Name Exists Error")).toBe(false);
+    expect(isMissingDocumentError("")).toBe(false);
   });
 });

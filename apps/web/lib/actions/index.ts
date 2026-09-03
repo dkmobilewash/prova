@@ -39,5 +39,6 @@ export * from "./apprenticeship";
 export * from "./unionCompliance";
 export * from "./messages";
 export * from "./crm";
+export * from "./sales";
 export * from "./notifications";
 export * from "./certifications";

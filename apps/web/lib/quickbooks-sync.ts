@@ -351,3 +351,27 @@ export function isAccidentalRepeat(
   if (elapsed < 0) return true;
   return elapsed < DUPLICATE_PUSH_WINDOW_MS;
 }
+
+/**
+ * Does this refusal mean the document we addressed is GONE?
+ *
+ * Both push paths store the QuickBooks id of what they created and send it
+ * back as an update. Delete that document inside QuickBooks and the stored
+ * link still names it, so every later push addresses a record that no
+ * longer exists and fails the same way forever — the shape that bricked
+ * invoicing through a cached ITEM id until #85, one entity along.
+ *
+ * MATCHED ON "OBJECT NOT FOUND", NEVER ON THE WORD "DELETED", and the test
+ * beside this pins why. Intuit's refusal for a deleted Product/Service
+ * reads "...Product/Service assigned to this transaction has been
+ * deleted..." — a real message this project has seen four times — and it
+ * means something completely different. Treating it as a missing document
+ * would clear the invoice's link over a problem with the line item.
+ *
+ * Narrow on purpose: a miss falls through to the generic refusal, which is
+ * the behaviour today and no worse. A false positive throws away a link
+ * that was correct.
+ */
+export function isMissingDocumentError(detail: string): boolean {
+  return /object not found/i.test(detail);
+}

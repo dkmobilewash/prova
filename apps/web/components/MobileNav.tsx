@@ -18,10 +18,19 @@ import type { Principal } from "@/lib/permissions";
  * One shared NAV_ITEMS list, so the two can never disagree about what pages
  * exist.
  */
-export function MobileNav({ companyName, principal }: { companyName: string; principal: Principal }) {
+export function MobileNav({
+  companyName,
+  principal,
+  showsSalesCrm = false,
+}: {
+  companyName: string;
+  principal: Principal;
+  /** Prova's own operating company only -- see Company.isProvaOperator. */
+  showsSalesCrm?: boolean;
+}) {
   // Filtered here rather than in the layout so the desktop rail and
   // the mobile drawer run the same function on the same input.
-  const groups = navGroupsFor(principal);
+  const groups = navGroupsFor(principal, { showsSalesCrm });
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
 
@@ -99,6 +108,25 @@ export function MobileNav({ companyName, principal }: { companyName: string; pri
                 </p>,
                 ...group.items.map((item) => {
                 const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
+
+                // Same rule as the desktop rail (Sidebar.tsx) -- a disabled
+                // item is not a link. Without this branch a phone could
+                // reach a page the rail calls "coming soon", which is
+                // exactly the drift this shared list exists to prevent.
+                if (item.disabled) {
+                  return (
+                    <span
+                      key={item.href}
+                      title={`${item.label} — coming soon`}
+                      aria-disabled="true"
+                      className="flex cursor-not-allowed items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-slate-600"
+                    >
+                      <span className="opacity-50">{item.icon}</span>
+                      {item.label}
+                    </span>
+                  );
+                }
+
                 return (
                   <Link
                     key={item.href}

@@ -20,6 +20,14 @@ model Company {
   phone          String?
   website        String?
 
+  /// Which Company is PROVA'S OWN operating company -- the only tenant that
+  /// should ever see the internal sales CRM (SalesLead/SalesOpportunity,
+  /// sales.prisma). Exactly one row in production should ever be true, set
+  /// by hand once. No backfill: nobody logs "we are the operator," so
+  /// nothing can compute this from existing data, same as every other flag
+  /// in this schema with no source to derive it from.
+  isProvaOperator Boolean @default(false)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -65,6 +73,8 @@ model Company {
   contactInteractions     ContactInteraction[]
   apprenticeshipEnrollments ApprenticeshipEnrollment[]
   contactPeople           ContactPerson[]
+  salesLeads              SalesLead[]
+  salesOpportunities      SalesOpportunity[]
   workerCertifications    WorkerCertification[]
   requiredCertifications  CertificationRequirement[]
 }
