@@ -22,17 +22,16 @@ import {
   RESPONSIBILITIES,
   daysOfWarrantyLeft,
   daysToResolve,
-  isCloseoutComplete,
   isOpen,
-  outstandingRequired,
+  outsideWarranty,
   responsibilityLabel,
   warrantyExpiry,
   warrantyState,
   warrantyStateLabel,
-  wasInWarranty,
 } from "@/components/closeoutLabels";
 import { localToday } from "@/components/localToday";
-import type { CloseoutStage } from "@/lib/closeout-readiness";
+import { closeoutChip } from "@/components/closeoutPackageLabels";
+import type { CloseoutBlocker, CloseoutStage } from "@/lib/closeout-readiness";
 
 export type CloseoutJobData = {
   id: string;
@@ -128,35 +127,9 @@ export function CloseoutJobCard({
   const openRequests = job.requests.filter(isOpen);
 
   // Read out of the blockers the panel below renders, never recomputed
-  // from job.items. NO_CHECKLIST covers both "no items at all" and "items,
-  // but none of them required" — nothing has been asserted either way, and
-  // the panel says exactly that in both.
-  const checklistBlocker = packageBlockers.find(
-    (b) => b.kind === "NO_CHECKLIST" || b.kind === "REQUIRED_ITEMS",
-  );
-  const outstandingCount = checklistBlocker?.kind === "REQUIRED_ITEMS" ? checklistBlocker.count : 0;
-
-  // "Closeout complete" is a claim about the whole closeout, so it is only
-  // made when the package was actually accepted. A finished checklist with
-  // punch items still open is a finished CHECKLIST, and says so.
-  const closedOut = checklistBlocker === undefined && packageStage === "ACCEPTED";
-  const closeoutChipLabel = closedOut
-    ? "Closeout complete"
-    : checklistBlocker?.kind === "NO_CHECKLIST"
-      ? // A list of optional items is still nothing asserted about what
-        // closeout needs — but it is not an empty list, so it does not say
-        // one is missing either.
-        job.items.length === 0
-        ? "No checklist yet"
-        : "Nothing required yet"
-      : outstandingCount > 0
-        ? `${outstandingCount} still outstanding`
-        : "Checklist done";
-  const closeoutChip = closedOut
-    ? "bg-green-500/15 text-green-300"
-    : outstandingCount > 0
-      ? "bg-amber-500/15 text-amber-300"
-      : "bg-slate-800 text-slate-400";
+  // from job.items. The derivation itself lives in closeoutPackageLabels so
+  // it can be tested — see closeoutPackageLabels.test.ts.
+  const chip = closeoutChip(packageBlockers, packageStage, job.items.length);
 
   const warrantyChip =
     wState === "ACTIVE"
@@ -169,7 +142,7 @@ export function CloseoutJobCard({
     <li className="flex flex-col gap-4 p-5">
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-slate-100">{job.name}</span>
-        <span className={`rounded px-1.5 py-0.5 text-xs ${closeoutChip}`}>{closeoutChipLabel}</span>
+        <span className={`rounded px-1.5 py-0.5 text-xs ${chip.className}`}>{chip.label}</span>
         <span className={`rounded px-1.5 py-0.5 text-xs ${warrantyChip}`}>
           {warrantyStateLabel(wState)}
           {daysLeft !== null && ` · ${daysLeft} day${daysLeft === 1 ? "" : "s"} left`}
@@ -557,14 +530,14 @@ export function CloseoutJobCard({
                     {isOpen(r) ? "open" : "closed"}
                   </span>
                   {` · reported ${r.reportedOn}`}
-                  {/* Explicitly `=== false`, never `!wasInWarranty(...)`.
-                      The third state is null — no warranty period on file —
+                  {/* `outsideWarranty`, never `!wasInWarranty(...)`. The
+                      third state is null — no warranty period on file —
                       and negating it claimed every callback on such a job
                       was outside a warranty nobody has recorded. Nothing is
                       rendered there instead: the chip at the top of the card
                       already says "No warranty recorded", which is the only
                       thing the data supports. */}
-                  {wasInWarranty(r, job.warranty) === false && (
+                  {outsideWarranty(r, job.warranty) && (
                     <span className="text-amber-300"> · outside warranty</span>
                   )}
                   {` · ${responsibilityLabel(r.responsibility).toLowerCase()}`}

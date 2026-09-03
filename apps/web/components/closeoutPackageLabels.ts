@@ -38,7 +38,10 @@ export function stageBadgeClass(stage: CloseoutStage) {
   }
 }
 
-const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+/** `1 job` / `2 jobs`. Exported because /closeout was rendering "1 jobs",
+ * "1 items" and "1 days with them" from raw interpolation while this file
+ * sat next to it already getting it right. */
+export const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 export function blockerLabel(blocker: CloseoutBlocker) {
   switch (blocker.kind) {
@@ -53,6 +56,68 @@ export function blockerLabel(blocker: CloseoutBlocker) {
     case "OPEN_CALLBACKS":
       return `${plural(blocker.count, "callback", "callbacks")} still open`;
   }
+}
+
+/**
+ * The chip beside a job's name on /closeout, derived from the SAME blocker
+ * array the package panel underneath it renders.
+ *
+ * It lives here rather than inside CloseoutJobCard because the card is a
+ * client component with no test around it, and this chip has now been
+ * wrong three times — each time because it was a SECOND reading of the
+ * checklist that could disagree with the first:
+ *
+ * 1. Every box ticked read "Closeout complete" above a panel reading "Not
+ *    ready to submit — 1 punch item still open".
+ * 2. A checklist made up ENTIRELY OF OPTIONAL ITEMS has no required items,
+ *    so `isCloseoutComplete` was false and `outstandingRequired` was
+ *    empty: the chip fell through to an amber "0 still outstanding"
+ *    directly above a panel saying no checklist exists.
+ * 3. (guarded by the tests below) any future recomputation.
+ *
+ * `blockers` is not optional. An absent-argument default would mean
+ * "nothing is blocking", which is the dangerous direction.
+ */
+export function closeoutChip(
+  blockers: CloseoutBlocker[],
+  stage: CloseoutStage,
+  /** How many checklist rows exist AT ALL, required or not. Only ever used
+   * to tell "nobody has written a checklist" apart from "somebody wrote
+   * one and marked nothing on it required" — two different silences. */
+  checklistItemCount: number,
+): { label: string; className: string } {
+  // NO_CHECKLIST covers both "no items at all" and "items, but none of
+  // them required" — nothing has been asserted either way, and the panel
+  // says exactly that in both.
+  const checklistBlocker = blockers.find(
+    (b) => b.kind === "NO_CHECKLIST" || b.kind === "REQUIRED_ITEMS",
+  );
+  const outstanding = checklistBlocker?.kind === "REQUIRED_ITEMS" ? checklistBlocker.count : 0;
+
+  // "Closeout complete" is a claim about the whole closeout, so it is only
+  // made when the package was actually accepted. A finished checklist with
+  // punch items still open is a finished CHECKLIST, and says so.
+  if (checklistBlocker === undefined && stage === "ACCEPTED") {
+    return { label: "Closeout complete", className: "bg-green-500/15 text-green-300" };
+  }
+
+  const label =
+    checklistBlocker?.kind === "NO_CHECKLIST"
+      ? // A list of optional items is still nothing asserted about what
+        // closeout needs — but it is not an empty list, so it does not say
+        // one is missing either.
+        checklistItemCount === 0
+        ? "No checklist yet"
+        : "Nothing required yet"
+      : outstanding > 0
+        ? `${plural(outstanding, "document", "documents")} still outstanding`
+        : "Checklist done";
+
+  return {
+    label,
+    className:
+      outstanding > 0 ? "bg-amber-500/15 text-amber-300" : "bg-slate-800 text-slate-400",
+  };
 }
 
 export const SUBMISSION_STATUS_LABELS: Record<string, string> = {

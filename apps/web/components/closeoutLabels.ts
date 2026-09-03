@@ -137,6 +137,20 @@ export function wasInWarranty(
   return request.reportedOn >= period.startsOn && request.reportedOn <= warrantyExpiry(period);
 }
 
+/** The only thing a screen is allowed to badge "outside warranty".
+ *
+ * A named predicate rather than `!wasInWarranty(...)` at the call site,
+ * because the whole bug was that `!` turns the unknown third state into a
+ * confident accusation. `=== false` is easy to write and just as easy to
+ * drop back to `!` in a later edit; this is the same rule with a test
+ * around it. */
+export function outsideWarranty(
+  request: ServiceRequestData,
+  period: WarrantyPeriodData | null,
+): boolean {
+  return wasInWarranty(request, period) === false;
+}
+
 export function isOpen(request: ServiceRequestData) {
   return !request.resolvedOn;
 }

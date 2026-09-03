@@ -8,6 +8,7 @@ import {
   daysToResolve,
   isCloseoutComplete,
   isOpen,
+  outsideWarranty,
   outstandingRequired,
   responsibilityLabel,
   warrantyExpiry,
@@ -162,8 +163,12 @@ describe("daysOfWarrantyLeft", () => {
 });
 
 describe("wasInWarranty", () => {
-  it("is false when no warranty was recorded", () => {
-    expect(wasInWarranty(request({ reportedOn: "2026-09-01" }), null)).toBe(false);
+  // It returned `false` here until 2026-09-03, and the card rendered the
+  // negation: every callback on a job with no recorded period was badged
+  // "outside warranty", in amber, next to a chip correctly reading "No
+  // warranty recorded". The absence is a THIRD state, not a no.
+  it("is null when no warranty was recorded — not false", () => {
+    expect(wasInWarranty(request({ reportedOn: "2026-09-01" }), null)).toBeNull();
   });
 
   it("is true for a call reported inside the period", () => {
@@ -189,6 +194,21 @@ describe("wasInWarranty", () => {
   it("includes both boundary days", () => {
     expect(wasInWarranty(request({ reportedOn: "2026-03-01" }), period())).toBe(true);
     expect(wasInWarranty(request({ reportedOn: "2027-03-01" }), period())).toBe(true);
+  });
+});
+
+// The predicate the SCREEN uses. Its whole job is to make the badge
+// impossible to write as `!wasInWarranty(...)`, which is what turned an
+// unrecorded warranty into an accusation.
+describe("outsideWarranty", () => {
+  it("is false when no warranty was recorded — nothing is claimed either way", () => {
+    expect(outsideWarranty(request({ reportedOn: "2026-09-01" }), null)).toBe(false);
+  });
+
+  it("is true only for a call the recorded period actually excludes", () => {
+    expect(outsideWarranty(request({ reportedOn: "2027-04-01" }), period())).toBe(true);
+    expect(outsideWarranty(request({ reportedOn: "2026-02-01" }), period())).toBe(true);
+    expect(outsideWarranty(request({ reportedOn: "2026-09-01" }), period())).toBe(false);
   });
 });
 
