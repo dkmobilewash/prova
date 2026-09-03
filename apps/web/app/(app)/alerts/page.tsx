@@ -6,6 +6,7 @@ import { AlertRow } from "@/components/AlertRow";
 import { money } from "@/lib/money";
 import { SendDigestButton } from "@/components/SendDigestButton";
 import { sendMyAlertDigest } from "@/lib/actions/notifications";
+import { viewerToday } from "@/lib/viewerToday";
 
 export default async function AlertsPage({
   searchParams,
@@ -16,7 +17,11 @@ export default async function AlertsPage({
   const { show } = await searchParams;
   const showSilenced = show === "silenced";
 
-  const today = new Date().toISOString().slice(0, 10);
+  // The day on the READER'S calendar, not the server's. This line was
+  // `new Date().toISOString()`, so at 18:00 in Los Angeles the engine was
+  // already working in tomorrow: a follow-up due tomorrow read "Due today"
+  // and one due today flipped to OVERDUE — issue #111 item 1.
+  const today = await viewerToday();
   const { visible, silenced } = await loadAlerts(
     company.id,
     currentUser.id,
