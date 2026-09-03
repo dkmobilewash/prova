@@ -94,7 +94,12 @@ export function ApprenticeshipForm({
 
         <label className="flex flex-col gap-1 text-xs text-slate-400">
           Craft
-          <select name="craftClassificationId" className={`w-56 ${field}`} defaultValue="">
+          <select
+            name="craftClassificationId"
+            className={`w-56 ${field}`}
+            defaultValue=""
+            disabled={crafts.length === 0}
+          >
             <option value="">Not recorded</option>
             {crafts.map((c) => (
               <option key={c.id} value={c.id}>
@@ -102,6 +107,13 @@ export function ApprenticeshipForm({
               </option>
             ))}
           </select>
+          {/* A dropdown whose only option is "Not recorded" is a dead
+              control, and this page explains every other empty state. */}
+          {crafts.length === 0 && (
+            <span className="text-slate-500">
+              None yet — add a classification under a local below, then it can be chosen here.
+            </span>
+          )}
         </label>
       </div>
 
