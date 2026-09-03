@@ -151,6 +151,26 @@ export function enumFromForm<T extends readonly string[]>(formData: FormData, ke
 
 export const BID_INVITATION_STATUSES = ["INVITED", "SUBMITTED", "WON", "LOST", "DECLINED"] as const;
 
+export const CONTACT_STATUSES = ["PROSPECT", "ACTIVE", "INACTIVE"] as const;
+
+export const CONTACT_TYPES = ["GENERAL_CONTRACTOR", "DEVELOPER", "VENDOR", "SUBCONTRACTOR"] as const;
+
+/** Like enumFromForm, but an empty selection is valid and means "not set"
+ * (null) rather than an error — used for fields like Contact.accountType
+ * that are deliberately unclassified with no backfill. */
+export function optionalEnumFromForm<T extends readonly string[]>(
+  formData: FormData,
+  key: string,
+  allowed: T,
+): T[number] | null {
+  const raw = String(formData.get(key) ?? "").trim();
+  if (!raw) return null;
+  if (!allowed.includes(raw as T[number])) {
+    throw new Error(`"${key}" must be one of: ${allowed.join(", ")}`);
+  }
+  return raw as T[number];
+}
+
 export const INVOICE_STATUSES = ["SUBMITTED", "APPROVED", "PARTIALLY_PAID", "PAID", "DISPUTED"] as const;
 
 /** The return shape for expected, user-readable action failures.

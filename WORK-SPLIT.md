@@ -107,6 +107,43 @@ one entry in `navItems.tsx`, and one `export *` in the actions barrel,
 plus the back-relation fields Prisma requires on `Job`, `Company` and
 `User`.
 
+## A fourth lane, claimed 2 Sep 2026
+
+A fourth session is running alongside the three above, on
+`claude/prova-crm-contact-lifecycle`. It owns the customer-facing CRM,
+Phase A of the CRM spec:
+
+1. **Contact create/delete + prospect status** — Sheet 02. `ContactStatus`
+   (PROSPECT/ACTIVE/INACTIVE), `ContactType` (GC/DEVELOPER/VENDOR/
+   SUBCONTRACTOR, nullable, no backfill), `Contact.msaExpirationDate` /
+   `.prequalificationExpiresAt` (both nullable, status derived via
+   `lib/compliance-expiry.ts`'s existing `RenewalKind` machinery, not a
+   second copy of the day-counting). `createContact`/`deleteContact` added
+   to `lib/actions/company.ts`, and `updateContact` converted to the
+   `ActionResult` pattern in the same pass. UI: `/contacts` gets a
+   collapsed add-form and two-step delete; `/contacts/[id]`'s edit form
+   gains status/type/MSA/prequal fields.
+2. Interaction log per contact (call/email/site visit/note, dated, with an
+   optional follow-up date) — next.
+3. `ContactPerson` — individual people at an account (name/title/email/
+   phone/last-touch) — after that.
+4. Follow-ups surfaced in the existing `/alerts` engine.
+5. A read-only GC pipeline view over `BidInvitation` (Lead → Bid Invited →
+   Estimate Sent → Awarded → Contracted, derived from `Job`/
+   `BidInvitation`/`EstimateVersion` state, never stored).
+
+Then Phase B: an internal, owner-only sales CRM for selling Prova itself
+(Lead/Opportunity models, its own nav section) — not started until Phase A
+ships.
+
+It does NOT touch estimating, job costing, billing/AIA, retainage, WIP,
+AI, `jobs/[id]/page.tsx`, safety, materials/vendors, equipment,
+backcharges, closeout, alerts, roles/permissions, prevailing wage, or
+union compliance — those stay in the other three lanes. Where a CRM task
+genuinely needs a shared file, the change is announced in Slack before the
+push and kept to the smallest diff that works, same discipline as the
+third lane's backcharges note above.
+
 **Note that this file is otherwise out of date.** It describes a single
 `packages/db/prisma/schema.prisma` and a single `apps/web/lib/actions.ts`;
 both were split by domain some time ago — the schema into

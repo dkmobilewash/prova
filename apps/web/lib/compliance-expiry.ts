@@ -19,7 +19,13 @@
  * anything — it ranks, and the pages render it. Sheet 26 stays open.
  */
 
-export type RenewalKind = "COMPLIANCE_DOCUMENT" | "LICENSE" | "INSURANCE_POLICY" | "BOND";
+export type RenewalKind =
+  | "COMPLIANCE_DOCUMENT"
+  | "LICENSE"
+  | "INSURANCE_POLICY"
+  | "BOND"
+  | "MSA"
+  | "PREQUALIFICATION";
 
 /**
  * How far ahead each kind is worth warning about.
@@ -35,6 +41,12 @@ export const RENEWAL_HORIZON_DAYS: Record<RenewalKind, number> = {
   INSURANCE_POLICY: 30,
   LICENSE: 60,
   BOND: 60,
+  // A Master Service Agreement is a negotiated contract, not paperwork you
+  // resubmit — same lead-time reasoning as LICENSE/BOND.
+  MSA: 60,
+  // Prequalification is a form/portal resubmission, closer in effort to an
+  // insurance renewal than a licence one.
+  PREQUALIFICATION: 30,
 };
 
 export type RenewalUrgency = "EXPIRED" | "DUE_SOON" | "CURRENT" | "UNDATED";

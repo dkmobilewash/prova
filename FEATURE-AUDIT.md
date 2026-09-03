@@ -23,14 +23,14 @@ in flight. Left as-is here rather than guessed at from the outside; the next
 update to touch those sheets should come from whoever actually verified them
 against a fresh clone.
 
-**118 items audited — 85 built / 22 partial / 9 missing / 2 descoped**
+**115 items audited — 85 built / 21 partial / 8 missing / 1 descoped**
 
 | Status | Count |
 | --- | --- |
 | Built | 85 |
-| Partial | 22 |
-| Missing | 9 |
-| Descoped | 2 |
+| Partial | 21 |
+| Missing | 8 |
+| Descoped | 1 |
 
 
 ## 01. Company / Org Setup — 6 built · 0 partial · 0 missing
@@ -44,16 +44,24 @@ against a fresh clone.
 | Built | Multi-location/multi-office support (CA/NV/AZ/CO/UT) | `CompanyLocation`, free-text state — any state works, not just the five listed |
 | Built | Self-service export of every company record (data portability) | `lib/export.ts` + `/settings/export` + `/api/export` — 18 tables as CSV each, or all of them as one JSON, owner-only, with row counts shown before download. Column lists are an **allowlist**, so a newly added credential column is absent rather than leaked; `export.test.ts` reads the .prisma files and fails if any field matching a credential pattern reaches a column list. Verified in a browser on 2 Sep: files downloaded, and all six credential field names return zero matches in the JSON. Does NOT cover formatted report exports — the WIP-schedule and AIA-format rows in sheet 15 and sheet 10 are separate and still stand |
 
-## 02. Customer (GC) Relationship Mgmt — 3 built · 0 partial · 0 missing
+## 02. Customer (GC) Relationship Mgmt — 4 built · 0 partial · 0 missing
 
 *Updated from the original audit (was 0 built / 1 partial / 2 missing) — GC
-contract terms, bid invitations, and payment reliability shipped same-day.*
+contract terms, bid invitations, and payment reliability shipped same-day.
+Updated again 2 Sep 2026: the directory row below was marked Built on the
+`Contact` model alone since 25 Aug, during which there was no way to add a
+GC before a job existed with them, and no way to remove one entered by
+mistake — the exact "looks built, isn't" shape this sheet has caught
+against a license row and a union-compliance row already. `createContact`/
+`deleteContact` close that; prospect status and account
+type/MSA/prequalification are new fields shipped in the same pass.*
 
 | Status | Feature | Note |
 | --- | --- | --- |
-| Built | GC/customer directory (contact info, project history, payment history/reliability) | `Contact` has name/email/phone/address, jobs linked, plus `lib/gc-reliability.ts` computing on-time rate and average days-to-pay from invoice/payment history |
+| Built | GC/customer directory (contact info, project history, payment history/reliability) | `Contact` has name/email/phone/address, jobs linked, plus `lib/gc-reliability.ts` computing on-time rate and average days-to-pay from invoice/payment history. `createContact`/`deleteContact` (2 Sep) let a GC be entered before any job exists and removed again if it never goes anywhere — deletion refuses once a job or bid invitation is on record |
 | Built | Per-GC contract terms (retainage %, payment terms, standard forms used) | `Contact.defaultRetainagePercent`, `.paymentTermsDays`, `.standardFormsUsed` |
 | Built | Bid invitation tracking (which GCs invite this company to bid, on what) | `BidInvitation` model — trade scope, status, due dates, linked to a `Contact` |
+| Built | Prospect status, account type, and MSA/prequalification tracking | `Contact.status` (PROSPECT/ACTIVE/INACTIVE, backfilled to ACTIVE — every existing row already has a job); `Contact.accountType` (GC/developer/vendor/subcontractor, nullable, no backfill); `.msaExpirationDate`/`.prequalificationExpiresAt`, both nullable with status derived via `lib/compliance-expiry.ts`'s existing renewal ranking, not a second copy of the day-counting |
 
 ## 03. Estimating & Bidding — 10 built · 0 partial · 0 missing
 

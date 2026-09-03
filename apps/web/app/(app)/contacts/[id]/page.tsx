@@ -9,13 +9,15 @@ import {
   deleteBidInvitation,
   enablePortalAccess,
   updateBidInvitationStatus,
-  updateContact,
 } from "@/lib/actions";
 import { money } from "@/lib/money";
 import { can } from "@/lib/permissions";
 import { calculatePaymentReliability } from "@/lib/gc-reliability";
 import { SubmitButton } from "@/components/SubmitButton";
 import { LinkContactToQuickBooks } from "@/components/LinkContactToQuickBooks";
+import { ContactEditForm } from "@/components/ContactEditForm";
+import { toIsoDate } from "@/lib/compliance-expiry";
+import { serverToday } from "@/lib/serverToday";
 
 const TRADE_SCOPE_OPTIONS = [
   { value: "METAL_FRAMING_DRYWALL", label: "Metal framing / drywall" },
@@ -114,7 +116,6 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
       })
     : null;
 
-  const updateContactWithId = updateContact.bind(null, contact.id);
   const enablePortalWithId = enablePortalAccess.bind(null, contact.id);
   const createBidInvitationWithId = createBidInvitation.bind(null, contact.id);
 
@@ -125,82 +126,23 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
     <div className="mx-auto max-w-3xl px-6 py-8">
       <section className="mb-10 rounded-lg border border-slate-800 bg-slate-900 p-6">
         <h1 className="mb-4 text-lg font-semibold text-slate-100">Edit contact</h1>
-        <form action={updateContactWithId} className="flex flex-col gap-3">
-          <label className="flex flex-col gap-1 text-sm text-slate-300">
-            Name
-            <input
-              name="name"
-              defaultValue={contact.name}
-              required
-              className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-sm text-slate-300">
-            Email
-            <input
-              name="email"
-              type="email"
-              defaultValue={contact.email ?? ""}
-              className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-sm text-slate-300">
-            Phone
-            <input
-              name="phone"
-              defaultValue={contact.phone ?? ""}
-              className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-sm text-slate-300">
-            Address
-            <input
-              name="address"
-              defaultValue={contact.address ?? ""}
-              className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
-            />
-          </label>
-
-          <p className="mt-2 text-xs font-medium uppercase tracking-wide text-slate-500">
-            Standing terms with this GC
-          </p>
-          <div className="flex flex-wrap gap-3">
-            <label className="flex flex-col gap-1 text-sm text-slate-300">
-              Default retainage %
-              <input
-                name="defaultRetainagePercent"
-                defaultValue={contact.defaultRetainagePercent?.toString() ?? ""}
-                placeholder="e.g. 10"
-                className="w-32 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-sm text-slate-300">
-              Payment terms (days)
-              <input
-                name="paymentTermsDays"
-                defaultValue={contact.paymentTermsDays?.toString() ?? ""}
-                placeholder="e.g. 30"
-                className="w-32 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
-              />
-            </label>
-            <label className="flex flex-1 min-w-[200px] flex-col gap-1 text-sm text-slate-300">
-              Standard forms used
-              <input
-                name="standardFormsUsed"
-                defaultValue={contact.standardFormsUsed ?? ""}
-                placeholder="e.g. AIA A401"
-                className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
-              />
-            </label>
-          </div>
-
-          <SubmitButton
-            type="submit"
-            className="mt-2 inline-flex w-fit items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
-          >
-            Save
-          </SubmitButton>
-        </form>
+        <ContactEditForm
+          contactId={contact.id}
+          today={serverToday()}
+          defaults={{
+            name: contact.name,
+            email: contact.email,
+            phone: contact.phone,
+            address: contact.address,
+            status: contact.status,
+            accountType: contact.accountType,
+            defaultRetainagePercent: contact.defaultRetainagePercent?.toString() ?? null,
+            paymentTermsDays: contact.paymentTermsDays?.toString() ?? null,
+            standardFormsUsed: contact.standardFormsUsed,
+            msaExpirationDate: toIsoDate(contact.msaExpirationDate),
+            prequalificationExpiresAt: toIsoDate(contact.prequalificationExpiresAt),
+          }}
+        />
       </section>
 
       {showsBilling && (
