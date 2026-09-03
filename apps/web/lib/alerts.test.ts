@@ -7,6 +7,7 @@ import {
   backchargeAlerts,
   certifiedPayrollAlerts,
   closeoutAlerts,
+  contactFollowUpAlerts,
   partitionAlerts,
   rankAlerts,
   renewalAlert,
@@ -68,6 +69,46 @@ describe("renewalAlert", () => {
       ),
     );
     expect(coi.severity).toBe("STANDING");
+  });
+});
+
+describe("contactFollowUpAlerts", () => {
+  const followUp = {
+    interactionId: "int_1",
+    contactId: "contact_1",
+    contactName: "Ferrante Construction",
+    followUpOn: "2026-08-25",
+    assignedToName: "Jane" as string | null,
+  };
+
+  it("raises an overdue follow-up naming who it's assigned to", () => {
+    const [alert] = contactFollowUpAlerts([followUp], TODAY);
+    expect(alert.severity).toBe("OVERDUE");
+    expect(alert.title).toBe("Follow up with Ferrante Construction");
+    expect(alert.detail).toBe("Was due 7 days ago. Assigned to Jane.");
+    expect(alert.href).toBe("/contacts/contact_1");
+    expect(alert.key).toBe("CONTACT_FOLLOW_UP:int_1:2026-08-25");
+    expect(alert.amount).toBeNull();
+  });
+
+  it("omits the assignment sentence when nobody is assigned", () => {
+    const [alert] = contactFollowUpAlerts([{ ...followUp, assignedToName: null }], TODAY);
+    expect(alert.detail).toBe("Was due 7 days ago.");
+  });
+
+  it("warns inside the 7-day floor and stays quiet outside it", () => {
+    const horizon = ALERT_HORIZON_DAYS.CONTACT_FOLLOW_UP as number;
+    expect(horizon).toBeGreaterThanOrEqual(7);
+    expect(
+      contactFollowUpAlerts([{ ...followUp, followUpOn: "2026-09-08" }], TODAY)[0].severity,
+    ).toBe("DUE_SOON");
+    expect(contactFollowUpAlerts([{ ...followUp, followUpOn: "2026-09-20" }], TODAY)).toEqual([]);
+  });
+
+  it("rekeys when the follow-up is rescheduled, so an old dismissal lapses", () => {
+    const original = contactFollowUpAlerts([followUp], TODAY)[0].key;
+    const rescheduled = contactFollowUpAlerts([{ ...followUp, followUpOn: "2026-09-05" }], TODAY)[0].key;
+    expect(original).not.toBe(rescheduled);
   });
 });
 

@@ -112,7 +112,9 @@ plus the back-relation fields Prisma requires on `Job`, `Company` and
 A fourth session is running alongside the three above. It owns the
 customer-facing CRM, Phase A of the CRM spec, one item at a time on a new
 branch per item (previously `claude/prova-crm-contact-lifecycle`, then
-`claude/prova-crm-interaction-log`, now `claude/prova-crm-contact-people`):
+`claude/prova-crm-interaction-log`, then `claude/prova-crm-contact-people`,
+then `claude/prova-crm-followup-alerts`, now `claude/prova-sales-crm` for
+Phase B below):
 
 1. **Contact create/delete + prospect status** — Sheet 02. *Shipped 2 Sep.*
    `ContactStatus` (PROSPECT/ACTIVE/INACTIVE), `ContactType` (GC/DEVELOPER/
@@ -143,16 +145,39 @@ branch per item (previously `claude/prova-crm-contact-lifecycle`, then
    Interactions, and interactions can now optionally name who they were
    with. No `isDecisionMaker` flag or role-based filter tabs — left out,
    see ARCHITECTURE.md.
-4. Follow-ups surfaced in the existing `/alerts` engine.
+4. **Follow-ups surfaced in `/alerts`** — Sheet 02 / Sheet 26. *Shipped
+   3 Sep.* No schema at all: `ContactInteraction.followUpOn` already
+   existed (item 2). New `CONTACT_FOLLOW_UP` `AlertKind` in the shared
+   `lib/alerts.ts`/`lib/alerts-query.ts` (Cyrus's territory, touched
+   additively only — a new kind, a new fetch block, nothing existing
+   changed), gated behind `MANAGE_ESTIMATING`, horizon fixed at 7 (the
+   floor `notification-milestones.ts` requires — see Slack and
+   ARCHITECTURE.md for why a lower number silently drops its own earlier
+   warning). Rides PR #59's generic dispatch layer for email delivery with
+   no changes there. Visible to everyone holding the capability, not
+   scoped to the specific assignee, matching every other kind.
 5. ~~A read-only GC pipeline view over `BidInvitation`~~ — already shipped
    by another lane as `/pipeline` (PR #80, merged before this lane reached
    it): `lib/bid-pipeline.ts` + `lib/bid-pipeline-query.ts`, reading
    `BidInvitation` per GC, derived and stored nowhere. Struck rather than
    duplicated.
 
-Then Phase B: an internal, owner-only sales CRM for selling Prova itself
-(Lead/Opportunity models, its own nav section) — not started until Phase A
-ships.
+Then Phase B: an internal, owner-only sales CRM for selling Prova itself.
+*Shipped 3 Sep.* `SalesLead`/`SalesOpportunity` (new file `sales.prisma`) —
+prospective Prova customers and the deals in progress with them, not a
+second `Contact` (every tenant has their own GCs; this belongs only to
+Prova's own operating company). Gated on two independent checks, neither
+expressible as a `lib/permissions.ts` `Capability` (that map is about job
+function *within* a company, and an OWNER always holds every capability in
+it regardless — there's no way to express "owner only" there): a new
+`Company.isProvaOperator` boolean (exactly one row ever true, set by hand)
+and `role === "OWNER"`, both checked directly in `lib/actions/sales.ts`'s
+`assertSalesAccess` and in `/sales`'s pages. `/sales` (list) and
+`/sales/[id]` (lead detail + its opportunities), a new "Internal" nav group
+appended only when both checks pass — `navGroupsFor` in `navItems.tsx`
+gained an optional second argument for this rather than folding it into
+`canReach`'s capability system. `deleteSalesLead` blocks once a lead has
+opportunities on file, same reasoning as `deleteContact`.
 
 It does NOT touch estimating, job costing, billing/AIA, retainage, WIP,
 AI, `jobs/[id]/page.tsx`, safety, materials/vendors, equipment,

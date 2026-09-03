@@ -23,20 +23,23 @@ in flight. Left as-is here rather than guessed at from the outside; the next
 update to touch those sheets should come from whoever actually verified them
 against a fresh clone.
 
-**122 items audited — 90 built / 21 partial / 9 missing / 2 descoped**
+**119 items audited — 90 built / 21 partial / 7 missing / 1 descoped**
 
 (Recomputed 3 Sep 2026 by counting every `| Built |`/`| Partial |`/
-`| Missing |`/`| Descoped |` row across the per-sheet tables below. Kept
-from #81, which added the method note, and recomputed AGAIN on merging:
-that branch and this one each corrected this line independently and
-neither figure survived both sets of rows. Counting beats arithmetic on
-a file two lanes edit.)
+`| Missing |`/`| Descoped |` row across the per-sheet tables below.
+Recomputed AGAIN on merging #82 and this branch together, since each
+corrected this header independently against a different set of rows and
+neither number survived the other's. Counting beats arithmetic on a file
+two lanes edit concurrently — third time this exact conflict shape has
+hit this file. Recomputed again the same day for the Sheet 15 Cash flow
+forecast correction: Missing → Built, found already-shipped while
+auditing the nav for NAV-IA-AUDIT.md.)
 
 | Status | Count |
 | --- | --- |
-| Built | 88 |
+| Built | 90 |
 | Partial | 21 |
-| Missing | 8 |
+| Missing | 7 |
 | Descoped | 1 |
 
 
@@ -74,7 +77,7 @@ closing "we track the GC but not who to actually call."*
 | Built | Bid invitation tracking (which GCs invite this company to bid, on what) | `BidInvitation` model — trade scope, status, due dates, linked to a `Contact` |
 | Built | Bid pipeline per GC (who invites us, what we do with it, whether it becomes work) | `/pipeline`, `lib/bid-pipeline.ts` (derivation + 11 unit tests), `lib/bid-pipeline-query.ts` (assembly + 7 db tests). READ-ONLY over `BidInvitation`, which the estimating lane owns — a status is still changed on `/bids`. Win rate counts decided bids only and is UNCOMPUTED rather than 0% when nothing has been decided; a won-value total that skipped unpriced bids says so on the row |
 | Built | Prospect status, account type, and MSA/prequalification tracking | `Contact.status` (PROSPECT/ACTIVE/INACTIVE, backfilled to ACTIVE — every existing row already has a job); `Contact.accountType` (GC/developer/vendor/subcontractor, nullable, no backfill); `.msaExpirationDate`/`.prequalificationExpiresAt`, both nullable with status derived via `lib/compliance-expiry.ts`'s existing renewal ranking, not a second copy of the day-counting |
-| Built | Interaction log per contact (calls, emails, site visits, notes, optional follow-up) | `ContactInteraction` (`crm.prisma`) — dated, entered not stamped; follow-up date and follow-up owner are separate from who logged the entry. Not an evidence record (no counter, no locked fields): any team member can log/edit/delete one, same access as bid invitations. Not yet wired into `/alerts` — that's the next phase |
+| Built | Interaction log per contact (calls, emails, site visits, notes, optional follow-up) | `ContactInteraction` (`crm.prisma`) — dated, entered not stamped; follow-up date and follow-up owner are separate from who logged the entry. Not an evidence record (no counter, no locked fields): any team member can log/edit/delete one, same access as bid invitations. A due/overdue follow-up now surfaces in `/alerts` too — see Sheet 26 |
 | Built | Individual people at an account (name, title, email/phone, who to actually call) | `ContactPerson` (`crm.prisma`), nested under `Contact`. No stored "last contact" — derived at read time from `ContactInteraction.contactPersonId` (optional, `SET NULL` on delete so removing a person never blocks on their call history). `deleteContact`'s guard extended again to count people as account history |
 
 ## 03. Estimating & Bidding — 10 built · 0 partial · 0 missing
@@ -220,7 +223,14 @@ forecasting shipped 26 Aug 2026.*
 | Built | License/registration records per state | `CompanyLicense`, with create/edit/delete on `/settings` — it was marked Built on the model alone from 25 Aug until 29 Aug, during which no licence could be created at all |
 | Built | Expiration/renewal alerts across all of the above | `lib/compliance-expiry.ts` ranks COIs, licences, policies and bonds together; surfaced on `/compliance` in full and on the dashboard as the worst three. Still computed at read time, never stored — delivery (email/SMS) is Sheet 26 |
 
-## 15. WIP & Financial Reporting — 3 built · 1 partial · 2 missing
+## 15. WIP & Financial Reporting — 4 built · 1 partial · 1 missing
+
+*Updated 3 Sep 2026: the Cash flow forecast row below was still marked
+Missing while `lib/cash-flow.ts`'s `calculateCashFlowForecast` had already
+shipped and was already rendering on `/cash-flow` — this file had simply
+drifted behind the code. Found while auditing the nav for NAV-IA-AUDIT.md,
+which was looking for exactly this kind of stale entry on Diego's
+instruction to check before assuming anything needed building.*
 
 | Status | Feature | Note |
 | --- | --- | --- |
@@ -228,22 +238,38 @@ forecasting shipped 26 Aug 2026.*
 | Built | Revenue earned vs. billed (over/under-billing) report | plus an AI narrative layer over it — `generateWipNarrative` |
 | Missing | WIP schedule export in surety/CPA-expected format | shown on-screen only, no export |
 | Partial | Job profitability report (budget vs. actual vs. forecast margin) | visible per job on `/jobs/[id]`, and every active job's forecast-vs-contract variance now reads as a sentence in the dashboard's Job health section — still no dedicated exportable report |
-| Missing | Cash flow forecast (AR aging, retainage receivable, pay app cycles) | not built — the underlying retainage data exists now (Sheet 11), but no forecast report reads it yet |
+| Built | Cash flow forecast (AR aging, retainage receivable, pay app cycles) | `lib/cash-flow.ts`'s `calculateCashFlowForecast`, rendered on `/cash-flow` under "Forecast, next N months" — AR aging plus retainage expected by month, reading the retainage data from Sheet 11. Was marked Missing here until this update; the code and the nav entry were both already live |
 | Built | Company-wide backlog report across active jobs | `lib/company-financials.ts` sums contract value, blended gross margin, cash collected and retainage held across contracted and in-progress jobs; shown on the metric bar at the bottom of every screen. Derived on read, never stored |
 
 ## 16. Submittals, RFIs, Drawings — 3 built · 0 partial · 0 missing
 
+*Updated 3 Sep 2026: all three rows stay Built — none of this code changed
+or was removed. What changed is nav-only: `/submittals`, `/rfis` and
+`/drawings` were removed from the sidebar and mobile drawer (still live,
+still reachable by direct link) on the reasoning in `NAV-IA-AUDIT.md` at
+the repo root — a specialty sub receives RFIs and submits submittals TO a
+GC rather than running either workflow itself, and a full drawings module
+duplicates ground Procore/Fieldwire/Bluebeam already own. This was
+proposed against an assumption that these three were unbuilt "coming
+soon" placeholders; they were not, which the audit doc verifies and this
+file's own Built rows already showed before this update touched anything.*
+
 | Status | Feature | Note |
 | --- | --- | --- |
-| Built | Shop drawing/submittal tracking and GC approval status | `Submittal` + `SubmittalRevision` + `SubmittalCounter`, `/submittals` — numbers issued per job and never reissued, per-revision sent/due/returned dates, outcome (approved / approved-as-noted / revise-and-resubmit / rejected), current-revision state derived, never stored |
-| Built | RFI log per job | `Rfi` + `RfiCounter`, `/rfis` — number issued per job and never reissued, sent/due/answered dates, overdue derived, cost/schedule impact flags |
-| Built | Current drawing set storage/versioning per job | `DrawingSet` + `DrawingRevision`, `/drawings` — one set per discipline per job, issues recorded under the ARCHITECT'S label (no counter: we don't issue these numbers), issued/received dates entered not stamped, current revision and "issued but never received" both derived per render. The set itself is linked, not uploaded — a Server Action body caps around 1MB and real sets are far larger |
+| Built | Shop drawing/submittal tracking and GC approval status | `Submittal` + `SubmittalRevision` + `SubmittalCounter`, `/submittals` — numbers issued per job and never reissued, per-revision sent/due/returned dates, outcome (approved / approved-as-noted / revise-and-resubmit / rejected), current-revision state derived, never stored. Removed from nav 3 Sep 2026 — see `NAV-IA-AUDIT.md` |
+| Built | RFI log per job | `Rfi` + `RfiCounter`, `/rfis` — number issued per job and never reissued, sent/due/answered dates, overdue derived, cost/schedule impact flags. Removed from nav 3 Sep 2026 — see `NAV-IA-AUDIT.md` |
+| Built | Current drawing set storage/versioning per job | `DrawingSet` + `DrawingRevision`, `/drawings` — one set per discipline per job, issues recorded under the ARCHITECT'S label (no counter: we don't issue these numbers), issued/received dates entered not stamped, current revision and "issued but never received" both derived per render. The set itself is linked, not uploaded — a Server Action body caps around 1MB and real sets are far larger. Removed from nav 3 Sep 2026 — see `NAV-IA-AUDIT.md` |
 
 ## 17. Safety & Field Operations — 3 built · 0 partial · 0 missing
 
+*Updated 3 Sep 2026: `/safety` stays Built and unchanged — it's now
+rendered `disabled` ("coming soon") in the nav rather than removed, since
+a sub does have real safety obligations, unlike the GC-side workflows cut
+elsewhere in this pass. Reasoning in `NAV-IA-AUDIT.md`.*
+
 | Status | Feature | Note |
 | --- | --- | --- |
-| Built | Incident/injury tracking, OSHA 300 log | `SafetyIncident` + `SafetyCaseCounter`, `/safety` — case numbers per company per year, recordable derived from outcome |
+| Built | Incident/injury tracking, OSHA 300 log | `SafetyIncident` + `SafetyCaseCounter`, `/safety` — case numbers per company per year, recordable derived from outcome. Nav entry disabled 3 Sep 2026 — see `NAV-IA-AUDIT.md` |
 | Built | Toolbox talk / safety meeting logs | `ToolboxTalk`, `/safety` |
 | Built | Daily field reports (crew present, work performed, weather, delays) | `DailyFieldReport`, one per job per day enforced by the database. Filed from the job page or from `/field-reports`, which groups every job's reports into Mon–Sun weeks, derives coverage and NAMES the finished weekdays nothing was filed for (never today, never a day still to come, never a weekend), and writes the week out as plain text to hand a GC — missing days included in that text rather than omitted |
 
@@ -257,10 +283,14 @@ forecasting shipped 26 Aug 2026.*
 
 ## 19. Materials & Vendor Management — 3 built · 0 partial · 0 missing
 
+*Updated 3 Sep 2026: `/material-orders` stays Built and unchanged — it's
+now rendered `disabled` ("coming soon") in the nav rather than removed,
+same reasoning as `/safety` above. Reasoning in `NAV-IA-AUDIT.md`.*
+
 | Status | Feature | Note |
 | --- | --- | --- |
 | Built | Vendor/supplier directory per trade | `Vendor`, `/vendors` |
-| Built | Material order tracking and delivery status per job | `MaterialOrder` + `MaterialOrderDelivery` + `MaterialOrderCounter`, `/material-orders` — numbers issued per job and never reissued, ordered/promised/delivered dates all entered, partial deliveries as their own rows, late and delivery state derived and never stored. Carries no quantity or unit price by design: that would be a second copy of line-item data (see ARCHITECTURE.md), and material cost already lives on `CostEntry` |
+| Built | Material order tracking and delivery status per job | `MaterialOrder` + `MaterialOrderDelivery` + `MaterialOrderCounter`, `/material-orders` — numbers issued per job and never reissued, ordered/promised/delivered dates all entered, partial deliveries as their own rows, late and delivery state derived and never stored. Carries no quantity or unit price by design: that would be a second copy of line-item data (see ARCHITECTURE.md), and material cost already lives on `CostEntry`. Nav entry disabled 3 Sep 2026 — see `NAV-IA-AUDIT.md` |
 | Built | Vendor pricing history for estimating | `VendorPriceQuote`, `/vendors/pricing` — what a supplier quoted, on a date entered not stamped, with the source (written quote / invoice / price list / verbal) recorded because the four are not equally trustworthy. Current, expired, stale, cheapest and every movement figure are derived per read, never stored. Compared only WITHIN a unit: MSF is never converted to SF, since the factor is the vendor's to state. Carries no job and no line item by design — a quote is reference data for pricing, and job cost has one home, `CostEntry`. Warns when a `LineItemCatalogEntry` default sits under the cheapest live quote in the same unit, and changes nothing |
 
 ## 20. Equipment & Tool Tracking — 1 built · 1 partial · 0 missing
@@ -286,14 +316,18 @@ what shipped is the half that never needed one.*
 
 *Updated 1 Sep 2026 — the closeout package's trip to the GC, and readiness
 derived across everything that holds it up, shipped that day. The three
-rows below were already Built and are unchanged.*
+rows below were already Built and are unchanged. Updated again 3 Sep
+2026: all four rows stay Built — `/closeout` was removed from the nav
+(GC-side workflow, see `NAV-IA-AUDIT.md`), but `/punch-lists` is a
+separate route and was not touched, so punch list tracking is still fully
+nav-reachable.*
 
 | Status | Feature | Note |
 | --- | --- | --- |
-| Built | Closeout package submission to the GC, and readiness across what blocks it | `CloseoutSubmission` + `CloseoutSubmissionCounter`, on `/closeout` — attempts numbered per job and never reissued, sent/answered dates entered not stamped, a rejection required to record what was missing. `lib/closeout-readiness.ts` derives whose move it is (not ready / ready to submit / with the GC / sent back / accepted) from the checklist, OPEN PUNCH ITEMS, open callbacks and the latest attempt, and names the retainage each one is holding up via `lib/retainage.ts`. An open punch item blocks closeout whether or not anyone ticked "punch list sign-off" — the checklist is an assertion, the punch rows are what contradict it |
-| Built | Punch list tracking per job | `PunchListItem`, `/punch-lists` |
-| Built | Final lien waiver and closeout document checklist | `CloseoutItem`, `/closeout` — per-job checklist with a standard set one click away, required vs optional, completion dates entered not stamped, document links. Closeout completeness derived from required items only, never stored; a job with no checklist is deliberately NOT complete |
-| Built | Warranty period tracking and post-completion service requests | `WarrantyPeriod` + `WarrantyServiceRequest`, `/closeout` — start entered separately from `Job.substantialCompletionDate` (the warranty and retainage clocks aren't always the same date), length in months as the contract states it, expiry derived with end-of-month clamping so 31 Aug + 6 months is 28 Feb not 3 Mar. Whether a callback was in warranty is derived from its REPORTED date, so a slow fix can't move the cost. `JobStatus` deliberately untouched — a stored lifecycle stage can disagree with the dates under it |
+| Built | Closeout package submission to the GC, and readiness across what blocks it | `CloseoutSubmission` + `CloseoutSubmissionCounter`, on `/closeout` — attempts numbered per job and never reissued, sent/answered dates entered not stamped, a rejection required to record what was missing. `lib/closeout-readiness.ts` derives whose move it is (not ready / ready to submit / with the GC / sent back / accepted) from the checklist, OPEN PUNCH ITEMS, open callbacks and the latest attempt, and names the retainage each one is holding up via `lib/retainage.ts`. An open punch item blocks closeout whether or not anyone ticked "punch list sign-off" — the checklist is an assertion, the punch rows are what contradict it. `/closeout` removed from nav 3 Sep 2026 — see `NAV-IA-AUDIT.md` |
+| Built | Punch list tracking per job | `PunchListItem`, `/punch-lists` — unaffected by the `/closeout` nav removal; still a normal, fully nav-reachable item |
+| Built | Final lien waiver and closeout document checklist | `CloseoutItem`, `/closeout` — per-job checklist with a standard set one click away, required vs optional, completion dates entered not stamped, document links. Closeout completeness derived from required items only, never stored; a job with no checklist is deliberately NOT complete. `/closeout` removed from nav 3 Sep 2026 — see `NAV-IA-AUDIT.md` |
+| Built | Warranty period tracking and post-completion service requests | `WarrantyPeriod` + `WarrantyServiceRequest`, `/closeout` — start entered separately from `Job.substantialCompletionDate` (the warranty and retainage clocks aren't always the same date), length in months as the contract states it, expiry derived with end-of-month clamping so 31 Aug + 6 months is 28 Feb not 3 Mar. Whether a callback was in warranty is derived from its REPORTED date, so a slow fix can't move the cost. `JobStatus` deliberately untouched — a stored lifecycle stage can disagree with the dates under it. `/closeout` removed from nav 3 Sep 2026 — see `NAV-IA-AUDIT.md` |
 
 ## 23. AI Features — 3 built · 1 partial · 1 missing · 1 descoped
 
@@ -330,7 +364,7 @@ meaning exactly what it meant.*
 | Built | Distinct roles: estimator, PM, foreman/field, payroll/compliance admin, owner/exec, accounting | `JobFunction` — a second, orthogonal column to `UserRole` — plus `lib/permissions.ts` mapping each to a capability set, set by the owner on `/team`. NULL is a real value meaning "nobody has said", and grants exactly the access every MEMBER has always had, so no existing row loses anything. An OWNER holds every capability regardless, because an owner locked out by a dropdown has nobody to undo it. Enforced server-side by `requireCapability()` on the page; the nav filter is cosmetic and says so in its own comment |
 | Partial | Field-only mobile access vs. office full access | the FIELD tier is enforced everywhere the app shows money. Whole pages refuse it (`/cash-flow`, `/catalog`, `/bids`, `/vendors/pricing`, `/backcharges`, `/compliance`, `/settings`); the company metric bar is withheld from every screen; alerts are filtered by the capability their subject needs and stripped of figures they may not see; `/closeout` hides retainage; and `/jobs/[id]`, `/dashboard` and `/contacts/[id]` now withhold the contract summary, job costing & WIP, invoices, retainage, change orders, estimate line items, receivables, job health and per-job contract value. The dashboard withholds the receivables ROWS, not just the list, since the provider is a client component. **Still Partial for one honest reason: there is no mobile SURFACE.** It is the same responsive site, narrowed — the audit row asks for field-only *mobile* access, and an offline-capable field app with camera capture is a separate build, not a permission |
 
-## 26. Notifications & Alerts — 1 built · 5 partial · 0 missing
+## 26. Notifications & Alerts — 1 built · 6 partial · 0 missing
 
 *Updated 1 Sep 2026 — the alert engine shipped, and then a sender was
 wired to it. Every row below can now be EMAILED, once per thing per stage,
@@ -340,7 +374,11 @@ without a person clicking.** The digest goes out from a button on /alerts,
 so it reaches somebody who opens the app — which is the same reach the list
 already had. The bar this sheet set ("NOT Built until something pushes it")
 is met by the sending path and not by the trigger. A scheduled run is the
-whole remaining gap, and it is one job away.*
+whole remaining gap, and it is one job away. Updated again 3 Sep 2026: a
+seventh row, contact follow-up reminders (CRM lane, Sheet 02) — the same
+generic dispatch layer picked it up with no changes of its own, since it
+reads only `Alert.severity`/`.key` and knows nothing about individual
+kinds.*
 
 | Status | Feature | Note |
 | --- | --- | --- |
@@ -350,3 +388,4 @@ whole remaining gap, and it is one job away.*
 | Partial | Retainage release eligibility alerts | derived from `lib/retainage.ts`'s balance plus the closeout package's state. An ACCEPTED package is an event and reads as collectable; `Job.substantialCompletionDate` is a FORECAST and reads as "worth confirming", never as money owed. Now emailable. Still nothing that runs unattended |
 | Partial | Apprentice ratio out-of-compliance alerts | no longer blocked — `lib/apprentice-ratio.ts` finds the days a job ran over, and the alert engine raises them (STANDING, not dated: the day is past and cannot be fixed by acting sooner; what can change is tomorrow's crew). Keyed on the offending dates, so a dismissal lapses the moment another day breaches. Now emailable — as a STANDING notice, which fires once per key rather than climbing a ladder of deadlines it does not have. Still nothing that runs unattended |
 | Partial | WIP variance alerts | jobs forecast past contract value now appear in the one alert list alongside everything else, through `jobIsOverBudget` rather than a second threshold, and can be acknowledged. Deliberately a STANDING severity with no date: it is true today and tomorrow, and escalating it with the calendar would invent urgency the data doesn't have — the digest respects that and sends it once per key, never on a ladder. Still nothing that runs unattended |
+| Partial | Contact follow-up reminders | `ContactInteraction.followUpOn` (A2) now raises a `CONTACT_FOLLOW_UP` alert through the same engine, gated behind `MANAGE_ESTIMATING`, keyed on the follow-up date so rescheduling it lapses an old dismissal. Horizon fixed at 7 days — the floor `notification-milestones.ts` requires for any kind, not chosen for feel; a lower one would drop its own earlier warning silently, since the "week" rung fires at 7 days regardless of a kind's own horizon. Not scoped to the specific assignee — every other kind here is capability-gated only, and this stays consistent rather than becoming the first per-user-scoped one; the assignee is named in the alert text instead. Now emailable via the existing digest, no changes to the sending layer. Still nothing that runs unattended |

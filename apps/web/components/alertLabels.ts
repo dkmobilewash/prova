@@ -12,6 +12,7 @@ export const ALERT_KIND_LABELS: Record<AlertKind, string> = {
   CERTIFIED_PAYROLL: "Certified payroll",
   APPRENTICE_RATIO: "Apprentice ratio",
   WIP_VARIANCE: "Job health",
+  CONTACT_FOLLOW_UP: "Follow-up",
 };
 
 export function kindLabel(kind: AlertKind) {
