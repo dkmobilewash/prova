@@ -25,29 +25,25 @@ against a fresh clone.
 
 **119 items audited — 90 built / 21 partial / 7 missing / 1 descoped**
 
-(Recomputed 3 Sep 2026 by counting every `| Built |`/`| Partial |`/
-`| Missing |`/`| Descoped |` row across the per-sheet tables below.
-Recomputed AGAIN on merging #82 and this branch together, since each
-corrected this header independently against a different set of rows and
-neither number survived the other's. Counting beats arithmetic on a file
-two lanes edit concurrently — third time this exact conflict shape has
-hit this file. Recomputed again the same day for the Sheet 15 Cash flow
-forecast correction: Missing → Built, found already-shipped while
-auditing the nav for NAV-IA-AUDIT.md.
+These three statements of the same arithmetic — the line above, the table
+below, and the 26 per-sheet headers — are now checked against the rows by
+`apps/web/lib/plumbing.test.ts`, per sheet, naming the sheet that is wrong.
+Do not hand-increment them after a merge; run the test and let it say.
 
-FOURTH correction, 3 Sep 2026, and this time the METHOD is the bug rather
-than the arithmetic. The header read 123 — 91/22/8/2 while the rows said
-119 — 90/21/7/1: over by exactly one in EVERY status. That is the
-signature of counting with a bare `grep '^| Built |'`, which also matches
-the four rows of the summary table immediately below this note. Every
-status is inflated by precisely its own summary row.
-
-So do not grep the whole file. Count only rows underneath a `## NN.`
-sheet heading, e.g.
+**Do not recount by grepping `^| Built |` over this file.** That also
+matches the summary table's own four rows and overcounts by exactly four.
+It has produced a wrong header twice that looked like a careful recount:
+121 against 117 rows, and then 123 — 91/22/8/2 against rows reading
+119 — 90/21/7/1, over by exactly one in EVERY status, which is that error's
+signature. Count only rows sitting under a `## NN.` sheet header:
 
     awk '/^## [0-9]+\./{s=1} s && /^\| *(Built|Partial|Missing|Descoped) *\|/{n[$2]++} END{for(k in n) print k, n[k]}' FEATURE-AUDIT.md
 
-and make the summary table below agree with THAT, not with a grep.)
+(Recounted from the rows every time this file has been merged, which is the
+only way to settle it — each side is right about ITS rows and neither
+number survives the other's. The per-sheet headers are the stronger check
+than the total, because a total can hide two errors that cancel and a
+per-sheet header cannot.)
 
 | Status | Count |
 | --- | --- |
