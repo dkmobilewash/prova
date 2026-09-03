@@ -109,24 +109,32 @@ plus the back-relation fields Prisma requires on `Job`, `Company` and
 
 ## A fourth lane, claimed 2 Sep 2026
 
-A fourth session is running alongside the three above, on
-`claude/prova-crm-contact-lifecycle`. It owns the customer-facing CRM,
-Phase A of the CRM spec:
+A fourth session is running alongside the three above. It owns the
+customer-facing CRM, Phase A of the CRM spec, one item at a time on a new
+branch per item (previously `claude/prova-crm-contact-lifecycle`, now
+`claude/prova-crm-interaction-log`):
 
-1. **Contact create/delete + prospect status** — Sheet 02. `ContactStatus`
-   (PROSPECT/ACTIVE/INACTIVE), `ContactType` (GC/DEVELOPER/VENDOR/
-   SUBCONTRACTOR, nullable, no backfill), `Contact.msaExpirationDate` /
-   `.prequalificationExpiresAt` (both nullable, status derived via
+1. **Contact create/delete + prospect status** — Sheet 02. *Shipped 2 Sep.*
+   `ContactStatus` (PROSPECT/ACTIVE/INACTIVE), `ContactType` (GC/DEVELOPER/
+   VENDOR/SUBCONTRACTOR, nullable, no backfill), `Contact.msaExpirationDate`
+   / `.prequalificationExpiresAt` (both nullable, status derived via
    `lib/compliance-expiry.ts`'s existing `RenewalKind` machinery, not a
    second copy of the day-counting). `createContact`/`deleteContact` added
    to `lib/actions/company.ts`, and `updateContact` converted to the
    `ActionResult` pattern in the same pass. UI: `/contacts` gets a
    collapsed add-form and two-step delete; `/contacts/[id]`'s edit form
    gains status/type/MSA/prequal fields.
-2. Interaction log per contact (call/email/site visit/note, dated, with an
-   optional follow-up date) — next.
+2. **Interaction log per contact** — Sheet 02. *Shipped 3 Sep.*
+   `ContactInteraction` (new file `crm.prisma`) — call/email/site-visit/
+   note, dated (entered, not stamped), with an optional follow-up date and
+   a separate follow-up owner (`followUpAssignedToUserId`, distinct from
+   `loggedByUserId`). Not an evidence record: no counter, no locked fields,
+   any team member can log/edit/delete one. `lib/actions/crm.ts`, gated
+   behind `MANAGE_ESTIMATING` on `/contacts/[id]` like Bid Invitations.
+   `deleteContact`'s guard extended to also block on logged interactions.
+   Not wired into `/alerts` yet — that's item 4.
 3. `ContactPerson` — individual people at an account (name/title/email/
-   phone/last-touch) — after that.
+   phone/last-touch) — next.
 4. Follow-ups surfaced in the existing `/alerts` engine.
 5. A read-only GC pipeline view over `BidInvitation` (Lead → Bid Invited →
    Estimate Sent → Awarded → Contracted, derived from `Job`/
@@ -152,6 +160,19 @@ both were split by domain some time ago — the schema into
 domain rather than appending to an existing one, which is also why the
 "only add at the very end of the file" advice below no longer applies the
 way it reads.
+
+## The bid pipeline view, 3 Sep 2026
+
+The third lane also built `/pipeline` — a per-GC read of `BidInvitation`
+(`lib/bid-pipeline.ts`, `lib/bid-pipeline-query.ts`). It is deliberately
+READ-ONLY: `BidInvitation`, its actions in `lib/actions/estimating.ts` and
+the `/bids` page all stay with estimating, and a status is changed there.
+Shared files touched, one line each: `navItems.tsx`, `middleware.ts`, and
+the `ROUTE_CAPABILITY` map in `lib/permissions.ts`.
+
+The CRM lane (`claude/prova-crm-contact-lifecycle`, #72) owns contacts
+themselves — creation, status, MSA/prequal, and whatever comes next on
+`/contacts`. This page links to those pages and edits none of them.
 
 ## Cyrus's first five tasks
 

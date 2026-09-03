@@ -12,6 +12,96 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+## The counter was wrong twice, the same way, and the second fix was mine
+
+Browser testing passed all four fixes and then found the counter I had
+just "fixed" reading 15 against a list of 16.
+
+It was `blockers.length > 0`. A job whose checklist is ticked and which
+NOBODY HAS SENT has no blockers, so it vanished from the number while
+staying in the list -- and that is exactly the job somebody needs to chase.
+The list uses `needsAttention`, which keeps it because the panel's own
+stated rule is that a job is only off the list once the GC has ACCEPTED
+its package.
+
+Both versions of this counter were the same mistake: a SECOND computation
+of what the list already decides. The first fix swapped a checklist-only
+duplicate for a blockers duplicate and called it derive-don't-duplicate.
+It is now `attention.length` -- the counter and the list are the same set
+by construction rather than by agreement.
+
+The lesson is about the test, not the code. My own click-list told the
+tester to compare the counter against the "not ready" count, which is the
+counter's definition rather than the requirement. It confirmed my
+implementation instead of checking the claim, so it passed while the thing
+was still wrong. A test written from the implementation cannot fail.
+
+Also from that round:
+
+Backcharge category defaulted to CLEANUP. Every other field on that form
+is blank on purpose, and the schema's own default is OTHER; the form was
+overriding a neutral default with a specific claim nobody made, so a
+backcharge logged in a hurry became a cleanup backcharge with nothing to
+say the tag was a default. Now OTHER.
+
+The two-step delete put "Confirm delete" exactly where "Delete" had been.
+A destructive second step under the first click is a one-step delete with
+extra rendering. Cancel takes that position now.
+
+NOT changed: date fields defaulting to "yesterday". Reported as a
+systematic one-day lag; `localToday()` is correct and was executed across
+six zones to prove it. At the time of the test the UTC date was the 3rd
+and the local date in every American zone was the 2nd, which is what those
+fields showed. Changing it would reintroduce the bug the helper exists to
+prevent -- a foreman filing at the end of a shift dating the record a day
+late. Worth re-reading this entry before anyone "fixes" it again.
+
+ALSO NOT A BUG IN THIS FEATURE, and worth someone checking: the footer's
+"Cash collected" moved 0 -> $500 mid-session with no payment logged. It is
+`SUM(Payment.amount)`, and exactly one path in the app writes a Payment
+(`lib/actions/billing.ts`). Backcharges and closeout reference Payment
+zero times, so nothing in that test could have moved it. A row was written
+by something else -- data, not display.
+
+---
+
+## The bidding relationship, as opposed to the list of bids
+
+`/bids` lists invitations one per row and filters them. It cannot answer
+the question a sub actually asks about a GC: do they keep inviting us, and
+does it turn into work. `/pipeline` derives that per contact — invited,
+bid, won, lost, declined, what is still live, and what is past the date
+they asked for.
+
+Read-only over `BidInvitation`, which belongs to the estimating lane. A
+status is still changed on `/bids`; nothing here is stored, so a correction
+there moves these figures with it.
+
+**Win rate is null, not zero, until something has been decided.** A GC who
+has invited us three times with every bid still open has not got a 0% win
+rate, and a table printing one is how somebody talks themselves out of a
+customer who is still deciding. `winRateLabel` says "no decided bids yet".
+
+**A declined invitation is not a loss.** Declining is a decision we made,
+usually because the job was wrong for us. Folding it into the rate would
+punish good judgement and make "bid on everything" look like the way to
+improve the number.
+
+**A won-value total that skipped rows says so.** `bidAmount` is nullable,
+so summing it across won bids gives a floor. The row renders "at least"
+and names how many won bids carry no amount, rather than presenting the
+partial sum as a total — the same defect as the $0.00 the browser found in
+five fringe columns. Worth knowing that `/bids` itself still does the
+silent version, filtering unpriced bids out of its total; that is the
+estimating lane's to fix and is filed as an issue rather than changed here.
+
+FEATURE-AUDIT's top line said 115 items / 85 built while its rows said 119.
+Every PER-SHEET header agreed with its own rows; only the total was stale,
+which is the signature of a merge keeping one side's totals line and both
+sides' rows. Recomputed from the rows: 120 items now, including this one.
+
+---
+
 ## What browser testing found in tests 1-5, and what it cost
 
 Six real defects, all mine, none caught by 814 unit tests, 105 DB tests,

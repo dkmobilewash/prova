@@ -705,6 +705,38 @@ module exists specifically to avoid duplicating. Rendered today only on
 and the `/alerts` engine is future work (see the interaction-log/follow-up
 phase), not guessed at here.
 
+### `ContactInteraction` — a relationship log, not an evidence record
+
+A logged touchpoint with a `Contact`: a call, an email, a site visit, or a
+plain note, with an optional follow-up date. New file `crm.prisma` — new
+domain, new file, so this lane's schema changes don't collide with the
+others' — even though `Contact` itself stays in `company.prisma`, which
+every lane touches.
+
+Deliberately **not** shaped like `Rfi`/`Submittal`/`SafetyIncident`: no
+counter, no locked identity fields, no GC-facing correspondence copy. An
+interaction log is an internal record a PM or estimator keeps on a
+relationship, not a numbered document the other side also holds — so any
+team member can log, edit, or delete one, the same access `BidInvitation`
+already has on this page, and a correction just overwrites the row.
+
+**Two separate user references, not one.** `loggedByUserId` is audit-only
+(who actually recorded the entry, set once at creation) and
+`followUpAssignedToUserId` is who owns the follow-up — deliberately
+independent, because the person who logs a call is not necessarily the
+person whose job the follow-up is. `occurredOn` is entered, not stamped,
+same rule as every other date in this schema: logging a call from
+yesterday has to record yesterday.
+
+Gated behind `MANAGE_ESTIMATING` on `/contacts/[id]`, the same capability
+that already gates Bid Invitations directly above it — relationship work
+sits in the same bucket as pipeline work, and no new capability was added
+to `lib/permissions.ts` for it (that map is the roles lane's territory).
+
+Not wired into `/alerts` yet: a follow-up coming due only shows up by
+visiting the contact page today. Surfacing it company-wide is explicitly
+the next phase, not this one.
+
 ## What proves this works (Phase 00's CRUD flow)
 
 The minimal CRUD flow in `apps/web` exists specifically to demonstrate the
