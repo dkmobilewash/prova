@@ -625,7 +625,43 @@ export type Acknowledgement = {
   alertKey: string;
   /** Null = dismissed until the underlying fact changes. */
   snoozedUntil: string | null;
+  /**
+   * How bad it was when they said they had seen it. Null on rows written
+   * before AlertAcknowledgement carried the column — read as
+   * ACK_SEVERITY_WHEN_UNRECORDED, never as "matches anything".
+   */
+  acknowledgedSeverity: AlertSeverity | null;
 };
+
+/**
+ * What an acknowledgement with no recorded severity is taken to have meant.
+ *
+ * Every row written before the column existed is NULL, and the choice for
+ * them is a real trade with no free option:
+ *
+ * - Treat NULL as "matches anything" and today's behaviour is preserved
+ *   exactly — including issue #110 staying live for those rows, forever.
+ *   A licence somebody dismissed at sixty days would still never be
+ *   mentioned again, and its "due" email would still never send.
+ * - Treat NULL as STANDING (the mildest) and every dated dismissal anyone
+ *   has ever made comes back at once, whether or not anything escalated.
+ *   Correct, and it un-silences a pile of things nobody escalated.
+ *
+ * DUE_SOON is the middle and it is the one that matches what the failure
+ * actually is. #110 is not "a dismissal lasted too long", it is "a
+ * dismissal survived the transition to OVERDUE" — the moment the sentence
+ * changes from a warning into a fact. Reading NULL as DUE_SOON keeps every
+ * old dismissal working for STANDING and DUE_SOON alerts, so nothing
+ * resurfaces that has not actually got worse, and guarantees that nothing
+ * stays silenced once its date has passed.
+ *
+ * The one cost is a row genuinely acknowledged while already OVERDUE: it
+ * reappears once. It then self-heals, because the next "Seen it" writes a
+ * real severity. Being shown an overdue thing one extra time is the safe
+ * direction of that error; never being shown it is the one that costs
+ * money.
+ */
+export const ACK_SEVERITY_WHEN_UNRECORDED: AlertSeverity = "DUE_SOON";
 
 export type PartitionedAlerts = {
   /** What to show. */
@@ -637,13 +673,42 @@ export type PartitionedAlerts = {
 };
 
 /**
+ * True when `severity` is a worse situation than `than` — strictly worse,
+ * so equal is not worse.
+ *
+ * OVERDUE beats DUE_SOON beats STANDING, the same order the list is ranked
+ * in, read from the one table rather than re-encoded.
+ */
+export function severityIsWorseThan(severity: AlertSeverity, than: AlertSeverity): boolean {
+  return SEVERITY_ORDER[severity] < SEVERITY_ORDER[than];
+}
+
+/**
  * Splits alerts by what this person has already dealt with.
  *
  * A snooze whose date has passed is spent and the alert returns — the
  * acknowledgement row stays, because deleting it would lose the record
- * that somebody looked. Matching is on the whole key, so an alert whose
- * underlying fact has moved never matches an old acknowledgement at all;
- * that is the mechanism, and there is no expiry logic beyond it.
+ * that somebody looked.
+ *
+ * TWO things must match, not one, and the second is issue #110.
+ *
+ * The KEY carries the fact, so an alert whose underlying fact has moved —
+ * a renewed licence, a reissued backcharge deadline — never matches an old
+ * acknowledgement at all. That half has always worked.
+ *
+ * The SEVERITY carries what the key deliberately cannot: how bad an
+ * UNCHANGED fact has become. A COI sixty days out and the same COI after
+ * it lapses are byte-identical keys, so on the key alone one "Seen it" in
+ * November silenced the expiry itself, and every one after it, forever —
+ * and because the notifier reads `visible`, it silenced the "week" and
+ * "due" emails too. An acknowledgement now covers the situation it was
+ * made about and anything NO WORSE than it; the moment the alert escalates
+ * past that, it is a different sentence and it comes back.
+ *
+ * It does not work the other way round. An alert that has got BETTER —
+ * OVERDUE back to DUE_SOON, which happens when a date is corrected rather
+ * than met — stays silenced under the same rule, and should: the person
+ * already said they had seen the worse version of it.
  */
 export function partitionAlerts(
   alerts: Alert[],
@@ -656,8 +721,14 @@ export function partitionAlerts(
 
   for (const alert of alerts) {
     const ack = byKey.get(alert.key);
-    const stillQuiet = ack !== undefined && (ack.snoozedUntil === null || ack.snoozedUntil > todayIso);
-    (stillQuiet ? silenced : visible).push(alert);
+    const unspent = ack !== undefined && (ack.snoozedUntil === null || ack.snoozedUntil > todayIso);
+    const escalated =
+      ack !== undefined &&
+      severityIsWorseThan(
+        alert.severity,
+        ack.acknowledgedSeverity ?? ACK_SEVERITY_WHEN_UNRECORDED,
+      );
+    (unspent && !escalated ? silenced : visible).push(alert);
   }
 
   return { visible: rankAlerts(visible), silenced: rankAlerts(silenced) };
