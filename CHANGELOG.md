@@ -12,6 +12,59 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+## The counter was wrong twice, the same way, and the second fix was mine
+
+Browser testing passed all four fixes and then found the counter I had
+just "fixed" reading 15 against a list of 16.
+
+It was `blockers.length > 0`. A job whose checklist is ticked and which
+NOBODY HAS SENT has no blockers, so it vanished from the number while
+staying in the list -- and that is exactly the job somebody needs to chase.
+The list uses `needsAttention`, which keeps it because the panel's own
+stated rule is that a job is only off the list once the GC has ACCEPTED
+its package.
+
+Both versions of this counter were the same mistake: a SECOND computation
+of what the list already decides. The first fix swapped a checklist-only
+duplicate for a blockers duplicate and called it derive-don't-duplicate.
+It is now `attention.length` -- the counter and the list are the same set
+by construction rather than by agreement.
+
+The lesson is about the test, not the code. My own click-list told the
+tester to compare the counter against the "not ready" count, which is the
+counter's definition rather than the requirement. It confirmed my
+implementation instead of checking the claim, so it passed while the thing
+was still wrong. A test written from the implementation cannot fail.
+
+Also from that round:
+
+Backcharge category defaulted to CLEANUP. Every other field on that form
+is blank on purpose, and the schema's own default is OTHER; the form was
+overriding a neutral default with a specific claim nobody made, so a
+backcharge logged in a hurry became a cleanup backcharge with nothing to
+say the tag was a default. Now OTHER.
+
+The two-step delete put "Confirm delete" exactly where "Delete" had been.
+A destructive second step under the first click is a one-step delete with
+extra rendering. Cancel takes that position now.
+
+NOT changed: date fields defaulting to "yesterday". Reported as a
+systematic one-day lag; `localToday()` is correct and was executed across
+six zones to prove it. At the time of the test the UTC date was the 3rd
+and the local date in every American zone was the 2nd, which is what those
+fields showed. Changing it would reintroduce the bug the helper exists to
+prevent -- a foreman filing at the end of a shift dating the record a day
+late. Worth re-reading this entry before anyone "fixes" it again.
+
+ALSO NOT A BUG IN THIS FEATURE, and worth someone checking: the footer's
+"Cash collected" moved 0 -> $500 mid-session with no payment logged. It is
+`SUM(Payment.amount)`, and exactly one path in the app writes a Payment
+(`lib/actions/billing.ts`). Backcharges and closeout reference Payment
+zero times, so nothing in that test could have moved it. A row was written
+by something else -- data, not display.
+
+---
+
 ## The bidding relationship, as opposed to the list of bids
 
 `/bids` lists invitations one per row and filters them. It cannot answer
