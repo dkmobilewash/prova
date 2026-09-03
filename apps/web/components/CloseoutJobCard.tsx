@@ -23,17 +23,16 @@ import {
   RESPONSIBILITIES,
   daysOfWarrantyLeft,
   daysToResolve,
-  isCloseoutComplete,
   isOpen,
-  outstandingRequired,
+  outsideWarranty,
   responsibilityLabel,
   warrantyExpiry,
   warrantyState,
   warrantyStateLabel,
-  wasInWarranty,
 } from "@/components/closeoutLabels";
 import { localToday } from "@/components/localToday";
-import type { CloseoutStage } from "@/lib/closeout-readiness";
+import { closeoutChip } from "@/components/closeoutPackageLabels";
+import type { CloseoutBlocker, CloseoutStage } from "@/lib/closeout-readiness";
 
 export type CloseoutJobData = {
   id: string;
@@ -66,12 +65,24 @@ export function CloseoutJobCard({
    * defers to the same derivation the panel uses, and says only what a
    * checklist can actually tell you. */
   packageStage,
+  /** The blockers from lib/closeout-readiness — the SAME array the package
+   * panel renders below, not a second reading of the checklist.
+   *
+   * The third time this chip disagreed with that panel: a checklist made
+   * up ENTIRELY OF OPTIONAL ITEMS has no required items, so
+   * isCloseoutComplete was false and outstandingRequired was empty, and
+   * the chip fell through to an amber "0 still outstanding" sitting
+   * directly above a panel saying no checklist exists. Both props are
+   * required rather than optional on purpose: the absent-prop default
+   * would be "nothing is blocking", which is the dangerous direction. */
+  packageBlockers,
 }: {
   job: CloseoutJobData;
   today: string;
   canDelete: boolean;
   packageSlot?: ReactNode;
-  packageStage?: CloseoutStage;
+  packageStage: CloseoutStage;
+  packageBlockers: CloseoutBlocker[];
 }) {
   const [openForm, setOpenForm] = useState<"none" | "item" | "warranty" | "request">("none");
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
@@ -112,21 +123,14 @@ export function CloseoutJobCard({
     run(() => action(formData), onOk);
   }
 
-  const outstanding = outstandingRequired(job.items);
-  const complete = isCloseoutComplete(job.items);
   const wState = warrantyState(job.warranty, today);
   const daysLeft = daysOfWarrantyLeft(job.warranty, today);
   const openRequests = job.requests.filter(isOpen);
 
-  // "Closeout complete" is a claim about the whole closeout, so it is only
-  // made when the package was actually accepted. A finished checklist with
-  // punch items still open is a finished CHECKLIST, and says so.
-  const closedOut = complete && packageStage === "ACCEPTED";
-  const closeoutChip = closedOut
-    ? "bg-green-500/15 text-green-300"
-    : job.items.length === 0 || complete
-      ? "bg-slate-800 text-slate-400"
-      : "bg-amber-500/15 text-amber-300";
+  // Read out of the blockers the panel below renders, never recomputed
+  // from job.items. The derivation itself lives in closeoutPackageLabels so
+  // it can be tested — see closeoutPackageLabels.test.ts.
+  const chip = closeoutChip(packageBlockers, packageStage, job.items.length);
 
   const warrantyChip =
     wState === "ACTIVE"
@@ -147,15 +151,7 @@ export function CloseoutJobCard({
         >
           {job.name}
         </Link>
-        <span className={`rounded px-1.5 py-0.5 text-xs ${closeoutChip}`}>
-          {job.items.length === 0
-            ? "No checklist yet"
-            : closedOut
-              ? "Closeout complete"
-              : complete
-                ? "Checklist done"
-                : `${outstanding.length} still outstanding`}
-        </span>
+        <span className={`rounded px-1.5 py-0.5 text-xs ${chip.className}`}>{chip.label}</span>
         <span className={`rounded px-1.5 py-0.5 text-xs ${warrantyChip}`}>
           {warrantyStateLabel(wState)}
           {daysLeft !== null && ` · ${daysLeft} day${daysLeft === 1 ? "" : "s"} left`}
@@ -543,7 +539,14 @@ export function CloseoutJobCard({
                     {isOpen(r) ? "open" : "closed"}
                   </span>
                   {` · reported ${r.reportedOn}`}
-                  {!wasInWarranty(r, job.warranty) && (
+                  {/* `outsideWarranty`, never `!wasInWarranty(...)`. The
+                      third state is null — no warranty period on file —
+                      and negating it claimed every callback on such a job
+                      was outside a warranty nobody has recorded. Nothing is
+                      rendered there instead: the chip at the top of the card
+                      already says "No warranty recorded", which is the only
+                      thing the data supports. */}
+                  {outsideWarranty(r, job.warranty) && (
                     <span className="text-amber-300"> · outside warranty</span>
                   )}
                   {` · ${responsibilityLabel(r.responsibility).toLowerCase()}`}
