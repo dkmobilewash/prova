@@ -438,13 +438,22 @@ scrollback gets broken by whoever didn't scroll far enough.
   commit invites a second click, and no create action is idempotent. #19
   disabled 57 create buttons while their form is in flight and added an
   error boundary that says not to resubmit before reloading.
-- **`./scripts/preflight.sh` CANNOT RUN IN A GIT WORKTREE, and fails on
-  its first line.** It does `rm -f .git/index.lock`, but in a worktree
-  `.git` is a FILE, not a directory — so that is `ENOTDIR`, which `rm -f`
-  does not suppress, and `set -e` kills the script. Output is one line:
+- **`./scripts/preflight.sh` used to die on its first line inside a git
+  worktree.** It ran `rm -f .git/index.lock`, but in a worktree `.git` is
+  a FILE, not a directory — so that is `ENOTDIR`, which `rm -f` does NOT
+  suppress, and `set -e` killed the script. The entire output was
   `rm: .git/index.lock: Not a directory`. Agents work in worktrees, which
-  is why none of their branches has ever been preflighted. Until it is
-  fixed, run the four checks by hand there.
+  is why no agent branch was ever preflighted.
+
+  The fix is `rm -f "$(git rev-parse --git-path index.lock)"`, placed
+  BELOW the `cd` to the repo root so the lock cleared is the repo's rather
+  than whatever directory you were standing in. Two branches found this
+  independently on the same day and wrote the same fix, which is its own
+  small signal about how often the worktree path is exercised.
+
+  If you are on a branch that predates that fix and preflight dies with
+  that one line, it is this — run `typecheck`, `lint`, `test` and `build`
+  individually rather than hunting it.
 
 - **A fresh worktree has NO `node_modules`, and that is how unverified
   work piles up.** `pnpm install --frozen-lockfile` takes seconds and
