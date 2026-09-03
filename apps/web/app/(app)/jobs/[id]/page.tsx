@@ -15,6 +15,7 @@ import { PushPaymentToQuickBooks } from "@/components/PushPaymentToQuickBooks";
 import { PushInvoiceToQuickBooks } from "@/components/PushInvoiceToQuickBooks";
 import { pushBlockers } from "@/lib/quickbooks-sync";
 import { paymentPushBlockers } from "@/lib/quickbooks-payment-sync";
+import { accountPurpose } from "@/lib/quickbooks-constants";
 import { MarkContractedButton } from "@/components/MarkContractedButton";
 import { ChangeOrders, type ChangeOrderView } from "@/components/ChangeOrders";
 import { changeOrderValueDelta, pendingChangeOrderExposure, reopenBlockers } from "@/lib/change-order";
@@ -341,7 +342,9 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
       select: { qboId: true },
     }),
     prisma.quickBooksAccountMapping.findUnique({
-      where: { companyId_purpose: { companyId: company.id, purpose: "INVOICE_REVENUE" } },
+      where: {
+        companyId_purpose: { companyId: company.id, purpose: accountPurpose("INCOME") },
+      },
       select: { qboAccountId: true },
     }),
   ]);

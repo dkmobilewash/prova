@@ -63,6 +63,7 @@ model Company {
   vendorPriceQuotes       VendorPriceQuote[]
   outboundMessages        OutboundMessage[]
   contactInteractions     ContactInteraction[]
+  apprenticeshipEnrollments ApprenticeshipEnrollment[]
   contactPeople           ContactPerson[]
   workerCertifications    WorkerCertification[]
   requiredCertifications  CertificationRequirement[]
@@ -129,6 +130,7 @@ model User {
   recordedCertifications               WorkerCertification[]         @relation("WorkerCertificationRecorder")
 
   @@index([companyId])
+  apprenticeshipEnrollments ApprenticeshipEnrollment[] @relation("ApprenticeEnrollments")
 }
 
 /// A pending invitation for someone to join a Company. Deleted once
