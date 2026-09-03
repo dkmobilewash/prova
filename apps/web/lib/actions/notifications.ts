@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { requireCompanyContext } from "@/lib/auth";
 import { dispatchAlertDigest } from "@/lib/notification-dispatch";
+import { viewerToday } from "@/lib/viewerToday";
 import {
   actionFail as fail,
   actionOk as ok,
@@ -62,10 +63,12 @@ export async function sendMyAlertDigest(): Promise<ActionResult> {
     );
   }
 
-  // The user's own calendar day would be better and is not available on a
-  // server action; UTC matches how every date in this app is stored and
-  // compared, so a digest agrees with the page that raised it.
-  const today = new Date().toISOString().slice(0, 10);
+  // The reader's own calendar day, which this comment used to say was not
+  // available on a server action. It is now -- the browser parks its zone
+  // in a cookie and lib/viewerToday.ts reads it (issue #111 item 1). The
+  // point of using it here is unchanged: the digest has to agree with the
+  // page that raised it, and /alerts is dated this way too.
+  const today = await viewerToday();
 
   const outcome = await dispatchAlertDigest(
     {
