@@ -39,6 +39,14 @@ export interface ApprenticeStanding {
   /** DERIVED from TimeEntry over the current period's window. */
   ojtHoursThisPeriod: number;
   requiredOjtHoursPerPeriod: number | null;
+  /** Carried for the EDIT form, not for the standing. `enrollmentState`
+   *  already folded these into `state`; the form needs the raw dates back
+   *  because updateApprenticeshipEnrollment overwrites the whole row, so a
+   *  field the form cannot see is a field the form would silently clear. */
+  completedOn: string | null;
+  cancelledOn: string | null;
+  requiredClassroomHoursPerPeriod: number | null;
+  note: string | null;
   ojt: RequirementStanding;
   ojtShortfall: number | null;
   periods: (PeriodStanding & {
@@ -127,6 +135,10 @@ export async function loadApprenticeships(
       periodStartedOn: startedOn,
       ojtHoursThisPeriod: ojtHours,
       requiredOjtHoursPerPeriod: e.requiredOjtHoursPerPeriod,
+      completedOn: e.completedOn,
+      cancelledOn: e.cancelledOn,
+      requiredClassroomHoursPerPeriod: e.requiredClassroomHoursPerPeriod,
+      note: row.note,
       ojt: standing(ojtHours, e.requiredOjtHoursPerPeriod),
       ojtShortfall: shortfall(ojtHours, e.requiredOjtHoursPerPeriod),
       periods: periodStandings(e, periods).map((standing) => {

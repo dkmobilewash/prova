@@ -53,10 +53,26 @@ export type SetState =
   | "CURRENT_IN_HAND" // the newest issue is one we actually hold
   | "BEHIND"; // the newest issue has not reached us
 
+/**
+ * CURRENT_IN_HAND is a claim that the crew is holding everything that
+ * governs, so it has to be true of EVERY revision issued on the newest
+ * issue date — not just of whichever one the tiebreak picked.
+ *
+ * The tiebreak in `byNewestFirst` prefers a revision already in hand,
+ * which is right for "which single sheet is current" and wrong here: two
+ * bulletins issued the same day, one received and one never delivered,
+ * made `current.receivedOn` truthy and this function say "Current set in
+ * hand" while a sheet with equal authority had never arrived. The set is
+ * not in hand. `unreceivedRevisions` listed it on the same screen the
+ * whole time, which is the two-computations-disagreeing shape again.
+ */
 export function setState(revisions: RevisionData[]): SetState {
   const current = currentRevision(revisions);
   if (!current) return "EMPTY";
-  return current.receivedOn ? "CURRENT_IN_HAND" : "BEHIND";
+  const newestIssueMissing = revisions.some(
+    (r) => r.issuedOn === current.issuedOn && !r.receivedOn,
+  );
+  return newestIssueMissing ? "BEHIND" : "CURRENT_IN_HAND";
 }
 
 export function stateLabel(state: SetState) {

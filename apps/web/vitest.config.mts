@@ -16,11 +16,13 @@ import { fileURLToPath } from "node:url";
  * second and can gate every push.
  */
 export default defineConfig({
-  // navItems.tsx carries an inline SVG per entry, so importing it from a
-  // test compiles JSX. The automatic runtime means that works without every
-  // such module importing React purely to satisfy the test environment --
-  // which is the same runtime Next already uses, so nothing here diverges
-  // from how the app is built.
+  // The app compiles JSX with the automatic runtime (next/tsconfig sets
+  // "jsx": "preserve" and Next injects it); esbuild defaults to the classic
+  // one and turns every icon into a bare `React.createElement`, which throws
+  // "React is not defined" the moment a test imports a .tsx module. Nothing
+  // here renders — navItems.tsx is imported for its route table, and the
+  // icons just have to survive being constructed. Same runtime Next itself
+  // uses, so nothing here diverges from how the app is built.
   esbuild: { jsx: "automatic" },
   test: {
     environment: "node",
