@@ -85,8 +85,10 @@ export default async function RfisPage({
     return qs ? `/rfis?${qs}` : "/rfis";
   };
 
+  // 44px tall, from 34px. The job filter is the first thing someone on site
+  // taps to reach their own job's RFIs.
   const chip = (active: boolean) =>
-    `rounded-md border px-3 py-1.5 text-sm ${
+    `inline-flex min-h-11 items-center rounded-md border px-3 py-2 text-sm ${
       active ? "border-blue-500 text-blue-400" : "border-slate-700 text-slate-300 hover:border-slate-500"
     }`;
 
@@ -107,17 +109,17 @@ export default async function RfisPage({
       <div className="mb-4 grid gap-3 sm:grid-cols-3">
         <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
           <p className="text-2xl font-semibold text-slate-100">{openCount}</p>
-          <p className="text-xs text-slate-500">Awaiting an answer</p>
+          <p className="text-xs text-slate-400">Awaiting an answer</p>
         </div>
         <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
           <p className={`text-2xl font-semibold ${overdueCount > 0 ? "text-red-300" : "text-slate-100"}`}>
             {overdueCount}
           </p>
-          <p className="text-xs text-slate-500">Past the date we asked for</p>
+          <p className="text-xs text-slate-400">Past the date we asked for</p>
         </div>
         <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
           <p className="text-2xl font-semibold text-amber-300">{impactCount}</p>
-          <p className="text-xs text-slate-500">Answers with cost or schedule impact</p>
+          <p className="text-xs text-slate-400">Answers with cost or schedule impact</p>
         </div>
       </div>
 
@@ -138,7 +140,10 @@ export default async function RfisPage({
         <h2 className="text-sm font-semibold text-slate-300">
           {rows.length} {showClosed ? "total" : "in play"}
         </h2>
-        <Link href={filterHref({ show: showClosed ? null : "all" })} className="text-sm text-blue-400">
+        <Link
+          href={filterHref({ show: showClosed ? null : "all" })}
+          className="inline-flex min-h-11 items-center text-sm text-blue-400"
+        >
           {showClosed ? "Hide closed" : "Show closed"}
         </Link>
       </div>

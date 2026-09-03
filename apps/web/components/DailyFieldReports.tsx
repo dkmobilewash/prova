@@ -9,9 +9,24 @@ import {
 import { localToday } from "@/components/localToday";
 import type { ActionResult } from "@/lib/actions/shared";
 
+// `text-base` is load-bearing, not decoration. These inputs sit inside a
+// `text-sm` label and INHERIT 14px, and iOS Safari zooms the whole page
+// whenever a focused field is under 16px — so a foreman filing a report on a
+// phone ends up zoomed in and scrolled sideways after every single tap.
+// `min-h-11` is 44px, the tap-target floor.
 export const inputClass =
-  "rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none";
+  "min-h-11 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-base text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none";
 export const labelClass = "flex flex-col gap-1 text-sm text-slate-300";
+
+// The row's controls, defined once so they can't drift back under 44px a
+// button at a time. These were `py-1.5 text-xs` — 30px tall, the smallest
+// buttons anywhere in the field screens.
+const rowBtn =
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-slate-700 px-3 py-2 text-xs text-slate-300 hover:border-slate-500 disabled:opacity-50";
+const rowBtnDanger =
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-slate-700 px-3 py-2 text-xs text-slate-300 hover:border-red-500 hover:text-red-400 disabled:opacity-50";
+const rowBtnConfirm =
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-red-500 px-3 py-2 text-xs text-red-400 hover:bg-red-500/10 disabled:opacity-50";
 
 export type FieldReport = {
   id: string;
@@ -125,7 +140,7 @@ export function DailyFieldReports({
           <button
             type="button"
             onClick={() => setIsOpen(true)}
-            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
+            className="inline-flex min-h-11 items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
           >
             Log a day
           </button>
@@ -155,7 +170,7 @@ export function DailyFieldReports({
             <button
               type="submit"
               disabled={isPending}
-              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+              className="inline-flex min-h-11 items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
             >
               {isPending ? "Saving…" : "Save report"}
             </button>
@@ -166,7 +181,7 @@ export function DailyFieldReports({
                 setIsOpen(false);
                 setError(null);
               }}
-              className="rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50"
+              className="inline-flex min-h-11 items-center justify-center rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50"
             >
               Cancel
             </button>
@@ -201,7 +216,7 @@ export function DailyFieldReports({
                     <button
                       type="submit"
                       disabled={isPending}
-                      className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+                      className="inline-flex min-h-11 items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
                     >
                       {isPending ? "Saving…" : "Save changes"}
                     </button>
@@ -212,7 +227,7 @@ export function DailyFieldReports({
                         setEditingId(null);
                         setError(null);
                       }}
-                      className="rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50"
+                      className="inline-flex min-h-11 items-center justify-center rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50"
                     >
                       Cancel
                     </button>
@@ -221,18 +236,22 @@ export function DailyFieldReports({
               </li>
             ) : (
               <li key={report.id} className="rounded-md border border-slate-800 bg-slate-900 p-3 text-sm">
-                <div className="flex items-start justify-between gap-3">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0">
                     <p className="font-medium text-slate-100">{formatDate(report.reportDate)}</p>
                     {report.crewPresent && <p className="text-slate-400">{report.crewPresent}</p>}
                     <p className="mt-1 text-slate-300">{report.workPerformed}</p>
-                    {report.weather && <p className="mt-1 text-slate-500">Weather: {report.weather}</p>}
+                    {/* slate-400, not slate-500 — measured 3.83:1 on this card,
+                        under the 4.5 floor for text. Weather is the field a
+                        delay claim is argued from months later; it does not
+                        get to be the faintest thing on the row. */}
+                    {report.weather && <p className="mt-1 text-slate-400">Weather: {report.weather}</p>}
                     {report.delays && <p className="text-amber-400">Delays: {report.delays}</p>}
                     {report.filedByName && (
-                      <p className="mt-1 text-xs text-slate-500">filed by {report.filedByName}</p>
+                      <p className="mt-1 text-xs text-slate-400">filed by {report.filedByName}</p>
                     )}
                   </div>
-                  <div className="flex shrink-0 items-center gap-2">
+                  <div className="flex shrink-0 flex-wrap items-center gap-3">
                     <button
                       type="button"
                       disabled={isPending}
@@ -241,7 +260,7 @@ export function DailyFieldReports({
                         setConfirmingDeleteId(null);
                         setError(null);
                       }}
-                      className="rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:border-slate-500 disabled:opacity-50"
+                      className={rowBtn}
                     >
                       Edit
                     </button>
@@ -257,7 +276,7 @@ export function DailyFieldReports({
                                 "Could not delete the report",
                               )
                             }
-                            className="rounded-md border border-red-500 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+                            className={rowBtnConfirm}
                           >
                             Confirm remove
                           </button>
@@ -265,7 +284,7 @@ export function DailyFieldReports({
                             type="button"
                             disabled={isPending}
                             onClick={() => setConfirmingDeleteId(null)}
-                            className="rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:border-slate-500 disabled:opacity-50"
+                            className={rowBtn}
                           >
                             Cancel
                           </button>
@@ -275,7 +294,7 @@ export function DailyFieldReports({
                           type="button"
                           disabled={isPending}
                           onClick={() => setConfirmingDeleteId(report.id)}
-                          className="rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:border-red-500 hover:text-red-400 disabled:opacity-50"
+                          className={rowBtnDanger}
                         >
                           Remove
                         </button>

@@ -1,7 +1,10 @@
 "use client";
 
+// 16px, not the 14px inherited from the `text-sm` label: iOS Safari zooms the
+// whole page when a focused input is under 16px, which leaves the page zoomed
+// and scrolled sideways after every tap. `min-h-11` is a 44px tap target.
 const inputClass =
-  "rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none";
+  "min-h-11 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-base text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none";
 const labelClass = "flex flex-col gap-1 text-sm text-slate-300";
 
 export type EquipmentFieldValues = {
@@ -50,7 +53,17 @@ export function EquipmentFields({
         </label>
         <label className={labelClass}>
           Asset tag or serial
-          <input type="text" name="assetTag" defaultValue={defaults?.assetTag ?? ""} className={inputClass} />
+          {/* Autocorrect off: a phone keyboard rewrites a serial like
+              "AT-11492b" into a word it recognises, and the whole point of
+              the field is that it matches the sticker on the machine. */}
+          <input
+            type="text"
+            name="assetTag"
+            autoCorrect="off"
+            spellCheck={false}
+            defaultValue={defaults?.assetTag ?? ""}
+            className={inputClass}
+          />
         </label>
       </div>
 

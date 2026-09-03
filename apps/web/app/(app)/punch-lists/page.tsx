@@ -44,8 +44,11 @@ export default async function PunchListsPage({
     return qs ? `/punch-lists?${qs}` : "/punch-lists";
   };
 
+  // 44px tall. This is the job filter — the first thing someone on site taps
+  // to get to their own job — and at 34px it was among the smallest targets
+  // on the page.
   const chip = (active: boolean) =>
-    `rounded-md border px-3 py-1.5 text-sm ${
+    `inline-flex min-h-11 items-center rounded-md border px-3 py-2 text-sm ${
       active ? "border-blue-500 text-blue-400" : "border-slate-700 text-slate-300 hover:border-slate-500"
     }`;
 
@@ -81,7 +84,10 @@ export default async function PunchListsPage({
           <h2 className="text-sm font-semibold text-slate-300">
             {openCount} open{activeJob ? " on this job" : ""}
           </h2>
-          <Link href={filterHref({ show: showDone ? null : "all" })} className="text-sm text-blue-400">
+          <Link
+            href={filterHref({ show: showDone ? null : "all" })}
+            className="inline-flex min-h-11 items-center text-sm text-blue-400"
+          >
             {showDone ? "Hide completed" : "Show completed"}
           </Link>
         </div>

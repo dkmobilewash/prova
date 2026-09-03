@@ -8,6 +8,16 @@ import {
 } from "@/components/DailyFieldReports";
 import { type ReportData, dayLabel } from "@/components/fieldReportWeeks";
 
+// Defined once so the row's controls can't drift back under 44px a button at
+// a time. `inline-flex` + `items-center` is what makes min-h centre the label
+// instead of pinning it to the top.
+const rowBtn =
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50";
+const rowBtnDanger =
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:border-red-500 hover:text-red-400 disabled:opacity-50";
+const rowBtnConfirm =
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-red-500 px-3 py-2 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50";
+
 /** One day in the company-wide log. Reading, editing, or confirming a
  * delete — the same three states every row in this app has.
  *
@@ -57,11 +67,11 @@ export function FieldReportEntry({
           </p>
           <FieldReportFields report={asFields} />
           {error && <p className="text-sm text-red-400">{error}</p>}
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button
               type="submit"
               disabled={isPending}
-              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+              className="inline-flex min-h-11 items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
             >
               {isPending ? "Saving…" : "Save changes"}
             </button>
@@ -72,7 +82,7 @@ export function FieldReportEntry({
                 setIsEditing(false);
                 setError(null);
               }}
-              className="rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50"
+              className="inline-flex min-h-11 items-center justify-center rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50"
             >
               Cancel
             </button>
@@ -84,7 +94,10 @@ export function FieldReportEntry({
 
   return (
     <li className="rounded-md border border-slate-800 bg-slate-900 p-4">
-      <div className="flex items-start justify-between gap-3">
+      {/* Stacks on a phone: the three confirm-delete buttons are ~266px wide
+          and this row only has 293px of content box at 375px, which left the
+          report itself nothing to render in. */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <p className="flex flex-wrap items-baseline gap-x-2">
             <span className="font-medium text-slate-100">{dayLabel(report.reportDate)}</span>
@@ -92,17 +105,20 @@ export function FieldReportEntry({
           </p>
           {report.crewPresent && <p className="text-sm text-slate-400">{report.crewPresent}</p>}
           <p className="mt-1 text-sm text-slate-300">{report.workPerformed}</p>
+          {/* slate-400, not slate-500 — measured 3.83:1 on this card, under
+              the 4.5 floor for text. Weather is what a delay claim is argued
+              from months later. */}
           {report.weather && (
-            <p className="mt-1 text-sm text-slate-500">Weather: {report.weather}</p>
+            <p className="mt-1 text-sm text-slate-400">Weather: {report.weather}</p>
           )}
           {report.delays && <p className="text-sm text-amber-400">Delays: {report.delays}</p>}
           {report.filedByName && (
-            <p className="mt-1 text-xs text-slate-500">filed by {report.filedByName}</p>
+            <p className="mt-1 text-xs text-slate-400">filed by {report.filedByName}</p>
           )}
           {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
         </div>
 
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 flex-wrap items-center gap-3">
           <button
             type="button"
             disabled={isPending}
@@ -110,7 +126,7 @@ export function FieldReportEntry({
               setIsEditing(true);
               setIsConfirmingDelete(false);
             }}
-            className="rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50"
+            className={rowBtn}
           >
             Edit
           </button>
@@ -131,7 +147,7 @@ export function FieldReportEntry({
                       }
                     });
                   }}
-                  className="rounded-md border border-red-500 px-3 py-2 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+                  className={rowBtnConfirm}
                 >
                   {isPending ? "Removing…" : "Confirm remove"}
                 </button>
@@ -139,7 +155,7 @@ export function FieldReportEntry({
                   type="button"
                   disabled={isPending}
                   onClick={() => setIsConfirmingDelete(false)}
-                  className="rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50"
+                  className={rowBtn}
                 >
                   Cancel
                 </button>
@@ -149,7 +165,7 @@ export function FieldReportEntry({
                 type="button"
                 disabled={isPending}
                 onClick={() => setIsConfirmingDelete(true)}
-                className="rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:border-red-500 hover:text-red-400 disabled:opacity-50"
+                className={rowBtnDanger}
               >
                 Remove
               </button>
