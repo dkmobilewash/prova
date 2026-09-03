@@ -9,6 +9,7 @@ import {
   messageState,
   needsAttention,
   newestFirst,
+  relatedLabel,
   reachedProvider,
   recipient,
   stale,
@@ -16,7 +17,11 @@ import {
 } from "@/components/messageLabels";
 
 let seq = 0;
-function ev(type: string, occurredAt: string, detail: string | null = null): MessageEventData {
+function ev(
+  type: string,
+  occurredAt: string,
+  detail: string | null = null,
+): MessageEventData {
   return { id: `e${++seq}`, type, occurredAt, detail };
 }
 
@@ -39,13 +44,20 @@ describe("messageState", () => {
   });
 
   it("is IN_FLIGHT on queued or sent", () => {
-    expect(messageState([ev("QUEUED", "2026-08-28T10:00:00Z")])).toBe("IN_FLIGHT");
-    expect(messageState([ev("SENT", "2026-08-28T10:00:01Z")])).toBe("IN_FLIGHT");
+    expect(messageState([ev("QUEUED", "2026-08-28T10:00:00Z")])).toBe(
+      "IN_FLIGHT",
+    );
+    expect(messageState([ev("SENT", "2026-08-28T10:00:01Z")])).toBe(
+      "IN_FLIGHT",
+    );
   });
 
   it("is DELIVERED once the far end accepts it", () => {
     expect(
-      messageState([ev("SENT", "2026-08-28T10:00:00Z"), ev("DELIVERED", "2026-08-28T10:00:04Z")]),
+      messageState([
+        ev("SENT", "2026-08-28T10:00:00Z"),
+        ev("DELIVERED", "2026-08-28T10:00:04Z"),
+      ]),
     ).toBe("DELIVERED");
   });
 
@@ -58,7 +70,10 @@ describe("messageState", () => {
 
   it("reports a bounce that arrives after a send", () => {
     expect(
-      messageState([ev("SENT", "2026-08-28T10:00:00Z"), ev("BOUNCED", "2026-08-28T10:00:09Z", "550 no such user")]),
+      messageState([
+        ev("SENT", "2026-08-28T10:00:00Z"),
+        ev("BOUNCED", "2026-08-28T10:00:09Z", "550 no such user"),
+      ]),
     ).toBe("BOUNCED");
   });
 
@@ -88,11 +103,17 @@ describe("messageState", () => {
   });
 
   it("never lets an open alone imply delivery", () => {
-    expect(messageState([ev("OPENED", "2026-08-28T11:00:00Z")])).toBe("UNKNOWN");
+    expect(messageState([ev("OPENED", "2026-08-28T11:00:00Z")])).toBe(
+      "UNKNOWN",
+    );
   });
 
   it("is FAILED when it never reached the provider", () => {
-    expect(messageState([ev("FAILED", "2026-08-28T10:00:00Z", "no API key configured")])).toBe("FAILED");
+    expect(
+      messageState([
+        ev("FAILED", "2026-08-28T10:00:00Z", "no API key configured"),
+      ]),
+    ).toBe("FAILED");
   });
 
   it("labels every state", () => {
@@ -107,7 +128,10 @@ describe("messageState", () => {
 
 describe("newestFirst", () => {
   it("does not mutate its input", () => {
-    const input = [ev("SENT", "2026-08-28T10:00:00Z"), ev("DELIVERED", "2026-08-28T10:00:04Z")];
+    const input = [
+      ev("SENT", "2026-08-28T10:00:00Z"),
+      ev("DELIVERED", "2026-08-28T10:00:04Z"),
+    ];
     const before = input.map((e) => e.id);
     newestFirst(input);
     expect(input.map((e) => e.id)).toEqual(before);
@@ -134,13 +158,17 @@ describe("arrived / needsAttention", () => {
   it("flags bounced, failed and complained", () => {
     expect(needsAttention([ev("BOUNCED", "2026-08-28T10:00:09Z")])).toBe(true);
     expect(needsAttention([ev("FAILED", "2026-08-28T10:00:00Z")])).toBe(true);
-    expect(needsAttention([ev("COMPLAINED", "2026-08-29T08:00:00Z")])).toBe(true);
+    expect(needsAttention([ev("COMPLAINED", "2026-08-29T08:00:00Z")])).toBe(
+      true,
+    );
   });
 
   // Silence is not itself a failure — see `stale` for when it becomes one.
   it("does not flag silence or success", () => {
     expect(needsAttention([])).toBe(false);
-    expect(needsAttention([ev("DELIVERED", "2026-08-28T10:00:04Z")])).toBe(false);
+    expect(needsAttention([ev("DELIVERED", "2026-08-28T10:00:04Z")])).toBe(
+      false,
+    );
     expect(needsAttention([ev("SENT", "2026-08-28T10:00:00Z")])).toBe(false);
   });
 });
@@ -150,7 +178,9 @@ describe("stale", () => {
 
   it("is stale when unconfirmed for a day or more", () => {
     expect(stale(msg([], "2026-08-28"), TODAY)).toBe(true);
-    expect(stale(msg([ev("SENT", "2026-08-28T10:00:00Z")], "2026-08-28"), TODAY)).toBe(true);
+    expect(
+      stale(msg([ev("SENT", "2026-08-28T10:00:00Z")], "2026-08-28"), TODAY),
+    ).toBe(true);
   });
 
   it("is not stale on the same day", () => {
@@ -158,15 +188,24 @@ describe("stale", () => {
   });
 
   it("is never stale once the provider has decided", () => {
-    expect(stale(msg([ev("DELIVERED", "2026-08-28T10:00:04Z")], "2026-08-28"), TODAY)).toBe(false);
-    expect(stale(msg([ev("BOUNCED", "2026-08-28T10:00:09Z")], "2026-08-28"), TODAY)).toBe(false);
+    expect(
+      stale(
+        msg([ev("DELIVERED", "2026-08-28T10:00:04Z")], "2026-08-28"),
+        TODAY,
+      ),
+    ).toBe(false);
+    expect(
+      stale(msg([ev("BOUNCED", "2026-08-28T10:00:09Z")], "2026-08-28"), TODAY),
+    ).toBe(false);
   });
 });
 
 describe("deliveryRate", () => {
   it("is null when nothing has been decided", () => {
     expect(deliveryRate([])).toBeNull();
-    expect(deliveryRate([msg([]), msg([ev("SENT", "2026-08-28T10:00:00Z")])])).toBeNull();
+    expect(
+      deliveryRate([msg([]), msg([ev("SENT", "2026-08-28T10:00:00Z")])]),
+    ).toBeNull();
   });
 
   it("counts delivered over decided", () => {
@@ -215,7 +254,11 @@ describe("presentation helpers", () => {
   });
 
   it("writes the recipient as a person would", () => {
-    const withName = { ...msg([]), toName: "Dana Reyes", toAddress: "dana@gc.example" };
+    const withName = {
+      ...msg([]),
+      toName: "Dana Reyes",
+      toAddress: "dana@gc.example",
+    };
     expect(recipient(withName)).toBe("Dana Reyes <dana@gc.example>");
     expect(recipient(msg([]))).toBe("super@gc.example");
   });
@@ -236,7 +279,9 @@ describe("failureEventType", () => {
   it("leaves an accepted send in a state that reads as unconfirmed", () => {
     // No provider id means no webhook can ever match it, so it must not
     // read as delivered — it should sit in flight and go stale.
-    const state = messageState([ev(failureEventType(true), "2026-08-28T10:00:00Z")]);
+    const state = messageState([
+      ev(failureEventType(true), "2026-08-28T10:00:00Z"),
+    ]);
     expect(state).toBe("IN_FLIGHT");
     expect(state).not.toBe("DELIVERED");
   });
@@ -262,6 +307,40 @@ describe("reachedProvider", () => {
   });
 
   it("is true once anything at all has been reported about it", () => {
-    expect(reachedProvider(null, [{ type: "FAILED" }, { type: "DELIVERED" }])).toBe(true);
+    expect(
+      reachedProvider(null, [{ type: "FAILED" }, { type: "DELIVERED" }]),
+    ).toBe(true);
+  });
+});
+
+describe("relatedLabel", () => {
+  it("names the digest with the right article", () => {
+    // The bug this exists for: the log read "about a alert_digest".
+    expect(relatedLabel("ALERT_DIGEST")).toBe("an alert digest");
+  });
+
+  it("gets acronyms right, which no vowel rule could", () => {
+    // "RFI" starts with a consonant LETTER and takes "an" because of how
+    // it is said. It was rendering as "a rfi" before anything set it.
+    expect(relatedLabel("RFI")).toBe("an RFI");
+  });
+
+  it("unpacks an unknown machine-set value rather than showing the enum", () => {
+    expect(relatedLabel("CHANGE_ORDER")).toBe("a change order");
+    expect(relatedLabel("EQUIPMENT_ASSIGNMENT")).toBe(
+      "an equipment assignment",
+    );
+  });
+
+  it("shows text a person typed as they typed it", () => {
+    // relatedType is free text on the composer. Lower-casing somebody's
+    // own words is a different kind of wrong from the one being fixed.
+    expect(relatedLabel("Change order #12")).toBe("a Change order #12");
+    expect(relatedLabel("Invoice 4471")).toBe("an Invoice 4471");
+  });
+
+  it("never emits a stray article for an empty value", () => {
+    expect(relatedLabel("")).toBe("");
+    expect(relatedLabel("   ")).toBe("");
   });
 });

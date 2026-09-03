@@ -12,6 +12,7 @@ import {
   recipient,
   stale,
   stateLabel,
+  relatedLabel,
 } from "@/components/messageLabels";
 
 export type MessageRowData = MessageData & {
@@ -62,14 +63,21 @@ export function MessageRow({
   // The reason a bounce is actionable at all. Surfaced on the row rather
   // than hidden behind the expander, because a bounce nobody reads is the
   // same as no bounce.
-  const reason = newestFirst(message.events).find((e) => e.detail)?.detail ?? null;
+  const reason =
+    newestFirst(message.events).find((e) => e.detail)?.detail ?? null;
 
   return (
     <li className="flex flex-col gap-2 p-4">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="font-mono text-xs text-slate-500">{channelLabel(message.channel)}</span>
-        <span className="text-slate-100">{message.subject ?? "(no subject)"}</span>
-        <span className={`rounded px-1.5 py-0.5 text-xs ${chip}`}>{stateLabel(state)}</span>
+        <span className="font-mono text-xs text-slate-500">
+          {channelLabel(message.channel)}
+        </span>
+        <span className="text-slate-100">
+          {message.subject ?? "(no subject)"}
+        </span>
+        <span className={`rounded px-1.5 py-0.5 text-xs ${chip}`}>
+          {stateLabel(state)}
+        </span>
         {isStale && !attention && (
           <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-xs text-amber-300">
             No confirmation since {message.sentAt}
@@ -88,9 +96,11 @@ export function MessageRow({
       {reason && <p className="text-sm text-red-300">{reason}</p>}
 
       <p className="text-xs text-slate-500">
-        {message.jobName && <span className="text-blue-400">{message.jobName} · </span>}
+        {message.jobName && (
+          <span className="text-blue-400">{message.jobName} · </span>
+        )}
         sent {message.sentAt}
-        {message.relatedType && ` · about a ${message.relatedType.toLowerCase()}`}
+        {message.relatedType && ` · about ${relatedLabel(message.relatedType)}`}
         {message.sentByName && ` · by ${message.sentByName}`}
         <button
           type="button"
@@ -135,14 +145,18 @@ export function MessageRow({
 
       {open && (
         <div className="rounded-md border border-slate-800 bg-slate-950 p-3">
-          <p className="whitespace-pre-wrap text-sm text-slate-300">{message.body}</p>
+          <p className="whitespace-pre-wrap text-sm text-slate-300">
+            {message.body}
+          </p>
           {message.events.length > 0 && (
             <ul className="mt-3 flex flex-col gap-1 border-l-2 border-slate-700 pl-3">
               {newestFirst(message.events).map((event) => (
                 <li key={event.id} className="text-xs text-slate-400">
                   <span className="font-mono text-slate-500">{event.type}</span>
                   {` · ${event.occurredAt.replace("T", " ").slice(0, 16)}`}
-                  {event.detail && <span className="text-slate-500"> — {event.detail}</span>}
+                  {event.detail && (
+                    <span className="text-slate-500"> — {event.detail}</span>
+                  )}
                 </li>
               ))}
             </ul>
