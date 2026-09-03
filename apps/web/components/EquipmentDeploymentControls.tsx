@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import {
   assignEquipment,
   deleteEquipmentAssignment,
@@ -44,7 +45,27 @@ export function EquipmentDeploymentControls({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
 
+  /* On top of the actions' own revalidatePath("/equipment").
+   *
+   * Not belt-and-braces here. `open` is derived from the `history` PROP, and
+   * it decides which button this row offers: a stale prop after a save shows
+   * "Send out to a job" for a machine that is now out, or "Bring it back"
+   * for one already in the yard. Every other list in this app goes stale in
+   * a way you can see — a row missing, a row that should be gone. This one
+   * goes stale in a way that invites the wrong click.
+   *
+   * The precedent is BackchargeForm: browser testing found two forms leaving
+   * the page stale on revalidatePath alone while structurally identical ones
+   * updated live, and nobody has explained why. Nothing about that
+   * investigation says this component is on the safe side of the line.
+   *
+   * What a second click actually costs, since it is worth being exact: the
+   * overlap check inside assignEquipment's transaction catches a repeat send
+   * and refuses it, so no duplicate stay can be written — the damage is a
+   * dispatcher told "that lift is already out on Maple" about a save that
+   * had in fact just worked. Confusing, not corrupting. Cheap to prevent. */
   const open = history.find((h) => h.returnedOn === null) ?? null;
 
   return (
@@ -88,8 +109,10 @@ export function EquipmentDeploymentControls({
             formData.set("equipmentId", equipmentId);
             startTransition(async () => {
               const result = await assignEquipment(formData);
-              if (result.ok) setMode("idle");
-              else setError(result.error);
+              if (result.ok) {
+                router.refresh();
+                setMode("idle");
+              } else setError(result.error);
             });
           }}
           className="mt-2 flex flex-col gap-3 rounded-md border border-slate-800 bg-slate-950 p-3"
@@ -158,8 +181,10 @@ export function EquipmentDeploymentControls({
             const formData = new FormData(event.currentTarget);
             startTransition(async () => {
               const result = await returnEquipment(open.id, formData);
-              if (result.ok) setMode("idle");
-              else setError(result.error);
+              if (result.ok) {
+                router.refresh();
+                setMode("idle");
+              } else setError(result.error);
             });
           }}
           className="mt-2 flex flex-col gap-3 rounded-md border border-slate-800 bg-slate-950 p-3"
@@ -219,8 +244,10 @@ export function EquipmentDeploymentControls({
                     const formData = new FormData(event.currentTarget);
                     startTransition(async () => {
                       const result = await updateEquipmentAssignment(stay.id, formData);
-                      if (result.ok) setEditingId(null);
-                      else setError(result.error);
+                      if (result.ok) {
+                        router.refresh();
+                        setEditingId(null);
+                      } else setError(result.error);
                     });
                   }}
                   className="flex flex-col gap-2"
@@ -323,6 +350,7 @@ export function EquipmentDeploymentControls({
                         startTransition(async () => {
                           const result = await deleteEquipmentAssignment(stay.id);
                           if (!result.ok) setError(result.error);
+                          else router.refresh();
                           setConfirmingId(null);
                         });
                       }}

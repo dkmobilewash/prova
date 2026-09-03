@@ -878,9 +878,13 @@ enum VendorPriceSource {
 /// Adding this history makes `Equipment.assignedJobId` a stored copy of
 /// derived state — where a thing is now IS the newest assignment with no
 /// return date. Storing a derived fact is the rule this schema breaks for
-/// nobody, so nothing reads that column any more. It is deliberately NOT
-/// dropped here: that is a destructive migration against production, and
-/// it is Diego's to run when he chooses. Announced in Slack 2026-08-30.
+/// nobody, so nothing reads that column any more. That sentence was written
+/// before it was true: Ask's `equipment_location` handler kept reading the
+/// column for a while and answered from a value nothing had written since,
+/// so verify it with a grep for `assignedJobId` across `apps/` rather than
+/// trusting the sentence. It is deliberately NOT dropped here: that is a
+/// destructive migration against production, and it is Diego's to run when
+/// he chooses. Announced in Slack 2026-08-30.
 model EquipmentAssignment {
   id        String  @id @default(cuid())
   companyId String

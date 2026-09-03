@@ -150,7 +150,7 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: "equipment_location",
     description:
-      "Which job each piece of equipment is assigned to, and what is unassigned. Answers 'who has the skid steer'. This is an ASSIGNMENT, not a live location — there is no GPS or telematics, so it says which job it is booked to, not where it physically is.",
+      "Which job each piece of equipment was last sent out to and not brought back from, the day it went out, and what is sitting in the yard. Answers 'who has the skid steer'. This is a DISPATCH RECORD, not a live location — there is no GPS or telematics, so it says where somebody logged it as going, not where it physically is.",
     input_schema: noInput,
   },
   {

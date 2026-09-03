@@ -434,6 +434,15 @@ export const NAV_GROUPS: NavGroup[] = [
     heading: "Operations",
     items: [
       item("/schedule"),
+      // Next to the schedule on purpose. The schedule answers WHEN jobs
+      // run; deployment answers WHERE everybody and everything is right
+      // now, and the page says so in its own first paragraph. Grouping is
+      // by when in a job's life you reach for the thing, not by which
+      // table it reads — which is the argument for filing it under
+      // Logistics beside Equipment, and the thing this rail deliberately
+      // does not do. A page in NAV_ITEMS but in no group renders nowhere:
+      // both the rail and the mobile drawer draw from navGroupsFor().
+      item("/deployment"),
       item("/rfis"),
       item("/submittals"),
       item("/drawings"),

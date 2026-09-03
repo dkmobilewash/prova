@@ -2,11 +2,21 @@
  *
  * Nothing here is stored. Where a lift is right now, whether two records
  * contradict each other, and how utilised a piece is are all derived from
- * the assignment history on every read — which is why
- * `Equipment.assignedJobId` is no longer read at all. It held the same fact
- * this computes, and a stored copy of a derived fact is exactly the thing
- * that eventually disagrees with what it was derived from.
- */
+ * the assignment history on every read.
+ *
+ * `Equipment.assignedJobId` held the same fact `currentAssignment` computes,
+ * and a stored copy of a derived fact is exactly the thing that eventually
+ * disagrees with what it was derived from. Nothing writes it any more, so
+ * every reader of it is frozen at the day the writes stopped.
+ *
+ * THREE surfaces answer "where is the skid steer", and all three must come
+ * through this module or they will diverge silently: `/equipment`,
+ * `/deployment`, and Ask's `equipment_location` handler. Ask did NOT, and
+ * shipped a permanently stale answer while this comment claimed the column
+ * was "no longer read at all" — a claim written from one file's vantage
+ * point about the whole app. If you add a fourth reader, grep
+ * `assignedJobId` across `apps/` before you believe any sentence like that
+ * one: the grep is the check, not the comment. */
 
 export type AssignmentData = {
   id: string;

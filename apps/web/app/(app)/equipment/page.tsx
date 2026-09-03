@@ -59,9 +59,13 @@ export default async function EquipmentPage() {
       item,
       history,
       // Where it is NOW — derived from the history, never read from
-      // Equipment.assignedJobId. That column still exists and nothing
-      // consults it: a stored copy of a derived fact eventually disagrees
-      // with what it was derived from.
+      // Equipment.assignedJobId. That column still exists, nothing writes
+      // it, and it is frozen at the day the writes stopped; a stored copy
+      // of a derived fact eventually disagrees with what it was derived
+      // from. This comment used to assert that nothing in the app consulted
+      // the column, which was false — Ask's equipment_location handler did,
+      // and answered from the frozen value. Both now come through
+      // currentAssignment(). See components/equipmentDeployment.ts.
       open: currentAssignment(history),
       use: utilisation(history, windowStart, today, item.createdAt.toISOString().slice(0, 10)),
     };

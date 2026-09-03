@@ -84,6 +84,58 @@ a re-send overlapping a CLOSED stay was refused by name and date, a
 non-overlapping one went through, and the backfilled piece read its location
 from history rather than the column.
 
+**Two things above were false when I wrote them, and review caught both.**
+
+"Nothing reads `Equipment.assignedJobId`" was a claim about the whole app
+written from inside one file. Ask's `equipment_location` handler still
+selected the column and reported it as `assignedToJob`/`available`. Since
+nothing writes it any more, that answer was not merely stale — it was frozen
+at the migration and would never have moved again, while `/equipment` and
+`/deployment` showed the truth beside it. Nothing would have flagged the
+disagreement; Ask would simply have named the wrong site to whoever asked
+where the skid steer was. Ask now derives through `currentAssignment()`, the
+same function both pages use, and reports the day it went out as well.
+Three comments and the schema doc asserted the false version; all four now
+say what was actually wrong and point at the grep that settles it, because a
+comment claiming "nothing reads this" is exactly how the next person
+re-introduces the reader.
+
+`/deployment` was registered in `NAV_ITEMS` and put in no `NAV_GROUP`. Both
+the rail and the mobile drawer render `navGroupsFor()` — groups only — so
+the page shipped working, typechecked, and linked from nowhere but the
+address bar. Nothing failed; the absence looked exactly like a link nobody
+wanted. It sits in **Operations, immediately after Schedule**, because the
+grouping is by when in a job's life you reach for the thing rather than
+which table it reads — the "it reads EquipmentAssignment, file it under
+Logistics next to Equipment" argument is the one this rail deliberately does
+not follow, and the page's own first paragraph defines itself against the
+schedule.
+
+Both fixes are mutation-checked. Putting the old handler back fails all four
+`handlers.equipment` tests; the fake prisma in that file honours the
+`select`, so a handler that asks for the frozen column gets the frozen column
+and cannot pass. Removing the nav entry fails all four `navItems` tests.
+That nav test is deliberately scoped to `/deployment`: four other items
+(`/field-reports`, `/messages`, `/pipeline`, `/vendors/pricing`) are orphaned
+the same way and belong to other branches — a blanket assertion would go red
+for work this PR has no business touching. Worth someone picking up.
+
+`EquipmentDeploymentControls` also gained `router.refresh()` on all four
+save paths, joining the 18 components that already do it. Its `history` prop
+decides which button the row offers, so a stale prop does not just show an
+old list — it shows "Send out to a job" for a machine that is already out.
+A second click cannot corrupt anything (the overlap check inside
+`assignEquipment`'s transaction refuses a repeat send), but it tells a
+dispatcher their save failed when it worked, and `BackchargeForm` already
+records that `revalidatePath` alone left structurally identical forms stale
+in this app for reasons nobody has explained.
+
+`scripts/preflight.sh` died on its own third line inside a git worktree:
+`.git` is a FILE there, so `rm -f .git/index.lock` is ENOTDIR, `rm` exits 1
+and `set -e` kills the script before any check runs. It also ran before the
+`cd`, so it was clearing a lock relative to wherever you were standing.
+`git rev-parse --git-path index.lock` resolves both layouts.
+
 ---
 
 ## The counter was wrong twice, the same way, and the second fix was mine
