@@ -63,9 +63,15 @@ describe("closeoutChip", () => {
   // The chip reads the blockers the panel underneath it renders. A blocker
   // that is not about the checklist must not change what the chip says
   // about the checklist.
-  it("ignores blockers that are not about the checklist", () => {
+  it("reads the checklist as done while other work is still open", () => {
+    // The chip speaks only about the CHECKLIST when a non-checklist blocker
+    // is present, at either stage. The second line asserted "Closeout
+    // complete" until pre-push verification found it pinning the very
+    // overstatement this branch exists to remove: an ACCEPTED package with
+    // a punch item open rendered green, above a panel saying what was
+    // holding it up. See the describe block below.
     expect(closeoutChip([openPunch], "NOT_READY", 3).label).toBe("Checklist done");
-    expect(closeoutChip([openPunch], "ACCEPTED", 3).label).toBe("Closeout complete");
+    expect(closeoutChip([openPunch], "ACCEPTED", 3).label).toBe("Checklist done");
   });
 });
 

@@ -94,10 +94,24 @@ export function closeoutChip(
   );
   const outstanding = checklistBlocker?.kind === "REQUIRED_ITEMS" ? checklistBlocker.count : 0;
 
-  // "Closeout complete" is a claim about the whole closeout, so it is only
-  // made when the package was actually accepted. A finished checklist with
-  // punch items still open is a finished CHECKLIST, and says so.
-  if (checklistBlocker === undefined && stage === "ACCEPTED") {
+  // "Closeout complete" is a claim about the WHOLE closeout, so it is made
+  // only when the package was accepted AND nothing at all is outstanding —
+  // `blockers.length === 0`, not merely "no checklist blocker".
+  //
+  // That distinction is the bug this function was extracted to end, and the
+  // extraction originally fixed only half of it. `closeoutReadiness` sets
+  // the stage from the submission and reports blockers independently, by
+  // design: a callback raised after acceptance must not un-accept the
+  // package. So OPEN_PUNCH_ITEMS and OPEN_CALLBACKS left `checklistBlocker`
+  // undefined and the chip went green — printing "Closeout complete"
+  // directly above CloseoutPackagePanel's "Holding it up: 1 punch item
+  // still open", which renders at ANY stage. One card, two contradictory
+  // sentences, which is exactly what a chip is for preventing.
+  //
+  // Falling through with a non-checklist blocker yields "Checklist done" in
+  // grey — a finished CHECKLIST, said plainly, which is what the sentence
+  // below always claimed this did.
+  if (blockers.length === 0 && stage === "ACCEPTED") {
     return { label: "Closeout complete", className: "bg-green-500/15 text-green-300" };
   }
 
