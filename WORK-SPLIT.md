@@ -112,7 +112,8 @@ plus the back-relation fields Prisma requires on `Job`, `Company` and
 A fourth session is running alongside the three above. It owns the
 customer-facing CRM, Phase A of the CRM spec, one item at a time on a new
 branch per item (previously `claude/prova-crm-contact-lifecycle`, then
-`claude/prova-crm-interaction-log`, now `claude/prova-crm-contact-people`):
+`claude/prova-crm-interaction-log`, then `claude/prova-crm-contact-people`,
+now `claude/prova-crm-followup-alerts`):
 
 1. **Contact create/delete + prospect status** — Sheet 02. *Shipped 2 Sep.*
    `ContactStatus` (PROSPECT/ACTIVE/INACTIVE), `ContactType` (GC/DEVELOPER/
@@ -143,7 +144,17 @@ branch per item (previously `claude/prova-crm-contact-lifecycle`, then
    Interactions, and interactions can now optionally name who they were
    with. No `isDecisionMaker` flag or role-based filter tabs — left out,
    see ARCHITECTURE.md.
-4. Follow-ups surfaced in the existing `/alerts` engine.
+4. **Follow-ups surfaced in `/alerts`** — Sheet 02 / Sheet 26. *Shipped
+   3 Sep.* No schema at all: `ContactInteraction.followUpOn` already
+   existed (item 2). New `CONTACT_FOLLOW_UP` `AlertKind` in the shared
+   `lib/alerts.ts`/`lib/alerts-query.ts` (Cyrus's territory, touched
+   additively only — a new kind, a new fetch block, nothing existing
+   changed), gated behind `MANAGE_ESTIMATING`, horizon fixed at 7 (the
+   floor `notification-milestones.ts` requires — see Slack and
+   ARCHITECTURE.md for why a lower number silently drops its own earlier
+   warning). Rides PR #59's generic dispatch layer for email delivery with
+   no changes there. Visible to everyone holding the capability, not
+   scoped to the specific assignee, matching every other kind.
 5. ~~A read-only GC pipeline view over `BidInvitation`~~ — already shipped
    by another lane as `/pipeline` (PR #80, merged before this lane reached
    it): `lib/bid-pipeline.ts` + `lib/bid-pipeline-query.ts`, reading
