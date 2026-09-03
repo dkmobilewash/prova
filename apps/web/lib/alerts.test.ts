@@ -203,10 +203,18 @@ describe("retainageAlerts", () => {
 });
 
 describe("closeoutAlerts", () => {
-  const job = { jobId: "job_1", jobName: "Mercy Tower", submittedOn: "2026-08-01", retainageBalance: 13420 };
+  const job = {
+    jobId: "job_1",
+    jobName: "Mercy Tower",
+    submittedOn: "2026-08-01",
+    retainageBalance: 13420,
+    status: "SUBMITTED" as const,
+    respondedOn: null,
+  };
 
   it("chases a package the GC has sat on", () => {
     const [alert] = closeoutAlerts([job], TODAY);
+    expect(alert.kind).toBe("CLOSEOUT_WITH_GC");
     expect(alert.detail).toContain("31 days ago");
     expect(alert.severity).toBe("STANDING");
     expect(alert.amount).toBe(13420);
@@ -219,6 +227,60 @@ describe("closeoutAlerts", () => {
 
   it("carries no money figure when none is held", () => {
     expect(closeoutAlerts([{ ...job, retainageBalance: 0 }], TODAY)[0].amount).toBeNull();
+  });
+
+  /**
+   * Issue #111 item 3. A package the GC REJECTED raised nothing at all:
+   * alerts-query only fed through submissions whose status was SUBMITTED,
+   * against a three-value enum. The chase vanished at the exact moment the
+   * ball came back into our court and the retainage stopped moving.
+   */
+  describe("a package the GC sent back", () => {
+    const rejected = {
+      ...job,
+      status: "REJECTED" as const,
+      submittedOn: "2026-08-01",
+      respondedOn: "2026-08-29",
+    };
+
+    it("raises its own alert rather than nothing", () => {
+      const [alert] = closeoutAlerts([rejected], TODAY);
+      expect(alert.kind).toBe("CLOSEOUT_REJECTED");
+      expect(alert.amount).toBe(13420);
+      // Worded as what happened. "Sent 31 days ago and nothing recorded
+      // back" would be a lie about a package they answered.
+      expect(alert.detail).toContain("3 days ago");
+      expect(alert.title).toContain("Mercy Tower");
+    });
+
+    it("hangs on the day they sent it back, not the day we sent it", () => {
+      const [alert] = closeoutAlerts([rejected], TODAY);
+      expect(alert.dueOn).toBe("2026-08-29");
+      expect(alert.key).toBe(alertKey("CLOSEOUT_REJECTED", "job_1", "2026-08-29"));
+    });
+
+    it("does not wait out the 21-day chase threshold", () => {
+      // The threshold is a courtesy to a GC who has not answered yet. A
+      // rejection is answered, and ours to act on the same day — /closeout
+      // already lists a REJECTED job immediately (needsAttention).
+      const sameDay = closeoutAlerts([{ ...rejected, respondedOn: TODAY }], TODAY);
+      expect(sameDay).toHaveLength(1);
+      expect(sameDay[0].daysUntil).toBe(0);
+    });
+
+    it("is covered by the capability table like every other kind", () => {
+      expect(ALERT_CAPABILITY.CLOSEOUT_REJECTED).toBe("MANAGE_JOBS");
+    });
+
+    it("falls back to the submission date when nobody recorded the response date", () => {
+      // status REJECTED with no respondedOn is bad data rather than an
+      // impossible one — recordCloseoutResponse requires the date, but a
+      // row edited elsewhere could carry it. Silence would be the worst
+      // answer, so the alert is raised on what we do have and says so.
+      const [alert] = closeoutAlerts([{ ...rejected, respondedOn: null }], TODAY);
+      expect(alert.kind).toBe("CLOSEOUT_REJECTED");
+      expect(alert.dueOn).toBe("2026-08-01");
+    });
   });
 });
 
@@ -503,7 +565,29 @@ describe("visibleToPrincipal", () => {
     TODAY,
   );
   const closeout = closeoutAlerts(
-    [{ jobId: "job_1", jobName: "Mercy Tower", submittedOn: "2026-08-01", retainageBalance: 13420 }],
+    [
+      {
+        jobId: "job_1",
+        jobName: "Mercy Tower",
+        submittedOn: "2026-08-01",
+        retainageBalance: 13420,
+        status: "SUBMITTED",
+        respondedOn: null,
+      },
+    ],
+    TODAY,
+  );
+  const closeoutRejected = closeoutAlerts(
+    [
+      {
+        jobId: "job_2",
+        jobName: "Harbor Point",
+        submittedOn: "2026-08-01",
+        retainageBalance: 13420,
+        status: "REJECTED",
+        respondedOn: "2026-08-29",
+      },
+    ],
     TODAY,
   );
 
@@ -511,9 +595,17 @@ describe("visibleToPrincipal", () => {
     // A kind added without an entry here would fall through the filter as
     // undefined and be shown to everybody, which is the failure mode this
     // whole map exists to close.
-    for (const alert of [...backcharge, ...closeout]) {
+    for (const alert of [...backcharge, ...closeout, ...closeoutRejected]) {
       expect(ALERT_CAPABILITY[alert.kind]).toBeTruthy();
     }
+  });
+
+  it("keeps a rejected package's money away from a foreman too", () => {
+    // Same reasoning as the stuck package below: whose move it is now is
+    // operational, what it is holding up is not.
+    const [alert] = visibleToPrincipal(closeoutRejected, foreman);
+    expect(alert).toBeDefined();
+    expect(alert.amount).toBeNull();
   });
 
   it("passes everything through for someone unrestricted", () => {

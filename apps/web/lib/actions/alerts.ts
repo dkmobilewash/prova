@@ -5,6 +5,7 @@ import { requireCompanyContext } from "@/lib/auth";
 import { loadAlerts } from "@/lib/alerts-query";
 import type { AlertSeverity } from "@/lib/alerts";
 import { prisma } from "@prova/db";
+import { viewerToday } from "@/lib/viewerToday";
 import { actionFail as fail, actionOk as ok, type ActionResult } from "./shared";
 
 /**
@@ -79,11 +80,15 @@ async function severityForKey(
   user: { id: string; role: string; jobFunction: string | null },
   alertKey: string,
 ): Promise<AlertSeverity | null> {
-  // Same call as lib/actions/notifications.ts makes, and for the same
-  // reason: the user's own calendar day would be better and is not
-  // available on a server action, while UTC matches how every date in
-  // this app is stored and compared.
-  const today = new Date().toISOString().slice(0, 10);
+  // Same call as lib/actions/notifications.ts makes, and dated the same
+  // way /alerts is. This used to read the server's UTC clock, with a
+  // comment saying the user's own calendar day would be better and was
+  // not available on a server action. It is now: the browser parks its
+  // zone in a cookie and cookies() reads it here (issue #111 item 1). It
+  // matters more here than almost anywhere, because this answer decides
+  // which severity a dismissal is recorded at and that is what the row is
+  // measured against for the rest of its life -- see #110.
+  const today = await viewerToday();
   const { visible, silenced } = await loadAlerts(companyId, user.id, today, {
     role: user.role,
     jobFunction: user.jobFunction,
@@ -144,6 +149,16 @@ export async function snoozeAlert(alertKey: string, formData: FormData): Promise
     // A snooze into the past is spent the moment it is written, so the
     // alert would come straight back with no explanation. Refusing says
     // what happened instead of silently doing nothing.
+    //
+    // STILL THE SERVER'S UTC DAY, ON PURPOSE, and left that way by the
+    // change that moved severityForKey above onto viewerToday(). This is
+    // issue #111 item 4, which is an open product question rather than a
+    // clear bug: west of UTC after 17:00 this refuses a "tomorrow" the
+    // person picked off their own calendar, and the fix is not only which
+    // clock to read — the date input has no `min` and no default, so the
+    // choice is between refusing later, warning earlier, or defaulting the
+    // field. Cyrus owns that decision. Changing this line alone would make
+    // the refusal disagree with the same reasoning applied one screen over.
     const today = new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00.000Z`);
     if (snoozedUntil <= today) {
       return fail("Pick a date in the future — a snooze until today is already over.");

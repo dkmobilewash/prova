@@ -37,6 +37,7 @@ export type AlertKind =
   | "BACKCHARGE_RESPONSE"
   | "RETAINAGE_RELEASE"
   | "CLOSEOUT_WITH_GC"
+  | "CLOSEOUT_REJECTED"
   | "CERTIFIED_PAYROLL"
   | "APPRENTICE_RATIO"
   | "WIP_VARIANCE"
@@ -90,6 +91,9 @@ export const ALERT_CAPABILITY: Record<AlertKind, Capability> = {
   // Not billing: whether the GC has answered the closeout package is
   // operational, and the money on it is dropped separately below.
   CLOSEOUT_WITH_GC: "MANAGE_JOBS",
+  // Same gate, same reason: whose move it is on the closeout package is
+  // operational. The retainage it is holding up is dropped separately.
+  CLOSEOUT_REJECTED: "MANAGE_JOBS",
   CERTIFIED_PAYROLL: "MANAGE_COMPLIANCE",
   APPRENTICE_RATIO: "MANAGE_COMPLIANCE",
   WIP_VARIANCE: "VIEW_JOB_COSTS",
@@ -373,15 +377,86 @@ export type CloseoutAlertSource = {
   jobName: string;
   submittedOn: string;
   retainageBalance: number;
+  /**
+   * Where the LATEST attempt stands.
+   *
+   * Required rather than optional, because the whole of issue #111 item 3
+   * was a caller that only ever passed one of the three enum values and a
+   * function that could not tell. CloseoutSubmissionStatus has three:
+   * ACCEPTED is not a chase and the caller drops it (retainageAlerts picks
+   * that case up instead); the other two both are, and they are chases of
+   * completely different things.
+   */
+  status: "SUBMITTED" | "REJECTED";
+  /** The day the GC answered, on a REJECTED attempt. Null while it is
+   * still with them — and, on bad data, on a rejection nobody dated. */
+  respondedOn: string | null;
 };
 
-/** A closeout package the GC has had longer than anyone should have to
- * wait, with no response recorded. Callers pass only submissions still
- * outstanding. */
+/**
+ * A closeout package that somebody has to do something about.
+ *
+ * TWO ALERTS, NOT ONE, and the difference is whose move it is.
+ *
+ * SUBMITTED is the GC sitting on it. Nothing is wrong yet, so it waits out
+ * CLOSEOUT_CHASE_DAYS before it says anything — chasing a GC on day three
+ * is how a list stops being read.
+ *
+ * REJECTED is the ball back in our court, and it raised NOTHING at all
+ * until issue #111: alerts-query fed through `status === "SUBMITTED"`
+ * only, so the moment the GC bounced the package the chase vanished — at
+ * exactly the point the retainage stopped moving and somebody had to
+ * assemble a second attempt. It gets no threshold, because there is
+ * nothing to wait for: /closeout's own needsAttention already lists a
+ * REJECTED job the same day, and the two screens disagreeing about that
+ * is the bug in miniature.
+ *
+ * The wording is separate for the same reason. "Sent 31 days ago and
+ * nothing recorded back" is false about a package they answered, and an
+ * alert that misdescribes the record it is derived from is worse than no
+ * alert — it is the thing this file's header calls furniture.
+ *
+ * Callers pass ACCEPTED submissions nowhere near this function.
+ */
 export function closeoutAlerts(sources: CloseoutAlertSource[], todayIso: string): Alert[] {
   const alerts: Alert[] = [];
 
   for (const job of sources) {
+    const amount = job.retainageBalance > 0 ? job.retainageBalance : null;
+
+    if (job.status === "REJECTED") {
+      // Dated from the response, so a package bounced today reads as
+      // today rather than as however long the GC took to bounce it.
+      //
+      // Falling back to submittedOn is for bad data, not for a state the
+      // app can produce: recordCloseoutResponse requires a respondedOn.
+      // Staying silent on a row missing it would hide a live rejection to
+      // punish a data problem, so it is raised on the date we do have and
+      // the wording stops claiming to know when.
+      const since = job.respondedOn ?? job.submittedOn;
+      const days = daysUntilIso(since, todayIso);
+      const ago = Math.abs(days);
+      const elapsed = ago === 0 ? "today" : `${ago} ${ago === 1 ? "day" : "days"} ago`;
+
+      alerts.push({
+        key: alertKey("CLOSEOUT_REJECTED", job.jobId, since),
+        kind: "CLOSEOUT_REJECTED",
+        // No deadline exists to be past: most subcontracts say nothing
+        // about how fast a bounced package must go back. Same argument as
+        // the SUBMITTED case, and the reason neither claims OVERDUE.
+        severity: "STANDING",
+        title: `Closeout package on ${job.jobName} was sent back`,
+        detail: job.respondedOn
+          ? `The GC returned it ${elapsed} and nothing has gone back to them since.`
+          : "The GC returned it and no response date was recorded. Nothing has gone back to them since.",
+        href: "/closeout",
+        dueOn: since,
+        daysUntil: days,
+        amount,
+      });
+      continue;
+    }
+
     const daysWith = -daysUntilIso(job.submittedOn, todayIso);
     if (daysWith < CLOSEOUT_CHASE_DAYS) continue;
 
@@ -394,7 +469,7 @@ export function closeoutAlerts(sources: CloseoutAlertSource[], todayIso: string)
       href: "/closeout",
       dueOn: job.submittedOn,
       daysUntil: -daysWith,
-      amount: job.retainageBalance > 0 ? job.retainageBalance : null,
+      amount,
     });
   }
 
