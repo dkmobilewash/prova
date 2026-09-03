@@ -86,6 +86,19 @@ needs the GC's requirement list as its own data. And nobody who is not a
 `User` can hold a card, which is the honest limit of keying on the person
 you dispatch.
 
+Two things settled while catching this branch up to `main`, which had moved
+58 commits underneath it. `FEATURE-AUDIT.md` sheet 17 now carries the row
+this branch owed it and had handed back when another lane owned the file —
+3 built becomes 4, and `lib/plumbing.test.ts` checks the arithmetic in all
+three places rather than anyone recounting by hand. And `/certifications`
+sits in the nav next to a `/safety` that `main` turned `disabled` on 3 Sep
+on product-scope grounds. That was left enabled deliberately: the page is
+built, clicked and live, and NAV-IA-AUDIT.md's argument for muting Safety
+is "not proven as a daily priority yet", which is exactly the opposite of
+the question this page answers at six in the morning. If that reading is
+wrong it is a one-word edit, and it should be argued rather than inherited
+from a merge.
+
 ---
 
 ### Where the lift actually is, and the same bug I'd just built a guard for (Cyrus)

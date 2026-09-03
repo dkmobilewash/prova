@@ -23,7 +23,7 @@ in flight. Left as-is here rather than guessed at from the outside; the next
 update to touch those sheets should come from whoever actually verified them
 against a fresh clone.
 
-**119 items audited — 93 built / 19 partial / 6 missing / 1 descoped**
+**120 items audited — 94 built / 19 partial / 6 missing / 1 descoped**
 
 (Recounted from the rows on merging `main` into this branch, which is the
 only thing that settles it — the fourth time this exact conflict shape has
@@ -45,7 +45,7 @@ header cannot.)
 
 | Status | Count |
 | --- | --- |
-| Built | 93 |
+| Built | 94 |
 | Partial | 19 |
 | Missing | 6 |
 | Descoped | 1 |
@@ -268,7 +268,7 @@ file's own Built rows already showed before this update touched anything.*
 | Built | RFI log per job | `Rfi` + `RfiCounter`, `/rfis` — number issued per job and never reissued, sent/due/answered dates, overdue derived, cost/schedule impact flags. Removed from nav 3 Sep 2026 — see `NAV-IA-AUDIT.md` |
 | Built | Current drawing set storage/versioning per job | `DrawingSet` + `DrawingRevision`, `/drawings` — one set per discipline per job, issues recorded under the ARCHITECT'S label (no counter: we don't issue these numbers), issued/received dates entered not stamped, current revision and "issued but never received" both derived per render. The set itself is linked, not uploaded — a Server Action body caps around 1MB and real sets are far larger. Removed from nav 3 Sep 2026 — see `NAV-IA-AUDIT.md` |
 
-## 17. Safety & Field Operations — 3 built · 0 partial · 0 missing
+## 17. Safety & Field Operations — 4 built · 0 partial · 0 missing
 
 *Updated 3 Sep 2026: `/safety` stays Built and unchanged — it's now
 rendered `disabled` ("coming soon") in the nav rather than removed, since
@@ -279,6 +279,7 @@ elsewhere in this pass. Reasoning in `NAV-IA-AUDIT.md`.*
 | --- | --- | --- |
 | Built | Incident/injury tracking, OSHA 300 log | `SafetyIncident` + `SafetyCaseCounter`, `/safety` — case numbers per company per year, recordable derived from outcome. Nav entry disabled 3 Sep 2026 — see `NAV-IA-AUDIT.md` |
 | Built | Toolbox talk / safety meeting logs | `ToolboxTalk`, `/safety` |
+| Built | Worker certification and safety-training tracking, per person, with expiry | `WorkerCertification` + `CertificationRequirement`, `/certifications` — OSHA cards, scaffold/lift qualifications, fit tests. Keyed on `User`, not free text. Standing is derived per read from `expiresOn` (never stored); a renewal is a NEW row and the superseded card stays. A blank expiry reads as *no expiry recorded*, never as current. `CertificationRequirement` is what makes an ABSENT record visible — a worker with no row looks identical to one who doesn't need it until something declares it required. Raises no alert yet |
 | Built | Daily field reports (crew present, work performed, weather, delays) | `DailyFieldReport`, one per job per day enforced by the database. Filed from the job page or from `/field-reports`, which groups every job's reports into Mon–Sun weeks, derives coverage and NAMES the finished weekdays nothing was filed for (never today, never a day still to come, never a weekend), and writes the week out as plain text to hand a GC — missing days included in that text rather than omitted |
 
 ## 18. Scheduling & Crew Dispatch — 3 built · 0 partial · 0 missing
