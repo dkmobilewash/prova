@@ -12,6 +12,85 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+## Two notification bugs: a standing alert emailed as "Now due", and a digest that could go out with no record of it
+
+### A STANDING alert borrowed the dated ladder (#126)
+
+`crossedRungs` decided which ladder an alert climbed by asking whether
+`dueOn` was null. The severity is the claim being made; `dueOn` is only a
+date attached to it, and three kinds are STANDING **and** dated — a
+closeout package the GC has sat on, retainage past a forecast substantial
+completion, and (arriving with #128) a rejected closeout. Every one of them
+carries a date already BEHIND it, because what makes them standing is that
+the day cannot be met by acting sooner.
+
+So all three went up the dated ladder, `days <= 0` fired the DUE rung, and
+`rungLabel("due")` put **"Now due"** in an email about a condition that has
+no deadline at all. Worse than the wording: they spent `@week` and `@due`
+instead of `@standing`, so the one notice those alerts were ever going to
+send could never be sent — silently, for good, since a spent rung is spent.
+
+The split is now on `severity === "STANDING"`, with one wrinkle that is the
+reason a bare severity check is not enough. A COI fifty-five days out is
+also STANDING — because it is outside its own horizon, not because it is a
+standing condition — and firing its only key there would spend it long
+before there is anything to say. A STANDING alert therefore reaches its rung
+when it has no date, or when the date it has is behind it; a date still
+ahead, or a date with no distance computed, says nothing.
+
+**The guard test for this passed vacuously and had done since it was
+written.** It was named "never borrows the dated ladder" and its fixture was
+a `WIP_VARIANCE` alert with `dueOn: null` — the one STANDING shape that
+cannot reach the dated branch at all, so it would have passed whatever that
+branch did. It now uses a STANDING alert that HAS a past `dueOn`, which is
+the only fixture that exercises the thing it is named after, and it fails
+against the old code with `expected 'due' to be 'standing'`.
+
+### A sent digest could leave no record that it was sent (#116)
+
+`notification-dispatch.ts` opens with "THE ORDER IS THE DESIGN" — claims
+written before the provider is called, so a crash between sending and
+recording is a notice that was sent and recorded. That was true of the
+CLAIMS and false of the MESSAGE. The message row went first, but its
+handover event and its `providerMessageId` were written afterwards, in a
+`$transaction` that ran AFTER `sendEmail` returned.
+
+Everything between those two points was a window where the digest had
+reached a real person and the database said otherwise: no provider id, no
+events at all — which is exactly what a send that never left looks like.
+`/messages` reads such a row as "No word back yet", and `reachedProvider`,
+the guard on deletion, sees nothing to protect and would let the record of a
+delivered email be destroyed. Not a re-send risk: the dispatch claims were
+always safe, and that is the half that was already right.
+
+Fixed the same way `lib/actions/messages.ts` was. The QUEUED handover is
+written BEFORE the send. A provider that took it keeps that event and gains
+the reason (a second QUEUED would report one send as two). A send that
+never got there gives the claim back — deleted and re-recorded as FAILED in
+ONE transaction, because losing the claim without writing the failure is the
+same hole pointing the other way. And the write that follows a successful
+send no longer throws: it returns, because production redacts a thrown
+Server Action message and an opaque error on a digest that DID go out invites
+a second click.
+
+One thing not to overclaim, and it is written into the code: "provably never
+took it" is stronger than `mayHaveSent` can support. `sendEmail` treats every
+fetch rejection as never-reached, and a timeout after the body went out is a
+fetch rejection. The branch means "nothing came back that says it arrived".
+
+The cost of all this is the opposite error — a crash between the handover and
+the send leaves a message reading handed-over-and-unconfirmed that never
+went. That is the right way round: an overstated send goes stale in a day and
+somebody checks it, an understated one is evidence that no longer exists.
+
+Both fixes are pinned by tests watched failing first. The dispatch tests are
+unit tests over a small in-memory Prisma stand-in with two properties a naive
+fake lacks — lazy operations, and a `$transaction` that really rolls back —
+because without those the "second write of a failed transaction" case passes
+against the broken code.
+
+---
+
 ## The demo dataset caught up with nine models it had never heard of
 
 The seed was written against a schema that has since gained CRM contact
