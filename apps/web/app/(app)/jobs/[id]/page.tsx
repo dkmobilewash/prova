@@ -13,6 +13,8 @@ import { DailyFieldReports } from "@/components/DailyFieldReports";
 import { PayApplications, StatusForm } from "@/components/PayApplications";
 import { PushPaymentToQuickBooks } from "@/components/PushPaymentToQuickBooks";
 import { PushInvoiceToQuickBooks } from "@/components/PushInvoiceToQuickBooks";
+import { pushBlockers } from "@/lib/quickbooks-sync";
+import { paymentPushBlockers } from "@/lib/quickbooks-payment-sync";
 import { MarkContractedButton } from "@/components/MarkContractedButton";
 import { ChangeOrders, type ChangeOrderView } from "@/components/ChangeOrders";
 import { changeOrderValueDelta, pendingChangeOrderExposure, reopenBlockers } from "@/lib/change-order";
@@ -315,6 +317,39 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
     releaseAmounts: job.retainageReleases.map((release) => Number(release.amount)),
     substantialCompletionDate: job.substantialCompletionDate,
   });
+
+  // What would stop a push, worked out ONCE for the whole job and handed
+  // to every row. The server has always refused a blocked push; until a
+  // browser test caught it on 2026-09-03, nothing told the person WHY, so
+  // "Send payment to QuickBooks" sat live and clickable on a payment whose
+  // invoice QuickBooks had never seen.
+  //
+  // Read through the same helpers the actions use — `pushBlockers` and
+  // `paymentPushBlockers` — rather than re-deriving the conditions here. A
+  // second opinion about whether something is sendable is how a button and
+  // the action behind it come to disagree.
+  const [quickBooksConnection, jobCustomerLink, incomeAccountMapping] = await Promise.all([
+    prisma.quickBooksConnection.findUnique({ where: { companyId: company.id } }),
+    prisma.quickBooksEntityLink.findUnique({
+      where: {
+        companyId_entityType_entityId: {
+          companyId: company.id,
+          entityType: "Contact",
+          entityId: job.contactId,
+        },
+      },
+      select: { qboId: true },
+    }),
+    prisma.quickBooksAccountMapping.findUnique({
+      where: { companyId_purpose: { companyId: company.id, purpose: "INVOICE_REVENUE" } },
+      select: { qboAccountId: true },
+    }),
+  ]);
+
+  // NEEDS_REAUTH is not connected for this purpose: the token is dead and
+  // no push can succeed until somebody reconnects.
+  const quickBooksUsable =
+    quickBooksConnection !== null && quickBooksConnection.status !== "NEEDS_REAUTH";
 
   // Which invoices are already in QuickBooks, so a row can say so without
   // being asked — and so re-sending is visibly a re-send rather than a
@@ -1303,6 +1338,12 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                           lastVerifiedAt={
                             quickBooksInvoiceLinks.get(invoice.id)?.lastVerifiedAt ?? null
                           }
+                          blockers={pushBlockers({
+                            hasConnection: quickBooksUsable,
+                            customerQboId: jobCustomerLink?.qboId ?? null,
+                            incomeAccountId: incomeAccountMapping?.qboAccountId ?? null,
+                            totalCents: Math.round(Number(invoice.amount) * 100),
+                          })}
                         />
                       </div>
                     </div>
@@ -1342,6 +1383,17 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                                 lastVerifiedAt={
                                   quickBooksPaymentLinks.get(payment.id)?.lastVerifiedAt ?? null
                                 }
+                                blockers={paymentPushBlockers({
+                                  hasConnection: quickBooksUsable,
+                                  customerQboId: jobCustomerLink?.qboId ?? null,
+                                  // The ordering constraint, and the one the
+                                  // browser test found unguarded: a payment is
+                                  // APPLIED to an invoice, so the invoice has to
+                                  // be there first.
+                                  invoiceQboId:
+                                    quickBooksInvoiceLinks.get(invoice.id)?.qboId ?? null,
+                                  amountCents: Math.round(Number(payment.amount) * 100),
+                                })}
                               />
                               <form action={deletePayment.bind(null, job.id, payment.id)}>
                                 <SubmitButton
