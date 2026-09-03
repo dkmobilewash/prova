@@ -4,7 +4,6 @@ import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createPrevailingWageRuleSet } from "@/lib/actions";
 import { RuleSetFields } from "@/components/RuleSetFields";
-import { localToday } from "@/components/localToday";
 
 export function RuleSetForm() {
   const [isOpen, setIsOpen] = useState(false);
@@ -70,7 +69,12 @@ export function RuleSetForm() {
           portalUrl: null,
           sourceUrl: null,
           note: null,
-          effectiveFrom: localToday(),
+          // NOT localToday(). Every other field here defaults to empty, and
+          // this one is a legal fact: when the rules came into force. A
+          // date defaulted to today silently asserts they started today,
+          // which is the same invented value the blank thresholds exist to
+          // avoid. Browser testing caught it defaulting to 09/02/2026.
+          effectiveFrom: "",
           effectiveTo: null,
         }}
       />

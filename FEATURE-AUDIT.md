@@ -312,10 +312,25 @@ meaning exactly what it meant.*
 
 *Updated 1 Sep 2026 — the alert engine shipped. Four of these rows moved,
 and NONE of them moved to Built, because the bar this sheet set for itself
-("NOT Built until something pushes it") has not been met: there is still no
-email or SMS sender anywhere on main. What changed is that every one of
-these is now derived, ranked against the others, acknowledgeable, and
-visible from every screen instead of from one page.*
+("NOT Built until something pushes it") has not been met. What changed is
+that every one of these is now derived, ranked against the others,
+acknowledgeable, and visible from every screen instead of from one page.*
+
+*Corrected 2 Sep 2026 — this paragraph said "there is still no email or SMS
+sender anywhere on main". That was true when written and stopped being true
+hours later, when #38 merged an email sender
+(`packages/integrations/src/email.ts`, Resend). No SMS sender exists. The
+statuses below are unchanged and still right: an unwired transport pushes
+nothing, so the bar is still unmet — but it is now unmet for want of a
+TRIGGER, not for want of a channel. Anything that closes these rows calls
+the existing sender from `loadAlerts`; it does not build a second one.*
+
+*And this correction has its own expiry date, which is the point. Checked
+against `main` at 21133db: `cyrus/notifications` (#59) is building exactly
+that trigger -- an alert digest with a delivery ledger -- and is not merged
+yet. When it lands, these rows move and this paragraph is stale in turn.
+State what you checked and when, or the next reader inherits a confident
+sentence about a repository that has moved on.*
 
 | Status | Feature | Note |
 | --- | --- | --- |

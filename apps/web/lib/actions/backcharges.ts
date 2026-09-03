@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
+import { money as formatMoney } from "@/lib/money";
 import { Prisma, prisma } from "@prova/db";
 import { actionFail as fail, actionOk as ok, type ActionResult } from "./shared";
 
@@ -306,7 +307,7 @@ export async function resolveBackcharge(id: string, formData: FormData): Promise
       // on which button someone happened to press.
       if (Number(resolvedAmount) === Number(backcharge.claimedAmount)) {
         return fail(
-          `Settling at the full $${Number(backcharge.claimedAmount).toFixed(2)} is accepting it — use "Accept in full".`,
+          `Settling at the full ${formatMoney(Number(backcharge.claimedAmount))} is accepting it — use "Accept in full".`,
         );
       }
     }

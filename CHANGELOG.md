@@ -12,6 +12,70 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+## What browser testing found in tests 1-5, and what it cost
+
+Six real defects, all mine, none caught by 814 unit tests, 105 DB tests,
+typecheck, lint or a clean build. Worth writing down because of WHAT the
+green checks were blind to.
+
+**Attaching a wage determination with no file and no link took down the
+page.** Both inputs are labelled optional -- either one satisfies the rule,
+neither alone is required by the browser -- and the action enforced "one of
+them" with `throw`. Production redacts a thrown Server Action message to a
+digest, so the rule arrived as the full-page error boundary and a reference
+number. Three attempts, three crashes, read (reasonably) as data loss. The
+form is now a client component that renders the returned refusal next to the
+field. The rule this broke was already in CLAUDE.md; the action predated it
+and nobody went back for it.
+
+There are 146 more `throw new Error` in `lib/actions/`, twelve of them still
+in `labor.ts`. Most are legitimate -- "Time entry not found on this job" is a
+genuine bug and the boundary is the right place for it. The dangerous ones
+are the subset that a USER can trigger by filling a form wrong, because
+those turn a correctable mistake into a page crash with a redacted message.
+That is the audit worth doing, and this fix only covered one action.
+
+Also: the reference number was byte-identical across all three crashes.
+That is correct -- React hashes the error to make the digest -- but it means
+a support reference identifies an ERROR, never an incident. Don't ask a user
+to quote one expecting it to narrow anything down.
+
+**A green "Closeout complete" badge sat directly above "Not ready to submit
+-- 1 punch item still open".** `lib/closeout-readiness.ts` derives readiness
+across the checklist, punch items, callbacks and retainage. The panel used
+it. The badge one line above kept calling the old checklist-only helper, and
+so did the page's header counter -- which reported 0 outstanding jobs while
+listing fifteen that each said they weren't ready. Two computations of one
+concept, which is the exact thing "derive, don't duplicate" exists to stop,
+introduced by the commit that added the better derivation and left the worse
+one in place beside it. A badge that can only see the checklist now says
+"Checklist done" and never claims the whole closeout.
+
+**A refusal that outlived its input.** Settling a backcharge above the claim
+was blocked by `max={claimed}`, so Chrome's own tooltip fired and the
+action's real sentence -- that a bigger number is a NEW backcharge, not this
+one growing -- was unreachable. The attribute is gone; the server owns the
+rule. Separately, the previous refusal stayed on screen after the field was
+edited, so "Settling at the full $4200.00 is accepting it" sat under an
+input reading 5000. Forms clear the error on input now.
+
+**"In force from" was pre-filled with today.** Every other field on that
+form defaults to empty on purpose, because a blank threshold means nobody
+looked it up. A defaulted start date silently asserts the rules began today,
+which is the same invented value. Removed. `localToday()` is for "this is
+happening now", not for when a law took effect.
+
+Smaller: one money string used `.toFixed(2)` while its neighbour used the
+shared formatter, so the same number appeared as `$4,200.00` and `$4200.00`
+two lines apart; and "Mark done" opened an editor rather than marking
+anything done, now "Mark done...".
+
+The clicked-through finding underneath all of these: **green checks confirm
+the code does what it says, and every one of these bugs was the code saying
+two different things in two places.** Only loading the page catches that.
+
+---
+
 ### You can now take all your data out, without asking anyone (Diego)
 `claude/prova-vercel-direct-url-hg1acx`
 

@@ -55,10 +55,21 @@ one at a time:
 3. **Notifications & Alerts** — Sheet 26. *Engine shipped 1 Sep.*
    `lib/alerts.ts`, `lib/alerts-query.ts`, `notifications.prisma`
    (`AlertAcknowledgement` only — alerts themselves are never stored),
-   `/alerts`, and a count in `Topbar`. NOT push: no email sender exists on
-   main, so four of Sheet 26's rows stay Partial on purpose. If the
-   `sendOutboundEmail` work lands in the other lane, it feeds from
-   `loadAlerts` rather than growing its own rules.
+   `/alerts`, and a count in `Topbar`. NOT push: four of Sheet 26's rows
+   stay Partial on purpose, but no longer for the reason first written
+   here. This said "no email sender exists on main", which was true on
+   1 Sep and stopped being true when #38 (`cyrus/messaging`) merged: main
+   now has `packages/integrations/src/email.ts` (Resend, with
+   `readEmailConfig`/`emailSetupProblem` degrading to a named setup
+   problem rather than a throw) and `sendOutboundEmail` wired to
+   `MessageComposer`. What is still missing is the WIRING: nothing calls
+   the sender from an alert, so the rows are Partial for want of a
+   trigger, not for want of a transport. Whoever builds it feeds from
+   `loadAlerts` rather than growing its own rules, and must decide what
+   happens when `emailSetupProblem()` is non-null — a silently dropped
+   alert is worse than no alert. Checked against `main` at 21133db;
+   `cyrus/notifications` (#59) is building that trigger and had not merged
+   at the time of writing, so re-check before relying on this.
 4. **Roles & Permissions** — Sheet 25. *Shipped 1 Sep.*
    `permissions.prisma` (`JobFunction`, a nullable column on `User` —
    `UserRole` untouched), `lib/permissions.ts`, `lib/authz.ts`,

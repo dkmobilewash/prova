@@ -3,7 +3,6 @@ import { CloseoutJobCard } from "@/components/CloseoutJobCard";
 import { CloseoutPackagePanel } from "@/components/CloseoutPackagePanel";
 import { blockerLabel, stageLabel } from "@/components/closeoutPackageLabels";
 import {
-  isCloseoutComplete,
   isOpen,
   outstandingRequired,
   warrantyState,
@@ -35,7 +34,12 @@ export default async function CloseoutPage() {
 
   // All three counted across every job, and all three derived — there is no
   // stored "closed out" or "in warranty" flag anywhere in this feature.
-  const outstandingJobs = rows.filter((r) => r.items.length > 0 && !isCloseoutComplete(r.items)).length;
+  // Was `r.items.length > 0 && !isCloseoutComplete(r.items)` -- checklist
+  // only, and blind to a job with no checklist at all. It reported 0 while
+  // the list below it showed fifteen jobs each saying "not ready to
+  // submit". A counter that disagrees with the list it sits on top of is
+  // worse than no counter, so it now reads the same blockers the cards do.
+  const outstandingJobs = rows.filter((r) => r.readiness.blockers.length > 0).length;
   const inWarranty = rows.filter((r) => warrantyState(r.warranty, today) === "ACTIVE").length;
   const openCallbacks = rows.reduce((n, r) => n + r.requests.filter(isOpen).length, 0);
   const totalOutstandingItems = rows.reduce((n, r) => n + outstandingRequired(r.items).length, 0);
@@ -127,6 +131,7 @@ export default async function CloseoutPage() {
               key={job.id}
               job={job}
               today={today}
+              packageStage={job.readiness.stage}
               packageSlot={
                 <CloseoutPackagePanel
                   jobId={job.id}
