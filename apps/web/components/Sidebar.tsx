@@ -20,10 +20,19 @@ import type { Principal } from "@/lib/permissions";
  * clusters is already legible by spacing, and a heading you cannot read at
  * 64px is just noise.
  */
-export function Sidebar({ companyName, principal }: { companyName: string; principal: Principal }) {
+export function Sidebar({
+  companyName,
+  principal,
+  showsSalesCrm = false,
+}: {
+  companyName: string;
+  principal: Principal;
+  /** Prova's own operating company only -- see Company.isProvaOperator. */
+  showsSalesCrm?: boolean;
+}) {
   // Filtered here rather than in the layout so the desktop rail and
   // the mobile drawer run the same function on the same input.
-  const groups = navGroupsFor(principal);
+  const groups = navGroupsFor(principal, { showsSalesCrm });
   const pathname = usePathname();
 
   return (

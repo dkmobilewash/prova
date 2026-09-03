@@ -113,7 +113,8 @@ A fourth session is running alongside the three above. It owns the
 customer-facing CRM, Phase A of the CRM spec, one item at a time on a new
 branch per item (previously `claude/prova-crm-contact-lifecycle`, then
 `claude/prova-crm-interaction-log`, then `claude/prova-crm-contact-people`,
-now `claude/prova-crm-followup-alerts`):
+then `claude/prova-crm-followup-alerts`, now `claude/prova-sales-crm` for
+Phase B below):
 
 1. **Contact create/delete + prospect status** — Sheet 02. *Shipped 2 Sep.*
    `ContactStatus` (PROSPECT/ACTIVE/INACTIVE), `ContactType` (GC/DEVELOPER/
@@ -161,9 +162,22 @@ now `claude/prova-crm-followup-alerts`):
    `BidInvitation` per GC, derived and stored nowhere. Struck rather than
    duplicated.
 
-Then Phase B: an internal, owner-only sales CRM for selling Prova itself
-(Lead/Opportunity models, its own nav section) — not started until Phase A
-ships.
+Then Phase B: an internal, owner-only sales CRM for selling Prova itself.
+*Shipped 3 Sep.* `SalesLead`/`SalesOpportunity` (new file `sales.prisma`) —
+prospective Prova customers and the deals in progress with them, not a
+second `Contact` (every tenant has their own GCs; this belongs only to
+Prova's own operating company). Gated on two independent checks, neither
+expressible as a `lib/permissions.ts` `Capability` (that map is about job
+function *within* a company, and an OWNER always holds every capability in
+it regardless — there's no way to express "owner only" there): a new
+`Company.isProvaOperator` boolean (exactly one row ever true, set by hand)
+and `role === "OWNER"`, both checked directly in `lib/actions/sales.ts`'s
+`assertSalesAccess` and in `/sales`'s pages. `/sales` (list) and
+`/sales/[id]` (lead detail + its opportunities), a new "Internal" nav group
+appended only when both checks pass — `navGroupsFor` in `navItems.tsx`
+gained an optional second argument for this rather than folding it into
+`canReach`'s capability system. `deleteSalesLead` blocks once a lead has
+opportunities on file, same reasoning as `deleteContact`.
 
 It does NOT touch estimating, job costing, billing/AIA, retainage, WIP,
 AI, `jobs/[id]/page.tsx`, safety, materials/vendors, equipment,

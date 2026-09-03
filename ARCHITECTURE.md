@@ -809,6 +809,59 @@ No new "resolved" state either — a follow-up is retired by clearing
 which is also what changes the alert's key and lets a dismissal lapse
 naturally, same mechanism as every other kind here.
 
+### Phase B — `SalesLead`/`SalesOpportunity`, Prova's own sales CRM
+
+Everything above this point is for a tenant to run their own construction
+business. This is different in kind: it's Diego/Cyrus's own tool for
+tracking *other subcontractors* as prospective Prova customers, not a
+tenant-facing feature at all. New file `sales.prisma`, same "new domain,
+new file" reasoning as `crm.prisma`.
+
+**Not a second `Contact`.** `Contact` is a tenant's own GC/developer/vendor,
+and every tenant rightly has their own; a `SalesLead` is a company that
+might become a *tenant*, and belongs only to Prova's own operating company.
+Conflating the two would mean every subcontractor's owner sees a "Sales
+CRM" nav item for tracking leads to sell them Prova, which is nonsensical
+from that customer's side of the product.
+
+**Scoped like everything else, restricted like nothing else.**
+`SalesLead`/`SalesOpportunity` still carry `companyId` and go through
+`requireCompanyContext()` exactly like every other model — no new
+multi-tenancy mechanism. What's new is a `Company.isProvaOperator` boolean
+(one additive field, exactly one row ever `true` in production, set by
+hand — nobody logs "we are the operator," so nothing can derive this) that
+gates the feature to that one company, stacked with `role === "OWNER"`.
+
+**Why this isn't a `lib/permissions.ts` `Capability`.** That map is
+explicitly about what a job function can do *within* a company, and its own
+rule is "an OWNER holds every capability regardless of job function" — there
+is no way to express "owner only, not even an EXECUTIVE-function member" in
+it, and forcing one in would corrupt a map that's otherwise purely about
+roles. `assertSalesAccess` in `lib/actions/sales.ts` checks
+`isProvaOperator` and `role` directly instead, same shape as `assertOwner`
+elsewhere. A non-operator company gets treated as if the route doesn't
+exist (`notFound()`/a plain "nothing here" message) rather than an
+authorization message — the feature isn't being withheld from them, it was
+never theirs to see. A member at the operator company gets the real reason,
+matching `assertOwner`'s own convention elsewhere.
+
+**Nav is the one place this touches shared files.** `canReach`/
+`navGroupsFor` in `navItems.tsx` filter every other nav item by
+job-function capability alone, which doesn't fit this axis. Rather than
+stretch that system, `navGroupsFor` gained one optional second argument
+(`{ showsSalesCrm }`) that appends a separate "Internal" group only when
+true; the flag is computed once in `app/(app)/layout.tsx`
+(`company.isProvaOperator && role === "OWNER"`) and threaded through
+`Sidebar`/`Topbar`/`MobileNav` so the desktop rail and the mobile drawer
+can never disagree about who sees it. Every touch to those files is
+additive — no existing nav item's filtering changed.
+
+`deleteSalesLead` blocks once a lead has opportunities on file, same
+reasoning as `deleteContact`: real pipeline history stays even if none of
+it ever closed. Not audited in FEATURE-AUDIT.md — that file is explicitly
+scoped to the customer-facing feature spec, and this isn't a customer
+feature.
+
 ## What proves this works (Phase 00's CRUD flow)
 
 The minimal CRUD flow in `apps/web` exists specifically to demonstrate the
