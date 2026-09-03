@@ -16,6 +16,12 @@ import { fileURLToPath } from "node:url";
  * second and can gate every push.
  */
 export default defineConfig({
+  // navItems.tsx carries an inline SVG per entry, so importing it from a
+  // test compiles JSX. The automatic runtime means that works without every
+  // such module importing React purely to satisfy the test environment --
+  // which is the same runtime Next already uses, so nothing here diverges
+  // from how the app is built.
+  esbuild: { jsx: "automatic" },
   test: {
     environment: "node",
     include: ["**/*.test.ts"],

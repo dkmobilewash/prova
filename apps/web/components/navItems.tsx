@@ -438,7 +438,15 @@ const item = (href: string): NavItem => {
 export const NAV_GROUPS: NavGroup[] = [
   {
     heading: "Pre-construction",
-    items: [item("/dashboard"), item("/alerts"), item("/bids"), item("/contacts"), item("/catalog")],
+    items: [
+      item("/dashboard"),
+      item("/alerts"),
+      item("/bids"),
+      item("/pipeline"),
+      item("/contacts"),
+      item("/messages"),
+      item("/catalog"),
+    ],
   },
   {
     heading: "Operations",
@@ -448,6 +456,7 @@ export const NAV_GROUPS: NavGroup[] = [
       item("/submittals"),
       item("/drawings"),
       item("/punch-lists"),
+      item("/field-reports"),
       item("/closeout"),
     ],
   },
@@ -457,7 +466,7 @@ export const NAV_GROUPS: NavGroup[] = [
   },
   {
     heading: "Logistics",
-    items: [item("/material-orders"), item("/vendors"), item("/equipment")],
+    items: [item("/material-orders"), item("/vendors"), item("/vendors/pricing"), item("/equipment")],
   },
   {
     heading: "Financials",
