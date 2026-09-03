@@ -195,6 +195,160 @@ Migration is additive — one `CREATE TABLE`, its indexes, three FKs, no
 `ALTER` and no `DROP`. Generated with `migrate diff` against main's schema
 rather than `migrate dev`, which offered to reset.
 
+## The counter was wrong twice, the same way, and the second fix was mine
+
+Browser testing passed all four fixes and then found the counter I had
+just "fixed" reading 15 against a list of 16.
+
+It was `blockers.length > 0`. A job whose checklist is ticked and which
+NOBODY HAS SENT has no blockers, so it vanished from the number while
+staying in the list -- and that is exactly the job somebody needs to chase.
+The list uses `needsAttention`, which keeps it because the panel's own
+stated rule is that a job is only off the list once the GC has ACCEPTED
+its package.
+
+Both versions of this counter were the same mistake: a SECOND computation
+of what the list already decides. The first fix swapped a checklist-only
+duplicate for a blockers duplicate and called it derive-don't-duplicate.
+It is now `attention.length` -- the counter and the list are the same set
+by construction rather than by agreement.
+
+The lesson is about the test, not the code. My own click-list told the
+tester to compare the counter against the "not ready" count, which is the
+counter's definition rather than the requirement. It confirmed my
+implementation instead of checking the claim, so it passed while the thing
+was still wrong. A test written from the implementation cannot fail.
+
+Also from that round:
+
+Backcharge category defaulted to CLEANUP. Every other field on that form
+is blank on purpose, and the schema's own default is OTHER; the form was
+overriding a neutral default with a specific claim nobody made, so a
+backcharge logged in a hurry became a cleanup backcharge with nothing to
+say the tag was a default. Now OTHER.
+
+The two-step delete put "Confirm delete" exactly where "Delete" had been.
+A destructive second step under the first click is a one-step delete with
+extra rendering. Cancel takes that position now.
+
+NOT changed: date fields defaulting to "yesterday". Reported as a
+systematic one-day lag; `localToday()` is correct and was executed across
+six zones to prove it. At the time of the test the UTC date was the 3rd
+and the local date in every American zone was the 2nd, which is what those
+fields showed. Changing it would reintroduce the bug the helper exists to
+prevent -- a foreman filing at the end of a shift dating the record a day
+late. Worth re-reading this entry before anyone "fixes" it again.
+
+ALSO NOT A BUG IN THIS FEATURE, and worth someone checking: the footer's
+"Cash collected" moved 0 -> $500 mid-session with no payment logged. It is
+`SUM(Payment.amount)`, and exactly one path in the app writes a Payment
+(`lib/actions/billing.ts`). Backcharges and closeout reference Payment
+zero times, so nothing in that test could have moved it. A row was written
+by something else -- data, not display.
+
+---
+
+## The bidding relationship, as opposed to the list of bids
+
+`/bids` lists invitations one per row and filters them. It cannot answer
+the question a sub actually asks about a GC: do they keep inviting us, and
+does it turn into work. `/pipeline` derives that per contact — invited,
+bid, won, lost, declined, what is still live, and what is past the date
+they asked for.
+
+Read-only over `BidInvitation`, which belongs to the estimating lane. A
+status is still changed on `/bids`; nothing here is stored, so a correction
+there moves these figures with it.
+
+**Win rate is null, not zero, until something has been decided.** A GC who
+has invited us three times with every bid still open has not got a 0% win
+rate, and a table printing one is how somebody talks themselves out of a
+customer who is still deciding. `winRateLabel` says "no decided bids yet".
+
+**A declined invitation is not a loss.** Declining is a decision we made,
+usually because the job was wrong for us. Folding it into the rate would
+punish good judgement and make "bid on everything" look like the way to
+improve the number.
+
+**A won-value total that skipped rows says so.** `bidAmount` is nullable,
+so summing it across won bids gives a floor. The row renders "at least"
+and names how many won bids carry no amount, rather than presenting the
+partial sum as a total — the same defect as the $0.00 the browser found in
+five fringe columns. Worth knowing that `/bids` itself still does the
+silent version, filtering unpriced bids out of its total; that is the
+estimating lane's to fix and is filed as an issue rather than changed here.
+
+FEATURE-AUDIT's top line said 115 items / 85 built while its rows said 119.
+Every PER-SHEET header agreed with its own rows; only the total was stale,
+which is the signature of a merge keeping one side's totals line and both
+sides' rows. Recomputed from the rows: 120 items now, including this one.
+
+---
+
+## What browser testing found in tests 1-5, and what it cost
+
+Six real defects, all mine, none caught by 814 unit tests, 105 DB tests,
+typecheck, lint or a clean build. Worth writing down because of WHAT the
+green checks were blind to.
+
+**Attaching a wage determination with no file and no link took down the
+page.** Both inputs are labelled optional -- either one satisfies the rule,
+neither alone is required by the browser -- and the action enforced "one of
+them" with `throw`. Production redacts a thrown Server Action message to a
+digest, so the rule arrived as the full-page error boundary and a reference
+number. Three attempts, three crashes, read (reasonably) as data loss. The
+form is now a client component that renders the returned refusal next to the
+field. The rule this broke was already in CLAUDE.md; the action predated it
+and nobody went back for it.
+
+There are 146 more `throw new Error` in `lib/actions/`, twelve of them still
+in `labor.ts`. Most are legitimate -- "Time entry not found on this job" is a
+genuine bug and the boundary is the right place for it. The dangerous ones
+are the subset that a USER can trigger by filling a form wrong, because
+those turn a correctable mistake into a page crash with a redacted message.
+That is the audit worth doing, and this fix only covered one action.
+
+Also: the reference number was byte-identical across all three crashes.
+That is correct -- React hashes the error to make the digest -- but it means
+a support reference identifies an ERROR, never an incident. Don't ask a user
+to quote one expecting it to narrow anything down.
+
+**A green "Closeout complete" badge sat directly above "Not ready to submit
+-- 1 punch item still open".** `lib/closeout-readiness.ts` derives readiness
+across the checklist, punch items, callbacks and retainage. The panel used
+it. The badge one line above kept calling the old checklist-only helper, and
+so did the page's header counter -- which reported 0 outstanding jobs while
+listing fifteen that each said they weren't ready. Two computations of one
+concept, which is the exact thing "derive, don't duplicate" exists to stop,
+introduced by the commit that added the better derivation and left the worse
+one in place beside it. A badge that can only see the checklist now says
+"Checklist done" and never claims the whole closeout.
+
+**A refusal that outlived its input.** Settling a backcharge above the claim
+was blocked by `max={claimed}`, so Chrome's own tooltip fired and the
+action's real sentence -- that a bigger number is a NEW backcharge, not this
+one growing -- was unreachable. The attribute is gone; the server owns the
+rule. Separately, the previous refusal stayed on screen after the field was
+edited, so "Settling at the full $4200.00 is accepting it" sat under an
+input reading 5000. Forms clear the error on input now.
+
+**"In force from" was pre-filled with today.** Every other field on that
+form defaults to empty on purpose, because a blank threshold means nobody
+looked it up. A defaulted start date silently asserts the rules began today,
+which is the same invented value. Removed. `localToday()` is for "this is
+happening now", not for when a law took effect.
+
+Smaller: one money string used `.toFixed(2)` while its neighbour used the
+shared formatter, so the same number appeared as `$4,200.00` and `$4200.00`
+two lines apart; and "Mark done" opened an editor rather than marking
+anything done, now "Mark done...".
+
+The clicked-through finding underneath all of these: **green checks confirm
+the code does what it says, and every one of these bugs was the code saying
+two different things in two places.** Only loading the page catches that.
+
+---
+
 ### You can now take all your data out, without asking anyone (Diego)
 `claude/prova-vercel-direct-url-hg1acx`
 

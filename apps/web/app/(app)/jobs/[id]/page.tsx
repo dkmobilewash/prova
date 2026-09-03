@@ -4,6 +4,7 @@ import Link from "next/link";
 import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { PrintButton } from "@/components/PrintButton";
+import { PrevailingWageDeterminationForm } from "@/components/PrevailingWageDeterminationForm";
 import { ContractSummary } from "@/components/ContractSummary";
 import { WipNarrativeButton } from "@/components/WipNarrativeButton";
 import { DraftLineItemsForm } from "@/components/DraftLineItemsForm";
@@ -12,6 +13,8 @@ import { DailyFieldReports } from "@/components/DailyFieldReports";
 import { PayApplications, StatusForm } from "@/components/PayApplications";
 import { PushPaymentToQuickBooks } from "@/components/PushPaymentToQuickBooks";
 import { PushInvoiceToQuickBooks } from "@/components/PushInvoiceToQuickBooks";
+import { pushBlockers } from "@/lib/quickbooks-sync";
+import { paymentPushBlockers } from "@/lib/quickbooks-payment-sync";
 import { MarkContractedButton } from "@/components/MarkContractedButton";
 import { ChangeOrders, type ChangeOrderView } from "@/components/ChangeOrders";
 import { changeOrderValueDelta, pendingChangeOrderExposure, reopenBlockers } from "@/lib/change-order";
@@ -42,7 +45,6 @@ import {
   logTimeEntry,
   updateJobRetainageTerms,
   uploadDispatchSlip,
-  uploadPrevailingWageDetermination,
   markJobContracted,
   deleteContractDocument,
   saveEstimateVersion,
@@ -316,6 +318,39 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
     substantialCompletionDate: job.substantialCompletionDate,
   });
 
+  // What would stop a push, worked out ONCE for the whole job and handed
+  // to every row. The server has always refused a blocked push; until a
+  // browser test caught it on 2026-09-03, nothing told the person WHY, so
+  // "Send payment to QuickBooks" sat live and clickable on a payment whose
+  // invoice QuickBooks had never seen.
+  //
+  // Read through the same helpers the actions use — `pushBlockers` and
+  // `paymentPushBlockers` — rather than re-deriving the conditions here. A
+  // second opinion about whether something is sendable is how a button and
+  // the action behind it come to disagree.
+  const [quickBooksConnection, jobCustomerLink, incomeAccountMapping] = await Promise.all([
+    prisma.quickBooksConnection.findUnique({ where: { companyId: company.id } }),
+    prisma.quickBooksEntityLink.findUnique({
+      where: {
+        companyId_entityType_entityId: {
+          companyId: company.id,
+          entityType: "Contact",
+          entityId: job.contactId,
+        },
+      },
+      select: { qboId: true },
+    }),
+    prisma.quickBooksAccountMapping.findUnique({
+      where: { companyId_purpose: { companyId: company.id, purpose: "INVOICE_REVENUE" } },
+      select: { qboAccountId: true },
+    }),
+  ]);
+
+  // NEEDS_REAUTH is not connected for this purpose: the token is dead and
+  // no push can succeed until somebody reconnects.
+  const quickBooksUsable =
+    quickBooksConnection !== null && quickBooksConnection.status !== "NEEDS_REAUTH";
+
   // Which invoices are already in QuickBooks, so a row can say so without
   // being asked — and so re-sending is visibly a re-send rather than a
   // second document.
@@ -486,7 +521,6 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
   const deleteTimeEntryWithId = (timeEntryId: string) => deleteTimeEntry.bind(null, job.id, timeEntryId);
   const uploadDispatchSlipWithId = uploadDispatchSlip.bind(null, job.id);
   const deleteDispatchSlipWithId = (dispatchSlipId: string) => deleteDispatchSlip.bind(null, job.id, dispatchSlipId);
-  const uploadPrevailingWageDeterminationWithId = uploadPrevailingWageDetermination.bind(null, job.id);
   const deletePrevailingWageDeterminationWithId = (determinationId: string) =>
     deletePrevailingWageDetermination.bind(null, job.id, determinationId);
   const updateJobRetainageTermsWithId = updateJobRetainageTerms.bind(null, job.id);
@@ -1273,49 +1307,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             </ul>
           )}
 
-          <form
-            action={uploadPrevailingWageDeterminationWithId}
-            encType="multipart/form-data"
-            className="flex flex-wrap items-end gap-2 rounded-lg border border-slate-800 bg-slate-900 p-3"
-          >
-            <label className="flex flex-col gap-1 text-xs text-slate-400">
-              Jurisdiction
-              <input
-                name="jurisdiction"
-                placeholder="e.g. California, federal (Davis-Bacon)"
-                required
-                className="w-56 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-600 focus:border-blue-500 focus:outline-none"
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-xs text-slate-400">
-              Document (optional)
-              <input
-                type="file"
-                name="file"
-                accept="application/pdf,image/png,image/jpeg,image/webp"
-                className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 file:mr-2 file:rounded file:border-0 file:bg-slate-800 file:px-2 file:py-1 file:text-slate-200 focus:border-blue-500 focus:outline-none"
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-xs text-slate-400">
-              Or source link
-              <input
-                name="sourceUrl"
-                placeholder="https://sam.gov/..."
-                className="w-48 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-600 focus:border-blue-500 focus:outline-none"
-              />
-            </label>
-            <input
-              name="note"
-              placeholder="Note (optional)"
-              className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
-            />
-            <SubmitButton
-              type="submit"
-              className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-100 hover:bg-slate-700"
-            >
-              Attach
-            </SubmitButton>
-          </form>
+          <PrevailingWageDeterminationForm jobId={job.id} />
         </section>
 
         {!isEstimateStage && showsBilling && (
@@ -1346,6 +1338,12 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                           lastVerifiedAt={
                             quickBooksInvoiceLinks.get(invoice.id)?.lastVerifiedAt ?? null
                           }
+                          blockers={pushBlockers({
+                            hasConnection: quickBooksUsable,
+                            customerQboId: jobCustomerLink?.qboId ?? null,
+                            incomeAccountId: incomeAccountMapping?.qboAccountId ?? null,
+                            totalCents: Math.round(Number(invoice.amount) * 100),
+                          })}
                         />
                       </div>
                     </div>
@@ -1385,6 +1383,17 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                                 lastVerifiedAt={
                                   quickBooksPaymentLinks.get(payment.id)?.lastVerifiedAt ?? null
                                 }
+                                blockers={paymentPushBlockers({
+                                  hasConnection: quickBooksUsable,
+                                  customerQboId: jobCustomerLink?.qboId ?? null,
+                                  // The ordering constraint, and the one the
+                                  // browser test found unguarded: a payment is
+                                  // APPLIED to an invoice, so the invoice has to
+                                  // be there first.
+                                  invoiceQboId:
+                                    quickBooksInvoiceLinks.get(invoice.id)?.qboId ?? null,
+                                  amountCents: Math.round(Number(payment.amount) * 100),
+                                })}
                               />
                               <form action={deletePayment.bind(null, job.id, payment.id)}>
                                 <SubmitButton

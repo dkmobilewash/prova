@@ -3,7 +3,6 @@ import { CloseoutJobCard } from "@/components/CloseoutJobCard";
 import { CloseoutPackagePanel } from "@/components/CloseoutPackagePanel";
 import { blockerLabel, stageLabel } from "@/components/closeoutPackageLabels";
 import {
-  isCloseoutComplete,
   isOpen,
   outstandingRequired,
   warrantyState,
@@ -35,7 +34,20 @@ export default async function CloseoutPage() {
 
   // All three counted across every job, and all three derived — there is no
   // stored "closed out" or "in warranty" flag anywhere in this feature.
-  const outstandingJobs = rows.filter((r) => r.items.length > 0 && !isCloseoutComplete(r.items)).length;
+  //
+  // This counter has now been wrong twice, the same way both times. First it
+  // was `r.items.length > 0 && !isCloseoutComplete(r.items)` -- checklist
+  // only -- and read 0 while the list showed fifteen not-ready jobs. Then it
+  // became `blockers.length > 0`, which browser testing caught reading 15
+  // against a list of 16: a job whose checklist is ticked and which NOBODY
+  // HAS SENT has no blockers, so it vanished from the number while staying
+  // in the list. That job is exactly the one somebody needs chasing.
+  //
+  // Both versions were the same mistake -- a SECOND computation of what the
+  // list already decides -- and the first fix only swapped one duplicate for
+  // another. There is one derivation now, and the counter and the list are
+  // the same set by construction rather than by agreement.
+  const outstandingJobs = attention.length;
   const inWarranty = rows.filter((r) => warrantyState(r.warranty, today) === "ACTIVE").length;
   const openCallbacks = rows.reduce((n, r) => n + r.requests.filter(isOpen).length, 0);
   const totalOutstandingItems = rows.reduce((n, r) => n + outstandingRequired(r.items).length, 0);
@@ -127,6 +139,7 @@ export default async function CloseoutPage() {
               key={job.id}
               job={job}
               today={today}
+              packageStage={job.readiness.stage}
               packageSlot={
                 <CloseoutPackagePanel
                   jobId={job.id}

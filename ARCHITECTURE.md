@@ -670,6 +670,73 @@ outstanding, on-time rate, average days to pay — never stored on
 `Contact`. Same rule as `lib/wip.ts`: a number like this has to be
 exactly reproducible from source data, not cached and left to go stale.
 
+### Contact create/delete, prospect status, account type, MSA/prequalification
+
+Every existing `Contact` was created as a side effect of opening a job with
+them — there was no way to enter a GC you're only talking to, and no way
+to remove one added by mistake. `createContact`/`deleteContact`
+(`lib/actions/company.ts`) close that. Deletion refuses once a `Job` or
+`BidInvitation` references the contact — same reasoning as
+`deleteSubmittal` refusing to delete a sent package: there's real
+correspondence on record, and deleting the contact would strand it.
+
+`ContactStatus` (PROSPECT/ACTIVE/INACTIVE) answers "are we engaging with
+this account at all," independent of the read-only pipeline-stage view a
+later phase derives from `Job`/`BidInvitation`/`EstimateVersion` state
+("how far along is their most advanced opportunity"). Existing rows
+backfill to `ACTIVE` — not a guess, since every one of them already has a
+`Job`. `createContact` defaults a new row to `PROSPECT` instead: a
+contact created this way has no history by definition.
+
+`ContactType` (GENERAL_CONTRACTOR/DEVELOPER/VENDOR/SUBCONTRACTOR) is
+nullable with **no backfill** — nobody has classified any existing
+`Contact`, and defaulting them all to GC would be wrong the moment an
+existing row turns out to be a developer, the same reasoning
+`User.jobFunction` and `CraftClassification.tier` already use.
+
+`msaExpirationDate`/`prequalificationExpiresAt` are both nullable dates,
+null meaning "none on file" rather than a separate boolean — whether one
+is active, expiring, or lapsed is derived at read time through
+`lib/compliance-expiry.ts`'s existing `RenewalKind`/`classifyRenewal`
+machinery (two new kinds, `MSA` and `PREQUALIFICATION`, added to that
+shared type), not a second copy of the day-counting arithmetic that shared
+module exists specifically to avoid duplicating. Rendered today only on
+`/contacts/[id]`; wiring these into the company-wide `/compliance` ranking
+and the `/alerts` engine is future work (see the interaction-log/follow-up
+phase), not guessed at here.
+
+### `ContactInteraction` — a relationship log, not an evidence record
+
+A logged touchpoint with a `Contact`: a call, an email, a site visit, or a
+plain note, with an optional follow-up date. New file `crm.prisma` — new
+domain, new file, so this lane's schema changes don't collide with the
+others' — even though `Contact` itself stays in `company.prisma`, which
+every lane touches.
+
+Deliberately **not** shaped like `Rfi`/`Submittal`/`SafetyIncident`: no
+counter, no locked identity fields, no GC-facing correspondence copy. An
+interaction log is an internal record a PM or estimator keeps on a
+relationship, not a numbered document the other side also holds — so any
+team member can log, edit, or delete one, the same access `BidInvitation`
+already has on this page, and a correction just overwrites the row.
+
+**Two separate user references, not one.** `loggedByUserId` is audit-only
+(who actually recorded the entry, set once at creation) and
+`followUpAssignedToUserId` is who owns the follow-up — deliberately
+independent, because the person who logs a call is not necessarily the
+person whose job the follow-up is. `occurredOn` is entered, not stamped,
+same rule as every other date in this schema: logging a call from
+yesterday has to record yesterday.
+
+Gated behind `MANAGE_ESTIMATING` on `/contacts/[id]`, the same capability
+that already gates Bid Invitations directly above it — relationship work
+sits in the same bucket as pipeline work, and no new capability was added
+to `lib/permissions.ts` for it (that map is the roles lane's territory).
+
+Not wired into `/alerts` yet: a follow-up coming due only shows up by
+visiting the contact page today. Surfacing it company-wide is explicitly
+the next phase, not this one.
+
 ## What proves this works (Phase 00's CRUD flow)
 
 The minimal CRUD flow in `apps/web` exists specifically to demonstrate the

@@ -32,6 +32,7 @@ import {
   wasInWarranty,
 } from "@/components/closeoutLabels";
 import { localToday } from "@/components/localToday";
+import type { CloseoutStage } from "@/lib/closeout-readiness";
 
 export type CloseoutJobData = {
   id: string;
@@ -56,11 +57,20 @@ export function CloseoutJobCard({
    * built here, so this card stays the checklist/warranty/callbacks card
    * it already was. */
   packageSlot,
+  /** The package stage from lib/closeout-readiness. The chip used to be
+   * derived from the CHECKLIST ALONE, so a job with every box ticked read
+   * "Closeout complete" directly above a panel reading "Not ready to
+   * submit — 1 punch item still open". Browser testing caught exactly
+   * that. Two computations of one concept is the bug; this chip now
+   * defers to the same derivation the panel uses, and says only what a
+   * checklist can actually tell you. */
+  packageStage,
 }: {
   job: CloseoutJobData;
   today: string;
   canDelete: boolean;
   packageSlot?: ReactNode;
+  packageStage?: CloseoutStage;
 }) {
   const [openForm, setOpenForm] = useState<"none" | "item" | "warranty" | "request">("none");
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
@@ -107,9 +117,13 @@ export function CloseoutJobCard({
   const daysLeft = daysOfWarrantyLeft(job.warranty, today);
   const openRequests = job.requests.filter(isOpen);
 
-  const closeoutChip = complete
+  // "Closeout complete" is a claim about the whole closeout, so it is only
+  // made when the package was actually accepted. A finished checklist with
+  // punch items still open is a finished CHECKLIST, and says so.
+  const closedOut = complete && packageStage === "ACCEPTED";
+  const closeoutChip = closedOut
     ? "bg-green-500/15 text-green-300"
-    : job.items.length === 0
+    : job.items.length === 0 || complete
       ? "bg-slate-800 text-slate-400"
       : "bg-amber-500/15 text-amber-300";
 
@@ -127,9 +141,11 @@ export function CloseoutJobCard({
         <span className={`rounded px-1.5 py-0.5 text-xs ${closeoutChip}`}>
           {job.items.length === 0
             ? "No checklist yet"
-            : complete
+            : closedOut
               ? "Closeout complete"
-              : `${outstanding.length} still outstanding`}
+              : complete
+                ? "Checklist done"
+                : `${outstanding.length} still outstanding`}
         </span>
         <span className={`rounded px-1.5 py-0.5 text-xs ${warrantyChip}`}>
           {warrantyStateLabel(wState)}
@@ -262,7 +278,13 @@ export function CloseoutJobCard({
                     onClick={() => setEditingItemId(item.id)}
                     className={`${linkBtn} ml-2`}
                   >
-                    {item.completedOn ? "Edit" : "Mark done"}
+                    {/* "Mark done" marked nothing done -- it opens the item
+                        editor, where a date has to be typed. The ellipsis is
+                        the honest version. Not changed to complete-on-click
+                        with today's date, because the date a closeout item was
+                        actually signed is frequently NOT today, and this app
+                        does not fill dates in on someone's behalf. */}
+                    {item.completedOn ? "Edit" : "Mark done…"}
                   </button>
                   {canDelete &&
                     (confirming === item.id ? (

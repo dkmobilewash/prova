@@ -153,6 +153,7 @@ export const ROUTE_CAPABILITY: Record<string, Capability> = {
   "/cash-flow": "VIEW_COMPANY_FINANCIALS",
   "/catalog": "MANAGE_ESTIMATING",
   "/bids": "MANAGE_ESTIMATING",
+  "/pipeline": "MANAGE_ESTIMATING",
   "/vendors/pricing": "MANAGE_ESTIMATING",
   "/backcharges": "MANAGE_BILLING",
   "/compliance": "MANAGE_COMPLIANCE",

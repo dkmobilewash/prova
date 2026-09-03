@@ -82,6 +82,11 @@ export function BackchargeRow({
     return (
       <li className="p-4">
         <form
+          // A refusal is about the values that were submitted. Leave it up
+          // after an edit and it contradicts the field: browser testing saw
+          // "Settling at the full $4200.00 is accepting it" sitting under an
+          // input that by then read 5000.
+          onInput={() => setError(null)}
           onSubmit={(event) => {
             event.preventDefault();
             const formData = new FormData(event.currentTarget);
@@ -115,6 +120,11 @@ export function BackchargeRow({
     return (
       <li className="p-4">
         <form
+          // A refusal is about the values that were submitted. Leave it up
+          // after an edit and it contradicts the field: browser testing saw
+          // "Settling at the full $4200.00 is accepting it" sitting under an
+          // input that by then read 5000.
+          onInput={() => setError(null)}
           onSubmit={(event) => {
             event.preventDefault();
             const formData = new FormData(event.currentTarget);
@@ -169,6 +179,11 @@ export function BackchargeRow({
     return (
       <li className="p-4">
         <form
+          // A refusal is about the values that were submitted. Leave it up
+          // after an edit and it contradicts the field: browser testing saw
+          // "Settling at the full $4200.00 is accepting it" sitting under an
+          // input that by then read 5000.
+          onInput={() => setError(null)}
           onSubmit={(event) => {
             event.preventDefault();
             const formData = new FormData(event.currentTarget);
@@ -203,7 +218,13 @@ export function BackchargeRow({
                 required
                 step="0.01"
                 min="0.01"
-                max={claimed}
+                // Deliberately NO max={claimed}. The action already refuses a
+                // settlement above the claim, with a sentence explaining that
+                // a bigger number is a NEW backcharge rather than this one
+                // growing. `max` fired Chrome's own "Value must be less than
+                // or equal to 4200" first, so that sentence was unreachable
+                // -- unstyled, untranslatable, and gone entirely if the
+                // attribute is ever dropped. The server owns this rule.
                 placeholder="0.00"
                 className={inputClass}
               />
@@ -366,14 +387,14 @@ export function BackchargeRow({
           backcharge.status === "RECEIVED" &&
           (isConfirmingDelete ? (
             <>
-              <button
-                type="button"
-                disabled={isPending}
-                onClick={() => run(() => deleteBackcharge(backcharge.id), "Could not delete it")}
-                className="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50"
-              >
-                {isPending ? "Deleting…" : "Confirm delete"}
-              </button>
+              {/* Cancel comes FIRST on purpose. The confirm step replaces
+                  "Delete" in place, so whichever button lands here is what a
+                  second click at the same spot hits -- and a two-step delete
+                  whose second step is under the first click is a one-step
+                  delete with extra rendering. Browser testing hit exactly
+                  this class of thing, clicking through to a control that had
+                  shifted underneath. Cancel here means a hurried double-click
+                  costs a click, not a record. */}
               <button
                 type="button"
                 disabled={isPending}
@@ -381,6 +402,14 @@ export function BackchargeRow({
                 className={btn}
               >
                 Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isPending}
+                onClick={() => run(() => deleteBackcharge(backcharge.id), "Could not delete it")}
+                className="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+              >
+                {isPending ? "Deleting…" : "Confirm delete"}
               </button>
             </>
           ) : (

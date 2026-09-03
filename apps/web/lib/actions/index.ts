@@ -37,4 +37,5 @@ export * from "./permissions";
 export * from "./prevailingWage";
 export * from "./unionCompliance";
 export * from "./messages";
+export * from "./crm";
 export * from "./notifications";

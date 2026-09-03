@@ -1,0 +1,49 @@
+// Customer-facing CRM: the relationship-management layer over Contact
+// (GCs/developers/vendors). Contact itself stays in company.prisma since
+// every lane touches it — this file holds the CRM-specific models built on
+// top of it, kept in their own migrations so this lane's schema changes
+// don't collide with the others'.
+
+enum InteractionType {
+  CALL
+  EMAIL
+  SITE_VISIT
+  NOTE
+}
+
+/// A logged touchpoint with a Contact -- a call, an email, a site visit, or
+/// a plain note. Not an evidence record like an RFI or submittal (no
+/// counter, no locked identity fields, no GC-facing correspondence copy):
+/// this is an internal log a PM or estimator keeps on a relationship.
+model ContactInteraction {
+  id        String   @id @default(cuid())
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id])
+  contactId String
+  contact   Contact  @relation(fields: [contactId], references: [id])
+
+  type InteractionType
+  /// Entered, not stamped -- logging a call from yesterday must record
+  /// yesterday, same rule as every other date in this schema.
+  occurredOn DateTime
+  summary    String
+
+  /// Null = no follow-up needed. Set = the date one is due. Who owns it is
+  /// followUpAssignedToUserId, which is deliberately a SEPARATE field from
+  /// loggedByUserId -- the person who logged a call is not necessarily the
+  /// person whose job the follow-up is.
+  followUpOn               DateTime?
+  followUpAssignedToUserId String?
+  followUpAssignedToUser   User?     @relation("ContactInteractionFollowUp", fields: [followUpAssignedToUserId], references: [id])
+
+  /// Who actually recorded this entry. Audit-only, not editable after
+  /// creation.
+  loggedByUserId String?
+  loggedByUser   User?   @relation("ContactInteractionLogger", fields: [loggedByUserId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([contactId])
+  @@index([companyId])
+  @@index([followUpOn])
+}
