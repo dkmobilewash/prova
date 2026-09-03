@@ -80,3 +80,12 @@ describe("resolveViewerTimeZone", () => {
     expect(resolveViewerTimeZone([null, undefined, ""])).toBe("UTC");
   });
 });
+
+describe("viewerTimeZone outside a request scope", () => {
+  // The regression CI caught. `cookies()` THROWS outside a request — it
+  // does not return empty — so the documented UTC floor was not a floor.
+  it("falls back to UTC instead of throwing", async () => {
+    const { viewerTimeZone } = await import("./viewerToday");
+    await expect(viewerTimeZone()).resolves.toBe("UTC");
+  });
+});

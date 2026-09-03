@@ -38,11 +38,27 @@ import {
  * trap documented on components/localToday.ts does not apply.
  */
 export async function viewerTimeZone(): Promise<string> {
-  const [cookieStore, headerList] = await Promise.all([cookies(), headers()]);
-  return resolveViewerTimeZone([
-    cookieStore.get(TIMEZONE_COOKIE)?.value,
-    headerList.get("x-vercel-ip-timezone"),
-  ]);
+  // `cookies()` and `headers()` THROW outside a request scope — they do not
+  // return empty. Without this catch the UTC floor described above is not a
+  // floor at all: every caller gains a new way to fail that it did not have
+  // before, in exactly the contexts that have no reader whose calendar
+  // could matter anyway.
+  //
+  // CI found this rather than any local gate. Two `alerts-query.dbtest.ts`
+  // cases went red with `cookies was called outside a request scope`
+  // (E251) the moment `severityForKey` started dating dismissals by the
+  // viewer — a database test calls the action directly, with no request
+  // around it. A scheduled digest and any script would hit the same edge,
+  // and none of typecheck, lint, unit tests or build can see it.
+  try {
+    const [cookieStore, headerList] = await Promise.all([cookies(), headers()]);
+    return resolveViewerTimeZone([
+      cookieStore.get(TIMEZONE_COOKIE)?.value,
+      headerList.get("x-vercel-ip-timezone"),
+    ]);
+  } catch {
+    return "UTC";
+  }
 }
 
 /** The YYYY-MM-DD to hand the alert engine as `todayIso`. */
