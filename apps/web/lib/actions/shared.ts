@@ -155,6 +155,8 @@ export const CONTACT_STATUSES = ["PROSPECT", "ACTIVE", "INACTIVE"] as const;
 
 export const CONTACT_TYPES = ["GENERAL_CONTRACTOR", "DEVELOPER", "VENDOR", "SUBCONTRACTOR"] as const;
 
+export const INTERACTION_TYPES = ["CALL", "EMAIL", "SITE_VISIT", "NOTE"] as const;
+
 /** Like enumFromForm, but an empty selection is valid and means "not set"
  * (null) rather than an error — used for fields like Contact.accountType
  * that are deliberately unclassified with no backfill. */

@@ -16,6 +16,8 @@ import { calculatePaymentReliability } from "@/lib/gc-reliability";
 import { SubmitButton } from "@/components/SubmitButton";
 import { LinkContactToQuickBooks } from "@/components/LinkContactToQuickBooks";
 import { ContactEditForm } from "@/components/ContactEditForm";
+import { ContactInteractionForm } from "@/components/ContactInteractionForm";
+import { ContactInteractionRow } from "@/components/ContactInteractionRow";
 import { toIsoDate } from "@/lib/compliance-expiry";
 import { serverToday } from "@/lib/serverToday";
 
@@ -73,12 +75,22 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
         },
       },
       bidInvitations: { orderBy: { createdAt: "desc" } },
+      interactions: {
+        orderBy: { occurredOn: "desc" },
+        include: { loggedByUser: true, followUpAssignedToUser: true },
+      },
     },
   });
 
   if (!contact || contact.companyId !== company.id) {
     notFound();
   }
+
+  const companyMembers = await prisma.user.findMany({
+    where: { companyId: company.id },
+    orderBy: { createdAt: "asc" },
+  });
+  const memberOptions = companyMembers.map((m) => ({ id: m.id, name: m.name ?? m.email }));
 
   const reliability = calculatePaymentReliability(
     contact.jobs.flatMap((job) =>
@@ -297,6 +309,40 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
           </SubmitButton>
         </form>
       </section>
+      )}
+
+      {showsEstimating && (
+        <section className="mb-10 rounded-lg border border-slate-800 bg-slate-900 p-6">
+          <h2 className="mb-3 text-lg font-semibold text-slate-100">Interactions</h2>
+          <p className="mb-4 text-sm text-slate-400">
+            Calls, emails, site visits, and notes with {contact.name} -- a log of the relationship,
+            not just the paperwork.
+          </p>
+          {contact.interactions.length === 0 ? (
+            <p className="mb-4 text-sm text-slate-400">No interactions logged with {contact.name} yet.</p>
+          ) : (
+            <ul className="mb-4 divide-y divide-slate-800 border-y border-slate-800">
+              {contact.interactions.map((interaction) => (
+                <ContactInteractionRow
+                  key={interaction.id}
+                  members={memberOptions}
+                  interaction={{
+                    id: interaction.id,
+                    type: interaction.type,
+                    occurredOn: toIsoDate(interaction.occurredOn) ?? "",
+                    summary: interaction.summary,
+                    followUpOn: toIsoDate(interaction.followUpOn),
+                    followUpAssignedToUserId: interaction.followUpAssignedToUserId,
+                    followUpAssignedToUserName:
+                      interaction.followUpAssignedToUser?.name ?? interaction.followUpAssignedToUser?.email ?? null,
+                    loggedByUserName: interaction.loggedByUser?.name ?? interaction.loggedByUser?.email ?? null,
+                  }}
+                />
+              ))}
+            </ul>
+          )}
+          <ContactInteractionForm contactId={contact.id} members={memberOptions} />
+        </section>
       )}
 
       {quickBooksConnected && (
