@@ -10,9 +10,17 @@ import { describe } from "./connection-target.mjs";
  * The problem this solves is not "the database is empty". It is that a
  * product whose whole argument is DERIVED state demos as blank without data
  * to derive from. The catalog's variance warning, the field report's missing
- * day, the vendor price movement, equipment utilisation, WIP over/under
- * billing, retainage held — every one of those is a good feature that shows
- * nothing at all against a job called "test" worth $0.00.
+ * day, the vendor price movement, the equipment still sitting on a closed
+ * job, the backcharge nobody answered in time, WIP over/under billing,
+ * retainage held — every one of those is a good feature that shows nothing
+ * at all against a job called "test" worth $0.00.
+ *
+ * This docstring promised "equipment utilisation" for a while and the seed
+ * wrote no equipment at all, which is a worse failure than not mentioning
+ * it: nothing computes utilisation (see FEATURE-AUDIT sheet 20, where that
+ * row is Partial for exactly that reason), so the promise could not have
+ * been kept by adding rows. What /equipment does derive is where each item
+ * is, and how many are in the yard.
  *
  * SAFETY. This writes a lot of rows, so it refuses to run unless you name
  * the database you mean. It prints the host first and compares it against
@@ -842,8 +850,277 @@ async function main() {
     });
   }
 
-  console.log("seed: change orders, submittals, punch list, closeout, talks, orders, drawings, time, catalog, pricing, RFIs, safety, bids and interactions written");
-  return { company, user, gc, gc2, gc3, riverside, northgate, lakeshore, riversideLines };
+  // ---------------------------------------------------------------- equipment
+  //
+  // The one number /equipment derives is "N in the yard", counted from a
+  // NULL assignedJobId — so a set where everything is on a job demos the
+  // page with that figure stuck at zero and nothing to explain it. Both
+  // `type` and `assetTag` are nullable on purpose ("plenty of small
+  // equipment has neither"), so some rows leave them out rather than
+  // inventing an asset tag for a wheelbarrow.
+  //
+  // One item is deliberately still assigned to the FINISHED job. Gear left
+  // on a closed job is the thing this screen is for noticing, and it only
+  // exists in the data if the seed puts it there.
+  const equipment = [
+    ["Genie S-45 boom lift", "Lift", "EQ-1042", riverside, "Certified through next spring."],
+    ["Genie GS-1930 scissor lift", "Lift", "EQ-1043", riverside, null],
+    ["Baker scaffold set (12 frames)", "Scaffolding", null, riverside, null],
+    ["Stud crimper, Malco", null, null, northgate, null],
+    ["Graco Mark V texture rig", "Sprayer", "EQ-2011", cedar, "Still on Cedar after closeout — needs collecting."],
+    ["Mud mixer, 1/2in drill", "Mixer", "EQ-2044", null, null],
+    ["Laser level, Hilti PM 30-MG", "Layout", "EQ-3001", null, "In the yard. Calibration due."],
+    ["Wheelbarrow (x3)", null, null, null, null],
+  ];
+  for (const [name, type, assetTag, job, notes] of equipment) {
+    await prisma.equipment.create({
+      data: {
+        companyId: company.id,
+        name: `${name} ${MARK}`,
+        type,
+        assetTag,
+        assignedJobId: job?.id ?? null,
+        notes,
+      },
+    });
+  }
+
+  // -------------------------------------------------- prevailing wage rules
+  //
+  // Effective-dated, and the pair on the same jurisdiction is the point:
+  // reviewing last year's timesheet has to use the rule in force THEN. The
+  // database enforces non-overlap per company+jurisdiction with a gist
+  // EXCLUDE constraint, so these two ranges are half-open and adjacent
+  // rather than merely "different" — [-730, -180) then [-180, ∞).
+  //
+  // The county row records nothing but its own existence. Null thresholds
+  // mean "nobody has looked this up", which the review reports as unchecked
+  // rather than assuming a figure — a state that cannot be demonstrated by
+  // a row with sensible numbers in it.
+  const oregonPrior = await prisma.prevailingWageRuleSet.create({
+    data: {
+      companyId: company.id,
+      name: `Oregon BOLI — prior determination ${MARK}`,
+      jurisdiction: "Oregon",
+      authority: "STATE",
+      dailyOvertimeAfterHours: "8",
+      weeklyOvertimeAfterHours: "40",
+      filingFrequency: "WEEKLY",
+      filingDueDays: 5,
+      formName: "WH-38",
+      effectiveFrom: day(-730),
+      effectiveTo: day(-180),
+      note: "Superseded. Kept so weeks worked under it still review correctly.",
+    },
+  });
+  const oregonCurrent = await prisma.prevailingWageRuleSet.create({
+    data: {
+      companyId: company.id,
+      name: `Oregon BOLI — current ${MARK}`,
+      jurisdiction: "Oregon",
+      authority: "STATE",
+      dailyOvertimeAfterHours: "8",
+      dailyDoubleTimeAfterHours: "12",
+      weeklyOvertimeAfterHours: "40",
+      seventhDayOvertimeAfterHours: "0",
+      filingFrequency: "WEEKLY",
+      filingDueDays: 5,
+      formName: "WH-38",
+      portalUrl: "https://www.oregon.gov/boli/example",
+      sourceUrl: "https://www.oregon.gov/boli/example/rates",
+      effectiveFrom: day(-180),
+      effectiveTo: null,
+    },
+  });
+  await prisma.prevailingWageRuleSet.create({
+    data: {
+      companyId: company.id,
+      name: `Clark County, WA — not yet researched ${MARK}`,
+      jurisdiction: "Clark County, WA",
+      authority: "COUNTY",
+      // Every threshold null on purpose. See above.
+      filingFrequency: "MONTHLY",
+      effectiveFrom: day(-90),
+      note: "Recorded so the jurisdiction is not invisible. Thresholds still to be read off the determination.",
+    },
+  });
+  // Attaches the current Oregon rules to the job that has time entries, so
+  // /prevailing-wage has a week to review rather than an empty selector.
+  await prisma.prevailingWageDetermination.create({
+    data: {
+      jobId: riverside.id,
+      jurisdiction: "Oregon",
+      ruleSetId: oregonCurrent.id,
+      fileName: "boli-determination-riverside.pdf",
+      sourceUrl: "https://www.oregon.gov/boli/example/rates",
+      note: `Public works — BOLI rates apply. ${MARK}`,
+      uploadedByUserId: user?.id ?? null,
+    },
+  });
+
+  // -------------------------------------------------------------- backcharges
+  //
+  // Numbers come from BackchargeCounter, never from a count of the rows
+  // that happen to survive — same rule as RFIs and submittals.
+  //
+  // The spread is chosen around what /backcharges DERIVES. `overdueCount`
+  // is RECEIVED + a respondByDate in the past, so one row is exactly that
+  // and one is RECEIVED with the deadline still ahead; without both, the
+  // red counter is either always zero or always alarming. `concededAmount`
+  // returns the claim for ACCEPTED, zero for WITHDRAWN, and the negotiated
+  // figure only for SETTLED — so all three are here, and the settled one
+  // came down from the claim, which is the "we argued them down" the log
+  // exists to prove. One row has no GC reference and no deadline at all:
+  // that reads as "not recorded", and it is the commonest real shape.
+  const backcharges = [
+    // [job, number, category, description, claimed, issued, received, respondBy,
+    //  status, disputedOn, disputeReason, resolvedOn, resolvedAmount, note, gcRef]
+    [riverside, 1, "CLEANUP", "Common-area cleanup, weeks of the 6th and 13th — GC crew.", "2450.00", -38, -31, -17, "RECEIVED", null, null, null, null, null, "BC-0417"],
+    [riverside, 2, "DAMAGE_TO_OTHER_TRADES", "Sprinkler drop damaged at level 2 during ceiling grid.", "6120.00", -12, -10, 9, "RECEIVED", null, null, null, null, null, "BC-0431"],
+    [riverside, 3, "COMPLETION_BY_OTHERS", "Soffit framing at grid F completed by GC carpenters.", "9800.00", -26, -24, -9, "DISPUTED", -13, "Scope was deleted by ASI 09. Backup requested and not provided.", null, null, null, "BC-0426"],
+    [riverside, 4, "SUPERVISION", "Additional GC supervision, no backup provided.", "1875.00", -20, null, null, "WITHDRAWN", null, null, -6, null, "Withdrawn after we asked for the daily reports behind it.", null],
+    [cedar, 1, "SCHEDULE_DELAY", "Two-day delay to the finish trades at the west stair.", "14500.00", -64, -60, -46, "SETTLED", -52, "Delay was the elevator subcontractor's; our crew was released on time.", -34, "4000.00", "Settled at $4,000 against a $14,500 claim after the daily reports were produced.", "BC-0388"],
+    [cedar, 2, "MATERIAL_OR_EQUIPMENT_SUPPLIED", "Hoisting and material handling, three days.", "3200.00", -58, -55, -41, "ACCEPTED", null, null, -40, null, "Legitimate — our hoist was down.", "BC-0391"],
+  ];
+  const backchargeHighest = {};
+  for (const [job, number, category, description, claimed, issued, received, respondBy, status, disputedOn, disputeReason, resolvedOn, resolvedAmount, resolutionNote, gcReference] of backcharges) {
+    await prisma.backcharge.create({
+      data: {
+        companyId: company.id,
+        jobId: job.id,
+        number,
+        gcReference,
+        category,
+        description: `${description} ${MARK}`,
+        claimedAmount: claimed,
+        issuedOn: day(issued),
+        receivedOn: received === null ? null : day(received),
+        respondByDate: respondBy === null ? null : day(respondBy),
+        status,
+        disputedOn: disputedOn === null ? null : day(disputedOn),
+        disputeReason,
+        resolvedOn: resolvedOn === null ? null : day(resolvedOn),
+        resolvedAmount,
+        resolutionNote,
+        loggedByUserId: user?.id ?? null,
+      },
+    });
+    backchargeHighest[job.id] = Math.max(backchargeHighest[job.id] ?? 0, number);
+  }
+  for (const [jobId, lastNumber] of Object.entries(backchargeHighest)) {
+    await prisma.backchargeCounter.upsert({
+      where: { jobId },
+      create: { jobId, lastNumber },
+      update: { lastNumber },
+    });
+  }
+
+  // ------------------------------------------------- closeout submissions
+  //
+  // Two attempts on the finished job, which is the history the model was
+  // added for: sent, bounced, sent again. Collapsing that into one row
+  // would erase the fact that we made the first date.
+  //
+  // The second attempt has respondedOn NULL deliberately — that is the
+  // state `daysWithGc` counts, and it is the difference between "nobody
+  // sent the package" and "the GC is sitting on it", which is the entire
+  // question the panel exists to answer. Attempt numbers come from the
+  // counter.
+  const submissions = [
+    [1, -29, "Emailed to PM and uploaded to Procore", "REJECTED", -22, "Returned — final unconditional lien waiver missing and as-builts were the wrong revision.", null],
+    [2, -14, "Emailed to PM and uploaded to Procore", "SUBMITTED", null, null, "Re-sent with the corrected as-builts and the executed waiver."],
+  ];
+  for (const [attempt, submittedOn, method, status, respondedOn, gcResponse, note] of submissions) {
+    await prisma.closeoutSubmission.create({
+      data: {
+        companyId: company.id,
+        jobId: cedar.id,
+        attempt,
+        submittedOn: day(submittedOn),
+        method,
+        status,
+        respondedOn: respondedOn === null ? null : day(respondedOn),
+        gcResponse,
+        note: note === null ? MARK : `${note} ${MARK}`,
+        submittedByUserId: user?.id ?? null,
+      },
+    });
+  }
+  await prisma.closeoutSubmissionCounter.upsert({
+    where: { jobId: cedar.id },
+    create: { jobId: cedar.id, lastAttempt: submissions.length },
+    update: { lastAttempt: submissions.length },
+  });
+
+  // ------------------------------------------------------ outbound messages
+  //
+  // /messages derives three figures and each needs a different shape to
+  // show at all. `problems` counts BOUNCED/FAILED/COMPLAINED. `unconfirmed`
+  // counts messages whose last event is QUEUED or SENT (or which have no
+  // events) AND that are at least a day old — which is why createdAt is set
+  // explicitly here rather than left to default to now(): a message created
+  // this second can never be stale, so a seed that lets the default stand
+  // demos that counter permanently at zero.
+  //
+  // `deliveryRate` counts only messages the provider has decided on, so the
+  // in-flight ones below deliberately do NOT drag it down.
+  const fromAddress = "office@example-drywall.com";
+  // Events need DISTINCT, ORDERED timestamps within the day. messageState
+  // walks them newest-first and returns the first decisive one, so three
+  // events sharing one occurredAt make the derived state depend on the
+  // order Postgres happens to return — which is not stable. Seeded at
+  // UTC midnight with all three equal, a delivered message read as
+  // "Handed over, not confirmed" on one run and "Delivered" on the next.
+  // The schema says as much in its own words: "the sequence itself carries
+  // meaning".
+  const eventAt = (daysAgo, minutes) => new Date(day(daysAgo).getTime() + minutes * 60_000);
+  const messages = [
+    // [job, to, toName, subject, body, sentDaysAgo, relatedType, events]
+    // events: [type, daysAgo, minutesPastMidnight, detail]
+    [riverside, "dana@brackettconstruction.example", "Dana Whitfield", "RFI 3 — rated assembly at mechanical rooms 2A/2B", "Dana, following up on RFI 3. We need the UL assembly before we can close those walls. Framing is holding.", -9, "RFI", [["QUEUED", -9, 494, null], ["SENT", -9, 495, null], ["DELIVERED", -9, 498, null]]],
+    [riverside, "dana@brackettconstruction.example", "Dana Whitfield", "Submittal 2 — ceiling grid, revision B", "Revision B attached, incorporating the seismic bracing comments.", -20, "SUBMITTAL", [["QUEUED", -20, 601, null], ["SENT", -20, 602, null], ["DELIVERED", -20, 604, null]]],
+    [cedar, "ap@brackettconstruction.example", null, "Closeout package — Cedar, second submission", "Full package attached with the corrected as-builts and the executed unconditional waiver.", -14, "CLOSEOUT", [["QUEUED", -14, 933, null], ["SENT", -14, 934, null], ["DELIVERED", -14, 941, null]]],
+    // Bounced: a real, fixable problem, and the detail is what makes it fixable.
+    [northgate, "j.reyes@halvorsenbuilders.example", "Joel Reyes", "Northgate Phase 2 — schedule of values for review", "Attached the SOV for the 48 units, broken out by building.", -6, null, [["QUEUED", -6, 545, null], ["SENT", -6, 546, null], ["BOUNCED", -6, 549, "550 5.1.1 recipient address rejected: user unknown"]]],
+    // Handed to the provider six days ago and never confirmed. The state
+    // /messages calls "unconfirmed", which needs a message at least a day
+    // old — hence the explicit createdAt below.
+    [riverside, "super@brackettconstruction.example", "Marco Silva", "Level 3 ceiling grid — start date", "Confirming we start the level 3 grid Monday, assuming the mechanical rough-in is signed off.", -6, null, [["QUEUED", -6, 1012, null], ["SENT", -6, 1013, null]]],
+    // Never reached the provider at all: no events, no providerMessageId.
+    // Reads as "Never sent" rather than as an empty log.
+    [cedar, "ap@brackettconstruction.example", null, "Retainage release — Cedar", "The closeout package went in on the 14th. Confirming the retainage release schedule.", -3, null, []],
+  ];
+  for (const [job, toAddress, toName, subject, body, sentAt, relatedType, events] of messages) {
+    const wentOut = events.length > 0;
+    const message = await prisma.outboundMessage.create({
+      data: {
+        companyId: company.id,
+        jobId: job.id,
+        channel: "EMAIL",
+        toAddress,
+        toName,
+        subject,
+        body: `${body}\n\n${MARK}`,
+        fromAddress,
+        // Explicit, not defaulted — see the note above about `stale`.
+        createdAt: day(sentAt),
+        // Null means it never reached the provider, which is a different
+        // failure from bouncing and reads differently on the page.
+        providerMessageId: wentOut ? `demo-${MARK}-${toAddress}-${sentAt}` : null,
+        relatedType,
+        relatedId: relatedType === null ? null : job.id,
+        sentByUserId: user?.id ?? null,
+      },
+    });
+    for (const [type, at, minutes, detail] of events) {
+      await prisma.outboundMessageEvent.create({
+        data: { messageId: message.id, type, occurredAt: eventAt(at, minutes), detail },
+      });
+    }
+  }
+
+  console.log("seed: change orders, submittals, punch list, closeout, talks, orders, drawings, time, catalog, pricing, RFIs, safety, bids, interactions, equipment, prevailing wage, backcharges, closeout submissions and messages written");
+  return { company, user, gc, gc2, gc3, riverside, northgate, lakeshore, riversideLines, oregonPrior, oregonCurrent };
 }
 
 async function undo(companyId) {
@@ -967,6 +1244,42 @@ async function undo(companyId) {
     await del("complianceDocument", () =>
       prisma.complianceDocument.deleteMany({ where: { jobId: { in: jobIds } } }),
     );
+    // Everything from here to the job delete is ON DELETE RESTRICT against
+    // Job — checked in the migrations, not assumed. Any one of them left
+    // out does not fail quietly: `job.deleteMany` throws, `del` records the
+    // failure, and the run exits non-zero saying the rows are still there.
+    // That is the intended behaviour and it is why these sit ABOVE the job
+    // delete rather than in the company-scoped section below.
+    await del("backcharge", () =>
+      prisma.backcharge.deleteMany({ where: { jobId: { in: jobIds } } }),
+    );
+    await del("backchargeCounter", () =>
+      prisma.backchargeCounter.deleteMany({ where: { jobId: { in: jobIds } } }),
+    );
+    await del("closeoutSubmission", () =>
+      prisma.closeoutSubmission.deleteMany({ where: { jobId: { in: jobIds } } }),
+    );
+    await del("closeoutSubmissionCounter", () =>
+      prisma.closeoutSubmissionCounter.deleteMany({ where: { jobId: { in: jobIds } } }),
+    );
+    await del("prevailingWageDetermination", () =>
+      prisma.prevailingWageDetermination.deleteMany({ where: { jobId: { in: jobIds } } }),
+    );
+    // OutboundMessage.jobId is ON DELETE SET NULL, so a message left here
+    // would not block the job delete — it would be silently ORPHANED, with
+    // its jobId nulled and no way left to find it by job. Scoped by the
+    // tag in the body instead, which survives that, and deleted here
+    // anyway so the count is reported against the run that made it.
+    // Events cascade from the message; deleted first so they are counted
+    // rather than disappearing into the cascade.
+    await del("outboundMessageEvent", () =>
+      prisma.outboundMessageEvent.deleteMany({
+        where: { message: { companyId, body: { contains: MARK } } },
+      }),
+    );
+    await del("outboundMessage", () =>
+      prisma.outboundMessage.deleteMany({ where: { companyId, body: { contains: MARK } } }),
+    );
     await del("jobAssignment", () =>
       prisma.jobAssignment.deleteMany({ where: { jobId: { in: jobIds } } }),
     );
@@ -980,8 +1293,18 @@ async function undo(companyId) {
     prisma.vendorPriceQuote.deleteMany({ where: { companyId, description: { contains: MARK } } }),
   );
   await del("vendor", () => prisma.vendor.deleteMany({ where: { companyId, name: { contains: MARK } } }));
+  // Equipment.assignedJobId is ON DELETE SET NULL, so this is safe after
+  // the jobs have gone: a demo item assigned to a demo job has simply been
+  // returned to the yard by then and is still found by its tagged name.
+  // The same action is what keeps a HAND-ADDED item assigned to a demo job
+  // from blocking anything — it goes back to the yard rather than being
+  // deleted, which is the right outcome for a row a person entered.
   await del("equipment", () =>
     prisma.equipment.deleteMany({ where: { companyId, name: { contains: MARK } } }),
+  );
+  // After prevailingWageDetermination above, which points at these.
+  await del("prevailingWageRuleSet", () =>
+    prisma.prevailingWageRuleSet.deleteMany({ where: { companyId, name: { contains: MARK } } }),
   );
   await del("lineItemCatalogEntry", () =>
     prisma.lineItemCatalogEntry.deleteMany({ where: { companyId, description: { contains: MARK } } }),

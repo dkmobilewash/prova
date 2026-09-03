@@ -40,17 +40,79 @@ through a preview is untagged, would survive a tag-scoped delete, and would
 then block `contact.deleteMany` on a foreign key -- which is precisely the
 half-removed state this PR exists to fix.
 
-Still not seeded, and named here so the next person does not have to
-rediscover it: `Backcharge`, `CloseoutSubmission`, `OutboundMessage`,
-`PrevailingWageRuleSet`, `Equipment`, `EstimateVersion` and `DispatchSlip`.
-Their screens demo empty. The first four are Diego's lane and two of them
-need counter rows, which is not something to guess at from outside.
+Then the six screens that were still demoing empty. Each row below exists
+because a page DERIVES something that a set of nominal values cannot show:
+
+- **`Equipment`** -- eight items. `/equipment`'s only derived figure is "N
+  in the yard", counted from a null `assignedJobId`, so three are
+  unassigned; a set where everything is on a job pins that number at zero.
+  `type` and `assetTag` are left off some rows because both are nullable on
+  purpose. One item is still assigned to the FINISHED job, which is the
+  thing the screen is actually for noticing. This one was overdue: the
+  seed's own docstring had promised "equipment utilisation" while writing
+  no equipment at all -- and could not have kept that promise by adding
+  rows, because nothing computes utilisation. The docstring now says what
+  the page really derives.
+- **`Backcharge`** -- six across two jobs, numbered from `BackchargeCounter`.
+  One RECEIVED past its `respondByDate` and one still inside it, because
+  the red overdue counter is otherwise permanently zero or permanently
+  alarming. All three terminal states appear, since `concededAmount`
+  returns a different thing for each: the claim for ACCEPTED, zero for
+  WITHDRAWN, and the negotiated figure only for SETTLED -- which is
+  $4,000 against a $14,500 claim, the "we argued them down" the log exists
+  to prove. One row has no GC reference and no deadline at all.
+- **`CloseoutSubmission`** -- two attempts on the finished job, from
+  `CloseoutSubmissionCounter`: sent, bounced, sent again. The second has
+  `respondedOn` null on purpose. That is the state `daysWithGc` counts, and
+  it is the whole difference between "nobody sent the package" and "the GC
+  is sitting on it".
+- **`OutboundMessage`** -- six, with fourteen events. One bounced with the
+  550 reason that makes it fixable, one handed over and never confirmed,
+  one that never reached the provider at all. `createdAt` is set
+  explicitly rather than defaulted, because `stale()` needs a message at
+  least a day old and a row created this second can never be one.
+- **`PrevailingWageRuleSet`** -- three, including two on the SAME
+  jurisdiction with adjacent half-open ranges, which is what effective
+  dating is for and what the gist EXCLUDE constraint permits. A third
+  records a jurisdiction with every threshold null: "nobody has looked
+  this up" is a state the review reports, and a row full of sensible
+  numbers cannot demonstrate it. One `PrevailingWageDetermination` ties
+  the current rules to the job that has time entries.
+
+Counter rows are bumped, never `max(n)+1` -- verified by reading the
+counter back against the highest number actually issued on each job.
+
+`UnionLocal` is deliberately NOT seeded, and that is the schema's own
+instruction rather than a gap: there is no verified source for real local
+numbers, and a wrong one misattributes a company's CBA. `/union-compliance`
+demos empty on purpose. `EstimateVersion` and `DispatchSlip` are still
+unseeded.
+
+**One bug found by running it, not by reading it.** Every message event was
+written at UTC midnight, so a message's three events shared one
+`occurredAt` -- and `messageState` walks them newest-first and returns the
+first decisive one. With the timestamps tied, a DELIVERED message rendered
+as "Handed over, not confirmed", and the delivery rate came out 67% instead
+of 75%. The events now carry distinct ordered times. The schema had already
+said why this matters in its own words: "the sequence itself carries
+meaning". Nothing in the suite would have caught it; the census did.
+
+Undo was verified by counting all 74 models before, after, and after undo:
+**160 rows created, 160 removed, nothing left behind.** Three of the new
+tables are `ON DELETE RESTRICT` against `Job` -- read out of the migrations,
+not assumed -- so they delete above the job delete. `OutboundMessage` is
+the opposite trap and worth naming: its `jobId` is `ON DELETE SET NULL`, so
+leaving it out would not have failed loudly the way the last one did. The
+rows would have been silently ORPHANED, jobId nulled, unfindable by job
+forever after. It is scoped by the tag in the body instead.
 
 Separately, `FEATURE-AUDIT.md`'s summary line on `main` was counting the
-four rows of its own legend table as feature rows: it said 121 items /
-88 built where the sheets sum to 117 / 87. The branch's `plumbing.test.ts`
-is what caught it -- it was already wrong before this merge, and nothing on
-`main` checks that arithmetic.
+four rows of its own summary table as feature rows: it said 121 items /
+88 built where the sheets sum to 117 / 87, while that same table said 86 --
+three numbers, no two agreeing. `main` has since recounted correctly to
+118 / 88 / 21 / 8 / 1 (the ContactPerson row landed in between), and the
+guard now checks all three statements of it per sheet rather than only the
+total, which two errors can cancel out of.
 
 ---
 
