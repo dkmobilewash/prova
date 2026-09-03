@@ -41,4 +41,5 @@ export * from "./messages";
 export * from "./crm";
 export * from "./sales";
 export * from "./notifications";
+export * from "./equipmentAssignments";
 export * from "./certifications";

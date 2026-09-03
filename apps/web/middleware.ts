@@ -40,6 +40,7 @@ const isProtectedRoute = createRouteMatcher([
   // so it belongs in the list a reader checks even though the handler
   // itself is OWNER-gated.
   "/api/export(.*)",
+  "/deployment(.*)",
 ]);
 
 // /api/integrations/webhooks/[provider] is deliberately NOT protected here.

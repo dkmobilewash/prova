@@ -75,6 +75,7 @@ model Company {
   contactPeople           ContactPerson[]
   salesLeads              SalesLead[]
   salesOpportunities      SalesOpportunity[]
+  equipmentAssignments    EquipmentAssignment[]
   workerCertifications    WorkerCertification[]
   requiredCertifications  CertificationRequirement[]
 }
@@ -134,10 +135,11 @@ model User {
   recordedWarrantyServiceRequests      WarrantyServiceRequest[]
   recordedVendorPriceQuotes            VendorPriceQuote[]
   sentOutboundMessages                 OutboundMessage[]
-  loggedContactInteractions            ContactInteraction[]          @relation("ContactInteractionLogger")
-  assignedContactFollowUps             ContactInteraction[]          @relation("ContactInteractionFollowUp")
-  certifications                       WorkerCertification[]         @relation("WorkerCertificationHolder")
-  recordedCertifications               WorkerCertification[]         @relation("WorkerCertificationRecorder")
+  loggedContactInteractions            ContactInteraction[]  @relation("ContactInteractionLogger")
+  assignedContactFollowUps             ContactInteraction[]  @relation("ContactInteractionFollowUp")
+  recordedEquipmentAssignments         EquipmentAssignment[]
+  certifications                       WorkerCertification[] @relation("WorkerCertificationHolder")
+  recordedCertifications               WorkerCertification[] @relation("WorkerCertificationRecorder")
 
   @@index([companyId])
   apprenticeshipEnrollments ApprenticeshipEnrollment[] @relation("ApprenticeEnrollments")
