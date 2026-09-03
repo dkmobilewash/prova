@@ -1,7 +1,7 @@
 import { requireCompanyContext } from "@/lib/auth";
 import { CloseoutJobCard } from "@/components/CloseoutJobCard";
 import { CloseoutPackagePanel } from "@/components/CloseoutPackagePanel";
-import { blockerLabel, stageLabel } from "@/components/closeoutPackageLabels";
+import { blockerLabel, plural, stageLabel } from "@/components/closeoutPackageLabels";
 import {
   isOpen,
   outstandingRequired,
@@ -69,7 +69,7 @@ export default async function CloseoutPage() {
           </p>
           <p className="text-xs text-slate-500">
             Jobs with closeout outstanding
-            {totalOutstandingItems > 0 && ` · ${totalOutstandingItems} items`}
+            {totalOutstandingItems > 0 && ` · ${plural(totalOutstandingItems, "item", "items")}`}
           </p>
         </div>
         <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
@@ -84,7 +84,9 @@ export default async function CloseoutPage() {
         </div>
         <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
           <p className="font-mono text-xl font-semibold text-slate-100">
-            {showsMoney ? money(retainageBehindCloseout) : `${attention.length} jobs`}
+            {showsMoney
+              ? money(retainageBehindCloseout)
+              : plural(attention.length, "job", "jobs")}
           </p>
           <p className="text-xs text-slate-500">
             {showsMoney ? "Retainage behind an unfinished closeout" : "Waiting on something"}
@@ -120,7 +122,10 @@ export default async function CloseoutPage() {
                   </span>
                 )}
                 {job.readiness.stage === "AWAITING_GC" && job.readiness.daysWithGc !== null && (
-                  <span className="text-slate-500"> · {job.readiness.daysWithGc} days with them</span>
+                  <span className="text-slate-500">
+                    {" "}
+                    · {plural(job.readiness.daysWithGc, "day", "days")} with them
+                  </span>
                 )}
               </li>
             ))}
@@ -140,6 +145,11 @@ export default async function CloseoutPage() {
               job={job}
               today={today}
               packageStage={job.readiness.stage}
+              // The SAME array the panel below the chip renders. Passed
+              // rather than recomputed in the card: two readings of one
+              // checklist is what put an amber "0 still outstanding"
+              // directly above a panel saying no checklist exists.
+              packageBlockers={job.readiness.blockers}
               packageSlot={
                 <CloseoutPackagePanel
                   jobId={job.id}
