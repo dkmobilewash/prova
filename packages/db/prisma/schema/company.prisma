@@ -20,6 +20,14 @@ model Company {
   phone          String?
   website        String?
 
+  /// Which Company is PROVA'S OWN operating company -- the only tenant that
+  /// should ever see the internal sales CRM (SalesLead/SalesOpportunity,
+  /// sales.prisma). Exactly one row in production should ever be true, set
+  /// by hand once. No backfill: nobody logs "we are the operator," so
+  /// nothing can compute this from existing data, same as every other flag
+  /// in this schema with no source to derive it from.
+  isProvaOperator Boolean @default(false)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -49,6 +57,7 @@ model Company {
   backcharges             Backcharge[]
   closeoutSubmissions     CloseoutSubmission[]
   alertAcknowledgements   AlertAcknowledgement[]
+  notificationDispatches  NotificationDispatch[]
   prevailingWageRuleSets  PrevailingWageRuleSet[]
   submittals              Submittal[]
   safetyCaseCounters      SafetyCaseCounter[]
@@ -62,6 +71,10 @@ model Company {
   vendorPriceQuotes       VendorPriceQuote[]
   outboundMessages        OutboundMessage[]
   contactInteractions     ContactInteraction[]
+  apprenticeshipEnrollments ApprenticeshipEnrollment[]
+  contactPeople           ContactPerson[]
+  salesLeads              SalesLead[]
+  salesOpportunities      SalesOpportunity[]
   equipmentAssignments    EquipmentAssignment[]
 }
 
@@ -111,6 +124,7 @@ model User {
   loggedBackcharges                    Backcharge[]
   submittedCloseoutPackages            CloseoutSubmission[]
   alertAcknowledgements                AlertAcknowledgement[]
+  notificationDispatches               NotificationDispatch[]
   submittedSubmittals                  Submittal[]
   reportedSafetyIncidents              SafetyIncident[]
   recordedToolboxTalks                 ToolboxTalk[]
@@ -124,6 +138,7 @@ model User {
   recordedEquipmentAssignments         EquipmentAssignment[]
 
   @@index([companyId])
+  apprenticeshipEnrollments ApprenticeshipEnrollment[] @relation("ApprenticeEnrollments")
 }
 
 /// A pending invitation for someone to join a Company. Deleted once
@@ -209,6 +224,7 @@ model Contact {
   jobs           Job[]
   bidInvitations BidInvitation[]
   interactions   ContactInteraction[]
+  people         ContactPerson[]
 
   @@index([companyId])
 }

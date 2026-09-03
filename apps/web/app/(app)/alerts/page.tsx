@@ -4,6 +4,8 @@ import { loadAlerts } from "@/lib/alerts-query";
 import { summarizeAlerts } from "@/lib/alerts";
 import { AlertRow } from "@/components/AlertRow";
 import { money } from "@/lib/money";
+import { SendDigestButton } from "@/components/SendDigestButton";
+import { sendMyAlertDigest } from "@/lib/actions/notifications";
 
 export default async function AlertsPage({
   searchParams,
@@ -15,10 +17,15 @@ export default async function AlertsPage({
   const showSilenced = show === "silenced";
 
   const today = new Date().toISOString().slice(0, 10);
-  const { visible, silenced } = await loadAlerts(company.id, currentUser.id, today, {
-    role: currentUser.role,
-    jobFunction: currentUser.jobFunction,
-  });
+  const { visible, silenced } = await loadAlerts(
+    company.id,
+    currentUser.id,
+    today,
+    {
+      role: currentUser.role,
+      jobFunction: currentUser.jobFunction,
+    },
+  );
   const summary = summarizeAlerts(visible);
 
   const rows = showSilenced ? silenced : visible;
@@ -27,44 +34,66 @@ export default async function AlertsPage({
     <div className="mx-auto max-w-4xl px-6 py-8">
       <h1 className="mb-2 text-xl font-semibold text-slate-100">Alerts</h1>
       <p className="mb-2 text-sm text-slate-400">
-        Everything with a date on it that nobody has dealt with, in one place: cover about to lapse, a
-        backcharge nobody has answered, retainage that has become collectable, a closeout package the
-        GC is sitting on, certified payroll owed on a prevailing-wage week, a job forecast past its
-        contract value. Worst first, and within that, most money first.
+        Everything with a date on it that nobody has dealt with, in one place:
+        cover about to lapse, a backcharge nobody has answered, retainage that
+        has become collectable, a closeout package the GC is sitting on,
+        certified payroll owed on a prevailing-wage week, a job forecast past
+        its contract value. Worst first, and within that, most money first.
       </p>
       <p className="mb-6 text-xs text-slate-500">
-        Nothing here is stored. Every line is derived from the record it is about, every time this page
-        loads — so fixing the thing removes the alert, and no alert can go stale against the data
-        underneath it. <span className="text-slate-400">This is not email or SMS.</span> It reaches
-        whoever opens the app; there is no sender wired up to reach anyone who doesn&apos;t.
+        Nothing here is stored. Every line is derived from the record it is
+        about, every time this page loads — so fixing the thing removes the
+        alert, and no alert can go stale against the data underneath it.{" "}
+        <span className="text-slate-400">These can now be emailed to you</span>,
+        once per thing per stage — not once a day until you deal with it. Fixing
+        the thing is what stops the reminders.
       </p>
 
       <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-          <p className={`text-2xl font-semibold ${summary.overdue > 0 ? "text-red-300" : "text-slate-100"}`}>
+          <p
+            className={`text-2xl font-semibold ${summary.overdue > 0 ? "text-red-300" : "text-slate-100"}`}
+          >
             {summary.overdue}
           </p>
           <p className="text-xs text-slate-500">Past due</p>
         </div>
         <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-          <p className={`text-2xl font-semibold ${summary.dueSoon > 0 ? "text-amber-300" : "text-slate-100"}`}>
+          <p
+            className={`text-2xl font-semibold ${summary.dueSoon > 0 ? "text-amber-300" : "text-slate-100"}`}
+          >
             {summary.dueSoon}
           </p>
           <p className="text-xs text-slate-500">Coming up</p>
         </div>
         <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-          <p className="text-2xl font-semibold text-slate-100">{summary.standing}</p>
+          <p className="text-2xl font-semibold text-slate-100">
+            {summary.standing}
+          </p>
           <p className="text-xs text-slate-500">Standing conditions, no date</p>
         </div>
         <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-          <p className="font-mono text-xl font-semibold text-slate-100">{money(summary.amountNamed)}</p>
+          <p className="font-mono text-xl font-semibold text-slate-100">
+            {money(summary.amountNamed)}
+          </p>
           {/* Named, not owed. Several kinds carry no figure at all, and a
               backcharge claim and retainage held are money moving in
               opposite directions — presenting the sum as a balance would
               be a number nobody could reconcile. */}
-          <p className="text-xs text-slate-500">Money named by these alerts, not a balance</p>
+          <p className="text-xs text-slate-500">
+            Money named by these alerts, not a balance
+          </p>
         </div>
       </div>
+
+      {currentUser.email && (
+        <div className="mb-6">
+          <SendDigestButton
+            sendMyAlertDigest={sendMyAlertDigest}
+            recipientEmail={currentUser.email}
+          />
+        </div>
+      )}
 
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-sm font-semibold text-slate-300">
@@ -74,7 +103,9 @@ export default async function AlertsPage({
           href={showSilenced ? "/alerts" : "/alerts?show=silenced"}
           className="text-sm text-blue-400"
         >
-          {showSilenced ? "Back to open alerts" : `Show silenced (${silenced.length})`}
+          {showSilenced
+            ? "Back to open alerts"
+            : `Show silenced (${silenced.length})`}
         </Link>
       </div>
 

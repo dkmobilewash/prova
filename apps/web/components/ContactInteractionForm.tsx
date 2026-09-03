@@ -3,10 +3,18 @@
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createContactInteraction } from "@/lib/actions";
-import { ContactInteractionFields, type MemberOption } from "@/components/ContactInteractionFields";
+import { ContactInteractionFields, type MemberOption, type PersonOption } from "@/components/ContactInteractionFields";
 import { localToday } from "@/components/localToday";
 
-export function ContactInteractionForm({ contactId, members }: { contactId: string; members: MemberOption[] }) {
+export function ContactInteractionForm({
+  contactId,
+  members,
+  people,
+}: {
+  contactId: string;
+  members: MemberOption[];
+  people: PersonOption[];
+}) {
   const [isOpen, setIsOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
@@ -53,7 +61,15 @@ export function ContactInteractionForm({ contactId, members }: { contactId: stri
 
       <ContactInteractionFields
         members={members}
-        defaults={{ type: "CALL", occurredOn: localToday(), summary: "", followUpOn: null, followUpAssignedToUserId: null }}
+        people={people}
+        defaults={{
+          type: "CALL",
+          occurredOn: localToday(),
+          summary: "",
+          followUpOn: null,
+          followUpAssignedToUserId: null,
+          contactPersonId: null,
+        }}
       />
 
       {error && <p className="text-sm text-red-400">{error}</p>}

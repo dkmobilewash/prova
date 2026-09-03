@@ -30,7 +30,8 @@ export type MessageData = {
  * an unstable sort would make the derived status flicker between renders. */
 export function newestFirst(events: MessageEventData[]): MessageEventData[] {
   return [...events].sort((a, b) => {
-    if (a.occurredAt !== b.occurredAt) return a.occurredAt < b.occurredAt ? 1 : -1;
+    if (a.occurredAt !== b.occurredAt)
+      return a.occurredAt < b.occurredAt ? 1 : -1;
     return a.id < b.id ? 1 : -1;
   });
 }
@@ -103,7 +104,9 @@ export function needsAttention(events: MessageEventData[]) {
 
 /** Whole days between two UTC-midnight ISO dates. */
 export function daysBetween(fromIso: string, toIso: string) {
-  const ms = Date.parse(`${toIso}T00:00:00.000Z`) - Date.parse(`${fromIso}T00:00:00.000Z`);
+  const ms =
+    Date.parse(`${toIso}T00:00:00.000Z`) -
+    Date.parse(`${fromIso}T00:00:00.000Z`);
   return Math.round(ms / 86_400_000);
 }
 
@@ -129,10 +132,17 @@ export function stale(message: MessageData, today: string) {
 export function deliveryRate(messages: MessageData[]): number | null {
   const decided = messages.filter((m) => {
     const s = messageState(m.events);
-    return s === "DELIVERED" || s === "BOUNCED" || s === "COMPLAINED" || s === "FAILED";
+    return (
+      s === "DELIVERED" ||
+      s === "BOUNCED" ||
+      s === "COMPLAINED" ||
+      s === "FAILED"
+    );
   });
   if (decided.length === 0) return null;
-  const good = decided.filter((m) => messageState(m.events) === "DELIVERED").length;
+  const good = decided.filter(
+    (m) => messageState(m.events) === "DELIVERED",
+  ).length;
   return Math.round((good / decided.length) * 100);
 }
 
@@ -142,7 +152,9 @@ export function channelLabel(channel: string) {
 
 /** The recipient as a person would write it. */
 export function recipient(message: MessageData) {
-  return message.toName ? `${message.toName} <${message.toAddress}>` : message.toAddress;
+  return message.toName
+    ? `${message.toName} <${message.toAddress}>`
+    : message.toAddress;
 }
 
 /** What a send the provider REFUSED goes down as, versus one it accepted
@@ -170,4 +182,43 @@ export function reachedProvider(
   events: { type: string }[],
 ): boolean {
   return providerMessageId !== null || events.some((e) => e.type !== "FAILED");
+}
+
+/** Known machine-set values for `relatedType`, with their article.
+ *
+ * The article is part of the label rather than glued on outside, because
+ * it is not derivable from the string: "an RFI" reads from how the
+ * acronym is SPOKEN, and no vowel test on the letters gets there. */
+const RELATED_LABELS: Record<string, string> = {
+  ALERT_DIGEST: "an alert digest",
+  RFI: "an RFI",
+  SUBMITTAL: "a submittal",
+  INVOICE: "an invoice",
+  SIGNATURE_REQUEST: "a signature request",
+};
+
+/**
+ * How a message says what it was about.
+ *
+ * Found by clicking, not by a test: the delivery log rendered
+ * `· about a ${relatedType.toLowerCase()}`, which produced **"about a
+ * alert_digest"** the first time the notifier sent anything — wrong twice
+ * in four words, the article and the underscore. It had been wrong for
+ * "RFI" the whole time and nothing set that value, so nothing showed it.
+ *
+ * `relatedType` is also free text on the composer, so anything can arrive
+ * here. A value that looks machine-set (SCREAMING_SNAKE) is unpacked into
+ * words; anything a person typed is shown as they typed it, because
+ * lower-casing somebody's "Change order #12" is a different kind of wrong.
+ */
+export function relatedLabel(relatedType: string): string {
+  const known = RELATED_LABELS[relatedType];
+  if (known) return known;
+
+  const raw = relatedType.trim();
+  if (!raw) return "";
+
+  const machineSet = /^[A-Z][A-Z0-9_]*$/.test(raw);
+  const words = machineSet ? raw.toLowerCase().replace(/_/g, " ") : raw;
+  return `${/^[aeiou]/i.test(words) ? "an" : "a"} ${words}`;
 }

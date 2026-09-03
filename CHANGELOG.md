@@ -138,6 +138,326 @@ and `set -e` kills the script before any check runs. It also ran before the
 
 ---
 
+## The apprenticeship panel, clicked — and a click-list that could not fail
+
+Everything passed except the one step designed to prove the central claim,
+and that step was wrong. Mine.
+
+STEP 3d ASKED FOR THE IMPOSSIBLE. It told a tester to sign off a period and
+watch on-the-job hours drop from 30 to 8 — but every hour in the fixture
+(Aug 26, Aug 3) already fell AFTER the sign-off date of 1 July, so both
+windows held the same 30 hours. A working window and a broken one would
+have looked identical. The tester noticed, built the case I should have
+specified — 4 hours on 2026-03-10, between the indenture and the sign-off —
+and watched it be correctly excluded. That is a real proof of the
+derivation and it is theirs.
+
+The unit suite now pins that straddling case, so the fixture lives in code
+rather than in someone's judgement.
+
+WHAT DELETING PROVED. The registration was removed and every timesheet
+survived, including the entries created during the run. That was the step
+worth running above all others: the panel promises "No timesheet is
+touched", and if it had been wrong it would have destroyed payroll data.
+
+A REGISTRATION THAT LOOKED LIKE IT FAILED. After a successful register the
+panel still read "No apprenticeship registrations recorded"; the row was
+saved and only a reload showed it. `router.refresh()` is on that path and
+the action calls `revalidatePath`, so the obvious explanation is wrong, and
+this file already carries the symptom with its cause NOT established — the
+material-order entry describes it exactly. So no cause is claimed here.
+
+What IS fixed is the harm: same apprentice, same sponsor, same indenture
+date is now refused as the same indenture entered twice. A page that looks
+like it did nothing gets clicked again, and nothing else would have stopped
+the second click.
+
+Also from that run: "Record a period" no longer sits live beside "Confirm
+remove" (an ordinary control adjacent to a destructive one is how somebody
+confirms a removal they meant to cancel); the panel now says it IGNORES the
+month selector above it, after reading "30 hrs" inches from "No hours
+logged this month" for the same person, both true under different windows
+and neither saying so; and the Craft dropdown explains its empty state
+instead of silently offering one option that means nothing.
+
+Answered without another run: the period-level Remove DOES have a two-step
+confirm. The tester flagged it as untested and was right to.
+
+---
+
+## Four shipped pages nothing in the app linked to
+
+A browser tester opened the sidebar looking for Pipeline, could not find
+it, and stopped without touching anything. They were right, and the cause
+was not what either of us first assumed.
+
+/pipeline was merged, deployed, and confirmed READY. The route worked. The
+page worked. It was in NAV_ITEMS. And NOTHING RENDERED IT, because what
+the sidebar draws is NAV_GROUPS, a second hand-written list, and nobody
+had added it there.
+
+Three other pages were in the same state: /messages, /field-reports and
+/vendors/pricing. Twenty-seven items, twenty-three reachable.
+
+THE ASYMMETRY THAT ALLOWED IT. `item()` throws when a GROUP names an href
+no NAV_ITEM has. The reverse -- an item in no group -- was silent. So the
+failure mode with a loud error was the harmless one, and the failure mode
+that hides a whole feature was the quiet one.
+
+This is mine. I added /pipeline by anchoring on the /bids entry in
+NAV_ITEMS and inserting beside it, never checking that a second list
+governed rendering. Then I wrote a click-list whose step 0 could only
+fail, and told Diego the feature was live. Every check was green: CI,
+production READY, a passing build that even printed `ƒ /pipeline` in its
+route table. One fact in two places -- the bug class this session spent
+all day fixing in other people's code.
+
+THE FIX THAT LASTS IS THE TEST, not the four lines of data. navItems.test.ts
+requires every NAV_ITEM to be in a group or named in APPENDED_SEPARATELY
+with its reason (/sales is there: it is gated on Company.isProvaOperator
+and appended by navGroupsFor). Proven by reintroducing the exact bug --
+removing /pipeline from its group -- and watching it fail with the right
+message, then restoring and watching it pass. A test written from the
+implementation cannot fail; this one was written from the defect.
+
+Also: vitest needed `esbuild: { jsx: "automatic" }` to import navItems.tsx
+at all, since every entry carries an inline SVG. Same runtime Next already
+uses, so nothing diverges from how the app builds.
+
+---
+
+## The apprenticeship programme, as opposed to the apprentice's hours
+
+Sheet 09's last Partial, and the audit had already written the gap: "a
+registered enrolment record, the sponsor, required classroom hours, or
+progression sign-off... none of it can be derived from hours logged."
+
+THE SPLIT THE WHOLE THING RESTS ON. On-the-job hours stay derived: summed
+from `TimeEntry` over the window from the last sign-off to today, stored
+nowhere, so a corrected timesheet moves them. Classroom hours ARE stored,
+because related instruction happens at a training centre and there is no
+`TimeEntry` to sum. Storing what cannot be derived is the other half of
+"derive, don't duplicate", not an exception to it.
+
+A period closes on a SIGNATURE, never on an hour count reaching a line.
+The sponsor decides progression; recording our own arithmetic as though it
+were their decision would be inventing a fact about somebody else's
+programme. `currentPeriod` therefore reads sign-offs and ignores hours
+entirely, and a test pins it.
+
+Nothing defaults the hour requirements. Blank means the programme has not
+told us, and the review says "no requirement recorded" rather than
+measuring against the conventional 2000 — a denominator this app made up
+would turn "we don't know" into a percentage somebody could act on. Null
+and zero stay distinct all the way through: zero classroom hours means
+somebody checked and they attended none, and those two go in different
+columns of a report to a sponsor.
+
+An indenture recorded as both completed AND cancelled is refused, not
+resolved by precedence. Picking one would bury a data-entry error on a
+record somebody may have to defend.
+
+WHAT THE SUITE CAUGHT, which is the argument for that test existing:
+`reachable.test.ts` failed on `updateApprenticeshipPeriod` and
+`deleteApprenticeshipPeriod` — exported, re-exported through the barrel,
+and called from nowhere. The same defect that once shipped
+`sendOutboundEmail` with no form. The fix was not to delete them: a period
+that can be created and never corrected makes a typo in classroom hours
+permanent. They have an edit row now.
+
+Deleting an enrolment cascades its periods and touches no `TimeEntry` —
+the hours belong to the timesheet, not to the registration — and there is
+a db test asserting exactly that.
+
+14 unit tests, 12 db tests. Migration is additive: two CREATE TABLEs, their
+indexes, FKs on the new tables only. No ALTER or DROP on anything existing.
+Announced in Slack before the push, per the working agreement.
+
+---
+
+### Alerts can now email themselves, once per thing per stage (Cyrus)
+`cyrus/notifications`
+
+Sheet 26's five Partial rows all gave the same reason: **"Still no push."**
+`#38` landed a sender, `#56` landed the alert engine, and neither knew the
+other existed. This is the join, plus the ledger that stops it repeating
+itself — which is the only genuinely hard part of it.
+
+A button on `/alerts` sends one email covering everything you have not
+already been told. Its most useful property looks like a failure: **click
+it twice and the second click says there is nothing new to send.**
+
+**Why a milestone and not a state.** A COI expiring in thirty days is still
+true tomorrow. Notify on the state and you send the same sentence thirty
+mornings running, and the person learns to filter you — the
+six-platforms-and-abandon pattern from the competitor research, self-
+inflicted. So nothing notifies on a state. A notice fires when a milestone
+is crossed, once, ever, and the milestone is part of its identity rather
+than the date it was sent: `RENEWAL:lic_1:2026-11-30@week`. The alert key
+carries the FACT, so renewing the licence changes the key and every
+dispatch against the old date stops applying — the same mechanism that
+makes a dismissal lapse, with no expiry logic anywhere. The rung
+distinguishes "this is coming" from "this has happened" about one
+*unchanged* fact, which the key alone cannot.
+
+**Per user, not per company.** Alerts are capability-filtered, so two
+people legitimately have different lists. A company-wide ledger would let
+the first person's send suppress the second's — and the person suppressed
+is the one whose capability made it their job.
+
+**The digest never composes a sentence about a situation.** An undated COI
+and a job forecast over budget are both `STANDING` with a null date and are
+indistinguishable in the `Alert` shape. The engine already says "no date
+recorded" for one and the right thing for the other. A label generated from
+the rung would email somebody that their certificate has EXPIRED when the
+truth is that nobody typed a date in.
+
+**Rows are claimed before the provider is called**, and
+`@@unique([userId, dispatchKey])` is the lock, so a crash between sending
+and recording is a notice that was sent rather than one that goes again
+tomorrow.
+
+#### Seven bugs, and what found each one
+
+The suite was green through every one of these.
+
+**The rungs read the wrong horizon table, and silently dropped the most
+useful notice the feature sends.** My first version read
+`ALERT_HORIZON_DAYS`, which has no `RENEWAL` entry — renewal horizons are
+per renewal kind in `RENEWAL_HORIZON_DAYS` (licence 60, bond 60, COI 30)
+and `Alert` flattens all four to the single kind `"RENEWAL"`. It fell
+through to a 7-day default, so the sixty-day licence warning never went.
+Nothing failed. The fix is better than the bug: the rungs are now NAMED,
+and the loosest is *"the engine started calling this DUE_SOON"* — reading
+`severity`, which already has each kind's horizon baked into it. A licence
+fires at 60 and a COI at 30 with no table on the notifier's side at all.
+
+**`messageId` was `@unique`.** A digest is one email covering many notices,
+so the second notice in any digest would have failed to link. Found by
+writing the probe that inserts three dispatches against one message.
+
+**The delivery log read "sent · about a alert_digest".** Wrong twice in
+four words, found by clicking it. `MessageRow` was rendering
+``about a ${relatedType.toLowerCase()}`` — my own code from #38 — and it had
+been wrong for `"RFI"` the whole time ("about a rfi"); nothing in the
+codebase had ever set that value, so nothing ever displayed it. The
+notifier is the first thing to write `relatedType` from code rather than
+from a form, which is what surfaced it. Fixed with a label that carries its
+own article, because the article is not derivable from the string: "an RFI"
+comes from how the acronym is SPOKEN, and no vowel test on the letters gets
+there. Free text from the composer is still shown as typed.
+
+**An unconfigured provider burned every milestone permanently.** Found by
+an adversarial pass after the click-through, not by clicking. `claim()` ran
+before anything checked whether email was set up, and `sendEmail` only
+discovers that internally — so the sequence was claim the keys, attempt,
+fail, keys spent. Those licence warnings could then never be sent,
+**including after email was configured**, because the ledger said they
+already had been. This is not an edge case: it is the state every company
+is in before somebody sets up a sending domain, so it is the likeliest
+first click this feature will ever get, and it silently destroyed exactly
+what the feature exists to deliver. Config is now checked before claiming,
+and an unconfigured send takes nothing, sends nothing and writes nothing to
+the log. The composer keeps its row on a failed send because a PERSON typed
+that message; a digest regenerates itself exactly from the alerts, so a row
+for mail that was never composed for a provider would record something that
+did not happen.
+
+**A provable non-send also burned the claim.** `sendEmail` fails three ways
+and only one of them sets `mayHaveSent`. A `fetch` that threw never left the
+machine; a provider refusal (bad key, unverified domain, 429) was rejected
+outright. Both were keeping the claim. My own note said "a second copy is
+worse than a late one" — but where nothing was sent, a second copy is
+impossible, so the default was inverted. `mayHaveSent` now decides whether
+the claim stands and it is the only thing that does. This one was worse
+than the unconfigured case for striking long after everything worked: one
+Resend outage during a nightly run and every milestone for every user is
+spent for good, with nothing but FAILED rows to show for it. Releasing
+never erases the FAILED event — the log is the only place anyone can see
+what happened.
+
+**The `rung` column described the wrong rung on every burned row.** Also
+from the second-reader pass. `claim()` wrote the rung that FIRED onto every
+key a notice consumed, including the looser ones it burned on the way past,
+so a row keyed `…@approaching` recorded itself as a `week`. Nothing sent
+wrong and nothing could — `dispatchKey` is the only column ever matched on,
+which is why 43 unit tests and 12 database tests were green through it. What
+was wrong is the column's whole reason for existing: it is stored so that
+"why did this person get this email" is a query rather than string surgery,
+and it answered wrongly for exactly the rows whose answer is not obvious
+from the key. Fixed before merge rather than after, because the table does
+not exist on `ep-little-sea` yet: two lines today, a backfill against a
+ledger of what we told people once it does. `consumed()` now returns each
+key WITH the rung that key names, which makes the old mistake unavailable
+rather than merely corrected.
+
+**A count of claimed rows is not ownership, and treating it as one sent two
+emails about one licence.** Found reviewing this branch as a second reader.
+`claim()` inserted with `skipDuplicates` and returned how many rows it
+created; anything above zero was taken as "I won", and the digest then went
+out covering every notice in hand. Two concurrent runs for one person do
+not have to compute the same notices, and it takes no new record for them
+to differ — a rung boundary crossed between their two reads is enough. One
+run sees `approaching`, the other sees `approaching` + `week` and fires
+`week`. The second wins one key, loses the other, counts 1, and sends. Two
+emails, seconds apart, about the same licence: the nag this whole feature
+exists to prevent, produced by the machinery meant to prevent it.
+
+`claim()` now returns WHICH keys it created, via `createManyAndReturn`, and
+a notice is ours only if we won **every** key it consumes — winning the rung
+that fired is not enough, because losing one it burns means another run is
+speaking about that alert right now. Keys won for a notice we then decline
+to send are given back, so the tighter rung fires next run instead of being
+burnt by a run that stayed silent.
+
+Releasing what we won for a notice we decline to send cannot use the
+`messageId` scoping described below, because at that point there is no
+message yet. It matches on the won keys instead, which is a stricter test
+of ownership than any column: a row this call did not insert is never in
+the list, so it cannot be deleted by ours.
+
+That release used to match `messageId: null` as well as its own message,
+which was raised in review as an accepted risk and turned out not to need
+accepting. Only the rung that FIRED is ever linked to a message, so every
+`alsoSpent` row stays null for life — and two runs whose notice sets
+overlap could each delete the other's. Narrow to hit, but the cost when it
+lands is a duplicate carrying the LOOSER notice behind a tighter one
+already sent, which reads backwards to whoever gets it.
+
+Releasing only this call's own `messageId` closes it, and costs nothing:
+the looser rungs stay spent and were never going to be sent anyway, since
+the retry re-fires the rung it failed on with `alsoSpent` already in the
+ledger. Both halves are pinned — the existing retry test would fail if the
+release were too narrow, and the new one fails against the old code with
+`expected [] to deeply equal [ 'approaching' ]` if it is too wide.
+
+#### What this does not do
+
+**Nothing runs unattended.** The digest goes out from a button, so it
+reaches somebody who opens the app — the same reach the list already had.
+That is why Sheet 26's rows stay Partial: the bar that sheet set for itself
+("NOT Built until something pushes it") is met by the sending path and not
+by the trigger. A scheduled run is the whole remaining gap.
+
+Verified: 43 unit tests mutation-tested six ways, 12 database tests for
+what unit tests cannot reach (the constraint really refuses a second claim,
+a colleague's ledger is their own, a silenced alert never mails, and the
+full three-way failure taxonomy including a transient outage followed by a
+successful retry), and an 8-of-8 click-through on the preview against a
+real licence entered through the UI — the run that found the delivery-log
+wording. Step 6, delivery confirmation, is unprovable on a preview by
+construction: a preview-sent message lives in the demo database and Resend
+posts the event to production, which correctly ignores an id it has never
+seen. #38 already proved that path on production.
+
+Also worth recording: **the build type-checks `.dbtest.ts` files**, so a
+type error in a database test breaks `next build` even though CI never runs
+those tests.
+
+Migration is additive — one `CREATE TABLE`, its indexes, three FKs, no
+`ALTER` and no `DROP`. Generated with `migrate diff` against main's schema
+rather than `migrate dev`, which offered to reset.
+
 ## The counter was wrong twice, the same way, and the second fix was mine
 
 Browser testing passed all four fixes and then found the counter I had
@@ -1207,7 +1527,6 @@ Not a defect, still unproven: gross margin renders "—" because no job in
 that dataset has earned revenue, so neither side of the 35% colour rule has
 been exercised.
 
-
 ### Six things browser testing found in the new dashboard (Diego)
 
 **The two pages disagreed about which invoices were overdue.** The
@@ -1258,7 +1577,6 @@ Not a defect, recorded because it limits what the run proved: gross margin
 showed "—" throughout, because no job in that dataset has earned revenue.
 The null branch renders neutral correctly; neither side of the 35% colour
 rule has been seen against real data.
-
 
 ### A dashboard that tells you something before you ask (Diego)
 
@@ -1519,7 +1837,6 @@ call itself has never run against Intuit — and given that every real
 defect in this integration was found by clicking rather than by a test,
 that is the gate before this is trusted.
 
-
 ### QuickBooks sync: every claim now verified against the real API
 
 Closing the record. Five browser runs against a sandbox company, each one
@@ -1555,7 +1872,6 @@ QuickBooks is refused rather than absorbed, and nothing in Prova shows that
 the two have drifted until someone presses the button. That is a real gap,
 deliberately not papered over, and the right fix is a reconciliation view
 rather than pretending to a two-way sync nobody in this market has managed.
-
 
 ### The round trip works, and "Re-send" was a button that did nothing (Diego)
 
@@ -1602,7 +1918,6 @@ Still unexercised: the stale-SyncToken path. The re-send now reaches
 QuickBooks, so the next attempt at a QuickBooks-side edit will either
 restore our number or refuse because someone changed theirs. Neither has
 been seen yet.
-
 
 ### Every QuickBooks push failed, and 193 green tests said otherwise (Diego)
 
@@ -1655,7 +1970,6 @@ QuickBooks. The client-side pending guard was observed collapsing a fast
 double-click into one attempt, which is the browser half; the server half
 has never been reached because nothing has ever successfully landed.
 
-
 ### The message that told you what to do was replaced by a crash (Diego)
 
 Browser testing hit "Mark as contracted" on a job with no line items and
@@ -1683,7 +1997,6 @@ generic crash string. Written down rather than fixed in passing: it is a
 systemic conversion across fourteen files and every caller that renders a
 result, not something to do quietly at the end of an unrelated commit.
 
-
 ### The QuickBooks link action had no button (Diego)
 
 `linkContactToQuickBooks` shipped an hour ago as an action nobody could
@@ -1701,7 +2014,6 @@ QuickBooks is connected — offering a control that cannot work is its own
 small lie. The copy explains the behaviour that matters: an existing
 customer with the same name is reused rather than duplicated, because a
 second copy splits the payment history the bookkeeper already has.
-
 
 ### QuickBooks actually syncs now — one direction, verified (Diego)
 
@@ -1778,7 +2090,6 @@ out is not a thing to do. Before this is trusted with a real invoice it
 needs a sandbox run, and the app's Intuit environment needs checking —
 production API access goes through Intuit review.
 
-
 ### There are two Neon projects, and saying otherwise cost a day (Diego)
 
 Settled, with evidence, and written into the three files that were lying
@@ -1826,7 +2137,6 @@ code is broken.
 step in #28, and three documents still described it. A documented escape
 hatch that no longer exists is worse than none.
 
-
 ### A wrong database URL creates a new database instead of failing (Diego)
 
 The migrate workflow's first real run failed, and testing the fix found
@@ -1861,7 +2171,6 @@ unless `ALLOW_EMPTY_DATABASE=true` is set. Verified: it refuses, and
 critically, no database is created. Setting up a genuinely new database
 costs one environment variable once; the alternative cost has already been
 paid.
-
 
 ### The environment now says which database it is talking to (Diego)
 
@@ -1927,7 +2236,6 @@ Still open, and deliberately not guessed at: which endpoint Vercel's
 marked as the false claim it is rather than replaced with a second
 confident answer.
 
-
 ### Contractor licences can now be created (Diego)
 
 `CompanyLicense` had a model, two indexes, a slot in the renewals ranking
@@ -1985,7 +2293,6 @@ ranking logic these rows feed was clicked through against real data
 earlier. The form and its three actions themselves have not been clicked
 yet.
 
-
 ### Two pages, one record, two different day counts (Diego)
 
 Browser testing put both numbers on screen at once. `/settings` said a
@@ -2020,7 +2327,6 @@ fix a commit earlier was written into one row component instead of
 something reusable, so the very next test run found the same bug three
 doors down. `ConfirmDeleteButton` is that reusable thing; the next list
 that needs a delete has no excuse to hand-roll a fourth copy.
-
 
 ### One place that tells you what is about to lapse (Diego)
 
@@ -2087,7 +2393,6 @@ Also corrected here: the summary line at the top of `FEATURE-AUDIT.md`
 said 51/15/37 while the table under it said 59/13/35. Two answers in one
 file, drifted apart at some point. Recounted to the table.
 
-
 ### Deleting a catalog entry now asks twice (Diego)
 
 Browser testing found it: four deletions, four rows gone on the next
@@ -2118,7 +2423,6 @@ trusting, and that preview is the only thing between a bad file and the
 catalog. Both now read from one `trade-scopes.ts`. And the active nav
 link carried its state in colour only; it now also carries
 `aria-current="page"`.
-
 
 ### The app now works on a phone (Diego)
 
@@ -2151,7 +2455,6 @@ Not fixed here, and worth being straight about: this is the shell, not a
 mobile design pass. Individual pages still lay out for a wide screen, and
 the forms are dense. The app is now usable on a phone; it is not yet good
 on one.
-
 
 ### Duplicate records from an exhausted pool: the half that's fixable (Diego)
 
@@ -2205,7 +2508,6 @@ Three options, in increasing order of how much they actually fix:
 
 (1) and (2) are `DATABASE_URL` changes on Vercel and need Diego. (3) needs
 a branch and a real test against Neon.
-
 
 ## 2026-08-28
 

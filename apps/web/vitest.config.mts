@@ -21,7 +21,8 @@ export default defineConfig({
   // one and turns every icon into a bare `React.createElement`, which throws
   // "React is not defined" the moment a test imports a .tsx module. Nothing
   // here renders — navItems.tsx is imported for its route table, and the
-  // icons just have to survive being constructed.
+  // icons just have to survive being constructed. Same runtime Next itself
+  // uses, so nothing here diverges from how the app is built.
   esbuild: { jsx: "automatic" },
   test: {
     environment: "node",

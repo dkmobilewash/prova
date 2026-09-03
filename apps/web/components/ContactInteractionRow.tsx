@@ -3,7 +3,12 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { deleteContactInteraction, updateContactInteraction } from "@/lib/actions";
-import { ContactInteractionFields, INTERACTION_TYPE_OPTIONS, type MemberOption } from "@/components/ContactInteractionFields";
+import {
+  ContactInteractionFields,
+  INTERACTION_TYPE_OPTIONS,
+  type MemberOption,
+  type PersonOption,
+} from "@/components/ContactInteractionFields";
 
 export type ContactInteractionRowData = {
   id: string;
@@ -14,6 +19,8 @@ export type ContactInteractionRowData = {
   followUpAssignedToUserId: string | null;
   followUpAssignedToUserName: string | null;
   loggedByUserName: string | null;
+  contactPersonId: string | null;
+  contactPersonName: string | null;
 };
 
 const btn =
@@ -22,9 +29,11 @@ const btn =
 export function ContactInteractionRow({
   interaction,
   members,
+  people,
 }: {
   interaction: ContactInteractionRowData;
   members: MemberOption[];
+  people: PersonOption[];
 }) {
   const [mode, setMode] = useState<"view" | "edit">("view");
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
@@ -56,7 +65,7 @@ export function ContactInteractionRow({
           }}
           className="flex flex-col gap-3"
         >
-          <ContactInteractionFields members={members} defaults={interaction} />
+          <ContactInteractionFields members={members} people={people} defaults={interaction} />
           {error && <p className="text-sm text-red-400">{error}</p>}
           <div className="flex gap-2">
             <button
@@ -84,6 +93,9 @@ export function ContactInteractionRow({
               {INTERACTION_TYPE_OPTIONS.find((o) => o.value === interaction.type)?.label ?? interaction.type}
             </span>
             <span className="text-xs text-slate-500">{interaction.occurredOn}</span>
+            {interaction.contactPersonName && (
+              <span className="text-xs text-slate-500">with {interaction.contactPersonName}</span>
+            )}
           </div>
           <p className="mt-1 text-sm text-slate-300">{interaction.summary}</p>
           {interaction.followUpOn && (
