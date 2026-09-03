@@ -128,6 +128,49 @@ plus four, exactly, for the third time. Corrected here, and that is now a
 test failure naming the file rather than something the next person counts
 by hand and gets a fourth answer for.
 
+---
+
+## Four shipped pages nothing in the app linked to
+
+A browser tester opened the sidebar looking for Pipeline, could not find
+it, and stopped without touching anything. They were right, and the cause
+was not what either of us first assumed.
+
+/pipeline was merged, deployed, and confirmed READY. The route worked. The
+page worked. It was in NAV_ITEMS. And NOTHING RENDERED IT, because what
+the sidebar draws is NAV_GROUPS, a second hand-written list, and nobody
+had added it there.
+
+Three other pages were in the same state: /messages, /field-reports and
+/vendors/pricing. Twenty-seven items, twenty-three reachable.
+
+THE ASYMMETRY THAT ALLOWED IT. `item()` throws when a GROUP names an href
+no NAV_ITEM has. The reverse -- an item in no group -- was silent. So the
+failure mode with a loud error was the harmless one, and the failure mode
+that hides a whole feature was the quiet one.
+
+This is mine. I added /pipeline by anchoring on the /bids entry in
+NAV_ITEMS and inserting beside it, never checking that a second list
+governed rendering. Then I wrote a click-list whose step 0 could only
+fail, and told Diego the feature was live. Every check was green: CI,
+production READY, a passing build that even printed `ƒ /pipeline` in its
+route table. One fact in two places -- the bug class this session spent
+all day fixing in other people's code.
+
+THE FIX THAT LASTS IS THE TEST, not the four lines of data. navItems.test.ts
+requires every NAV_ITEM to be in a group or named in APPENDED_SEPARATELY
+with its reason (/sales is there: it is gated on Company.isProvaOperator
+and appended by navGroupsFor). Proven by reintroducing the exact bug --
+removing /pipeline from its group -- and watching it fail with the right
+message, then restoring and watching it pass. A test written from the
+implementation cannot fail; this one was written from the defect.
+
+Also: vitest needed `esbuild: { jsx: "automatic" }` to import navItems.tsx
+at all, since every entry carries an inline SVG. Same runtime Next already
+uses, so nothing diverges from how the app builds.
+
+---
+
 ## The apprenticeship programme, as opposed to the apprentice's hours
 
 Sheet 09's last Partial, and the audit had already written the gap: "a

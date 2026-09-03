@@ -12,6 +12,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     role: currentUser.role,
     jobFunction: currentUser.jobFunction,
   };
+  // Prova's own sales pipeline, for exactly one company -- see
+  // Company.isProvaOperator. Not a lib/permissions.ts Capability: that map
+  // is about job function within a company, and an OWNER always holds
+  // every capability in it regardless, which cannot express "owner only."
+  const showsSalesCrm = company.isProvaOperator && currentUser.role === "OWNER";
 
   const [financials, alertCount] = await Promise.all([
     loadCompanyFinancials(company.id),
@@ -36,9 +41,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     // side panel) is bounded by the same numbers the bars are laid out
     // with, rather than repeating them and drifting.
     <div className="flex h-screen bg-slate-950 [--shell-metricbar:52px] [--shell-topbar:56px]">
-      <Sidebar companyName={company.name} principal={principal} />
+      <Sidebar companyName={company.name} principal={principal} showsSalesCrm={showsSalesCrm} />
       <div className="flex min-w-0 flex-1 flex-col">
-        <Topbar companyName={company.name} alertCount={alertCount} principal={principal} />
+        <Topbar
+          companyName={company.name}
+          alertCount={alertCount}
+          principal={principal}
+          showsSalesCrm={showsSalesCrm}
+        />
         {/* No background of its own: each page brings its own ground, so a
             page still written against the dark theme keeps it and a
             converted one opts into the light canvas. */}

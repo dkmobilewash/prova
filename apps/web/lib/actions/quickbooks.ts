@@ -304,10 +304,72 @@ export async function linkContactToQuickBooks(contactId: string): Promise<Action
  *
  * Found by name before being created, and the name is stable, so a second
  * run reuses the first run's item rather than littering the contractor's
- * product list. The link is stored so later pushes skip the lookup
- * entirely.
+ * product list.
+ *
+ * THE STORED LINK IS A RECORD, NOT AN AUTHORITY, AND THAT IS THE FIX HERE.
+ *
+ * It used to short-circuit: a stored link returned its id immediately and
+ * the name was never consulted again. Then somebody deleted the item inside
+ * QuickBooks, and every invoice push failed forever with
+ *
+ *   "Product/Service assigned to this transaction has been deleted. Before
+ *    you can modify this transaction, you must restore Prova — Construction
+ *    services (deleted)."
+ *
+ * — an error naming a QuickBooks problem for a cache this app was holding.
+ * Nothing inside Prova could recover from it. Restoring the item does fix
+ * it, because reactivating keeps the id; CREATING a new item with the same
+ * name does NOT, because the new item has a new id and the cache still
+ * points at the dead one. Those two look identical to somebody in the
+ * QuickBooks UI, and the second is what a person does when the "include
+ * inactive" filter will not open. This blocked a browser test three runs
+ * running.
+ *
+ * So the name is resolved every push and the link is corrected when it
+ * disagrees. That is one extra query per invoice push against a rate limit
+ * measured per realm per minute, on a button a person presses deliberately
+ * — cheap. It is also the rule the rest of this codebase already follows:
+ * derived state is never stored, because a stored value is free to disagree
+ * with what it was derived from.
  */
 const INCOME_ITEM_NAME = "Prova — Construction services";
+
+/**
+ * Creates the income item, and translates the one refusal a person can act
+ * on into an instruction instead of an Intuit sentence.
+ *
+ * A DELETED ITEM STILL OWNS ITS NAME. QuickBooks excludes inactive items
+ * from a name query, so the lookup above reports it absent and we try to
+ * create one — and QuickBooks refuses, because the name is taken by the
+ * very item that is hidden from the query. Both halves are correct and the
+ * result is a dead end described in QuickBooks' vocabulary.
+ *
+ * The way out is REACTIVATING the original rather than making a second one,
+ * and a new item with the same name is not a substitute: the invoice would
+ * post to whichever the app resolved, and the contractor's product list
+ * would carry two. So the message says which action to take and where.
+ */
+async function createIncomeItem(
+  realmId: string,
+  accessToken: string,
+  incomeAccountId: string,
+) {
+  try {
+    return await createServiceItem(realmId, accessToken, INCOME_ITEM_NAME, incomeAccountId);
+  } catch (error) {
+    const detail = error instanceof QuickBooksApiError ? error.detail : "";
+    if (/duplicate\s*name/i.test(detail)) {
+      throw new QuickBooksApiError(
+        error instanceof QuickBooksApiError ? error.status : 400,
+        `"${INCOME_ITEM_NAME}" exists in QuickBooks but is inactive, so invoices cannot reference ` +
+          `it. In QuickBooks go to Sales → Products and Services, change the filter to include ` +
+          `inactive items, find it, and choose Make active. Creating a second item with the same ` +
+          `name will not work.`,
+      );
+    }
+    throw error;
+  }
+}
 
 async function resolveIncomeItemId(
   companyId: string,
@@ -315,14 +377,12 @@ async function resolveIncomeItemId(
   accessToken: string,
   incomeAccountId: string,
 ): Promise<string> {
-  const link = await prisma.quickBooksEntityLink.findFirst({
-    where: { companyId, entityType: "Item", entityId: INCOME_ITEM_NAME },
-  });
-  if (link) return link.qboId;
-
-  const item =
-    (await findItemByName(realmId, accessToken, INCOME_ITEM_NAME)) ??
-    (await createServiceItem(realmId, accessToken, INCOME_ITEM_NAME, incomeAccountId));
+  // Resolved from QuickBooks every time. `findItemByName` queries by name
+  // and QuickBooks leaves inactive items out of that result, so a deleted
+  // item reads as absent here and is recreated rather than referenced into
+  // a refusal.
+  const found = await findItemByName(realmId, accessToken, INCOME_ITEM_NAME);
+  const item = found ?? (await createIncomeItem(realmId, accessToken, incomeAccountId));
 
   await prisma.quickBooksEntityLink.upsert({
     where: {
