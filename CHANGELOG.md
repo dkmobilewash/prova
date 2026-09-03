@@ -130,6 +130,60 @@ by hand and gets a fourth answer for.
 
 ---
 
+---
+
+### The QuickBooks payment push is verified against Intuit at last (Diego)
+`claude/prova-vercel-direct-url-hg1acx`
+
+Payments have pushed to QuickBooks in code since #55 and had NEVER RUN
+ONCE — not against real books, not against the sandbox. Cyrus put a hold
+on that PR for exactly this reason; it merged anyway, so production has
+been carrying a money-moving path nobody had executed. That is closed now.
+
+**Read in the books rather than from our own success message.** QuickBooks
+invoice 146 went from balance $1,000.00 to $500.00, status Partial, after
+one click. `"Applied to the invoice in QuickBooks and verified."` is Prova
+reporting on itself and was never going to be enough — the invoice ledger
+moving is the evidence.
+
+**The re-send is the half worth keeping.** A deliberate second click
+produced ONE payment, balance unchanged. `isAccidentalRepeat` and the
+Id/SyncToken payload had only ever been reasoned about; a duplicate
+document in somebody's books is the failure this integration exists to
+prevent, and it now has one real trial behind it.
+
+FOUR RUNS, FOUR STOPS, AND THREE OF THE CAUSES WERE OURS
+
+Worth recording because none was findable without clicking, and 832 green
+tests were green through all of them:
+
+  #77  `paymentPushBlockers` was written, exported, tested — and called
+       from nowhere that renders. Both push buttons sat enabled with no
+       explanation on a payment whose invoice QuickBooks had never seen.
+  #83  #77's own lookup asked for the account mapped to "INVOICE_REVENUE".
+       No such value exists; it is "INCOME". `purpose` is a plain String,
+       so nothing could catch it.
+  #85  The QuickBooks item id was cached in a QuickBooksEntityLink and
+       returned without ever checking the item still existed. Deleting it
+       inside QuickBooks bricked invoicing permanently, and restoring it
+       only helped if you reactivated the original rather than creating a
+       new one with the same name.
+  #94  A push that threw rendered NOTHING: neither button had a catch, so
+       the transition ended and the screen did not change.
+
+The fourth is the one to remember. A correction posted on #94 records that
+its own description was wrong about the evidence — the 06:30 push had
+SUCCEEDED and logged it, and I repeated a tester's "no log entry" as fact
+without reading the log. So the real defect was never "a throw shows
+nothing"; it was **the work landing while the person cannot tell**, which
+is what invites the second click.
+
+The sandbox item deletion was the one blocker that was not ours.
+
+**Still not two-way, and still sandbox.** Prova does not pull QuickBooks
+edits back and does not pretend to. `QUICKBOOKS_ENVIRONMENT=sandbox`
+remains the only thing between this path and a real ledger.
+
 ## The apprenticeship panel, clicked — and a click-list that could not fail
 
 Everything passed except the one step designed to prove the central claim,
