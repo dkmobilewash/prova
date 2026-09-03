@@ -769,6 +769,46 @@ original mockup for this feature — left out because neither is derivable
 from anything else (a genuinely new bit of state) and neither was asked
 for by name; easy to add later behind the same schema if wanted.
 
+### `CONTACT_FOLLOW_UP` — a follow-up joins the alert engine, no schema at all
+
+The fourth CRM item, and the first with no migration: `ContactInteraction`
+already carries `followUpOn`/`followUpAssignedToUserId` (A2), so surfacing
+one in `/alerts` is a pure addition to `lib/alerts.ts`/`lib/alerts-query.ts`
+— a new `AlertKind`, a `contactFollowUpAlerts` derivation function, and one
+new fetch block, none of it touching a table.
+
+`lib/alerts.ts` is the shared alert-derivation engine every other lane's
+kind lives in too (`RENEWAL`, `BACKCHARGE_RESPONSE`, `WIP_VARIANCE`, …), and
+PR #59 (merged just before this) added a generic notification-dispatch
+layer on top of it (`NotificationDispatch`, milestone rungs) that reads
+`Alert.severity`/`.key` and knows nothing about individual kinds. Adding
+`CONTACT_FOLLOW_UP` to `loadAlerts()`'s output means it gets digest/email
+delivery for free — nothing in the dispatch layer needed to change.
+
+Two things worth being explicit about, both surfaced in Slack before this
+was written:
+
+- **The horizon floor is 7, not chosen for feel.** `notification-milestones.ts`
+  fires its "week" rung at `days <= 7` and its "approaching" rung off
+  `severity` (i.e. `days <= horizon`). A kind with a horizon below 7 would
+  have "week" cross before "approaching" ever does, silently dropping the
+  earlier warning forever. `ALERT_HORIZON_DAYS.CONTACT_FOLLOW_UP` is 7, the
+  same floor `CERTIFIED_PAYROLL` already sits on, and the constant's own
+  comment says why so the next kind doesn't rediscover this the hard way.
+- **Not scoped to `followUpAssignedToUserId`.** Every existing alert kind
+  is capability-gated only — anyone holding it sees every alert of that
+  kind company-wide, not just "theirs." Making follow-ups the first
+  per-user-scoped kind would be a real behavior fork in shared code for a
+  fairly small gain, so it stays consistent with the other seven: gated
+  behind `MANAGE_ESTIMATING` (the same capability as the Interactions
+  section it's drawn from), with the assignee's name in the alert's detail
+  text rather than as a visibility filter.
+
+No new "resolved" state either — a follow-up is retired by clearing
+`followUpOn` on the interaction (already possible via `updateContactInteraction`),
+which is also what changes the alert's key and lets a dismissal lapse
+naturally, same mechanism as every other kind here.
+
 ## What proves this works (Phase 00's CRUD flow)
 
 The minimal CRUD flow in `apps/web` exists specifically to demonstrate the

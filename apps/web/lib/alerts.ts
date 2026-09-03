@@ -39,7 +39,8 @@ export type AlertKind =
   | "CLOSEOUT_WITH_GC"
   | "CERTIFIED_PAYROLL"
   | "APPRENTICE_RATIO"
-  | "WIP_VARIANCE";
+  | "WIP_VARIANCE"
+  | "CONTACT_FOLLOW_UP";
 
 /** Three levels, not five. OVERDUE is "a date has passed"; DUE_SOON is "a
  * date is coming"; STANDING is a condition with no deadline attached to
@@ -92,6 +93,9 @@ export const ALERT_CAPABILITY: Record<AlertKind, Capability> = {
   CERTIFIED_PAYROLL: "MANAGE_COMPLIANCE",
   APPRENTICE_RATIO: "MANAGE_COMPLIANCE",
   WIP_VARIANCE: "VIEW_JOB_COSTS",
+  // Same gate as the interactions/bid-invitations section it comes from on
+  // /contacts/[id] -- relationship work, not billing or compliance.
+  CONTACT_FOLLOW_UP: "MANAGE_ESTIMATING",
 };
 
 /**
@@ -127,10 +131,21 @@ export function visibleToPrincipal(
  * runway of the three deadline kinds relative to how long the work takes.
  * Certified payroll is a report someone runs, due weekly.
  */
+/**
+ * CONTACT_FOLLOW_UP sits at 7, the floor for any horizon in this table and
+ * not a smaller number picked for feel. notification-milestones.ts fires
+ * its "week" rung at days<=7 and its "approaching" rung off severity
+ * (days<=horizon) -- give a kind a horizon below 7 and "week" crosses
+ * before "approaching" ever does, so the earlier warning silently never
+ * sends and the tighter-sounding one arrives first. Flagged in Slack
+ * before this shipped; keep at 7 or above, or raise it with whoever owns
+ * notification-milestones.ts first.
+ */
 export const ALERT_HORIZON_DAYS: Partial<Record<AlertKind, number>> = {
   BACKCHARGE_RESPONSE: 10,
   RETAINAGE_RELEASE: 14,
   CERTIFIED_PAYROLL: 7,
+  CONTACT_FOLLOW_UP: 7,
 };
 
 /**
@@ -506,6 +521,69 @@ export function wipAlerts(sources: WipAlertSource[]): Alert[] {
       dueOn: null,
       daysUntil: null,
       amount: job.overrun,
+    });
+  }
+
+  return alerts;
+}
+
+/* ------------------------------------------------ contact follow-ups */
+
+export type ContactFollowUpAlertSource = {
+  interactionId: string;
+  contactId: string;
+  contactName: string;
+  followUpOn: string;
+  assignedToName: string | null;
+};
+
+/**
+ * A follow-up promised on a logged call, email, site visit or note, and
+ * not yet cleared.
+ *
+ * There is no separate "resolved" flag for a follow-up -- same "derive,
+ * don't duplicate" rule as everything else here. Clearing followUpOn (via
+ * updateContactInteraction, e.g. after actually making the call) is what
+ * retires one; this function only ever sees rows where it is still set.
+ *
+ * Keyed on followUpOn, so rescheduling it is a new key and an old
+ * dismissal lapses -- the standard mechanism, applied to a promise instead
+ * of a document's expiry date.
+ *
+ * Visible to everyone holding CONTACT_FOLLOW_UP's capability, not scoped
+ * to followUpAssignedToUserId -- no alert kind in this file is scoped to
+ * one user today, and adding the first would be a real behavior fork in
+ * shared code. The assignee's name is named in the detail text instead.
+ */
+export function contactFollowUpAlerts(
+  sources: ContactFollowUpAlertSource[],
+  todayIso: string,
+): Alert[] {
+  const horizon = ALERT_HORIZON_DAYS.CONTACT_FOLLOW_UP ?? 7;
+  const alerts: Alert[] = [];
+
+  for (const source of sources) {
+    const severity = severityForDate(source.followUpOn, todayIso, horizon);
+    if (!severity) continue;
+
+    const days = daysUntilIso(source.followUpOn, todayIso);
+    const timing =
+      days < 0
+        ? `Was due ${Math.abs(days)} ${Math.abs(days) === 1 ? "day" : "days"} ago.`
+        : days === 0
+          ? "Due today."
+          : `Due in ${days} ${days === 1 ? "day" : "days"}.`;
+
+    alerts.push({
+      key: alertKey("CONTACT_FOLLOW_UP", source.interactionId, source.followUpOn),
+      kind: "CONTACT_FOLLOW_UP",
+      severity,
+      title: `Follow up with ${source.contactName}`,
+      detail: source.assignedToName ? `${timing} Assigned to ${source.assignedToName}.` : timing,
+      href: `/contacts/${source.contactId}`,
+      dueOn: source.followUpOn,
+      daysUntil: days,
+      amount: null,
     });
   }
 
