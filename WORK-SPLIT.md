@@ -161,6 +161,19 @@ domain rather than appending to an existing one, which is also why the
 "only add at the very end of the file" advice below no longer applies the
 way it reads.
 
+## The bid pipeline view, 3 Sep 2026
+
+The third lane also built `/pipeline` — a per-GC read of `BidInvitation`
+(`lib/bid-pipeline.ts`, `lib/bid-pipeline-query.ts`). It is deliberately
+READ-ONLY: `BidInvitation`, its actions in `lib/actions/estimating.ts` and
+the `/bids` page all stay with estimating, and a status is changed there.
+Shared files touched, one line each: `navItems.tsx`, `middleware.ts`, and
+the `ROUTE_CAPABILITY` map in `lib/permissions.ts`.
+
+The CRM lane (`claude/prova-crm-contact-lifecycle`, #72) owns contacts
+themselves — creation, status, MSA/prequal, and whatever comes next on
+`/contacts`. This page links to those pages and edits none of them.
+
 ## Cyrus's first five tasks
 
 **1. (Do this first — should take under an hour.) Add a "Trailer" location

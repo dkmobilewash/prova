@@ -387,14 +387,14 @@ export function BackchargeRow({
           backcharge.status === "RECEIVED" &&
           (isConfirmingDelete ? (
             <>
-              <button
-                type="button"
-                disabled={isPending}
-                onClick={() => run(() => deleteBackcharge(backcharge.id), "Could not delete it")}
-                className="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50"
-              >
-                {isPending ? "Deleting…" : "Confirm delete"}
-              </button>
+              {/* Cancel comes FIRST on purpose. The confirm step replaces
+                  "Delete" in place, so whichever button lands here is what a
+                  second click at the same spot hits -- and a two-step delete
+                  whose second step is under the first click is a one-step
+                  delete with extra rendering. Browser testing hit exactly
+                  this class of thing, clicking through to a control that had
+                  shifted underneath. Cancel here means a hurried double-click
+                  costs a click, not a record. */}
               <button
                 type="button"
                 disabled={isPending}
@@ -402,6 +402,14 @@ export function BackchargeRow({
                 className={btn}
               >
                 Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isPending}
+                onClick={() => run(() => deleteBackcharge(backcharge.id), "Could not delete it")}
+                className="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+              >
+                {isPending ? "Deleting…" : "Confirm delete"}
               </button>
             </>
           ) : (

@@ -90,7 +90,14 @@ export function BackchargeForm({
         defaultJobId={defaultJobId}
         defaults={{
           gcReference: null,
-          category: "CLEANUP",
+          // NOT "CLEANUP". Everything else on this form is blank by
+          // default because a value nobody chose is a value nobody can
+          // trust, and the category was the one field quietly breaking
+          // that: a backcharge logged in a hurry became a cleanup
+          // backcharge, with nothing on the row to say the tag was a
+          // default rather than a decision. OTHER is what the schema
+          // itself defaults to and is the honest starting point.
+          category: "OTHER",
           description: "",
           claimedAmount: "",
           // The date the GC's notice is dated is usually not today, but

@@ -34,12 +34,20 @@ export default async function CloseoutPage() {
 
   // All three counted across every job, and all three derived — there is no
   // stored "closed out" or "in warranty" flag anywhere in this feature.
-  // Was `r.items.length > 0 && !isCloseoutComplete(r.items)` -- checklist
-  // only, and blind to a job with no checklist at all. It reported 0 while
-  // the list below it showed fifteen jobs each saying "not ready to
-  // submit". A counter that disagrees with the list it sits on top of is
-  // worse than no counter, so it now reads the same blockers the cards do.
-  const outstandingJobs = rows.filter((r) => r.readiness.blockers.length > 0).length;
+  //
+  // This counter has now been wrong twice, the same way both times. First it
+  // was `r.items.length > 0 && !isCloseoutComplete(r.items)` -- checklist
+  // only -- and read 0 while the list showed fifteen not-ready jobs. Then it
+  // became `blockers.length > 0`, which browser testing caught reading 15
+  // against a list of 16: a job whose checklist is ticked and which NOBODY
+  // HAS SENT has no blockers, so it vanished from the number while staying
+  // in the list. That job is exactly the one somebody needs chasing.
+  //
+  // Both versions were the same mistake -- a SECOND computation of what the
+  // list already decides -- and the first fix only swapped one duplicate for
+  // another. There is one derivation now, and the counter and the list are
+  // the same set by construction rather than by agreement.
+  const outstandingJobs = attention.length;
   const inWarranty = rows.filter((r) => warrantyState(r.warranty, today) === "ACTIVE").length;
   const openCallbacks = rows.reduce((n, r) => n + r.requests.filter(isOpen).length, 0);
   const totalOutstandingItems = rows.reduce((n, r) => n + outstandingRequired(r.items).length, 0);

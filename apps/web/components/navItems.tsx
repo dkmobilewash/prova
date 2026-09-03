@@ -82,6 +82,20 @@ export const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
+    href: "/pipeline",
+    label: "Pipeline",
+    icon: (
+      <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5">
+        <path
+          d="M3.5 5.5h13M5.5 10h9M8 14.5h4"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinecap="round"
+        />
+      </svg>
+    ),
+  },
+  {
     href: "/catalog",
     label: "Catalog",
     icon: (

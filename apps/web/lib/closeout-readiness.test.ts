@@ -165,6 +165,23 @@ describe("needsAttention", () => {
     readiness: closeoutReadiness({ ...clean, ...input }, TODAY),
   });
 
+  it("keeps a job that is ready to submit but has never been sent", () => {
+    // The /closeout header counter is `needsAttention(...).length`, so this
+    // is the invariant it rests on. A ticked-but-unsent job has NO blockers,
+    // and both previous versions of that counter -- checklist-only, then
+    // `blockers.length > 0` -- dropped it while the list below kept showing
+    // it. Browser testing caught the second one as 15 against a list of 16.
+    // That job is precisely the one somebody needs to chase: everything is
+    // signed and nobody has sent it.
+    const rows = needsAttention([
+      row("ticked but unsent", { requiredItemsOutstanding: 0, retainageBalance: 0 }),
+    ]);
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].readiness.stage).toBe("READY_TO_SUBMIT");
+    expect(rows[0].readiness.blockers).toHaveLength(0);
+  });
+
   it("puts the most money first", () => {
     const rows = needsAttention([
       row("small", { requiredItemsOutstanding: 1, retainageBalance: 900 }),
