@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@prova/db";
-import { requireCompanyContext } from "@/lib/auth";
+import { requireCapability } from "@/lib/authz";
+import { NoAccess } from "@/components/NoAccess";
 import { PrintButton } from "@/components/PrintButton";
 import { money } from "@/lib/money";
 import { buildCertifiedPayrollSummary, type CertifiedPayrollTimeEntryInput } from "@/lib/certified-payroll";
@@ -43,7 +44,13 @@ export default async function CertifiedPayrollPage({
 }) {
   const { id } = await params;
   const { weekStart: weekStartParam } = await searchParams;
-  const { company } = await requireCompanyContext();
+  // "certified payroll" is named in MANAGE_COMPLIANCE's own definition,
+  // and this page prints an hourly rate against a named employee for
+  // every day of the week. Same capability as /prevailing-wage, which is
+  // the filing this report feeds.
+  const { context, allowed } = await requireCapability("MANAGE_COMPLIANCE");
+  if (!allowed) return <NoAccess capability="MANAGE_COMPLIANCE" />;
+  const { company } = context;
 
   const job = await prisma.job.findUnique({ where: { id }, include: { contact: true } });
   if (!job || job.companyId !== company.id) {

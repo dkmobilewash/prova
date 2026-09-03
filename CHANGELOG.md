@@ -12,6 +12,75 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+## The guard that could not fail
+
+`MANAGE_FIELD` and `MANAGE_JOBS` were declared in `lib/permissions.ts`,
+documented by route name — "safety, punch lists, equipment" and "RFIs,
+submittals, drawings, closeout" — and mapped to **nothing at all**.
+`ROUTE_CAPABILITY` listed neither, `canReach()` returns true for any route
+absent from it, and none of those pages called `requireCapability()`
+either. So an ACCOUNTING member, whom this suite explicitly asserts holds
+no `MANAGE_FIELD`, saw the links and could open, file and edit safety
+cases, RFIs and submittals — evidence records. The Team page counted both
+capabilities while telling an owner they had withheld something they had
+not.
+
+**The defect that matters is the test, not the map.** The check that was
+supposed to catch this iterated `Object.entries(ROUTE_CAPABILITY)` — so a
+route absent from that map contributes no iteration and is structurally
+invisible to it. It could not fail for the thing its own comment claimed
+to prevent ("a door being left unlisted but unguarded"), and this file
+repeated the claim. Same shape as the dead P2002 guards in #25 and #26: a
+check that exists and can never fire.
+
+So the enumeration now starts from the **filesystem** — every `page.tsx`
+under `app/(app)`, which is what Next.js actually serves — and not from
+any hand-written list, since a hand-written list is the artefact that
+drifted. Each route must land in one of three places, all of them a
+recorded decision: `ROUTE_CAPABILITY`, a page-only map for dynamic routes
+the nav never links, or an explicit open list **with the reason written
+down**. Add a page and decide nothing and the suite fails, naming your
+route. Reverting the map fix turns it red with all ten named, which is the
+only reason to believe it.
+
+**Mapping decisions, each from the capability's own definition rather than
+by pattern match.** `/safety`, `/punch-lists`, `/equipment`,
+`/field-reports`, `/material-orders` → `MANAGE_FIELD`. `/rfis`,
+`/submittals`, `/drawings`, `/closeout` → `MANAGE_JOBS`. Deliberately NOT
+`/jobs`, `/jobs/new` or `/jobs/[id]`: ACCOUNTING and PAYROLL_COMPLIANCE
+hold no `MANAGE_JOBS` and both must open a job, so reading that capability
+as "may see a job" would lock accounting out of the pay applications they
+exist to raise. The job record stays open and withholds money section by
+section, as before. Two sub-pages of it did not, and now do:
+`/jobs/[id]/pay-applications/[invoiceId]` (`MANAGE_BILLING` — it *is* the
+money document) and `/jobs/[id]/certified-payroll` (`MANAGE_COMPLIANCE` —
+named in that capability's definition, and it prints wage rates by
+employee). `/settings/integrations` takes its parent `/settings`'
+capability rather than the `MANAGE_BILLING` that "accounting sync" would
+suggest, because a sub-page reachable by somebody who cannot reach the
+page linking to it is incoherent.
+
+**`canReach(FIELD, "/safety")` was asserted true under the heading "lets
+anyone signed in reach an unguarded route", and both halves needed
+different treatment.** The value is right — a foreman needs safety and
+punch lists — and the reason was wrong: `/safety` was not open by
+decision, it was open by omission. The assertion stays and its value is
+unchanged, because FIELD holds `MANAGE_FIELD`; it moved to a test that
+says so. What actually changed is that ESTIMATOR and ACCOUNTING no longer
+reach it.
+
+**The actions, not only the pages.** A page guard stops a page rendering
+and does nothing about a Server Action, which is its own endpoint and
+answers whoever posts to it. Every write behind the newly-guarded pages
+now asserts the same capability the page does — throwing where the module
+throws, returning `fail()` where the module returns `ActionResult`, since
+production redacts a thrown message. Two deletes had no guard of ANY kind,
+not even `assertOwner`: `deleteDailyFieldReport` and
+`deleteMaterialDelivery`. A daily field report is what a delay claim is
+argued from months later.
+
+---
+
 ## The apprenticeship programme, as opposed to the apprentice's hours
 
 Sheet 09's last Partial, and the audit had already written the gap: "a
@@ -905,8 +974,13 @@ attack.
 **`requireCapability()` on the page is the boundary; the nav filter is
 decoration and says so in its own comment.** Hiding a link hides nothing.
 A test asserts `canReach()` and `can()` agree on every guarded route for
-every principal, so a link can never point at a door that will not open —
-nor, far worse, a door be left unlisted and unguarded.
+every principal, so a link can never point at a door that will not open.
+
+> **The second half of that sentence used to read "nor, far worse, a door
+> be left unlisted and unguarded", and it was false.** That test iterated
+> `ROUTE_CAPABILITY`, so an unlisted door contributed no iteration and was
+> invisible to it. Eight were. See "The guard that could not fail" at the
+> top of this file.
 
 **Auditing my own claim found real holes, and closing the ones I own
 changed the shape of the work.** A FIELD user could still be told, by name

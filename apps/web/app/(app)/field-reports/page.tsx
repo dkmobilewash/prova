@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@prova/db";
-import { requireCompanyContext } from "@/lib/auth";
+import { requireCapability } from "@/lib/authz";
+import { NoAccess } from "@/components/NoAccess";
 import { FieldReportComposer } from "@/components/FieldReportComposer";
 import { FieldReportEntry } from "@/components/FieldReportEntry";
 import { WeekSummary } from "@/components/WeekSummary";
@@ -24,7 +25,9 @@ export const dynamic = "force-dynamic";
  * is actually argued in.
  */
 export default async function FieldReportsPage() {
-  const { company, ...currentUser } = await requireCompanyContext();
+  const { context, allowed } = await requireCapability("MANAGE_FIELD");
+  if (!allowed) return <NoAccess capability="MANAGE_FIELD" />;
+  const { company, ...currentUser } = context;
 
   const [rows, jobs] = await Promise.all([
     prisma.dailyFieldReport.findMany({

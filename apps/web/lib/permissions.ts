@@ -148,6 +148,24 @@ export function isRestricted(user: Principal): boolean {
  * guarded would claim a protection that redirects straight past itself. Being explicit about the guarded
  * set, in one map, is what makes it possible to check the nav and the page
  * guards against each other rather than hoping they agree.
+ *
+ * ABSENCE IS NOT A DECISION, AND THIS MAP CANNOT TELL YOU WHICH KIND OF
+ * ABSENCE IT IS. `MANAGE_FIELD` and `MANAGE_JOBS` were declared above,
+ * documented by route name, and listed here against nothing at all — so
+ * `canReach` returned true for `/safety`, `/rfis` and six others for
+ * every signed-in person, and the pages themselves had no guard either.
+ * Every test passed throughout, because the test iterated THIS MAP. The
+ * enumeration that would have caught it now lives in
+ * lib/permissions.test.ts and starts from the filesystem: every page the
+ * app serves is either listed here, guarded at the page as a dynamic
+ * route, or on an explicit open list with its reason. Add a route to the
+ * app and that suite fails until somebody decides.
+ *
+ * Keys are static hrefs only, because `canReach` looks them up by exact
+ * match to filter the nav. A dynamic route (`/jobs/[id]/…`) is guarded by
+ * its page's own `requireCapability` and recorded in that test file —
+ * putting a bracketed key here would never match a real URL and would
+ * quietly teach `canReach` to answer "open" for a guarded page.
  */
 export const ROUTE_CAPABILITY: Record<string, Capability> = {
   "/cash-flow": "VIEW_COMPANY_FINANCIALS",
@@ -158,8 +176,37 @@ export const ROUTE_CAPABILITY: Record<string, Capability> = {
   "/backcharges": "MANAGE_BILLING",
   "/compliance": "MANAGE_COMPLIANCE",
   "/settings": "MANAGE_COMPLIANCE",
+  // A child of `/settings`, so it takes its PARENT's capability rather
+  // than the MANAGE_BILLING that "accounting sync" would suggest. A
+  // sub-page reachable by somebody who cannot reach the page that links
+  // to it is incoherent, and if integrations belong to billing then
+  // `/settings` itself has to move — a separate decision, not this one.
+  "/settings/integrations": "MANAGE_COMPLIANCE",
   "/prevailing-wage": "MANAGE_COMPLIANCE",
   "/union-compliance": "MANAGE_COMPLIANCE",
+
+  // MANAGE_FIELD, exactly the routes its own doc comment names: "Field
+  // reports, safety, punch lists, time, materials, equipment". FIELD,
+  // PROJECT_MANAGER and PAYROLL_COMPLIANCE hold it; ESTIMATOR and
+  // ACCOUNTING do not, which is the access this feature was shipped to
+  // describe and — until now — did not enforce anywhere.
+  "/safety": "MANAGE_FIELD",
+  "/punch-lists": "MANAGE_FIELD",
+  "/equipment": "MANAGE_FIELD",
+  "/field-reports": "MANAGE_FIELD",
+  "/material-orders": "MANAGE_FIELD",
+
+  // MANAGE_JOBS, likewise from its doc comment: "the correspondence
+  // around them: RFIs, submittals, drawings, closeout". Deliberately NOT
+  // the job record itself — ACCOUNTING and PAYROLL_COMPLIANCE hold no
+  // MANAGE_JOBS and both must open a job, so reading this capability as
+  // "may see a job" would lock accounting out of the pay applications
+  // they exist to raise. `/jobs`, `/jobs/new` and `/jobs/[id]` stay open
+  // and withhold money section by section instead.
+  "/rfis": "MANAGE_JOBS",
+  "/submittals": "MANAGE_JOBS",
+  "/drawings": "MANAGE_JOBS",
+  "/closeout": "MANAGE_JOBS",
 };
 
 export function capabilityForRoute(href: string): Capability | null {

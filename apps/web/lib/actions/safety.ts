@@ -1,9 +1,15 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireCompanyContext } from "@/lib/auth";
+import { requireCapabilityForAction } from "@/lib/authz";
 import { Prisma, prisma } from "@prova/db";
 import { assertOwner } from "./shared";
+
+/** Every entry point to these records is a page guarded by MANAGE_FIELD,
+ * so every write here answers to the same capability. A guarded page
+ * in front of an open action is not a guard: the action is its own
+ * endpoint and answers whoever posts to it. */
+const FIELD_ONLY = "Field records aren't part of your job function. The account owner sets who sees what, on the Team page.";
 
 const OUTCOMES = [
   "DEATH",
@@ -95,7 +101,7 @@ async function issueCaseNumber(
 }
 
 export async function createSafetyIncident(formData: FormData) {
-  const { company, ...user } = await requireCompanyContext();
+  const { company, ...user } = await requireCapabilityForAction("MANAGE_FIELD", FIELD_ONLY);
 
   const employeeName = String(formData.get("employeeName") ?? "").trim();
   if (!employeeName) throw new Error("Employee name is required");
@@ -140,7 +146,7 @@ export async function createSafetyIncident(formData: FormData) {
 }
 
 export async function updateSafetyIncident(incidentId: string, formData: FormData) {
-  const { company } = await requireCompanyContext();
+  const { company } = await requireCapabilityForAction("MANAGE_FIELD", FIELD_ONLY);
 
   const incident = await prisma.safetyIncident.findUnique({ where: { id: incidentId } });
   if (!incident || incident.companyId !== company.id) throw new Error("Incident not found");
@@ -178,7 +184,7 @@ export async function updateSafetyIncident(incidentId: string, formData: FormDat
 }
 
 export async function deleteSafetyIncident(incidentId: string) {
-  const context = await requireCompanyContext();
+  const context = await requireCapabilityForAction("MANAGE_FIELD", FIELD_ONLY);
   assertOwner(context, "Only the account owner can remove a safety case");
   const { company } = context;
 
@@ -190,7 +196,7 @@ export async function deleteSafetyIncident(incidentId: string) {
 }
 
 export async function createToolboxTalk(formData: FormData) {
-  const { company, ...user } = await requireCompanyContext();
+  const { company, ...user } = await requireCapabilityForAction("MANAGE_FIELD", FIELD_ONLY);
 
   const topic = String(formData.get("topic") ?? "").trim();
   if (!topic) throw new Error("Topic is required");
@@ -215,7 +221,7 @@ export async function createToolboxTalk(formData: FormData) {
 }
 
 export async function deleteToolboxTalk(talkId: string) {
-  const context = await requireCompanyContext();
+  const context = await requireCapabilityForAction("MANAGE_FIELD", FIELD_ONLY);
   assertOwner(context, "Only the account owner can remove a toolbox talk");
   const { company } = context;
 
