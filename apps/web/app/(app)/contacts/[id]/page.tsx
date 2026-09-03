@@ -18,6 +18,8 @@ import { LinkContactToQuickBooks } from "@/components/LinkContactToQuickBooks";
 import { ContactEditForm } from "@/components/ContactEditForm";
 import { ContactInteractionForm } from "@/components/ContactInteractionForm";
 import { ContactInteractionRow } from "@/components/ContactInteractionRow";
+import { ContactPersonForm } from "@/components/ContactPersonForm";
+import { ContactPersonRow } from "@/components/ContactPersonRow";
 import { toIsoDate } from "@/lib/compliance-expiry";
 import { serverToday } from "@/lib/serverToday";
 
@@ -79,6 +81,7 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
         orderBy: { occurredOn: "desc" },
         include: { loggedByUser: true, followUpAssignedToUser: true },
       },
+      people: { orderBy: { createdAt: "asc" } },
     },
   });
 
@@ -91,6 +94,19 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
     orderBy: { createdAt: "asc" },
   });
   const memberOptions = companyMembers.map((m) => ({ id: m.id, name: m.name ?? m.email }));
+  const personOptions = contact.people.map((p) => ({ id: p.id, name: p.name }));
+  const personNameById = new Map(personOptions.map((p) => [p.id, p.name]));
+
+  // "Last contact" per person is derived from the interaction log at read
+  // time, never stored -- contact.interactions is already ordered newest
+  // first, so the first hit per person is the max.
+  const lastContactByPersonId = new Map<string, string>();
+  for (const interaction of contact.interactions) {
+    if (!interaction.contactPersonId) continue;
+    if (!lastContactByPersonId.has(interaction.contactPersonId)) {
+      lastContactByPersonId.set(interaction.contactPersonId, toIsoDate(interaction.occurredOn) ?? "");
+    }
+  }
 
   const reliability = calculatePaymentReliability(
     contact.jobs.flatMap((job) =>
@@ -313,6 +329,36 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
 
       {showsEstimating && (
         <section className="mb-10 rounded-lg border border-slate-800 bg-slate-900 p-6">
+          <h2 className="mb-1 text-lg font-semibold text-slate-100">People</h2>
+          <p className="mb-4 text-sm text-slate-400">
+            The individuals at {contact.name} -- not a separate account of their own, just who to
+            actually call.
+          </p>
+          {contact.people.length === 0 ? (
+            <p className="mb-4 text-sm text-slate-400">No one added at {contact.name} yet.</p>
+          ) : (
+            <ul className="mb-4 divide-y divide-slate-800 border-y border-slate-800">
+              {contact.people.map((person) => (
+                <ContactPersonRow
+                  key={person.id}
+                  person={{
+                    id: person.id,
+                    name: person.name,
+                    title: person.title,
+                    email: person.email,
+                    phone: person.phone,
+                    lastContactOn: lastContactByPersonId.get(person.id) ?? null,
+                  }}
+                />
+              ))}
+            </ul>
+          )}
+          <ContactPersonForm contactId={contact.id} />
+        </section>
+      )}
+
+      {showsEstimating && (
+        <section className="mb-10 rounded-lg border border-slate-800 bg-slate-900 p-6">
           <h2 className="mb-3 text-lg font-semibold text-slate-100">Interactions</h2>
           <p className="mb-4 text-sm text-slate-400">
             Calls, emails, site visits, and notes with {contact.name} -- a log of the relationship,
@@ -326,6 +372,7 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
                 <ContactInteractionRow
                   key={interaction.id}
                   members={memberOptions}
+                  people={personOptions}
                   interaction={{
                     id: interaction.id,
                     type: interaction.type,
@@ -336,12 +383,16 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
                     followUpAssignedToUserName:
                       interaction.followUpAssignedToUser?.name ?? interaction.followUpAssignedToUser?.email ?? null,
                     loggedByUserName: interaction.loggedByUser?.name ?? interaction.loggedByUser?.email ?? null,
+                    contactPersonId: interaction.contactPersonId,
+                    contactPersonName: interaction.contactPersonId
+                      ? (personNameById.get(interaction.contactPersonId) ?? null)
+                      : null,
                   }}
                 />
               ))}
             </ul>
           )}
-          <ContactInteractionForm contactId={contact.id} members={memberOptions} />
+          <ContactInteractionForm contactId={contact.id} members={memberOptions} people={personOptions} />
         </section>
       )}
 

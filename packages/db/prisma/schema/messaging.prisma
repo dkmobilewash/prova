@@ -73,6 +73,12 @@ model OutboundMessage {
   /// actually went out as, not what the config says today.
   fromAddress String
 
+  /// The notices this message was sent for, when it was sent by the
+  /// notifier rather than typed by a person. A digest is one email
+  /// covering many, so this is a list. Empty for most messages, which are
+  /// somebody writing to a GC.
+  dispatches NotificationDispatch[]
+
   /// The provider's id for this message. The join key for every webhook
   /// that arrives afterwards, so without it the events are orphans.
   providerMessageId String? @unique

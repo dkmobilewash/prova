@@ -49,6 +49,7 @@ model Company {
   backcharges             Backcharge[]
   closeoutSubmissions     CloseoutSubmission[]
   alertAcknowledgements   AlertAcknowledgement[]
+  notificationDispatches  NotificationDispatch[]
   prevailingWageRuleSets  PrevailingWageRuleSet[]
   submittals              Submittal[]
   safetyCaseCounters      SafetyCaseCounter[]
@@ -62,6 +63,7 @@ model Company {
   vendorPriceQuotes       VendorPriceQuote[]
   outboundMessages        OutboundMessage[]
   contactInteractions     ContactInteraction[]
+  contactPeople           ContactPerson[]
 }
 
 enum UserRole {
@@ -110,6 +112,7 @@ model User {
   loggedBackcharges                    Backcharge[]
   submittedCloseoutPackages            CloseoutSubmission[]
   alertAcknowledgements                AlertAcknowledgement[]
+  notificationDispatches               NotificationDispatch[]
   submittedSubmittals                  Submittal[]
   reportedSafetyIncidents              SafetyIncident[]
   recordedToolboxTalks                 ToolboxTalk[]
@@ -207,6 +210,7 @@ model Contact {
   jobs           Job[]
   bidInvitations BidInvitation[]
   interactions   ContactInteraction[]
+  people         ContactPerson[]
 
   @@index([companyId])
 }
