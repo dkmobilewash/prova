@@ -1,0 +1,71 @@
+// Prova's own internal sales CRM -- for selling Prova itself, not a
+// tenant's own GC/customer relationships (that's Contact/ContactPerson/
+// ContactInteraction, in company.prisma and crm.prisma). Scoped to
+// Company like every other model, but only ever populated on the one
+// Company with isProvaOperator set -- see the field's comment on
+// company.prisma. New domain, new file, same reasoning as crm.prisma.
+
+enum SalesLeadSource {
+  REFERRAL
+  OUTBOUND
+  INBOUND
+  EVENT
+  OTHER
+}
+
+enum OpportunityStage {
+  NEW
+  CONTACTED
+  DEMO_SCHEDULED
+  TRIAL
+  WON
+  LOST
+}
+
+/// A prospective PROVA customer -- a construction subcontractor who might
+/// sign up. Not a second Contact: a Contact is a tenant's own GC/developer/
+/// vendor, and every tenant has their own; a SalesLead belongs only to
+/// Prova's operating company.
+model SalesLead {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  companyName String
+  contactName String?
+  email       String?
+  phone       String?
+  source      SalesLeadSource?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  opportunities SalesOpportunity[]
+
+  @@index([companyId])
+}
+
+/// One deal in progress with a SalesLead. A lead can have more than one
+/// opportunity over time (a lost deal revisited, a second product) -- this
+/// is the thing that moves through the pipeline, not the lead itself.
+model SalesOpportunity {
+  id        String    @id @default(cuid())
+  companyId String
+  company   Company   @relation(fields: [companyId], references: [id])
+  leadId    String
+  lead      SalesLead @relation(fields: [leadId], references: [id])
+
+  stage             OpportunityStage @default(NEW)
+  /// Estimated monthly recurring revenue if won. Null until there's a
+  /// number worth naming -- not defaulted to 0, which would read as "worth
+  /// nothing" rather than "not yet estimated."
+  estimatedMrr      Decimal?         @db.Decimal(10, 2)
+  expectedCloseDate DateTime?
+  notes             String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([leadId])
+}

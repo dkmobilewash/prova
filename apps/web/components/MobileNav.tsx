@@ -18,10 +18,19 @@ import type { Principal } from "@/lib/permissions";
  * One shared NAV_ITEMS list, so the two can never disagree about what pages
  * exist.
  */
-export function MobileNav({ companyName, principal }: { companyName: string; principal: Principal }) {
+export function MobileNav({
+  companyName,
+  principal,
+  showsSalesCrm = false,
+}: {
+  companyName: string;
+  principal: Principal;
+  /** Prova's own operating company only -- see Company.isProvaOperator. */
+  showsSalesCrm?: boolean;
+}) {
   // Filtered here rather than in the layout so the desktop rail and
   // the mobile drawer run the same function on the same input.
-  const groups = navGroupsFor(principal);
+  const groups = navGroupsFor(principal, { showsSalesCrm });
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
 

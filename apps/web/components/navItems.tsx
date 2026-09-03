@@ -382,6 +382,27 @@ export const NAV_ITEMS: NavItem[] = [
       </svg>
     ),
   },
+  // Not in NAV_ITEMS's usual home in a NAV_GROUPS group below -- this one
+  // is for Prova's own operating company only (Company.isProvaOperator),
+  // never a tenant, so it is appended separately by navGroupsFor rather
+  // than filtered by the job-function capability system every other item
+  // uses. See SALES_NAV_GROUP.
+  {
+    href: "/sales",
+    label: "Sales CRM",
+    icon: (
+      <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5">
+        <path
+          d="M3.5 15.5V11l4-2.5 3.5 2 5.5-4.5"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        <path d="M12.5 6h3.5v3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+  },
 ];
 
 
@@ -444,6 +465,14 @@ export const NAV_GROUPS: NavGroup[] = [
   },
 ];
 
+/** Prova's own sales pipeline for selling Prova itself -- deliberately
+ * outside NAV_GROUPS above, which every tenant's nav is built from. Only
+ * ever appended by navGroupsFor, and only when the caller says so. */
+const SALES_NAV_GROUP: NavGroup = {
+  heading: "Internal",
+  items: [item("/sales")],
+};
+
 /**
  * The rail as one person sees it.
  *
@@ -459,9 +488,12 @@ export const NAV_GROUPS: NavGroup[] = [
  * forgotten in the other is a feature that exists on a phone and not on a
  * laptop.
  */
-export function navGroupsFor(user: Principal): NavGroup[] {
-  return NAV_GROUPS.map((group) => ({
-    ...group,
-    items: group.items.filter((item) => canReach(user, item.href)),
-  })).filter((group) => group.items.length > 0);
+export function navGroupsFor(user: Principal, options: { showsSalesCrm?: boolean } = {}): NavGroup[] {
+  const groups = options.showsSalesCrm ? [...NAV_GROUPS, SALES_NAV_GROUP] : NAV_GROUPS;
+  return groups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => canReach(user, item.href)),
+    }))
+    .filter((group) => group.items.length > 0);
 }
