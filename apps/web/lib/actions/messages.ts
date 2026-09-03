@@ -42,11 +42,31 @@ async function runAction(fn: () => Promise<ActionResult>): Promise<ActionResult>
 
 /** Sends one email and records it, whatever happens.
  *
- * The message row is written BEFORE the provider is called, and a failure
- * is recorded as a FAILED event rather than thrown away. A send that
- * vanishes because it failed is precisely the behaviour this feature
+ * The message row AND its handover event are written BEFORE the provider
+ * is called, and a failure is recorded rather than thrown away. A send
+ * that vanishes because it failed is precisely the behaviour this feature
  * exists to make impossible — the competitor complaint is mail that shows
  * "sending" forever with no record of what went wrong.
+ *
+ * **THE ORDER IS THE DESIGN**, the same way it is in
+ * `notification-dispatch.ts`, and for a while this function only got half
+ * of it right. The row went first, but the QUEUED event and the
+ * `providerMessageId` were written afterwards, in a separate transaction.
+ * Everything between the provider call and that transaction was a window
+ * where the email HAD GONE to a real person and the database said
+ * otherwise: no provider id, no events at all. `/messages` read "No word
+ * back yet", and — the part that made this DATA-LOST rather than merely
+ * wrong — `reachedProvider` saw nothing to protect, so the owner-only
+ * delete guard permitted destroying the record of an email a GC had
+ * already received. The guard's own comment says that is exactly what it
+ * exists to prevent; it was being handed a row that lied to it.
+ *
+ * So the handover is claimed first and given back only when the provider
+ * PROVABLY never took it. The cost is the opposite error: a crash between
+ * that event and the send leaves a message reading "handed over,
+ * unconfirmed" that never went. That is the right way round. An
+ * overstated send surfaces as stale after a day and a person checks it; an
+ * understated one is evidence that no longer exists.
  */
 export async function sendOutboundEmail(formData: FormData): Promise<ActionResult> {
   const { company, ...user } = await requireCompanyContext();
@@ -87,6 +107,14 @@ export async function sendOutboundEmail(formData: FormData): Promise<ActionResul
       },
     });
 
+    // The claim. Written before the provider is reached, so that from here
+    // on there is no instant at which this message can be mistaken for one
+    // that never left. Our own clock is correct for it: this happened in
+    // this process, not at a provider reporting a past event.
+    const handover = await prisma.outboundMessageEvent.create({
+      data: { messageId: message.id, type: "QUEUED", occurredAt: new Date() },
+    });
+
     const result = await sendEmail({
       to: toAddress,
       toName: text(formData, "toName") || null,
@@ -103,18 +131,39 @@ export async function sendOutboundEmail(formData: FormData): Promise<ActionResul
       // It goes down as QUEUED, which is what actually happened, and it
       // will surface as unconfirmed after a day because no webhook can
       // ever match a message with no provider id.
-      await prisma.outboundMessageEvent.create({
-        data: {
-          messageId: message.id,
-          type: failureEventType(result.mayHaveSent === true),
-          // Our own clock is correct here: this happened in this process,
-          // not at a provider reporting a past event.
-          occurredAt: new Date(),
-          detail: result.mayHaveSent
-            ? `${result.error}. Treat it as sent — do not send it again without checking with them first.`
-            : result.error,
-        },
-      });
+      const outcome = failureEventType(result.mayHaveSent === true);
+
+      if (outcome === "QUEUED") {
+        // It reached the provider. The claim above already says so and is
+        // the correct record — it only needs the reason. A second QUEUED
+        // event would report one handover as two.
+        await prisma.outboundMessageEvent.update({
+          where: { id: handover.id },
+          data: {
+            detail: `${result.error}. Treat it as sent — do not send it again without checking with them first.`,
+          },
+        });
+      } else {
+        // Provably never got there: no network, or an outright refusal.
+        // The claim is given back, because there is no copy anywhere and a
+        // row carrying a QUEUED event would be undeletable evidence of an
+        // email that does not exist. Swapped for FAILED in one transaction
+        // so no interleaving can leave this message with neither — losing
+        // the claim without recording the failure is the same hole again,
+        // pointing the other way.
+        await prisma.$transaction([
+          prisma.outboundMessageEvent.delete({ where: { id: handover.id } }),
+          prisma.outboundMessageEvent.create({
+            data: {
+              messageId: message.id,
+              type: "FAILED",
+              occurredAt: new Date(),
+              detail: result.error,
+            },
+          }),
+        ]);
+      }
+
       revalidatePath("/messages");
       return fail(
         result.mayHaveSent
@@ -123,15 +172,26 @@ export async function sendOutboundEmail(formData: FormData): Promise<ActionResul
       );
     }
 
-    await prisma.$transaction([
-      prisma.outboundMessage.update({
+    try {
+      await prisma.outboundMessage.update({
         where: { id: message.id },
         data: { providerMessageId: result.providerMessageId, fromAddress: result.from },
-      }),
-      prisma.outboundMessageEvent.create({
-        data: { messageId: message.id, type: "QUEUED", occurredAt: new Date() },
-      }),
-    ]);
+      });
+    } catch {
+      // The email HAS gone; only our note of the provider's id for it is
+      // lost. That costs this message the join key every later webhook
+      // needs, so it can never be confirmed delivered — it stays "handed
+      // over, not confirmed" and goes stale after a day, which is a
+      // person's cue to check. Deliberately swallowed rather than thrown:
+      // a thrown Server Action message is redacted in production, so the
+      // sender would see a generic failure for an email that succeeded and
+      // the obvious next move is to send it again. The QUEUED event above
+      // survives regardless, which is what keeps the record undeletable.
+      revalidatePath("/messages");
+      return fail(
+        "It sent, but we couldn't finish recording it. It's in the log as handed over and unconfirmed — don't send it again.",
+      );
+    }
 
     revalidatePath("/messages");
     return ok;
