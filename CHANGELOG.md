@@ -54,7 +54,7 @@ truth is that nobody typed a date in.
 and recording is a notice that was sent rather than one that goes again
 tomorrow.
 
-#### Five bugs, and what found each one
+#### Seven bugs, and what found each one
 
 The suite was green through every one of these.
 
@@ -113,11 +113,47 @@ spent for good, with nothing but FAILED rows to show for it. Releasing
 never erases the FAILED event — the log is the only place anyone can see
 what happened.
 
-Known and accepted: `releaseClaims` is scoped to the keys one call claimed
-and only while unlinked or linked to its own message, so a concurrent run
-that succeeded is untouched. A rare interleaving could still release a
-competing run's spent-but-unsent rung, costing one duplicate email. That is
-better than permanently losing warnings on every transient failure.
+**The `rung` column described the wrong rung on every burned row.** Also
+from the second-reader pass. `claim()` wrote the rung that FIRED onto every
+key a notice consumed, including the looser ones it burned on the way past,
+so a row keyed `…@approaching` recorded itself as a `week`. Nothing sent
+wrong and nothing could — `dispatchKey` is the only column ever matched on,
+which is why 43 unit tests and 12 database tests were green through it. What
+was wrong is the column's whole reason for existing: it is stored so that
+"why did this person get this email" is a query rather than string surgery,
+and it answered wrongly for exactly the rows whose answer is not obvious
+from the key. Fixed before merge rather than after, because the table does
+not exist on `ep-little-sea` yet: two lines today, a backfill against a
+ledger of what we told people once it does. `consumed()` now returns each
+key WITH the rung that key names, which makes the old mistake unavailable
+rather than merely corrected.
+
+**A count of claimed rows is not ownership, and treating it as one sent two
+emails about one licence.** Found reviewing this branch as a second reader.
+`claim()` inserted with `skipDuplicates` and returned how many rows it
+created; anything above zero was taken as "I won", and the digest then went
+out covering every notice in hand. Two concurrent runs for one person do
+not have to compute the same notices, and it takes no new record for them
+to differ — a rung boundary crossed between their two reads is enough. One
+run sees `approaching`, the other sees `approaching` + `week` and fires
+`week`. The second wins one key, loses the other, counts 1, and sends. Two
+emails, seconds apart, about the same licence: the nag this whole feature
+exists to prevent, produced by the machinery meant to prevent it.
+
+`claim()` now returns WHICH keys it created, via `createManyAndReturn`, and
+a notice is ours only if we won **every** key it consumes — winning the rung
+that fired is not enough, because losing one it burns means another run is
+speaking about that alert right now. Keys won for a notice we then decline
+to send are given back, so the tighter rung fires next run instead of being
+burnt by a run that stayed silent.
+
+That also removed a hazard this entry previously recorded as accepted.
+`releaseClaims` used to delete keys matching `messageId: null OR ours`,
+which reads like "only my own in-flight rows" and is not: unlinked is also
+the permanent state of every rung burned but never sent. It now deletes
+only keys `claim` reported as won, so a run cannot touch a row it did not
+insert — no interleaving, rare or otherwise, and no duplicate email as the
+price of it.
 
 #### What this does not do
 

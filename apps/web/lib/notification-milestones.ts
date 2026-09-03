@@ -229,3 +229,36 @@ export function consumed(
 export function keysConsumed(notice: DueNotice): string[] {
   return consumed(notice).map((row) => row.dispatchKey);
 }
+
+/**
+ * Splits notices by whether THIS run won every key they consume.
+ *
+ * Lives here rather than with the dispatcher because it is pure and it is
+ * about the keys a notice consumes, which is this module's subject. The
+ * dispatcher supplies the set of keys its own insert actually created.
+ *
+ * **Winning the rung that fired is not enough.** Two concurrent runs for
+ * one person need not compute the same notices — a rung boundary crossed
+ * between their two reads is enough for one to see `approaching` and the
+ * other `approaching` + `week`. The second wins only `week`, and if that
+ * counted as ownership both runs send, and one licence produces two emails
+ * seconds apart. Losing ANY key a notice consumes means another run is
+ * speaking about that alert right now, so this run says nothing about it.
+ *
+ * The notices in `theirs` must have the keys this run won for them RELEASED
+ * by the caller. Left claimed, a rung would be burnt with no email behind
+ * it: the tighter, newer thing to say spent by a run that stayed silent,
+ * and nothing would ever say it.
+ */
+export function partitionOwned(
+  notices: DueNotice[],
+  won: ReadonlySet<string>,
+): { ours: DueNotice[]; theirs: DueNotice[] } {
+  const ours: DueNotice[] = [];
+  const theirs: DueNotice[] = [];
+  for (const notice of notices) {
+    const mine = consumed(notice).every((row) => won.has(row.dispatchKey));
+    (mine ? ours : theirs).push(notice);
+  }
+  return { ours, theirs };
+}

@@ -331,4 +331,60 @@ describe("dispatching a digest", () => {
     expect(outcome).toEqual({ ok: true, sent: false, reason: "nothing-due" });
     expect(sendEmail).not.toHaveBeenCalled();
   });
+
+  it("says nothing about an alert a concurrent run already claimed a rung of", async () => {
+    // The race, staged rather than timed: run B read a moment earlier,
+    // across a rung boundary, and claimed the looser rung. There is no way
+    // to make two real runs interleave deterministically, so B's row is
+    // written directly — which is exactly the state B's claim leaves.
+    const licence = await prisma.companyLicense.findFirst({
+      where: { companyId: recipient.companyId },
+    });
+    await prisma.companyLicense.update({
+      where: { id: licence!.id },
+      data: { expirationDate: utc("2026-09-08") },
+    });
+    const alertKey = `RENEWAL:${licence!.id}:2026-09-08`;
+
+    await prisma.notificationDispatch.deleteMany({
+      where: { userId: recipient.id },
+    });
+    await prisma.notificationDispatch.create({
+      data: {
+        companyId: recipient.companyId,
+        userId: recipient.id,
+        dispatchKey: `${alertKey}@approaching`,
+        alertKey,
+        rung: "approaching",
+      },
+    });
+
+    sendEmail.mockClear();
+    sendEmail.mockResolvedValue(accepted("msg_race"));
+    const outcome = await dispatchAlertDigest(
+      recipient,
+      TODAY,
+      "https://app.example.test",
+    );
+
+    // Our run crosses week and burns approaching, so it wins @week and
+    // loses @approaching. Sending on that partial win is two emails about
+    // one licence, seconds apart.
+    expect(outcome).toEqual({
+      ok: true,
+      sent: false,
+      reason: "already-claimed",
+    });
+    expect(sendEmail).not.toHaveBeenCalled();
+
+    // And the rung we did win is given back, not left burnt — otherwise
+    // the week notice is spent by a run that never sent anything, and
+    // nothing ever says it.
+    const rows = await prisma.notificationDispatch.findMany({
+      where: { userId: recipient.id, alertKey },
+    });
+    expect(rows.map((row) => row.dispatchKey)).toEqual([
+      `${alertKey}@approaching`,
+    ]);
+  });
 });

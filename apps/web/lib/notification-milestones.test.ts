@@ -5,6 +5,7 @@ import {
   STANDING_RUNG,
   consumed,
   dispatchKey,
+  partitionOwned,
   keysConsumed,
   noticesDue,
 } from "@/lib/notification-milestones";
@@ -459,5 +460,77 @@ describe("consumed", () => {
     expect(consumed(due[0]).map((row) => row.dispatchKey)).toEqual(
       keysConsumed(due[0]),
     );
+  });
+});
+
+describe("partitionOwned — who sends when two runs overlap", () => {
+  /** The scenario, which needs no new record to happen: two runs for one
+   * person read a moment apart across a rung boundary.
+   *
+   *   run B reads at 8 days → crosses [approaching] → claims @approaching
+   *   run A reads at 7 days → crosses [approaching, week], fires week
+   *
+   * A wins only @week. Counting that as ownership is what sent two emails
+   * about one licence seconds apart. */
+  it("does not let a run send a notice whose burned rung another run took", () => {
+    const due = noticesDue(
+      [alert({ key: "RENEWAL:lic_1:2026-11-30", daysUntil: 7 })],
+      nothingSent,
+    );
+    expect(due[0].rung).toBe("week");
+
+    // Everything this notice consumes except the rung the other run took.
+    const won = new Set(["RENEWAL:lic_1:2026-11-30@week"]);
+    const { ours, theirs } = partitionOwned(due, won);
+
+    expect(ours).toEqual([]);
+    expect(theirs).toEqual(due);
+  });
+
+  it("sends the notice when it won every key that notice consumes", () => {
+    const due = noticesDue(
+      [alert({ key: "RENEWAL:lic_1:2026-11-30", daysUntil: 7 })],
+      nothingSent,
+    );
+    const won = new Set(keysConsumed(due[0]));
+    const { ours, theirs } = partitionOwned(due, won);
+
+    expect(ours).toEqual(due);
+    expect(theirs).toEqual([]);
+  });
+
+  it("splits per notice — losing one alert does not silence the others", () => {
+    const due = noticesDue(
+      [
+        alert({ key: "RENEWAL:lic_1:2026-11-30", daysUntil: 7 }),
+        alert({ key: "WIP_VARIANCE:job_1:over", kind: "WIP_VARIANCE" }),
+      ],
+      nothingSent,
+    );
+    const lost = due.find((n) => n.alert.key.startsWith("RENEWAL:"))!;
+    const kept = due.find((n) => n.alert.key.startsWith("WIP_VARIANCE:"))!;
+
+    const won = new Set([
+      ...keysConsumed(kept),
+      // only the fired rung of the one we lost
+      dispatchKey(lost.alert.key, lost.rung),
+    ]);
+    const { ours, theirs } = partitionOwned(due, won);
+
+    expect(ours).toEqual([kept]);
+    expect(theirs).toEqual([lost]);
+  });
+
+  it("owns everything when nothing is contended", () => {
+    const due = noticesDue(
+      [
+        alert({ key: "RENEWAL:lic_1:2026-11-30", daysUntil: -2 }),
+        alert({ key: "WIP_VARIANCE:job_1:over", kind: "WIP_VARIANCE" }),
+      ],
+      nothingSent,
+    );
+    const won = new Set(due.flatMap(keysConsumed));
+    expect(partitionOwned(due, won).ours).toEqual(due);
+    expect(partitionOwned(due, won).theirs).toEqual([]);
   });
 });

@@ -10,6 +10,7 @@ import {
   consumed,
   keysConsumed,
   noticesDue,
+  partitionOwned,
   type DueNotice,
 } from "@/lib/notification-milestones";
 
@@ -122,14 +123,37 @@ export async function dispatchAlertDigest(
     };
   }
 
-  const claimed = await claim(recipient, notices);
-  // Another run got there first. Not an error: the person is being told,
-  // just not by us.
-  if (claimed === 0)
+  // WHICH keys this call won, not how many. A count cannot answer the
+  // question that matters, because two concurrent runs for one person do
+  // not have to compute the same notices: a rung boundary crossed between
+  // their two reads is enough to make one run see `approaching` and the
+  // other `approaching` + `week`. Claiming then returns a partial win —
+  // some keys ours, some already taken — and a count of 1 looked exactly
+  // like winning outright. The digest then went out covering every notice
+  // in hand, including the ones the other run was at that moment sending,
+  // which is two emails about one licence seconds apart: the nag this
+  // whole feature exists to prevent, produced by the machinery meant to
+  // prevent it.
+  const won = await claim(recipient, notices);
+
+  // A notice is ours only if we won EVERY key it consumes. Winning the
+  // rung that fired is not enough — losing a rung it burns means another
+  // run is speaking about this same alert right now.
+  const { ours, theirs } = partitionOwned(notices, won);
+
+  // Give back what we won for a notice we are NOT sending. Leaving those
+  // claimed would burn a rung with no email behind it — the tighter,
+  // newer thing to say would be spent by a run that stayed silent, and
+  // nothing would ever say it. Released, it simply fires next run.
+  await releaseKeys(recipient.id, keysWonFor(theirs, won));
+
+  // Everything in hand belongs to another run. Not an error: the person is
+  // being told, just not by us.
+  if (ours.length === 0)
     return { ok: true, sent: false, reason: "already-claimed" };
 
-  const subject = digestSubject(notices);
-  const body = digestBody(notices, baseUrl);
+  const subject = digestSubject(ours);
+  const body = digestBody(ours, baseUrl);
 
   const message = await prisma.outboundMessage.create({
     data: {
@@ -146,7 +170,7 @@ export async function dispatchAlertDigest(
     },
   });
 
-  await linkClaimsToMessage(recipient.id, notices, message.id);
+  await linkClaimsToMessage(recipient.id, ours, message.id);
 
   const result = await sendEmail({
     to: recipient.email,
@@ -186,11 +210,11 @@ export async function dispatchAlertDigest(
     // nightly run, and every milestone for every user is spent for good.
     // Every send fails loudly in the log and the warnings are gone anyway.
     if (!mayHaveSent) {
-      await releaseClaims(recipient.id, notices, message.id);
+      await releaseKeys(recipient.id, keysWonFor(ours, won));
       return { ok: false, error: result.error, claimed: 0 };
     }
 
-    return { ok: false, error: result.error, claimed };
+    return { ok: false, error: result.error, claimed: ours.length };
   }
 
   await prisma.$transaction([
@@ -209,7 +233,7 @@ export async function dispatchAlertDigest(
   return {
     ok: true,
     sent: true,
-    noticeCount: notices.length,
+    noticeCount: ours.length,
     messageId: message.id,
     toAddress: recipient.email,
   };
@@ -237,13 +261,18 @@ async function sentKeysFor(
  *
  * `skipDuplicates` makes a concurrent run lose rather than crash: two runs
  * starting together both compute the same notices, and the second inserts
- * nothing and sends nothing. The count it returns is how many rows THIS
- * call created, which is the only reliable signal of who won.
+ * nothing and sends nothing.
+ *
+ * Returns the keys THIS call created — not how many. `createManyAndReturn`
+ * hands back exactly the rows it inserted, so a partial win is legible as
+ * a partial win. A count could only say "at least one", and at least one
+ * is not ownership: the caller was sending a digest covering notices it
+ * had lost, which is how one licence produced two emails seconds apart.
  */
 async function claim(
   recipient: Recipient,
   notices: DueNotice[],
-): Promise<number> {
+): Promise<Set<string>> {
   // Each row records the rung ITS OWN key names, not the one that fired.
   // Writing `notice.rung` across all of them put every burned rung in the
   // ledger under the wrong name — a row keyed `…@approaching` saying it was
@@ -261,11 +290,21 @@ async function claim(
     })),
   );
 
-  const result = await prisma.notificationDispatch.createMany({
+  const created = await prisma.notificationDispatch.createManyAndReturn({
     data: rows,
     skipDuplicates: true,
+    select: { dispatchKey: true },
   });
-  return result.count;
+  return new Set(created.map((row) => row.dispatchKey));
+}
+
+/** The keys this call won, among the ones these notices consume.
+ *
+ * Intersecting rather than recomputing: a key is only ever released or
+ * linked by the call that actually inserted it, so a run can never touch
+ * a row belonging to a run it is racing. */
+function keysWonFor(notices: DueNotice[], won: ReadonlySet<string>): string[] {
+  return notices.flatMap(keysConsumed).filter((key) => won.has(key));
 }
 
 /**
@@ -295,28 +334,26 @@ async function linkClaimsToMessage(
 }
 
 /**
- * Gives back milestones for a send that provably never went out, so the
- * next run says the same thing again.
+ * Gives back milestones this call claimed and did not send, so the next
+ * run says the same thing again.
  *
- * Scoped to the keys THIS call claimed, and only while they are unlinked
- * or linked to this call's own message — a concurrent run that succeeded
- * has linked its fired rung to a different message and is not touched.
+ * Takes the keys rather than the notices, and the caller only ever passes
+ * keys `claim` reported as won. That is what makes this safe with no
+ * `messageId` guard: a row this call did not insert is never in the list,
+ * so a concurrent run's claim cannot be deleted by ours. The previous
+ * version filtered on `messageId: null OR ours`, which reads like the same
+ * protection and is not — an unlinked row is also the permanent state of
+ * every rung burned but never sent, so "unlinked" does not mean "mine".
+ *
+ * Two callers, one reason each: a notice we lost the race for (never sent,
+ * must not stay burnt), and a send that provably never left the machine.
+ *
  * The message row and its FAILED event stay: what happened is still what
  * happened, and the log is the only place anyone can see it.
  */
-async function releaseClaims(
-  userId: string,
-  notices: DueNotice[],
-  messageId: string,
-): Promise<void> {
-  const keys = notices.flatMap(keysConsumed);
+async function releaseKeys(userId: string, keys: string[]): Promise<void> {
   if (keys.length === 0) return;
-
   await prisma.notificationDispatch.deleteMany({
-    where: {
-      userId,
-      dispatchKey: { in: keys },
-      OR: [{ messageId: null }, { messageId }],
-    },
+    where: { userId, dispatchKey: { in: keys } },
   });
 }
