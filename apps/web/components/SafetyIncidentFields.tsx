@@ -3,8 +3,13 @@
 import { useState } from "react";
 import { INCIDENT_CLASSIFICATIONS, INCIDENT_OUTCOMES } from "@/components/safetyLabels";
 
+// `text-base` is load-bearing, not decoration. These inputs sit inside a
+// `text-sm` label and INHERIT 14px, and iOS Safari zooms the whole page
+// whenever a focused field is under 16px — which leaves whoever is recording
+// an incident zoomed in and scrolled sideways after every tap. `min-h-11` is
+// 44px, the tap-target floor.
 export const inputClass =
-  "rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none";
+  "min-h-11 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-base text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none";
 export const labelClass = "flex flex-col gap-1 text-sm text-slate-300";
 
 export type JobOption = { id: string; name: string };
@@ -155,9 +160,14 @@ export function SafetyIncidentFields({
         <div className="grid gap-3 sm:grid-cols-2">
           <label className={labelClass}>
             Days away from work
+            {/* inputMode="numeric" so the phone opens straight on digits.
+                type="number" alone gets a keypad on iOS but a full keyboard
+                on several Android browsers, and a day count has no decimal
+                point or minus sign to reach for. */}
             <input
               type="number"
               name="daysAway"
+              inputMode="numeric"
               min={0}
               defaultValue={defaults.daysAway ?? ""}
               className={inputClass}
@@ -168,6 +178,7 @@ export function SafetyIncidentFields({
             <input
               type="number"
               name="daysRestricted"
+              inputMode="numeric"
               min={0}
               defaultValue={defaults.daysRestricted ?? ""}
               className={inputClass}

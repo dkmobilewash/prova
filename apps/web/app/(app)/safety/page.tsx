@@ -82,7 +82,9 @@ export default async function SafetyPage({
               <Link
                 key={y}
                 href={`/safety?year=${y}`}
-                className={`rounded-md border px-3 py-1.5 text-sm ${
+                // 44px tall — these year chips were 34px and sit right next
+                // to each other, which is a mis-tap into the wrong year's log.
+                className={`inline-flex min-h-11 items-center rounded-md border px-3 py-2 text-sm ${
                   y === activeYear
                     ? "border-blue-500 text-blue-400"
                     : "border-slate-700 text-slate-300 hover:border-slate-500"
@@ -97,15 +99,15 @@ export default async function SafetyPage({
         <div className="mb-4 grid gap-3 sm:grid-cols-3">
           <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
             <p className="text-2xl font-semibold text-slate-100">{incidents.length}</p>
-            <p className="text-xs text-slate-500">Cases logged</p>
+            <p className="text-xs text-slate-400">Cases logged</p>
           </div>
           <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
             <p className="text-2xl font-semibold text-amber-300">{recordableCount}</p>
-            <p className="text-xs text-slate-500">Recordable on the 300 log</p>
+            <p className="text-xs text-slate-400">Recordable on the 300 log</p>
           </div>
           <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
             <p className="text-2xl font-semibold text-slate-100">{daysAwayCases}</p>
-            <p className="text-xs text-slate-500">Cases with days away</p>
+            <p className="text-xs text-slate-400">Cases with days away</p>
           </div>
         </div>
 

@@ -3,8 +3,11 @@
 import { useRef, useState, useTransition } from "react";
 import { createPunchListItem } from "@/lib/actions";
 
+// 16px, not the 14px inherited from the `text-sm` label: iOS Safari zooms the
+// whole page when a focused input is under 16px, and the foreman then has to
+// pinch back out between fields. `min-h-11` is a 44px tap target.
 const inputClass =
-  "rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none";
+  "min-h-11 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-base text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none";
 const labelClass = "flex flex-col gap-1 text-sm text-slate-300";
 
 export type JobOption = { id: string; name: string };
@@ -79,7 +82,7 @@ export function PunchListForm({ jobs, defaultJobId }: { jobs: JobOption[]; defau
       <button
         type="submit"
         disabled={isPending}
-        className="self-start rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+        className="inline-flex min-h-11 items-center justify-center self-start rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
       >
         {isPending ? "Adding…" : "Add item"}
       </button>

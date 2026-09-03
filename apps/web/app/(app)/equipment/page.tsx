@@ -34,7 +34,7 @@ export default async function EquipmentPage() {
         <h2 className="mb-3 text-sm font-semibold text-slate-300">
           Inventory
           {equipment.length > 0 && (
-            <span className="ml-2 font-normal text-slate-500">
+            <span className="ml-2 font-normal text-slate-400">
               {equipment.length} item{equipment.length === 1 ? "" : "s"}, {inYard} in the yard
             </span>
           )}

@@ -24,9 +24,9 @@ export function ToolboxTalkRow({ talk, canDelete }: { talk: ToolboxTalkRowData; 
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-slate-100">{talk.topic}</span>
-          <span className="text-xs text-slate-500">{talk.heldOn}</span>
+          <span className="text-xs text-slate-400">{talk.heldOn}</span>
         </div>
-        <p className="mt-1 text-xs text-slate-500">
+        <p className="mt-1 text-xs text-slate-400">
           {talk.jobName ? (
             <span className="text-blue-400">{talk.jobName}</span>
           ) : (
@@ -41,7 +41,7 @@ export function ToolboxTalkRow({ talk, canDelete }: { talk: ToolboxTalkRowData; 
       </div>
 
       {canDelete && (
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 flex-wrap items-center gap-3">
           {isConfirmingDelete ? (
             <>
               <button
@@ -57,7 +57,7 @@ export function ToolboxTalkRow({ talk, canDelete }: { talk: ToolboxTalkRowData; 
                     }
                   });
                 }}
-                className="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+                className="inline-flex min-h-11 items-center justify-center rounded-md border border-red-500 px-3 py-2 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50"
               >
                 {isPending ? "Removing…" : "Confirm remove"}
               </button>
@@ -65,7 +65,7 @@ export function ToolboxTalkRow({ talk, canDelete }: { talk: ToolboxTalkRowData; 
                 type="button"
                 disabled={isPending}
                 onClick={() => setIsConfirmingDelete(false)}
-                className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50"
+                className="inline-flex min-h-11 items-center justify-center rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -75,7 +75,7 @@ export function ToolboxTalkRow({ talk, canDelete }: { talk: ToolboxTalkRowData; 
               type="button"
               disabled={isPending}
               onClick={() => setIsConfirmingDelete(true)}
-              className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:border-red-500 hover:text-red-400 disabled:opacity-50"
+              className="inline-flex min-h-11 items-center justify-center rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:border-red-500 hover:text-red-400 disabled:opacity-50"
             >
               Remove
             </button>

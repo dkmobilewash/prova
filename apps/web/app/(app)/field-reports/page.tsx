@@ -100,7 +100,10 @@ export default async function FieldReportsPage() {
               <section key={week.start}>
                 <header className="mb-3 border-b border-slate-800 pb-2">
                   <h2 className="font-semibold text-slate-100">{weekLabel(week.start)}</h2>
-                  <p className="mt-1 flex flex-wrap gap-x-3 text-xs text-slate-500">
+                  {/* slate-400 — slate-500 measures 3.83:1 on this ground,
+                      under the 4.5 floor for text, and the coverage figure is
+                      the point of grouping by week. */}
+                  <p className="mt-1 flex flex-wrap gap-x-3 text-xs text-slate-400">
                     <span>
                       {week.reports.length} {week.reports.length === 1 ? "report" : "reports"}
                     </span>
