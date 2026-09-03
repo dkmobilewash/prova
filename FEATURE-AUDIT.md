@@ -25,11 +25,16 @@ against a fresh clone.
 
 **118 items audited — 88 built / 21 partial / 8 missing / 1 descoped**
 
-(Recomputed 3 Sep 2026 by counting every `| Built |`/`| Partial |`/
-`| Missing |`/`| Descoped |` row across the per-sheet tables below — this
-header had drifted from those rows independently of the ContactPerson
-work landing in this same pass, so it's corrected here rather than
-hand-incremented.)
+These three statements of the same arithmetic — the line above, the table
+below, and the 26 per-sheet headers — are now checked against the rows by
+`apps/web/lib/plumbing.test.ts`, per sheet, naming the sheet that is wrong.
+Do not hand-increment them after a merge; run the test and let it say.
+
+**Do not recount by grepping `^| Built |` over this file.** That also
+matches the summary table's own four rows and overcounts by exactly four,
+which is how the header came to claim 121 items against 117 rows on
+3 Sep 2026 — a wrong number that looked like a careful recount. Count only
+rows that sit under a `## NN.` sheet header.
 
 | Status | Count |
 | --- | --- |

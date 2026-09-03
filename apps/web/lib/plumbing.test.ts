@@ -78,78 +78,166 @@ describe("workflows only run scripts that exist on this ref", () => {
  * 2. FEATURE-AUDIT's arithmetic must agree with its own rows.
  * ------------------------------------------------------------------ */
 
+/*
+ * The file states its arithmetic in THREE places, and all three have been
+ * wrong at once. On `ebe3532~1` the stated line said 121/88/22/9/2, the
+ * summary table said 86 built, and the rows themselves were 87 — three
+ * numbers, no two agreeing, every check green.
+ *
+ * The 121 is worth naming because it is the whole reason this guard reads
+ * the file structurally instead of grepping it. Someone recounted by
+ * grepping `^| Built |` over the file, which also matches the summary
+ * table's OWN four rows — so the count came out at rows + 4, and the error
+ * looked like a careful recount. Feature rows are therefore only counted
+ * while inside a sheet, and the summary table is parsed separately and
+ * asserted against, never counted as data.
+ *
+ * All three places are checked here. Checking only the total would let two
+ * per-sheet errors cancel and pass.
+ */
+
 type Counts = { built: number; partial: number; missing: number; descoped: number };
 const zero = (): Counts => ({ built: 0, partial: 0, missing: 0, descoped: 0 });
+const KEYS = ["built", "partial", "missing", "descoped"] as const;
 
-/** Reads the file into per-sheet header counts and per-sheet row counts. */
+const sum = (a: Counts, b: Counts): Counts => ({
+  built: a.built + b.built,
+  partial: a.partial + b.partial,
+  missing: a.missing + b.missing,
+  descoped: a.descoped + b.descoped,
+});
+const items = (c: Counts) => c.built + c.partial + c.missing + c.descoped;
+
+/** "built: header says 6, rows have 7" for each status that disagrees. */
+function deltas(claim: Counts, actual: Counts): string {
+  return KEYS.filter((k) => claim[k] !== actual[k])
+    .map((k) => `${k}: says ${claim[k]}, rows have ${actual[k]}`)
+    .join("; ");
+}
+
+/** Reads the file into per-sheet header counts, per-sheet row counts, the
+ *  summary table, and the stated summary line. */
 function readAudit() {
   const text = readFileSync(join(REPO, "FEATURE-AUDIT.md"), "utf8");
-  const sheets: { title: string; header: Counts; rows: Counts }[] = [];
+  const sheets: { n: string; title: string; line: number; header: Counts; rows: Counts }[] = [];
+  const summaryTable = zero();
+  const summaryTableSaw = new Set<string>();
+  const strays: string[] = [];
   let current: (typeof sheets)[number] | null = null;
 
-  for (const line of text.split("\n")) {
-    const head = line.match(/^## (\d+\..*?) — ((?:\d+ \w+(?: · )?)+)\s*$/);
+  text.split("\n").forEach((line, i) => {
+    const head = line.match(/^## (\d+)\.\s*(.*?) — ((?:\d+ \w+(?: · )?)+)\s*$/);
     if (head) {
-      current = { title: head[1], header: zero(), rows: zero() };
-      for (const [, n, word] of head[2].matchAll(/(\d+) (built|partial|missing|descoped)/g)) {
+      current = { n: head[1], title: `${head[1]}. ${head[2]}`, line: i + 1, header: zero(), rows: zero() };
+      for (const [, n, word] of head[3].matchAll(/(\d+) (built|partial|missing|descoped)/g)) {
         current.header[word as keyof Counts] = Number(n);
       }
       sheets.push(current);
-      continue;
+      return;
     }
-    const row = line.match(/^\| (Built|Partial|Missing|Descoped) \|/);
-    if (row && current) {
-      current.rows[row[1].toLowerCase() as keyof Counts] += 1;
-    }
-  }
 
-  const summary = text.match(
+    const status = line.match(/^\|\s*(Built|Partial|Missing|Descoped)\s*\|/);
+    if (!status) return;
+    const key = status[1].toLowerCase() as keyof Counts;
+
+    if (current) {
+      // Inside a sheet: a feature row.
+      current.rows[key] += 1;
+      return;
+    }
+
+    // Before the first sheet. The only legitimate status-shaped rows up
+    // here are the summary table's two-column `| Built | 88 |`.
+    const cell = line.match(/^\|\s*(?:Built|Partial|Missing|Descoped)\s*\|\s*(\d+)\s*\|\s*$/);
+    if (cell) {
+      summaryTable[key] = Number(cell[1]);
+      summaryTableSaw.add(key);
+    } else {
+      strays.push(`line ${i + 1}: ${line.slice(0, 70)}`);
+    }
+  });
+
+  const summaryLine = text.match(
     /\*\*(\d+) items audited — (\d+) built \/ (\d+) partial \/ (\d+) missing \/ (\d+) descoped\*\*/,
   );
 
-  return { sheets, summary };
+  return { sheets, summaryTable, summaryTableSaw, strays, summaryLine };
 }
 
 describe("FEATURE-AUDIT counts agree with its own rows", () => {
-  const { sheets, summary } = readAudit();
+  const { sheets, summaryTable, summaryTableSaw, strays, summaryLine } = readAudit();
+  const total = sheets.reduce((acc, s) => sum(acc, s.rows), zero());
 
-  it("finds the sheets at all", () => {
-    expect(sheets.length).toBeGreaterThan(20);
+  /* -- guards on the parser itself, so a miss can't pass as agreement -- */
+
+  it("parses all 26 sheets, numbered contiguously", () => {
+    // A sheet header that stops matching (reworded, or its `— N built`
+    // suffix dropped) does not fail loudly: its rows get attributed to the
+    // PREVIOUS sheet and both sheets then look self-consistent. A bare
+    // `length > 20` passes straight through that. The numbering is what
+    // makes the miss visible.
+    expect(
+      sheets.map((s) => s.n),
+      "A sheet header did not parse. Headers must read exactly " +
+        "`## NN. Title — N built · N partial · N missing`, and this test " +
+        "counts rows only while inside one — so an unparsed header silently " +
+        "folds its rows into the sheet above it.",
+    ).toEqual(Array.from({ length: 26 }, (_, i) => String(i + 1).padStart(2, "0")));
   });
 
-  it.each(sheets)("$title header matches the rows under it", ({ header, rows }) => {
+  it("finds a summary table with all four statuses, and nothing else above the sheets", () => {
+    expect(
+      [...summaryTableSaw].sort(),
+      "The summary table above the sheets is missing a status row.",
+    ).toEqual([...KEYS].sort());
+    expect(
+      strays,
+      "A status-shaped row sits above the first sheet but is not part of " +
+        "the summary table. Feature rows must live under a `## NN.` header, " +
+        "or they are counted by nothing.",
+    ).toEqual([]);
+  });
+
+  /* ---------------- the three places the numbers are stated ------------- */
+
+  it.each(sheets)("sheet $title — header matches the rows under it", ({ title, line, header, rows }) => {
     // The counts are DERIVED from the rows; the header is a copy of a
     // derived fact, which is the thing this codebase never stores. Since
     // the header is written by hand, this is what keeps the copy honest.
-    expect(header).toEqual(rows);
+    expect(
+      rows,
+      `Sheet ${title} (FEATURE-AUDIT.md line ${line}) disagrees with its own rows — ` +
+        `${deltas(header, rows)}. Fix the header to match the rows beneath it; ` +
+        `the rows are the record, the header is a summary of them.`,
+    ).toEqual(header);
+  });
+
+  it("the summary table equals the sum of every sheet", () => {
+    expect(
+      summaryTable,
+      `The | Status | Count | table disagrees with the rows — ${deltas(summaryTable, total)}. ` +
+        `It said 86 built against 87 rows on main for days: it is the least-read ` +
+        `of the three places and drifts first.`,
+    ).toEqual(total);
   });
 
   it("the summary line equals the sum of every sheet", () => {
-    expect(summary, "summary line missing or reworded — this test reads its exact shape").not.toBeNull();
-    const total = sheets.reduce<Counts>(
-      (acc, s) => ({
-        built: acc.built + s.rows.built,
-        partial: acc.partial + s.rows.partial,
-        missing: acc.missing + s.rows.missing,
-        descoped: acc.descoped + s.rows.descoped,
-      }),
-      zero(),
-    );
-    const items = total.built + total.partial + total.missing + total.descoped;
-    const [, gotItems, gotBuilt, gotPartial, gotMissing, gotDescoped] = summary!;
+    expect(
+      summaryLine,
+      "Summary line missing or reworded — this test reads its exact shape: " +
+        "`**N items audited — N built / N partial / N missing / N descoped**`",
+    ).not.toBeNull();
+    const [, gotItems, ...got] = summaryLine!;
+    const stated = { built: Number(got[0]), partial: Number(got[1]), missing: Number(got[2]), descoped: Number(got[3]) };
 
     expect(
-      {
-        items: Number(gotItems),
-        built: Number(gotBuilt),
-        partial: Number(gotPartial),
-        missing: Number(gotMissing),
-        descoped: Number(gotDescoped),
-      },
-      "The summary disagrees with the rows. Recount from the sheets rather " +
-        "than picking a side: after a merge, BOTH sides' numbers are usually " +
-        "wrong, because each was right before the other landed. This has " +
-        "happened three times.",
-    ).toEqual({ items, ...total });
+      { items: Number(gotItems), ...stated },
+      `The summary line disagrees with the rows — ${deltas(stated, total)}` +
+        (Number(gotItems) !== items(total) ? `; items: says ${gotItems}, rows have ${items(total)}` : "") +
+        `. Recount from the sheets rather than picking a side: after a merge ` +
+        `BOTH sides' numbers are usually wrong, because each was right before ` +
+        `the other landed. Do not recount by grepping "^| Built |" — that also ` +
+        `matches the summary table's own rows and overcounts by exactly four.`,
+    ).toEqual({ items: items(total), ...total });
   });
 });
