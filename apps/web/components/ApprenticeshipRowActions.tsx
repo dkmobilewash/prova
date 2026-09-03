@@ -259,9 +259,15 @@ export function ApprenticeshipRowActions({
 
   return (
     <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-800 pt-3">
-      <button type="button" disabled={isPending} onClick={() => setMode("period")} className={btn}>
-        Record a period
-      </button>
+      {/* Hidden while a delete is armed. Browser testing found "Record a
+          period" sitting live beside "Confirm remove" -- an ordinary action
+          adjacent to a destructive one, both enabled, is how somebody
+          confirms a removal they meant to cancel. */}
+      {!confirming && (
+        <button type="button" disabled={isPending} onClick={() => setMode("period")} className={btn}>
+          Record a period
+        </button>
+      )}
 
       <button type="button" disabled={isPending} onClick={() => setMode("edit")} className={btn}>
         Edit enrolment

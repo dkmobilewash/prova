@@ -79,6 +79,25 @@ describe("apprenticeship actions against a real database", () => {
     expect(row?.programNumber).toBe("CA-2026-118");
   });
 
+  it("refuses the SAME indenture entered twice", async () => {
+    // Browser testing found the panel still reading "No apprenticeship
+    // registrations recorded" right after a successful register -- saved,
+    // but only visible on reload. A page that looks like it did nothing
+    // gets clicked again, and nothing else here would stop the second
+    // click. Same apprentice, sponsor and date is one indenture.
+    const before = await prisma.apprenticeshipEnrollment.count({
+      where: { companyId: context.company.id },
+    });
+
+    const again = await createApprenticeshipEnrollment(base({ programNumber: "CA-2026-118" }));
+
+    expect(again.ok).toBe(false);
+    if (!again.ok) expect(again.error).toMatch(/already recorded/i);
+    expect(
+      await prisma.apprenticeshipEnrollment.count({ where: { companyId: context.company.id } }),
+    ).toBe(before);
+  });
+
   it("refuses an enrolment for somebody outside the company, by RETURNING", async () => {
     const other = await prisma.company.create({ data: { name: "Elsewhere" } });
     const stamp = Date.now();
