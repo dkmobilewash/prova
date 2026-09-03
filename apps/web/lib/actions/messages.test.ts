@@ -170,3 +170,40 @@ describe("sendOutboundEmail records the handover before the provider is called",
     );
   });
 });
+
+/**
+ * ADDED IN PRE-PUSH VERIFICATION — a gap, not a defect.
+ *
+ * The hard-failure path swaps QUEUED for FAILED inside `$transaction`, and
+ * its comment says why: "no interleaving can leave this message with
+ * neither — losing the claim without recording the failure is the same
+ * hole again, pointing the other way." Nothing exercised that. Replacing
+ * the transaction with two sequential writes passed the whole suite.
+ *
+ * It is also the only thing that makes `fake-prisma`'s rollback load-
+ * bearing. Before this test, `restore()` could be made a no-op, `op()`
+ * could be made eager, and the transaction loop could be swapped for
+ * `Promise.all`, and all nine tests still passed — sixty lines of the fake
+ * asserting nothing, in a file whose header calls those exact properties
+ * the reason the tests are not vacuous.
+ */
+describe("the FAILED swap is atomic", () => {
+  it("keeps the QUEUED claim when the FAILED event cannot be written", async () => {
+    sendEmail.mockImplementation(async () => {
+      // Arm the failure for the second write inside the transaction. The
+      // delete has already been applied by then, which is the whole point:
+      // if it is not rolled back this message ends up with no events at
+      // all, and `reachedProvider` reads that as never-sent.
+      db.failNext = "outboundMessageEvent.create";
+      return { ok: false, error: "Network unreachable", configured: true };
+    });
+
+    await expect(sendOutboundEmail(composed())).rejects.toThrow(/simulated database failure/);
+
+    // Neither half of the swap happened. The claim is still standing, so
+    // the record cannot be deleted by mistake while its true fate is
+    // unknown.
+    expect(eventTypes()).toEqual(["QUEUED"]);
+    expect(await deletionRefused()).toBe(true);
+  });
+});
