@@ -23,17 +23,17 @@ in flight. Left as-is here rather than guessed at from the outside; the next
 update to touch those sheets should come from whoever actually verified them
 against a fresh clone.
 
-**114 items audited — 84 built / 21 partial / 8 missing / 1 descoped**
+**115 items audited — 85 built / 21 partial / 8 missing / 1 descoped**
 
 | Status | Count |
 | --- | --- |
-| Built | 84 |
+| Built | 85 |
 | Partial | 21 |
 | Missing | 8 |
 | Descoped | 1 |
 
 
-## 01. Company / Org Setup — 5 built · 0 partial · 0 missing
+## 01. Company / Org Setup — 6 built · 0 partial · 0 missing
 
 | Status | Feature | Note |
 | --- | --- | --- |
@@ -42,6 +42,7 @@ against a fresh clone.
 | Built | Union affiliation records: CBA(s) by state/local | `UnionLocal`, `CraftClassification`, `CompanyUnionAgreement`, `FringeRateSchedule`, `ApprenticeRatioRule` — with create/edit on `/union-compliance` since 2 Sep. **It was marked Built on the models alone from 24 Aug until then, during which not one of those five rows could be created through the app** — the same defect this sheet already records against the licence row, found the same way: by writing the click-list and discovering the first step was impossible |
 | Built | Company's own insurance and bonding records (COI, bond capacity) | `CompanyInsurancePolicy`, `CompanyBond` — UI on `/settings` |
 | Built | Multi-location/multi-office support (CA/NV/AZ/CO/UT) | `CompanyLocation`, free-text state — any state works, not just the five listed |
+| Built | Self-service export of every company record (data portability) | `lib/export.ts` + `/settings/export` + `/api/export` — 18 tables as CSV each, or all of them as one JSON, owner-only, with row counts shown before download. Column lists are an **allowlist**, so a newly added credential column is absent rather than leaked; `export.test.ts` reads the .prisma files and fails if any field matching a credential pattern reaches a column list. Verified in a browser on 2 Sep: files downloaded, and all six credential field names return zero matches in the JSON. Does NOT cover formatted report exports — the WIP-schedule and AIA-format rows in sheet 15 and sheet 10 are separate and still stand |
 
 ## 02. Customer (GC) Relationship Mgmt — 4 built · 0 partial · 0 missing
 

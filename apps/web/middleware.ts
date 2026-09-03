@@ -32,6 +32,11 @@ const isProtectedRoute = createRouteMatcher([
   // it looks public whether or not it is.
   "/api/ask(.*)",
   "/messages(.*)",
+  // The data export returns a file rather than a page, for the same reason
+  // and with the same consequence: it is the single widest read in the app,
+  // so it belongs in the list a reader checks even though the handler
+  // itself is OWNER-gated.
+  "/api/export(.*)",
 ]);
 
 // /api/integrations/webhooks/[provider] is deliberately NOT protected here.
