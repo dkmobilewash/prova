@@ -25,6 +25,25 @@ appended to the end of `lib/actions.ts`. Copy `app/(app)/catalog/
 page.tsx` as your template for any list-plus-create-form page.
 
 **Shared files — be careful here:**
+
+> **Read this before the three bullets below: two of the three name files
+> that do not exist.** There is a note saying so 130 lines further down,
+> under the fourth lane, where nobody acting on this section will reach it
+> — moved up here 2026-09-02 for that reason. `packages/db/prisma/
+> schema.prisma` is now `packages/db/prisma/schema/*.prisma` (one file per
+> domain, plus `migrations/`), and `apps/web/lib/actions.ts` is now
+> `apps/web/lib/actions/*.ts` (37 files) behind the barrel at
+> `lib/actions/index.ts`. New work adds a NEW file per domain rather than
+> appending, so "only add new functions at the very end of the file" no
+> longer means anything. ARCHITECTURE.md carried the same two stale paths
+> and has now been corrected too.
+>
+> Missing from the three bullets entirely, and shared: `lib/actions/
+> shared.ts` (where `ActionResult`, `assertOwner` and the enum allowlists
+> live), the actions barrel itself, and `components/navItems.tsx` — the
+> nav entries are there, NOT in `Sidebar.tsx`, which only renders what
+> `navGroupsFor()` returns. CLAUDE.md said `Sidebar.tsx` until 2026-09-02
+> and was wrong; adding a route there produces no link and no error.
 - `packages/db/prisma/schema.prisma` — every new model gets added here.
   `git pull` right before you edit it, and add your model as a pure
   addition (new block at the bottom of the relevant section) rather than
@@ -70,6 +89,20 @@ one at a time:
    alert is worse than no alert. Checked against `main` at 21133db;
    `cyrus/notifications` (#59) is building that trigger and had not merged
    at the time of writing, so re-check before relying on this.
+
+   *Re-checked 2026-09-02, as that last sentence asked. #59 has merged
+   (`8264917` on `origin/main`) and the trigger exists: `sendMyAlertDigest`
+   in `lib/actions/notifications.ts`, the dispatch ledger in
+   `lib/notification-dispatch.ts`, a `SendDigestButton` on `/alerts`. Two
+   corrections follow from it. `notifications.prisma` is no longer
+   "`AlertAcknowledgement` only" — it now also holds `NotificationDispatch`,
+   the once-per-milestone ledger, so the claim that alerts themselves are
+   never stored is still true but is no longer the whole story of that
+   file. And the sender is `sendEmail` in
+   `packages/integrations/src/email.ts`; `sendOutboundEmail` named above is
+   the Server Action in `lib/actions/messages.ts` that wraps it. Both exist,
+   they are different things, and this entry used the second name for the
+   first.*
 4. **Roles & Permissions** — Sheet 25. *Shipped 1 Sep.*
    `permissions.prisma` (`JobFunction`, a nullable column on `User` —
    `UserRole` untouched), `lib/permissions.ts`, `lib/authz.ts`,
@@ -94,9 +127,27 @@ one at a time:
    enrolment tracking is deliberately still Partial — it needs the
    program's own data model and cannot be derived from hours logged.
 
-**All six items in this lane are now shipped and unmerged on the branch.
+~~**All six items in this lane are now shipped and unmerged on the branch.
 None has been browser-tested.** That is the outstanding risk, not the
-remaining work.
+remaining work.~~
+
+**Updated 2026-09-02: all six have MERGED.** Verified on `origin/main` by
+the artefacts rather than by a PR page — `backcharges.prisma`,
+`closeout.prisma`, `notifications.prisma`, `permissions.prisma`,
+`prevailing-wage.prisma` are all in `packages/db/prisma/schema/`;
+`lib/apprentice-ratio.ts`, `lib/fringe-remittance.ts`,
+`lib/union-compliance-query.ts`, `lib/bid-pipeline.ts` are all in
+`apps/web/lib/`; and `/backcharges`, `/closeout`, `/alerts`,
+`/prevailing-wage`, `/union-compliance` are all in `middleware.ts`'s
+protected list.
+
+Read the struck sentence again before moving on, because merging did not
+discharge what it was warning about. "None has been browser-tested" was
+the risk, and nothing about a merge clicks a page. Six capabilities went
+to production untested by the one method this project says is the only
+one that has ever found a real bug. Whether that has since been done is
+NOT VERIFIABLE from the repository and is not recorded anywhere in it —
+ask, or click them.
 
 It does NOT touch estimating, billing/AIA pay applications,
 `jobs/[id]/page.tsx`, safety, materials/vendors, equipment or RFIs. Where
@@ -228,6 +279,38 @@ page.tsx` and add a `{ value: "TRAILER", label: "Trailer" }` entry.
 *Done looks like:* you can go to `/settings`, pick "Trailer" from the
 location type dropdown, save a new company location, and see it in the
 list. `pnpm typecheck && pnpm lint` both pass. PR opened into `main`.
+
+> **THIS IS NOT DONE ON `main`, AND IT IS THE EXACT BUG THIS TASK WAS
+> DESIGNED TO TEACH.** Found 2026-09-02 while auditing this file.
+>
+> Two of the three edits landed and the third did not. `enum LocationType`
+> has `TRAILER` (`operations.prisma:10`) and the dropdown has
+> `{ value: "TRAILER", label: "Trailer" }` (`settings/page.tsx:52`). But
+> the server-side allowlist does not:
+>
+>     // apps/web/lib/actions/shared.ts:118
+>     export const LOCATION_TYPES = ["HQ", "BRANCH_YARD", "WAREHOUSE"] as const;
+>
+> and `createCompanyLocation` validates against it with `enumFromForm`
+> (`lib/actions/company.ts:234`), which throws `"locationType" must be one
+> of: HQ, BRANCH_YARD, WAREHOUSE`. So picking Trailer and saving fails.
+> On production it fails worse: thrown Server Action messages are redacted
+> to a digest, so the user gets an unexplained error rather than that
+> sentence.
+>
+> This is the whole point of the prime directive, demonstrated on the
+> setup task: `typecheck` and `lint` both pass, `LOCATION_TYPES` is a
+> `readonly string[]` that has no idea it is meant to mirror a Prisma
+> enum, and nothing anywhere fails until a person clicks the dropdown.
+> The "done looks like" above is a click-list, and it was written
+> correctly — it just was not run to the end.
+>
+> Not fixed here (docs branch). The fix is one word in `shared.ts:118`;
+> the thing worth doing alongside it is a test asserting `LOCATION_TYPES`
+> matches the enum, since the same shape of split exists for
+> `CONTACT_TYPES`, `BID_INVITATION_STATUSES` and the other allowlists next
+> to it — UNVERIFIED whether any of those have drifted too; only this one
+> was checked.
 
 **2. Vendor/supplier directory.**
 *What:* A new page listing vendors/suppliers (name, trade, contact info,

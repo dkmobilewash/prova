@@ -33,8 +33,26 @@ Vercel deployment and repo settings). Each drives their own agent.
   (fixed section slots: Retainage → Field Reports → Pay Apps — insert at
   your slot, never at the end). Cyrus: self-contained verticals (safety,
   vendors, equipment, punch lists, RFIs, submittals). Shared, edit
-  surgically: schema files, `middleware.ts`, `Sidebar.tsx`,
+  surgically: schema files, `middleware.ts`, `navItems.tsx`,
   `lib/actions/shared.ts`, the actions barrel.
+
+  Corrected 2026-09-02: this line said `Sidebar.tsx` for weeks and it is
+  the wrong file. `Sidebar.tsx` is 106 lines that render whatever
+  `navGroupsFor()` hands them; the 28 nav entries themselves live in
+  `components/navItems.tsx`, which also holds the `ROUTE_CAPABILITY`-
+  adjacent grouping. Add a route to `Sidebar.tsx` and nothing appears,
+  with no error to say why. WORK-SPLIT.md's third-lane note has said
+  `navItems.tsx` since 1 Sep; this file disagreed with it and lost.
+
+  Also verified 2026-09-02: the three "fixed section slots" are real and
+  in that order — Retainage at line 1490, `<DailyFieldReports>` at 1931,
+  `<PayApplications>` at 1946 of a 1955-line file — but NOTHING IN THE
+  FILE MARKS THEM. There is no comment, no sentinel, no named slot. Field
+  Reports and Pay Apps are literally the last two elements before the
+  closing tags, so "insert at your slot, never at the end" is advice you
+  can only follow if you already knew the order, which is why it is
+  written here. Read this line before you edit that file; the file will
+  not tell you.
 
 ## The working agreement (agreed in Slack 2026-08-29)
 
@@ -73,6 +91,36 @@ scrollback gets broken by whoever didn't scroll far enough.
   is the only proof it landed. "The PR says Merged" is not.
 - Scripts start with `set -e` AND `set -o pipefail` (a failed build
   piped to `tee` printed ALL GREEN once), and `rm -f .git/index.lock`.
+- **`./scripts/preflight.sh` CANNOT RUN IN A GIT WORKTREE, and the way it
+  fails is the problem.** Found 2026-09-02 by an agent running in
+  `.claude/worktrees/`. In a worktree `.git` is a FILE holding one line
+  (`gitdir: …/.git/worktrees/<name>`), not a directory. So line 30's
+  `rm -f .git/index.lock` hits ENOTDIR — and `-f` suppresses "no such
+  file", not "not a directory", so it returns 1, and `set -e` on line 28
+  kills the script instantly:
+
+      $ ./scripts/preflight.sh --quick
+      rm: .git/index.lock: Not a directory
+      $ echo $?
+      1
+
+  That is the ENTIRE output. Not one check ran — not the branch guard, not
+  `prisma generate`, not test, lint, typecheck, build, and not the
+  migration report that is the whole reason the script exists. And it
+  reads like a stray warning from a script that then got on with its job.
+  Same family as the green-checks and promoted-preview scars: the failure
+  is silent in the direction of looking fine.
+
+  FIXED on this branch, 2026-09-02, in the one place it can be fixed:
+
+      rm -f "$(git rev-parse --git-path index.lock)"
+
+  `--git-path` resolves correctly in a normal checkout AND a worktree, so
+  it works everywhere the old line worked and also where it did not. The
+  fix is one line; finding it took reproducing a script that appeared to
+  do nothing. If you see `rm: .git/index.lock: Not a directory` from any
+  script in this repo, that script predates this fix and has run none of
+  its checks — do not read its silence as success.
 - Cyrus authenticates through `gh` (token in the macOS keyring; scopes
   `repo`, `workflow`, `read:org`, `gist`), so `.github/workflows/` IS
   editable from the CLI, and `gh pr create` works. The older PAT lacked
@@ -157,11 +205,37 @@ scrollback gets broken by whoever didn't scroll far enough.
 
 ## Hard-won technical rules
 
-- **Sequence numbers** (case, RFI, submittal, invoice numbers) come from
-  a counter row that only increments, bumped inside the same transaction
-  as the insert. Never `max(n)+1`, never `count()+1` — anything derived
-  from surviving rows is reissued when a row is deleted. See
-  `SafetyCaseCounter`, `RfiCounter`, `SubmittalCounter`.
+- **Sequence numbers** come from a counter row that only increments,
+  bumped inside the same transaction as the insert. Never `max(n)+1`,
+  never `count()+1` — anything derived from surviving rows is reissued
+  when a row is deleted. Seven counters exist and all seven do this:
+  `SafetyCaseCounter`, `RfiCounter`, `SubmittalCounter` and
+  `MaterialOrderCounter` (`operations.prisma`), `ChangeOrderCounter`
+  (`jobs.prisma`), `BackchargeCounter` (`backcharges.prisma`),
+  `CloseoutSubmissionCounter` (`closeout.prisma`).
+
+  **INVOICE NUMBERS ARE NOT AMONG THEM, and this file said they were.**
+  Corrected 2026-09-02. There is no `InvoiceCounter` anywhere in the repo.
+  `apps/web/lib/actions/billing.ts:138` is:
+
+      async function nextInvoiceNumber(jobId: string) {
+        const last = await prisma.invoice.findFirst({
+          where: { jobId }, orderBy: { number: "desc" } });
+        return (last?.number ?? 0) + 1;
+      }
+
+  That is `max(n)+1`, the exact thing the rule above forbids, and it is
+  read OUTSIDE any transaction — both call sites (`createInvoice` and the
+  AIA pay-application submit) compute it and then `create` separately, so
+  two concurrent submits on one job can also collide on
+  `@@unique([jobId, number])`. Delete invoice 3 of 3 and the next invoice
+  is 3 again, on a document a GC has already been sent.
+
+  The cost of the wrong sentence is not the bug, it is the search: an
+  agent told "invoice numbers come from a counter" does not go and look.
+  This entry is now the reason to look. NOT FIXED HERE — a docs branch is
+  the wrong place to change money-document numbering, and billing is
+  Diego's lane, so it goes to him as an issue per working agreement 3.
 - **Derived state is never stored** (overdue, recordable, current
   revision) — a stored flag can disagree with what it was derived from.
 - **Evidence records** (safety incidents, RFIs, submittals, invoices):
@@ -269,6 +343,21 @@ scrollback gets broken by whoever didn't scroll far enough.
   `DEMO_DIRECT_URL` repository secrets, which are deliberately not named
   after production's so the two can never be confused.
 
+  All of that verified against the workflow file 2026-09-02 and true.
+  What is NOT true is the inference everyone draws from it: **the demo
+  button asserts its target and the PRODUCTION one does not.** The
+  assertion is `wrongTarget()` in `connection-target.mjs`, fired only when
+  `MIGRATE_EXPECT_HOST` is set — `migrate-demo.yml:138` sets it from the
+  box you typed in, and `migrate.yml` sets nothing but `DATABASE_URL` and
+  `DIRECT_URL`. The comment in `migrate-deploy.mjs:70` says why ("so
+  production's job, which predates it, is unaffected until someone wires
+  it up deliberately"), which is a reason and not a guarantee. So the
+  weaker check guards the real data and the stronger one guards the demo.
+  Two wrong-but-matching production secrets still pass every check on
+  merge, apply a whole schema to whatever they point at, and read back
+  "verified — every migration in this commit is applied." Nobody has
+  wired the guard up; leaving it noted rather than fixed on a docs branch.
+
   Established 2026-08-29 from: two production build logs printing
   `ep-little-sea` as the migrate target; the `Migrate` workflow printing
   the same for secrets copied out of Diego's Neon project; that project
@@ -342,15 +431,49 @@ scrollback gets broken by whoever didn't scroll far enough.
   "missing this commit's migrations", read the log for the wait lines
   before assuming the race: without them, you are on a build that predates
   this fix.
+  Re-read line by line 2026-09-02, because a claim that was once false is
+  the one worth re-checking rather than inheriting: the wait IS built now.
+  `check-schema.mjs` lines 107-133 — `WAIT_SECONDS` from
+  `MIGRATE_WAIT_SECONDS` defaulting to 90, `POLL_SECONDS = 5`, a
+  `while (pending && Date.now() < deadline)` loop that re-runs `migrate
+  status` and prints `db: <n>s — still pending` each time, guarded by
+  `pending && isProduction`. Previews skip the loop entirely. The prose
+  above and the code now agree.
 - **Do not promote a preview to production.** Merge to `main` instead, so
   the build actually runs. Previews are public (no deployment protection),
   carry the branch's latest commit at a stable alias, and are what browser
   testing should point at.
-- Previews share PRODUCTION's database — they run on Vercel's env vars,
+- ~~Previews share PRODUCTION's database — they run on Vercel's env vars,
   so a preview reads and writes `ep-little-sea`, the real data. Browser
   testing against a preview creates real rows; use an obvious prefix and
-  delete them afterwards.
-  Until 2026-08-28 every deployment migrated it, so a migration went live
+  delete them afterwards.~~
+
+  **STRUCK 2026-09-02. This was true until 1 Sep and it contradicted the
+  three-project table 100 lines above it in this same file** — the table
+  says previews run on the demo project, this paragraph said they run on
+  production, and both sentences sat on `main` at once. Exactly the
+  two-meanings-of-"the database" failure the table was written to end,
+  reproduced inside the document that ends it.
+
+  Previews run against the DEMO project (`ep-patient-lake`). Preview's
+  `DATABASE_URL`/`DIRECT_URL` were repointed there by `344e152`, 1 Sep,
+  the commit that added the table. Browser testing on a preview no longer
+  creates real rows and no longer needs cleaning up — which is the point
+  of the split, and was being thrown away by anyone who read this far
+  down and stopped.
+
+  Verified from the repo rather than from the table it agrees with: the
+  preview arm of `apps/web/app/(app)/error.tsx` tells a failing preview to
+  run the **Migrate demo database** workflow, which would be nonsense
+  advice if previews read production; and `CHANGELOG.md` records a preview
+  verified against `ep-patient-lake` and a preview-sent message living in
+  the demo database. UNVERIFIED from here: nobody on this branch can read
+  Vercel's environment variables, so the last word is the Vercel dashboard,
+  not this file. If a preview ever shows the real 14 jobs, this paragraph
+  came back and the env vars are what to check.
+
+  The rest of this entry is history and still accurate:
+  until 2026-08-28 every deployment migrated it, so a migration went live
   ON PUSH (`add_submittals` reached production from an unmerged branch).
   #18 gated that to `VERCEL_ENV=production`; #28 took it out of the build
   altogether, because that gate could not see promotion. Migrations now
@@ -367,8 +490,12 @@ scrollback gets broken by whoever didn't scroll far enough.
   WITHOUT those tables, so those pages fail on the preview until it merges
   — to click through such a branch first, apply its migration to the
   target database yourself and redeploy. (`ALLOW_PREVIEW_MIGRATIONS` was
-  the old escape hatch and no longer exists; it left with the build's
-  migrate step.)
+  the old escape hatch. No code reads it any more — it left with the
+  build's migrate step — but corrected 2026-09-02: it is NOT gone, it is
+  still sitting commented-out in `packages/db/.env.example:17`, where the
+  next person setting up a laptop will find it and reasonably assume it
+  does something. Setting it does nothing at all, which is the worst of
+  the three possible behaviours.)
 - **A successful write can show up as an empty list — cause NOT
   established.** Observed once: the action returned ok, the row was in
   the database, the page said "Nothing on order", and a manual reload

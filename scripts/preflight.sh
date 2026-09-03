@@ -27,7 +27,27 @@
 
 set -e
 set -o pipefail
-rm -f .git/index.lock
+
+# NOT `rm -f .git/index.lock`, which is what this was until 2026-09-02 and
+# which made this entire script a no-op inside a git worktree.
+#
+# In a worktree, `.git` is a FILE containing `gitdir: …`, not a directory.
+# So `.git/index.lock` is ENOTDIR, and `-f` suppresses "no such file" but
+# NOT "not a directory" — rm returns 1, `set -e` above fires, and the
+# script dies here having run nothing. Total observed output:
+#
+#     $ ./scripts/preflight.sh --quick
+#     rm: .git/index.lock: Not a directory
+#
+# No branch check, no test, no lint, no typecheck, no build, and no
+# migration report — which is the part this script exists for. It reads
+# like a stray warning from a run that carried on, which is the same
+# failure shape as a green PR check that never ran.
+#
+# `git rev-parse --git-path` resolves correctly in both a normal checkout
+# and a worktree, so this form works everywhere the old one did and also
+# where it did not.
+rm -f "$(git rev-parse --git-path index.lock)"
 
 # A failed build piped to `tee` once printed ALL GREEN. Never drop
 # pipefail from this file.

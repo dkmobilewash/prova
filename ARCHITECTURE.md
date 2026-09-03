@@ -39,8 +39,20 @@ Company
 A Job represents one project for one client. Its `status` field
 (`ESTIMATE → CONTRACTED → IN_PROGRESS → COMPLETE`) does not gate which
 table `lineItems` come from — the same rows back the job at every stage.
-What it does gate (enforced server-side in `apps/web/lib/actions.ts`, not
-just hidden in the UI) is *how* those rows may be changed:
+What it does gate (enforced server-side in `apps/web/lib/actions/*.ts`,
+not just hidden in the UI) is *how* those rows may be changed:
+
+> **Path corrected 2026-09-02, in three places in this file.** There is no
+> `apps/web/lib/actions.ts` and there has not been for weeks — it was split
+> by domain into `apps/web/lib/actions/*.ts` (37 files) behind a barrel at
+> `lib/actions/index.ts`, and `packages/db/prisma/schema.prisma` was split
+> the same way into `packages/db/prisma/schema/*.prisma`. Both names still
+> appear throughout this document and throughout WORK-SPLIT.md. WORK-SPLIT
+> at least carries a note saying so; this file carried none, so it read as
+> current. A path that does not exist sends an agent grepping for a file
+> instead of a symbol — grep for the function name, which is stable across
+> the split. The estimate-stage gate itself is `assertEditableDirectly`,
+> `lib/actions/shared.ts:47`.
 
 - **`ESTIMATE`** — line items can be added, edited, and removed directly.
   Nothing to audit yet; it's still a draft.
@@ -284,13 +296,28 @@ to.
 
 ### Migrations are applied by CI on merge, and only there
 
-There are TWO Neon projects, one per developer, and only one of them is
-production. Diego's (`ep-little-sea-a6bdnaw2`) is what Vercel uses for
-production AND previews, and it holds the real data. Cyrus's
+There are THREE Neon projects, and only one of them is production.
+Diego's (`ep-little-sea-a6bdnaw2`) is what Vercel uses for PRODUCTION
+ONLY, and it holds the real data. The demo project (`ep-patient-lake`) is
+what every Vercel PREVIEW reads and writes. Cyrus's
 (`ep-icy-hat-afqau56u`) is a dev database reached only from his laptop.
 This document asserted a single database for weeks; that sentence is what
 made a day of confusion possible, because "the database" meant two
 different things to two people reading the same logs.
+
+Corrected 2026-09-02, and note the shape of the correction: the paragraph
+above went from one project to two and stopped there. The demo project was
+added on 1 Sep (`344e152`), CLAUDE.md's table was updated, and this
+paragraph was not — so for a day this document told you a preview writes
+the real data and CLAUDE.md told you it does not, which is the same
+"the database means two things" failure the paragraph is about, one level
+up. A count that has already been wrong once is not a fact to copy
+forward; check the table in CLAUDE.md, which is the one that gets
+maintained. Evidence for three: `migrate-demo.yml` and `seed-demo.yml`
+exist and take `DEMO_DATABASE_URL`/`DEMO_DIRECT_URL`, and the preview arm
+of `app/(app)/error.tsx` tells a broken preview to run the demo migrate
+workflow — advice that only makes sense if previews read the demo
+database.
 
 Every Vercel build — preview or production — runs the same build command.
 When that command applied migrations, every push to every branch changed
@@ -321,12 +348,34 @@ pending, since that means shipping code that reads columns which do not
 exist. A preview only warns: a branch's own migration legitimately has not
 merged yet.
 
-The applier also refuses a database with no migration history unless
-`ALLOW_EMPTY_DATABASE=true`. `prisma migrate deploy` CREATES a database
-that does not exist and applies every migration to it, reporting success —
-so a wrong URL does not fail, it manufactures a second, empty, plausible
-database while the real data sits elsewhere. Which is one candidate
-explanation for how this project came to have two.
+**`ALLOW_EMPTY_DATABASE` DOES NOT EXIST.** Struck 2026-09-02: this
+paragraph claimed "the applier also refuses a database with no migration
+history unless `ALLOW_EMPTY_DATABASE=true`", and there is no such
+variable anywhere in the repository — not in `migrate-deploy.mjs`, not in
+`check-schema.mjs`, not in a workflow, not in `.env.example`. Nothing
+reads it and nothing refuses an empty database. The claim was a described
+guard that was never written, the same failure mode as the 90-second
+migration wait in CLAUDE.md, and more dangerous than a missing guard on
+its own because it invites someone to point a URL somewhere and trust the
+net to catch them.
+
+The risk it described is real and unmitigated. `prisma migrate deploy`
+CREATES a database that does not exist and applies every migration to it,
+reporting success — so a wrong URL does not fail, it manufactures a
+second, empty, plausible database while the real data sits elsewhere.
+Which is one candidate explanation for how this project came to have
+more than one.
+
+What DOES guard against this is `wrongTarget()` in
+`packages/db/scripts/connection-target.mjs`: you name the endpoint you
+mean, and it is compared against the host the connection string actually
+resolves to before anything is applied. It is opt-in via
+`MIGRATE_EXPECT_HOST`, and only `migrate-demo.yml` sets it. **Production's
+`migrate.yml` does not**, deliberately (`migrate-deploy.mjs:70` — "so
+production's job, which predates it, is unaffected until someone wires it
+up deliberately"). So the demo database is protected from a wrong secret
+and production is not. That is backwards, it is known, and nobody has
+wired it up.
 
 **The cost is real.** A preview of a branch that adds a model runs against
 a database without those tables, so pages using them fail until the branch
@@ -339,6 +388,17 @@ something a push does on its own.
 preview — Neon supports it natively through the Vercel integration — which
 would give previews a real schema to test against without touching
 production at all. This gate stops the bleeding until that is wired up.
+
+Half-arrived 2026-09-01. The demo project moved previews off production,
+so the paragraph above no longer describes previews writing real data —
+that part is done. What it does NOT do is give a preview the schema its
+own branch needs: one shared demo database serves every preview at once,
+gets nothing on merge, and drifts the moment anyone adds a migration, so
+"column does not exist" on a preview is still the normal failure and
+still reads as a code bug. The remedy is a person clicking **Migrate demo
+database** from that branch. A branch per preview would make that step
+disappear; until then this is one step short of the destination, not at
+it.
 
 ### `CostEntry` — actual cost, referencing the same line item
 
@@ -892,17 +952,38 @@ as every other model here: it references `Company` and `User`
 there is no QuickBooks-shaped duplicate of `Contact` or `Job` anywhere in
 this schema.
 
-**Scope, deliberately narrow:** this phase is the OAuth 2.0
+~~**Scope, deliberately narrow:** this phase is the OAuth 2.0
 `authorization_code` handshake, token storage, token refresh, and a
 read-only connectivity check (fetching company info) — nothing more.
 `Contact` rows are not pushed to QuickBooks as Customers, `Invoice` rows
-are not pushed as QBO Invoices, and no accounting data is pulled back.
-Wiring actual sync is a separate, larger decision (which direction is the
-source of truth? what happens on conflict?) that this phase intentionally
-doesn't answer. See `packages/integrations/src/quickbooks.ts` for the
-OAuth client and `apps/web/app/api/quickbooks/callback/route.ts` +
-`initiateQuickBooksConnect`/`disconnectQuickBooks`/`testQuickBooksConnection`
-in `apps/web/lib/actions.ts` for how it's wired up.
+are not pushed as QBO Invoices, and no accounting data is pulled back.~~
+
+**OUT OF DATE — struck 2026-09-02, and this one had gone quietly wrong in
+the expensive direction: it says money does not move and money moves.**
+Invoice push is built. `pushInvoiceToQuickBooks` is
+`lib/actions/quickbooks.ts:364`; the payload builder, the readback
+verification, the blocker list and the duplicate-click window are
+`lib/quickbooks-sync.ts` (`buildInvoicePayload`, `verifyPushedInvoice`,
+`pushBlockers`, `idempotencyKeyFor`, `DUPLICATE_PUSH_WINDOW_MS`); payments
+and reconciliation have their own modules
+(`lib/quickbooks-payment-sync.ts`, `lib/quickbooks-reconcile.ts`), each
+with tests. The invoice payload carries a `CustomerRef`, so a QBO customer
+identity is part of it.
+
+The "separate, larger decision (which direction is the source of truth?
+what happens on conflict?)" was the right question and it has been
+answered in code — by whoever built the above, not here. **This section
+still needs someone who knows that work to write down what the answer
+was.** Marked as a hole rather than guessed at: an audit can prove the
+old paragraph false without being able to state the new design, and
+inventing one would put this document straight back where it started.
+
+The OAuth half is still accurate. See `packages/integrations/src/quickbooks.ts`
+for the OAuth client, `apps/web/app/api/quickbooks/callback/route.ts` for
+the redirect, and `disconnectQuickBooks`/`testQuickBooksConnection` in
+`apps/web/lib/actions/billing.ts` — not in `actions/quickbooks.ts`, where
+you would look for them, and not in `lib/actions.ts`, which no longer
+exists.
 
 Only the `com.intuit.quickbooks.accounting` and OpenID profile scopes are
 requested — QuickBooks Payments is not, since this app already has its
@@ -1521,16 +1602,41 @@ there is no cross-company data access path.
 
 Multiple users can now share a Company. The first person to sign in
 creates the Company and becomes its `OWNER`. An `OWNER` can invite a
-teammate by email (`Invite`, see `apps/web/lib/actions.ts` and
-`requireCompanyContext()` in `apps/web/lib/auth.ts`) — there is no
-email-sending integration for this; the `OWNER` shares the normal
-`/sign-up` link out of band, and matching the invited email on first
-sign-in attaches that person to the existing Company as a `MEMBER`
-instead of creating a new one. `MEMBER`s have full access to jobs,
-contacts, and costing; the only thing gated by role today is team
-management itself (inviting, removing, canceling an invite) — `OWNER`
-only. Finer-grained per-feature permissions are future-phase work if it
-turns out to be needed.
+teammate by email (`Invite`, see `apps/web/lib/actions/company.ts` and
+`requireCompanyContext()` in `apps/web/lib/auth.ts`) — the invite itself
+still sends no email; the `OWNER` shares the normal `/sign-up` link out of
+band, and matching the invited email on first sign-in attaches that person
+to the existing Company as a `MEMBER` instead of creating a new one.
+
+~~`MEMBER`s have full access to jobs, contacts, and costing; the only
+thing gated by role today is team management itself (inviting, removing,
+canceling an invite) — `OWNER` only. Finer-grained per-feature permissions
+are future-phase work if it turns out to be needed.~~
+
+**Struck 2026-09-02 — this document contradicted itself by about 300
+lines.** Finer-grained per-feature permissions shipped on 1 Sep and this
+file describes them at length under "Roles: two orthogonal questions, not
+one enum" above: `User.jobFunction`, `capabilitiesFor()`,
+`requireCapability()` in `lib/authz.ts`, the `ROUTE_CAPABILITY` map, and
+the `showsJobMoney`/`showsBilling` narrowing on `/jobs/[id]`,
+`/dashboard` and `/contacts/[id]`. A `MEMBER` does not necessarily have
+full access to costing any more. The correct summary is the one above;
+this tail paragraph was simply never updated when the section was added.
+
+Worth naming the failure rather than just deleting it: a document long
+enough to say a thing twice will eventually say it two ways, and the
+stale copy is usually the summary rather than the detail — because the
+person adding a feature writes a new section and does not grep for older
+sentences about it. Before adding a section here, grep this file for the
+subject first.
+
+Two things are still true as written: `UserRole` remains two values
+answering only "can this person administer the company", and every
+`assertOwner()` still means exactly that. Also corrected: the invite
+paragraph said "there is no email-sending integration for this", which
+read as "this repo has no email sender". It has one —
+`packages/integrations/src/email.ts` (Resend), used by
+`sendOutboundEmail` and the alert digest. Invites just do not use it.
 
 ## Future phases (explicitly not built yet)
 
@@ -1550,10 +1656,20 @@ specifically trying to avoid.
   a lock, in both cases. Plan-takeoff via computer vision is a distinct,
   later, larger effort — different input modality, different accuracy
   bar, deliberately not bundled into this phase.
-- **QuickBooks data sync** — the OAuth connection itself is built (see
+- ~~**QuickBooks data sync** — the OAuth connection itself is built (see
   `QuickBooksConnection` above); actually pushing/pulling `Contact` or
   `Invoice` data to/from QuickBooks is not. That needs its own design pass
-  for sync direction and conflict handling before it's built.
+  for sync direction and conflict handling before it's built.~~
+  **Struck 2026-09-02: this is BUILT, and a "not built yet" list is the
+  worst place to be wrong** — its whole job is telling someone what they
+  are allowed to assume is missing, and a wrong entry here invites a
+  second implementation of something that already moves money. Invoice
+  push, payment sync and reconciliation all exist:
+  `pushInvoiceToQuickBooks` (`lib/actions/quickbooks.ts:364`),
+  `lib/quickbooks-sync.ts`, `lib/quickbooks-payment-sync.ts`,
+  `lib/quickbooks-reconcile.ts`, each with tests. See the corrected
+  QuickBooks section above, which also notes that the sync-direction
+  design still needs writing down by whoever built it.
 - **Real payment processing** — `Payment` rows are manual records (check,
   cash, card handled elsewhere), not charges. Actually collecting a card/
   ACH payment in-app needs a processor (e.g. Stripe) and its own API keys
