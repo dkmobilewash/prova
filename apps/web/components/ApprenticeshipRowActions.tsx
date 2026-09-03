@@ -259,19 +259,37 @@ export function ApprenticeshipRowActions({
 
   return (
     <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-800 pt-3">
-      {/* Hidden while a delete is armed. Browser testing found "Record a
-          period" sitting live beside "Confirm remove" -- an ordinary action
-          adjacent to a destructive one, both enabled, is how somebody
-          confirms a removal they meant to cancel. */}
-      {!confirming && (
-        <button type="button" disabled={isPending} onClick={() => setMode("period")} className={btn}>
-          Record a period
-        </button>
-      )}
+      {/* BOTH hidden while a delete is armed. Browser testing found "Record
+          a period" sitting live beside "Confirm remove" -- an ordinary
+          action adjacent to a destructive one, both enabled, is how
+          somebody confirms a removal they meant to cancel.
 
-      <button type="button" disabled={isPending} onClick={() => setMode("edit")} className={btn}>
-        Edit enrolment
-      </button>
+          "Edit enrolment" is inside the same guard rather than beside it.
+          Merging this branch with that fix produced a CLEAN merge that put
+          the new button in exactly the position the fix had just emptied,
+          so the guard wraps the group and not one button -- otherwise the
+          next action added here reintroduces the bug for a third time. */}
+      {!confirming && (
+        <>
+          <button
+            type="button"
+            disabled={isPending}
+            onClick={() => setMode("period")}
+            className={btn}
+          >
+            Record a period
+          </button>
+
+          <button
+            type="button"
+            disabled={isPending}
+            onClick={() => setMode("edit")}
+            className={btn}
+          >
+            Edit enrolment
+          </button>
+        </>
+      )}
 
       {canDelete &&
         (confirming ? (
