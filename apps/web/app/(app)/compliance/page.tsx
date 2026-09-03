@@ -1,5 +1,6 @@
 import { prisma } from "@prova/db";
-import { requireCompanyContext } from "@/lib/auth";
+import { requireCapability } from "@/lib/authz";
+import { NoAccess } from "@/components/NoAccess";
 import { ComplianceUploadForm } from "@/components/ComplianceUploadForm";
 import { ComplianceDocumentRow } from "@/components/ComplianceDocumentRow";
 import { RenewalAlerts } from "@/components/RenewalAlerts";
@@ -8,7 +9,9 @@ import { renewalAlerts } from "@/lib/compliance-expiry";
 import { serverToday } from "@/lib/serverToday";
 
 export default async function CompliancePage() {
-  const { company, ...currentUser } = await requireCompanyContext();
+  const { context, allowed } = await requireCapability("MANAGE_COMPLIANCE");
+  if (!allowed) return <NoAccess capability="MANAGE_COMPLIANCE" />;
+  const { company, ...currentUser } = context;
 
   const [documents, jobs, renewalSources] = await Promise.all([
     prisma.complianceDocument.findMany({

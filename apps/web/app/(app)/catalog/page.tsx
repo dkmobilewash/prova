@@ -1,5 +1,6 @@
 import { prisma } from "@prova/db";
-import { requireCompanyContext } from "@/lib/auth";
+import { requireCapability } from "@/lib/authz";
+import { NoAccess } from "@/components/NoAccess";
 import {
   createLineItemCatalogEntry,
   updateCatalogDefaultsFromActuals,
@@ -93,7 +94,9 @@ function ActualsLine({ entry }: { entry: CatalogEntryWithLines }) {
 }
 
 export default async function CatalogPage() {
-  const { company } = await requireCompanyContext();
+  const { context, allowed } = await requireCapability("MANAGE_ESTIMATING");
+  if (!allowed) return <NoAccess capability="MANAGE_ESTIMATING" />;
+  const { company } = context;
 
   const [entries, craftClassifications] = await Promise.all([
     prisma.lineItemCatalogEntry.findMany({

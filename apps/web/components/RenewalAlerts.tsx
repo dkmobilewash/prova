@@ -16,6 +16,10 @@ const KIND_LABELS: Record<Renewal["kind"], string> = {
   LICENSE: "Licence",
   INSURANCE_POLICY: "Policy",
   BOND: "Bond",
+  // Not fed into this list yet (see /contacts/[id] for where these render
+  // today) — added so this Record stays exhaustive over RenewalKind.
+  MSA: "MSA",
+  PREQUALIFICATION: "Prequalification",
 };
 
 function toneFor(renewal: Renewal) {

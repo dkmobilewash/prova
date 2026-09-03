@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@prova/db";
-import { requireCompanyContext } from "@/lib/auth";
+import { requireCapability } from "@/lib/authz";
+import { NoAccess } from "@/components/NoAccess";
 import { money } from "@/lib/money";
 import { VendorPriceQuoteForm } from "@/components/VendorPriceQuoteForm";
 import { VendorPriceQuoteRow } from "@/components/VendorPriceQuoteRow";
@@ -26,7 +27,9 @@ type ItemGroup = {
 };
 
 export default async function VendorPricingPage() {
-  const { company, ...currentUser } = await requireCompanyContext();
+  const { context, allowed } = await requireCapability("MANAGE_ESTIMATING");
+  if (!allowed) return <NoAccess capability="MANAGE_ESTIMATING" />;
+  const { company, ...currentUser } = context;
 
   const [rows, vendors, catalogEntries] = await Promise.all([
     prisma.vendorPriceQuote.findMany({

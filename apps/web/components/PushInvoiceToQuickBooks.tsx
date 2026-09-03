@@ -20,12 +20,20 @@ export function PushInvoiceToQuickBooks({
   invoiceId,
   linkedQboId,
   lastVerifiedAt,
+  blockers,
 }: {
   invoiceId: string;
   /** Set once this invoice exists in QuickBooks. */
   linkedQboId: string | null;
   lastVerifiedAt: string | null;
+  /** Why this cannot be sent yet, or empty. Required for the same reason
+   * as on the payment button: `pushBlockers` has always existed and the
+   * action has always honoured it, but nothing handed the reasons to the
+   * UI, so a button that could not work looked identical to one that
+   * could. */
+  blockers: string[];
 }) {
+  const blocked = blockers.length > 0;
   const [message, setMessage] = useState<{ tone: "ok" | "bad"; text: string } | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -46,7 +54,7 @@ export function PushInvoiceToQuickBooks({
       <button
         type="button"
         onClick={push}
-        disabled={isPending}
+        disabled={isPending || blocked}
         className="rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:border-slate-500 disabled:opacity-50"
       >
         {isPending
@@ -55,6 +63,10 @@ export function PushInvoiceToQuickBooks({
             ? "Re-send to QuickBooks"
             : "Send to QuickBooks"}
       </button>
+
+      {blocked && message === null && (
+        <p className="max-w-[18rem] text-right text-xs text-slate-500">{blockers.join(" ")}</p>
+      )}
 
       {/* Shown when there's no message of its own, so the row always says
           whether this invoice is in QuickBooks without being asked. */}

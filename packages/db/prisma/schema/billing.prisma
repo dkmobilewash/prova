@@ -181,6 +181,15 @@ model RetainageRelease {
   @@index([jobId])
 }
 
+enum QuickBooksConnectionStatus {
+  CONNECTED
+  /// The refresh token expired or was revoked. A person has to reconnect;
+  /// no retry can fix it, which is why it is distinct from ERROR.
+  NEEDS_REAUTH
+  /// Reachable, but the last attempt failed for some other reason.
+  ERROR
+}
+
 /// One QuickBooks Online connection per Company. Tokens stored as plain
 /// columns (sandbox-appropriate; revisit encryption-at-rest before this
 /// connects to a real production QuickBooks account — see ARCHITECTURE.md).
@@ -198,6 +207,26 @@ model QuickBooksConnection {
   refreshToken          String
   accessTokenExpiresAt  DateTime
   refreshTokenExpiresAt DateTime
+
+  /// Whether this connection can still reach QuickBooks.
+  ///
+  /// NOT derivable, which is why it is stored against this codebase's usual
+  /// rule. An expiring refresh token has a date to compare against, but a
+  /// REVOKED one has no signal at all — someone clicks "disconnect" inside
+  /// QuickBooks and the only way to find out is to try and be refused.
+  /// Intuit's refresh tokens also roll roughly every 100 days, so this
+  /// arrives on a schedule whether or not anyone is watching.
+  ///
+  /// Before this existed, a dead refresh token threw out of accessTokenFor
+  /// and a production build redacted it to a digest — so the person saw an
+  /// opaque error on a page that had nothing to do with QuickBooks, and no
+  /// screen anywhere said the connection was the problem.
+  status QuickBooksConnectionStatus @default(CONNECTED)
+
+  /// Why it stopped, in Intuit's own words, for the screen that asks
+  /// someone to reconnect.
+  statusDetail String?
+  statusAt     DateTime?
 
   connectedByUserId String?
   connectedByUser   User?   @relation(fields: [connectedByUserId], references: [id])

@@ -53,12 +53,41 @@ export const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
+    href: "/messages",
+    label: "Messages",
+    icon: (
+      <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5">
+        <path
+          d="M3.5 6A1.5 1.5 0 0 1 5 4.5h10A1.5 1.5 0 0 1 16.5 6v8a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 14V6Z"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinejoin="round"
+        />
+        <path d="m4 6.5 6 4.5 6-4.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+  },
+  {
     href: "/bids",
     label: "Bids",
     icon: (
       <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5">
         <path
           d="M10 3.5v13M4.5 13c0 1.4 1.6 2.5 3.5 2.5h4c1.9 0 3.5-1.1 3.5-2.5s-1.6-2.5-3.5-2.5h-4c-1.9 0-3.5-1.1-3.5-2.5S6.1 5.5 8 5.5h4c1.9 0 3.5 1.1 3.5 2.5"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinecap="round"
+        />
+      </svg>
+    ),
+  },
+  {
+    href: "/pipeline",
+    label: "Pipeline",
+    icon: (
+      <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5">
+        <path
+          d="M3.5 5.5h13M5.5 10h9M8 14.5h4"
           stroke="currentColor"
           strokeWidth="1.4"
           strokeLinecap="round"
@@ -180,6 +209,62 @@ export const NAV_ITEMS: NavItem[] = [
           strokeLinejoin="round"
         />
         <path d="m7 10 2 2 4-4.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+  },
+  {
+    href: "/union-compliance",
+    label: "Union & fringe",
+    icon: (
+      <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5">
+        <circle cx="7" cy="7" r="2.4" stroke="currentColor" strokeWidth="1.4" />
+        <circle cx="13.5" cy="8.5" r="1.8" stroke="currentColor" strokeWidth="1.4" />
+        <path
+          d="M2.8 16c0-2.4 2-4 4.2-4s4.2 1.6 4.2 4M12.2 12.6c1.7.1 3.2 1.4 3.2 3.4"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinecap="round"
+        />
+      </svg>
+    ),
+  },
+  {
+    href: "/prevailing-wage",
+    label: "Prevailing wage",
+    icon: (
+      <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5">
+        <path d="M10 3.5v13M5 7h10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+        <path
+          d="M5 7 3 11.5a2.2 2.2 0 0 0 4 0L5 7Zm10 0-2 4.5a2.2 2.2 0 0 0 4 0L15 7Z"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinejoin="round"
+        />
+      </svg>
+    ),
+  },
+  {
+    href: "/alerts",
+    label: "Alerts",
+    icon: (
+      <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5">
+        <path
+          d="M10 3.5a4.5 4.5 0 0 0-4.5 4.5c0 3-1.5 4-1.5 4h12s-1.5-1-1.5-4A4.5 4.5 0 0 0 10 3.5Z"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinejoin="round"
+        />
+        <path d="M8.5 14.5a1.6 1.6 0 0 0 3 0" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      </svg>
+    ),
+  },
+  {
+    href: "/backcharges",
+    label: "Backcharges",
+    icon: (
+      <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5">
+        <circle cx="10" cy="10" r="6.5" stroke="currentColor" strokeWidth="1.4" />
+        <path d="M7 10h6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
       </svg>
     ),
   },
@@ -320,6 +405,8 @@ export type NavGroup = {
   items: (NavItem & { disabled?: boolean })[];
 };
 
+import { canReach, type Principal } from "@/lib/permissions";
+
 const byHref = new Map(NAV_ITEMS.map((item) => [item.href, item]));
 const item = (href: string): NavItem => {
   const found = byHref.get(href);
@@ -330,7 +417,7 @@ const item = (href: string): NavItem => {
 export const NAV_GROUPS: NavGroup[] = [
   {
     heading: "Pre-construction",
-    items: [item("/dashboard"), item("/bids"), item("/contacts"), item("/catalog")],
+    items: [item("/dashboard"), item("/alerts"), item("/bids"), item("/contacts"), item("/catalog")],
   },
   {
     heading: "Operations",
@@ -345,7 +432,7 @@ export const NAV_GROUPS: NavGroup[] = [
   },
   {
     heading: "Compliance & safety",
-    items: [item("/compliance"), item("/safety"), item("/team")],
+    items: [item("/compliance"), item("/prevailing-wage"), item("/union-compliance"), item("/safety"), item("/team")],
   },
   {
     heading: "Logistics",
@@ -353,6 +440,28 @@ export const NAV_GROUPS: NavGroup[] = [
   },
   {
     heading: "Financials",
-    items: [item("/cash-flow"), item("/settings")],
+    items: [item("/cash-flow"), item("/backcharges"), item("/settings")],
   },
 ];
+
+/**
+ * The rail as one person sees it.
+ *
+ * NOT a security boundary, and it must never be mistaken for one — hiding
+ * a link hides nothing, since the URL still exists and can be typed or
+ * pasted from a colleague. requireCapability() on the page is the
+ * boundary; this only stops the rail advertising doors that will not open,
+ * and drops a group that empties out entirely so nobody gets a heading
+ * with nothing under it.
+ *
+ * One function used by both the desktop rail and the mobile drawer, for
+ * the same reason NAV_GROUPS itself is shared: a filter applied in one and
+ * forgotten in the other is a feature that exists on a phone and not on a
+ * laptop.
+ */
+export function navGroupsFor(user: Principal): NavGroup[] {
+  return NAV_GROUPS.map((group) => ({
+    ...group,
+    items: group.items.filter((item) => canReach(user, item.href)),
+  })).filter((group) => group.items.length > 0);
+}

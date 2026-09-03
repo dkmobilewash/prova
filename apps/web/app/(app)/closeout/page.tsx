@@ -1,68 +1,53 @@
-import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { CloseoutJobCard } from "@/components/CloseoutJobCard";
+import { CloseoutPackagePanel } from "@/components/CloseoutPackagePanel";
+import { blockerLabel, stageLabel } from "@/components/closeoutPackageLabels";
 import {
-  isCloseoutComplete,
   isOpen,
   outstandingRequired,
   warrantyState,
 } from "@/components/closeoutLabels";
-
-/** Stored at UTC midnight, rendered in UTC — same rule as every other
- * dated record in this app. */
-function isoDate(date: Date | null) {
-  return date ? date.toISOString().slice(0, 10) : null;
-}
+import { needsAttention } from "@/lib/closeout-readiness";
+import { loadCloseoutJobs } from "@/lib/closeout-query";
+import { money } from "@/lib/money";
+import { can } from "@/lib/permissions";
 
 export default async function CloseoutPage() {
   const { company, ...currentUser } = await requireCompanyContext();
   const today = new Date().toISOString().slice(0, 10);
 
-  const jobs = await prisma.job.findMany({
-    where: { companyId: company.id },
-    orderBy: { createdAt: "desc" },
-    select: {
-      id: true,
-      name: true,
-      closeoutItems: { orderBy: [{ isRequired: "desc" }, { name: "asc" }] },
-      warrantyPeriod: true,
-      warrantyServiceRequests: { orderBy: { reportedOn: "desc" } },
-    },
-  });
+  const withReadiness = await loadCloseoutJobs(company.id, today);
+  const rows = withReadiness;
 
-  const rows = jobs.map((job) => ({
-    id: job.id,
-    name: job.name,
-    items: job.closeoutItems.map((i) => ({
-      id: i.id,
-      name: i.name,
-      isRequired: i.isRequired,
-      completedOn: isoDate(i.completedOn),
-      note: i.note,
-      documentUrl: i.documentUrl,
-      documentName: i.documentName,
-    })),
-    warranty: job.warrantyPeriod
-      ? {
-          startsOn: isoDate(job.warrantyPeriod.startsOn) as string,
-          months: job.warrantyPeriod.months,
-          note: job.warrantyPeriod.note,
-        }
-      : null,
-    requests: job.warrantyServiceRequests.map((r) => ({
-      id: r.id,
-      reportedOn: isoDate(r.reportedOn) as string,
-      description: r.description,
-      reportedBy: r.reportedBy,
-      responsibility: r.responsibility,
-      resolvedOn: isoDate(r.resolvedOn),
-      resolutionNote: r.resolutionNote,
-    })),
-  }));
+  // Retainage is the company's money, not everyone's business. A foreman
+  // needs to know the package is stuck; what it is holding up in dollars
+  // is a margin conversation. Without this the job-function work would
+  // have a hole straight through it on a page a field tier can reach.
+  const showsMoney = can(
+    { role: currentUser.role, jobFunction: currentUser.jobFunction },
+    "VIEW_COMPANY_FINANCIALS",
+  );
+
+  const attention = needsAttention(withReadiness);
+  const readyToSubmit = withReadiness.filter((j) => j.readiness.stage === "READY_TO_SUBMIT");
+  const retainageBehindCloseout = attention.reduce((sum, j) => sum + j.readiness.retainageAtStake, 0);
 
   // All three counted across every job, and all three derived — there is no
   // stored "closed out" or "in warranty" flag anywhere in this feature.
-  const outstandingJobs = rows.filter((r) => r.items.length > 0 && !isCloseoutComplete(r.items)).length;
+  //
+  // This counter has now been wrong twice, the same way both times. First it
+  // was `r.items.length > 0 && !isCloseoutComplete(r.items)` -- checklist
+  // only -- and read 0 while the list showed fifteen not-ready jobs. Then it
+  // became `blockers.length > 0`, which browser testing caught reading 15
+  // against a list of 16: a job whose checklist is ticked and which NOBODY
+  // HAS SENT has no blockers, so it vanished from the number while staying
+  // in the list. That job is exactly the one somebody needs chasing.
+  //
+  // Both versions were the same mistake -- a SECOND computation of what the
+  // list already decides -- and the first fix only swapped one duplicate for
+  // another. There is one derivation now, and the counter and the list are
+  // the same set by construction rather than by agreement.
+  const outstandingJobs = attention.length;
   const inWarranty = rows.filter((r) => warrantyState(r.warranty, today) === "ACTIVE").length;
   const openCallbacks = rows.reduce((n, r) => n + r.requests.filter(isOpen).length, 0);
   const totalOutstandingItems = rows.reduce((n, r) => n + outstandingRequired(r.items).length, 0);
@@ -77,7 +62,7 @@ export default async function CloseoutPage() {
         difference between a favour and work you should be paid for.
       </p>
 
-      <div className="mb-6 grid gap-3 sm:grid-cols-3">
+      <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
           <p className={`text-2xl font-semibold ${outstandingJobs > 0 ? "text-amber-300" : "text-slate-100"}`}>
             {outstandingJobs}
@@ -97,7 +82,51 @@ export default async function CloseoutPage() {
           </p>
           <p className="text-xs text-slate-500">Open callbacks</p>
         </div>
+        <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
+          <p className="font-mono text-xl font-semibold text-slate-100">
+            {showsMoney ? money(retainageBehindCloseout) : `${attention.length} jobs`}
+          </p>
+          <p className="text-xs text-slate-500">
+            {showsMoney ? "Retainage behind an unfinished closeout" : "Waiting on something"}
+            {readyToSubmit.length > 0 && (
+              <span className="text-amber-300"> · {readyToSubmit.length} ready to send today</span>
+            )}
+          </p>
+        </div>
       </div>
+
+      {attention.length > 0 && (
+        <section className="mb-6 rounded-lg border border-slate-800 bg-slate-900 p-4">
+          <h2 className="mb-1 text-sm font-semibold text-slate-300">What to do next</h2>
+          <p className="mb-3 text-xs text-slate-500">
+            Most money first. A job is only off this list once the GC has accepted its package —
+            &ldquo;the checklist is ticked&rdquo; and &ldquo;they took it&rdquo; are different
+            claims, and only the second one releases retainage.
+          </p>
+          <ul className="flex flex-col gap-2">
+            {attention.map((job) => (
+              <li key={job.id} className="text-sm text-slate-300">
+                <span className="text-slate-100">{job.name}</span>
+                <span className="text-slate-500"> — {stageLabel(job.readiness.stage).toLowerCase()}</span>
+                {job.readiness.blockers.length > 0 && (
+                  <span className="text-slate-400">
+                    : {job.readiness.blockers.map(blockerLabel).join(", ")}
+                  </span>
+                )}
+                {showsMoney && job.readiness.retainageAtStake > 0 && (
+                  <span className="font-mono text-slate-400">
+                    {" "}
+                    · {money(job.readiness.retainageAtStake)} held
+                  </span>
+                )}
+                {job.readiness.stage === "AWAITING_GC" && job.readiness.daysWithGc !== null && (
+                  <span className="text-slate-500"> · {job.readiness.daysWithGc} days with them</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {rows.length === 0 ? (
         <p className="text-slate-400">
@@ -105,11 +134,24 @@ export default async function CloseoutPage() {
         </p>
       ) : (
         <ul className="divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900">
-          {rows.map((job) => (
+          {withReadiness.map((job) => (
             <CloseoutJobCard
               key={job.id}
               job={job}
               today={today}
+              packageStage={job.readiness.stage}
+              packageSlot={
+                <CloseoutPackagePanel
+                  jobId={job.id}
+                  readiness={
+                    showsMoney
+                      ? job.readiness
+                      : { ...job.readiness, retainageAtStake: 0 }
+                  }
+                  submissions={job.submissions}
+                  canDelete={currentUser.role === "OWNER"}
+                />
+              }
               canDelete={currentUser.role === "OWNER"}
             />
           ))}

@@ -1,0 +1,124 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { requireCompanyContext } from "@/lib/auth";
+import { prisma } from "@prova/db";
+import { actionFail as fail, actionOk as ok, type ActionResult } from "./shared";
+
+/**
+ * Acknowledging an alert. The only writes this feature has.
+ *
+ * There is no createAlert and there never will be — every alert is derived
+ * from the rows that already carry the fact (see lib/alerts.ts). What gets
+ * written here is one person saying they have seen one, which is the only
+ * part of an alert that is not derivable.
+ *
+ * Failures are RETURNED, not thrown: production redacts a thrown Server
+ * Action message to a digest.
+ */
+
+class InputError extends Error {}
+
+function text(formData: FormData, key: string) {
+  return String(formData.get(key) ?? "").trim();
+}
+
+async function runAction(fn: () => Promise<ActionResult>): Promise<ActionResult> {
+  try {
+    return await fn();
+  } catch (err) {
+    if (err instanceof InputError) return fail(err.message);
+    throw err;
+  }
+}
+
+/**
+ * A key must look like one this app builds — KIND:subject:fact.
+ *
+ * The key arrives from the client, and it is the whole silencing
+ * mechanism, so it does not get to be arbitrary. A row keyed on something
+ * this app never generates would sit in the table forever silencing
+ * nothing, which is harmless; a key with a wildcard-ish shape someone
+ * pasted in is the thing worth refusing outright. Length is capped for
+ * the same reason.
+ */
+function assertKeyShape(key: string) {
+  if (!key) throw new InputError("Nothing to acknowledge");
+  if (key.length > 200) throw new InputError("That alert reference is not one of ours");
+  const parts = key.split(":");
+  if (parts.length !== 3 || parts.some((p) => p.length === 0)) {
+    throw new InputError("That alert reference is not one of ours");
+  }
+}
+
+/** Quiet until the underlying fact changes.
+ *
+ * Note what this deliberately does NOT do: it never touches the thing the
+ * alert is about. Dismissing "licence expires in 12 days" does not renew
+ * the licence, and the alert returns the moment somebody does — because
+ * renewing it changes the date, which changes the key, which stops this
+ * row matching. That is the entire expiry mechanism.
+ */
+export async function dismissAlert(alertKey: string): Promise<ActionResult> {
+  const { company, ...user } = await requireCompanyContext();
+  return runAction(async () => {
+    assertKeyShape(alertKey);
+
+    await prisma.alertAcknowledgement.upsert({
+      where: { userId_alertKey: { userId: user.id, alertKey } },
+      create: { companyId: company.id, userId: user.id, alertKey, snoozedUntil: null },
+      // Re-dismissing something snoozed clears the date rather than
+      // keeping the older, weaker instruction.
+      update: { snoozedUntil: null, acknowledgedAt: new Date() },
+    });
+
+    revalidatePath("/alerts");
+    return ok;
+  });
+}
+
+/** Quiet until a date, then back. */
+export async function snoozeAlert(alertKey: string, formData: FormData): Promise<ActionResult> {
+  const { company, ...user } = await requireCompanyContext();
+  return runAction(async () => {
+    assertKeyShape(alertKey);
+
+    const raw = text(formData, "snoozeUntil");
+    if (!raw) throw new InputError("Pick a date to be reminded again");
+    const snoozedUntil = new Date(`${raw}T00:00:00.000Z`);
+    if (Number.isNaN(snoozedUntil.getTime())) throw new InputError("That is not a valid date");
+
+    // A snooze into the past is spent the moment it is written, so the
+    // alert would come straight back with no explanation. Refusing says
+    // what happened instead of silently doing nothing.
+    const today = new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00.000Z`);
+    if (snoozedUntil <= today) {
+      return fail("Pick a date in the future — a snooze until today is already over.");
+    }
+
+    await prisma.alertAcknowledgement.upsert({
+      where: { userId_alertKey: { userId: user.id, alertKey } },
+      create: { companyId: company.id, userId: user.id, alertKey, snoozedUntil },
+      update: { snoozedUntil, acknowledgedAt: new Date() },
+    });
+
+    revalidatePath("/alerts");
+    return ok;
+  });
+}
+
+/** Puts a silenced alert back on the list. Deletes the row rather than
+ * dating it: the acknowledgement was a decision that has been reversed,
+ * and keeping a spent one would only make the next dismissal an update to
+ * something already meaningless. */
+export async function restoreAlert(alertKey: string): Promise<ActionResult> {
+  const { ...user } = await requireCompanyContext();
+  return runAction(async () => {
+    assertKeyShape(alertKey);
+
+    await prisma.alertAcknowledgement.deleteMany({ where: { userId: user.id, alertKey } });
+
+    revalidatePath("/alerts");
+    return ok;
+  });
+}

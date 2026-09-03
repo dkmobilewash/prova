@@ -4,15 +4,21 @@ import Link from "next/link";
 import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { PrintButton } from "@/components/PrintButton";
+import { PrevailingWageDeterminationForm } from "@/components/PrevailingWageDeterminationForm";
 import { ContractSummary } from "@/components/ContractSummary";
 import { WipNarrativeButton } from "@/components/WipNarrativeButton";
 import { DraftLineItemsForm } from "@/components/DraftLineItemsForm";
+import { TakeoffForm } from "@/components/TakeoffForm";
 import { DailyFieldReports } from "@/components/DailyFieldReports";
 import { PayApplications, StatusForm } from "@/components/PayApplications";
+import { PushPaymentToQuickBooks } from "@/components/PushPaymentToQuickBooks";
 import { PushInvoiceToQuickBooks } from "@/components/PushInvoiceToQuickBooks";
+import { pushBlockers } from "@/lib/quickbooks-sync";
+import { paymentPushBlockers } from "@/lib/quickbooks-payment-sync";
 import { MarkContractedButton } from "@/components/MarkContractedButton";
 import { ChangeOrders, type ChangeOrderView } from "@/components/ChangeOrders";
 import { changeOrderValueDelta, pendingChangeOrderExposure, reopenBlockers } from "@/lib/change-order";
+import { can } from "@/lib/permissions";
 import { money } from "@/lib/money";
 import { calculateLineItemWip, calculateJobWip } from "@/lib/wip";
 import { calculateTimeEntryLaborCost, findEffectiveFringeRateSchedule } from "@/lib/labor-cost";
@@ -39,7 +45,6 @@ import {
   logTimeEntry,
   updateJobRetainageTerms,
   uploadDispatchSlip,
-  uploadPrevailingWageDetermination,
   markJobContracted,
   deleteContractDocument,
   saveEstimateVersion,
@@ -313,6 +318,39 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
     substantialCompletionDate: job.substantialCompletionDate,
   });
 
+  // What would stop a push, worked out ONCE for the whole job and handed
+  // to every row. The server has always refused a blocked push; until a
+  // browser test caught it on 2026-09-03, nothing told the person WHY, so
+  // "Send payment to QuickBooks" sat live and clickable on a payment whose
+  // invoice QuickBooks had never seen.
+  //
+  // Read through the same helpers the actions use — `pushBlockers` and
+  // `paymentPushBlockers` — rather than re-deriving the conditions here. A
+  // second opinion about whether something is sendable is how a button and
+  // the action behind it come to disagree.
+  const [quickBooksConnection, jobCustomerLink, incomeAccountMapping] = await Promise.all([
+    prisma.quickBooksConnection.findUnique({ where: { companyId: company.id } }),
+    prisma.quickBooksEntityLink.findUnique({
+      where: {
+        companyId_entityType_entityId: {
+          companyId: company.id,
+          entityType: "Contact",
+          entityId: job.contactId,
+        },
+      },
+      select: { qboId: true },
+    }),
+    prisma.quickBooksAccountMapping.findUnique({
+      where: { companyId_purpose: { companyId: company.id, purpose: "INVOICE_REVENUE" } },
+      select: { qboAccountId: true },
+    }),
+  ]);
+
+  // NEEDS_REAUTH is not connected for this purpose: the token is dead and
+  // no push can succeed until somebody reconnects.
+  const quickBooksUsable =
+    quickBooksConnection !== null && quickBooksConnection.status !== "NEEDS_REAUTH";
+
   // Which invoices are already in QuickBooks, so a row can say so without
   // being asked — and so re-sending is visibly a re-send rather than a
   // second document.
@@ -323,6 +361,32 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
           companyId: company.id,
           entityType: "Invoice",
           entityId: { in: job.invoices.map((invoice) => invoice.id) },
+        },
+        select: { entityId: true, qboId: true, lastVerifiedAt: true },
+      })
+    ).map((link) => [
+      link.entityId,
+      {
+        qboId: link.qboId,
+        lastVerifiedAt: link.lastVerifiedAt
+          ? link.lastVerifiedAt.toISOString().slice(0, 10)
+          : null,
+      },
+    ]),
+  );
+
+  // The same for payments. Without it a payment row cannot say whether it
+  // reached QuickBooks, and "Send" would look identical on a payment that
+  // is already there — which is how a second document gets created.
+  const quickBooksPaymentLinks = new Map(
+    (
+      await prisma.quickBooksEntityLink.findMany({
+        where: {
+          companyId: company.id,
+          entityType: "Payment",
+          entityId: {
+            in: job.invoices.flatMap((invoice) => invoice.payments.map((p) => p.id)),
+          },
         },
         select: { entityId: true, qboId: true, lastVerifiedAt: true },
       })
@@ -457,12 +521,23 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
   const deleteTimeEntryWithId = (timeEntryId: string) => deleteTimeEntry.bind(null, job.id, timeEntryId);
   const uploadDispatchSlipWithId = uploadDispatchSlip.bind(null, job.id);
   const deleteDispatchSlipWithId = (dispatchSlipId: string) => deleteDispatchSlip.bind(null, job.id, dispatchSlipId);
-  const uploadPrevailingWageDeterminationWithId = uploadPrevailingWageDetermination.bind(null, job.id);
   const deletePrevailingWageDeterminationWithId = (determinationId: string) =>
     deletePrevailingWageDetermination.bind(null, job.id, determinationId);
   const updateJobRetainageTermsWithId = updateJobRetainageTerms.bind(null, job.id);
   const createRetainageReleaseWithId = createRetainageRelease.bind(null, job.id);
   const deleteRetainageReleaseWithId = (releaseId: string) => deleteRetainageRelease.bind(null, job.id, releaseId);
+
+  // What this person's job function lets them see of the job's money.
+  // Computed once rather than per section, so the contract summary, the
+  // WIP table and the change-order log cannot end up disagreeing about
+  // whether this reader may see a price.
+  //
+  // Both are TRUE for an owner and for a member with no job function set,
+  // so this page renders exactly as it always has for everyone who has
+  // ever used it. Only a narrowed function loses anything.
+  const principal = { role: currentUser.role, jobFunction: currentUser.jobFunction };
+  const showsJobMoney = can(principal, "VIEW_JOB_COSTS");
+  const showsBilling = can(principal, "MANAGE_BILLING");
 
   const headerList = await headers();
   const origin = `${headerList.get("x-forwarded-proto") ?? "https"}://${headerList.get("host")}`;
@@ -475,6 +550,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
           estimate are rendered here as contract content, via the shared
           ContractSummary component also used by the public /esign/[token]
           signing page. Nothing below this heading is retyped anywhere. */}
+      {showsJobMoney && (
       <div className="mb-10">
         <ContractSummary
           companyName={company.name}
@@ -493,6 +569,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
           footer={<PrintButton />}
         />
       </div>
+      )}
 
       <div className="print:hidden">
         <section className="mb-10">
@@ -589,6 +666,8 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
           </div>
         </section>
 
+        {/* The signing link renders the priced contract. */}
+        {showsJobMoney && (
         <section className="mb-10">
           <h2 className="mb-3 text-lg font-semibold text-slate-100">Contract signature</h2>
           <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
@@ -628,7 +707,10 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             )}
           </div>
         </section>
+        )}
 
+        {/* The subcontract PDF states the contract value. */}
+        {showsJobMoney && (
         <section className="mb-10">
           <h2 className="mb-1 text-lg font-semibold text-slate-100">Subcontract agreement</h2>
           <p className="mb-3 text-sm text-slate-400">
@@ -702,7 +784,12 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             </SubmitButton>
           </form>
         </section>
+        )}
 
+        {/* Actual cost, forecast and margin. The whole section, not a
+            filtered version of it: a WIP table with the money taken out is
+            still a WIP table, and half a screen of blanks reads as broken. */}
+        {showsJobMoney && (
         <section className="mb-10">
           <h2 className="mb-3 text-lg font-semibold text-slate-100">Job costing &amp; WIP</h2>
 
@@ -883,6 +970,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             })}
           </div>
         </section>
+        )}
 
         <section className="mb-10">
           <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
@@ -1219,52 +1307,10 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             </ul>
           )}
 
-          <form
-            action={uploadPrevailingWageDeterminationWithId}
-            encType="multipart/form-data"
-            className="flex flex-wrap items-end gap-2 rounded-lg border border-slate-800 bg-slate-900 p-3"
-          >
-            <label className="flex flex-col gap-1 text-xs text-slate-400">
-              Jurisdiction
-              <input
-                name="jurisdiction"
-                placeholder="e.g. California, federal (Davis-Bacon)"
-                required
-                className="w-56 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-600 focus:border-blue-500 focus:outline-none"
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-xs text-slate-400">
-              Document (optional)
-              <input
-                type="file"
-                name="file"
-                accept="application/pdf,image/png,image/jpeg,image/webp"
-                className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 file:mr-2 file:rounded file:border-0 file:bg-slate-800 file:px-2 file:py-1 file:text-slate-200 focus:border-blue-500 focus:outline-none"
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-xs text-slate-400">
-              Or source link
-              <input
-                name="sourceUrl"
-                placeholder="https://sam.gov/..."
-                className="w-48 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-600 focus:border-blue-500 focus:outline-none"
-              />
-            </label>
-            <input
-              name="note"
-              placeholder="Note (optional)"
-              className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
-            />
-            <SubmitButton
-              type="submit"
-              className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-100 hover:bg-slate-700"
-            >
-              Attach
-            </SubmitButton>
-          </form>
+          <PrevailingWageDeterminationForm jobId={job.id} />
         </section>
 
-        {!isEstimateStage && (
+        {!isEstimateStage && showsBilling && (
           <section className="mb-10">
             <h2 className="mb-3 text-lg font-semibold text-slate-100">Invoices</h2>
             <div className="flex flex-col gap-4">
@@ -1292,6 +1338,12 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                           lastVerifiedAt={
                             quickBooksInvoiceLinks.get(invoice.id)?.lastVerifiedAt ?? null
                           }
+                          blockers={pushBlockers({
+                            hasConnection: quickBooksUsable,
+                            customerQboId: jobCustomerLink?.qboId ?? null,
+                            incomeAccountId: incomeAccountMapping?.qboAccountId ?? null,
+                            totalCents: Math.round(Number(invoice.amount) * 100),
+                          })}
                         />
                       </div>
                     </div>
@@ -1325,6 +1377,24 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                             </span>
                             <span className="flex items-center gap-2">
                               <span className="text-slate-100">{money(Number(payment.amount))}</span>
+                              <PushPaymentToQuickBooks
+                                paymentId={payment.id}
+                                linkedQboId={quickBooksPaymentLinks.get(payment.id)?.qboId ?? null}
+                                lastVerifiedAt={
+                                  quickBooksPaymentLinks.get(payment.id)?.lastVerifiedAt ?? null
+                                }
+                                blockers={paymentPushBlockers({
+                                  hasConnection: quickBooksUsable,
+                                  customerQboId: jobCustomerLink?.qboId ?? null,
+                                  // The ordering constraint, and the one the
+                                  // browser test found unguarded: a payment is
+                                  // APPLIED to an invoice, so the invoice has to
+                                  // be there first.
+                                  invoiceQboId:
+                                    quickBooksInvoiceLinks.get(invoice.id)?.qboId ?? null,
+                                  amountCents: Math.round(Number(payment.amount) * 100),
+                                })}
+                              />
                               <form action={deletePayment.bind(null, job.id, payment.id)}>
                                 <SubmitButton
                                   type="submit"
@@ -1412,7 +1482,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
           </section>
         )}
 
-        {!isEstimateStage && (
+        {!isEstimateStage && showsBilling && (
           <section className="mb-10">
             <h2 className="mb-1 text-lg font-semibold text-slate-100">Retainage</h2>
             <p className="mb-3 text-sm text-slate-500">
@@ -1540,11 +1610,21 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
           </section>
         )}
 
-        {isEstimateStage ? (
+        {/* Prices, change-order value deltas and estimate versions. Withheld
+            from a job function without VIEW_JOB_COSTS — the field tier reads
+            the schedule and files reports above without being handed the
+            job's commercial terms. */}
+        {!showsJobMoney ? null : isEstimateStage ? (
           <>
             <section className="mb-10">
               <h2 className="mb-3 text-lg font-semibold text-slate-100">Line items (estimate)</h2>
               <DraftLineItemsForm jobId={job.id} initialScope={job.scope ?? ""} />
+              {/* Beside the scope drafter rather than below the list: both
+                  answer "where do line items come from", and the two ways in
+                  belong in the same place. Gated by the same
+                  assertEditableDirectly, so it only appears where lines can
+                  actually be added. */}
+              <TakeoffForm jobId={job.id} />
               <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
                 {job.lineItems.length === 0 && (
                   <p className="py-2 text-sm text-slate-400">No line items yet — add one below.</p>
@@ -1859,7 +1939,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
           }))}
         />
 
-        {!isEstimateStage && (
+        {!isEstimateStage && showsBilling && (
           <PayApplications
             jobId={job.id}
             lineItems={payApplicationLineItemOptions}

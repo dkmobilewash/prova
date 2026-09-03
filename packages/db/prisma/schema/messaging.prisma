@@ -1,0 +1,138 @@
+// Outbound messaging: what this company actually sent, to whom, and
+// whether it arrived. Cyrus's lane.
+//
+// Part of the multi-file Prisma schema in this folder.
+//
+// Why this exists at all: until now the app could not send anything. Every
+// "sent on" date in RFIs, submittals and material orders recorded that a
+// human sent something through some other channel. This is the channel.
+//
+// Why the delivery log is the feature rather than the sending: across the
+// competitor research, sending is table stakes and knowing whether it
+// arrived is where every product fails. Quotes land in spam under the
+// vendor's own domain and go 60% unopened; one product shows "sending"
+// forever on mail that never left, and a contractor took a formal
+// complaint over three messages a customer never received. Silence is the
+// failure mode, so silence is what this models against.
+
+enum MessageChannel {
+  EMAIL
+  /// Modelled but not wired. One channel that works beats two that half do.
+  SMS
+}
+
+enum MessageEventType {
+  /// Accepted by the provider, not yet handed to a mail server.
+  QUEUED
+  /// Handed off. NOT the same as arrived, and the distinction is the point.
+  SENT
+  /// The receiving server accepted it. The only status that means anything.
+  DELIVERED
+  /// Rejected. `detail` carries the reason, which is what makes it fixable.
+  BOUNCED
+  /// Recipient marked it as spam. Rare, and load-bearing for domain
+  /// reputation — ignoring these is how a sending domain dies quietly.
+  COMPLAINED
+  /// We never got it to the provider at all: no API key, network, refusal.
+  FAILED
+  /// Opened. Weakest signal here — image-blocking makes absence meaningless,
+  /// so it is recorded and never used to conclude anything negative.
+  OPENED
+}
+
+/// One message this company actually sent.
+///
+/// There is deliberately NO status column. Current status is derived from
+/// the newest event on every read — a stored status can disagree with the
+/// events underneath it, and "we sent it and it was delivered" is a claim
+/// people make while chasing money.
+model OutboundMessage {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  /// Most messages are about a job. Optional because some aren't, and a
+  /// required FK would push people into inventing a job to send anything.
+  jobId String?
+  job   Job?    @relation(fields: [jobId], references: [id])
+
+  channel MessageChannel
+
+  /// Email address or E.164 phone number depending on channel.
+  toAddress String
+  toName    String?
+
+  /// Null on SMS. Not a separate model — a subject line is a property of
+  /// the message, not a second kind of thing.
+  subject String?
+  body    String
+
+  /// Stored per message rather than read from config when displayed. The
+  /// whole point of the feature is sending from the contractor's own
+  /// domain; if that domain changes we need to know what each message
+  /// actually went out as, not what the config says today.
+  fromAddress String
+
+  /// The provider's id for this message. The join key for every webhook
+  /// that arrives afterwards, so without it the events are orphans.
+  providerMessageId String? @unique
+
+  /// What this was about — an RFI, a submittal, a signature request.
+  ///
+  /// Deliberately a type/id pair rather than a nullable FK per feature. A
+  /// real FK per feature means a new column on this model every time
+  /// either lane ships anything, and it would make the other lane's models
+  /// grow to hold pointers they don't care about. The cost is no
+  /// referential integrity on this pair: a dangling reference is possible.
+  /// Acceptable because the message log is its own evidence and reads
+  /// correctly on its own — the link enriches it, nothing depends on it.
+  relatedType String?
+  relatedId   String?
+
+  sentByUserId String?
+  sentBy       User?   @relation(fields: [sentByUserId], references: [id])
+
+  events OutboundMessageEvent[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([jobId])
+  @@index([relatedType, relatedId])
+}
+
+/// One thing the provider told us about a message. Append-only.
+///
+/// Never updated in place. A delivery log that can be edited is not a log,
+/// and the sequence itself carries meaning — queued then bounced reads
+/// very differently from delivered then complained.
+model OutboundMessageEvent {
+  id        String          @id @default(cuid())
+  messageId String
+  message   OutboundMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  type MessageEventType
+
+  /// When the PROVIDER says it happened, not when the webhook reached us.
+  /// A webhook delayed an hour must not make a prompt delivery read as a
+  /// slow one — the same entered-not-stamped rule as every other date in
+  /// this app.
+  occurredAt DateTime
+
+  /// Bounce reason, refusal message, whatever makes it actionable. A
+  /// bounce without a reason tells someone their mail failed and nothing
+  /// they can do about it.
+  detail String?
+
+  /// The provider's id for this event. Unique, because providers retry any
+  /// non-2xx and replaying a webhook would otherwise record the same
+  /// bounce twice — which would misreport deliverability, the one number
+  /// this feature exists to get right.
+  providerEventId String? @unique
+
+  createdAt DateTime @default(now())
+
+  @@index([messageId])
+  @@index([occurredAt])
+}
