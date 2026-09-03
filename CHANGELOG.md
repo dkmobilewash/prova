@@ -12,6 +12,44 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+## /pipeline, clicked — and a page that told people to do the impossible
+
+Every assertion passed, including the two that were the point: the counts
+on /pipeline equal what /bids reports for the same GC (1 + 1 = 2), and
+flipping a bid from LOST to WON moved the figures 67% -> 100% -> 67% with
+the won total tracking it and nothing touched on /pipeline. The derivation
+is proven against the data rather than against my description of it.
+
+THE REAL FINDING IS MY OWN COPY. The page said:
+
+  "worked out from the bid invitations on Bids, which is where a status
+   gets changed"
+
+`/bids` has no editing controls. Its rows are bare links; its only <select>
+elements are the trade and status FILTERS. `updateBidInvitationStatus` is
+called from exactly one place, `/contacts/[id]/page.tsx`. So that sentence
+sent a reader to a page where the action does not exist.
+
+It also propagated: my click-list said "on /bids change Tower C", because I
+wrote the click-list from my own wrong copy rather than from the code. The
+tester found the real control on the contact record, performed the flip
+there, preserved the intent of the step, and said plainly that they had
+deviated and why. Both halves of that are what made it useful.
+
+Corrected to name the contact record, and to say what /bids actually does:
+filters and reads.
+
+Filed rather than fixed, both outside this lane: a bid can only be created
+as INVITED with no amount, so every row starts in the state that makes a
+won-value total a floor (#133); and two contact pages return 503 on RSC
+prefetch while siblings in the same batch return 200 (#134).
+
+Not tested: the non-owner access check. There is still exactly one user on
+the account, so section 7 has now been skipped on every run that included
+it. It is the one assertion about /pipeline nobody has exercised.
+
+---
+
 ## The demo dataset caught up with nine models it had never heard of
 
 The seed was written against a schema that has since gained CRM contact
