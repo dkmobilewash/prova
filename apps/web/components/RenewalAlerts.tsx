@@ -1,5 +1,10 @@
 import Link from "next/link";
-import { renewalTiming, summarizeRenewals, type Renewal } from "@/lib/compliance-expiry";
+import {
+  renewalCoverage,
+  renewalTiming,
+  summarizeRenewals,
+  type Renewal,
+} from "@/lib/compliance-expiry";
 
 /**
  * What is about to lapse, rendered where someone will actually see it.
@@ -30,22 +35,52 @@ function toneFor(renewal: Renewal) {
 
 export function RenewalAlerts({
   renewals,
+  trackedCount,
   limit,
   heading = "Renewals",
 }: {
   renewals: Renewal[];
+  /**
+   * How many records that CAN lapse exist at all — the length of what
+   * `renewalSourcesForCompany` returned, before `renewalAlerts` dropped
+   * the current ones.
+   *
+   * Without it this component cannot tell "everything on file is current"
+   * from "nothing is on file", and it said the first for both. On
+   * /compliance that put "Certificates, licences, policies and bonds are
+   * all current." about forty pixels above "No compliance documents yet."
+   * The whole system reads existing rows, so a company that never filed a
+   * COI is structurally indistinguishable from a compliant one — the only
+   * honest thing to do is say which of the two it is looking at.
+   *
+   * Required, not optional. A default would have to be a number, and every
+   * number is a claim.
+   */
+  trackedCount: number;
   /** Show only the worst few, with a count of the rest. Used on the
    * dashboard, where this is a prompt to go and look, not the list itself. */
   limit?: number;
   heading?: string;
 }) {
-  if (renewals.length === 0) {
+  const coverage = renewalCoverage(renewals, trackedCount);
+
+  if (coverage !== "HAS_ALERTS") {
     return (
       <section className="rounded-lg border border-slate-800 bg-slate-900 p-4">
         <h2 className="text-sm font-semibold text-slate-300">{heading}</h2>
-        <p className="mt-1 text-sm text-slate-400">
-          Nothing expiring. Certificates, licences, policies and bonds are all current.
-        </p>
+        {coverage === "NOTHING_TRACKED" ? (
+          <p className="mt-1 text-sm text-amber-300">
+            Nothing is being tracked. No certificate, licence, policy or bond is on file — which
+            is not the same as everything being current. A COI nobody uploaded cannot expire,
+            and cannot warn you either.
+          </p>
+        ) : (
+          <p className="mt-1 text-sm text-slate-400">
+            Nothing expiring. All {trackedCount} tracked{" "}
+            {trackedCount === 1 ? "record is" : "records are"} current — certificates, licences,
+            policies and bonds.
+          </p>
+        )}
       </section>
     );
   }

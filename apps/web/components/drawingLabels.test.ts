@@ -53,11 +53,17 @@ describe("currentRevision", () => {
     expect(currentRevision([b, a])?.label).toBe("ASI-12");
   });
 
-  it("breaks a same-day tie on the received date rather than array order", () => {
-    const notHeld = rev({ label: "Bulletin 4", issuedOn: "2026-08-20" });
-    const held = rev({ label: "Bulletin 5", issuedOn: "2026-08-20", receivedOn: "2026-08-25" });
-    expect(currentRevision([notHeld, held])?.label).toBe("Bulletin 5");
-    expect(currentRevision([held, notHeld])?.label).toBe("Bulletin 5");
+  // Labelled so the received revision is the alphabetically EARLIER one.
+  // It used to be the later one, which meant the label tiebreak and the
+  // received-date tiebreak agreed on the answer — and deleting the
+  // received-date comparison from byNewestFirst left every test in this
+  // file green. A test whose two candidate rules give the same answer
+  // pins neither of them.
+  it("breaks a same-day tie on the received date, not on the label", () => {
+    const notHeld = rev({ label: "Bulletin 5", issuedOn: "2026-08-20" });
+    const held = rev({ label: "Bulletin 4", issuedOn: "2026-08-20", receivedOn: "2026-08-25" });
+    expect(currentRevision([notHeld, held])?.label).toBe("Bulletin 4");
+    expect(currentRevision([held, notHeld])?.label).toBe("Bulletin 4");
   });
 });
 
@@ -127,6 +133,40 @@ describe("setState", () => {
         rev({ label: "Rev 3", issuedOn: "2026-08-20" }),
       ]),
     ).toBe("BEHIND");
+  });
+
+  // "Current set in hand" is a claim about the whole newest issue, and an
+  // architect issuing two bulletins on one day is ordinary. The tiebreak
+  // in byNewestFirst prefers the revision already held — correct for
+  // "which sheet is current", wrong as evidence that nothing is missing —
+  // so this read CURRENT_IN_HAND while a sheet of equal authority had
+  // never arrived, on the same screen that listed it as not received.
+  it("is BEHIND when a revision issued the same day never arrived", () => {
+    expect(
+      setState([
+        rev({ label: "Bulletin 4", issuedOn: "2026-08-20", receivedOn: "2026-08-25" }),
+        rev({ label: "Bulletin 5", issuedOn: "2026-08-20" }),
+      ]),
+    ).toBe("BEHIND");
+    // Order must not change the answer either.
+    expect(
+      setState([
+        rev({ label: "Bulletin 5", issuedOn: "2026-08-20" }),
+        rev({ label: "Bulletin 4", issuedOn: "2026-08-20", receivedOn: "2026-08-25" }),
+      ]),
+    ).toBe("BEHIND");
+  });
+
+  it("is CURRENT_IN_HAND when every revision of the newest issue arrived", () => {
+    expect(
+      setState([
+        rev({ label: "Bulletin 4", issuedOn: "2026-08-20", receivedOn: "2026-08-25" }),
+        rev({ label: "Bulletin 5", issuedOn: "2026-08-20", receivedOn: "2026-08-26" }),
+        // An older one never received does not make the CURRENT set
+        // missing — it is superseded, and unreceivedRevisions still lists it.
+        rev({ label: "Rev 1", issuedOn: "2026-08-01" }),
+      ]),
+    ).toBe("CURRENT_IN_HAND");
   });
 
   it("labels every state", () => {
