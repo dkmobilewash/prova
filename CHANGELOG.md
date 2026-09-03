@@ -12,6 +12,43 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+## The bidding relationship, as opposed to the list of bids
+
+`/bids` lists invitations one per row and filters them. It cannot answer
+the question a sub actually asks about a GC: do they keep inviting us, and
+does it turn into work. `/pipeline` derives that per contact — invited,
+bid, won, lost, declined, what is still live, and what is past the date
+they asked for.
+
+Read-only over `BidInvitation`, which belongs to the estimating lane. A
+status is still changed on `/bids`; nothing here is stored, so a correction
+there moves these figures with it.
+
+**Win rate is null, not zero, until something has been decided.** A GC who
+has invited us three times with every bid still open has not got a 0% win
+rate, and a table printing one is how somebody talks themselves out of a
+customer who is still deciding. `winRateLabel` says "no decided bids yet".
+
+**A declined invitation is not a loss.** Declining is a decision we made,
+usually because the job was wrong for us. Folding it into the rate would
+punish good judgement and make "bid on everything" look like the way to
+improve the number.
+
+**A won-value total that skipped rows says so.** `bidAmount` is nullable,
+so summing it across won bids gives a floor. The row renders "at least"
+and names how many won bids carry no amount, rather than presenting the
+partial sum as a total — the same defect as the $0.00 the browser found in
+five fringe columns. Worth knowing that `/bids` itself still does the
+silent version, filtering unpriced bids out of its total; that is the
+estimating lane's to fix and is filed as an issue rather than changed here.
+
+FEATURE-AUDIT's top line said 115 items / 85 built while its rows said 119.
+Every PER-SHEET header agreed with its own rows; only the total was stale,
+which is the signature of a merge keeping one side's totals line and both
+sides' rows. Recomputed from the rows: 120 items now, including this one.
+
+---
+
 ## What browser testing found in tests 1-5, and what it cost
 
 Six real defects, all mine, none caught by 814 unit tests, 105 DB tests,

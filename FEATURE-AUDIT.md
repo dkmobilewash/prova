@@ -23,7 +23,7 @@ in flight. Left as-is here rather than guessed at from the outside; the next
 update to touch those sheets should come from whoever actually verified them
 against a fresh clone.
 
-**115 items audited — 85 built / 21 partial / 8 missing / 1 descoped**
+**120 items audited — 87 built / 22 partial / 9 missing / 2 descoped**
 
 | Status | Count |
 | --- | --- |
@@ -44,7 +44,7 @@ against a fresh clone.
 | Built | Multi-location/multi-office support (CA/NV/AZ/CO/UT) | `CompanyLocation`, free-text state — any state works, not just the five listed |
 | Built | Self-service export of every company record (data portability) | `lib/export.ts` + `/settings/export` + `/api/export` — 18 tables as CSV each, or all of them as one JSON, owner-only, with row counts shown before download. Column lists are an **allowlist**, so a newly added credential column is absent rather than leaked; `export.test.ts` reads the .prisma files and fails if any field matching a credential pattern reaches a column list. Verified in a browser on 2 Sep: files downloaded, and all six credential field names return zero matches in the JSON. Does NOT cover formatted report exports — the WIP-schedule and AIA-format rows in sheet 15 and sheet 10 are separate and still stand |
 
-## 02. Customer (GC) Relationship Mgmt — 4 built · 0 partial · 0 missing
+## 02. Customer (GC) Relationship Mgmt — 5 built · 0 partial · 0 missing
 
 *Updated from the original audit (was 0 built / 1 partial / 2 missing) — GC
 contract terms, bid invitations, and payment reliability shipped same-day.
@@ -61,6 +61,7 @@ type/MSA/prequalification are new fields shipped in the same pass.*
 | Built | GC/customer directory (contact info, project history, payment history/reliability) | `Contact` has name/email/phone/address, jobs linked, plus `lib/gc-reliability.ts` computing on-time rate and average days-to-pay from invoice/payment history. `createContact`/`deleteContact` (2 Sep) let a GC be entered before any job exists and removed again if it never goes anywhere — deletion refuses once a job or bid invitation is on record |
 | Built | Per-GC contract terms (retainage %, payment terms, standard forms used) | `Contact.defaultRetainagePercent`, `.paymentTermsDays`, `.standardFormsUsed` |
 | Built | Bid invitation tracking (which GCs invite this company to bid, on what) | `BidInvitation` model — trade scope, status, due dates, linked to a `Contact` |
+| Built | Bid pipeline per GC (who invites us, what we do with it, whether it becomes work) | `/pipeline`, `lib/bid-pipeline.ts` (derivation + 11 unit tests), `lib/bid-pipeline-query.ts` (assembly + 7 db tests). READ-ONLY over `BidInvitation`, which the estimating lane owns — a status is still changed on `/bids`. Win rate counts decided bids only and is UNCOMPUTED rather than 0% when nothing has been decided; a won-value total that skipped unpriced bids says so on the row |
 | Built | Prospect status, account type, and MSA/prequalification tracking | `Contact.status` (PROSPECT/ACTIVE/INACTIVE, backfilled to ACTIVE — every existing row already has a job); `Contact.accountType` (GC/developer/vendor/subcontractor, nullable, no backfill); `.msaExpirationDate`/`.prequalificationExpiresAt`, both nullable with status derived via `lib/compliance-expiry.ts`'s existing renewal ranking, not a second copy of the day-counting |
 
 ## 03. Estimating & Bidding — 10 built · 0 partial · 0 missing
