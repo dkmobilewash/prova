@@ -100,6 +100,54 @@ async function issueCaseNumber(
   return counter.lastCaseNumber;
 }
 
+/** What identifies one OSHA case: who was hurt, when, and what happened.
+ *
+ * Deliberately NOT the classification, the outcome or the day counts.
+ * Those are what the record SAYS about the injury rather than which
+ * injury it is, they stay editable afterwards, and including them would
+ * let a resubmission that corrected one of them file a second case for the
+ * same person on the same day — the exact duplicate this is here to stop.
+ */
+type CaseIdentity = {
+  occurredAt: Date;
+  employeeName: string;
+  description: string;
+};
+
+/** Is this injury already on the log?
+ *
+ * Run `createSafetyIncident` twice and nothing in the schema refused the
+ * second one. The only relevant constraint is
+ * `@@unique([companyId, caseYear, caseNumber])`, and `issueCaseNumber`
+ * hands the second run a fresh number, so the duplicate is unique by
+ * construction. One injury became two recordable cases in the count a GC
+ * reads at prequalification.
+ *
+ * Deleting the duplicate afterwards is worse than leaving it, which is why
+ * this has to be prevention rather than cleanup: the counter only ever
+ * increments, on purpose, so a deleted case retires its number for good
+ * and the filed log is left with a gap in the sequence and nothing on the
+ * document to explain it.
+ *
+ * Must run inside the transaction and BEFORE the counter is touched. A
+ * guard that refused after issuing a number would still burn it, and
+ * produce that same unexplained gap without any duplicate to blame.
+ *
+ * WHAT THIS DOES NOT CLOSE: two identical submissions arriving at the same
+ * instant can both read nothing here and both insert. Only a unique index
+ * in the database can refuse that one, and adding it is a migration.
+ */
+async function alreadyFiled(
+  tx: Prisma.TransactionClient,
+  companyId: string,
+  identity: CaseIdentity,
+) {
+  return tx.safetyIncident.findFirst({
+    where: { companyId, ...identity },
+    select: { id: true },
+  });
+}
+
 export async function createSafetyIncident(formData: FormData) {
   const { company, ...user } = await requireCapabilityForAction("MANAGE_FIELD", FIELD_ONLY);
 
@@ -123,6 +171,16 @@ export async function createSafetyIncident(formData: FormData) {
   );
 
   await prisma.$transaction(async (tx) => {
+    // Silent on purpose. This runs when somebody's report did not appear
+    // to go through and they sent it again, and the truthful outcome of
+    // that is the one case that is already filed — the page revalidates
+    // below and shows it. An error would report a failure that did not
+    // happen, about a record that exists, and in production the message
+    // would be redacted to a digest anyway.
+    if (await alreadyFiled(tx, company.id, { occurredAt, employeeName, description })) {
+      return;
+    }
+
     await tx.safetyIncident.create({
       data: {
         companyId: company.id,
