@@ -23,7 +23,7 @@ in flight. Left as-is here rather than guessed at from the outside; the next
 update to touch those sheets should come from whoever actually verified them
 against a fresh clone.
 
-**118 items audited — 88 built / 21 partial / 8 missing / 1 descoped**
+**119 items audited — 89 built / 21 partial / 8 missing / 1 descoped**
 
 (Recomputed 3 Sep 2026 by counting every `| Built |`/`| Partial |`/
 `| Missing |`/`| Descoped |` row across the per-sheet tables below — this
@@ -33,7 +33,7 @@ hand-incremented.)
 
 | Status | Count |
 | --- | --- |
-| Built | 88 |
+| Built | 89 |
 | Partial | 21 |
 | Missing | 8 |
 | Descoped | 1 |
@@ -238,10 +238,17 @@ forecasting shipped 26 Aug 2026.*
 | Built | RFI log per job | `Rfi` + `RfiCounter`, `/rfis` — number issued per job and never reissued, sent/due/answered dates, overdue derived, cost/schedule impact flags |
 | Built | Current drawing set storage/versioning per job | `DrawingSet` + `DrawingRevision`, `/drawings` — one set per discipline per job, issues recorded under the ARCHITECT'S label (no counter: we don't issue these numbers), issued/received dates entered not stamped, current revision and "issued but never received" both derived per render. The set itself is linked, not uploaded — a Server Action body caps around 1MB and real sets are far larger |
 
-## 17. Safety & Field Operations — 3 built · 0 partial · 0 missing
+## 17. Safety & Field Operations — 4 built · 0 partial · 0 missing
+
+*Updated 3 Sep 2026 — worker certification and safety-training tracking
+shipped. It is a row this spec never had: the sheet covered what has
+already gone wrong (incidents) and what was said about it (toolbox talks),
+and nothing covered whether the man being dispatched is allowed through
+the gate in the first place.*
 
 | Status | Feature | Note |
 | --- | --- | --- |
+| Built | Worker certification and safety-training tracking, per person, with expiry | `WorkerCertification` + `CertificationRequirement`, `/certifications` — OSHA 10/30, scaffold, lift, silica, fit tests and anything else, keyed on the User you dispatch so it joins to `JobAssignment` and answers "is this job's crew clear on Monday". A renewal is a NEW row and the superseded card stays; which one governs is derived per read, never stored. A blank expiry reads as *no expiry recorded* and NEVER as current — a card nobody dated is unchecked, not valid. `CertificationRequirement` is what turns an absence into a finding: without it, a worker who has never held a card looks identical to one who does not need it. Per-kind warning horizons through `lib/certifications.ts`, using `lib/compliance-expiry.ts`'s day counting rather than a second copy of it. Not wired into `/alerts` yet |
 | Built | Incident/injury tracking, OSHA 300 log | `SafetyIncident` + `SafetyCaseCounter`, `/safety` — case numbers per company per year, recordable derived from outcome |
 | Built | Toolbox talk / safety meeting logs | `ToolboxTalk`, `/safety` |
 | Built | Daily field reports (crew present, work performed, weather, delays) | `DailyFieldReport`, one per job per day enforced by the database. Filed from the job page or from `/field-reports`, which groups every job's reports into Mon–Sun weeks, derives coverage and NAMES the finished weekdays nothing was filed for (never today, never a day still to come, never a weekend), and writes the week out as plain text to hand a GC — missing days included in that text rather than omitted |

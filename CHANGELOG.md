@@ -12,6 +12,80 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### Whether the man at the gate has a current card (Cyrus)
+`cyrus/worker-certifications`
+
+Sheet 17 had three rows and all three looked backwards. The incident log
+records what already went wrong; the toolbox talks record what was said
+about it; the daily field report records what happened. Nothing anywhere
+answered the question that gets asked FIRST, at six in the morning, by a
+guard with a clipboard: can this man be on this site today.
+
+The cost of not knowing is not the one man. It is the crew standing next
+to him while the office phones round looking for a folder, and it is a GC
+who now watches you.
+
+- **`/certifications`** — every card, class and fit test, per person, with
+  what the company requires of everyone. OSHA 10/30, scaffold competent
+  person, aerial lift, forklift, fall protection, silica, respirator fit
+  test and medical evaluation, first aid, hot work, confined space,
+  hazcom, site orientation, and OTHER with its own name.
+- **Keyed on `User`, not a free-text name.** Deliberately unlike
+  `SafetyIncident.employeeName`, which is free text because an injured
+  party can be a visitor. A certification only matters for somebody you
+  DISPATCH, and everyone you dispatch is already a User — which is what
+  lets the page join to `JobAssignment` and answer "is Maple Street's crew
+  clear on Monday" rather than only "who is short".
+- **A renewal is a NEW row and the old card stays.** There is no unique
+  constraint on (holder, kind) and that is on purpose: which card was
+  valid on the day of an incident is exactly what gets read back
+  afterwards. Which row governs TODAY is derived per read, never stored —
+  same rule as the current drawing revision.
+- **A blank expiry is reported as "no expiry recorded", never as
+  current.** This is the entry worth arguing with, so: some cards
+  genuinely do not expire, and a blank cannot tell you which case it is.
+  Reading it as valid is how a lapsed card sits on a green screen, so it
+  reads as unchecked instead — the same call `PrevailingWageRuleSet`
+  already makes about a blank overtime threshold. It ranks BELOW expiring
+  and ABOVE expired: an expired card sitting next to one nobody dated is
+  "go and look at the card", not "he is lapsed".
+- **`CertificationRequirement` is the point of the whole thing.** Without
+  it the page can only report on rows somebody already entered, and the
+  dangerous case is the opposite one — a worker with no record at all
+  looks identical to one who does not need it. An absence is invisible
+  until something says it should have been filled, same reasoning as the
+  field-report week that names the days nothing was filed for.
+- **Per-kind warning horizons**, not one global 30 days, for the reason
+  `RENEWAL_HORIZON_DAYS` already gives: a fit test is a half-day
+  appointment and an OSHA 30 is thirty hours of classroom you have to get
+  a seat on. The day counting itself comes from `lib/compliance-expiry.ts`
+  rather than a second copy, so the two can never disagree about whether a
+  card expiring today has expired. It has not.
+- Holder and kind are locked after creation. Moving a card to another
+  person would silently rewrite who was qualified on a past date, which is
+  the one thing this log exists to establish.
+- The scan is a LINK, not an upload — a Server Action body caps around
+  1MB and a phone photo of a card exceeds it. Same call as drawing sets,
+  and the same `https://`-only guard, since the string goes into an href.
+
+`lib/certifications.test.ts` covers the derivation with 35 tests. Every
+one of them was checked by putting the wrong behaviour back and watching
+it go red — including the two that matter most, "a blank expiry is never
+current" and "a requirement nobody has met becomes a named finding".
+
+Migration `20260903143000_add_worker_certifications` is purely additive:
+two new tables, one new enum, no column touched on anything that already
+exists beyond the back-relations Prisma requires on `Company` and `User`.
+
+Not done, and named rather than left to be discovered: this raises no
+alert. `lib/alerts.ts` was being edited in another branch while this was
+written, and a lapsed card belongs in that list next to a lapsed COI —
+that is the next commit, not this one. Requirements are company-wide, not
+per craft and not per job; a GC's own orientation requirement is real and
+needs the GC's requirement list as its own data. And nobody who is not a
+`User` can hold a card, which is the honest limit of keying on the person
+you dispatch.
+
 ### Alerts can now email themselves, once per thing per stage (Cyrus)
 `cyrus/notifications`
 
