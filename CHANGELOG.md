@@ -12,6 +12,146 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### The QuickBooks payment push is verified against Intuit at last (Diego)
+`claude/prova-vercel-direct-url-hg1acx`
+
+Payments have pushed to QuickBooks in code since #55 and had NEVER RUN
+ONCE — not against real books, not against the sandbox. Cyrus put a hold
+on that PR for exactly this reason; it merged anyway, so production has
+been carrying a money-moving path nobody had executed. That is closed now.
+
+**Read in the books rather than from our own success message.** QuickBooks
+invoice 146 went from balance $1,000.00 to $500.00, status Partial, after
+one click. `"Applied to the invoice in QuickBooks and verified."` is Prova
+reporting on itself and was never going to be enough — the invoice ledger
+moving is the evidence.
+
+**The re-send is the half worth keeping.** A deliberate second click
+produced ONE payment, balance unchanged. `isAccidentalRepeat` and the
+Id/SyncToken payload had only ever been reasoned about; a duplicate
+document in somebody's books is the failure this integration exists to
+prevent, and it now has one real trial behind it.
+
+FOUR RUNS, FOUR STOPS, AND THREE OF THE CAUSES WERE OURS
+
+Worth recording because none was findable without clicking, and 832 green
+tests were green through all of them:
+
+  #77  `paymentPushBlockers` was written, exported, tested — and called
+       from nowhere that renders. Both push buttons sat enabled with no
+       explanation on a payment whose invoice QuickBooks had never seen.
+  #83  #77's own lookup asked for the account mapped to "INVOICE_REVENUE".
+       No such value exists; it is "INCOME". `purpose` is a plain String,
+       so nothing could catch it.
+  #85  The QuickBooks item id was cached in a QuickBooksEntityLink and
+       returned without ever checking the item still existed. Deleting it
+       inside QuickBooks bricked invoicing permanently, and restoring it
+       only helped if you reactivated the original rather than creating a
+       new one with the same name.
+  #94  A push that threw rendered NOTHING: neither button had a catch, so
+       the transition ended and the screen did not change.
+
+The fourth is the one to remember. A correction posted on #94 records that
+its own description was wrong about the evidence — the 06:30 push had
+SUCCEEDED and logged it, and I repeated a tester's "no log entry" as fact
+without reading the log. So the real defect was never "a throw shows
+nothing"; it was **the work landing while the person cannot tell**, which
+is what invites the second click.
+
+The sandbox item deletion was the one blocker that was not ours.
+
+**Still not two-way, and still sandbox.** Prova does not pull QuickBooks
+edits back and does not pretend to. `QUICKBOOKS_ENVIRONMENT=sandbox`
+remains the only thing between this path and a real ledger.
+
+## The apprenticeship panel, clicked — and a click-list that could not fail
+
+Everything passed except the one step designed to prove the central claim,
+and that step was wrong. Mine.
+
+STEP 3d ASKED FOR THE IMPOSSIBLE. It told a tester to sign off a period and
+watch on-the-job hours drop from 30 to 8 — but every hour in the fixture
+(Aug 26, Aug 3) already fell AFTER the sign-off date of 1 July, so both
+windows held the same 30 hours. A working window and a broken one would
+have looked identical. The tester noticed, built the case I should have
+specified — 4 hours on 2026-03-10, between the indenture and the sign-off —
+and watched it be correctly excluded. That is a real proof of the
+derivation and it is theirs.
+
+The unit suite now pins that straddling case, so the fixture lives in code
+rather than in someone's judgement.
+
+WHAT DELETING PROVED. The registration was removed and every timesheet
+survived, including the entries created during the run. That was the step
+worth running above all others: the panel promises "No timesheet is
+touched", and if it had been wrong it would have destroyed payroll data.
+
+A REGISTRATION THAT LOOKED LIKE IT FAILED. After a successful register the
+panel still read "No apprenticeship registrations recorded"; the row was
+saved and only a reload showed it. `router.refresh()` is on that path and
+the action calls `revalidatePath`, so the obvious explanation is wrong, and
+this file already carries the symptom with its cause NOT established — the
+material-order entry describes it exactly. So no cause is claimed here.
+
+What IS fixed is the harm: same apprentice, same sponsor, same indenture
+date is now refused as the same indenture entered twice. A page that looks
+like it did nothing gets clicked again, and nothing else would have stopped
+the second click.
+
+Also from that run: "Record a period" no longer sits live beside "Confirm
+remove" (an ordinary control adjacent to a destructive one is how somebody
+confirms a removal they meant to cancel); the panel now says it IGNORES the
+month selector above it, after reading "30 hrs" inches from "No hours
+logged this month" for the same person, both true under different windows
+and neither saying so; and the Craft dropdown explains its empty state
+instead of silently offering one option that means nothing.
+
+Answered without another run: the period-level Remove DOES have a two-step
+confirm. The tester flagged it as untested and was right to.
+
+---
+
+## Four shipped pages nothing in the app linked to
+
+A browser tester opened the sidebar looking for Pipeline, could not find
+it, and stopped without touching anything. They were right, and the cause
+was not what either of us first assumed.
+
+/pipeline was merged, deployed, and confirmed READY. The route worked. The
+page worked. It was in NAV_ITEMS. And NOTHING RENDERED IT, because what
+the sidebar draws is NAV_GROUPS, a second hand-written list, and nobody
+had added it there.
+
+Three other pages were in the same state: /messages, /field-reports and
+/vendors/pricing. Twenty-seven items, twenty-three reachable.
+
+THE ASYMMETRY THAT ALLOWED IT. `item()` throws when a GROUP names an href
+no NAV_ITEM has. The reverse -- an item in no group -- was silent. So the
+failure mode with a loud error was the harmless one, and the failure mode
+that hides a whole feature was the quiet one.
+
+This is mine. I added /pipeline by anchoring on the /bids entry in
+NAV_ITEMS and inserting beside it, never checking that a second list
+governed rendering. Then I wrote a click-list whose step 0 could only
+fail, and told Diego the feature was live. Every check was green: CI,
+production READY, a passing build that even printed `ƒ /pipeline` in its
+route table. One fact in two places -- the bug class this session spent
+all day fixing in other people's code.
+
+THE FIX THAT LASTS IS THE TEST, not the four lines of data. navItems.test.ts
+requires every NAV_ITEM to be in a group or named in APPENDED_SEPARATELY
+with its reason (/sales is there: it is gated on Company.isProvaOperator
+and appended by navGroupsFor). Proven by reintroducing the exact bug --
+removing /pipeline from its group -- and watching it fail with the right
+message, then restoring and watching it pass. A test written from the
+implementation cannot fail; this one was written from the defect.
+
+Also: vitest needed `esbuild: { jsx: "automatic" }` to import navItems.tsx
+at all, since every entry carries an inline SVG. Same runtime Next already
+uses, so nothing diverges from how the app builds.
+
+---
+
 ## The apprenticeship programme, as opposed to the apprentice's hours
 
 Sheet 09's last Partial, and the audit had already written the gap: "a

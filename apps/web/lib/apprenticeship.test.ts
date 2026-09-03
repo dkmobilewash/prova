@@ -90,6 +90,30 @@ describe("when the current period started", () => {
   });
 });
 
+describe("the window a sign-off opens", () => {
+  it("starts at the sign-off, so work done BEFORE it stops counting", () => {
+    // The fixture my own click-list failed to specify. It asked a tester to
+    // watch hours drop after a sign-off, but every hour in the data was
+    // already after the sign-off date, so both windows held the same total
+    // and a broken window would have looked identical to a working one.
+    // They caught it, built the straddling case by hand, and it passed.
+    // This pins that case so the next person does not need to.
+    const e = enrollment({ enrolledOn: "2026-01-05" });
+    const signedOff = [period({ periodNumber: 1, signedOffOn: "2026-07-01" })];
+
+    expect(currentPeriodStartedOn(e, [])).toBe("2026-01-05");
+    expect(currentPeriodStartedOn(e, signedOff)).toBe("2026-07-01");
+
+    // An entry dated between the two -- 2026-03-10 in the run that found
+    // this -- is inside the first window and outside the second. That is
+    // the whole behaviour, and it is a date comparison, which is why the
+    // hours never needed storing.
+    const probe = "2026-03-10";
+    expect(probe >= currentPeriodStartedOn(e, [])).toBe(true);
+    expect(probe >= currentPeriodStartedOn(e, signedOff)).toBe(false);
+  });
+});
+
 describe("measuring against a requirement", () => {
   it("refuses to measure when the programme never stated one", () => {
     // The whole point. 2000 hours is a convention, not a rule, and a
