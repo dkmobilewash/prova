@@ -103,6 +103,394 @@ against our own sending reputation, not a mailbox.
 Needs `CRON_SECRET` and `NOTIFY_BASE_URL` on the Vercel project before
 anything sends. Both are in `.env.example` and the README table.
 
+---
+
+### Where the lift actually is, and the same bug I'd just built a guard for (Cyrus)
+`cyrus/equipment-deployment`
+
+Neither crew nor equipment had a time dimension. `JobAssignment` is a bare
+join; `Equipment.assignedJobId` is one pointer to where a machine is right
+now. So "was that scaffold on Maple in March?" was unanswerable, and
+utilisation was unanswerable for the same reason — nothing recorded when
+anything went out or came back.
+
+`EquipmentAssignment` records the stay: which piece, which job, when it
+left, when it returned. Both dates **entered, not stamped** — recording on
+Friday that a lift went Tuesday has to say Tuesday, or every figure computed
+over the table is wrong by however long the paperwork sat.
+
+**A machine cannot be in two places at once**, and the check is on
+overlapping date RANGES rather than "is there an open one". A backdated
+entry collides with a stay that already closed just as easily, and only
+looking for an open assignment would let the record hold two places at once
+for a week in the past. It runs inside the same transaction as the insert:
+no unique constraint can express this (Postgres would want an exclusion
+constraint; Prisma can't declare one), so the transaction is all that stands
+between us and two dispatchers sending one lift to two jobs.
+
+**Touching at a boundary is deliberately allowed.** Back to the yard in the
+morning, out again after lunch is an ordinary day. A rule that cries wolf on
+the normal case is one people learn to click past.
+
+**Utilisation is honest about its denominator.** Nothing in the schema
+records when a contractor bought a mixer, so the window is clamped to when
+the record was created — "since we started tracking it" rather than a claim
+about the machine's life. It reads null rather than 0% when that window is
+empty, and counts distinct days so two contradictory records can't show a
+lift at 180%.
+
+`/deployment` answers the inverse of `/schedule`: not when jobs run, but
+where everybody is. Crew-first, flagging anyone split across more than one
+job, plus by-job with crew and equipment together, plus gear still recorded
+as out on a job that is not running.
+
+**`Equipment.assignedJobId` is now a stored copy of derived state, so
+nothing reads it.** It is NOT dropped — that is destructive against
+production and Diego's to run. The migration backfills every current
+assignment into an open stay so nothing is lost, with the inferred date
+written into the row's notes, because the old column only ever recorded
+where, never when. The form no longer offers it either: leaving a control
+that writes a column nothing reads would be the same defect as the
+QuickBooks chart-of-accounts mapping that was collected, stored, displayed
+and never read.
+
+**And then I shipped the exact bug I spent the morning building a guard
+for.** `updateEquipmentAssignment` was written, exported, and called from
+nowhere — no edit form. The reachability check caught it on this branch
+within a minute of being copied across, which is the argument for the check
+better than anything I could write. The edit form exists now; `findOverlap`
+already took an `ignoreId` for exactly that case.
+
+34 tests on the pure module, four mutation-checked: an overlap check that
+only looks at open stays fails two, treating touching boundaries as a clash
+fails one, summing stays instead of counting distinct days fails one, and
+ignoring when tracking began fails one.
+
+**Clicking found two more the tests could not.** A stay dated in the future
+— dispatching ahead, which is ordinary — rendered as "out since today",
+reporting a machine as deployed while it sat in the yard. And the heading
+over gear on inactive jobs said "finished job" when the job in front of me
+was an estimate that never started. Both fixed, the first with tests.
+
+Verified by doing it: the return guard refused a date before the stay began,
+a re-send overlapping a CLOSED stay was refused by name and date, a
+non-overlapping one went through, and the backfilled piece read its location
+from history rather than the column.
+
+**Two things above were false when I wrote them, and review caught both.**
+
+"Nothing reads `Equipment.assignedJobId`" was a claim about the whole app
+written from inside one file. Ask's `equipment_location` handler still
+selected the column and reported it as `assignedToJob`/`available`. Since
+nothing writes it any more, that answer was not merely stale — it was frozen
+at the migration and would never have moved again, while `/equipment` and
+`/deployment` showed the truth beside it. Nothing would have flagged the
+disagreement; Ask would simply have named the wrong site to whoever asked
+where the skid steer was. Ask now derives through `currentAssignment()`, the
+same function both pages use, and reports the day it went out as well.
+Three comments and the schema doc asserted the false version; all four now
+say what was actually wrong and point at the grep that settles it, because a
+comment claiming "nothing reads this" is exactly how the next person
+re-introduces the reader.
+
+`/deployment` was registered in `NAV_ITEMS` and put in no `NAV_GROUP`. Both
+the rail and the mobile drawer render `navGroupsFor()` — groups only — so
+the page shipped working, typechecked, and linked from nowhere but the
+address bar. Nothing failed; the absence looked exactly like a link nobody
+wanted. It sits in **Operations, immediately after Schedule**, because the
+grouping is by when in a job's life you reach for the thing rather than
+which table it reads — the "it reads EquipmentAssignment, file it under
+Logistics next to Equipment" argument is the one this rail deliberately does
+not follow, and the page's own first paragraph defines itself against the
+schedule.
+
+Both fixes are mutation-checked. Putting the old handler back fails all four
+`handlers.equipment` tests; the fake prisma in that file honours the
+`select`, so a handler that asks for the frozen column gets the frozen column
+and cannot pass. Removing the nav entry fails all four `navItems` tests.
+That nav test is deliberately scoped to `/deployment`: four other items
+(`/field-reports`, `/messages`, `/pipeline`, `/vendors/pricing`) are orphaned
+the same way and belong to other branches — a blanket assertion would go red
+for work this PR has no business touching. Worth someone picking up.
+
+`EquipmentDeploymentControls` also gained `router.refresh()` on all four
+save paths, joining the 18 components that already do it. Its `history` prop
+decides which button the row offers, so a stale prop does not just show an
+old list — it shows "Send out to a job" for a machine that is already out.
+A second click cannot corrupt anything (the overlap check inside
+`assignEquipment`'s transaction refuses a repeat send), but it tells a
+dispatcher their save failed when it worked, and `BackchargeForm` already
+records that `revalidatePath` alone left structurally identical forms stale
+in this app for reasons nobody has explained.
+
+`scripts/preflight.sh` died on its own third line inside a git worktree:
+`.git` is a FILE there, so `rm -f .git/index.lock` is ENOTDIR, `rm` exits 1
+and `set -e` kills the script before any check runs. It also ran before the
+`cd`, so it was clearing a lock relative to wherever you were standing.
+`git rev-parse --git-path index.lock` resolves both layouts.
+
+---
+
+## The demo dataset caught up with nine models it had never heard of
+
+The seed was written against a schema that has since gained CRM contact
+lifecycle fields, an interaction log, and a bid pipeline built over
+`BidInvitation`. A demo dataset does not fail when that happens -- it goes
+quietly stale, and the new screens read as broken rather than as unseeded.
+Merging `main` in is what surfaced it, so this PR now seeds:
+
+- `Contact.status` / `accountType` / `msaExpirationDate` /
+  `prequalificationExpiresAt` on the two GCs, plus a third contact that is
+  a PROSPECT with no jobs -- PROSPECT is meaningless on a contact that owns
+  work, so it needed its own row. One MSA is deliberately lapsed and one
+  prequal deliberately expiring: both states are DERIVED from a date and
+  cannot be demonstrated by a default.
+- Ten `BidInvitation` rows across three GCs, spread to make `/pipeline`
+  show its edges rather than an average -- one WON bid with no amount
+  recorded (so the value reads as a floor, not a total), one still open
+  past its due date, and one GC with nothing decided at all, whose win rate
+  must read as "not decided" and not as 0%.
+- Six `ContactInteraction` rows, with follow-ups both overdue and upcoming.
+
+And `undo()` covers both new tables. It scopes them by the demo CONTACT
+rather than by the `[demo]` tag, the same way job children are scoped by
+the demo job ids: a bid logged by hand against a demo GC while clicking
+through a preview is untagged, would survive a tag-scoped delete, and would
+then block `contact.deleteMany` on a foreign key -- which is precisely the
+half-removed state this PR exists to fix.
+
+Then the six screens that were still demoing empty. Each row below exists
+because a page DERIVES something that a set of nominal values cannot show:
+
+- **`Equipment`** -- eight items. `/equipment`'s only derived figure is "N
+  in the yard", counted from a null `assignedJobId`, so three are
+  unassigned; a set where everything is on a job pins that number at zero.
+  `type` and `assetTag` are left off some rows because both are nullable on
+  purpose. One item is still assigned to the FINISHED job, which is the
+  thing the screen is actually for noticing. This one was overdue: the
+  seed's own docstring had promised "equipment utilisation" while writing
+  no equipment at all -- and could not have kept that promise by adding
+  rows, because nothing computes utilisation. The docstring now says what
+  the page really derives.
+- **`Backcharge`** -- six across two jobs, numbered from `BackchargeCounter`.
+  One RECEIVED past its `respondByDate` and one still inside it, because
+  the red overdue counter is otherwise permanently zero or permanently
+  alarming. All three terminal states appear, since `concededAmount`
+  returns a different thing for each: the claim for ACCEPTED, zero for
+  WITHDRAWN, and the negotiated figure only for SETTLED -- which is
+  $4,000 against a $14,500 claim, the "we argued them down" the log exists
+  to prove. One row has no GC reference and no deadline at all.
+- **`CloseoutSubmission`** -- two attempts on the finished job, from
+  `CloseoutSubmissionCounter`: sent, bounced, sent again. The second has
+  `respondedOn` null on purpose. That is the state `daysWithGc` counts, and
+  it is the whole difference between "nobody sent the package" and "the GC
+  is sitting on it".
+- **`OutboundMessage`** -- six, with fourteen events. One bounced with the
+  550 reason that makes it fixable, one handed over and never confirmed,
+  one that never reached the provider at all. `createdAt` is set
+  explicitly rather than defaulted, because `stale()` needs a message at
+  least a day old and a row created this second can never be one.
+- **`PrevailingWageRuleSet`** -- three, including two on the SAME
+  jurisdiction with adjacent half-open ranges, which is what effective
+  dating is for and what the gist EXCLUDE constraint permits. A third
+  records a jurisdiction with every threshold null: "nobody has looked
+  this up" is a state the review reports, and a row full of sensible
+  numbers cannot demonstrate it. One `PrevailingWageDetermination` ties
+  the current rules to the job that has time entries.
+
+Counter rows are bumped, never `max(n)+1` -- verified by reading the
+counter back against the highest number actually issued on each job.
+
+`UnionLocal` is deliberately NOT seeded, and that is the schema's own
+instruction rather than a gap: there is no verified source for real local
+numbers, and a wrong one misattributes a company's CBA. `/union-compliance`
+demos empty on purpose. `EstimateVersion` and `DispatchSlip` are still
+unseeded.
+
+**One bug found by running it, not by reading it.** Every message event was
+written at UTC midnight, so a message's three events shared one
+`occurredAt` -- and `messageState` walks them newest-first and returns the
+first decisive one. With the timestamps tied, a DELIVERED message rendered
+as "Handed over, not confirmed", and the delivery rate came out 67% instead
+of 75%. The events now carry distinct ordered times. The schema had already
+said why this matters in its own words: "the sequence itself carries
+meaning". Nothing in the suite would have caught it; the census did.
+
+Undo was verified by counting all 74 models before, after, and after undo:
+**160 rows created, 160 removed, nothing left behind.** Three of the new
+tables are `ON DELETE RESTRICT` against `Job` -- read out of the migrations,
+not assumed -- so they delete above the job delete. `OutboundMessage` is
+the opposite trap and worth naming: its `jobId` is `ON DELETE SET NULL`, so
+leaving it out would not have failed loudly the way the last one did. The
+rows would have been silently ORPHANED, jobId nulled, unfindable by job
+forever after. It is scoped by the tag in the body instead.
+
+Separately, `FEATURE-AUDIT.md`'s arithmetic, which three passes had now
+counted and disagreed about. The cause is one mistake made repeatedly:
+recounting by grepping `^| Built |` over the file also matches the summary
+table's OWN four rows, so the total comes out at rows + 4 and the error
+looks like a careful recount. It said 121 items / 88 built where the sheets
+summed to 117 / 87, while that same table said 86 — three numbers, no two
+agreeing.
+
+The guard now checks all three statements of it — the line, the table, and
+every one of the 26 sheet headers — against the rows, per sheet and by
+name, rather than only the total, which two errors can cancel out of. It
+also asserts the sheets parse as 01..26 contiguously: a header that stops
+matching folds its rows into the sheet above and leaves both looking
+self-consistent, which `length > 20` sails straight past.
+
+**It caught the same bug again during the final merge of this branch**, on
+a number written after the note explaining the trap: `main` had recounted
+to 122 / 90 / 21 / 9 / 2 against 118 / 89 / 20 / 8 / 1 of actual rows —
+plus four, exactly, for the third time. Corrected here, and that is now a
+test failure naming the file rather than something the next person counts
+by hand and gets a fourth answer for.
+
+---
+
+---
+
+### The QuickBooks payment push is verified against Intuit at last (Diego)
+`claude/prova-vercel-direct-url-hg1acx`
+
+Payments have pushed to QuickBooks in code since #55 and had NEVER RUN
+ONCE — not against real books, not against the sandbox. Cyrus put a hold
+on that PR for exactly this reason; it merged anyway, so production has
+been carrying a money-moving path nobody had executed. That is closed now.
+
+**Read in the books rather than from our own success message.** QuickBooks
+invoice 146 went from balance $1,000.00 to $500.00, status Partial, after
+one click. `"Applied to the invoice in QuickBooks and verified."` is Prova
+reporting on itself and was never going to be enough — the invoice ledger
+moving is the evidence.
+
+**The re-send is the half worth keeping.** A deliberate second click
+produced ONE payment, balance unchanged. `isAccidentalRepeat` and the
+Id/SyncToken payload had only ever been reasoned about; a duplicate
+document in somebody's books is the failure this integration exists to
+prevent, and it now has one real trial behind it.
+
+FOUR RUNS, FOUR STOPS, AND THREE OF THE CAUSES WERE OURS
+
+Worth recording because none was findable without clicking, and 832 green
+tests were green through all of them:
+
+  #77  `paymentPushBlockers` was written, exported, tested — and called
+       from nowhere that renders. Both push buttons sat enabled with no
+       explanation on a payment whose invoice QuickBooks had never seen.
+  #83  #77's own lookup asked for the account mapped to "INVOICE_REVENUE".
+       No such value exists; it is "INCOME". `purpose` is a plain String,
+       so nothing could catch it.
+  #85  The QuickBooks item id was cached in a QuickBooksEntityLink and
+       returned without ever checking the item still existed. Deleting it
+       inside QuickBooks bricked invoicing permanently, and restoring it
+       only helped if you reactivated the original rather than creating a
+       new one with the same name.
+  #94  A push that threw rendered NOTHING: neither button had a catch, so
+       the transition ended and the screen did not change.
+
+The fourth is the one to remember. A correction posted on #94 records that
+its own description was wrong about the evidence — the 06:30 push had
+SUCCEEDED and logged it, and I repeated a tester's "no log entry" as fact
+without reading the log. So the real defect was never "a throw shows
+nothing"; it was **the work landing while the person cannot tell**, which
+is what invites the second click.
+
+The sandbox item deletion was the one blocker that was not ours.
+
+**Still not two-way, and still sandbox.** Prova does not pull QuickBooks
+edits back and does not pretend to. `QUICKBOOKS_ENVIRONMENT=sandbox`
+remains the only thing between this path and a real ledger.
+
+## The apprenticeship panel, clicked — and a click-list that could not fail
+
+Everything passed except the one step designed to prove the central claim,
+and that step was wrong. Mine.
+
+STEP 3d ASKED FOR THE IMPOSSIBLE. It told a tester to sign off a period and
+watch on-the-job hours drop from 30 to 8 — but every hour in the fixture
+(Aug 26, Aug 3) already fell AFTER the sign-off date of 1 July, so both
+windows held the same 30 hours. A working window and a broken one would
+have looked identical. The tester noticed, built the case I should have
+specified — 4 hours on 2026-03-10, between the indenture and the sign-off —
+and watched it be correctly excluded. That is a real proof of the
+derivation and it is theirs.
+
+The unit suite now pins that straddling case, so the fixture lives in code
+rather than in someone's judgement.
+
+WHAT DELETING PROVED. The registration was removed and every timesheet
+survived, including the entries created during the run. That was the step
+worth running above all others: the panel promises "No timesheet is
+touched", and if it had been wrong it would have destroyed payroll data.
+
+A REGISTRATION THAT LOOKED LIKE IT FAILED. After a successful register the
+panel still read "No apprenticeship registrations recorded"; the row was
+saved and only a reload showed it. `router.refresh()` is on that path and
+the action calls `revalidatePath`, so the obvious explanation is wrong, and
+this file already carries the symptom with its cause NOT established — the
+material-order entry describes it exactly. So no cause is claimed here.
+
+What IS fixed is the harm: same apprentice, same sponsor, same indenture
+date is now refused as the same indenture entered twice. A page that looks
+like it did nothing gets clicked again, and nothing else would have stopped
+the second click.
+
+Also from that run: "Record a period" no longer sits live beside "Confirm
+remove" (an ordinary control adjacent to a destructive one is how somebody
+confirms a removal they meant to cancel); the panel now says it IGNORES the
+month selector above it, after reading "30 hrs" inches from "No hours
+logged this month" for the same person, both true under different windows
+and neither saying so; and the Craft dropdown explains its empty state
+instead of silently offering one option that means nothing.
+
+Answered without another run: the period-level Remove DOES have a two-step
+confirm. The tester flagged it as untested and was right to.
+
+---
+
+## Four shipped pages nothing in the app linked to
+
+A browser tester opened the sidebar looking for Pipeline, could not find
+it, and stopped without touching anything. They were right, and the cause
+was not what either of us first assumed.
+
+/pipeline was merged, deployed, and confirmed READY. The route worked. The
+page worked. It was in NAV_ITEMS. And NOTHING RENDERED IT, because what
+the sidebar draws is NAV_GROUPS, a second hand-written list, and nobody
+had added it there.
+
+Three other pages were in the same state: /messages, /field-reports and
+/vendors/pricing. Twenty-seven items, twenty-three reachable.
+
+THE ASYMMETRY THAT ALLOWED IT. `item()` throws when a GROUP names an href
+no NAV_ITEM has. The reverse -- an item in no group -- was silent. So the
+failure mode with a loud error was the harmless one, and the failure mode
+that hides a whole feature was the quiet one.
+
+This is mine. I added /pipeline by anchoring on the /bids entry in
+NAV_ITEMS and inserting beside it, never checking that a second list
+governed rendering. Then I wrote a click-list whose step 0 could only
+fail, and told Diego the feature was live. Every check was green: CI,
+production READY, a passing build that even printed `ƒ /pipeline` in its
+route table. One fact in two places -- the bug class this session spent
+all day fixing in other people's code.
+
+THE FIX THAT LASTS IS THE TEST, not the four lines of data. navItems.test.ts
+requires every NAV_ITEM to be in a group or named in APPENDED_SEPARATELY
+with its reason (/sales is there: it is gated on Company.isProvaOperator
+and appended by navGroupsFor). Proven by reintroducing the exact bug --
+removing /pipeline from its group -- and watching it fail with the right
+message, then restoring and watching it pass. A test written from the
+implementation cannot fail; this one was written from the defect.
+
+Also: vitest needed `esbuild: { jsx: "automatic" }` to import navItems.tsx
+at all, since every entry carries an inline SVG. Same runtime Next already
+uses, so nothing diverges from how the app builds.
+
+---
+
 ## The apprenticeship programme, as opposed to the apprentice's hours
 
 Sheet 09's last Partial, and the audit had already written the gap: "a

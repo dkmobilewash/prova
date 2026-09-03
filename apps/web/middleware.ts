@@ -27,6 +27,7 @@ const isProtectedRoute = createRouteMatcher([
   "/prevailing-wage(.*)",
   "/union-compliance(.*)",
   "/field-reports(.*)",
+  "/sales(.*)",
   // Ask streams over a route handler rather than a Server Action.
   // requireCompanyContext already redirects an anonymous caller, but this
   // list is the allowlist a reader checks, and a data route missing from
@@ -38,6 +39,7 @@ const isProtectedRoute = createRouteMatcher([
   // so it belongs in the list a reader checks even though the handler
   // itself is OWNER-gated.
   "/api/export(.*)",
+  "/deployment(.*)",
 ]);
 
 // /api/integrations/webhooks/[provider] is deliberately NOT protected here.

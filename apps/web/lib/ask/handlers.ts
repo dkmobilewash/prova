@@ -7,6 +7,7 @@ import { serverToday } from "@/lib/serverToday";
 import { daysPastDueFor, effectiveDueDateFor } from "@/lib/cash-flow";
 import { currentRevision, setState, stateLabel, unreceivedRevisions } from "@/components/drawingLabels";
 import { orderState, stateLabel as orderStateLabel, daysLate } from "@/components/materialOrderLabels";
+import { currentAssignment } from "@/components/equipmentDeployment";
 import { matchesJobName, type ToolName, type ToolResult } from "./tools";
 
 /**
@@ -393,27 +394,67 @@ async function materialDeliveries(companyId: string, input: Input): Promise<Tool
   };
 }
 
+/** Where each piece of equipment is, derived exactly as `/equipment` and
+ * `/deployment` derive it: `currentAssignment` over the stay history.
+ *
+ * This handler used to read `Equipment.assignedJobId` instead. Nothing has
+ * written that column since the assignment history landed, so it froze at
+ * whatever was true the day it stopped being maintained — and because the
+ * page and Ask were reading two different things, Ask would have gone on
+ * naming a job the equipment page had already stopped showing, forever,
+ * with nothing anywhere to indicate a disagreement. Two surfaces computing
+ * the same fact separately is the bug; the fix is the shared derivation,
+ * not a second copy of it here. */
 async function equipmentLocation(companyId: string): Promise<ToolResult> {
   const equipment = await prisma.equipment.findMany({
     where: { companyId },
     select: {
+      id: true,
       name: true,
       assetTag: true,
-      assignedJob: { select: { name: true } },
+      assignments: {
+        select: {
+          id: true,
+          jobId: true,
+          sentOutOn: true,
+          returnedOn: true,
+          job: { select: { name: true } },
+        },
+      },
     },
     orderBy: { name: "asc" },
   });
 
   return {
-    data: equipment.map((item) => ({
-      equipment: item.name,
-      assetTag: item.assetTag,
-      // An assignment, not a position. Saying "on the Riverside job" when
-      // the data means "booked to the Riverside job" is the kind of small
-      // overstatement that gets someone driving to the wrong site.
-      assignedToJob: item.assignedJob?.name ?? null,
-      available: item.assignedJob === null,
-    })),
+    data: equipment.map((item) => {
+      const open = currentAssignment(
+        item.assignments.map((a) => ({
+          id: a.id,
+          equipmentId: item.id,
+          equipmentName: item.name,
+          jobId: a.jobId,
+          jobName: a.job.name,
+          sentOutOn: a.sentOutOn.toISOString().slice(0, 10),
+          returnedOn: iso(a.returnedOn),
+          notes: null,
+        })),
+      );
+
+      return {
+        equipment: item.name,
+        assetTag: item.assetTag,
+        // An assignment, not a position. Saying "on the Riverside job" when
+        // the data means "sent out to the Riverside job and not brought
+        // back" is the kind of small overstatement that gets someone
+        // driving to the wrong site.
+        assignedToJob: open?.jobName ?? null,
+        // The day it went out, so "since when" is answerable without a
+        // second question. Entered, not stamped.
+        sentOutOn: open?.sentOutOn ?? null,
+        // In the yard is a real answer, not missing data: no open stay.
+        available: open === null,
+      };
+    }),
     citations: [{ label: "Equipment", href: "/equipment" }],
     unavailable: equipment.length === 0 ? "No equipment is recorded." : undefined,
   };
