@@ -6,6 +6,7 @@ import { FieldReportEntry } from "@/components/FieldReportEntry";
 import { WeekSummary } from "@/components/WeekSummary";
 import {
   type ReportData,
+  addDays,
   dayLabel,
   groupIntoWeeks,
   weekLabel,
@@ -13,6 +14,10 @@ import {
 } from "@/components/fieldReportWeeks";
 
 export const dynamic = "force-dynamic";
+
+/** How many reports this page renders. The query asks for one more, so the
+ * page can tell a full history from a cut-off one. */
+const REPORT_LIMIT = 400;
 
 /**
  * Every job's daily reports in one place, by week.
@@ -34,7 +39,11 @@ export default async function FieldReportsPage() {
         filedBy: { select: { name: true, email: true } },
       },
       orderBy: { reportDate: "desc" },
-      take: 400,
+      // One more than we render, purely so the page can TELL whether it
+      // was truncated. Without that it grouped a cut-off set into weeks
+      // and named real filed reports as days nobody filed — see knownFrom
+      // below.
+      take: REPORT_LIMIT + 1,
     }),
     prisma.job.findMany({
       where: { companyId: company.id },
@@ -48,7 +57,10 @@ export default async function FieldReportsPage() {
   // used for form defaults — see components/localToday.ts.
   const today = new Date().toISOString().slice(0, 10);
 
-  const reports: ReportData[] = rows.map((row) => ({
+  const truncated = rows.length > REPORT_LIMIT;
+  const shownRows = truncated ? rows.slice(0, REPORT_LIMIT) : rows;
+
+  const reports: ReportData[] = shownRows.map((row) => ({
     id: row.id,
     jobId: row.job.id,
     jobName: row.job.name,
@@ -60,7 +72,17 @@ export default async function FieldReportsPage() {
     filedByName: row.filedBy?.name ?? row.filedBy?.email ?? null,
   }));
 
-  const weeks = groupIntoWeeks(reports, today);
+  // The earliest date this page's records are COMPLETE from.
+  //
+  // Ordered newest first, so everything after the oldest loaded date is
+  // certainly here — but that date itself may have had more reports cut
+  // off mid-day, so completeness starts the day AFTER it. Undefined when
+  // nothing was truncated, which is the only case where an absent report
+  // is evidence that none was filed.
+  const oldestLoaded = reports[reports.length - 1]?.reportDate;
+  const knownFrom = truncated && oldestLoaded ? addDays(oldestLoaded, 1) : undefined;
+
+  const weeks = groupIntoWeeks(reports, today, knownFrom);
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-8">
@@ -122,6 +144,18 @@ export default async function FieldReportsPage() {
                       that are over and unrecorded.
                     </p>
                   )}
+
+                  {/* The oldest week on a truncated page is cut off partway
+                      through. Before this said so, its unloaded days were
+                      grouped as days nobody filed — reports that exist, on
+                      the page a schedule dispute gets argued from. */}
+                  {week.partial && (
+                    <p className="mt-2 rounded bg-slate-800 px-2 py-1.5 text-xs text-slate-400">
+                      Only part of this week is loaded — this page shows the most recent{" "}
+                      {REPORT_LIMIT} reports. Nothing is claimed about the days before it, and no
+                      coverage figure is shown for this week for the same reason.
+                    </p>
+                  )}
                 </header>
 
                 <ul className="flex flex-col gap-2">
@@ -144,6 +178,7 @@ export default async function FieldReportsPage() {
                   const jobWeek = groupIntoWeeks(
                     week.reports.filter((r) => r.jobId === jobId),
                     today,
+                    knownFrom,
                   )[0];
                   if (!jobWeek) return null;
                   return (

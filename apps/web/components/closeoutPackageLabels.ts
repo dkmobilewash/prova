@@ -38,7 +38,10 @@ export function stageBadgeClass(stage: CloseoutStage) {
   }
 }
 
-const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+/** `1 job` / `2 jobs`. Exported because /closeout was rendering "1 jobs",
+ * "1 items" and "1 days with them" from raw interpolation while this file
+ * sat next to it already getting it right. */
+export const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 export function blockerLabel(blocker: CloseoutBlocker) {
   switch (blocker.kind) {
@@ -53,6 +56,82 @@ export function blockerLabel(blocker: CloseoutBlocker) {
     case "OPEN_CALLBACKS":
       return `${plural(blocker.count, "callback", "callbacks")} still open`;
   }
+}
+
+/**
+ * The chip beside a job's name on /closeout, derived from the SAME blocker
+ * array the package panel underneath it renders.
+ *
+ * It lives here rather than inside CloseoutJobCard because the card is a
+ * client component with no test around it, and this chip has now been
+ * wrong three times — each time because it was a SECOND reading of the
+ * checklist that could disagree with the first:
+ *
+ * 1. Every box ticked read "Closeout complete" above a panel reading "Not
+ *    ready to submit — 1 punch item still open".
+ * 2. A checklist made up ENTIRELY OF OPTIONAL ITEMS has no required items,
+ *    so `isCloseoutComplete` was false and `outstandingRequired` was
+ *    empty: the chip fell through to an amber "0 still outstanding"
+ *    directly above a panel saying no checklist exists.
+ * 3. (guarded by the tests below) any future recomputation.
+ *
+ * `blockers` is not optional. An absent-argument default would mean
+ * "nothing is blocking", which is the dangerous direction.
+ */
+export function closeoutChip(
+  blockers: CloseoutBlocker[],
+  stage: CloseoutStage,
+  /** How many checklist rows exist AT ALL, required or not. Only ever used
+   * to tell "nobody has written a checklist" apart from "somebody wrote
+   * one and marked nothing on it required" — two different silences. */
+  checklistItemCount: number,
+): { label: string; className: string } {
+  // NO_CHECKLIST covers both "no items at all" and "items, but none of
+  // them required" — nothing has been asserted either way, and the panel
+  // says exactly that in both.
+  const checklistBlocker = blockers.find(
+    (b) => b.kind === "NO_CHECKLIST" || b.kind === "REQUIRED_ITEMS",
+  );
+  const outstanding = checklistBlocker?.kind === "REQUIRED_ITEMS" ? checklistBlocker.count : 0;
+
+  // "Closeout complete" is a claim about the WHOLE closeout, so it is made
+  // only when the package was accepted AND nothing at all is outstanding —
+  // `blockers.length === 0`, not merely "no checklist blocker".
+  //
+  // That distinction is the bug this function was extracted to end, and the
+  // extraction originally fixed only half of it. `closeoutReadiness` sets
+  // the stage from the submission and reports blockers independently, by
+  // design: a callback raised after acceptance must not un-accept the
+  // package. So OPEN_PUNCH_ITEMS and OPEN_CALLBACKS left `checklistBlocker`
+  // undefined and the chip went green — printing "Closeout complete"
+  // directly above CloseoutPackagePanel's "Holding it up: 1 punch item
+  // still open", which renders at ANY stage. One card, two contradictory
+  // sentences, which is exactly what a chip is for preventing.
+  //
+  // Falling through with a non-checklist blocker yields "Checklist done" in
+  // grey — a finished CHECKLIST, said plainly, which is what the sentence
+  // below always claimed this did.
+  if (blockers.length === 0 && stage === "ACCEPTED") {
+    return { label: "Closeout complete", className: "bg-green-500/15 text-green-300" };
+  }
+
+  const label =
+    checklistBlocker?.kind === "NO_CHECKLIST"
+      ? // A list of optional items is still nothing asserted about what
+        // closeout needs — but it is not an empty list, so it does not say
+        // one is missing either.
+        checklistItemCount === 0
+        ? "No checklist yet"
+        : "Nothing required yet"
+      : outstanding > 0
+        ? `${plural(outstanding, "document", "documents")} still outstanding`
+        : "Checklist done";
+
+  return {
+    label,
+    className:
+      outstanding > 0 ? "bg-amber-500/15 text-amber-300" : "bg-slate-800 text-slate-400",
+  };
 }
 
 export const SUBMISSION_STATUS_LABELS: Record<string, string> = {

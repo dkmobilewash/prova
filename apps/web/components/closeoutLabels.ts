@@ -118,13 +118,37 @@ export function daysOfWarrantyLeft(period: WarrantyPeriodData | null, today: str
 /** Whether a callback fell inside the warranty, by its REPORTED date — not
  * by when it was resolved and not by today. A call reported in warranty
  * stays in warranty however long it takes to fix, which is the point of
- * recording the reported date separately. */
+ * recording the reported date separately.
+ *
+ * NULL when no warranty period has been recorded, because "we never wrote
+ * down a warranty" is not "this call was outside the warranty" — same rule
+ * as daysOfWarrantyLeft above. It returned `false` for a null period until
+ * 2026-09-03, and the card rendered the negation: every callback on a job
+ * with no recorded period was badged "outside warranty", in amber, beside
+ * a chip correctly reading "No warranty recorded". That is the difference
+ * between a favour and work you should be paid for, so the absence has to
+ * be a third state the caller renders rather than a false the caller can
+ * negate. */
 export function wasInWarranty(
   request: ServiceRequestData,
   period: WarrantyPeriodData | null,
-): boolean {
-  if (!period) return false;
+): boolean | null {
+  if (!period) return null;
   return request.reportedOn >= period.startsOn && request.reportedOn <= warrantyExpiry(period);
+}
+
+/** The only thing a screen is allowed to badge "outside warranty".
+ *
+ * A named predicate rather than `!wasInWarranty(...)` at the call site,
+ * because the whole bug was that `!` turns the unknown third state into a
+ * confident accusation. `=== false` is easy to write and just as easy to
+ * drop back to `!` in a later edit; this is the same rule with a test
+ * around it. */
+export function outsideWarranty(
+  request: ServiceRequestData,
+  period: WarrantyPeriodData | null,
+): boolean {
+  return wasInWarranty(request, period) === false;
 }
 
 export function isOpen(request: ServiceRequestData) {
