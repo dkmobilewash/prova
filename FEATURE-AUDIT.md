@@ -31,19 +31,19 @@ below, and the 26 per-sheet headers — are now checked against the rows by
 Do not hand-increment them after a merge; run the test and let it say.
 
 **Do not recount by grepping `^| Built |` over this file.** That also
-matches the summary table's own four rows and overcounts by exactly four,
-which is how the header came to claim 121 items against 117 rows on
-3 Sep 2026 — a wrong number that looked like a careful recount. Count only
-rows that sit under a `## NN.` sheet header.
+matches the summary table's own four rows and overcounts by exactly four.
+It has produced a wrong header twice that looked like a careful recount:
+121 against 117 rows, and then 123 — 91/22/8/2 against rows reading
+119 — 90/21/7/1, over by exactly one in EVERY status, which is that error's
+signature. Count only rows sitting under a `## NN.` sheet header:
 
-(Recounted from the rows again when `main` merged into this branch, which
-is the only way to settle it: this branch's 118 / 89 / 20 / 8 / 1 was right
-about ITS rows and `main`'s 119 / 90 / 21 / 7 / 1 was right about ITS, and
-neither survived the other's. `main` moved Sheet 15's cash flow forecast
-Missing → Built and added a Partial to Sheet 26; this branch changed no
-rows at all. 90 + 21 + 7 + 1 = 119, and all 26 per-sheet headers match
-their own rows with zero mismatches — which is the stronger check, since a
-total can hide two errors that cancel and a per-sheet header cannot.)
+    awk '/^## [0-9]+\./{s=1} s && /^\| *(Built|Partial|Missing|Descoped) *\|/{n[$2]++} END{for(k in n) print k, n[k]}' FEATURE-AUDIT.md
+
+(Recounted from the rows every time this file has been merged, which is the
+only way to settle it — each side is right about ITS rows and neither
+number survives the other's. The per-sheet headers are the stronger check
+than the total, because a total can hide two errors that cancel and a
+per-sheet header cannot.)
 
 | Status | Count |
 | --- | --- |
