@@ -44,19 +44,45 @@ that, and by seeing the count check catch a page whose guard was removed
 (30 actions found where 35 were expected).
 
 **It found a hole the gates opened.** Fifteen actions sit behind pages this
-pass newly closed and answer anyone: thirteen behind `/closeout`
+pass newly closed and assert no capability: thirteen behind `/closeout`
 (`closeout.ts`, `closeoutSubmissions.ts`) and two behind
 `/settings/integrations`. Before the gates, page and action agreed — both
 open. Now the page refuses and the endpoint does not, which is the shape
-every comment in this feature calls the worse one. A further fifty sit
+every comment in this feature calls the worse one. A further fifty-one sit
 behind pages guarded since long before any of this (`/settings`,
 `/compliance`, `/union-compliance`, `/prevailing-wage`, `/catalog`,
-`/vendors/pricing`, `/backcharges`). All sixty-five are listed by name with
-their capability, and the list MAY ONLY SHRINK: an entry that acquires a
-guard fails the suite as loudly as a guard that goes missing, so the debt
-cannot quietly grow and cannot rot into fiction. They are listed rather
-than fixed because every one belongs to another lane, and touching another
-lane's file is announced first.
+`/vendors/pricing`, `/backcharges`). All sixty-six are listed by name with
+their capability, and the list MAY ONLY SHRINK BY BEING FIXED: an entry
+that acquires a guard fails the suite as loudly as a guard that goes
+missing, so the debt cannot quietly grow and cannot rot into fiction. They
+are listed rather than fixed because every one belongs to another lane, and
+touching another lane's file is announced first.
+
+**Six of the fifteen are narrower than "answers anyone", and saying so
+matters more than the round number.** `closeout.deleteCloseoutItem`,
+`deleteWarrantyPeriod`, `deleteServiceRequest`,
+`closeoutSubmissions.deleteCloseoutSubmission` and both
+`integrations.*SandboxIntegration` already refuse anyone who is not the
+account OWNER — and an OWNER holds every capability by construction
+(`lib/permissions.ts`), so no principal exists who is refused by the page
+and admitted by those endpoints today. They stay on the list because the
+list is about what the code ASSERTS, and an owner check is a different axis
+that would stop covering for them the moment the role model gains a third
+value. The nine with nothing at all —
+`addStandardCloseoutChecklist`, `addCloseoutItem`, `updateCloseoutItem`,
+`setWarrantyPeriod`, `recordServiceRequest`, `updateServiceRequest`,
+`submitCloseoutPackage`, `recordCloseoutResponse`,
+`reopenCloseoutSubmission` — are the live gap, and all nine are writes to a
+closeout package.
+
+**The list grew by one on the final merge, which is the mechanism working
+rather than failing.** `main` gained
+`apprenticeship.updateApprenticeshipEnrollment` (#117/#127) while this
+branch was open: a new write behind `/union-compliance`, ungated like its
+five siblings already recorded here. The suite refused the merge by name
+until a decision was written down. Recorded as debt on the same grounds as
+the rest of that module — gating one of six would leave the page
+half-enforced, and it is not this lane's file.
 
 At the route level: every guarded route is now asserted against every job
 function that must be refused, rather than the few somebody thought of; a

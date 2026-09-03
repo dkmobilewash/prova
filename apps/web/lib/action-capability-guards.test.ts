@@ -441,6 +441,11 @@ const OPEN_BEHIND_AN_ALREADY_GUARDED_PAGE: Record<string, Capability> = {
   "unionCompliance.deleteFringeRateSchedule": "MANAGE_COMPLIANCE",
   "unionCompliance.setApprenticeRatioRule": "MANAGE_COMPLIANCE",
   "apprenticeship.createApprenticeshipEnrollment": "MANAGE_COMPLIANCE",
+  // Arrived on `main` in #117/#127 while this branch was open, ungated like
+  // its five siblings. Listed here on the merge rather than fixed, for the
+  // same reason as the rest of the module: gating one of six would leave
+  // /union-compliance half-enforced, and the module is not this lane's.
+  "apprenticeship.updateApprenticeshipEnrollment": "MANAGE_COMPLIANCE",
   "apprenticeship.deleteApprenticeshipEnrollment": "MANAGE_COMPLIANCE",
   "apprenticeship.recordApprenticeshipPeriod": "MANAGE_COMPLIANCE",
   "apprenticeship.updateApprenticeshipPeriod": "MANAGE_COMPLIANCE",
