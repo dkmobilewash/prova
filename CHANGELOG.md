@@ -146,6 +146,126 @@ argued from months later.
 
 ---
 
+## The demo dataset caught up with nine models it had never heard of
+
+The seed was written against a schema that has since gained CRM contact
+lifecycle fields, an interaction log, and a bid pipeline built over
+`BidInvitation`. A demo dataset does not fail when that happens -- it goes
+quietly stale, and the new screens read as broken rather than as unseeded.
+Merging `main` in is what surfaced it, so this PR now seeds:
+
+- `Contact.status` / `accountType` / `msaExpirationDate` /
+  `prequalificationExpiresAt` on the two GCs, plus a third contact that is
+  a PROSPECT with no jobs -- PROSPECT is meaningless on a contact that owns
+  work, so it needed its own row. One MSA is deliberately lapsed and one
+  prequal deliberately expiring: both states are DERIVED from a date and
+  cannot be demonstrated by a default.
+- Ten `BidInvitation` rows across three GCs, spread to make `/pipeline`
+  show its edges rather than an average -- one WON bid with no amount
+  recorded (so the value reads as a floor, not a total), one still open
+  past its due date, and one GC with nothing decided at all, whose win rate
+  must read as "not decided" and not as 0%.
+- Six `ContactInteraction` rows, with follow-ups both overdue and upcoming.
+
+And `undo()` covers both new tables. It scopes them by the demo CONTACT
+rather than by the `[demo]` tag, the same way job children are scoped by
+the demo job ids: a bid logged by hand against a demo GC while clicking
+through a preview is untagged, would survive a tag-scoped delete, and would
+then block `contact.deleteMany` on a foreign key -- which is precisely the
+half-removed state this PR exists to fix.
+
+Then the six screens that were still demoing empty. Each row below exists
+because a page DERIVES something that a set of nominal values cannot show:
+
+- **`Equipment`** -- eight items. `/equipment`'s only derived figure is "N
+  in the yard", counted from a null `assignedJobId`, so three are
+  unassigned; a set where everything is on a job pins that number at zero.
+  `type` and `assetTag` are left off some rows because both are nullable on
+  purpose. One item is still assigned to the FINISHED job, which is the
+  thing the screen is actually for noticing. This one was overdue: the
+  seed's own docstring had promised "equipment utilisation" while writing
+  no equipment at all -- and could not have kept that promise by adding
+  rows, because nothing computes utilisation. The docstring now says what
+  the page really derives.
+- **`Backcharge`** -- six across two jobs, numbered from `BackchargeCounter`.
+  One RECEIVED past its `respondByDate` and one still inside it, because
+  the red overdue counter is otherwise permanently zero or permanently
+  alarming. All three terminal states appear, since `concededAmount`
+  returns a different thing for each: the claim for ACCEPTED, zero for
+  WITHDRAWN, and the negotiated figure only for SETTLED -- which is
+  $4,000 against a $14,500 claim, the "we argued them down" the log exists
+  to prove. One row has no GC reference and no deadline at all.
+- **`CloseoutSubmission`** -- two attempts on the finished job, from
+  `CloseoutSubmissionCounter`: sent, bounced, sent again. The second has
+  `respondedOn` null on purpose. That is the state `daysWithGc` counts, and
+  it is the whole difference between "nobody sent the package" and "the GC
+  is sitting on it".
+- **`OutboundMessage`** -- six, with fourteen events. One bounced with the
+  550 reason that makes it fixable, one handed over and never confirmed,
+  one that never reached the provider at all. `createdAt` is set
+  explicitly rather than defaulted, because `stale()` needs a message at
+  least a day old and a row created this second can never be one.
+- **`PrevailingWageRuleSet`** -- three, including two on the SAME
+  jurisdiction with adjacent half-open ranges, which is what effective
+  dating is for and what the gist EXCLUDE constraint permits. A third
+  records a jurisdiction with every threshold null: "nobody has looked
+  this up" is a state the review reports, and a row full of sensible
+  numbers cannot demonstrate it. One `PrevailingWageDetermination` ties
+  the current rules to the job that has time entries.
+
+Counter rows are bumped, never `max(n)+1` -- verified by reading the
+counter back against the highest number actually issued on each job.
+
+`UnionLocal` is deliberately NOT seeded, and that is the schema's own
+instruction rather than a gap: there is no verified source for real local
+numbers, and a wrong one misattributes a company's CBA. `/union-compliance`
+demos empty on purpose. `EstimateVersion` and `DispatchSlip` are still
+unseeded.
+
+**One bug found by running it, not by reading it.** Every message event was
+written at UTC midnight, so a message's three events shared one
+`occurredAt` -- and `messageState` walks them newest-first and returns the
+first decisive one. With the timestamps tied, a DELIVERED message rendered
+as "Handed over, not confirmed", and the delivery rate came out 67% instead
+of 75%. The events now carry distinct ordered times. The schema had already
+said why this matters in its own words: "the sequence itself carries
+meaning". Nothing in the suite would have caught it; the census did.
+
+Undo was verified by counting all 74 models before, after, and after undo:
+**160 rows created, 160 removed, nothing left behind.** Three of the new
+tables are `ON DELETE RESTRICT` against `Job` -- read out of the migrations,
+not assumed -- so they delete above the job delete. `OutboundMessage` is
+the opposite trap and worth naming: its `jobId` is `ON DELETE SET NULL`, so
+leaving it out would not have failed loudly the way the last one did. The
+rows would have been silently ORPHANED, jobId nulled, unfindable by job
+forever after. It is scoped by the tag in the body instead.
+
+Separately, `FEATURE-AUDIT.md`'s arithmetic, which three passes had now
+counted and disagreed about. The cause is one mistake made repeatedly:
+recounting by grepping `^| Built |` over the file also matches the summary
+table's OWN four rows, so the total comes out at rows + 4 and the error
+looks like a careful recount. It said 121 items / 88 built where the sheets
+summed to 117 / 87, while that same table said 86 — three numbers, no two
+agreeing.
+
+The guard now checks all three statements of it — the line, the table, and
+every one of the 26 sheet headers — against the rows, per sheet and by
+name, rather than only the total, which two errors can cancel out of. It
+also asserts the sheets parse as 01..26 contiguously: a header that stops
+matching folds its rows into the sheet above and leaves both looking
+self-consistent, which `length > 20` sails straight past.
+
+**It caught the same bug again during the final merge of this branch**, on
+a number written after the note explaining the trap: `main` had recounted
+to 122 / 90 / 21 / 9 / 2 against 118 / 89 / 20 / 8 / 1 of actual rows —
+plus four, exactly, for the third time. Corrected here, and that is now a
+test failure naming the file rather than something the next person counts
+by hand and gets a fourth answer for.
+
+---
+
+---
+
 ### The QuickBooks payment push is verified against Intuit at last (Diego)
 `claude/prova-vercel-direct-url-hg1acx`
 

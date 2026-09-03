@@ -27,7 +27,12 @@
 
 set -e
 set -o pipefail
-rm -f .git/index.lock
+# In a worktree, `.git` is a FILE pointing at the real git dir, so
+# `rm -f .git/index.lock` fails with ENOTDIR — and because `set -e` is
+# already on by then, preflight died on its first line and reported
+# nothing about the code. Ask git where the lock actually lives; this
+# resolves correctly in both a normal checkout and a worktree.
+rm -f "$(git rev-parse --git-path index.lock)"
 
 # A failed build piped to `tee` once printed ALL GREEN. Never drop
 # pipefail from this file.

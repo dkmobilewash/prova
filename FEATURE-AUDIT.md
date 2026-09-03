@@ -23,24 +23,34 @@ in flight. Left as-is here rather than guessed at from the outside; the next
 update to touch those sheets should come from whoever actually verified them
 against a fresh clone.
 
-**123 items audited — 91 built / 22 partial / 8 missing / 2 descoped**
+**119 items audited — 90 built / 21 partial / 7 missing / 1 descoped**
 
-(Recomputed 3 Sep 2026 by counting every `| Built |`/`| Partial |`/
-`| Missing |`/`| Descoped |` row across the per-sheet tables below.
-Recomputed AGAIN on merging #82 and this branch together, since each
-corrected this header independently against a different set of rows and
-neither number survived the other's. Counting beats arithmetic on a file
-two lanes edit concurrently — third time this exact conflict shape has
-hit this file. Recomputed again the same day for the Sheet 15 Cash flow
-forecast correction: Missing → Built, found already-shipped while
-auditing the nav for NAV-IA-AUDIT.md.)
+These three statements of the same arithmetic — the line above, the table
+below, and the 26 per-sheet headers — are now checked against the rows by
+`apps/web/lib/plumbing.test.ts`, per sheet, naming the sheet that is wrong.
+Do not hand-increment them after a merge; run the test and let it say.
+
+**Do not recount by grepping `^| Built |` over this file.** That also
+matches the summary table's own four rows and overcounts by exactly four.
+It has produced a wrong header twice that looked like a careful recount:
+121 against 117 rows, and then 123 — 91/22/8/2 against rows reading
+119 — 90/21/7/1, over by exactly one in EVERY status, which is that error's
+signature. Count only rows sitting under a `## NN.` sheet header:
+
+    awk '/^## [0-9]+\./{s=1} s && /^\| *(Built|Partial|Missing|Descoped) *\|/{n[$2]++} END{for(k in n) print k, n[k]}' FEATURE-AUDIT.md
+
+(Recounted from the rows every time this file has been merged, which is the
+only way to settle it — each side is right about ITS rows and neither
+number survives the other's. The per-sheet headers are the stronger check
+than the total, because a total can hide two errors that cancel and a
+per-sheet header cannot.)
 
 | Status | Count |
 | --- | --- |
-| Built | 91 |
-| Partial | 22 |
-| Missing | 8 |
-| Descoped | 2 |
+| Built | 90 |
+| Partial | 21 |
+| Missing | 7 |
+| Descoped | 1 |
 
 
 ## 01. Company / Org Setup — 6 built · 0 partial · 0 missing
