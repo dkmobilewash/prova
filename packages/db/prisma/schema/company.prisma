@@ -75,6 +75,7 @@ model Company {
   contactPeople           ContactPerson[]
   salesLeads              SalesLead[]
   salesOpportunities      SalesOpportunity[]
+  equipmentAssignments    EquipmentAssignment[]
 }
 
 enum UserRole {
@@ -134,6 +135,7 @@ model User {
   sentOutboundMessages                 OutboundMessage[]
   loggedContactInteractions            ContactInteraction[] @relation("ContactInteractionLogger")
   assignedContactFollowUps             ContactInteraction[] @relation("ContactInteractionFollowUp")
+  recordedEquipmentAssignments         EquipmentAssignment[]
 
   @@index([companyId])
   apprenticeshipEnrollments ApprenticeshipEnrollment[] @relation("ApprenticeEnrollments")

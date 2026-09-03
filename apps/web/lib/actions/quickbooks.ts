@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@prova/db";
 import { accountPurpose } from "@/lib/quickbooks-constants";
+import { isMissingDocumentError } from "@/lib/quickbooks-sync";
 import {
   QuickBooksApiError,
   createCustomer,
@@ -645,6 +646,42 @@ export async function pushInvoiceToQuickBooks(invoiceId: string): Promise<Action
         "This invoice was changed inside QuickBooks since we last sent it. Open it there and decide which version is right before pushing again.",
       );
     }
+
+    // THE DOCUMENT WE ARE UPDATING NO LONGER EXISTS.
+    //
+    // Somebody deleted the invoice inside QuickBooks. The stored link still
+    // names its id, so every later push addresses a record that is gone and
+    // fails identically forever — the same shape as the item-id cache that
+    // bricked invoicing until the fix in #85, arriving one entity along.
+    //
+    // Dropping the link is what makes recovery possible: with no link the
+    // next push builds a CREATE rather than an update, and lands.
+    //
+    // IT DOES NOT CREATE ONE HERE, AND THAT IS DELIBERATE. Retrying a write
+    // inside the failure handler is exactly what the retry rules forbid —
+    // a create is the one call that can duplicate a document, and doing it
+    // automatically off the back of an error we matched by string is how a
+    // second invoice ends up in somebody's books. The person clicks again,
+    // knowing what they are making.
+    //
+    // Matched narrowly on Intuit's "Object Not Found" rather than on the
+    // word "deleted", because the Product/Service refusal contains
+    // "has been deleted" and means something completely different — that
+    // one is about the ITEM and clearing the invoice link would be wrong.
+    // If Intuit's wording differs from this, the fallback is the generic
+    // message below, which is what happens today.
+    if (error instanceof QuickBooksApiError && isMissingDocumentError(error.detail)) {
+      await prisma.quickBooksEntityLink.deleteMany({
+        where: { companyId: company.id, entityType: "Invoice", entityId: invoice.id },
+      });
+      revalidatePath(`/jobs/${invoice.jobId}`);
+      return actionFail(
+        "The QuickBooks invoice this was linked to no longer exists — someone deleted it there. " +
+          "The link has been cleared, so sending again will create a new invoice in QuickBooks rather " +
+          "than failing. Check QuickBooks first if you are not sure it was deleted on purpose.",
+      );
+    }
+
     return actionFail(`QuickBooks refused: ${detail}`);
   }
 }
@@ -876,6 +913,27 @@ export async function pushPaymentToQuickBooks(paymentId: string): Promise<Action
       summary: `Payment on invoice ${payment.invoice.number} was not sent.`,
       detail,
     });
+
+    // Same self-healing as the invoice push above, one entity along: the
+    // stored link names a QuickBooks payment somebody deleted there, so
+    // every later push updates a record that is gone. Clearing the link
+    // lets the next push CREATE instead — and it is the next push, not
+    // this one, for the reason written out at the invoice call site: a
+    // create is the only call that can duplicate, and doing it inside a
+    // failure handler on a string match is how a second payment lands in
+    // somebody's books.
+    if (error instanceof QuickBooksApiError && isMissingDocumentError(detail)) {
+      await prisma.quickBooksEntityLink.deleteMany({
+        where: { companyId: company.id, entityType: "Payment", entityId: payment.id },
+      });
+      revalidatePath(`/jobs/${payment.invoice.jobId}`);
+      return actionFail(
+        "The QuickBooks payment this was linked to no longer exists — someone deleted it there. " +
+          "The link has been cleared, so sending again will create a new payment rather than failing. " +
+          "Check QuickBooks first if you are not sure it was deleted on purpose.",
+      );
+    }
+
     return actionFail(`QuickBooks refused: ${detail}`);
   }
 
