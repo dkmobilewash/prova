@@ -147,13 +147,26 @@ speaking about that alert right now. Keys won for a notice we then decline
 to send are given back, so the tighter rung fires next run instead of being
 burnt by a run that stayed silent.
 
-That also removed a hazard this entry previously recorded as accepted.
-`releaseClaims` used to delete keys matching `messageId: null OR ours`,
-which reads like "only my own in-flight rows" and is not: unlinked is also
-the permanent state of every rung burned but never sent. It now deletes
-only keys `claim` reported as won, so a run cannot touch a row it did not
-insert — no interleaving, rare or otherwise, and no duplicate email as the
-price of it.
+Releasing what we won for a notice we decline to send cannot use the
+`messageId` scoping described below, because at that point there is no
+message yet. It matches on the won keys instead, which is a stricter test
+of ownership than any column: a row this call did not insert is never in
+the list, so it cannot be deleted by ours.
+
+That release used to match `messageId: null` as well as its own message,
+which was raised in review as an accepted risk and turned out not to need
+accepting. Only the rung that FIRED is ever linked to a message, so every
+`alsoSpent` row stays null for life — and two runs whose notice sets
+overlap could each delete the other's. Narrow to hit, but the cost when it
+lands is a duplicate carrying the LOOSER notice behind a tighter one
+already sent, which reads backwards to whoever gets it.
+
+Releasing only this call's own `messageId` closes it, and costs nothing:
+the looser rungs stay spent and were never going to be sent anyway, since
+the retry re-fires the rung it failed on with `alsoSpent` already in the
+ledger. Both halves are pinned — the existing retry test would fail if the
+release were too narrow, and the new one fails against the old code with
+`expected [] to deeply equal [ 'approaching' ]` if it is too wide.
 
 #### What this does not do
 

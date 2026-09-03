@@ -240,6 +240,55 @@ describe("dispatching a digest", () => {
     expect(sendEmail).toHaveBeenCalledTimes(1);
   });
 
+  it("RELEASES ONLY THE RUNG THAT FIRED, leaving what it spent on the way past", async () => {
+    // The scoping that makes a concurrent run safe, asserted on the rows.
+    //
+    // `releaseClaims` matches this call's own messageId and nothing else.
+    // It used to also match `messageId: null` — and since only the FIRED
+    // rung is ever linked, every `alsoSpent` row is null for life, so that
+    // arm could delete a row another run was relying on.
+    //
+    // Giving back only the fired rung is enough, and this proves it two
+    // ways: the spent rung stays in the ledger, and the retry above still
+    // re-sends. If the release were too narrow the retry test would fail;
+    // if it were too wide this one would.
+    const licence = await prisma.companyLicense.findFirst({
+      where: { companyId: recipient.companyId },
+    });
+    await prisma.companyLicense.update({
+      where: { id: licence!.id },
+      data: { expirationDate: utc("2026-09-04") },
+    });
+
+    // Clear the ledger for this licence so the ladder starts fresh: a run
+    // against untouched rows would fire the tightest unsent rung and spend
+    // the looser one, which is exactly the shape being tested.
+    await prisma.notificationDispatch.deleteMany({
+      where: { userId: recipient.id },
+    });
+
+    sendEmail.mockClear();
+    sendEmail.mockResolvedValueOnce({
+      ok: false,
+      error: "Couldn't reach the email provider: socket hang up",
+      configured: true,
+    });
+
+    await dispatchAlertDigest(recipient, TODAY, "https://app.example.test");
+
+    const rows = await prisma.notificationDispatch.findMany({
+      where: { userId: recipient.id },
+      select: { dispatchKey: true, rung: true, messageId: true },
+    });
+
+    // Three days out: `week` fires, `approaching` is spent behind it.
+    // The fired one is handed back; the spent one is not, and stays null
+    // because it was never in an email.
+    expect(rows.map((r) => r.rung)).toEqual(["approaching"]);
+    expect(rows[0].messageId).toBeNull();
+    expect(rows.some((r) => r.rung === "week")).toBe(false);
+  });
+
   it("keeps the FAILED record even after giving the milestone back", async () => {
     // Releasing the claim must not erase what happened. The log is the
     // only place anyone can see that a send failed.
@@ -332,59 +381,15 @@ describe("dispatching a digest", () => {
     expect(sendEmail).not.toHaveBeenCalled();
   });
 
-  it("says nothing about an alert a concurrent run already claimed a rung of", async () => {
-    // The race, staged rather than timed: run B read a moment earlier,
-    // across a rung boundary, and claimed the looser rung. There is no way
-    // to make two real runs interleave deterministically, so B's row is
-    // written directly — which is exactly the state B's claim leaves.
-    const licence = await prisma.companyLicense.findFirst({
-      where: { companyId: recipient.companyId },
-    });
-    await prisma.companyLicense.update({
-      where: { id: licence!.id },
-      data: { expirationDate: utc("2026-09-08") },
-    });
-    const alertKey = `RENEWAL:${licence!.id}:2026-09-08`;
+  // NOT TESTED HERE: the partial-claim race that `partitionOwned` exists
+  // for. Staging it by pre-inserting the competing run's row does not
+  // reproduce it — our own `sentKeysFor` read would then SEE that row and
+  // drop the rung from the notice, so we win what remains outright and
+  // send correctly. The real interleaving needs the other run's insert to
+  // land BETWEEN our read and our claim, which no arrangement of rows
+  // before the call can produce. The rule itself is pinned exhaustively in
+  // `notification-milestones.test.ts`, mutation-checked against the
+  // ownership test it replaced; what is unpinned here is only the wiring
+  // between that rule and `createManyAndReturn`.
 
-    await prisma.notificationDispatch.deleteMany({
-      where: { userId: recipient.id },
-    });
-    await prisma.notificationDispatch.create({
-      data: {
-        companyId: recipient.companyId,
-        userId: recipient.id,
-        dispatchKey: `${alertKey}@approaching`,
-        alertKey,
-        rung: "approaching",
-      },
-    });
-
-    sendEmail.mockClear();
-    sendEmail.mockResolvedValue(accepted("msg_race"));
-    const outcome = await dispatchAlertDigest(
-      recipient,
-      TODAY,
-      "https://app.example.test",
-    );
-
-    // Our run crosses week and burns approaching, so it wins @week and
-    // loses @approaching. Sending on that partial win is two emails about
-    // one licence, seconds apart.
-    expect(outcome).toEqual({
-      ok: true,
-      sent: false,
-      reason: "already-claimed",
-    });
-    expect(sendEmail).not.toHaveBeenCalled();
-
-    // And the rung we did win is given back, not left burnt — otherwise
-    // the week notice is spent by a run that never sent anything, and
-    // nothing ever says it.
-    const rows = await prisma.notificationDispatch.findMany({
-      where: { userId: recipient.id, alertKey },
-    });
-    expect(rows.map((row) => row.dispatchKey)).toEqual([
-      `${alertKey}@approaching`,
-    ]);
-  });
 });

@@ -71,18 +71,6 @@ scrollback gets broken by whoever didn't scroll far enough.
   money-display bug. So: delete the branch when you merge a stacked PR,
   and after ANY merge run `git log origin/main..<branch>` — empty output
   is the only proof it landed. "The PR says Merged" is not.
-- **`gh pr checks --watch` exits 0 when the check you care about never
-  ran.** It reports on the checks that REPORTED, and a conflicting branch
-  produces none from CI: GitHub cannot build the merge commit for a
-  `pull_request` event while the branch conflicts with its base, so the
-  workflow is never queued and the only green is Vercel's. Seen on #59 on
-  2026-09-02 — the watch exited 0, all green, and the newest `ci` run was
-  still against the previous commit, because #71 had landed on `main` and
-  taken the CHANGELOG with it. Same shape as the merge scar above, one
-  step earlier: the checks were not lying, they were answering about a
-  commit nobody asked them about. So name the SHA —
-  `gh api repos/<owner>/<repo>/commits/<sha>/check-runs` must list `ci`,
-  and `gh pr view <n> --json mergeStateStatus` must not say `DIRTY`.
 - Scripts start with `set -e` AND `set -o pipefail` (a failed build
   piped to `tee` printed ALL GREEN once), and `rm -f .git/index.lock`.
 - Cyrus authenticates through `gh` (token in the macOS keyring; scopes

@@ -210,7 +210,12 @@ export async function dispatchAlertDigest(
     // nightly run, and every milestone for every user is spent for good.
     // Every send fails loudly in the log and the warnings are gone anyway.
     if (!mayHaveSent) {
-      await releaseKeys(recipient.id, keysWonFor(ours, won));
+      // Their scoping, not the won-keys one: by here the message exists
+      // and the fired rungs carry its id, and releasing only those keeps
+      // the looser rungs spent — they were never going to be sent, since
+      // the retry re-fires the rung it failed on with `alsoSpent` already
+      // in the ledger. Pinned in both directions in the dbtest.
+      await releaseClaims(recipient.id, ours, message.id);
       return { ok: false, error: result.error, claimed: 0 };
     }
 
@@ -334,22 +339,58 @@ async function linkClaimsToMessage(
 }
 
 /**
- * Gives back milestones this call claimed and did not send, so the next
- * run says the same thing again.
+ * Gives back the milestones of a send that provably never left the machine,
+ * so the next run says the same thing again.
  *
- * Takes the keys rather than the notices, and the caller only ever passes
- * keys `claim` reported as won. That is what makes this safe with no
- * `messageId` guard: a row this call did not insert is never in the list,
- * so a concurrent run's claim cannot be deleted by ours. The previous
- * version filtered on `messageId: null OR ours`, which reads like the same
- * protection and is not — an unlinked row is also the permanent state of
- * every rung burned but never sent, so "unlinked" does not mean "mine".
+ * ONLY ROWS CARRYING THIS CALL'S OWN `messageId` ARE RELEASED, and that
+ * exact scoping is the whole safety of it. `linkClaimsToMessage` has
+ * already run by the time we get here, so this call's fired rungs carry
+ * its id and nothing else does.
  *
- * Two callers, one reason each: a notice we lost the race for (never sent,
- * must not stay burnt), and a send that provably never left the machine.
+ * It used to also match `messageId: null`, to hand back the looser rungs
+ * this notice spent on the way past. That arm could delete ANOTHER run's
+ * claim: only the rung that FIRED is ever linked, so every `alsoSpent`
+ * row stays null for life, and two runs whose notice sets overlap could
+ * each see the other's. The interleaving is narrow — B has to read before
+ * A claims and still find something of its own to claim — but the cost
+ * when it lands is a duplicate email carrying the LOOSER notice behind a
+ * tighter one already sent, which reads backwards to whoever gets it.
+ *
+ * Dropping the arm costs nothing, which is why this is a fix rather than
+ * a trade. The looser rungs stay spent, and they were never going to be
+ * sent: the retry re-fires the same rung it failed on, with `alsoSpent`
+ * empty because those are already in the ledger. Asserted directly below
+ * in `notification-dispatch.dbtest.ts`.
  *
  * The message row and its FAILED event stay: what happened is still what
  * happened, and the log is the only place anyone can see it.
+ */
+async function releaseClaims(
+  userId: string,
+  notices: DueNotice[],
+  messageId: string,
+): Promise<void> {
+  const keys = notices.flatMap(keysConsumed);
+  if (keys.length === 0) return;
+
+  await prisma.notificationDispatch.deleteMany({
+    where: { userId, dispatchKey: { in: keys }, messageId },
+  });
+}
+
+/**
+ * Gives back keys claimed for a notice this run then declined to send.
+ *
+ * A DIFFERENT SITUATION from `releaseClaims` above, and it cannot use that
+ * scoping: this runs when we lost the race for a notice, before any
+ * message exists, so there is no `messageId` to match on. What makes it
+ * safe instead is the input — the caller passes only keys `claim` reported
+ * as having been CREATED by this call, so a row another run inserted is
+ * never in the list and cannot be deleted by ours.
+ *
+ * Releasing rather than leaving them claimed is the point. A rung left
+ * burnt with no email behind it is the tighter, newer thing to say spent
+ * by a run that stayed silent — and nothing would ever say it.
  */
 async function releaseKeys(userId: string, keys: string[]): Promise<void> {
   if (keys.length === 0) return;
