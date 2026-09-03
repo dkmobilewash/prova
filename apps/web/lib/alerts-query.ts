@@ -4,6 +4,7 @@ import {
   backchargeAlerts,
   certifiedPayrollAlerts,
   closeoutAlerts,
+  contactFollowUpAlerts,
   partitionAlerts,
   renewalAlert,
   visibleToPrincipal,
@@ -59,7 +60,7 @@ export async function loadAlerts(
   // rather than a window of our own choosing.
   const currentMonth = todayIso.slice(0, 7);
 
-  const [renewalSources, backcharges, jobs, acknowledgements, ratioReviews] = await Promise.all([
+  const [renewalSources, backcharges, jobs, acknowledgements, ratioReviews, followUps] = await Promise.all([
     renewalSourcesForCompany(companyId),
 
     prisma.backcharge.findMany({
@@ -127,6 +128,17 @@ export async function loadAlerts(
     }),
 
     loadRatioReviews(companyId, currentMonth),
+
+    prisma.contactInteraction.findMany({
+      where: { companyId, followUpOn: { not: null } },
+      select: {
+        id: true,
+        followUpOn: true,
+        contactId: true,
+        contact: { select: { name: true } },
+        followUpAssignedToUser: { select: { name: true, email: true } },
+      },
+    }),
   ]);
 
   const alerts: Alert[] = [];
@@ -263,6 +275,18 @@ export async function loadAlerts(
     ),
   );
   alerts.push(...wipAlerts(wipSources));
+  alerts.push(
+    ...contactFollowUpAlerts(
+      followUps.map((f) => ({
+        interactionId: f.id,
+        contactId: f.contactId,
+        contactName: f.contact.name,
+        followUpOn: isoDate(f.followUpOn) as string,
+        assignedToName: f.followUpAssignedToUser?.name ?? f.followUpAssignedToUser?.email ?? null,
+      })),
+      todayIso,
+    ),
+  );
 
   const permitted = visibleToPrincipal(alerts, (capability) => can(principal, capability));
 

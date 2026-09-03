@@ -82,6 +82,7 @@ describe("alerts assembled from real rows", () => {
   afterAll(async () => {
     const where = { companyId: context.company.id };
     await prisma.alertAcknowledgement.deleteMany({ where });
+    await prisma.contactInteraction.deleteMany({ where });
     await prisma.backcharge.deleteMany({ where });
     await prisma.backchargeCounter.deleteMany({ where: { jobId } });
     await prisma.closeoutSubmission.deleteMany({ where });
@@ -296,6 +297,41 @@ describe("alerts assembled from real rows", () => {
     expect(await restoreAlert(target.key)).toEqual({ ok: true });
     const restored = await loadAlerts(context.company.id, context.id, TODAY);
     expect(keysOf(restored.visible)).toContain(target.key);
+  });
+
+  it("raises an overdue contact follow-up, naming the assignee, and drops it once cleared", async () => {
+    const interaction = await prisma.contactInteraction.create({
+      data: {
+        companyId: context.company.id,
+        contactId: (await prisma.contact.findFirstOrThrow({ where: { companyId: context.company.id } })).id,
+        type: "CALL",
+        occurredOn: utc("2026-08-20"),
+        summary: "Left a message about the change order",
+        followUpOn: utc("2026-08-25"),
+        followUpAssignedToUserId: secondUserId,
+        loggedByUserId: context.id,
+      },
+    });
+
+    const { visible } = await loadAlerts(context.company.id, context.id, TODAY);
+    const alert = visible.find((a) => a.kind === "CONTACT_FOLLOW_UP");
+    expect(alert).toBeDefined();
+    expect(alert?.severity).toBe("OVERDUE");
+    expect(alert?.href).toBe(`/contacts/${interaction.contactId}`);
+    // Named by email since the second user was created with no `name`.
+    expect(alert?.detail).toContain("Assigned to");
+
+    // Visible to anyone holding the capability, not just the assignee --
+    // the deliberate design choice, not an oversight.
+    const theirs = await loadAlerts(context.company.id, secondUserId, TODAY);
+    expect(theirs.visible.some((a) => a.kind === "CONTACT_FOLLOW_UP")).toBe(true);
+
+    await prisma.contactInteraction.update({
+      where: { id: interaction.id },
+      data: { followUpOn: null },
+    });
+    const { visible: afterClear } = await loadAlerts(context.company.id, context.id, TODAY);
+    expect(afterClear.filter((a) => a.kind === "CONTACT_FOLLOW_UP")).toEqual([]);
   });
 
   it("refuses a key that is not one this app builds", async () => {

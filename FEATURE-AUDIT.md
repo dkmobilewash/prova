@@ -23,17 +23,19 @@ in flight. Left as-is here rather than guessed at from the outside; the next
 update to touch those sheets should come from whoever actually verified them
 against a fresh clone.
 
-**118 items audited — 88 built / 21 partial / 8 missing / 1 descoped**
+**119 items audited — 89 built / 21 partial / 8 missing / 1 descoped**
 
 (Recomputed 3 Sep 2026 by counting every `| Built |`/`| Partial |`/
-`| Missing |`/`| Descoped |` row across the per-sheet tables below — this
-header had drifted from those rows independently of the ContactPerson
-work landing in this same pass, so it's corrected here rather than
-hand-incremented.)
+`| Missing |`/`| Descoped |` row across the per-sheet tables below.
+Recomputed AGAIN on merging #82 and this branch together, since each
+corrected this header independently against a different set of rows and
+neither number survived the other's. Counting beats arithmetic on a file
+two lanes edit concurrently — third time this exact conflict shape has
+hit this file.)
 
 | Status | Count |
 | --- | --- |
-| Built | 88 |
+| Built | 89 |
 | Partial | 21 |
 | Missing | 8 |
 | Descoped | 1 |
@@ -73,7 +75,7 @@ closing "we track the GC but not who to actually call."*
 | Built | Bid invitation tracking (which GCs invite this company to bid, on what) | `BidInvitation` model — trade scope, status, due dates, linked to a `Contact` |
 | Built | Bid pipeline per GC (who invites us, what we do with it, whether it becomes work) | `/pipeline`, `lib/bid-pipeline.ts` (derivation + 11 unit tests), `lib/bid-pipeline-query.ts` (assembly + 7 db tests). READ-ONLY over `BidInvitation`, which the estimating lane owns — a status is still changed on `/bids`. Win rate counts decided bids only and is UNCOMPUTED rather than 0% when nothing has been decided; a won-value total that skipped unpriced bids says so on the row |
 | Built | Prospect status, account type, and MSA/prequalification tracking | `Contact.status` (PROSPECT/ACTIVE/INACTIVE, backfilled to ACTIVE — every existing row already has a job); `Contact.accountType` (GC/developer/vendor/subcontractor, nullable, no backfill); `.msaExpirationDate`/`.prequalificationExpiresAt`, both nullable with status derived via `lib/compliance-expiry.ts`'s existing renewal ranking, not a second copy of the day-counting |
-| Built | Interaction log per contact (calls, emails, site visits, notes, optional follow-up) | `ContactInteraction` (`crm.prisma`) — dated, entered not stamped; follow-up date and follow-up owner are separate from who logged the entry. Not an evidence record (no counter, no locked fields): any team member can log/edit/delete one, same access as bid invitations. Not yet wired into `/alerts` — that's the next phase |
+| Built | Interaction log per contact (calls, emails, site visits, notes, optional follow-up) | `ContactInteraction` (`crm.prisma`) — dated, entered not stamped; follow-up date and follow-up owner are separate from who logged the entry. Not an evidence record (no counter, no locked fields): any team member can log/edit/delete one, same access as bid invitations. A due/overdue follow-up now surfaces in `/alerts` too — see Sheet 26 |
 | Built | Individual people at an account (name, title, email/phone, who to actually call) | `ContactPerson` (`crm.prisma`), nested under `Contact`. No stored "last contact" — derived at read time from `ContactInteraction.contactPersonId` (optional, `SET NULL` on delete so removing a person never blocks on their call history). `deleteContact`'s guard extended again to count people as account history |
 
 ## 03. Estimating & Bidding — 10 built · 0 partial · 0 missing
@@ -152,7 +154,7 @@ costing, and prevailing wage attachment shipped 26 Aug 2026.*
 | Missing | Multi-state prevailing wage rule variation support | not built as a rules engine — no real government wage-rate dataset to vary across states with; a job is already jurisdiction-scoped via `operatingLocationId` |
 | Partial | Certified payroll document storage/history per job, per pay period | `ComplianceDocument.type = CERTIFIED_PAYROLL` stores/tracks a submission, with AI extraction; not structured strictly by pay period |
 
-## 09. Union Fringe & Apprenticeship Compliance — 3 built · 1 partial · 0 missing
+## 09. Union Fringe & Apprenticeship Compliance — 4 built · 0 partial · 0 missing
 
 *Updated 1 Sep 2026 — the remittance generator and the daily ratio check
 shipped. Both were blocked on there being no time-entry data; `TimeEntry`
@@ -162,7 +164,7 @@ landed, and `CraftClassification.tier` supplied the other missing half.*
 | --- | --- | --- |
 | Built | Union fringe/benefit remittance report generation (pension, vacation, H&W, training) | `lib/fringe-remittance.ts`, on `/union-compliance`, with the setup CRUD that feeds it added 2 Sep — before that the report was correct and unreachable, because nothing in the app could create a local, a classification or a rate. — a month's logged hours rolled up per local, per classification, with the four funds broken out separately because that is how the form is filled in and how the cheques are written. Uses the rate in force on each entry's own date through `findEffectiveFringeRateSchedule`, not a second copy of that lookup. Fringe is paid at the flat per-hour rate regardless of pay type (Davis-Bacon), so overtime does not inflate it. Hours it cannot price — no craft tag, or no schedule effective that day — are counted and named, never valued at $0: under-reporting a trust fund is the expensive direction to be wrong in. Whether the month was filed is derived from a `UNION_FRINGE_BENEFIT_FILING` document covering the WHOLE period |
 | Built | Apprentice-to-journeyman ratio tracking per crew/job | `lib/apprentice-ratio.ts` — per job, per union local, **per day**, because that is how the rule is enforced and a monthly average would hide the exact day an inspector asks about. Measured in hours (what `TimeEntry` holds). Hours on a craft with no tier are NEVER counted as journeyman hours: the day reads "can't be judged", so a half-configured company never gets a clean bill of health. Also raises the Sheet 26 alert that was blocked on this existing |
-| Partial | Apprenticeship program enrollment/hours tracking | `CraftClassification.apprenticePeriod` identifies the step, and hours per apprentice per period are derivable from `TimeEntry` and shown in the ratio review. What is NOT built is the program side of it — a registered enrolment record, the sponsor, required classroom hours, or progression sign-off. That needs the program's own data model, and none of it can be derived from hours logged |
+| Built | Apprenticeship program enrollment/hours tracking | `apprenticeship.prisma` (`ApprenticeshipEnrollment`, `ApprenticeshipPeriodRecord`), `lib/apprenticeship.ts`, `lib/apprenticeship-query.ts`, on `/union-compliance` with create/edit/remove for both. The registration side the ratio work could not derive: sponsor, programme number, indenture date, classroom hours, and the sign-off that closes a period. **On-the-job hours are still never stored** — they are summed from `TimeEntry` over the window from the last sign-off to today, so a corrected timesheet moves them. Classroom hours ARE stored, because related instruction happens at a training centre and there is no `TimeEntry` to sum. A period closes on a SIGNATURE, never on an hour count: the sponsor decides, and recording our arithmetic as their decision would invent a fact about someone else's programme. Nothing defaults the hour requirements — blank reads as "not looked up" and is reported unchecked rather than measured against the conventional 2000 |
 | Built | Multi-CBA support (a company may run crews under more than one agreement) | `CompanyUnionAgreement` is a list per company, not a single field |
 
 ## 10. Billing — AIA-Style Pay Applications — 5 built · 0 partial · 0 missing
@@ -329,7 +331,7 @@ meaning exactly what it meant.*
 | Built | Distinct roles: estimator, PM, foreman/field, payroll/compliance admin, owner/exec, accounting | `JobFunction` — a second, orthogonal column to `UserRole` — plus `lib/permissions.ts` mapping each to a capability set, set by the owner on `/team`. NULL is a real value meaning "nobody has said", and grants exactly the access every MEMBER has always had, so no existing row loses anything. An OWNER holds every capability regardless, because an owner locked out by a dropdown has nobody to undo it. Enforced server-side by `requireCapability()` on the page; the nav filter is cosmetic and says so in its own comment |
 | Partial | Field-only mobile access vs. office full access | the FIELD tier is enforced everywhere the app shows money. Whole pages refuse it (`/cash-flow`, `/catalog`, `/bids`, `/vendors/pricing`, `/backcharges`, `/compliance`, `/settings`); the company metric bar is withheld from every screen; alerts are filtered by the capability their subject needs and stripped of figures they may not see; `/closeout` hides retainage; and `/jobs/[id]`, `/dashboard` and `/contacts/[id]` now withhold the contract summary, job costing & WIP, invoices, retainage, change orders, estimate line items, receivables, job health and per-job contract value. The dashboard withholds the receivables ROWS, not just the list, since the provider is a client component. **Still Partial for one honest reason: there is no mobile SURFACE.** It is the same responsive site, narrowed — the audit row asks for field-only *mobile* access, and an offline-capable field app with camera capture is a separate build, not a permission |
 
-## 26. Notifications & Alerts — 1 built · 5 partial · 0 missing
+## 26. Notifications & Alerts — 1 built · 6 partial · 0 missing
 
 *Updated 1 Sep 2026 — the alert engine shipped, and then a sender was
 wired to it. Every row below can now be EMAILED, once per thing per stage,
@@ -339,7 +341,11 @@ without a person clicking.** The digest goes out from a button on /alerts,
 so it reaches somebody who opens the app — which is the same reach the list
 already had. The bar this sheet set ("NOT Built until something pushes it")
 is met by the sending path and not by the trigger. A scheduled run is the
-whole remaining gap, and it is one job away.*
+whole remaining gap, and it is one job away. Updated again 3 Sep 2026: a
+seventh row, contact follow-up reminders (CRM lane, Sheet 02) — the same
+generic dispatch layer picked it up with no changes of its own, since it
+reads only `Alert.severity`/`.key` and knows nothing about individual
+kinds.*
 
 | Status | Feature | Note |
 | --- | --- | --- |
@@ -349,3 +355,4 @@ whole remaining gap, and it is one job away.*
 | Partial | Retainage release eligibility alerts | derived from `lib/retainage.ts`'s balance plus the closeout package's state. An ACCEPTED package is an event and reads as collectable; `Job.substantialCompletionDate` is a FORECAST and reads as "worth confirming", never as money owed. Now emailable. Still nothing that runs unattended |
 | Partial | Apprentice ratio out-of-compliance alerts | no longer blocked — `lib/apprentice-ratio.ts` finds the days a job ran over, and the alert engine raises them (STANDING, not dated: the day is past and cannot be fixed by acting sooner; what can change is tomorrow's crew). Keyed on the offending dates, so a dismissal lapses the moment another day breaches. Now emailable — as a STANDING notice, which fires once per key rather than climbing a ladder of deadlines it does not have. Still nothing that runs unattended |
 | Partial | WIP variance alerts | jobs forecast past contract value now appear in the one alert list alongside everything else, through `jobIsOverBudget` rather than a second threshold, and can be acknowledged. Deliberately a STANDING severity with no date: it is true today and tomorrow, and escalating it with the calendar would invent urgency the data doesn't have — the digest respects that and sends it once per key, never on a ladder. Still nothing that runs unattended |
+| Partial | Contact follow-up reminders | `ContactInteraction.followUpOn` (A2) now raises a `CONTACT_FOLLOW_UP` alert through the same engine, gated behind `MANAGE_ESTIMATING`, keyed on the follow-up date so rescheduling it lapses an old dismissal. Horizon fixed at 7 days — the floor `notification-milestones.ts` requires for any kind, not chosen for feel; a lower one would drop its own earlier warning silently, since the "week" rung fires at 7 days regardless of a kind's own horizon. Not scoped to the specific assignee — every other kind here is capability-gated only, and this stays consistent rather than becoming the first per-user-scoped one; the assignee is named in the alert text instead. Now emailable via the existing digest, no changes to the sending layer. Still nothing that runs unattended |

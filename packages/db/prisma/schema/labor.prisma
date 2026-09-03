@@ -138,6 +138,7 @@ model UnionLocal {
   companyAgreements    CompanyUnionAgreement[]
 
   @@unique([parentInternational, localNumber])
+  apprenticeshipEnrollments ApprenticeshipEnrollment[]
 }
 
 /// One CBA between a Company and a UnionLocal. `complianceDocument` links
@@ -214,6 +215,7 @@ model CraftClassification {
 
   @@unique([unionLocalId, name])
   @@index([unionLocalId])
+  apprenticeshipEnrollments ApprenticeshipEnrollment[]
 }
 
 /// Effective-dated, not a flat current-rate field: CBA rates typically
