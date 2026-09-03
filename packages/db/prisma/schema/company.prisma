@@ -63,6 +63,7 @@ model Company {
   outboundMessages        OutboundMessage[]
   contactInteractions     ContactInteraction[]
   apprenticeshipEnrollments ApprenticeshipEnrollment[]
+  contactPeople           ContactPerson[]
 }
 
 enum UserRole {
@@ -209,6 +210,7 @@ model Contact {
   jobs           Job[]
   bidInvitations BidInvitation[]
   interactions   ContactInteraction[]
+  people         ContactPerson[]
 
   @@index([companyId])
 }

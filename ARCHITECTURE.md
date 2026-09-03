@@ -737,6 +737,38 @@ Not wired into `/alerts` yet: a follow-up coming due only shows up by
 visiting the contact page today. Surfacing it company-wide is explicitly
 the next phase, not this one.
 
+### `ContactPerson` — individual people at an account
+
+`Contact` is the GC/developer/vendor's company; `ContactPerson` is the
+individual there — their PM, their estimator, the owner's rep. Not a
+second `Contact`: no jobs, no bid invitations, no portal access of its
+own, since none of that is per-person. Lives in `crm.prisma` alongside
+`ContactInteraction`, same reasoning (new domain, new file).
+
+**No stored `lastContactAt`.** The obvious field to reach for, and
+deliberately not added: it would be a second copy of a fact
+`ContactInteraction` already states once `ContactInteraction` gains an
+optional `contactPersonId`. "Last contact with Marcus Webb" is derived at
+read time — on `/contacts/[id]`, by scanning that contact's interactions
+(already fetched, already ordered newest-first) for the first one
+attributed to each person — the same "derive, don't duplicate" rule as
+every expiration date in this schema.
+
+**`ContactInteraction.contactPersonId` is optional and `SET NULL` on
+delete**, not `RESTRICT` like `contactId` on the same model. A person is a
+name-and-title record with no history of its own; the interactions
+themselves are the history. Deleting "Marcus Webb" because he left the
+GC's office shouldn't be blocked by three years of call logs — those rows
+just fall back to being attributed to the account alone. `deleteContact`'s
+own guard was extended to count `ContactPerson` rows as history on the
+*account*, though: an account with named people on file isn't a clean
+delete even if it has no jobs or interactions yet.
+
+No `isDecisionMaker` flag or role-based filter tabs, both present in the
+original mockup for this feature — left out because neither is derivable
+from anything else (a genuinely new bit of state) and neither was asked
+for by name; easy to add later behind the same schema if wanted.
+
 ## What proves this works (Phase 00's CRUD flow)
 
 The minimal CRUD flow in `apps/web` exists specifically to demonstrate the

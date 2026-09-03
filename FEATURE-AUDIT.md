@@ -23,11 +23,18 @@ in flight. Left as-is here rather than guessed at from the outside; the next
 update to touch those sheets should come from whoever actually verified them
 against a fresh clone.
 
-**121 items audited — 89 built / 21 partial / 9 missing / 2 descoped**
+**122 items audited — 90 built / 21 partial / 9 missing / 2 descoped**
+
+(Recomputed 3 Sep 2026 by counting every `| Built |`/`| Partial |`/
+`| Missing |`/`| Descoped |` row across the per-sheet tables below. Kept
+from #81, which added the method note, and recomputed AGAIN on merging:
+that branch and this one each corrected this line independently and
+neither figure survived both sets of rows. Counting beats arithmetic on
+a file two lanes edit.)
 
 | Status | Count |
 | --- | --- |
-| Built | 86 |
+| Built | 88 |
 | Partial | 21 |
 | Missing | 8 |
 | Descoped | 1 |
@@ -44,7 +51,7 @@ against a fresh clone.
 | Built | Multi-location/multi-office support (CA/NV/AZ/CO/UT) | `CompanyLocation`, free-text state — any state works, not just the five listed |
 | Built | Self-service export of every company record (data portability) | `lib/export.ts` + `/settings/export` + `/api/export` — 18 tables as CSV each, or all of them as one JSON, owner-only, with row counts shown before download. Column lists are an **allowlist**, so a newly added credential column is absent rather than leaked; `export.test.ts` reads the .prisma files and fails if any field matching a credential pattern reaches a column list. Verified in a browser on 2 Sep: files downloaded, and all six credential field names return zero matches in the JSON. Does NOT cover formatted report exports — the WIP-schedule and AIA-format rows in sheet 15 and sheet 10 are separate and still stand |
 
-## 02. Customer (GC) Relationship Mgmt — 6 built · 0 partial · 0 missing
+## 02. Customer (GC) Relationship Mgmt — 7 built · 0 partial · 0 missing
 
 *Updated from the original audit (was 0 built / 1 partial / 2 missing) — GC
 contract terms, bid invitations, and payment reliability shipped same-day.
@@ -56,7 +63,9 @@ against a license row and a union-compliance row already. `createContact`/
 `deleteContact` close that; prospect status and account
 type/MSA/prequalification are new fields shipped in the same pass. Updated
 again 3 Sep 2026: the interaction log shipped, closing the "we have no
-record of the relationship, only the paperwork" gap.*
+record of the relationship, only the paperwork" gap. Updated again 3 Sep
+2026 (same day): individual people at an account (`ContactPerson`) shipped,
+closing "we track the GC but not who to actually call."*
 
 | Status | Feature | Note |
 | --- | --- | --- |
@@ -66,6 +75,7 @@ record of the relationship, only the paperwork" gap.*
 | Built | Bid pipeline per GC (who invites us, what we do with it, whether it becomes work) | `/pipeline`, `lib/bid-pipeline.ts` (derivation + 11 unit tests), `lib/bid-pipeline-query.ts` (assembly + 7 db tests). READ-ONLY over `BidInvitation`, which the estimating lane owns — a status is still changed on `/bids`. Win rate counts decided bids only and is UNCOMPUTED rather than 0% when nothing has been decided; a won-value total that skipped unpriced bids says so on the row |
 | Built | Prospect status, account type, and MSA/prequalification tracking | `Contact.status` (PROSPECT/ACTIVE/INACTIVE, backfilled to ACTIVE — every existing row already has a job); `Contact.accountType` (GC/developer/vendor/subcontractor, nullable, no backfill); `.msaExpirationDate`/`.prequalificationExpiresAt`, both nullable with status derived via `lib/compliance-expiry.ts`'s existing renewal ranking, not a second copy of the day-counting |
 | Built | Interaction log per contact (calls, emails, site visits, notes, optional follow-up) | `ContactInteraction` (`crm.prisma`) — dated, entered not stamped; follow-up date and follow-up owner are separate from who logged the entry. Not an evidence record (no counter, no locked fields): any team member can log/edit/delete one, same access as bid invitations. Not yet wired into `/alerts` — that's the next phase |
+| Built | Individual people at an account (name, title, email/phone, who to actually call) | `ContactPerson` (`crm.prisma`), nested under `Contact`. No stored "last contact" — derived at read time from `ContactInteraction.contactPersonId` (optional, `SET NULL` on delete so removing a person never blocks on their call history). `deleteContact`'s guard extended again to count people as account history |
 
 ## 03. Estimating & Bidding — 10 built · 0 partial · 0 missing
 
