@@ -84,6 +84,13 @@ async function main() {
   if (UNDO) return undo(company.id);
 
   // ---------------------------------------------------------------- clients
+  //
+  // status / accountType / msaExpirationDate / prequalificationExpiresAt
+  // are set deliberately, not left at their defaults. Every one of them is
+  // read back as DERIVED state — "MSA lapsed", "prequal expiring", the
+  // prospect/active split on /contacts — and a demo where all three GCs
+  // carry the same defaults shows one row three times, which is the exact
+  // failure this script exists to prevent.
   const gc = await prisma.contact.create({
     data: {
       companyId: company.id,
@@ -92,6 +99,12 @@ async function main() {
       phone: "(503) 555-0142",
       defaultRetainagePercent: "5",
       paymentTermsDays: 45,
+      status: "ACTIVE",
+      accountType: "GENERAL_CONTRACTOR",
+      // In force, but the prequal renews well before it does — the two
+      // dates are deliberately not the same date.
+      msaExpirationDate: day(196),
+      prequalificationExpiresAt: day(24),
     },
   });
   const gc2 = await prisma.contact.create({
@@ -102,6 +115,25 @@ async function main() {
       phone: "(503) 555-0188",
       defaultRetainagePercent: "10",
       paymentTermsDays: 30,
+      status: "ACTIVE",
+      accountType: "GENERAL_CONTRACTOR",
+      // Already lapsed. Nothing stores "lapsed" — it is worked out from
+      // this date, so the only way to demo it is to put a past date here.
+      msaExpirationDate: day(-19),
+      prequalificationExpiresAt: null,
+    },
+  });
+  // A GC we are bidding to and have never worked for. PROSPECT is
+  // meaningless on a contact that owns jobs, so it needs its own row: this
+  // one has bid invitations below and no Job anywhere.
+  const gc3 = await prisma.contact.create({
+    data: {
+      companyId: company.id,
+      name: `Pell Development Group ${MARK}`,
+      email: "preconstruction@pelldevelopment.example",
+      phone: "(503) 555-0119",
+      status: "PROSPECT",
+      accountType: "DEVELOPER",
     },
   });
 
@@ -740,8 +772,78 @@ async function main() {
     });
   }
 
-  console.log("seed: change orders, submittals, punch list, closeout, talks, orders, drawings, time, catalog, pricing, RFIs and safety written");
-  return { company, user, gc, riverside, northgate, lakeshore, riversideLines };
+  // ------------------------------------------------------ bid invitations
+  //
+  // /bids lists these; /pipeline derives the relationship from them. The
+  // spread is chosen to make the derivations show their edges rather than
+  // an average:
+  //   - Brackett has a decided record, including one WON bid with NO
+  //     amount, so valueWon renders as a floor and not a total.
+  //   - Halvorsen has one still outstanding PAST its due date.
+  //   - Pell has nothing decided at all, so its win rate must read as
+  //     "no bids decided yet" and NOT as 0%. A GC printed at 0% is how
+  //     somebody drops a good customer.
+  const bids = [
+    [gc, "Cedar Hollow Apartments", "METAL_FRAMING_DRYWALL", "WON", -104, "412000.00"],
+    [gc, "Fifth & Ivy Mixed Use", "ACOUSTICAL_CEILINGS", "WON", -71, null],
+    [gc, "Whitfield Elementary Addition", "METAL_FRAMING_DRYWALL", "LOST", -47, "268500.00"],
+    [gc, "Northbank Parking Structure", "FIREPROOFING", "DECLINED", -33, null],
+    [gc, "Sellwood Clinic Fit-Out", "METAL_FRAMING_DRYWALL", "SUBMITTED", 9, "184250.00"],
+    [gc2, "Halvorsen Row Townhomes", "LATH_PLASTER", "WON", -88, "97400.00"],
+    // Past its due date and still open — this is what /pipeline counts as
+    // overdue, and nothing shows it unless a row is actually late.
+    [gc2, "Marquam Heights Phase 2", "EIFS", "SUBMITTED", -6, "233900.00"],
+    [gc2, "Alder Street Retail", "ACOUSTICAL_CEILINGS", "INVITED", 17, null],
+    [gc3, "Pell Riverfront Tower", "METAL_FRAMING_DRYWALL", "INVITED", 21, null],
+    [gc3, "Pell Eastside Warehouse", "FIREPROOFING", "INVITED", -3, null],
+  ];
+  for (const [contact, projectName, tradeScope, status, due, bidAmount] of bids) {
+    await prisma.bidInvitation.create({
+      data: {
+        companyId: company.id,
+        contactId: contact.id,
+        // Tagged so undo() can find it again without touching a row a
+        // person entered — same rule as every other row this script writes.
+        projectName: `${projectName} ${MARK}`,
+        tradeScope,
+        status,
+        dueDate: day(due),
+        bidAmount,
+      },
+    });
+  }
+
+  // -------------------------------------------------- contact interactions
+  //
+  // The follow-up date is the derived bit: overdue and upcoming follow-ups
+  // are worked out from followUpOn, so one of these is deliberately in the
+  // past and one in the future. followUpAssignedToUserId is a separate
+  // field from loggedByUserId on purpose, and both are exercised here.
+  const interactions = [
+    [gc, "CALL", -12, "Called Dana about the level 3 ceiling grid RFI. She will chase the architect.", 2],
+    [gc, "SITE_VISIT", -5, "Walked levels 1-2 with the super. Punch walk pencilled for the 20th.", null],
+    [gc2, "EMAIL", -21, "Sent the updated MSA for signature. No reply yet.", -4],
+    [gc2, "NOTE", -9, "Their AP has moved to net 30 in practice regardless of what the contract says.", null],
+    [gc3, "CALL", -16, "Intro call on the Riverfront Tower package. Bid due in three weeks.", 5],
+    [gc3, "EMAIL", -2, "Sent prequal packet and bonding letter.", null],
+  ];
+  for (const [contact, type, at, summary, followUp] of interactions) {
+    await prisma.contactInteraction.create({
+      data: {
+        companyId: company.id,
+        contactId: contact.id,
+        type,
+        occurredOn: day(at),
+        summary: `${summary} ${MARK}`,
+        followUpOn: followUp === null ? null : day(followUp),
+        followUpAssignedToUserId: followUp === null ? null : (user?.id ?? null),
+        loggedByUserId: user?.id ?? null,
+      },
+    });
+  }
+
+  console.log("seed: change orders, submittals, punch list, closeout, talks, orders, drawings, time, catalog, pricing, RFIs, safety, bids and interactions written");
+  return { company, user, gc, gc2, gc3, riverside, northgate, lakeshore, riversideLines };
 }
 
 async function undo(companyId) {
@@ -751,6 +853,18 @@ async function undo(companyId) {
     select: { id: true },
   });
   const jobIds = jobs.map((j) => j.id);
+
+  // Children of a demo CONTACT are scoped by the contact, not by their own
+  // tag — the same way children of a demo JOB are scoped by jobIds above.
+  // A bid invitation or an interaction someone adds by hand while clicking
+  // through a preview hangs off a demo contact and is untagged; scoped by
+  // tag it would survive, and then contact.deleteMany would fail on the
+  // foreign key and leave the whole demo dataset half-removed.
+  const contacts = await prisma.contact.findMany({
+    where: { companyId, name: { contains: MARK } },
+    select: { id: true },
+  });
+  const contactIds = contacts.map((c) => c.id);
 
   const counts = {};
   const failed = [];
@@ -872,7 +986,14 @@ async function undo(companyId) {
   await del("lineItemCatalogEntry", () =>
     prisma.lineItemCatalogEntry.deleteMany({ where: { companyId, description: { contains: MARK } } }),
   );
-  await del("contact", () => prisma.contact.deleteMany({ where: { companyId, name: { contains: MARK } } }));
+  // Both reference Contact, so both go before it.
+  await del("bidInvitation", () =>
+    prisma.bidInvitation.deleteMany({ where: { contactId: { in: contactIds } } }),
+  );
+  await del("contactInteraction", () =>
+    prisma.contactInteraction.deleteMany({ where: { contactId: { in: contactIds } } }),
+  );
+  await del("contact", () => prisma.contact.deleteMany({ where: { id: { in: contactIds } } }));
 
   console.log("seed: removed —", JSON.stringify(counts));
   if (failed.length) {

@@ -12,6 +12,48 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+## The demo dataset caught up with nine models it had never heard of
+
+The seed was written against a schema that has since gained CRM contact
+lifecycle fields, an interaction log, and a bid pipeline built over
+`BidInvitation`. A demo dataset does not fail when that happens -- it goes
+quietly stale, and the new screens read as broken rather than as unseeded.
+Merging `main` in is what surfaced it, so this PR now seeds:
+
+- `Contact.status` / `accountType` / `msaExpirationDate` /
+  `prequalificationExpiresAt` on the two GCs, plus a third contact that is
+  a PROSPECT with no jobs -- PROSPECT is meaningless on a contact that owns
+  work, so it needed its own row. One MSA is deliberately lapsed and one
+  prequal deliberately expiring: both states are DERIVED from a date and
+  cannot be demonstrated by a default.
+- Ten `BidInvitation` rows across three GCs, spread to make `/pipeline`
+  show its edges rather than an average -- one WON bid with no amount
+  recorded (so the value reads as a floor, not a total), one still open
+  past its due date, and one GC with nothing decided at all, whose win rate
+  must read as "not decided" and not as 0%.
+- Six `ContactInteraction` rows, with follow-ups both overdue and upcoming.
+
+And `undo()` covers both new tables. It scopes them by the demo CONTACT
+rather than by the `[demo]` tag, the same way job children are scoped by
+the demo job ids: a bid logged by hand against a demo GC while clicking
+through a preview is untagged, would survive a tag-scoped delete, and would
+then block `contact.deleteMany` on a foreign key -- which is precisely the
+half-removed state this PR exists to fix.
+
+Still not seeded, and named here so the next person does not have to
+rediscover it: `Backcharge`, `CloseoutSubmission`, `OutboundMessage`,
+`PrevailingWageRuleSet`, `Equipment`, `EstimateVersion` and `DispatchSlip`.
+Their screens demo empty. The first four are Diego's lane and two of them
+need counter rows, which is not something to guess at from outside.
+
+Separately, `FEATURE-AUDIT.md`'s summary line on `main` was counting the
+four rows of its own legend table as feature rows: it said 121 items /
+88 built where the sheets sum to 117 / 87. The branch's `plumbing.test.ts`
+is what caught it -- it was already wrong before this merge, and nothing on
+`main` checks that arithmetic.
+
+---
+
 ## The counter was wrong twice, the same way, and the second fix was mine
 
 Browser testing passed all four fixes and then found the counter I had

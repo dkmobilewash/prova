@@ -134,11 +134,21 @@ async function main() {
   const quotes = await prisma.vendorPriceQuote.count({
     where: { companyId: company.id, vendorId: { in: vendorIds } },
   });
+  // Both hang off Contact and both are newer than this script. Counted and
+  // printed rather than deleted quietly: this script's whole contract is
+  // that nothing goes without appearing in the list first.
+  const contactIds = contacts.map((c) => c.id);
+  const bids = await prisma.bidInvitation.count({ where: { contactId: { in: contactIds } } });
+  const interactions = await prisma.contactInteraction.count({
+    where: { contactId: { in: contactIds } },
+  });
   const rfis = await prisma.rfi.count({ where: { jobId: { in: jobIds } } });
   const incidents = await prisma.safetyIncident.count({ where: { companyId: company.id } });
   console.log(`  vendorPriceQuote  ${quotes} (belonging to the vendors above)`);
   console.log(`  rfi               ${rfis} (on the jobs above)`);
   console.log(`  safetyIncident    ${incidents} (all — none are demo-tagged)`);
+  console.log(`  bidInvitation     ${bids} (on the contacts above)`);
+  console.log(`  contactInteraction ${interactions} (on the contacts above)`);
 
   if (!DELETE) {
     console.log("\nclean: nothing removed. Re-run with --delete once the list above looks right.");
@@ -208,7 +218,16 @@ async function main() {
   await del("job", () => prisma.job.deleteMany({ where: { id: { in: jobIds } } }));
   await del("vendor", () => prisma.vendor.deleteMany({ where: { id: { in: vendorIds } } }));
   await del("equipment", () => prisma.equipment.deleteMany({ where: { id: { in: equipment.map((e) => e.id) } } }));
-  await del("contact", () => prisma.contact.deleteMany({ where: { id: { in: contacts.map((c) => c.id) } } }));
+  // Contact children, before the contact itself. Neither model existed when
+  // this script was written; without these the FK blocks contact.deleteMany
+  // and the run ends with "FAILED contact" and the scratch data still there.
+  await del("bidInvitation", () =>
+    prisma.bidInvitation.deleteMany({ where: { contactId: { in: contactIds } } }),
+  );
+  await del("contactInteraction", () =>
+    prisma.contactInteraction.deleteMany({ where: { contactId: { in: contactIds } } }),
+  );
+  await del("contact", () => prisma.contact.deleteMany({ where: { id: { in: contactIds } } }));
 
   if (failed.length) {
     console.error(`\nclean: ${failed.length} delete(s) FAILED: ${failed.join(", ")}. Rows remain.`);

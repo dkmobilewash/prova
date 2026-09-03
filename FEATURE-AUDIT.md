@@ -23,11 +23,11 @@ in flight. Left as-is here rather than guessed at from the outside; the next
 update to touch those sheets should come from whoever actually verified them
 against a fresh clone.
 
-**121 items audited — 88 built / 22 partial / 9 missing / 2 descoped**
+**117 items audited — 87 built / 21 partial / 8 missing / 1 descoped**
 
 | Status | Count |
 | --- | --- |
-| Built | 86 |
+| Built | 87 |
 | Partial | 21 |
 | Missing | 8 |
 | Descoped | 1 |
