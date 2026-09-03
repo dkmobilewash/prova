@@ -68,3 +68,55 @@ describe("closeoutChip", () => {
     expect(closeoutChip([openPunch], "ACCEPTED", 3).label).toBe("Closeout complete");
   });
 });
+
+/**
+ * FOUND IN PRE-PUSH VERIFICATION — this describe block FAILS on 20b810c.
+ *
+ * `closeoutChip` looks only for NO_CHECKLIST and REQUIRED_ITEMS. Every
+ * other blocker — OPEN_PUNCH_ITEMS, OPEN_CALLBACKS — leaves
+ * `checklistBlocker` undefined, so an ACCEPTED package goes green and says
+ * "Closeout complete" with work still open on the job.
+ *
+ * That is not a hypothetical. `closeoutReadiness` sets the stage from the
+ * submission and reports the blockers regardless — its own comment says a
+ * callback logged after acceptance must not un-accept the package — so
+ * ACCEPTED alongside a non-empty `blockers` array is a NORMAL state, not a
+ * corrupt one. And `CloseoutPackagePanel` renders "Holding it up: …"
+ * whenever `blockers.length > 0`, at any stage. So one card shows a green
+ * "Closeout complete" directly above "Holding it up: 1 punch item still
+ * open."
+ *
+ * Which is the exact shape this function was extracted to end — the
+ * docstring above calls the chip a claim "about the whole closeout", and
+ * item 1 in its own list of past failures is a green chip above a panel
+ * naming an open punch item. The extraction fixed the checklist half of
+ * the disagreement and left the other half in place.
+ *
+ * NOTE: this directly contradicts the last line of "ignores blockers that
+ * are not about the checklist" above, which pins the wrong behaviour as
+ * intended. One of the two has to go; on issue #112's own terms — screens
+ * that state more than the data does — the green chip is the overstatement.
+ *
+ * The fix is one line: require the whole blocker list to be empty, not
+ * just the checklist part of it.
+ */
+describe("closeoutChip does not overstate an accepted package", () => {
+  it("does not say closeout is complete while a punch item is open", () => {
+    const chip = closeoutChip([openPunch], "ACCEPTED", 3);
+    expect(chip.label).not.toBe("Closeout complete");
+    expect(chip.className).not.toBe(GREEN);
+  });
+
+  it("does not say closeout is complete while a callback is open", () => {
+    const openCallback: CloseoutBlocker = { kind: "OPEN_CALLBACKS", count: 2 };
+    const chip = closeoutChip([openCallback], "ACCEPTED", 3);
+    expect(chip.label).not.toBe("Closeout complete");
+  });
+
+  it("still says closeout is complete when nothing at all is holding it up", () => {
+    // The one case that should stay green, so the fix cannot be "delete
+    // the green branch".
+    expect(closeoutChip([], "ACCEPTED", 3).label).toBe("Closeout complete");
+    expect(closeoutChip([], "ACCEPTED", 3).className).toBe(GREEN);
+  });
+});
