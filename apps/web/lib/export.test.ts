@@ -175,19 +175,49 @@ describe("the dataset registry holds together", () => {
     }
   });
 
-  it("EVERY dataset narrows to one company", () => {
+  // Collects the VALUE bound to every `companyId` key anywhere in the where
+  // clause. The previous version of this only asked whether a key by that
+  // NAME existed, which is a different question and not the one that keeps
+  // one company's rows out of another's export: a scope hardcoding a
+  // foreign id has the key too. A 643-mutation sweep proved the point —
+  // replacing `byCompany` with `() => ({ companyId: "someone-else" })` left
+  // the whole suite green (issue #108).
+  const companyIdValues = (value: unknown): unknown[] => {
+    if (typeof value !== "object" || value === null) return [];
+    return Object.entries(value).flatMap(([key, child]) =>
+      key === "companyId" ? [child] : companyIdValues(child),
+    );
+  };
+
+  it("EVERY dataset narrows to THE company it was asked about", () => {
     // The worst possible bug in a data-export feature is handing somebody
     // another company's rows. Several of these models have no companyId of
     // their own and reach it through a relation, so this walks the where
-    // clause and insists it bottoms out at companyId somewhere.
-    const reachesCompany = (value: unknown): boolean => {
-      if (typeof value !== "object" || value === null) return false;
-      return Object.entries(value).some(
-        ([key, child]) => key === "companyId" || reachesCompany(child),
-      );
-    };
+    // clause, insists it bottoms out at companyId somewhere, and insists
+    // that every such binding is the id that was passed in.
     for (const dataset of EXPORT_DATASETS) {
-      expect(reachesCompany(dataset.scope("company-1")), `${dataset.key} is scoped`).toBe(true);
+      const bound = companyIdValues(dataset.scope("company-1"));
+      expect(bound.length, `${dataset.key} is scoped by companyId at all`).toBeGreaterThan(0);
+      expect(bound, `${dataset.key} binds the companyId it was given`).toEqual(
+        bound.map(() => "company-1"),
+      );
+    }
+  });
+
+  it("EVERY dataset's scope MOVES when the company does", () => {
+    // The other half, and the one a hardcoded id cannot survive. A scope
+    // that ignores its argument produces identical output for two different
+    // companies — which is exactly what exporting another company's rows
+    // looks like from here.
+    for (const dataset of EXPORT_DATASETS) {
+      const mine = dataset.scope("company-1");
+      const theirs = dataset.scope("company-2");
+      expect(companyIdValues(theirs), `${dataset.key} rebinds`).toEqual(
+        companyIdValues(mine).map(() => "company-2"),
+      );
+      expect(JSON.stringify(theirs), `${dataset.key} is not a constant`).not.toBe(
+        JSON.stringify(mine),
+      );
     }
   });
 
