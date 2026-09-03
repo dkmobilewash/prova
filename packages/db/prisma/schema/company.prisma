@@ -63,6 +63,7 @@ model Company {
   vendorPriceQuotes       VendorPriceQuote[]
   outboundMessages        OutboundMessage[]
   contactInteractions     ContactInteraction[]
+  apprenticeshipEnrollments ApprenticeshipEnrollment[]
   contactPeople           ContactPerson[]
 }
 
@@ -125,6 +126,7 @@ model User {
   assignedContactFollowUps             ContactInteraction[] @relation("ContactInteractionFollowUp")
 
   @@index([companyId])
+  apprenticeshipEnrollments ApprenticeshipEnrollment[] @relation("ApprenticeEnrollments")
 }
 
 /// A pending invitation for someone to join a Company. Deleted once
