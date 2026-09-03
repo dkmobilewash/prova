@@ -87,6 +87,40 @@ scrollback gets broken by whoever didn't scroll far enough.
   with the workflow itself. Run `./scripts/preflight.sh` before pushing
   anyway: same four checks, plus it names the migrations that push will
   apply to PRODUCTION and refuses destructive ones.
+- **GREEN CHECKS ON A PR DO NOT MEAN CI RAN ON YOUR COMMIT.** `ci.yml`
+  triggers on `pull_request`, and its `push` trigger is limited to `main` —
+  so on a feature branch the PR event is the ONLY thing that runs CI.
+  GitHub cannot build the merge commit a `pull_request` event needs while
+  the branch CONFLICTS with its base, so the workflow is never queued. Not
+  failed. Never queued. Nothing anywhere says so, and an absent check reads
+  exactly like a passing one.
+
+  Cyrus hit this on #59 (2026-09-02). `gh pr checks 59 --watch` exited 0
+  with everything green, and CI had never run on `19bb374` at all: the two
+  Vercel checks that DID report were the whole of the green, and the newest
+  CI run was still `5e77e54`, one commit behind. Confirmed from the API
+  rather than from the claim — the runs on that branch name seven head
+  SHAs and `19bb374` is not among them.
+
+  So `gh pr checks` answers "did the checks that ran, pass". It does not
+  answer "did anything run on THIS commit", which is the question. THE
+  CHECK IS THE SHA, NEVER THE COLOUR: take the head SHA of the newest
+  `ci.yml` run for your branch and require it to equal `git rev-parse
+  HEAD`. That is what settled #59 — the API lists seven head SHAs for
+  `cyrus/notifications` and `19bb374` is not one of them.
+
+      gh run list --branch <branch> --workflow ci.yml --limit 1 \
+        --json headSha,conclusion
+      git rev-parse HEAD    # these two must match
+
+  (The `gh` form above is written from its documented `--json` fields and
+  was NOT executed by the session that added this entry, which had no `gh`.
+  The comparison is the rule; if a flag has drifted, fix the flag.)
+
+  Same shape as the promotion and stacked-PR scars above: the checks were
+  not lying, they were answering about a commit nobody asked them about.
+  A conflicted PR is therefore untested by definition — resolve the
+  conflict FIRST, then read CI.
 
 ## Hard-won technical rules
 
