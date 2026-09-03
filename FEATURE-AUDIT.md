@@ -23,7 +23,7 @@ in flight. Left as-is here rather than guessed at from the outside; the next
 update to touch those sheets should come from whoever actually verified them
 against a fresh clone.
 
-**119 items audited — 90 built / 21 partial / 7 missing / 1 descoped**
+**123 items audited — 91 built / 22 partial / 8 missing / 2 descoped**
 
 (Recomputed 3 Sep 2026 by counting every `| Built |`/`| Partial |`/
 `| Missing |`/`| Descoped |` row across the per-sheet tables below.
@@ -37,10 +37,10 @@ auditing the nav for NAV-IA-AUDIT.md.)
 
 | Status | Count |
 | --- | --- |
-| Built | 90 |
-| Partial | 21 |
-| Missing | 7 |
-| Descoped | 1 |
+| Built | 91 |
+| Partial | 22 |
+| Missing | 8 |
+| Descoped | 2 |
 
 
 ## 01. Company / Org Setup — 6 built · 0 partial · 0 missing
@@ -345,7 +345,7 @@ nav-reachable.*
 | Status | Feature | Note |
 | --- | --- | --- |
 | Built | Integration framework (the shelf, not the things on it) | `IntegrationConnection` + append-only `IntegrationSyncLog`, a provider registry, an owner-only Settings → Integrations page, encrypted-at-rest credential columns (`lib/crypto.ts`, AES-256-GCM), and a generic inbound webhook route. Proven end to end against a scratch Postgres: 45 migrations applied clean, connect/disconnect verified by row rather than by return value, webhook exercised across all six branches. NO REAL PROVIDER SHIPPED WITH IT — the only thing it connects is a mock called Sandbox, which talks to nothing. QuickBooks predates this and still runs on its own tables |
-| Partial | Accounting: QuickBooks, and likely Sage 300 CRE / Foundation | QuickBooks is connected, mapped and syncing one direction — invoices push, the record is read back to confirm what landed, and reconciliation reports where the two disagree. Verified end to end against a sandbox company (#31, #33, #34, #36). Deliberately NOT two-way: Prova does not pull QuickBooks edits back, and does not pretend to. Sage/Foundation not started |
+| Partial | Accounting: QuickBooks, and likely Sage 300 CRE / Foundation | QuickBooks is connected, mapped and syncing one direction — invoices AND payments push, the record is read back to confirm what landed, and reconciliation reports where the two disagree. Verified end to end against a sandbox company (#31, #33, #34, #36, and the payment half on 2026-09-03): the invoice reached QuickBooks as invoice 146, the $500 payment applied against it, and the BALANCE MOVED IN QUICKBOOKS from $1,000.00 to $500.00 with status Partial — read in the books, not from Prova's own success message. A deliberate second click updated the same document rather than creating a duplicate, which is the first live exercise of the retry rules. Deliberately NOT two-way: Prova does not pull QuickBooks edits back, and does not pretend to. Sage/Foundation not started |
 | Missing | Payroll processor integration (for running actual pay) | not started |
 | Missing | DocuSign, Procore, myCOI | 0 built. Each has a registry entry so the page can render it, and each renders DISABLED with a "Coming soon" label. A card on a settings page is not an integration |
 | Partial | E-signature provider | homegrown token-based e-sign (`SignatureRequest`) covers contract signing only — not a general provider for every doc type |
