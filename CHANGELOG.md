@@ -101,6 +101,66 @@ from a merge.
 
 ---
 
+## A sent email the app could not prove it sent, and one injury filed twice
+
+Two of the six findings in #111. Both are ordering bugs, and neither was
+visible in anything a caller could see.
+
+**The email.** `sendOutboundEmail` called the provider first and wrote the
+record of the handover afterwards, in a separate transaction. Everything
+between those two points was a window where the mail had gone to a real
+person and the database said otherwise -- no provider id, no events at
+all. `/messages` read "No word back yet" for it, and the owner-only delete
+guard read the same nothing and ALLOWED THE ROW TO BE DELETED. That guard
+exists to stop precisely this; its own comment says removing such a record
+would "destroy the evidence that they received it". It was not wrong. It
+was being handed a row that lied to it.
+
+The handover event is now written BEFORE the provider is called, the way
+`notification-dispatch.ts` already claims its dispatch rows, and it is
+given back only when the provider provably never took the message -- no
+network, or an outright refusal -- because in that case there is no copy
+anywhere and a permanent QUEUED event would make every failed send
+undeletable. The trade runs the other way now, on purpose: a crash between
+the claim and the send leaves a message reading "handed over, unconfirmed"
+that never went. That surfaces as stale after a day and a person checks
+it. An understated send is evidence that no longer exists.
+
+A database failure AFTER a successful send no longer throws, either. The
+email went; a thrown Server Action message is redacted in production, so
+the sender saw a generic failure for something that had succeeded, and the
+obvious next move is to send it again. It now says so in words.
+
+**The injury.** `createSafetyIncident` run twice filed two OSHA case
+numbers for one injury. Nothing refused it: the only relevant constraint
+is `(companyId, caseYear, caseNumber)`, and the counter hands the second
+run a fresh number, so the duplicate is unique by construction. One injury
+became two recordable cases in the count a GC reads at prequalification.
+
+Cleaning it up afterwards is worse than leaving it, which is why this had
+to be prevention. `SafetyCaseCounter` only ever increments, deliberately,
+so deleting the duplicate retires its number for good and leaves the filed
+log with a gap in the sequence and nothing on the document to explain it.
+A report matching an existing case on who, when and what happened is now
+refused inside the transaction and BEFORE the counter is touched -- a
+guard that ran after would still burn the number and produce that same
+unexplained gap. Classification, outcome and day counts are deliberately
+not part of that match: they are what the record says about the injury
+rather than which injury it is, and matching on them would let a
+resubmission that corrected one file a second case.
+
+What this does NOT close: two identical submissions arriving at the same
+instant can both read nothing and both insert. Only a unique index can
+refuse that, and that is a migration -- not written here.
+
+Both fixes are pinned by tests that were watched failing first, against a
+lazy in-memory Prisma fake (`lib/fake-prisma.ts`) whose `$transaction`
+actually rolls back. Without that rollback the second write of a
+transaction whose first write threw still landed, which turned the exact
+situation under test into a passing one.
+
+---
+
 ## The alert engine was a day ahead of everyone west of UTC, and went blind the moment a GC bounced a closeout package
 
 Two of the six findings in issue #111.

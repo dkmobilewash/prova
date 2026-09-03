@@ -522,7 +522,61 @@ describe("partitionAlerts", () => {
 });
 
 describe("summarizeAlerts", () => {
-  it("counts by severity and sums only what carries a figure", () => {
+  // These are the headline numbers on /alerts, and the old fixture held ONE
+  // alert of each of two severities — so inverting all three filters to
+  // `!==` counted the complement and got the same answers, and dueSoon was
+  // never asserted at all (issue #108). Deliberately asymmetric now: three
+  // OVERDUE, two DUE_SOON, two STANDING. No count equals the count of
+  // everything that is NOT it, so an inverted filter cannot come out right.
+  const at = (severity: Alert["severity"], n: number, amount: number | null): Alert => ({
+    key: `${severity}:${n}`,
+    kind: "WIP_VARIANCE",
+    severity,
+    title: `${severity} ${n}`,
+    detail: "fixture",
+    href: "/alerts",
+    dueOn: severity === "STANDING" ? null : "2026-09-05",
+    daysUntil: severity === "STANDING" ? null : 4,
+    amount,
+  });
+
+  const fixture: Alert[] = [
+    at("OVERDUE", 1, 4200),
+    at("OVERDUE", 2, null),
+    at("OVERDUE", 3, 1000),
+    at("DUE_SOON", 1, 800),
+    at("DUE_SOON", 2, null),
+    at("STANDING", 1, 18000),
+    at("STANDING", 2, null),
+  ];
+
+  it("counts EACH severity, and never the complement of one", () => {
+    const summary = summarizeAlerts(fixture);
+    expect(summary.overdue).toBe(3);
+    expect(summary.dueSoon).toBe(2);
+    expect(summary.standing).toBe(2);
+    expect(summary.total).toBe(7);
+    // The three severities account for every alert — a fourth value
+    // appearing would otherwise vanish out of the headline numbers.
+    expect(summary.overdue + summary.dueSoon + summary.standing).toBe(summary.total);
+  });
+
+  it("sums only what carries a figure, and treats a missing one as nothing", () => {
+    expect(summarizeAlerts(fixture).amountNamed).toBe(24000);
+  });
+
+  it("counts zero for a severity that is absent rather than borrowing another's", () => {
+    const summary = summarizeAlerts([at("DUE_SOON", 1, 500)]);
+    expect(summary.overdue).toBe(0);
+    expect(summary.dueSoon).toBe(1);
+    expect(summary.standing).toBe(0);
+    expect(summary.total).toBe(1);
+    expect(summary.amountNamed).toBe(500);
+  });
+
+  it("still agrees with the alerts the real producers build", () => {
+    // Kept from the original: the hand-built fixture above is only worth
+    // anything if the severities it uses are the ones real alerts carry.
     const summary = summarizeAlerts([
       ...backchargeAlerts(
         [
@@ -540,6 +594,7 @@ describe("summarizeAlerts", () => {
       ...wipAlerts([{ jobId: "job_1", jobName: "Mercy Tower", overrun: 18000 }]),
     ]);
     expect(summary.overdue).toBe(1);
+    expect(summary.dueSoon).toBe(0);
     expect(summary.standing).toBe(1);
     expect(summary.total).toBe(2);
     expect(summary.amountNamed).toBe(22200);
