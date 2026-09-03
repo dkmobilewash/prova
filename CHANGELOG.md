@@ -103,6 +103,18 @@ against our own sending reputation, not a mailbox.
 Needs `CRON_SECRET` and `NOTIFY_BASE_URL` on the Vercel project before
 anything sends. Both are in `.env.example` and the README table.
 
+Caught up to `main`, which had moved 65 commits underneath this branch.
+Two things came out of that. `scripts/preflight.sh` took `main`'s version
+of the worktree fix rather than this branch's: the same one-line change,
+but placed AFTER the `cd`, which the version here was not — so the older
+one was clearing a lock relative to wherever the caller happened to be
+standing. And Sheet 26 gained a seventh row on `main` while this was
+open — contact follow-up reminders — still reading *"still nothing that
+runs unattended"*, which this branch makes untrue. It now says what the
+other five say. That is the whole failure mode this sheet has drifted by
+twice: a row that was right when it was written and nobody re-read after
+the thing it describes changed underneath it.
+
 ---
 
 ### Where the lift actually is, and the same bug I'd just built a guard for (Cyrus)

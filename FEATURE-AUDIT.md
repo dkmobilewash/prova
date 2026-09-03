@@ -374,7 +374,7 @@ meaning exactly what it meant.*
 
 ## 26. Notifications & Alerts — 1 built · 6 partial · 0 missing
 
-*Updated 2 Sep 2026 — the schedule is built. The previous note said
+*Updated 3 Sep 2026 — the schedule is built. The previous note said
 "nothing runs without a person clicking" and named a scheduled run as the
 whole remaining gap; `/api/notifications/digest` plus a Vercel cron at
 13:00 UTC is that run. It authenticates itself with `CRON_SECRET`, takes
@@ -388,7 +388,7 @@ and it is the last one.*** The code path is complete and tested; what has
 not happened is a run in production. `CRON_SECRET` and `NOTIFY_BASE_URL`
 have to exist on the Vercel project — without either, the route returns
 503 and sends nothing, deliberately — and one nightly invocation has to be
-observed doing it. **Flipping these five to Built is a one-line edit after
+observed doing it. **Flipping these six to Built is a one-line edit after
 that, not more building.** Writing them Built today would be this sheet
 doing the exact thing it has drifted by twice: recording an intention as a
 fact.*
@@ -403,4 +403,4 @@ fact.*
 | Partial | Retainage release eligibility alerts | derived from `lib/retainage.ts`'s balance plus the closeout package's state. An ACCEPTED package is an event and reads as collectable; `Job.substantialCompletionDate` is a FORECAST and reads as "worth confirming", never as money owed. Now emailable. Now also sent unattended, by the nightly cron — pending the two environment variables and one observed run |
 | Partial | Apprentice ratio out-of-compliance alerts | no longer blocked — `lib/apprentice-ratio.ts` finds the days a job ran over, and the alert engine raises them (STANDING, not dated: the day is past and cannot be fixed by acting sooner; what can change is tomorrow's crew). Keyed on the offending dates, so a dismissal lapses the moment another day breaches. Now emailable — as a STANDING notice, which fires once per key rather than climbing a ladder of deadlines it does not have. Now also sent unattended, by the nightly cron — pending the two environment variables and one observed run |
 | Partial | WIP variance alerts | jobs forecast past contract value now appear in the one alert list alongside everything else, through `jobIsOverBudget` rather than a second threshold, and can be acknowledged. Deliberately a STANDING severity with no date: it is true today and tomorrow, and escalating it with the calendar would invent urgency the data doesn't have — the digest respects that and sends it once per key, never on a ladder. Now also sent unattended, by the nightly cron — pending the two environment variables and one observed run |
-| Partial | Contact follow-up reminders | `ContactInteraction.followUpOn` (A2) now raises a `CONTACT_FOLLOW_UP` alert through the same engine, gated behind `MANAGE_ESTIMATING`, keyed on the follow-up date so rescheduling it lapses an old dismissal. Horizon fixed at 7 days — the floor `notification-milestones.ts` requires for any kind, not chosen for feel; a lower one would drop its own earlier warning silently, since the "week" rung fires at 7 days regardless of a kind's own horizon. Not scoped to the specific assignee — every other kind here is capability-gated only, and this stays consistent rather than becoming the first per-user-scoped one; the assignee is named in the alert text instead. Now emailable via the existing digest, no changes to the sending layer. Still nothing that runs unattended |
+| Partial | Contact follow-up reminders | `ContactInteraction.followUpOn` (A2) now raises a `CONTACT_FOLLOW_UP` alert through the same engine, gated behind `MANAGE_ESTIMATING`, keyed on the follow-up date so rescheduling it lapses an old dismissal. Horizon fixed at 7 days — the floor `notification-milestones.ts` requires for any kind, not chosen for feel; a lower one would drop its own earlier warning silently, since the "week" rung fires at 7 days regardless of a kind's own horizon. Not scoped to the specific assignee — every other kind here is capability-gated only, and this stays consistent rather than becoming the first per-user-scoped one; the assignee is named in the alert text instead. Now emailable via the existing digest, no changes to the sending layer. Now also sent unattended, by the nightly cron — it needed no change of its own, since the run reads the same alert list |
