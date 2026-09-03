@@ -130,6 +130,53 @@ by hand and gets a fourth answer for.
 
 ---
 
+## The apprenticeship panel, clicked — and a click-list that could not fail
+
+Everything passed except the one step designed to prove the central claim,
+and that step was wrong. Mine.
+
+STEP 3d ASKED FOR THE IMPOSSIBLE. It told a tester to sign off a period and
+watch on-the-job hours drop from 30 to 8 — but every hour in the fixture
+(Aug 26, Aug 3) already fell AFTER the sign-off date of 1 July, so both
+windows held the same 30 hours. A working window and a broken one would
+have looked identical. The tester noticed, built the case I should have
+specified — 4 hours on 2026-03-10, between the indenture and the sign-off —
+and watched it be correctly excluded. That is a real proof of the
+derivation and it is theirs.
+
+The unit suite now pins that straddling case, so the fixture lives in code
+rather than in someone's judgement.
+
+WHAT DELETING PROVED. The registration was removed and every timesheet
+survived, including the entries created during the run. That was the step
+worth running above all others: the panel promises "No timesheet is
+touched", and if it had been wrong it would have destroyed payroll data.
+
+A REGISTRATION THAT LOOKED LIKE IT FAILED. After a successful register the
+panel still read "No apprenticeship registrations recorded"; the row was
+saved and only a reload showed it. `router.refresh()` is on that path and
+the action calls `revalidatePath`, so the obvious explanation is wrong, and
+this file already carries the symptom with its cause NOT established — the
+material-order entry describes it exactly. So no cause is claimed here.
+
+What IS fixed is the harm: same apprentice, same sponsor, same indenture
+date is now refused as the same indenture entered twice. A page that looks
+like it did nothing gets clicked again, and nothing else would have stopped
+the second click.
+
+Also from that run: "Record a period" no longer sits live beside "Confirm
+remove" (an ordinary control adjacent to a destructive one is how somebody
+confirms a removal they meant to cancel); the panel now says it IGNORES the
+month selector above it, after reading "30 hrs" inches from "No hours
+logged this month" for the same person, both true under different windows
+and neither saying so; and the Craft dropdown explains its empty state
+instead of silently offering one option that means nothing.
+
+Answered without another run: the period-level Remove DOES have a two-step
+confirm. The tester flagged it as untested and was right to.
+
+---
+
 ## Four shipped pages nothing in the app linked to
 
 A browser tester opened the sidebar looking for Pipeline, could not find
