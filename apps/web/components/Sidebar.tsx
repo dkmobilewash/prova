@@ -67,10 +67,11 @@ export function Sidebar({
                 const isActive =
                   pathname === item.href || pathname.startsWith(`${item.href}/`);
 
-                // A disabled item is not a link and not focusable. Nothing
-                // is disabled today; the branch exists so a genuinely
-                // unbuilt feature can be added without inventing a route
-                // for it or faking a destination.
+                // A disabled item is not a link and not focusable. As of
+                // 3 Sep 2026, /safety and /material-orders render this way
+                // deliberately (see navItems.tsx) despite being built and
+                // working — the branch exists for exactly that case too,
+                // not only for a genuinely unbuilt feature.
                 if (item.disabled) {
                   return (
                     <span
