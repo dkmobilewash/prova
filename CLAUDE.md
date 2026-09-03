@@ -121,6 +121,29 @@ scrollback gets broken by whoever didn't scroll far enough.
   not lying, they were answering about a commit nobody asked them about.
   A conflicted PR is therefore untested by definition — resolve the
   conflict FIRST, then read CI.
+- **A `status` field can also be stale the OTHER way — pending long after
+  the work finished.** The companion to the entry above, and learned by
+  getting it wrong twice in one session (2026-09-03). Both times the job
+  was already done and the API had not caught up, and both times the
+  agent reported a slow build to Diego and started reasoning about why:
+
+  | Polled | API said | Its own timestamps said |
+  | --- | --- | --- |
+  | Vercel `dpl_yWKcK3mpQ…` for ~20 min | `BUILDING` | `buildingAt`→`ready` = **87s** |
+  | GitHub `ci` on #74 for ~13 min | `in_progress` | `started_at`→`completed_at` = **104s** |
+
+  **The timestamps are the truth; the status field is a cache.** When a
+  duration looks anomalous, compute it from `ready`/`completed_at` before
+  believing it and before theorising about a cause. An 87-second build
+  described as twenty minutes sends somebody hunting for an OOM that
+  never happened — this repo has a real exit-137 scar, which is exactly
+  what makes the false alarm expensive.
+
+  Two things that DID work as cross-checks, both cheap: Vercel's
+  `errorsOnly` build log returned no error, stderr or exit events, and
+  GitHub's job log 404s until a job completes. Neither says "finished",
+  but together they distinguish "still working" from "died silently",
+  which is the question actually worth answering while you wait.
 
 ## Hard-won technical rules
 
