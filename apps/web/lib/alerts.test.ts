@@ -4,10 +4,12 @@ import {
   ALERT_HORIZON_DAYS,
   CLOSEOUT_CHASE_DAYS,
   alertKey,
+  apprenticeRatioAlerts,
   backchargeAlerts,
   certifiedPayrollAlerts,
   closeoutAlerts,
   contactFollowUpAlerts,
+  factDigest,
   partitionAlerts,
   rankAlerts,
   renewalAlert,
@@ -538,5 +540,61 @@ describe("visibleToPrincipal", () => {
   it("keeps the figure for someone who may see billing", () => {
     const [alert] = visibleToPrincipal(closeout, (c) => c === "MANAGE_JOBS" || c === "MANAGE_BILLING");
     expect(alert.amount).toBe(13420);
+  });
+});
+
+describe("apprenticeRatioAlerts key length (issue #111)", () => {
+  // assertKeyShape() in lib/actions/alerts.ts is the gate every dismissal
+  // passes through. It is not exported, so its two rules are restated
+  // here rather than imported — a key is KIND:subject:fact, and no longer
+  // than 200 characters.
+  const MAX_KEY = 200;
+  const shapeOk = (key: string) => {
+    const parts = key.split(":");
+    return key.length <= MAX_KEY && parts.length === 3 && parts.every((p) => p.length > 0);
+  };
+
+  // A real cuid, because the length of the subject is part of the budget.
+  const jobId = "clx9k2m4p0001qw8h3n7v5t2r";
+  const source = (offendingDates: string[]) => ({
+    jobId,
+    jobName: "Riverside Medical",
+    unionLocalLabel: "Local 22",
+    offendingDates,
+    worstExcessHours: 6,
+  });
+  const days = (n: number) =>
+    Array.from({ length: n }, (_, i) => `2026-${String((i % 12) + 1).padStart(2, "0")}-${String((i % 28) + 1).padStart(2, "0")}`);
+
+  it("survives a job that is over ratio on many days", () => {
+    // The bug: the fact was the joined date list, which has no bound. At
+    // ~11 characters a day plus a 25-character cuid, the key crossed 200
+    // before the sixteenth day — so "Seen it" answered "That alert
+    // reference is not one of ours" on exactly the jobs that were
+    // persistently over ratio, and only on those.
+    const [alert] = apprenticeRatioAlerts([source(days(20))]);
+    expect(alert.key.length).toBeLessThanOrEqual(MAX_KEY);
+    expect(shapeOk(alert.key)).toBe(true);
+  });
+
+  it("still lapses a dismissal when another day breaches", () => {
+    // The property the fact carries, and the whole reason it is in the
+    // key. A digest that lost this would silence the alert forever.
+    const [before] = apprenticeRatioAlerts([source(days(20))]);
+    const [after] = apprenticeRatioAlerts([source(days(21))]);
+    expect(after.key).not.toEqual(before.key);
+  });
+
+  it("does not depend on the order the days arrive in", () => {
+    // Ordering is the caller's, not part of the fact.
+    const forwards = days(9);
+    const [a] = apprenticeRatioAlerts([source(forwards)]);
+    const [b] = apprenticeRatioAlerts([source([...forwards].reverse())]);
+    expect(a.key).toEqual(b.key);
+  });
+
+  it("separates the days, so a regrouping is a different fact", () => {
+    // Without a separator ["ab","c"] and ["a","bc"] digest identically.
+    expect(factDigest(["ab", "c"])).not.toEqual(factDigest(["a", "bc"]));
   });
 });

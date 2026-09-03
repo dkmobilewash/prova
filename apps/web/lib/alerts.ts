@@ -167,6 +167,43 @@ export function alertKey(kind: AlertKind, subjectId: string, fact: string): stri
   return `${kind}:${subjectId}:${fact}`;
 }
 
+/**
+ * A fixed-width stand-in for a fact that is a SET rather than a value.
+ *
+ * Most facts are one date and go in the key as themselves, which is worth
+ * keeping: a key you can read tells you why a dismissal lapsed. A set of
+ * dates cannot, because it has no bound. `assertKeyShape` caps a key at
+ * 200 characters, and an apprentice-ratio alert listing its offending days
+ * crossed that at fifteen of them — so "Seen it" answered "That alert
+ * reference is not one of ours" exactly on the jobs that were persistently
+ * over ratio, and only on those. Issue #111.
+ *
+ * What this must preserve is the property the fact was there for: add or
+ * remove a day and the digest changes, so an old dismissal lapses. So it
+ * is order-independent — the caller's ordering is not part of the fact —
+ * and it carries the count in the clear, because a digest that reads
+ * `17d-a3f19c2b` still says something to a person reading the table.
+ *
+ * FNV-1a, 32-bit, written out rather than imported: this module is pure
+ * and has no dependencies, and `node:crypto` would make it unimportable
+ * from anywhere that is not Node. Collisions are not a security question
+ * here — the worst a collision does is let one dismissal cover a different
+ * set of days on the same job.
+ */
+export function factDigest(values: string[]): string {
+  let hash = 0x811c9dc5;
+  for (const value of [...values].sort()) {
+    for (let i = 0; i < value.length; i += 1) {
+      hash ^= value.charCodeAt(i);
+      hash = Math.imul(hash, 0x01000193) >>> 0;
+    }
+    // Separator, so ["ab","c"] and ["a","bc"] are not the same fact.
+    hash ^= 0x1f;
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return `${values.length}d-${hash.toString(16).padStart(8, "0")}`;
+}
+
 function severityForDate(dateIso: string | null, todayIso: string, horizon: number): AlertSeverity | null {
   if (!dateIso) return null;
   const days = daysUntilIso(dateIso, todayIso);
@@ -468,6 +505,11 @@ export type ApprenticeRatioAlertSource = {
  * Keyed on the offending dates, so a dismissal lapses the moment another
  * day breaches — the same mechanism every other alert here uses, applied
  * to a set rather than a single date.
+ *
+ * Through factDigest(), NOT by listing them. A set has no bound and the
+ * joined list went past `assertKeyShape`'s 200-character cap at fifteen
+ * days, which made "Seen it" fail outright on precisely the jobs worth
+ * dismissing — see issue #111 and factDigest's own note.
  */
 export function apprenticeRatioAlerts(sources: ApprenticeRatioAlertSource[]): Alert[] {
   const alerts: Alert[] = [];
@@ -477,7 +519,7 @@ export function apprenticeRatioAlerts(sources: ApprenticeRatioAlertSource[]): Al
     const count = job.offendingDates.length;
 
     alerts.push({
-      key: alertKey("APPRENTICE_RATIO", job.jobId, job.offendingDates.join(",")),
+      key: alertKey("APPRENTICE_RATIO", job.jobId, factDigest(job.offendingDates)),
       kind: "APPRENTICE_RATIO",
       severity: "STANDING",
       title: `${job.jobName} ran over its apprentice ratio`,
