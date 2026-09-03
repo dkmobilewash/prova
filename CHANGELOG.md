@@ -103,6 +103,53 @@ against our own sending reputation, not a mailbox.
 Needs `CRON_SECRET` and `NOTIFY_BASE_URL` on the Vercel project before
 anything sends. Both are in `.env.example` and the README table.
 
+## The apprenticeship programme, as opposed to the apprentice's hours
+
+Sheet 09's last Partial, and the audit had already written the gap: "a
+registered enrolment record, the sponsor, required classroom hours, or
+progression sign-off... none of it can be derived from hours logged."
+
+THE SPLIT THE WHOLE THING RESTS ON. On-the-job hours stay derived: summed
+from `TimeEntry` over the window from the last sign-off to today, stored
+nowhere, so a corrected timesheet moves them. Classroom hours ARE stored,
+because related instruction happens at a training centre and there is no
+`TimeEntry` to sum. Storing what cannot be derived is the other half of
+"derive, don't duplicate", not an exception to it.
+
+A period closes on a SIGNATURE, never on an hour count reaching a line.
+The sponsor decides progression; recording our own arithmetic as though it
+were their decision would be inventing a fact about somebody else's
+programme. `currentPeriod` therefore reads sign-offs and ignores hours
+entirely, and a test pins it.
+
+Nothing defaults the hour requirements. Blank means the programme has not
+told us, and the review says "no requirement recorded" rather than
+measuring against the conventional 2000 — a denominator this app made up
+would turn "we don't know" into a percentage somebody could act on. Null
+and zero stay distinct all the way through: zero classroom hours means
+somebody checked and they attended none, and those two go in different
+columns of a report to a sponsor.
+
+An indenture recorded as both completed AND cancelled is refused, not
+resolved by precedence. Picking one would bury a data-entry error on a
+record somebody may have to defend.
+
+WHAT THE SUITE CAUGHT, which is the argument for that test existing:
+`reachable.test.ts` failed on `updateApprenticeshipPeriod` and
+`deleteApprenticeshipPeriod` — exported, re-exported through the barrel,
+and called from nowhere. The same defect that once shipped
+`sendOutboundEmail` with no form. The fix was not to delete them: a period
+that can be created and never corrected makes a typo in classroom hours
+permanent. They have an edit row now.
+
+Deleting an enrolment cascades its periods and touches no `TimeEntry` —
+the hours belong to the timesheet, not to the registration — and there is
+a db test asserting exactly that.
+
+14 unit tests, 12 db tests. Migration is additive: two CREATE TABLEs, their
+indexes, FKs on the new tables only. No ALTER or DROP on anything existing.
+Announced in Slack before the push, per the working agreement.
+
 ---
 
 ### Alerts can now email themselves, once per thing per stage (Cyrus)

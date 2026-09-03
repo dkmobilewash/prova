@@ -6,6 +6,7 @@ import {
   loadQuickBooksAccounts,
   saveQuickBooksAccountMapping,
 } from "@/lib/actions";
+import { QUICKBOOKS_ACCOUNT_PURPOSES } from "@/lib/quickbooks-constants";
 
 /**
  * Which QuickBooks account each kind of money posts to.
@@ -21,13 +22,12 @@ import {
  * QuickBooks.
  */
 
-const PURPOSES = [
-  { value: "INCOME", label: "Invoice revenue", hint: "Where money you bill a GC lands." },
-  { value: "LABOR", label: "Labor cost", hint: "Crew wages and burden." },
-  { value: "MATERIAL", label: "Material cost", hint: "Board, metal, compound, finishes." },
-  { value: "SUBCONTRACTOR", label: "Subcontractor cost", hint: "Lower-tier subs you hire." },
-  { value: "OTHER", label: "Other cost", hint: "Equipment, permits, anything else." },
-] as const;
+// Imported rather than declared here. This list and the code that READS a
+// mapping were two separate copies of the same fact, and they drifted: the
+// job page looked up "INVOICE_REVENUE" while this said "INCOME", so Settings
+// showed a mapping as present and the push path called it missing. One list,
+// one truth.
+const PURPOSES = QUICKBOOKS_ACCOUNT_PURPOSES;
 
 type Account = { id: string; name: string; accountType: string; accountSubType?: string };
 export type MappingRow = { purpose: string; qboAccountId: string; qboAccountName: string };

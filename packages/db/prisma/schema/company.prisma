@@ -63,6 +63,8 @@ model Company {
   vendorPriceQuotes       VendorPriceQuote[]
   outboundMessages        OutboundMessage[]
   contactInteractions     ContactInteraction[]
+  apprenticeshipEnrollments ApprenticeshipEnrollment[]
+  contactPeople           ContactPerson[]
 }
 
 enum UserRole {
@@ -124,6 +126,7 @@ model User {
   assignedContactFollowUps             ContactInteraction[] @relation("ContactInteractionFollowUp")
 
   @@index([companyId])
+  apprenticeshipEnrollments ApprenticeshipEnrollment[] @relation("ApprenticeEnrollments")
 }
 
 /// A pending invitation for someone to join a Company. Deleted once
@@ -209,6 +212,7 @@ model Contact {
   jobs           Job[]
   bidInvitations BidInvitation[]
   interactions   ContactInteraction[]
+  people         ContactPerson[]
 
   @@index([companyId])
 }
