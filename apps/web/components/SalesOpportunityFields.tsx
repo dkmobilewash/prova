@@ -1,15 +1,7 @@
 "use client";
 
 import { inputClass, labelClass } from "@/components/RfiFields";
-
-export const OPPORTUNITY_STAGE_OPTIONS = [
-  { value: "NEW", label: "New" },
-  { value: "CONTACTED", label: "Contacted" },
-  { value: "DEMO_SCHEDULED", label: "Demo scheduled" },
-  { value: "TRIAL", label: "Trial" },
-  { value: "WON", label: "Won" },
-  { value: "LOST", label: "Lost" },
-] as const;
+import { OPPORTUNITY_STAGE_OPTIONS } from "@/lib/sales-stage-history";
 
 export type SalesOpportunityDefaults = {
   stage: string;
