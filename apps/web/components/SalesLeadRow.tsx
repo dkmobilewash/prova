@@ -9,6 +9,30 @@ import { SALES_LEAD_SOURCE_OPTIONS } from "@/components/SalesLeadFields";
 const btn =
   "rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:border-slate-500 disabled:opacity-50";
 
+const FOLLOW_UP_STYLE = {
+  OVERDUE: "text-red-400",
+  DUE_TODAY: "text-amber-300",
+  UPCOMING: "text-slate-500",
+} as const;
+
+const FOLLOW_UP_LABEL = {
+  OVERDUE: "Follow-up was due",
+  DUE_TODAY: "Follow up today,",
+  UPCOMING: "Follow up",
+} as const;
+
+/**
+ * "No contact logged" is not "never contacted" and is deliberately worded
+ * as a statement about the log rather than about the relationship — nobody
+ * has written anything down, which is all this page can honestly claim.
+ */
+function lastContactLabel(lead: { lastContactOn: string | null; daysSinceContact: number | null }) {
+  if (lead.lastContactOn === null || lead.daysSinceContact === null) return "No contact logged";
+  if (lead.daysSinceContact === 0) return "Last contact today";
+  if (lead.daysSinceContact === 1) return "Last contact yesterday";
+  return `Last contact ${lead.daysSinceContact} days ago`;
+}
+
 export function SalesLeadRow({
   lead,
 }: {
@@ -20,6 +44,13 @@ export function SalesLeadRow({
     phone: string | null;
     source: string | null;
     opportunityCount: number;
+    /** All derived from SalesActivity at read time — see lib/sales-activity.ts.
+     * Every one of these is nullable and null never means zero: a lead with
+     * no logged contact is not a lead contacted today. */
+    lastContactOn: string | null;
+    daysSinceContact: number | null;
+    followUpOn: string | null;
+    followUpStanding: "OVERDUE" | "DUE_TODAY" | "UPCOMING" | null;
   };
 }) {
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
@@ -49,6 +80,12 @@ export function SalesLeadRow({
           <p>
             {lead.opportunityCount} {lead.opportunityCount === 1 ? "opportunity" : "opportunities"}
           </p>
+          <p className="text-xs text-slate-500">{lastContactLabel(lead)}</p>
+          {lead.followUpStanding && (
+            <p className={`text-xs ${FOLLOW_UP_STYLE[lead.followUpStanding]}`}>
+              {FOLLOW_UP_LABEL[lead.followUpStanding]} {lead.followUpOn}
+            </p>
+          )}
         </div>
       </div>
 

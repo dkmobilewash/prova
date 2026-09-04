@@ -159,6 +159,11 @@ export const INTERACTION_TYPES = ["CALL", "EMAIL", "SITE_VISIT", "NOTE"] as cons
 
 export const SALES_LEAD_SOURCES = ["REFERRAL", "OUTBOUND", "INBOUND", "EVENT", "OTHER"] as const;
 
+/** Deliberately not INTERACTION_TYPES: SITE_VISIT means nothing when the
+ * prospect is a software buyer, and DEMO is the meeting that moves a Prova
+ * deal. See the SalesActivity model comment. */
+export const SALES_ACTIVITY_TYPES = ["CALL", "EMAIL", "DEMO", "MEETING", "NOTE"] as const;
+
 export const OPPORTUNITY_STAGES = [
   "NEW",
   "CONTACTED",

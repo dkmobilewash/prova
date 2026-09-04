@@ -117,6 +117,193 @@ the thing it describes changed underneath it.
 
 ---
 
+
+---
+
+## Two notification bugs: a standing alert emailed as "Now due", and a digest that could go out with no record of it
+
+### A STANDING alert borrowed the dated ladder (#126)
+
+`crossedRungs` decided which ladder an alert climbed by asking whether
+`dueOn` was null. The severity is the claim being made; `dueOn` is only a
+date attached to it, and three kinds are STANDING **and** dated — a
+closeout package the GC has sat on, retainage past a forecast substantial
+completion, and (arriving with #128) a rejected closeout. Every one of them
+carries a date already BEHIND it, because what makes them standing is that
+the day cannot be met by acting sooner.
+
+So all three went up the dated ladder, `days <= 0` fired the DUE rung, and
+`rungLabel("due")` put **"Now due"** in an email about a condition that has
+no deadline at all. Worse than the wording: they spent `@week` and `@due`
+instead of `@standing`, so the one notice those alerts were ever going to
+send could never be sent — silently, for good, since a spent rung is spent.
+
+The split is now on `severity === "STANDING"`, with one wrinkle that is the
+reason a bare severity check is not enough. A COI fifty-five days out is
+also STANDING — because it is outside its own horizon, not because it is a
+standing condition — and firing its only key there would spend it long
+before there is anything to say. A STANDING alert therefore reaches its rung
+when it has no date, or when the date it has is behind it; a date still
+ahead, or a date with no distance computed, says nothing.
+
+**The guard test for this passed vacuously and had done since it was
+written.** It was named "never borrows the dated ladder" and its fixture was
+a `WIP_VARIANCE` alert with `dueOn: null` — the one STANDING shape that
+cannot reach the dated branch at all, so it would have passed whatever that
+branch did. It now uses a STANDING alert that HAS a past `dueOn`, which is
+the only fixture that exercises the thing it is named after, and it fails
+against the old code with `expected 'due' to be 'standing'`.
+
+### A sent digest could leave no record that it was sent (#116)
+
+`notification-dispatch.ts` opens with "THE ORDER IS THE DESIGN" — claims
+written before the provider is called, so a crash between sending and
+recording is a notice that was sent and recorded. That was true of the
+CLAIMS and false of the MESSAGE. The message row went first, but its
+handover event and its `providerMessageId` were written afterwards, in a
+`$transaction` that ran AFTER `sendEmail` returned.
+
+Everything between those two points was a window where the digest had
+reached a real person and the database said otherwise: no provider id, no
+events at all — which is exactly what a send that never left looks like.
+`/messages` reads such a row as "No word back yet", and `reachedProvider`,
+the guard on deletion, sees nothing to protect and would let the record of a
+delivered email be destroyed. Not a re-send risk: the dispatch claims were
+always safe, and that is the half that was already right.
+
+Fixed the same way `lib/actions/messages.ts` was. The QUEUED handover is
+written BEFORE the send. A provider that took it keeps that event and gains
+the reason (a second QUEUED would report one send as two). A send that
+never got there gives the claim back — deleted and re-recorded as FAILED in
+ONE transaction, because losing the claim without writing the failure is the
+same hole pointing the other way. And the write that follows a successful
+send no longer throws: it returns, because production redacts a thrown
+Server Action message and an opaque error on a digest that DID go out invites
+a second click.
+
+One thing not to overclaim, and it is written into the code: "provably never
+took it" is stronger than `mayHaveSent` can support. `sendEmail` treats every
+fetch rejection as never-reached, and a timeout after the body went out is a
+fetch rejection. The branch means "nothing came back that says it arrived".
+
+The cost of all this is the opposite error — a crash between the handover and
+the send leaves a message reading handed-over-and-unconfirmed that never
+went. That is the right way round: an overstated send goes stale in a day and
+somebody checks it, an understated one is evidence that no longer exists.
+
+Both fixes are pinned by tests watched failing first. The dispatch tests are
+unit tests over a small in-memory Prisma stand-in with two properties a naive
+fake lacks — lazy operations, and a `$transaction` that really rolls back —
+because without those the "second write of a failed transaction" case passes
+against the broken code.
+
+---
+
+
+---
+
+## The internal sales CRM remembers a conversation now
+
+Phase B shipped `SalesLead` and `SalesOpportunity` with full CRUD and two
+pages. Read as a schema that is complete; read as a CRM it had no memory —
+the entire record of a deal was `SalesOpportunity.notes`, one mutable
+free-text field the next edit overwrote. Nothing recorded that a call
+happened, and nothing anywhere said you had promised to ring someone back.
+
+`SalesActivity` is that record: call / email / demo / meeting / note,
+dated (entered, not stamped), with an optional follow-up date and an
+optional link to the deal it was about. `/sales/[id]` grows an Activity
+section; `/sales` grows a follow-up queue and a per-lead last-contact line.
+
+**One follow-up per lead, read off its LATEST activity.** The alternative —
+every `followUpOn` stays open until somebody ticks it off — needs a stored
+done-flag, and would leave a lead owing four separate calls for one
+conversation. The trade is real and is stated on the column itself: logging
+the next activity replaces what the lead owed, so clearing a follow-up is
+the explicit act of logging the next contact with the date left blank. An
+older activity's follow-up renders as "since superseded" rather than
+disappearing, so the history still reads correctly.
+
+**Follow-ups deliberately do NOT go into `/alerts`,** which was the obvious
+reuse and the wrong one. `/alerts` gates on a `lib/permissions.ts`
+capability; this feature gates on `isProvaOperator` AND `role === "OWNER"`,
+and an OWNER holds every capability by definition, so the map cannot
+express owner-only — that is why `assertSalesAccess` exists at all. Routing
+these through the shared engine would show "Follow up with Acme Drywall" to
+every estimator at the operator company.
+
+**Nulls, not zeroes, throughout.** "No contact logged" is a statement about
+the log, not about the relationship — nobody wrote anything down, which is
+all the page can honestly claim. `daysSinceContact` is null when nothing is
+logged and `0` when contact was today, and the unit suite pins the two
+apart specifically because they would otherwise both render as "0". That
+assertion caught a real one: negating `daysUntil()` returns `-0` for a
+contact logged today, which renders as "-0 days ago".
+
+**Two Phase B bugs fixed in passing.** `createSalesOpportunity` and
+`deleteSalesOpportunity` revalidated `/sales/[id]` but not `/sales` — which
+is where the opportunity count is rendered — so adding a lead's first
+opportunity left the list reading zero. And `deleteSalesLead`'s guard
+counted opportunities only; `SalesActivity.leadId` is `RESTRICT`, so a lead
+with a call log and no deals would have thrown a raw Postgres constraint
+error instead of a sentence. The guard now names both and, per the lesson
+from `deleteContact`, never prints a zero for the half that is empty.
+
+**The gate is executed for the first time.** `assertSalesAccess`'s two
+checks have never run against a company where they were false — there is
+one user on the real account, so the browser can only ever exercise the
+passing branch. `sales-activity-actions.dbtest.ts` builds a second tenant
+and a MEMBER of the operator company and asserts both refusals, plus that
+neither company's owner can reach the other's rows by id. Every assertion
+in it was watched fail first: dropping the OWNER check reds two tests, and
+removing the activity count from the delete guard reproduces the raw
+`PrismaClientKnownRequestError` it exists to prevent.
+
+:warning: **Still true and still unclosed: nobody has ever loaded this
+feature.** `Company.isProvaOperator` is false on every row until it is
+flipped by hand, and no record exists of it ever being flipped. Every page
+under `/sales` correctly renders "Not part of your access" while it is
+false, which means a click-list against it passes while proving nothing.
+Flip it on a test company first or the test cannot fail.
+
+---
+
+## /pipeline, clicked — and a page that told people to do the impossible
+
+Every assertion passed, including the two that were the point: the counts
+on /pipeline equal what /bids reports for the same GC (1 + 1 = 2), and
+flipping a bid from LOST to WON moved the figures 67% -> 100% -> 67% with
+the won total tracking it and nothing touched on /pipeline. The derivation
+is proven against the data rather than against my description of it.
+
+THE REAL FINDING IS MY OWN COPY. The page said:
+
+  "worked out from the bid invitations on Bids, which is where a status
+   gets changed"
+
+`/bids` has no editing controls. Its rows are bare links; its only <select>
+elements are the trade and status FILTERS. `updateBidInvitationStatus` is
+called from exactly one place, `/contacts/[id]/page.tsx`. So that sentence
+sent a reader to a page where the action does not exist.
+
+It also propagated: my click-list said "on /bids change Tower C", because I
+wrote the click-list from my own wrong copy rather than from the code. The
+tester found the real control on the contact record, performed the flip
+there, preserved the intent of the step, and said plainly that they had
+deviated and why. Both halves of that are what made it useful.
+
+Corrected to name the contact record, and to say what /bids actually does:
+filters and reads.
+
+Filed rather than fixed, both outside this lane: a bid can only be created
+as INVITED with no amount, so every row starts in the state that makes a
+won-value total a floor (#133); and two contact pages return 503 on RSC
+prefetch while siblings in the same batch return 200 (#134).
+
+Not tested: the non-owner access check. There is still exactly one user on
+the account, so section 7 has now been skipped on every run that included
+it. It is the one assertion about /pipeline nobody has exercised.
+
 ## A sent email the app could not prove it sent, and one injury filed twice
 
 Two of the six findings in #111. Both are ordering bugs, and neither was
