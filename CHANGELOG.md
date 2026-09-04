@@ -84,6 +84,56 @@ PENDING request rather than replacing it. Worth adding.
 
 ---
 
+## The sales pipeline, with the forecast it does not have
+
+`/sales` listed leads. To learn what was in `TRIAL`, or what the open
+pipeline was worth, you opened every lead in turn — despite `estimatedMrr`
+and `expectedCloseDate` sitting on every opportunity since Phase B.
+
+A band at the top of `/sales` now reads across every opportunity: a card
+per open stage with its count, its priced total and how long the
+longest-sitting deal has been there; won and lost; and the deals sitting
+longest, linked. `lib/sales-pipeline.ts` derives all of it. No schema, no
+new route, no nav entry, no `middleware.ts` line — **zero shared files
+touched**, because `/sales` already exists and this is a read over what
+items 1 and 2 left behind.
+
+**THERE IS DELIBERATELY NO WEIGHTED FORECAST, and that is a walk-back of
+my own plan.** The lane claim and both earlier PRs said this item would
+carry one. The usual weighted forecast multiplies each stage by a
+probability — 10% for New, 50% for Trial — and nobody at Prova has ever
+supplied those numbers. Inventing them produces a confident dollar figure
+derived from nothing, which is the same failure as the `createdAt`
+backfill this lane refused two days running. What replaces it is built
+only from entered facts: **past its close date**, **closing within 30
+days**, and **no close date given** kept as its own number rather than
+folded into either. The page says so in as many words, so the absence
+reads as a decision rather than an oversight.
+
+**Unpriced deals never read as worthless.** Every total sums only the
+deals that have a number and reports the rest as a count beside it, so a
+column saying "$0 across 3 deals" is unreachable — it says
+"$500/mo across 3, 2 unpriced". Folding them in as zero reds three tests.
+
+**No win rate is not a 0% win rate.** `winRate` is null until something
+has actually been decided, and the band says "no win rate yet, nothing
+decided". A pipeline with four live deals and nothing closed has no track
+record, and printing 0% invents a history of losing. Returning 0 there
+reds three tests. Zero is kept as a real answer for the case that earns
+it: everything decided was lost.
+
+**Close-date buckets only ever look at open deals.** A won deal's close
+date is history, not a forecast; counting it would show revenue as still
+to land after it already had. Dropping the open filter reds a test.
+
+**"Sitting longest" has no staleness threshold.** Nobody has decided what
+too long means for Prova's own sales, so the list is ordered by the fact
+and judged by the reader. Deals whose time in stage is unrecorded are
+excluded rather than sorted as if they were fresh — treating that null as
+0 reds two tests.
+
+---
+
 ### Asking QuickBooks whether a document is gone, instead of guessing from its prose (Diego)
 `claude/prova-vercel-direct-url-hg1acx`
 
