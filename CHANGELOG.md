@@ -477,20 +477,61 @@ excluded rather than sorted as if they were fresh — treating that null as
 
 ---
 
+### The evidence for the last entry did not exist (Diego)
+`claude/prova-vercel-direct-url-hg1acx`
+
+The entry below explains a real improvement with a story that was not
+true. Recording that here because a wrong reason in a comment outlives the
+person who wrote it, and this repo already has a rule about documentation
+that drifts.
+
+**What was claimed.** That invoice 1 on ZZQB-TEST had been deleted inside
+QuickBooks on purpose; that the deletion produced `Stale Object Error`
+rather than `Object Not Found`; and that Intuit compares the SyncToken
+before deciding a record is absent, so a delete surfaces as either fault.
+That went into a commit message, this changelog, four source comments, a
+test name and a Slack post.
+
+**What is actually true.** QuickBooks invoice 146 still exists. It was
+never deleted — a $500 payment (QuickBooks 147) is applied to it, and
+QuickBooks will not delete an invoice with a payment applied. So the 21:50
+refusal was an ordinary concurrent-edit refusal about a document sitting
+right there, which is precisely what that branch is for. The claim about
+SyncToken ordering was inference dressed up as a fact about Intuit's
+internals.
+
+**How it was caught, and how it should have been.** The link still read
+`QuickBooks invoice 146 · verified 2026-09-03`. An Invoice link's `qboId`
+is written in exactly one place — the success path of the push, from
+`readBack.Id` — so a link that had really been cleared and then re-pushed
+would carry a NEW id. The same id meant no clearing ever happened, which
+contradicted the report the whole story rested on. That was visible on
+screen the entire time. One question — "does 146 still exist" — would have
+settled it before any of it was written down, and it was asked only after
+the code had shipped.
+
+**What survives.** All of it, on a better argument. Nobody has yet deleted
+a QuickBooks invoice and clicked re-send, so what fault a deletion returns
+is UNKNOWN to this project. A read-back is correct under every answer and
+needs none of them; a string match needs the one fact nobody has. The
+widened predicate stays for the same reason — a stale-token refusal cannot
+be told apart from a deletion by reading it, so it buys a GET, and the GET
+decides. Comments, the test name and the paragraph below now say that
+instead.
+
+
 ### Asking QuickBooks whether a document is gone, instead of guessing from its prose (Diego)
 `claude/prova-vercel-direct-url-hg1acx`
 
 The self-healing added one commit ago worked on a string match, and the
 string was the wrong one. This replaces the guess with a question.
 
-**The sandbox settled it.** The QuickBooks invoice behind invoice 1 on
-ZZQB-TEST was deleted on purpose, and the refusal that came back at
-2026-09-03 21:50 UTC was not `Object Not Found`. It was `Stale Object
-Error : You and Craig Carlson were working on this at the same time.` A
-deleted document, reported as a concurrent edit. Intuit checks the
-SyncToken before it decides a record is absent, so a delete surfaces as
-either fault depending on which check trips first — and the match written
-for this only knew one of them.
+**CORRECTED 2026-09-04 — this paragraph was wrong, see the entry above.**
+The QuickBooks invoice behind invoice 1 on ZZQB-TEST was NOT deleted, so
+the `Stale Object Error` at 21:50 UTC says nothing about what a deletion
+returns, and the claim about Intuit checking the SyncToken first was
+inference stated as fact. The change below is still right; the reason
+given for it was not.
 
 **What that cost, in the shipped code.** The stale branch ran first, so
 the far more common wording never reached the recovery at all. The person

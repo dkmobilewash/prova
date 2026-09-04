@@ -385,15 +385,26 @@ export function isMissingDocumentError(detail: string): boolean {
  * positive costs one API call; it cannot clear a link, and it cannot
  * create anything.
  *
- * "Stale Object Error" is in here because of a real sandbox run on
- * 2026-09-03: invoice 1 on ZZQB-TEST was deleted inside QuickBooks and the
- * refusal that came back named Craig Carlson editing it concurrently, not a
- * missing object. Intuit compares the SyncToken before it decides the
- * document is absent, so a delete can surface as either fault depending on
- * which check runs first. Matching only "Object Not Found" meant the far
- * more common wording fell through to a message telling the person to
- * "open it in QuickBooks and decide which version is right" — about a
- * document that is not there to open, on a link that then never healed.
+ * "Stale Object Error" is in here because NOBODY HAS ESTABLISHED WHAT A
+ * DELETED DOCUMENT ACTUALLY RETURNS, and that is the honest reason rather
+ * than a story about Intuit's internals.
+ *
+ * An earlier version of this comment claimed a sandbox run on 2026-09-03
+ * proved a deleted invoice answers `Stale Object Error`, and explained it
+ * with a rule about Intuit checking the SyncToken before existence. Both
+ * were wrong. The invoice in that run (QuickBooks 146) was never deleted —
+ * QuickBooks would not remove it while a payment was applied — so the
+ * stale refusal was an ordinary concurrent-edit refusal about a document
+ * that was sitting right there, and the SyncToken ordering was inference
+ * dressed up as fact. See CHANGELOG for the correction.
+ *
+ * What is left is a genuine unknown, and it is enough on its own: a
+ * stale-token refusal is exactly the case where the message cannot
+ * distinguish "somebody edited it" from "it is not there any more". Intuit
+ * documents fault 610 "Object Not Found" for a missing entity, and this
+ * project has never once observed that fault against a deleted invoice.
+ * Probing on both is cheap insurance against a wording we have not seen —
+ * not a claim that we have seen it.
  *
  * The Product/Service refusal ("...has been deleted...") is NOT matched
  * here, and the test beside this pins that. It would be harmless if it were

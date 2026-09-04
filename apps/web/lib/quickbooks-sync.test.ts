@@ -402,10 +402,17 @@ describe("deciding when it is worth ASKING whether a document is gone", () => {
   // This predicate does not decide anything on its own — it decides whether
   // to spend one read-only GET, and the GET decides. So the bar for a true
   // is "plausibly about a missing document", not "certainly".
-  it("matches the wording a real deleted invoice actually produced", () => {
-    // Sandbox, 2026-09-03 21:50 UTC, invoice 1 on ZZQB-TEST, after the
-    // QuickBooks invoice had been deleted. This is the string that used to
-    // fall through to "open it there and decide which version is right".
+  it("matches a stale-token refusal, which cannot be told apart from a deletion", () => {
+    // A REAL string, sandbox 2026-09-03 21:50 UTC, invoice 1 on ZZQB-TEST —
+    // but NOT from a deleted invoice, and this test used to say it was.
+    // QuickBooks 146 still exists; it could not be deleted while a payment
+    // was applied to it. So this is an ordinary concurrent-edit refusal.
+    //
+    // It belongs here anyway, and the reason is the honest one: a message
+    // like this cannot distinguish "somebody edited it" from "it is not
+    // there any more". What a deleted invoice returns is still unknown to
+    // this project. Matching it buys a read-back, and the read-back is what
+    // tells the two apart.
     expect(
       mayMeanDocumentIsGone(
         "Stale Object Error — Stale Object Error : You and Craig Carlson were working on this at the " +

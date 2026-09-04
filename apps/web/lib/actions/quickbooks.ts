@@ -633,22 +633,26 @@ export async function pushInvoiceToQuickBooks(invoiceId: string): Promise<Action
     // DID SOMEBODY DELETE THE QUICKBOOKS INVOICE WE WERE UPDATING?
     //
     // We ask QuickBooks. We used to answer it by matching Intuit's prose
-    // for "Object Not Found", and that was wrong in the direction that
-    // costs money.
+    // for "Object Not Found", and a string match was never going to be
+    // sound here.
     //
-    // A real sandbox run on 2026-09-03 settled it: the QuickBooks invoice
-    // for invoice 1 on ZZQB-TEST was deleted, and the refusal that came
-    // back was `Stale Object Error`, naming a concurrent editor. Intuit
-    // compares the SyncToken before it decides the record is absent, so a
-    // deleted document surfaces as EITHER fault depending on which check
-    // trips first. The old match saw "stale", took the branch above this
-    // one, and told the person to open the invoice in QuickBooks and decide
-    // which version was right — about a document that was not there to
-    // open, on a link that then never healed no matter how many times they
-    // clicked.
+    // NOT because a sandbox run proved the wording wrong. An earlier
+    // version of this comment said exactly that — that invoice 1 on
+    // ZZQB-TEST had been deleted and answered `Stale Object Error` — and it
+    // was false: QuickBooks 146 was never deleted, because a payment was
+    // applied to it and QuickBooks refuses that. The stale refusal was an
+    // ordinary concurrent-edit refusal. The story was built on an
+    // unverified assumption and written up as evidence; the correction is
+    // in CHANGELOG.
     //
-    // So the string now only decides whether to spend one read-only GET,
-    // and the GET decides. That is worth the round trip precisely because
+    // The real reason is duller and better: NOBODY HAS EVER DELETED A
+    // QUICKBOOKS INVOICE AND CLICKED RE-SEND, so the fault a deletion
+    // produces is unknown to this project. A read-back does not need to
+    // know. That is the whole argument — it is correct under every answer,
+    // including the one we have not seen.
+    //
+    // So the string only decides whether to spend one read-only GET, and
+    // the GET decides. That is worth the round trip precisely because
     // clearing a link is the one recovery here that can produce a DUPLICATE
     // invoice: the next push builds a CREATE. A guess in that direction is
     // a second invoice in somebody's books; a guess the other way is a
