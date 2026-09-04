@@ -430,6 +430,19 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
     id: item.id,
     description: item.description,
     scheduledValue: Number(item.quantity) * Number(item.unitPrice ?? 0),
+    // materialsStoredValue is a per-period delta, so the running stored
+    // balance is the sum across every invoice — same summation
+    // lib/pay-application.ts does. Shown beside the entry box so a stored
+    // balance sitting on a line is visible at the moment somebody bills the
+    // installed work, which is when it otherwise gets billed twice (#95).
+    materialsStoredToDate: job.invoices.reduce(
+      (sum, invoice) =>
+        sum +
+        invoice.lineItems
+          .filter((row) => row.lineItemId === item.id)
+          .reduce((rowSum, row) => rowSum + Number(row.materialsStoredValue), 0),
+      0,
+    ),
   }));
 
   const addLineItemWithId = addLineItem.bind(null, job.id);
