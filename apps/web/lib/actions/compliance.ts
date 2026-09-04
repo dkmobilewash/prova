@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { put } from "@vercel/blob";
+import { putDocument } from "@/lib/blob";
 import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@prova/db";
 import { extractComplianceDocument } from "@prova/integrations";
@@ -144,7 +144,7 @@ export async function uploadComplianceDocument(formData: FormData) {
   const mediaType = file.type as (typeof COMPLIANCE_UPLOAD_MEDIA_TYPES)[number];
 
   const [blob, extraction] = await Promise.all([
-    put(`compliance/${company.id}/${file.name}`, buffer, { access: "public", contentType: file.type }),
+    putDocument(`compliance/${company.id}/${file.name}`, buffer, file.type),
     extractComplianceDocument({ fileBase64: buffer.toString("base64"), mediaType, fileName: file.name }),
   ]);
 

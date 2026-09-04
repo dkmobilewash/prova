@@ -2,8 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
-import { randomBytes } from "node:crypto";
-import { put } from "@vercel/blob";
+import { putDocument } from "@/lib/blob";
+import { linkToken } from "@/lib/tokens";
 import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@prova/db";
 import { revokeToken, refreshTokens, getCompanyInfo, generateWipNarrative, type QuickBooksCompanyInfo } from "@prova/integrations";
@@ -23,6 +23,14 @@ import {
  * this is signing the estimate that becomes the contract, not something you
  * re-sign after the fact. Idempotent: if an unsigned request already
  * exists, reuses it instead of spawning a second link.
+ *
+ * The token is generated HERE, by `linkToken()`, and not by the schema. It
+ * used to be `@default(cuid())` — an identifier generator standing as the
+ * sole access control on an unauthenticated page that renders the contract
+ * and will legally sign it. Same generator as the portal link now, which is
+ * what the schema comment always claimed. `token` has no default any more,
+ * so a create that forgets it fails to typecheck rather than quietly issuing
+ * a weak one.
  */
 export async function createSignatureRequest(jobId: string) {
   const { company } = await requireCompanyContext();
@@ -36,7 +44,7 @@ export async function createSignatureRequest(jobId: string) {
     where: { jobId, status: "PENDING" },
   });
   if (!existing) {
-    await prisma.signatureRequest.create({ data: { jobId } });
+    await prisma.signatureRequest.create({ data: { jobId, token: linkToken() } });
   }
 
   revalidatePath(`/jobs/${jobId}`);
@@ -129,8 +137,7 @@ export async function enablePortalAccess(contactId: string) {
     return;
   }
 
-  const token = randomBytes(24).toString("hex");
-  await prisma.contact.update({ where: { id: contactId }, data: { portalToken: token } });
+  await prisma.contact.update({ where: { id: contactId }, data: { portalToken: linkToken() } });
 
   revalidatePath(`/contacts/${contactId}`);
 }
@@ -509,7 +516,7 @@ export async function uploadContractDocument(jobId: string, formData: FormData) 
     prisma.contractDocument.findFirst({ where: { jobId }, orderBy: { versionNumber: "desc" } }),
   ]);
 
-  const blob = await put(`contracts/${jobId}/${file.name}`, buffer, { access: "public", contentType: file.type });
+  const blob = await putDocument(`contracts/${jobId}/${file.name}`, buffer, file.type);
 
   await prisma.contractDocument.create({
     data: {
