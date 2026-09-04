@@ -46,7 +46,7 @@ export function EquipmentRow({ canDelete, jobs, item }: EquipmentRowProps) {
     return (
       <li className="p-4">
         <form onSubmit={handleSave} className="flex flex-col gap-3">
-          <EquipmentFields jobs={jobs} defaults={item} />
+          <EquipmentFields defaults={item} />
 
           {error && <p className="text-sm text-red-400">{error}</p>}
 

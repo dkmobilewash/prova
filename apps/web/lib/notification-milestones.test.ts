@@ -574,3 +574,38 @@ describe("partitionOwned — who sends when two runs overlap", () => {
     expect(partitionOwned(due, won).theirs).toEqual([]);
   });
 });
+
+describe("CLOSEOUT_REJECTED does not borrow the dated ladder (issue #126)", () => {
+  // This kind did not exist when the fix was written — #128 landed it
+  // after. It is the third STANDING kind that carries a PAST dueOn, and
+  // the one that made #126 worth filing: the alert's own source comment
+  // says "No deadline exists to be past... the reason neither claims
+  // OVERDUE", while the digest was calling it "Now due" in an email.
+  const rejected: Alert = {
+    key: "CLOSEOUT_REJECTED:job_1:2026-08-03",
+    kind: "CLOSEOUT_REJECTED" as AlertKind,
+    severity: "STANDING" as AlertSeverity,
+    title: "Closeout package on Riverside Tower was sent back",
+    detail: "The GC returned it and nothing has gone back to them since.",
+    href: "/closeout",
+    dueOn: "2026-08-03",
+    daysUntil: -31,
+    amount: 42000,
+  };
+
+  it("reaches the standing rung, not 'due', with a month-old response date", () => {
+    const [notice] = noticesDue([rejected], new Set());
+    expect(notice.rung).toBe(STANDING_RUNG);
+    expect(DATED_RUNGS).not.toContain(notice.rung);
+  });
+
+  it("spends the standing key rather than the @week and @due keys", () => {
+    // The other half of the bug: the wrong rung burned dispatch keys the
+    // alert should never have consumed, so a later genuine notice found
+    // them already spent.
+    const [notice] = noticesDue([rejected], new Set());
+    const keys = consumed(notice).map((c) => c.dispatchKey);
+    expect(keys).toEqual([dispatchKey(rejected.key, STANDING_RUNG)]);
+    expect(keys.some((k) => k.endsWith("@due") || k.endsWith("@week"))).toBe(false);
+  });
+});

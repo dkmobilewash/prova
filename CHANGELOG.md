@@ -91,6 +91,275 @@ against the broken code.
 
 ---
 
+## A sent email the app could not prove it sent, and one injury filed twice
+
+Two of the six findings in #111. Both are ordering bugs, and neither was
+visible in anything a caller could see.
+
+**The email.** `sendOutboundEmail` called the provider first and wrote the
+record of the handover afterwards, in a separate transaction. Everything
+between those two points was a window where the mail had gone to a real
+person and the database said otherwise -- no provider id, no events at
+all. `/messages` read "No word back yet" for it, and the owner-only delete
+guard read the same nothing and ALLOWED THE ROW TO BE DELETED. That guard
+exists to stop precisely this; its own comment says removing such a record
+would "destroy the evidence that they received it". It was not wrong. It
+was being handed a row that lied to it.
+
+The handover event is now written BEFORE the provider is called, the way
+`notification-dispatch.ts` already claims its dispatch rows, and it is
+given back only when the provider provably never took the message -- no
+network, or an outright refusal -- because in that case there is no copy
+anywhere and a permanent QUEUED event would make every failed send
+undeletable. The trade runs the other way now, on purpose: a crash between
+the claim and the send leaves a message reading "handed over, unconfirmed"
+that never went. That surfaces as stale after a day and a person checks
+it. An understated send is evidence that no longer exists.
+
+A database failure AFTER a successful send no longer throws, either. The
+email went; a thrown Server Action message is redacted in production, so
+the sender saw a generic failure for something that had succeeded, and the
+obvious next move is to send it again. It now says so in words.
+
+**The injury.** `createSafetyIncident` run twice filed two OSHA case
+numbers for one injury. Nothing refused it: the only relevant constraint
+is `(companyId, caseYear, caseNumber)`, and the counter hands the second
+run a fresh number, so the duplicate is unique by construction. One injury
+became two recordable cases in the count a GC reads at prequalification.
+
+Cleaning it up afterwards is worse than leaving it, which is why this had
+to be prevention. `SafetyCaseCounter` only ever increments, deliberately,
+so deleting the duplicate retires its number for good and leaves the filed
+log with a gap in the sequence and nothing on the document to explain it.
+A report matching an existing case on who, when and what happened is now
+refused inside the transaction and BEFORE the counter is touched -- a
+guard that ran after would still burn the number and produce that same
+unexplained gap. Classification, outcome and day counts are deliberately
+not part of that match: they are what the record says about the injury
+rather than which injury it is, and matching on them would let a
+resubmission that corrected one file a second case.
+
+What this does NOT close: two identical submissions arriving at the same
+instant can both read nothing and both insert. Only a unique index can
+refuse that, and that is a migration -- not written here.
+
+Both fixes are pinned by tests that were watched failing first, against a
+lazy in-memory Prisma fake (`lib/fake-prisma.ts`) whose `$transaction`
+actually rolls back. Without that rollback the second write of a
+transaction whose first write threw still landed, which turned the exact
+situation under test into a passing one.
+
+---
+
+## The alert engine was a day ahead of everyone west of UTC, and went blind the moment a GC bounced a closeout package
+
+Two of the six findings in issue #111.
+
+**"Today" was the server's, not the reader's.** `/alerts` and the top-bar
+bell both computed `new Date().toISOString().slice(0, 10)` and handed it to
+the engine as `todayIso`. At 18:00 in Los Angeles the UTC date is already
+tomorrow, so every evening a follow-up due tomorrow read "Due today", one
+due today flipped to OVERDUE, and the bell counted it. Two to eight hours a
+day, depending on the season, and worse the further west you are.
+
+The tension that kept this unfixed is written down in two comments in the
+code, and one half of it was wrong. Dates here are stored at UTC midnight,
+so UTC "today" looked like the consistent choice. But those stored values
+are **plain calendar days** — the UTC midnight is how a date with no time
+gets into Postgres, not a claim about a moment. "2026-09-04" on a follow-up
+means the fourth of September wherever you are standing, so the day to
+compare it against is the day on the reader's own wall calendar. UTC was
+never the value that compared correctly; `serverToday.ts` said it was, and
+that sentence has been left in place with the correction under it.
+
+The other half of the tension was real and is why `components/localToday.ts`
+could not simply be called: it asks the BROWSER, during render, and
+server-rendered markup built from it breaks hydration. So the zone reaches
+the server as data instead. `components/TimeZoneCookie.tsx` renders nothing
+and writes the browser's IANA zone to a cookie in an effect — no markup, so
+nothing to disagree about — and `lib/viewerToday.ts` reads it back. Cookie
+first, then Vercel's `x-vercel-ip-timezone` for the first render of a new
+browser, then UTC. **The floor is the old behaviour**, not a new way to
+fail: an unknown zone, a blocked cookie or a local dev server all land on
+UTC, which is exactly what the app did before.
+
+The refresh is the part worth checking. The render that mounts the
+component was built without the cookie, so the first visit from a new
+browser shows UTC dates; the component calls `router.refresh()` once to
+correct them. It cannot loop — a ref guards the effect, and it only
+refreshes after reading the cookie back, so a browser refusing cookies gets
+no refresh rather than an endless one.
+
+`/alerts`, the bell, `severityForKey` (which decides what severity a
+dismissal is recorded at, and therefore what it silences forever — see
+#110) and the email digest all moved. The 30- and 60-day renewal horizons
+on `/dashboard`, `/compliance`, `/settings` and `/contacts/[id]` did NOT:
+a day either way there is the noise `serverToday`'s own comment described,
+and moving them is a change worth making deliberately rather than by sweep.
+
+`snoozeAlert`'s "pick a date in the future" refusal also did not move. It
+has the same root cause and it is issue #111 item 4, which is a product
+question rather than a clear bug — the date input has no `min` and no
+default either, so the choice is between refusing later, warning earlier,
+and defaulting the field. Left as it was, with the situation written into
+the code beside it.
+
+**A closeout package the GC REJECTED raised nothing at all.**
+`alerts-query.ts` fed submissions through on `latest?.status ===
+"SUBMITTED"`, against a three-value enum. So the chase alert vanished at the
+exact moment it started mattering: the GC has bounced the package, the ball
+is back in our court, somebody has to assemble a second attempt, and the
+retainage has stopped moving. `/closeout` had it right the whole time —
+`needsAttention` lists a REJECTED job immediately — so the two screens
+disagreed about the same row.
+
+Not the one-line widening it looked like, because the existing wording is
+false about a rejection: "Sent 31 days ago and nothing recorded back" is
+not true of a package they answered. It is a second alert kind,
+`CLOSEOUT_REJECTED`, dated from the day they sent it back rather than the
+day we sent it, with no chase threshold — the 21 days is a courtesy to a GC
+who has not answered yet, and there is nothing to wait for once they have.
+STANDING like its sibling, because no deadline exists to be past: most
+subcontracts say nothing about how fast a bounced package must go back, and
+claiming OVERDUE would be asserting a date that is not in the contract.
+
+A REJECTED row with no response date is bad data rather than a state the app
+can reach (`recordCloseoutResponse` requires the date), so it is raised on
+the submission date and the wording stops claiming to know when. Silence
+would have been the worst of the three answers.
+
+The `alerts-query` database test asserted the old behaviour in its own name
+— "and stops once they answer" — and passed for as long as the bug existed.
+It now asserts the handover: the GC-side chase ends, ours begins.
+
+---
+
+### Where the lift actually is, and the same bug I'd just built a guard for (Cyrus)
+`cyrus/equipment-deployment`
+
+Neither crew nor equipment had a time dimension. `JobAssignment` is a bare
+join; `Equipment.assignedJobId` is one pointer to where a machine is right
+now. So "was that scaffold on Maple in March?" was unanswerable, and
+utilisation was unanswerable for the same reason — nothing recorded when
+anything went out or came back.
+
+`EquipmentAssignment` records the stay: which piece, which job, when it
+left, when it returned. Both dates **entered, not stamped** — recording on
+Friday that a lift went Tuesday has to say Tuesday, or every figure computed
+over the table is wrong by however long the paperwork sat.
+
+**A machine cannot be in two places at once**, and the check is on
+overlapping date RANGES rather than "is there an open one". A backdated
+entry collides with a stay that already closed just as easily, and only
+looking for an open assignment would let the record hold two places at once
+for a week in the past. It runs inside the same transaction as the insert:
+no unique constraint can express this (Postgres would want an exclusion
+constraint; Prisma can't declare one), so the transaction is all that stands
+between us and two dispatchers sending one lift to two jobs.
+
+**Touching at a boundary is deliberately allowed.** Back to the yard in the
+morning, out again after lunch is an ordinary day. A rule that cries wolf on
+the normal case is one people learn to click past.
+
+**Utilisation is honest about its denominator.** Nothing in the schema
+records when a contractor bought a mixer, so the window is clamped to when
+the record was created — "since we started tracking it" rather than a claim
+about the machine's life. It reads null rather than 0% when that window is
+empty, and counts distinct days so two contradictory records can't show a
+lift at 180%.
+
+`/deployment` answers the inverse of `/schedule`: not when jobs run, but
+where everybody is. Crew-first, flagging anyone split across more than one
+job, plus by-job with crew and equipment together, plus gear still recorded
+as out on a job that is not running.
+
+**`Equipment.assignedJobId` is now a stored copy of derived state, so
+nothing reads it.** It is NOT dropped — that is destructive against
+production and Diego's to run. The migration backfills every current
+assignment into an open stay so nothing is lost, with the inferred date
+written into the row's notes, because the old column only ever recorded
+where, never when. The form no longer offers it either: leaving a control
+that writes a column nothing reads would be the same defect as the
+QuickBooks chart-of-accounts mapping that was collected, stored, displayed
+and never read.
+
+**And then I shipped the exact bug I spent the morning building a guard
+for.** `updateEquipmentAssignment` was written, exported, and called from
+nowhere — no edit form. The reachability check caught it on this branch
+within a minute of being copied across, which is the argument for the check
+better than anything I could write. The edit form exists now; `findOverlap`
+already took an `ignoreId` for exactly that case.
+
+34 tests on the pure module, four mutation-checked: an overlap check that
+only looks at open stays fails two, treating touching boundaries as a clash
+fails one, summing stays instead of counting distinct days fails one, and
+ignoring when tracking began fails one.
+
+**Clicking found two more the tests could not.** A stay dated in the future
+— dispatching ahead, which is ordinary — rendered as "out since today",
+reporting a machine as deployed while it sat in the yard. And the heading
+over gear on inactive jobs said "finished job" when the job in front of me
+was an estimate that never started. Both fixed, the first with tests.
+
+Verified by doing it: the return guard refused a date before the stay began,
+a re-send overlapping a CLOSED stay was refused by name and date, a
+non-overlapping one went through, and the backfilled piece read its location
+from history rather than the column.
+
+**Two things above were false when I wrote them, and review caught both.**
+
+"Nothing reads `Equipment.assignedJobId`" was a claim about the whole app
+written from inside one file. Ask's `equipment_location` handler still
+selected the column and reported it as `assignedToJob`/`available`. Since
+nothing writes it any more, that answer was not merely stale — it was frozen
+at the migration and would never have moved again, while `/equipment` and
+`/deployment` showed the truth beside it. Nothing would have flagged the
+disagreement; Ask would simply have named the wrong site to whoever asked
+where the skid steer was. Ask now derives through `currentAssignment()`, the
+same function both pages use, and reports the day it went out as well.
+Three comments and the schema doc asserted the false version; all four now
+say what was actually wrong and point at the grep that settles it, because a
+comment claiming "nothing reads this" is exactly how the next person
+re-introduces the reader.
+
+`/deployment` was registered in `NAV_ITEMS` and put in no `NAV_GROUP`. Both
+the rail and the mobile drawer render `navGroupsFor()` — groups only — so
+the page shipped working, typechecked, and linked from nowhere but the
+address bar. Nothing failed; the absence looked exactly like a link nobody
+wanted. It sits in **Operations, immediately after Schedule**, because the
+grouping is by when in a job's life you reach for the thing rather than
+which table it reads — the "it reads EquipmentAssignment, file it under
+Logistics next to Equipment" argument is the one this rail deliberately does
+not follow, and the page's own first paragraph defines itself against the
+schedule.
+
+Both fixes are mutation-checked. Putting the old handler back fails all four
+`handlers.equipment` tests; the fake prisma in that file honours the
+`select`, so a handler that asks for the frozen column gets the frozen column
+and cannot pass. Removing the nav entry fails all four `navItems` tests.
+That nav test is deliberately scoped to `/deployment`: four other items
+(`/field-reports`, `/messages`, `/pipeline`, `/vendors/pricing`) are orphaned
+the same way and belong to other branches — a blanket assertion would go red
+for work this PR has no business touching. Worth someone picking up.
+
+`EquipmentDeploymentControls` also gained `router.refresh()` on all four
+save paths, joining the 18 components that already do it. Its `history` prop
+decides which button the row offers, so a stale prop does not just show an
+old list — it shows "Send out to a job" for a machine that is already out.
+A second click cannot corrupt anything (the overlap check inside
+`assignEquipment`'s transaction refuses a repeat send), but it tells a
+dispatcher their save failed when it worked, and `BackchargeForm` already
+records that `revalidatePath` alone left structurally identical forms stale
+in this app for reasons nobody has explained.
+
+`scripts/preflight.sh` died on its own third line inside a git worktree:
+`.git` is a FILE there, so `rm -f .git/index.lock` is ENOTDIR, `rm` exits 1
+and `set -e` kills the script before any check runs. It also ran before the
+`cd`, so it was clearing a lock relative to wherever you were standing.
+`git rev-parse --git-path index.lock` resolves both layouts.
+
+---
+
 ## The demo dataset caught up with nine models it had never heard of
 
 The seed was written against a schema that has since gained CRM contact

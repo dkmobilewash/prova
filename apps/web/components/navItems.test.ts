@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { NAV_GROUPS, NAV_ITEMS, navGroupsFor } from "./navItems";
+import { JOB_FUNCTIONS } from "@/lib/permissions";
 
 /**
  * NAV_ITEMS and NAV_GROUPS are two lists that have to agree, and only ONE
@@ -15,8 +16,17 @@ import { NAV_GROUPS, NAV_ITEMS, navGroupsFor } from "./navItems";
  * feature had been merged, deployed and confirmed READY; every check was
  * green; the nav simply never listed it.
  *
+ * `/deployment`, on this branch, was the FIFTH — registered in NAV_ITEMS,
+ * in no group, and reachable from nothing but the address bar. Two lanes
+ * hit the same defect independently and each wrote a test for it; both are
+ * kept here, because they answer different questions. The general one below
+ * catches the next orphan whoever adds it. The `/deployment` block after it
+ * pins the things a blanket assertion cannot see: WHICH group the page is
+ * in, that it sits where its own first paragraph says it belongs, and that
+ * no permission filter quietly removes it.
+ *
  * One fact in two places, which is the bug class this repo keeps finding.
- * The fix that lasts is not adding the four back — it is this test.
+ * The fix that lasts is not adding the orphans back — it is these tests.
  */
 
 /** /sales is deliberately outside NAV_GROUPS: it belongs to Prova's own
@@ -29,6 +39,9 @@ const APPENDED_SEPARATELY = new Set(["/sales"]);
 function groupedHrefs(groups: typeof NAV_GROUPS): Set<string> {
   return new Set(groups.flatMap((g) => g.items.map((i) => i.href)));
 }
+
+const hrefsIn = (groups: typeof NAV_GROUPS) =>
+  groups.flatMap((group) => group.items.map((item) => item.href));
 
 describe("every nav item is reachable", () => {
   it("puts every NAV_ITEM in a group, or names it as a deliberate exception", () => {
@@ -61,5 +74,32 @@ describe("every nav item is reachable", () => {
 
     const operator = navGroupsFor(owner, { showsSalesCrm: true });
     expect(groupedHrefs(operator).has("/sales")).toBe(true);
+  });
+});
+
+describe("the deployment link", () => {
+  it("is in exactly one group, so the rail actually renders it", () => {
+    const found = NAV_GROUPS.filter((group) =>
+      group.items.some((item) => item.href === "/deployment"),
+    );
+    expect(found.map((g) => g.heading)).toEqual(["Operations"]);
+  });
+
+  it("sits next to the schedule, which is the page it contrasts itself with", () => {
+    const operations = NAV_GROUPS.find((g) => g.heading === "Operations");
+    const hrefs = operations?.items.map((item) => item.href) ?? [];
+    expect(hrefs.indexOf("/deployment")).toBe(hrefs.indexOf("/schedule") + 1);
+  });
+
+  it("survives the permission filter for every job function", () => {
+    // /deployment needs no capability, so nobody signed in should lose it.
+    // If someone later guards the route, this fails and says so rather than
+    // the link quietly vanishing for half the company.
+    for (const jobFunction of [null, ...JOB_FUNCTIONS]) {
+      const visible = hrefsIn(navGroupsFor({ role: "MEMBER", jobFunction }));
+      expect(visible, `a ${jobFunction ?? "unset"} member cannot see /deployment`).toContain(
+        "/deployment",
+      );
+    }
   });
 });

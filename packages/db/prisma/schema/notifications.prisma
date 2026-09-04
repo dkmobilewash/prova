@@ -17,6 +17,17 @@
 // amount of reading the source rows produces it. That is this table, and
 // that is all of it.
 
+/// How bad the thing was AT THE MOMENT somebody said they had seen it.
+///
+/// The same three levels as AlertSeverity in apps/web/lib/alerts.ts, and
+/// they must stay the same three: this column exists only to be compared
+/// against that type's value for the same alert today.
+enum AlertSeverity {
+  OVERDUE
+  DUE_SOON
+  STANDING
+}
+
 /// One person saying "I have seen this one".
 ///
 /// Per USER rather than per company, deliberately. Dismissing an alert on
@@ -40,9 +51,37 @@ model AlertAcknowledgement {
   /// keeping a dismissal from silencing a DIFFERENT situation later, and
   /// it needs no expiry logic of its own. See alertKey() in
   /// apps/web/lib/alerts.ts, which is the only thing allowed to build one.
+  ///
+  /// WHAT THE KEY CANNOT DO, and why the column below exists. The key is
+  /// STABLE as a date approaches — a COI sixty days out and the same COI
+  /// after it lapses are byte-identical keys. So an acknowledgement matched
+  /// on the key ALONE silenced the alert through the day it went overdue,
+  /// forever, and (because the notifier reads the un-silenced set) took the
+  /// "week" and "due" emails with it. That is the same objection
+  /// NotificationDispatch.dispatchKey already answers with its rung, on the
+  /// other half of this story. Issue #110.
   alertKey String
 
   acknowledgedAt DateTime @default(now())
+
+  /// How bad it was WHEN they said they had seen it.
+  ///
+  /// The acknowledgement covers that situation and anything no worse than
+  /// it. A dismissal recorded while a licence was DUE_SOON stops applying
+  /// the day it goes OVERDUE, because that is a different sentence about
+  /// the same unchanged fact — which is exactly what the key cannot
+  /// express. Compared in partitionAlerts(), the only reader.
+  ///
+  /// The key's shape is deliberately NOT touched by this. Every
+  /// NotificationDispatch row stores a dispatchKey built from the alert
+  /// key, so changing that shape would orphan the lot and the next run
+  /// would re-send every notice already sent — the nag this whole feature
+  /// exists to prevent.
+  ///
+  /// NULL is a row written before this column existed, and it is READ AS
+  /// DUE_SOON, not as "matches anything". See ACK_SEVERITY_WHEN_UNRECORDED
+  /// in apps/web/lib/alerts.ts for the argument.
+  acknowledgedSeverity AlertSeverity?
 
   /// Null means dismissed — quiet until the underlying fact changes. A
   /// date means quiet until then, at UTC midnight like every other date

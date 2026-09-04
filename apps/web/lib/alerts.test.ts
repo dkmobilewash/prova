@@ -4,10 +4,12 @@ import {
   ALERT_HORIZON_DAYS,
   CLOSEOUT_CHASE_DAYS,
   alertKey,
+  apprenticeRatioAlerts,
   backchargeAlerts,
   certifiedPayrollAlerts,
   closeoutAlerts,
   contactFollowUpAlerts,
+  factDigest,
   partitionAlerts,
   rankAlerts,
   renewalAlert,
@@ -201,10 +203,18 @@ describe("retainageAlerts", () => {
 });
 
 describe("closeoutAlerts", () => {
-  const job = { jobId: "job_1", jobName: "Mercy Tower", submittedOn: "2026-08-01", retainageBalance: 13420 };
+  const job = {
+    jobId: "job_1",
+    jobName: "Mercy Tower",
+    submittedOn: "2026-08-01",
+    retainageBalance: 13420,
+    status: "SUBMITTED" as const,
+    respondedOn: null,
+  };
 
   it("chases a package the GC has sat on", () => {
     const [alert] = closeoutAlerts([job], TODAY);
+    expect(alert.kind).toBe("CLOSEOUT_WITH_GC");
     expect(alert.detail).toContain("31 days ago");
     expect(alert.severity).toBe("STANDING");
     expect(alert.amount).toBe(13420);
@@ -217,6 +227,60 @@ describe("closeoutAlerts", () => {
 
   it("carries no money figure when none is held", () => {
     expect(closeoutAlerts([{ ...job, retainageBalance: 0 }], TODAY)[0].amount).toBeNull();
+  });
+
+  /**
+   * Issue #111 item 3. A package the GC REJECTED raised nothing at all:
+   * alerts-query only fed through submissions whose status was SUBMITTED,
+   * against a three-value enum. The chase vanished at the exact moment the
+   * ball came back into our court and the retainage stopped moving.
+   */
+  describe("a package the GC sent back", () => {
+    const rejected = {
+      ...job,
+      status: "REJECTED" as const,
+      submittedOn: "2026-08-01",
+      respondedOn: "2026-08-29",
+    };
+
+    it("raises its own alert rather than nothing", () => {
+      const [alert] = closeoutAlerts([rejected], TODAY);
+      expect(alert.kind).toBe("CLOSEOUT_REJECTED");
+      expect(alert.amount).toBe(13420);
+      // Worded as what happened. "Sent 31 days ago and nothing recorded
+      // back" would be a lie about a package they answered.
+      expect(alert.detail).toContain("3 days ago");
+      expect(alert.title).toContain("Mercy Tower");
+    });
+
+    it("hangs on the day they sent it back, not the day we sent it", () => {
+      const [alert] = closeoutAlerts([rejected], TODAY);
+      expect(alert.dueOn).toBe("2026-08-29");
+      expect(alert.key).toBe(alertKey("CLOSEOUT_REJECTED", "job_1", "2026-08-29"));
+    });
+
+    it("does not wait out the 21-day chase threshold", () => {
+      // The threshold is a courtesy to a GC who has not answered yet. A
+      // rejection is answered, and ours to act on the same day — /closeout
+      // already lists a REJECTED job immediately (needsAttention).
+      const sameDay = closeoutAlerts([{ ...rejected, respondedOn: TODAY }], TODAY);
+      expect(sameDay).toHaveLength(1);
+      expect(sameDay[0].daysUntil).toBe(0);
+    });
+
+    it("is covered by the capability table like every other kind", () => {
+      expect(ALERT_CAPABILITY.CLOSEOUT_REJECTED).toBe("MANAGE_JOBS");
+    });
+
+    it("falls back to the submission date when nobody recorded the response date", () => {
+      // status REJECTED with no respondedOn is bad data rather than an
+      // impossible one — recordCloseoutResponse requires the date, but a
+      // row edited elsewhere could carry it. Silence would be the worst
+      // answer, so the alert is raised on what we do have and says so.
+      const [alert] = closeoutAlerts([{ ...rejected, respondedOn: null }], TODAY);
+      expect(alert.kind).toBe("CLOSEOUT_REJECTED");
+      expect(alert.dueOn).toBe("2026-08-01");
+    });
   });
 });
 
@@ -359,7 +423,7 @@ describe("partitionAlerts", () => {
     // one that got fixed.
     const { visible, silenced } = partitionAlerts(
       [one],
-      [{ alertKey: one.key, snoozedUntil: null }],
+      [{ alertKey: one.key, snoozedUntil: null, acknowledgedSeverity: "DUE_SOON" }],
       TODAY,
     );
     expect(visible).toEqual([]);
@@ -369,7 +433,7 @@ describe("partitionAlerts", () => {
   it("brings back a snooze whose date has passed", () => {
     const { visible } = partitionAlerts(
       [one],
-      [{ alertKey: one.key, snoozedUntil: "2026-08-20" }],
+      [{ alertKey: one.key, snoozedUntil: "2026-08-20", acknowledgedSeverity: "DUE_SOON" }],
       TODAY,
     );
     expect(visible.map((a) => a.key)).toEqual([one.key]);
@@ -378,7 +442,7 @@ describe("partitionAlerts", () => {
   it("keeps a snooze quiet until its date", () => {
     const { silenced } = partitionAlerts(
       [one],
-      [{ alertKey: one.key, snoozedUntil: "2026-09-15" }],
+      [{ alertKey: one.key, snoozedUntil: "2026-09-15", acknowledgedSeverity: "DUE_SOON" }],
       TODAY,
     );
     expect(silenced.map((a) => a.key)).toEqual([one.key]);
@@ -390,15 +454,129 @@ describe("partitionAlerts", () => {
     const renewed: Alert = { ...one, key: "RENEWAL:lic_1:2027-11-30" };
     const { visible } = partitionAlerts(
       [renewed],
-      [{ alertKey: one.key, snoozedUntil: null }],
+      [{ alertKey: one.key, snoozedUntil: null, acknowledgedSeverity: "DUE_SOON" }],
       TODAY,
     );
     expect(visible.map((a) => a.key)).toEqual([renewed.key]);
   });
+
+  // ---- issue #110: the severity half of the match ----
+  //
+  // The key alone cannot express these. `one` and `overdue` below are
+  // byte-identical keys: same licence, same expiry date, different day.
+
+  const overdue: Alert = { ...one, severity: "OVERDUE", detail: "expired", daysUntil: -3 };
+
+  it("does NOT stay silent once the same alert escalates past what was seen", () => {
+    // The whole of issue #110. Somebody said "seen it" at 90 days out;
+    // that is not a statement about the licence having lapsed.
+    const { visible, silenced } = partitionAlerts(
+      [overdue],
+      [{ alertKey: one.key, snoozedUntil: null, acknowledgedSeverity: "DUE_SOON" }],
+      TODAY,
+    );
+    expect(visible.map((a) => a.key)).toEqual([overdue.key]);
+    expect(silenced).toEqual([]);
+  });
+
+  it("stays silent when the alert gets BETTER than what was seen", () => {
+    // A corrected date, not a met one. They already saw the worse version.
+    const { visible, silenced } = partitionAlerts(
+      [one],
+      [{ alertKey: one.key, snoozedUntil: null, acknowledgedSeverity: "OVERDUE" }],
+      TODAY,
+    );
+    expect(silenced.map((a) => a.key)).toEqual([one.key]);
+    expect(visible).toEqual([]);
+  });
+
+  it("stays silent at exactly the severity that was seen", () => {
+    // Equal is not worse. Guards the boundary the comparison turns on.
+    const { silenced } = partitionAlerts(
+      [one],
+      [{ alertKey: one.key, snoozedUntil: null, acknowledgedSeverity: "DUE_SOON" }],
+      TODAY,
+    );
+    expect(silenced.map((a) => a.key)).toEqual([one.key]);
+  });
+
+  it("reads a row written before the column existed as DUE_SOON, not as a wildcard", () => {
+    // ACK_SEVERITY_WHEN_UNRECORDED. A legacy NULL silences what it was
+    // almost certainly made about...
+    const stillQuiet = partitionAlerts(
+      [one],
+      [{ alertKey: one.key, snoozedUntil: null, acknowledgedSeverity: null }],
+      TODAY,
+    );
+    expect(stillQuiet.silenced.map((a) => a.key)).toEqual([one.key]);
+
+    // ...and stops covering the same alert the day it lapses, which is the
+    // half that makes NULL a fix for those rows rather than an amnesty.
+    const backAgain = partitionAlerts(
+      [overdue],
+      [{ alertKey: one.key, snoozedUntil: null, acknowledgedSeverity: null }],
+      TODAY,
+    );
+    expect(backAgain.visible.map((a) => a.key)).toEqual([overdue.key]);
+  });
 });
 
 describe("summarizeAlerts", () => {
-  it("counts by severity and sums only what carries a figure", () => {
+  // These are the headline numbers on /alerts, and the old fixture held ONE
+  // alert of each of two severities — so inverting all three filters to
+  // `!==` counted the complement and got the same answers, and dueSoon was
+  // never asserted at all (issue #108). Deliberately asymmetric now: three
+  // OVERDUE, two DUE_SOON, two STANDING. No count equals the count of
+  // everything that is NOT it, so an inverted filter cannot come out right.
+  const at = (severity: Alert["severity"], n: number, amount: number | null): Alert => ({
+    key: `${severity}:${n}`,
+    kind: "WIP_VARIANCE",
+    severity,
+    title: `${severity} ${n}`,
+    detail: "fixture",
+    href: "/alerts",
+    dueOn: severity === "STANDING" ? null : "2026-09-05",
+    daysUntil: severity === "STANDING" ? null : 4,
+    amount,
+  });
+
+  const fixture: Alert[] = [
+    at("OVERDUE", 1, 4200),
+    at("OVERDUE", 2, null),
+    at("OVERDUE", 3, 1000),
+    at("DUE_SOON", 1, 800),
+    at("DUE_SOON", 2, null),
+    at("STANDING", 1, 18000),
+    at("STANDING", 2, null),
+  ];
+
+  it("counts EACH severity, and never the complement of one", () => {
+    const summary = summarizeAlerts(fixture);
+    expect(summary.overdue).toBe(3);
+    expect(summary.dueSoon).toBe(2);
+    expect(summary.standing).toBe(2);
+    expect(summary.total).toBe(7);
+    // The three severities account for every alert — a fourth value
+    // appearing would otherwise vanish out of the headline numbers.
+    expect(summary.overdue + summary.dueSoon + summary.standing).toBe(summary.total);
+  });
+
+  it("sums only what carries a figure, and treats a missing one as nothing", () => {
+    expect(summarizeAlerts(fixture).amountNamed).toBe(24000);
+  });
+
+  it("counts zero for a severity that is absent rather than borrowing another's", () => {
+    const summary = summarizeAlerts([at("DUE_SOON", 1, 500)]);
+    expect(summary.overdue).toBe(0);
+    expect(summary.dueSoon).toBe(1);
+    expect(summary.standing).toBe(0);
+    expect(summary.total).toBe(1);
+    expect(summary.amountNamed).toBe(500);
+  });
+
+  it("still agrees with the alerts the real producers build", () => {
+    // Kept from the original: the hand-built fixture above is only worth
+    // anything if the severities it uses are the ones real alerts carry.
     const summary = summarizeAlerts([
       ...backchargeAlerts(
         [
@@ -416,6 +594,7 @@ describe("summarizeAlerts", () => {
       ...wipAlerts([{ jobId: "job_1", jobName: "Mercy Tower", overrun: 18000 }]),
     ]);
     expect(summary.overdue).toBe(1);
+    expect(summary.dueSoon).toBe(0);
     expect(summary.standing).toBe(1);
     expect(summary.total).toBe(2);
     expect(summary.amountNamed).toBe(22200);
@@ -441,7 +620,29 @@ describe("visibleToPrincipal", () => {
     TODAY,
   );
   const closeout = closeoutAlerts(
-    [{ jobId: "job_1", jobName: "Mercy Tower", submittedOn: "2026-08-01", retainageBalance: 13420 }],
+    [
+      {
+        jobId: "job_1",
+        jobName: "Mercy Tower",
+        submittedOn: "2026-08-01",
+        retainageBalance: 13420,
+        status: "SUBMITTED",
+        respondedOn: null,
+      },
+    ],
+    TODAY,
+  );
+  const closeoutRejected = closeoutAlerts(
+    [
+      {
+        jobId: "job_2",
+        jobName: "Harbor Point",
+        submittedOn: "2026-08-01",
+        retainageBalance: 13420,
+        status: "REJECTED",
+        respondedOn: "2026-08-29",
+      },
+    ],
     TODAY,
   );
 
@@ -449,9 +650,17 @@ describe("visibleToPrincipal", () => {
     // A kind added without an entry here would fall through the filter as
     // undefined and be shown to everybody, which is the failure mode this
     // whole map exists to close.
-    for (const alert of [...backcharge, ...closeout]) {
+    for (const alert of [...backcharge, ...closeout, ...closeoutRejected]) {
       expect(ALERT_CAPABILITY[alert.kind]).toBeTruthy();
     }
+  });
+
+  it("keeps a rejected package's money away from a foreman too", () => {
+    // Same reasoning as the stuck package below: whose move it is now is
+    // operational, what it is holding up is not.
+    const [alert] = visibleToPrincipal(closeoutRejected, foreman);
+    expect(alert).toBeDefined();
+    expect(alert.amount).toBeNull();
   });
 
   it("passes everything through for someone unrestricted", () => {
@@ -478,5 +687,61 @@ describe("visibleToPrincipal", () => {
   it("keeps the figure for someone who may see billing", () => {
     const [alert] = visibleToPrincipal(closeout, (c) => c === "MANAGE_JOBS" || c === "MANAGE_BILLING");
     expect(alert.amount).toBe(13420);
+  });
+});
+
+describe("apprenticeRatioAlerts key length (issue #111)", () => {
+  // assertKeyShape() in lib/actions/alerts.ts is the gate every dismissal
+  // passes through. It is not exported, so its two rules are restated
+  // here rather than imported — a key is KIND:subject:fact, and no longer
+  // than 200 characters.
+  const MAX_KEY = 200;
+  const shapeOk = (key: string) => {
+    const parts = key.split(":");
+    return key.length <= MAX_KEY && parts.length === 3 && parts.every((p) => p.length > 0);
+  };
+
+  // A real cuid, because the length of the subject is part of the budget.
+  const jobId = "clx9k2m4p0001qw8h3n7v5t2r";
+  const source = (offendingDates: string[]) => ({
+    jobId,
+    jobName: "Riverside Medical",
+    unionLocalLabel: "Local 22",
+    offendingDates,
+    worstExcessHours: 6,
+  });
+  const days = (n: number) =>
+    Array.from({ length: n }, (_, i) => `2026-${String((i % 12) + 1).padStart(2, "0")}-${String((i % 28) + 1).padStart(2, "0")}`);
+
+  it("survives a job that is over ratio on many days", () => {
+    // The bug: the fact was the joined date list, which has no bound. At
+    // ~11 characters a day plus a 25-character cuid, the key crossed 200
+    // before the sixteenth day — so "Seen it" answered "That alert
+    // reference is not one of ours" on exactly the jobs that were
+    // persistently over ratio, and only on those.
+    const [alert] = apprenticeRatioAlerts([source(days(20))]);
+    expect(alert.key.length).toBeLessThanOrEqual(MAX_KEY);
+    expect(shapeOk(alert.key)).toBe(true);
+  });
+
+  it("still lapses a dismissal when another day breaches", () => {
+    // The property the fact carries, and the whole reason it is in the
+    // key. A digest that lost this would silence the alert forever.
+    const [before] = apprenticeRatioAlerts([source(days(20))]);
+    const [after] = apprenticeRatioAlerts([source(days(21))]);
+    expect(after.key).not.toEqual(before.key);
+  });
+
+  it("does not depend on the order the days arrive in", () => {
+    // Ordering is the caller's, not part of the fact.
+    const forwards = days(9);
+    const [a] = apprenticeRatioAlerts([source(forwards)]);
+    const [b] = apprenticeRatioAlerts([source([...forwards].reverse())]);
+    expect(a.key).toEqual(b.key);
+  });
+
+  it("separates the days, so a regrouping is a different fact", () => {
+    // Without a separator ["ab","c"] and ["a","bc"] digest identically.
+    expect(factDigest(["ab", "c"])).not.toEqual(factDigest(["a", "bc"]));
   });
 });
