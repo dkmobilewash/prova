@@ -93,6 +93,8 @@ const RETAINAGE_COLUMN_FILES: Record<string, string> = {
   "lib/retainage-single-source.test.ts": "This file — it names the column in order to look for it.",
   "lib/alerts-query.dbtest.ts": "Proves the alert reads the same sum.",
   "lib/closeout-query.dbtest.ts": "Proves the closeout row reads the same sum.",
+  "lib/actions/quickbooks-invoice-push.test.ts":
+    "Pins the invoice-push idempotency path, which asserts on the retainage snapshot it sends. Arrived with #160.",
 };
 
 /** Case-sensitive, and not matched inside a longer identifier: this is the
