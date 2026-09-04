@@ -10,8 +10,10 @@ import { isMissingDocumentError } from "@/lib/quickbooks-sync";
  * can produce a DUPLICATE document: with no link the next push builds a
  * CREATE rather than an update. So "was it deleted in QuickBooks" has to be
  * answered by QuickBooks, not by pattern-matching Intuit's prose — which is
- * localised, changes without notice, and on 2026-09-03 came back as
- * `Stale Object Error` for an invoice that had in fact been deleted.
+ * localised, changes without notice, and which THIS PROJECT HAS NEVER SEEN
+ * FOR A DELETED DOCUMENT. No invoice has yet been deleted in QuickBooks and
+ * re-sent, so the fault a deletion produces is unknown. A read-back is
+ * right under every answer, which is the point: it needs no such knowledge.
  *
  * It lives in its own file, rather than beside its callers in
  * lib/actions/quickbooks.ts, for one reason: that file is `"use server"`,
