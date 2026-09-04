@@ -533,7 +533,7 @@ describe("union setup CRUD, from an empty company", () => {
     const result = await deleteCraftClassification(journeyman.id);
     expect(result.ok).toBe(false);
     // The FK alone would throw a raw error production redacts to a digest.
-    expect(result.ok === false && result.error).toContain("1 record is tagged");
+    expect(result.ok === false && result.error).toContain("1 of your records is tagged");
     // "1 time entries" shipped. This is the message an inspector-facing
     // user reads carefully, so the plural is pinned rather than trusted.
     expect(result.ok === false && result.error).toContain("1 time entry");
@@ -598,5 +598,205 @@ describe("union setup CRUD, from an empty company", () => {
     const [after] = await loadUnionSetup(ctx.company.id);
     // Still there — payroll filed under it has to stay explainable.
     expect(after.effectiveTo).toBe("2026-12-31");
+  });
+});
+
+/**
+ * The cross-company disclosure on a shared classification.
+ *
+ * `CraftClassification` hangs off `UnionLocal`, which is global and
+ * deliberately so — two contractors signatory to the same hall mean the
+ * same local. What that makes easy to get wrong is counting: a relation
+ * count on a global row counts EVERY company's rows, and the setup page
+ * renders it as this company's "N records tagged".
+ *
+ * These build two contractors under one local, give only the second one
+ * work, and assert the first one can neither read nor be told the second
+ * one's numbers. Unfiltered counts pass every other test in this file.
+ */
+describe("two contractors under one local", () => {
+  const ctx2 = { company: { id: "" }, id: "", role: "OWNER" as string };
+  let stamp2 = 0;
+  let sharedLocalId = "";
+  let sharedCraftId = "";
+  let aCompanyId = "";
+  let bCompanyId = "";
+  let aUserId = "";
+  let bUserId = "";
+  let aJobId = "";
+  let bJobId = "";
+
+  // Deliberately uneven, and none of them 1 — a message that leaks B's
+  // figures leaks recognisable numbers rather than something that could
+  // be a coincidence.
+  const B_TIME_ENTRIES = 3;
+  const B_LINE_ITEMS = 2;
+  const B_CATALOG_ENTRIES = 4;
+  const B_DISPATCH_SLIPS = 2;
+  const B_TOTAL = B_TIME_ENTRIES + B_LINE_ITEMS + B_CATALOG_ENTRIES + B_DISPATCH_SLIPS; // 11
+
+  async function contractor(name: string) {
+    const company = await prisma.company.create({ data: { name: `${name} ${stamp2}` } });
+    const owner = await prisma.user.create({
+      data: {
+        companyId: company.id,
+        clerkId: `${name}_${stamp2}`,
+        email: `${name}_${stamp2}@example.test`,
+        role: "OWNER",
+      },
+    });
+    const contact = await prisma.contact.create({ data: { companyId: company.id, name: "GC" } });
+    const job = await prisma.job.create({
+      data: { companyId: company.id, contactId: contact.id, name: `${name} Job` },
+    });
+    await prisma.companyUnionAgreement.create({
+      data: {
+        companyId: company.id,
+        unionLocalId: sharedLocalId,
+        effectiveFrom: utc("2026-01-01"),
+      },
+    });
+    return { companyId: company.id, userId: owner.id, jobId: job.id };
+  }
+
+  beforeAll(async () => {
+    stamp2 = Date.now();
+    const local = await prisma.unionLocal.create({
+      data: {
+        parentInternational: `ZZ Shared ${stamp2}`,
+        localNumber: "300",
+        jurisdictionName: "Northern California",
+      },
+    });
+    sharedLocalId = local.id;
+    const craft = await prisma.craftClassification.create({
+      data: { unionLocalId: local.id, name: "Journeyman Taper" },
+    });
+    sharedCraftId = craft.id;
+
+    const a = await contractor("acme");
+    const b = await contractor("borden");
+    aCompanyId = a.companyId;
+    aUserId = a.userId;
+    aJobId = a.jobId;
+    bCompanyId = b.companyId;
+    bUserId = b.userId;
+    bJobId = b.jobId;
+
+    // Only B does any work. A's page must show nothing.
+    await prisma.timeEntry.createMany({
+      data: Array.from({ length: B_TIME_ENTRIES }, (_, i) => ({
+        jobId: bJobId,
+        employeeUserId: bUserId,
+        craftClassificationId: sharedCraftId,
+        date: utc("2026-08-17"),
+        hours: `${i + 1}`,
+      })),
+    });
+    await prisma.jobLineItem.createMany({
+      data: Array.from({ length: B_LINE_ITEMS }, (_, i) => ({
+        jobId: bJobId,
+        craftClassificationId: sharedCraftId,
+        description: `Borden line ${i}`,
+      })),
+    });
+    await prisma.lineItemCatalogEntry.createMany({
+      data: Array.from({ length: B_CATALOG_ENTRIES }, (_, i) => ({
+        companyId: bCompanyId,
+        craftClassificationId: sharedCraftId,
+        description: `Borden catalog ${i}`,
+      })),
+    });
+    await prisma.dispatchSlip.createMany({
+      data: Array.from({ length: B_DISPATCH_SLIPS }, () => ({
+        jobId: bJobId,
+        employeeUserId: bUserId,
+        craftClassificationId: sharedCraftId,
+        dispatchDate: utc("2026-08-17"),
+      })),
+    });
+
+    ctx2.company.id = aCompanyId;
+    ctx2.id = aUserId;
+  });
+
+  afterAll(async () => {
+    const companyIds = [aCompanyId, bCompanyId];
+    const jobIds = [aJobId, bJobId];
+    await prisma.timeEntry.deleteMany({ where: { jobId: { in: jobIds } } });
+    await prisma.jobLineItem.deleteMany({ where: { jobId: { in: jobIds } } });
+    await prisma.dispatchSlip.deleteMany({ where: { jobId: { in: jobIds } } });
+    await prisma.lineItemCatalogEntry.deleteMany({ where: { companyId: { in: companyIds } } });
+    await prisma.companyUnionAgreement.deleteMany({ where: { companyId: { in: companyIds } } });
+    await prisma.job.deleteMany({ where: { companyId: { in: companyIds } } });
+    await prisma.contact.deleteMany({ where: { companyId: { in: companyIds } } });
+    await prisma.user.deleteMany({ where: { companyId: { in: companyIds } } });
+    await prisma.company.deleteMany({ where: { id: { in: companyIds } } });
+    await prisma.craftClassification.deleteMany({ where: { id: sharedCraftId } });
+    await prisma.unionLocal.deleteMany({ where: { id: sharedLocalId } });
+  });
+
+  it("counts only the viewing company's records, not every contractor's under the local", async () => {
+    const [bView] = await loadUnionSetup(bCompanyId);
+    const bCraft = bView.crafts.find((c) => c.id === sharedCraftId)!;
+    expect(bCraft.usageCount).toBe(B_TOTAL);
+
+    // The one that matters. An unfiltered _count reads 11 here — Borden's
+    // headcount and catalog size, on Acme's page, reached by typing a
+    // public local number.
+    const [aView] = await loadUnionSetup(aCompanyId);
+    const aCraft = aView.crafts.find((c) => c.id === sharedCraftId)!;
+    expect(aCraft.usageCount).toBe(0);
+  });
+
+  it("still refuses Acme's delete, and does so without naming Borden's numbers", async () => {
+    context.company.id = aCompanyId;
+    context.id = aUserId;
+    context.role = "OWNER";
+
+    const result = await deleteCraftClassification(sharedCraftId);
+
+    // The guard stays GLOBAL on purpose: letting Acme delete a craft that
+    // Borden has costed work tagged with would be a cross-company
+    // destructive action, which is worse than the read leak.
+    expect(result.ok).toBe(false);
+    expect(await prisma.craftClassification.count({ where: { id: sharedCraftId } })).toBe(1);
+
+    const error = result.ok === false ? result.error : "";
+    expect(error).toContain("another contractor");
+    // No count of any kind. The old message read "11 records are tagged
+    // (3 time entries, 2 line items, 4 catalog entries, 2 dispatch slips)".
+    expect(error).not.toMatch(/\d/);
+    expect(error).not.toContain("Borden");
+  });
+
+  it("quotes Acme's own numbers once Acme has work tagged", async () => {
+    await prisma.timeEntry.create({
+      data: {
+        jobId: aJobId,
+        employeeUserId: aUserId,
+        craftClassificationId: sharedCraftId,
+        date: utc("2026-08-18"),
+        hours: "8",
+      },
+    });
+
+    const [aView] = await loadUnionSetup(aCompanyId);
+    expect(aView.crafts.find((c) => c.id === sharedCraftId)!.usageCount).toBe(1);
+
+    context.company.id = aCompanyId;
+    context.id = aUserId;
+    context.role = "OWNER";
+    const result = await deleteCraftClassification(sharedCraftId);
+
+    expect(result.ok).toBe(false);
+    const error = result.ok === false ? result.error : "";
+    expect(error).toContain("1 of your records is tagged");
+    expect(error).toContain("1 time entry");
+    // Acme's own zeroes, not Borden's totals. 4 catalog entries and 2
+    // dispatch slips exist under this craft; neither belongs to Acme.
+    expect(error).toContain("0 catalog entries");
+    expect(error).toContain("0 dispatch slips");
+    expect(error).not.toContain(`${B_TOTAL}`);
   });
 });
