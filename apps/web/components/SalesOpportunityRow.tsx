@@ -3,10 +3,10 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { deleteSalesOpportunity, updateSalesOpportunity } from "@/lib/actions";
-import { OPPORTUNITY_STAGE_OPTIONS, SalesOpportunityFields } from "@/components/SalesOpportunityFields";
+import { SalesOpportunityFields } from "@/components/SalesOpportunityFields";
 import { localToday } from "@/components/localToday";
 import { money } from "@/lib/money";
-import { stageTiming, type StageSpell } from "@/lib/sales-stage-history";
+import { OPPORTUNITY_STAGE_OPTIONS, stageTiming, type StageSpell } from "@/lib/sales-stage-history";
 
 export type SalesOpportunityRowData = {
   id: string;

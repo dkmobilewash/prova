@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
+import { viewerToday } from "@/lib/viewerToday";
 import { prisma } from "@prova/db";
 import {
   OPPORTUNITY_STAGES,
@@ -380,6 +381,26 @@ async function readOpportunityField(
 }
 
 /**
+ * An activity dated in the future has not happened.
+ *
+ * The log records what took place; something upcoming belongs in the
+ * follow-up field, which the form says as much. Refused because of what a
+ * future row DOES to the rest of the feature: supersession reads the
+ * lead's latest activity, so a note dated tomorrow silently cleared a real
+ * outstanding follow-up and marked it "since superseded" — found in the
+ * browser on 2026-09-04. lib/sales-activity.ts's occurredBy() makes the
+ * rows already in the database read correctly; this stops new ones.
+ */
+function assertNotInTheFuture(occurredOn: Date, todayIso: string) {
+  const today = new Date(`${todayIso}T00:00:00.000Z`);
+  if (occurredOn > today) {
+    throw new InputError(
+      "That date is in the future. Log what happened; use the follow-up date for what is still to come.",
+    );
+  }
+}
+
+/**
  * A follow-up before the thing it follows up on is not a date somebody
  * meant to type. Refused rather than stored, because /sales reads the
  * latest activity's followUpOn as what the lead owes, and a backwards one
@@ -402,6 +423,7 @@ export async function createSalesActivity(leadId: string, formData: FormData): P
     const occurredOn = requiredDate(formData, "occurredOn", "The date it happened");
     const summary = required(formData, "summary", "A summary");
     const followUpOn = optionalDate(formData, "followUpOn");
+    assertNotInTheFuture(occurredOn, await viewerToday());
     assertFollowUpNotBackwards(occurredOn, followUpOn);
     const opportunityId = await readOpportunityField(formData, leadId, company.id);
 
@@ -442,6 +464,7 @@ export async function updateSalesActivity(
     const occurredOn = requiredDate(formData, "occurredOn", "The date it happened");
     const summary = required(formData, "summary", "A summary");
     const followUpOn = optionalDate(formData, "followUpOn");
+    assertNotInTheFuture(occurredOn, await viewerToday());
     assertFollowUpNotBackwards(occurredOn, followUpOn);
     const opportunityId = await readOpportunityField(formData, activity.leadId, context.company.id);
 

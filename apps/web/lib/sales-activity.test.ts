@@ -6,6 +6,7 @@ import {
   followUpStanding,
   lastContactOn,
   latestActivity,
+  occurredBy,
   openFollowUp,
   summarizeLeadActivity,
   type LoggedActivity,
@@ -15,6 +16,8 @@ import {
 /** createdAt only ever matters for same-day ties, so it defaults to a
  * stamp derived from the day and is overridden only where a test is
  * actually about the tie. */
+const TODAY = "2026-09-04";
+
 function activity(
   id: string,
   type: SalesActivityType,
@@ -27,7 +30,7 @@ function activity(
 
 describe("lastContactOn", () => {
   it("is null when nothing is logged — not a date, and not zero", () => {
-    expect(lastContactOn([])).toBeNull();
+    expect(lastContactOn([], TODAY)).toBeNull();
   });
 
   it("ignores a NOTE, even when the note is the most recent thing on file", () => {
@@ -38,16 +41,16 @@ describe("lastContactOn", () => {
       activity("a", "CALL", "2026-01-10"),
       activity("b", "NOTE", "2026-03-01"),
     ];
-    expect(lastContactOn(activities)).toBe("2026-01-10");
+    expect(lastContactOn(activities, TODAY)).toBe("2026-01-10");
   });
 
   it("is null when every activity is a NOTE", () => {
-    expect(lastContactOn([activity("a", "NOTE", "2026-03-01")])).toBeNull();
+    expect(lastContactOn([activity("a", "NOTE", "2026-03-01")], TODAY)).toBeNull();
   });
 
   it("counts a call, an email, a demo and a meeting alike", () => {
     for (const type of ["CALL", "EMAIL", "DEMO", "MEETING"] as const) {
-      expect(lastContactOn([activity("a", type, "2026-02-02")])).toBe("2026-02-02");
+      expect(lastContactOn([activity("a", type, "2026-02-02")], TODAY)).toBe("2026-02-02");
     }
   });
 });
@@ -79,7 +82,7 @@ describe("latestActivity", () => {
 
 describe("openFollowUp", () => {
   it("is null when nothing is logged", () => {
-    expect(openFollowUp([])).toBeNull();
+    expect(openFollowUp([], TODAY)).toBeNull();
   });
 
   it("reads the follow-up off the latest activity", () => {
@@ -87,7 +90,7 @@ describe("openFollowUp", () => {
       activity("old", "CALL", "2026-01-10"),
       activity("new", "CALL", "2026-02-10", "2026-02-17"),
     ];
-    expect(openFollowUp(activities)).toEqual({ activityId: "new", dueOn: "2026-02-17" });
+    expect(openFollowUp(activities, TODAY)).toEqual({ activityId: "new", dueOn: "2026-02-17" });
   });
 
   it("is null once a newer activity carries no follow-up — the old one is history", () => {
@@ -99,13 +102,13 @@ describe("openFollowUp", () => {
       activity("old", "CALL", "2026-01-10", "2026-01-17"),
       activity("new", "CALL", "2026-02-10", null),
     ];
-    expect(openFollowUp(activities)).toBeNull();
+    expect(openFollowUp(activities, TODAY)).toBeNull();
   });
 
   it("is null when the superseding activity was logged later the same day", () => {
     const promised = activity("promised", "CALL", "2026-04-01", "2026-04-08", "2026-04-01T09:00:00.000Z");
     const settled = activity("settled", "EMAIL", "2026-04-01", null, "2026-04-01T17:30:00.000Z");
-    expect(openFollowUp([promised, settled])).toBeNull();
+    expect(openFollowUp([promised, settled], TODAY)).toBeNull();
   });
 
   it("takes a NOTE as the latest activity — a note can carry a follow-up", () => {
@@ -113,7 +116,43 @@ describe("openFollowUp", () => {
       activity("call", "CALL", "2026-02-10", "2026-02-17"),
       activity("note", "NOTE", "2026-02-12", "2026-03-01"),
     ];
-    expect(openFollowUp(activities)?.dueOn).toBe("2026-03-01");
+    expect(openFollowUp(activities, TODAY)?.dueOn).toBe("2026-03-01");
+  });
+});
+
+describe("an activity dated in the future", () => {
+  // Found in the browser on 2026-09-04, not by this suite: a note dated
+  // tomorrow silently emptied the follow-up queue and marked a real
+  // outstanding email "since superseded" for a conversation that had not
+  // happened. Supersession was never meant to reach forwards.
+  const email = activity("email", "EMAIL", "2026-09-01", "2026-09-10");
+  const futureNote = activity("note", "NOTE", "2026-09-05");
+
+  it("does not supersede the follow-up a real activity is carrying", () => {
+    expect(openFollowUp([email, futureNote], TODAY)).toEqual({
+      activityId: "email",
+      dueOn: "2026-09-10",
+    });
+  });
+
+  it("does not count as contact, even when it is a call", () => {
+    const futureCall = activity("call", "CALL", "2026-09-05");
+    const realCall = activity("real", "CALL", "2026-08-30");
+    expect(lastContactOn([realCall, futureCall], TODAY)).toBe("2026-08-30");
+  });
+
+  it("counts once the day arrives", () => {
+    // The same two rows, read on the day the note is dated.
+    expect(openFollowUp([email, futureNote], "2026-09-05")).toBeNull();
+  });
+
+  it("treats an activity dated TODAY as having happened", () => {
+    const todayNote = activity("today", "NOTE", TODAY);
+    expect(openFollowUp([email, todayNote], TODAY)).toBeNull();
+  });
+
+  it("is excluded by occurredBy, which is what the pages filter with", () => {
+    expect(occurredBy([email, futureNote], TODAY).map((a) => a.id)).toEqual(["email"]);
   });
 });
 
