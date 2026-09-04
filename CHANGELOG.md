@@ -406,6 +406,56 @@ excluded rather than sorted as if they were fresh — treating that null as
 
 ---
 
+### A cleanup that can only take the jobs you name (Diego)
+`claude/prova-vercel-direct-url-hg1acx`
+
+Test jobs have been sitting in production for days because there was no
+safe way to remove them, and the obvious tool would have been a disaster.
+
+**`clean-scratch-data.mjs` is not that tool, on production.** It deletes
+every job whose name lacks a `[demo]` tag and every safety incident in the
+company, unconditionally. That is correct on `ep-icy-hat` or the demo
+project — where untagged rows ARE the scratch — and on `ep-little-sea` the
+untagged jobs are the real ones. Its host guard catches the wrong
+database, not the wrong database FOR IT. Nobody had run it there; this is
+recorded so nobody does.
+
+**`clean-test-jobs.mjs` takes exact names.** `--delete` additionally needs
+`CLEAN_EXPECT_HOST` to match the host. Names are matched with `in`, never
+`contains` — a substring match on "test" eats a real job called "Westfield
+Retest", which is the fixture the test suite uses for exactly that reason.
+
+**It deletes the two tables nothing else can reach.**
+`QuickBooksEntityLink` and `QuickBooksSyncAttempt` are keyed by
+`(entityType, entityId)` and carry no `jobId`, so removing a job's invoices
+any other way leaves links pointing at ids that are gone. There is no
+`deleteInvoice` or `deleteJob` in the app and there should not be —
+invoices are evidence records — so nothing in the product can tidy this.
+
+**It refuses rather than improvising.** 33 models carry a `jobId` today and
+the count only grows; a hand-written delete list silently stops being
+complete the moment somebody adds the 34th. So the script counts EVERY
+job-scoped model at runtime from the Prisma DMMF, and refuses — naming the
+table — if rows exist anywhere it does not handle. Falling behind produces
+a refusal, not a half-finished delete. Safety incidents, contract
+documents, signature requests and sent messages are permanently on that
+list: evidence closes, it does not delete.
+
+**Not a relation-graph cascade, deliberately.** Walking relations out of
+`Job` reaches 46 models, and reachable is not owned: it gets to `Equipment`
+through `EquipmentAssignment`, plus `CompanyUnionAgreement` and
+`ComplianceDocument`. A cascade would delete the company's equipment
+because a scratch job once had it on site. `Job` and `ChangeOrder` also
+reference each other, so there is no clean order to walk anyway.
+
+**Exercised against a real database, not just unit-tested.** Postgres 16,
+this repo's own migrations, two jobs seeded with identical shapes. The
+delete took `ZZQB-TEST` and left `Westfield Retest` holding its invoice,
+payment and both QuickBooks rows, with the contact and company untouched.
+Both refusals were confirmed to exit 1 changing nothing, and the DMMF guard
+was confirmed by attaching a safety incident and watching it stop.
+
+
 ### The evidence for the last entry did not exist (Diego)
 `claude/prova-vercel-direct-url-hg1acx`
 
