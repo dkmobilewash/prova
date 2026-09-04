@@ -25,8 +25,16 @@ export interface CompanyFinancialsInput {
   cashCollected: number;
   /** SUM(Invoice.amount) across every invoice raised. */
   totalBilled: number;
-  /** Outstanding retainage across jobs, from calculateRetainageSummary. */
-  retainageBalances: number[];
+  /** The company-wide figure, from lib/retainage-query.ts.
+   *
+   * A scalar, not an array of per-job balances. That shape is deliberate:
+   * `number[]` invites a caller to build it from whatever job list is
+   * already in hand, which is exactly how issue #97 happened — the metric
+   * bar reused a CONTRACTED/IN_PROGRESS list and lost every completed
+   * job's retainage. A single number named after the figure has to come
+   * from somewhere that has already decided the population, and that
+   * decision lives in one file. */
+  retainageHeld: number;
 }
 
 export interface CompanyFinancials {
@@ -62,7 +70,7 @@ export function calculateCompanyFinancials(input: CompanyFinancialsInput): Compa
     grossMarginRate: earnedRevenue > 0 ? grossProfit / earnedRevenue : null,
     cashPosition: input.cashCollected,
     outstandingReceivable: input.totalBilled - input.cashCollected,
-    retainageHeld: input.retainageBalances.reduce((sum, balance) => sum + balance, 0),
+    retainageHeld: input.retainageHeld,
   };
 }
 

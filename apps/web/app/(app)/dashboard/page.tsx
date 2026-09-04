@@ -217,7 +217,7 @@ export default async function TodayPage({
                   <StatCard
                     accent="teal"
                     label="Retainage held"
-                    value={money(today.retainageHeldPastCompletion)}
+                    value={money(today.retainageHeld)}
                     detail="Withheld and not yet released"
                   />
                 )}

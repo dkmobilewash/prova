@@ -12,6 +12,77 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### "Retainage held" was two different numbers on one screen — #97, which is #46 again (Cyrus)
+`fix/retainage-single-source`
+
+**The metric bar excluded COMPLETE jobs. It no longer does. Expect the
+figure to RISE for every existing company, by whatever retainage is being
+chased on finished work.** That is the correction, not a regression, but
+anyone who has been reading the bar will see it jump. On the seeded demo
+data it goes from $2,500.00 to $15,920.00.
+
+On `/dashboard` the "Retainage held" stat card and the "Retainage held"
+metric bar pinned along the bottom of the same viewport showed different
+numbers, eighteen inches apart. `loadCompanyFinancials` filtered its job
+list to `CONTRACTED`/`IN_PROGRESS` — correct for backlog and margin,
+because that is what the business is carrying — and retainage was drawn
+off that same list. Retainage comes back at CLOSEOUT, when the job is
+COMPLETE: the exact status that filter drops. `/cash-flow` and `/alerts`
+were already right, so the bar contradicted them too.
+
+**Why it came back matters more than the fix.** #46 was this same bug,
+fixed once. That fix extracted the SUMMING rule into a pure, well-tested
+helper and left the POPULATION rule — which jobs the sum runs over —
+copied into each call site as prose. Eight green unit tests covered
+`withheld − released`, which had never broken. Nothing covered "over which
+rows", which had now broken twice. The copy in `company-financials-query.ts`
+was written the day before the #46 fix and outlived it by three days.
+
+So the ownership is inverted. `lib/retainage-query.ts` owns the query, not
+the arithmetic: `loadRetainageHeld(companyId)` is THE company-wide figure
+and both callers ask it. `totalRetainageHeld` is gone — it existed only to
+host a filter that is now deleted, and keeping a pure helper with one
+caller is what created the split in the first place.
+
+**Two aggregates, not a row scan.** `SUM(Invoice.retainageWithheld) −
+SUM(RetainageRelease.amount)`, matching the `payment.aggregate` idiom two
+lines above it. This runs from the app LAYOUT, so it is a cost on every
+authenticated navigation and it runs twice on `/dashboard` (bar and card,
+and nothing in this codebase dedupes server reads within one render). Two
+indexed sums can afford that; a whole-company `findMany` over jobs with
+invoices and releases attached could not. The forms are arithmetically
+identical only because no per-job balance is clamped at zero — a sum of
+differences is the difference of sums — and the dbtest pins that property
+so anyone adding a floor has to break it.
+
+**`retainageHeldPastCompletion` is now `retainageHeld`.** The old name
+asserted a substantial-completion filter that `c057b03` had already
+removed, on a field the dashboard card renders.
+
+**The over-correction was the real risk and is guarded.** "No filter" is
+the rule for retainage ONLY. Applied to the whole function it would turn
+backlog into "every job we ever had" and inflate the first number on the
+same bar, so a dbtest pins `estimatedRevenue` to live jobs.
+
+**What makes a third reintroduction visible.** The durable guard is
+`expect(bar.retainageHeld).toBe(card.retainageHeld)` in
+`retainage-query.dbtest.ts` — it does not care which side drifts. A static
+guard covers the case a behavioural test cannot reach, a SEVENTH copy of
+the query in a file that does not exist yet: every file naming
+`Invoice.retainageWithheld` is enumerated with a reason, and an unlisted
+one fails the build. An earlier draft of that guard grepped for the string
+`CONTRACTED`; it was replaced because `status: { not: "ESTIMATE" }` and
+`status: { notIn: [...] }` both reintroduce #97 while reading clean. The
+population is asserted as a VALUE instead — `toEqual` on the whole where
+clause, which no spelling escapes.
+
+**Left alone on purpose:** `/cash-flow`, `lib/alerts-query.ts` and
+`lib/closeout-query.ts` still build their own reads. They need job names
+and ids, not a scalar, and they are correct today. They are on the
+enumerated list with that reason written down.
+
+---
+
 ### Two cross-tenant holes closed: QuickBooks OAuth binding, and the invite path's missing verification gate (Cyrus)
 `cyrus/oauth-binding-and-invite-verification`
 
