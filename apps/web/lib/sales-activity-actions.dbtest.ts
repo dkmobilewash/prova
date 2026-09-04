@@ -256,19 +256,67 @@ describe("the sales CRM's actions against real rows", () => {
 
     it("refuses a follow-up dated before the activity it follows up on", async () => {
       const lead = await makeLead("Backwards Dates");
+      // Both dates in the past: this test is about the ORDER of the two,
+      // and a future occurredOn would be refused by a different guard.
       const result = await createSalesActivity(
         lead.id,
         form({
           type: "CALL",
-          occurredOn: "2026-09-10",
+          occurredOn: "2026-08-10",
           summary: "called",
-          followUpOn: "2026-09-01",
+          followUpOn: "2026-08-01",
         }),
       );
       expect(result).toEqual({
         ok: false,
         error: "The follow-up date is before the activity it follows up on",
       });
+    });
+
+    it("refuses an activity dated in the future, and stores nothing", async () => {
+      // Computed from the clock, not hardcoded: a fixed date stops being
+      // in the future the moment it arrives.
+      const inFiveDays = new Date(Date.now() + 5 * 86_400_000).toISOString().slice(0, 10);
+      const lead = await makeLead("Future Dated");
+
+      const result = await createSalesActivity(
+        lead.id,
+        form({ type: "NOTE", occurredOn: inFiveDays, summary: "next week's thought" }),
+      );
+      expect(result.ok).toBe(false);
+      if (result.ok) throw new Error("unreachable");
+      expect(result.error).toContain("in the future");
+      expect(await prisma.salesActivity.count({ where: { leadId: lead.id } })).toBe(0);
+    });
+
+    it("refuses an EDIT that moves an activity into the future", async () => {
+      const inFiveDays = new Date(Date.now() + 5 * 86_400_000).toISOString().slice(0, 10);
+      const lead = await makeLead("Edited Into The Future");
+      await createSalesActivity(
+        lead.id,
+        form({ type: "CALL", occurredOn: "2026-08-10", summary: "called" }),
+      );
+      const activity = await prisma.salesActivity.findFirstOrThrow({ where: { leadId: lead.id } });
+
+      const result = await updateSalesActivity(
+        activity.id,
+        form({ type: "CALL", occurredOn: inFiveDays, summary: "called" }),
+      );
+      expect(result.ok).toBe(false);
+
+      const unchanged = await prisma.salesActivity.findFirstOrThrow({ where: { id: activity.id } });
+      expect(unchanged.occurredOn.toISOString().slice(0, 10)).toBe("2026-08-10");
+    });
+
+    it("accepts an activity dated today", async () => {
+      const today = new Date().toISOString().slice(0, 10);
+      const lead = await makeLead("Dated Today");
+      expect(
+        await createSalesActivity(
+          lead.id,
+          form({ type: "CALL", occurredOn: today, summary: "spoke this morning" }),
+        ),
+      ).toEqual({ ok: true });
     });
 
     it("stores the date entered, at UTC midnight, and records who logged it", async () => {

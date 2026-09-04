@@ -160,6 +160,33 @@ export const OPPORTUNITY_STAGE_LABELS: Record<OpportunityStage, string> = {
   LOST: "Lost",
 };
 
+/** Pipeline order, declared rather than relying on object key order. */
+export const OPPORTUNITY_STAGE_ORDER: readonly OpportunityStage[] = [
+  "NEW",
+  "CONTACTED",
+  "DEMO_SCHEDULED",
+  "TRIAL",
+  "WON",
+  "LOST",
+];
+
+/**
+ * The <select> options, DERIVED from the labels above rather than typed out
+ * a second time.
+ *
+ * This lives here, in a plain module, and not in SalesOpportunityFields.tsx
+ * where it used to. That file is "use client", and a non-component export
+ * from a client module does not survive the RSC boundary: a server
+ * component importing it receives a client-reference proxy, so `.find` is
+ * not a function. /sales/[id] did exactly that and 500'd on any lead with
+ * an opportunity -- the failure looked data-dependent only because the call
+ * sat inside opportunities.map(), so a lead with none rendered fine.
+ * lib/client-boundary.test.ts now fails if anything crosses that boundary
+ * again.
+ */
+export const OPPORTUNITY_STAGE_OPTIONS: readonly { value: OpportunityStage; label: string }[] =
+  OPPORTUNITY_STAGE_ORDER.map((value) => ({ value, label: OPPORTUNITY_STAGE_LABELS[value] }));
+
 /**
  * How a spell reads on the page. Separate from the numbers so the wording
  * is decided once rather than in three components.
