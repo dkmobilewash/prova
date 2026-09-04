@@ -3,7 +3,15 @@
 import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
 import { Prisma, prisma } from "@prova/db";
-import { assertOwner } from "./shared";
+import {
+  actionFail,
+  actionOk,
+  assertOwner,
+  type ActionResult,
+} from "./shared";
+// The one definition of what OSHA counts as recordable, shared with the log
+// and the form so a guard here can never disagree with what the row shows.
+import { isRecordable } from "@/components/safetyLabels";
 
 const OUTCOMES = [
   "DEATH",
@@ -235,16 +243,49 @@ export async function updateSafetyIncident(incidentId: string, formData: FormDat
   revalidatePath("/safety");
 }
 
-export async function deleteSafetyIncident(incidentId: string) {
+/**
+ * Removes a safety case — and refuses once it is RECORDABLE.
+ *
+ * This was the only evidence delete in the app with no lifecycle guard.
+ * `deleteRfi` refuses anything but a draft, `deleteSubmittal` refuses once
+ * a revision exists, `deleteBackcharge` refuses once it has moved past
+ * RECEIVED; this deleted an OSHA 300 case on an owner check alone. The
+ * schema gives it no accidental protection either — `SafetyIncident` has no
+ * child rows, so there is no foreign key to trip.
+ *
+ * Recordability is the right line, and it is DERIVED from the outcome by
+ * the same `isRecordable` the log and the form use, so this can never
+ * disagree with what the row displays. A first-aid case logged by mistake
+ * is an ordinary correction. A recordable one is a row on a filed log, and
+ * `SafetyCaseCounter` never reissues its number — so deleting one leaves a
+ * gap in the case-number sequence, which is its own audit finding, and
+ * unexplainable afterwards because the row that explained it is gone.
+ *
+ * RETURNS rather than throws, because production redacts a thrown Server
+ * Action message to a digest — and a guard whose reason cannot be read is a
+ * guard that only looks like it is protecting something.
+ */
+export async function deleteSafetyIncident(
+  incidentId: string,
+): Promise<ActionResult> {
   const context = await requireCompanyContext();
   assertOwner(context, "Only the account owner can remove a safety case");
   const { company } = context;
 
   const incident = await prisma.safetyIncident.findUnique({ where: { id: incidentId } });
-  if (!incident || incident.companyId !== company.id) throw new Error("Incident not found");
+  if (!incident || incident.companyId !== company.id)
+    return actionFail("That safety case no longer exists.");
+
+  if (isRecordable(incident.outcome)) {
+    return actionFail(
+      "A recordable case stays on the log. Correct its details instead — " +
+        "deleting it would leave an unexplained gap in the case numbers.",
+    );
+  }
 
   await prisma.safetyIncident.delete({ where: { id: incidentId } });
   revalidatePath("/safety");
+  return actionOk;
 }
 
 export async function createToolboxTalk(formData: FormData) {
