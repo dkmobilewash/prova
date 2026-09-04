@@ -159,13 +159,19 @@ export function assemblePayApplication(input: PayAppAssemblyInput): PayAppAssemb
     // Drop untouched, zero-value rows for lines that were never billed and
     // aren't in this period's application -- an all-zero row for every SOV
     // line on every application would bury the ones that actually moved.
+    //
+    // `!== 0`, not `> 0`: a negative materialsStoredValue is the documented
+    // way to move value out of stored once material is installed, so a row
+    // whose only remaining content is that negative residual is real. Under
+    // `> 0` such a row vanished from the sheet AND, because the summary
+    // sums these same rows, from every total on the certificate above it.
     .filter(
       (row) =>
-        row.scheduledValue > 0 ||
-        row.previousBilled > 0 ||
-        row.thisPeriodBilled > 0 ||
-        row.previousMaterialsStored > 0 ||
-        row.materialsStoredValue > 0,
+        row.scheduledValue !== 0 ||
+        row.previousBilled !== 0 ||
+        row.thisPeriodBilled !== 0 ||
+        row.previousMaterialsStored !== 0 ||
+        row.materialsStoredValue !== 0,
     )
     .map(calculatePayAppLineItem);
 

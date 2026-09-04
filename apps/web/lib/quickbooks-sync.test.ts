@@ -157,6 +157,31 @@ describe("buildInvoicePayload", () => {
     expect(payload.Line[1].Amount).toBe(400);
   });
 
+  it("sends the stored-materials RELEASE as a negative line", () => {
+    // #95 made the negative reachable from the form for the first time, so
+    // a negative Amount can now reach Intuit. This is the period where $40k
+    // of stored board gets installed: the whole $100k line is billed as
+    // completed work and the $40k comes back out of stored, netting $60k.
+    // Every existing materialsStoredCents case in this file is 0 or
+    // positive, so nothing pinned this shape before.
+    const payload = buildInvoicePayload(
+      invoice({
+        totalCents: 60_000,
+        lines: [line({ billedCents: 100_000, materialsStoredCents: -40_000 })],
+      }),
+      ITEM,
+    );
+
+    expect(payload.Line).toHaveLength(2);
+    expect(payload.Line[0].Amount).toBe(1000);
+    expect(payload.Line[1].Description).toContain("materials stored");
+    expect(payload.Line[1].Amount).toBe(-400);
+    // The two lines have to net to what the GC was actually invoiced. A
+    // release dropped or sent unsigned would post $1,000 to the ledger
+    // against a $600 pay application.
+    expect(payload.Line.reduce((sum, l) => sum + l.Amount, 0)).toBe(600);
+  });
+
   it("omits a line that is zero rather than sending a zero line", () => {
     const payload = buildInvoicePayload(
       invoice({ lines: [line({ billedCents: 100_000, materialsStoredCents: 0 })] }),

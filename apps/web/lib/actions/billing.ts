@@ -8,7 +8,11 @@ import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@prova/db";
 import { revokeToken, refreshTokens, getCompanyInfo, generateWipNarrative, type QuickBooksCompanyInfo } from "@prova/integrations";
 import { calculateLineItemWip, calculateJobWip } from "@/lib/wip";
+import { payAppEntryError } from "@/lib/pay-application";
 import {
+  actionFail,
+  actionOk,
+  type ActionResult,
   assertJobInCompany,
   assertLineItemOnJob,
   assertOwner,
@@ -181,13 +185,24 @@ export async function createInvoice(jobId: string, formData: FormData) {
  * a pay application's total IS the sum of what's billed per SOV line, so
  * there's nothing to reconcile against a separately-typed number. Rows
  * where both fields are blank/zero are dropped; at least one line must
- * have an amount. */
-export async function submitPayApplication(jobId: string, formData: FormData) {
+ * have an amount.
+ *
+ * A NEGATIVE materials-stored entry is legitimate and is the documented way
+ * to move value out of "stored" once the material is installed (see
+ * billing.prisma). That is why the drop filter tests `!== 0` rather than
+ * `> 0`: a row whose only content is the negative release is the whole
+ * point of the entry, and dropping it re-introduces #95's double bill.
+ *
+ * Returns an ActionResult rather than throwing its guard messages —
+ * production REDACTS thrown Server Action messages, so a refusal that
+ * throws shows the user an opaque digest while the $140,000 application
+ * they were trying to submit is simply not created, with no explanation. */
+export async function submitPayApplication(jobId: string, formData: FormData): Promise<ActionResult> {
   const { company } = await requireCompanyContext();
   const job = await assertJobInCompany(jobId, company.id);
 
   if (job.status === "ESTIMATE") {
-    throw new Error("Contract this job before invoicing it");
+    return actionFail("Contract this job before invoicing it");
   }
 
   const lineItemIds = formData.getAll("lineItemId").map(String);
@@ -200,14 +215,57 @@ export async function submitPayApplication(jobId: string, formData: FormData) {
       thisPeriodBilled: Number(thisPeriodValues[i] || "0") || 0,
       materialsStoredValue: Number(materialsStoredValues[i] || "0") || 0,
     }))
-    .filter((row) => row.thisPeriodBilled > 0 || row.materialsStoredValue > 0);
+    .filter((row) => row.thisPeriodBilled !== 0 || row.materialsStoredValue !== 0);
 
   if (rows.length === 0) {
-    throw new Error("Enter an amount for at least one line item");
+    return actionFail("Enter an amount for at least one line item");
   }
 
   for (const row of rows) {
     await assertLineItemOnJob(row.lineItemId, jobId);
+  }
+
+  // Prior-period context this action never used to fetch. Two narrow reads
+  // before the write, both outside any transaction: the Neon pooled
+  // connection limit is 5, and wrapping reads in one buys nothing here —
+  // Invoice's @@unique([jobId, number]) is what actually stops two
+  // concurrent submissions from both landing (the loser fails on the
+  // constraint), so this is a guard against a person's mistake rather than
+  // a concurrency control, and it does not pretend otherwise.
+  const sovLines = await prisma.jobLineItem.findMany({
+    where: { jobId },
+    select: { id: true, description: true, quantity: true, unitPrice: true },
+  });
+  const sovById = new Map(sovLines.map((line) => [line.id, line]));
+
+  // At creation time this invoice is the newest on the job, so every
+  // existing InvoiceLineItem row is "previous" by definition.
+  const priorRows = await prisma.invoiceLineItem.findMany({
+    where: { invoice: { jobId } },
+    select: { lineItemId: true, thisPeriodBilled: true, materialsStoredValue: true },
+  });
+
+  const entryErrors = rows
+    .map((row) => {
+      const line = sovById.get(row.lineItemId);
+      const prior = priorRows.filter((p) => p.lineItemId === row.lineItemId);
+      return payAppEntryError({
+        lineItemId: row.lineItemId,
+        description: line?.description ?? "This line item",
+        // Same expression the job page and the report use for a live line.
+        scheduledValue: line ? Number(line.quantity) * Number(line.unitPrice ?? 0) : 0,
+        previousBilled: prior.reduce((sum, p) => sum + Number(p.thisPeriodBilled), 0),
+        thisPeriodBilled: row.thisPeriodBilled,
+        previousMaterialsStored: prior.reduce((sum, p) => sum + Number(p.materialsStoredValue), 0),
+        materialsStoredValue: row.materialsStoredValue,
+      });
+    })
+    .filter((message): message is string => message != null);
+
+  if (entryErrors.length > 0) {
+    // All or nothing. A partially-accepted pay application is a worse
+    // artifact than a rejected one, and this document leaves the company.
+    return actionFail(entryErrors.join(" "));
   }
 
   const description = String(formData.get("description") ?? "").trim();
@@ -238,6 +296,7 @@ export async function submitPayApplication(jobId: string, formData: FormData) {
   });
 
   revalidatePath(`/jobs/${jobId}`);
+  return actionOk;
 }
 
 /** Sets this job's retainage rate and expected substantial-completion
