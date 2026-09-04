@@ -1,5 +1,6 @@
 import { prisma } from "@prova/db";
-import { requireCompanyContext } from "@/lib/auth";
+import { requireCapability } from "@/lib/authz";
+import { NoAccess } from "@/components/NoAccess";
 import { EquipmentForm } from "@/components/EquipmentForm";
 import { EquipmentRow } from "@/components/EquipmentRow";
 import { EquipmentDeploymentControls } from "@/components/EquipmentDeploymentControls";
@@ -18,7 +19,9 @@ export const dynamic = "force-dynamic";
 const WINDOW_DAYS = 90;
 
 export default async function EquipmentPage() {
-  const { company, ...currentUser } = await requireCompanyContext();
+  const { context, allowed } = await requireCapability("MANAGE_FIELD");
+  if (!allowed) return <NoAccess capability="MANAGE_FIELD" />;
+  const { company, ...currentUser } = context;
 
   const [equipment, jobs] = await Promise.all([
     prisma.equipment.findMany({

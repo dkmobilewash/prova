@@ -105,6 +105,185 @@ exactly like a test that works.
 
 ---
 
+## The half that needed a second person, tested instead
+
+The gates above shipped with one half clicked and the other half not. "Lets
+the right people in" was verified by the author as OWNER. "KEEPS THE WRONG
+PEOPLE OUT" was not, because it needs a second account with a different job
+function and this company has one member — and that is the half where being
+wrong is a security hole rather than an annoyance. It is now covered by
+tests instead of waiting on a person who does not exist.
+
+**A PAGE GUARD SAYS NOTHING ABOUT THE ACTION BEHIND IT.** A Server Action
+is its own endpoint with a stable id and it answers whoever posts to it.
+Every one of the 34 newly-gated writes, plus `deleteDailyFieldReport`, is
+now EXECUTED as each job function that should be refused, and has to refuse
+with its own message. `prisma` is replaced by a proxy that throws on the
+first property read, so the claim proved is not "it failed" — an action
+given junk arguments fails for a dozen reasons — but "it refused before
+touching any data at all". Every case has a control: the functions that DO
+hold the capability must fail for some *other* reason, because a guard that
+refuses everybody would satisfy the negative test perfectly.
+
+**Nothing is enumerated from a hand-written list**, for the same reason the
+route check was rewritten to walk the filesystem: a test that iterates a map
+cannot catch an omission from that map. This one walks every page, follows
+each page's own import graph through its components to the actions it can
+reach, resolves each action to the module defining it, and requires every
+action reachable only from pages demanding one capability to assert it.
+Adding an action, or wiring an existing one to a guarded page, fails the
+suite by name without anybody adding a line — verified by doing exactly
+that, and by seeing the count check catch a page whose guard was removed
+(30 actions found where 35 were expected).
+
+**It found a hole the gates opened.** Fifteen actions sit behind pages this
+pass newly closed and assert no capability: thirteen behind `/closeout`
+(`closeout.ts`, `closeoutSubmissions.ts`) and two behind
+`/settings/integrations`. Before the gates, page and action agreed — both
+open. Now the page refuses and the endpoint does not, which is the shape
+every comment in this feature calls the worse one. A further fifty-one sit
+behind pages guarded since long before any of this (`/settings`,
+`/compliance`, `/union-compliance`, `/prevailing-wage`, `/catalog`,
+`/vendors/pricing`, `/backcharges`). All sixty-six are listed by name with
+their capability, and the list MAY ONLY SHRINK BY BEING FIXED: an entry
+that acquires a guard fails the suite as loudly as a guard that goes
+missing, so the debt cannot quietly grow and cannot rot into fiction. They
+are listed rather than fixed because every one belongs to another lane, and
+touching another lane's file is announced first.
+
+**Six of the fifteen are narrower than "answers anyone", and saying so
+matters more than the round number.** `closeout.deleteCloseoutItem`,
+`deleteWarrantyPeriod`, `deleteServiceRequest`,
+`closeoutSubmissions.deleteCloseoutSubmission` and both
+`integrations.*SandboxIntegration` already refuse anyone who is not the
+account OWNER — and an OWNER holds every capability by construction
+(`lib/permissions.ts`), so no principal exists who is refused by the page
+and admitted by those endpoints today. They stay on the list because the
+list is about what the code ASSERTS, and an owner check is a different axis
+that would stop covering for them the moment the role model gains a third
+value. The nine with nothing at all —
+`addStandardCloseoutChecklist`, `addCloseoutItem`, `updateCloseoutItem`,
+`setWarrantyPeriod`, `recordServiceRequest`, `updateServiceRequest`,
+`submitCloseoutPackage`, `recordCloseoutResponse`,
+`reopenCloseoutSubmission` — are the live gap, and all nine are writes to a
+closeout package.
+
+**The list grew by one on the final merge, which is the mechanism working
+rather than failing.** `main` gained
+`apprenticeship.updateApprenticeshipEnrollment` (#117/#127) while this
+branch was open: a new write behind `/union-compliance`, ungated like its
+five siblings already recorded here. The suite refused the merge by name
+until a decision was written down. Recorded as debt on the same grounds as
+the rest of that module — gating one of six would leave the page
+half-enforced, and it is not this lane's file.
+
+**A second merge caught a whole new module, and that one is fixed rather
+than listed.** `cyrus/equipment-deployment` (#45) landed
+`lib/actions/equipmentAssignments.ts` — four writes recording where a piece
+of equipment went and when it came back — composed only on `/equipment`,
+which this branch guards with MANAGE_FIELD, and asserting nothing. Equipment
+is this lane, so all four now check `can(context, "MANAGE_FIELD")` and
+return the failure rather than throwing it, matching `materialOrders.ts`.
+`deleteEquipmentAssignment` keeps its owner check on top; the two are
+different axes and neither replaces the other. Between them, these two
+merges are the argument for deriving the surface from the filesystem instead
+of a list: neither module existed when this branch was written, and both
+failed the suite by name the moment they arrived.
+
+`/deployment`, the page that arrived with them, is recorded OPEN with its
+reason. It reads where every person and machine is right now — the same data
+`/schedule` shows from the job's end, already open on the same grounds — and
+it composes nothing: every control that writes an assignment is mounted on
+`/equipment`.
+
+At the route level: every guarded route is now asserted against every job
+function that must be refused, rather than the few somebody thought of; a
+route whose capability nobody lacks fails as decoration; and a page that
+enforces one capability while explaining another fails too.
+
+Every check here was watched failing before being kept — guard removed,
+guard reworded, guard inverted so it looked right and refused everyone,
+page guard reverted, a new ungated action added and wired up. The
+inverted-guard case is the one worth remembering: the source text still
+read `can(context, "MANAGE_FIELD")`, the shape check passed, and only
+executing it caught that it locked out the people it exists to admit.
+
+NOT verified: `pnpm test:db` was not run. This machine has no Postgres, no
+Docker and no way to install either, and its Node is 20.16 — below the
+20.19 where `require(esm)` works, so `vitest.db.config.ts` cannot even load
+here. The suite added is a unit suite by design and needs none of that.
+
+---
+
+## The guard that could not fail
+
+`MANAGE_FIELD` and `MANAGE_JOBS` were declared in `lib/permissions.ts`,
+documented by route name — "safety, punch lists, equipment" and "RFIs,
+submittals, drawings, closeout" — and mapped to **nothing at all**.
+`ROUTE_CAPABILITY` listed neither, `canReach()` returns true for any route
+absent from it, and none of those pages called `requireCapability()`
+either. So an ACCOUNTING member, whom this suite explicitly asserts holds
+no `MANAGE_FIELD`, saw the links and could open, file and edit safety
+cases, RFIs and submittals — evidence records. The Team page counted both
+capabilities while telling an owner they had withheld something they had
+not.
+
+**The defect that matters is the test, not the map.** The check that was
+supposed to catch this iterated `Object.entries(ROUTE_CAPABILITY)` — so a
+route absent from that map contributes no iteration and is structurally
+invisible to it. It could not fail for the thing its own comment claimed
+to prevent ("a door being left unlisted but unguarded"), and this file
+repeated the claim. Same shape as the dead P2002 guards in #25 and #26: a
+check that exists and can never fire.
+
+So the enumeration now starts from the **filesystem** — every `page.tsx`
+under `app/(app)`, which is what Next.js actually serves — and not from
+any hand-written list, since a hand-written list is the artefact that
+drifted. Each route must land in one of three places, all of them a
+recorded decision: `ROUTE_CAPABILITY`, a page-only map for dynamic routes
+the nav never links, or an explicit open list **with the reason written
+down**. Add a page and decide nothing and the suite fails, naming your
+route. Reverting the map fix turns it red with all ten named, which is the
+only reason to believe it.
+
+**Mapping decisions, each from the capability's own definition rather than
+by pattern match.** `/safety`, `/punch-lists`, `/equipment`,
+`/field-reports`, `/material-orders` → `MANAGE_FIELD`. `/rfis`,
+`/submittals`, `/drawings`, `/closeout` → `MANAGE_JOBS`. Deliberately NOT
+`/jobs`, `/jobs/new` or `/jobs/[id]`: ACCOUNTING and PAYROLL_COMPLIANCE
+hold no `MANAGE_JOBS` and both must open a job, so reading that capability
+as "may see a job" would lock accounting out of the pay applications they
+exist to raise. The job record stays open and withholds money section by
+section, as before. Two sub-pages of it did not, and now do:
+`/jobs/[id]/pay-applications/[invoiceId]` (`MANAGE_BILLING` — it *is* the
+money document) and `/jobs/[id]/certified-payroll` (`MANAGE_COMPLIANCE` —
+named in that capability's definition, and it prints wage rates by
+employee). `/settings/integrations` takes its parent `/settings`'
+capability rather than the `MANAGE_BILLING` that "accounting sync" would
+suggest, because a sub-page reachable by somebody who cannot reach the
+page linking to it is incoherent.
+
+**`canReach(FIELD, "/safety")` was asserted true under the heading "lets
+anyone signed in reach an unguarded route", and both halves needed
+different treatment.** The value is right — a foreman needs safety and
+punch lists — and the reason was wrong: `/safety` was not open by
+decision, it was open by omission. The assertion stays and its value is
+unchanged, because FIELD holds `MANAGE_FIELD`; it moved to a test that
+says so. What actually changed is that ESTIMATOR and ACCOUNTING no longer
+reach it.
+
+**The actions, not only the pages.** A page guard stops a page rendering
+and does nothing about a Server Action, which is its own endpoint and
+answers whoever posts to it. Every write behind the newly-guarded pages
+now asserts the same capability the page does — throwing where the module
+throws, returning `fail()` where the module returns `ActionResult`, since
+production redacts a thrown message. Two deletes had no guard of ANY kind,
+not even `assertOwner`: `deleteDailyFieldReport` and
+`deleteMaterialDelivery`. A daily field report is what a delay claim is
+argued from months later.
+
+---
+
 ## The sales pipeline, with the forecast it does not have
 
 `/sales` listed leads. To learn what was in `TRIAL`, or what the open
@@ -1983,8 +2162,13 @@ attack.
 **`requireCapability()` on the page is the boundary; the nav filter is
 decoration and says so in its own comment.** Hiding a link hides nothing.
 A test asserts `canReach()` and `can()` agree on every guarded route for
-every principal, so a link can never point at a door that will not open —
-nor, far worse, a door be left unlisted and unguarded.
+every principal, so a link can never point at a door that will not open.
+
+> **The second half of that sentence used to read "nor, far worse, a door
+> be left unlisted and unguarded", and it was false.** That test iterated
+> `ROUTE_CAPABILITY`, so an unlisted door contributed no iteration and was
+> invisible to it. Eight were. See "The guard that could not fail" at the
+> top of this file.
 
 **Auditing my own claim found real holes, and closing the ones I own
 changed the shape of the work.** A FIELD user could still be told, by name

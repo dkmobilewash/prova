@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@prova/db";
-import { requireCompanyContext } from "@/lib/auth";
+import { requireCapability } from "@/lib/authz";
+import { NoAccess } from "@/components/NoAccess";
 import { PrintButton } from "@/components/PrintButton";
 import { money } from "@/lib/money";
 import { calculatePayAppLineItem, calculatePayAppSummary, type PayAppLineItemResult } from "@/lib/pay-application";
@@ -16,7 +17,12 @@ export default async function PayApplicationPage({
   params: Promise<{ id: string; invoiceId: string }>;
 }) {
   const { id, invoiceId } = await params;
-  const { company } = await requireCompanyContext();
+  // The job page withholds its billing SECTIONS from anyone without
+  // MANAGE_BILLING; this is the same document on its own URL, so it has
+  // to answer the same way or the withholding upstairs means nothing.
+  const { context, allowed } = await requireCapability("MANAGE_BILLING");
+  if (!allowed) return <NoAccess capability="MANAGE_BILLING" />;
+  const { company } = context;
 
   const job = await prisma.job.findUnique({
     where: { id },

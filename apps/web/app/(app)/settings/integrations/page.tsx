@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { prisma } from "@prova/db";
 import { Card, StatusBadge } from "@prova/ui";
-import { requireCompanyContext } from "@/lib/auth";
+import { requireCapability } from "@/lib/authz";
+import { NoAccess } from "@/components/NoAccess";
 import { connectSandboxIntegration, disconnectSandboxIntegration } from "@/lib/actions";
 import { IntegrationControls } from "@/components/IntegrationControls";
 import { PROVIDERS, type ProviderEntry } from "@/lib/integrations/registry";
@@ -38,7 +39,9 @@ function DetailRow({ label, value }: { label: string; value: string }) {
 }
 
 export default async function IntegrationsPage() {
-  const { company, ...currentUser } = await requireCompanyContext();
+  const { context, allowed } = await requireCapability("MANAGE_COMPLIANCE");
+  if (!allowed) return <NoAccess capability="MANAGE_COMPLIANCE" />;
+  const { company, ...currentUser } = context;
 
   // The same gate the sibling Settings page uses, worded the same way. The
   // server actions assert it independently — hiding a control is not the
