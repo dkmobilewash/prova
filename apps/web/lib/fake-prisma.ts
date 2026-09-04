@@ -133,17 +133,31 @@ export class FakeDb {
           return row;
         }),
 
+      /**
+       * `where` may name a COMPOSITE unique key, not only `id`.
+       *
+       * Same trap `findUnique` and `upsert` already document, and it bites
+       * harder here: this used to index the id map with `where.id`
+       * unconditionally, so `update({ where: { companyId_entityType_entityId:
+       * {…} } })` did `Map.get(undefined)`, missed, and THREW "undefined not
+       * found". A caller with that update inside a try then took its error
+       * branch — so a test could watch a QuickBooks push report "couldn't
+       * read the invoice back" and be looking at this fake, not the action.
+       */
       update: ({
         where,
         data,
       }: {
-        where: { id: string };
+        where: Record<string, unknown>;
         data: Record<string, unknown>;
       }) =>
         op(() => {
           this.note(`${name}.update`);
-          const existing = this.table(name).get(where.id);
-          if (!existing) throw new Error(`${name} ${where.id} not found`);
+          const existing =
+            typeof where.id === "string"
+              ? this.table(name).get(where.id)
+              : this.rows(name).find((row) => matches(row, criteria(where)));
+          if (!existing) throw new Error(`${name} ${JSON.stringify(where)} not found`);
           // Replaced, never mutated, so the transaction snapshot is real.
           const next = { ...existing, ...data } as Row;
           this.table(name).set(next.id, next);
@@ -157,6 +171,27 @@ export class FakeDb {
           if (!existing) throw new Error(`${name} ${where.id} not found`);
           this.table(name).delete(where.id);
           return existing;
+        }),
+
+      /**
+       * Deletes every row matching a NON-unique `where`, and returns the
+       * count the way Prisma does.
+       *
+       * Here because the QuickBooks recovery path clears a link with
+       * `deleteMany` rather than `delete` — deliberately, so a link that is
+       * already gone is not an exception. A test of that path has to be
+       * able to watch the row disappear, and watching it NOT disappear is
+       * the more important half: clearing a link is the one recovery in
+       * this codebase that makes the next push a CREATE.
+       */
+      deleteMany: ({ where }: { where?: Record<string, unknown> } = {}) =>
+        op(() => {
+          this.note(`${name}.deleteMany`);
+          const doomed = where
+            ? this.rows(name).filter((row) => matches(row, where))
+            : this.rows(name);
+          for (const row of doomed) this.table(name).delete(row.id);
+          return { count: doomed.length };
         }),
 
       upsert: ({
