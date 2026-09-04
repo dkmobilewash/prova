@@ -78,9 +78,18 @@ const isProtectedRoute = createRouteMatcher([
 // /api/quickbooks/callback is deliberately NOT protected here — see
 // QuickBooksOAuthCookiePayload in lib/quickbooks-constants.ts. Intuit's
 // redirect back to that route is a third-party-initiated navigation;
-// requiring a live Clerk session for it can force a re-login (with 2FA)
-// mid-OAuth-flow, which drops the in-flight exchange. The route
-// authenticates itself via its own short-lived, httpOnly cookie instead.
+// auth.protect() on it can force a re-login (with 2FA) mid-OAuth-flow,
+// which drops the in-flight exchange.
+//
+// ABSENT FROM THIS LIST MEANS "NOT FORCED TO SIGN IN", NOT "SEES NO
+// SESSION", and the difference is the fix for #136 §2. clerkMiddleware
+// still RUNS on the path — the matcher below covers /(api|trpc)(.*) — and
+// decorates every request it handles with the auth headers, so the route
+// reads the session with requireCompanyContext() and takes the companyId
+// it binds from THERE. It used to take it from its own cookie, which the
+// browser's owner can edit, and that let anyone bind their QuickBooks
+// tokens to another company. The cookie now carries CSRF state and a
+// cross-check, nothing that decides access.
 
 export default clerkMiddleware(async (auth, req) => {
   if (isProtectedRoute(req)) {

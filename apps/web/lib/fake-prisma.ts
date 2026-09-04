@@ -44,6 +44,26 @@ function matches(row: Row, where: Record<string, unknown>): boolean {
   });
 }
 
+/**
+ * The columns a `where` actually constrains.
+ *
+ * Prisma spells a COMPOSITE unique key as a single nested object —
+ * `{ companyId_caseYear: { companyId, caseYear } }` — and a single-column
+ * one flat: `{ email: "…" }`. Both reach here, so unwrap the nested form
+ * and pass the flat one straight through. Reading `Object.values(where)[0]`
+ * unconditionally, as `upsert` once did, turns `{ companyId: "co_1" }`
+ * into the STRING "co_1", and matching against a string compares its
+ * character indices — which finds nothing, forever.
+ */
+function criteria(where: Record<string, unknown>): Record<string, unknown> {
+  const values = Object.values(where);
+  const onlyValue = values.length === 1 ? values[0] : null;
+  if (onlyValue && typeof onlyValue === "object" && !(onlyValue instanceof Date)) {
+    return onlyValue as Record<string, unknown>;
+  }
+  return where;
+}
+
 export class FakeDb {
   /** Table name -> rows by id. */
   private tables = new Map<string, Map<string, Row>>();
@@ -150,9 +170,7 @@ export class FakeDb {
       }) =>
         op(() => {
           this.note(`${name}.upsert`);
-          // The composite-key form: `{ companyId_caseYear: {...} }`.
-          const criteria = Object.values(where)[0] as Record<string, unknown>;
-          const found = this.rows(name).find((row) => matches(row, criteria));
+          const found = this.rows(name).find((row) => matches(row, criteria(where)));
           if (!found) {
             const row = { id: `${name}_${++this.seq}`, ...create } as Row;
             this.table(name).set(row.id, row);
@@ -176,15 +194,31 @@ export class FakeDb {
           return next;
         }),
 
+      /**
+       * `where` may name ANY unique column, not just `id`.
+       *
+       * This used to index the id map with `where.id` unconditionally, so
+       * `findUnique({ where: { email } })` did `Map.get(undefined)` and
+       * returned null — SILENTLY, and null is a perfectly ordinary answer
+       * for a unique lookup. requireCompanyContext looks a pending invite
+       * up by email, so under the old fake that lookup always missed and
+       * the code under test took the create-your-own-company branch
+       * instead. A test written to pin the invite path would then have
+       * been green about a path it never entered.
+       */
       findUnique: ({
         where,
         include,
       }: {
-        where: { id: string };
+        where: Record<string, unknown>;
         include?: Record<string, boolean>;
       }) =>
         op(() => {
-          const row = this.table(name).get(where.id) ?? null;
+          const row =
+            typeof where.id === "string"
+              ? (this.table(name).get(where.id) ?? null)
+              : (this.rows(name).find((candidate) => matches(candidate, criteria(where))) ??
+                null);
           return row ? this.withIncludes(row, include) : null;
         }),
 

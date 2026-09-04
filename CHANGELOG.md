@@ -12,6 +12,99 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### Two cross-tenant holes closed: QuickBooks OAuth binding, and the invite path's missing verification gate (Cyrus)
+`cyrus/oauth-binding-and-invite-verification`
+
+Both from the audit in #136, both live on production, and both had the
+same shape — a value the attacker controls being read as if it were a
+value we issued.
+
+**The QuickBooks callback bound the connection to whatever company the
+cookie named.** `qbo_oauth_state` is plaintext JSON. `httpOnly` keeps page
+JavaScript out of it; it does nothing about the person with devtools open.
+Hit `/api/quickbooks/start`, retype one field — `companyId` — as somebody
+else's, and finish Intuit's consent with your own QuickBooks account. The
+`state` still matched, because you never touched `state`, so all four
+checks the route made passed. The upsert then wrote your realm and your
+tokens under their company: their invoice and payment pushes post into
+YOUR books, and their real connection is overwritten and gone. It stays
+that way until somebody notices, and the thing that would normally give it
+away — a broken connection — is exactly what does not happen.
+
+The route now takes companyId and userId from the authenticated session.
+The cookie carries the CSRF `state`, which is all it was ever fit to carry,
+plus the same two ids as a CROSS-CHECK: finish the flow as a different
+account than you started it and the connection is refused rather than
+pointed at whichever of the two answers won.
+
+**Signing the cookie was the other option and was rejected.** An HMAC over
+the payload would also have made a rewritten `companyId` detectable, and it
+needed no session — but it needs a signing secret, and `lib/crypto.ts`
+already argues in this repo's own words why that must be its OWN variable
+rather than a borrowed one: "reusing a key that already signs or encrypts
+something else means rotating it for one reason breaks the other, which is
+how a key stops being rotated at all." That is a new env var, set by hand
+on Vercel, which fails a flow nobody tests often if it is ever missing or
+mistyped. Reading the session needs nothing deployed, and it is strictly
+stronger: a signed cookie is still a bearer token, where the session is the
+actual answer to "who is doing this".
+
+**The comments that said otherwise are gone.** `QuickBooksOAuthCookiePayload`
+claimed possession of the cookie was "itself sufficient authorization, so
+the callback route needs no separate auth check", and `middleware.ts`
+vouched for the same. That sentence WAS the vulnerability — it is the
+reason a reader would not look. Same lesson `middleware.ts` already records
+about the webhook entry: an allowlist entry is only as good as the sentence
+justifying it, and nothing checks that sentence.
+
+**Being outside the protected matcher does not mean there is no session,
+and that confusion is what made the cookie look necessary.** It is still
+outside it, deliberately — `auth.protect()` on a route Intuit redirects
+into can bounce an expired token into a re-login mid-flow and drop the
+in-flight exchange. But `clerkMiddleware` still RUNS on the path, because
+the matcher covers `/(api|trpc)(.*)`, and it calls `decorateRequest`
+unconditionally after the handler, on every request it matches — so the
+auth headers `auth()` reads are there whether or not anything called
+protect. Read out of the installed `@clerk/nextjs` 6.39.6, not assumed.
+
+**The invite path had no email-verification gate.** `requireCompanyContext`
+has three adoption paths. Main adoption checks `emailIsVerified`, race
+recovery checks it, and the invite path checked nothing: look the invite up
+by email, create the user as a MEMBER of the inviting company. So an
+invitation to `victim@example.com` was consumable by whoever signed up
+naming that address, and what they got was a real account inside someone
+else's company. It now applies the same check as its two neighbours.
+
+Whether that was exploitable today depends on Clerk refusing to mint a
+session before verifying an address — which is a DASHBOARD setting, not
+code, and there are two Clerk instances here whose settings can differ.
+An access check that holds only because of a checkbox in someone else's
+console is not a check.
+
+**Both fixes have a test that was watched failing first, in both
+directions.** The attack test alone is worthless here: a callback that
+refuses everybody and a gate that admits nobody each pass it perfectly,
+and both are silent outages — an OAuth flow that stops working is invisible
+for as long as the existing connection keeps refreshing, and a dead invite
+gate looks like the mail provider's fault. So each has a companion test
+that a legitimate owner still connects, and a genuinely invited person with
+a verified address still gets in as a MEMBER.
+
+**`FakeDb.findUnique` was lying, and it nearly made this a fake fix.** It
+indexed the id map with `where.id` unconditionally, so
+`findUnique({ where: { email } })` did `Map.get(undefined)` and returned
+null — silently, and null is an ordinary answer for a unique lookup. The
+first run of the invite test failed, but for the wrong reason: the invite
+was never found, so the code took the create-your-own-company branch and
+the test never entered the path it was written to pin. Fixed to match on
+any unique column, which is also what `upsert` needed — it read
+`Object.values(where)[0]` on the assumption of a composite key, so a plain
+`{ companyId }` became the STRING and matching compared its character
+indices. Worth the paragraph: a test that fails for the wrong reason looks
+exactly like a test that works.
+
+---
+
 ### Asking QuickBooks whether a document is gone, instead of guessing from its prose (Diego)
 `claude/prova-vercel-direct-url-hg1acx`
 
