@@ -375,3 +375,32 @@ export function isAccidentalRepeat(
 export function isMissingDocumentError(detail: string): boolean {
   return /object not found/i.test(detail);
 }
+
+/**
+ * Could this refusal mean the document we tried to update is GONE?
+ *
+ * Deliberately WIDER than `isMissingDocumentError`, and safe to be wide for
+ * one reason: nothing is decided by it. A true answer buys a single
+ * read-only GET of the document, and the GET is what decides. A false
+ * positive costs one API call; it cannot clear a link, and it cannot
+ * create anything.
+ *
+ * "Stale Object Error" is in here because of a real sandbox run on
+ * 2026-09-03: invoice 1 on ZZQB-TEST was deleted inside QuickBooks and the
+ * refusal that came back named Craig Carlson editing it concurrently, not a
+ * missing object. Intuit compares the SyncToken before it decides the
+ * document is absent, so a delete can surface as either fault depending on
+ * which check runs first. Matching only "Object Not Found" meant the far
+ * more common wording fell through to a message telling the person to
+ * "open it in QuickBooks and decide which version is right" — about a
+ * document that is not there to open, on a link that then never healed.
+ *
+ * The Product/Service refusal ("...has been deleted...") is NOT matched
+ * here, and the test beside this pins that. It would be harmless if it were
+ * — the probe would find the invoice present and leave the link alone —
+ * but a predicate that stays honest about what it means is worth more than
+ * one that relies on the next step to clean up after it.
+ */
+export function mayMeanDocumentIsGone(detail: string): boolean {
+  return isMissingDocumentError(detail) || /stale object|sync ?token/i.test(detail);
+}
