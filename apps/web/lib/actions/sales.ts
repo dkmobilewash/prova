@@ -5,6 +5,7 @@ import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@prova/db";
 import {
   OPPORTUNITY_STAGES,
+  SALES_ACTIVITY_TYPES,
   SALES_LEAD_SOURCES,
   actionFail as fail,
   actionOk as ok,
@@ -45,6 +46,12 @@ function optionalDate(formData: FormData, key: string): Date | null {
   if (!raw) return null;
   const date = new Date(`${raw}T00:00:00.000Z`);
   if (Number.isNaN(date.getTime())) throw new InputError("Date is not valid");
+  return date;
+}
+
+function requiredDate(formData: FormData, key: string, label: string): Date {
+  const date = optionalDate(formData, key);
+  if (date === null) throw new InputError(`${label} is required`);
   return date;
 }
 
@@ -158,9 +165,14 @@ export async function updateSalesLead(leadId: string, formData: FormData): Promi
   });
 }
 
-/** Blocks once there's a real opportunity on record, same reasoning as
- * deleteContact -- a lead with pipeline history stays even if none of it
- * ever closed. */
+/** Blocks once there's real history on record, same reasoning as
+ * deleteContact -- a lead with a pipeline or a call log stays even if none
+ * of it ever closed.
+ *
+ * Activities were added to this guard when SalesActivity was: its leadId
+ * FK is RESTRICT, so without the check Postgres refuses the delete and the
+ * person gets a thrown constraint error instead of a sentence telling them
+ * why. Same reason deleteContact's guard grew twice. */
 export async function deleteSalesLead(leadId: string): Promise<ActionResult> {
   const context = await requireCompanyContext();
   return runAction(async () => {
@@ -168,13 +180,27 @@ export async function deleteSalesLead(leadId: string): Promise<ActionResult> {
 
     const lead = await prisma.salesLead.findUnique({
       where: { id: leadId },
-      include: { _count: { select: { opportunities: true } } },
+      include: { _count: { select: { opportunities: true, activities: true } } },
     });
     if (!lead || lead.companyId !== context.company.id) return fail("Lead not found");
 
+    // Only the non-zero parts are named. "Acme has 0 opportunities and 3
+    // logged activities on file" is the shape of refusal message this repo
+    // has already had to fix once.
+    const held: string[] = [];
     if (lead._count.opportunities > 0) {
+      held.push(
+        `${lead._count.opportunities} opportunit${lead._count.opportunities === 1 ? "y" : "ies"}`,
+      );
+    }
+    if (lead._count.activities > 0) {
+      held.push(
+        `${lead._count.activities} logged activit${lead._count.activities === 1 ? "y" : "ies"}`,
+      );
+    }
+    if (held.length > 0) {
       return fail(
-        `${lead.companyName} has ${lead._count.opportunities} opportunit${lead._count.opportunities === 1 ? "y" : "ies"} on file, so its record stays. Only a lead with no opportunities can be deleted.`,
+        `${lead.companyName} has ${held.join(" and ")} on file, so its record stays. Only a lead with no history can be deleted.`,
       );
     }
 
@@ -208,6 +234,10 @@ export async function createSalesOpportunity(leadId: string, formData: FormData)
     });
 
     revalidatePath(`/sales/${leadId}`);
+    // /sales renders each lead's opportunity count, so it goes stale
+    // without this -- adding a lead's first opportunity left the list
+    // reading zero until something else happened to revalidate it.
+    revalidatePath("/sales");
     return ok;
   });
 }
@@ -243,6 +273,132 @@ export async function deleteSalesOpportunity(opportunityId: string): Promise<Act
 
     await prisma.salesOpportunity.delete({ where: { id: opportunityId } });
     revalidatePath(`/sales/${opportunity.leadId}`);
+    revalidatePath("/sales");
+    return ok;
+  });
+}
+
+async function findActivity(activityId: string, companyId: string) {
+  const activity = await prisma.salesActivity.findUnique({ where: { id: activityId } });
+  if (!activity || activity.companyId !== companyId) return null;
+  return activity;
+}
+
+/**
+ * Which deal this activity was about, if any. Empty is valid and common —
+ * an intro call happens before an opportunity exists. A named opportunity
+ * must belong to THIS lead: without the check, an owner could attribute a
+ * call to a deal with a different company, and the row would look correct
+ * from every page that renders it.
+ */
+async function readOpportunityField(
+  formData: FormData,
+  leadId: string,
+  companyId: string,
+): Promise<string | null> {
+  const opportunityId = text(formData, "opportunityId");
+  if (!opportunityId) return null;
+
+  const opportunity = await prisma.salesOpportunity.findUnique({ where: { id: opportunityId } });
+  if (!opportunity || opportunity.companyId !== companyId || opportunity.leadId !== leadId) {
+    throw new InputError("That opportunity is not one of this lead's");
+  }
+  return opportunityId;
+}
+
+/**
+ * A follow-up before the thing it follows up on is not a date somebody
+ * meant to type. Refused rather than stored, because /sales reads the
+ * latest activity's followUpOn as what the lead owes, and a backwards one
+ * would sit at the top of the queue permanently overdue.
+ */
+function assertFollowUpNotBackwards(occurredOn: Date, followUpOn: Date | null) {
+  if (followUpOn !== null && followUpOn < occurredOn) {
+    throw new InputError("The follow-up date is before the activity it follows up on");
+  }
+}
+
+export async function createSalesActivity(leadId: string, formData: FormData): Promise<ActionResult> {
+  const { company, ...user } = await requireCompanyContext();
+  return runAction(async () => {
+    assertSalesAccess({ company, role: user.role });
+    const lead = await findLead(leadId, company.id);
+    if (!lead) return fail("Lead not found");
+
+    const type = requiredEnum(formData, "type", SALES_ACTIVITY_TYPES, "what kind of activity this was");
+    const occurredOn = requiredDate(formData, "occurredOn", "The date it happened");
+    const summary = required(formData, "summary", "A summary");
+    const followUpOn = optionalDate(formData, "followUpOn");
+    assertFollowUpNotBackwards(occurredOn, followUpOn);
+    const opportunityId = await readOpportunityField(formData, leadId, company.id);
+
+    await prisma.salesActivity.create({
+      data: {
+        companyId: company.id,
+        leadId,
+        type,
+        occurredOn,
+        summary,
+        followUpOn,
+        opportunityId,
+        loggedByUserId: user.id,
+      },
+    });
+
+    revalidatePath(`/sales/${leadId}`);
+    // The follow-up queue and the last-contact column both live on /sales
+    // and are derived from these rows, so both move with every write here.
+    revalidatePath("/sales");
+    return ok;
+  });
+}
+
+/** loggedByUserId is deliberately not editable — who recorded an entry is
+ * audit, not content, same as ContactInteraction. */
+export async function updateSalesActivity(
+  activityId: string,
+  formData: FormData,
+): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  return runAction(async () => {
+    assertSalesAccess(context);
+    const activity = await findActivity(activityId, context.company.id);
+    if (!activity) return fail("Activity not found");
+
+    const type = requiredEnum(formData, "type", SALES_ACTIVITY_TYPES, "what kind of activity this was");
+    const occurredOn = requiredDate(formData, "occurredOn", "The date it happened");
+    const summary = required(formData, "summary", "A summary");
+    const followUpOn = optionalDate(formData, "followUpOn");
+    assertFollowUpNotBackwards(occurredOn, followUpOn);
+    const opportunityId = await readOpportunityField(formData, activity.leadId, context.company.id);
+
+    await prisma.salesActivity.update({
+      where: { id: activityId },
+      data: { type, occurredOn, summary, followUpOn, opportunityId },
+    });
+
+    revalidatePath(`/sales/${activity.leadId}`);
+    revalidatePath("/sales");
+    return ok;
+  });
+}
+
+/**
+ * Deletable, unlike an RFI or a submittal. This is an internal log of our
+ * own conversations, not evidence sent to anyone — a call logged against
+ * the wrong lead should be removable rather than corrected into a lie.
+ */
+export async function deleteSalesActivity(activityId: string): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  return runAction(async () => {
+    assertSalesAccess(context);
+    const activity = await findActivity(activityId, context.company.id);
+    if (!activity) return fail("Activity not found");
+
+    await prisma.salesActivity.delete({ where: { id: activityId } });
+
+    revalidatePath(`/sales/${activity.leadId}`);
+    revalidatePath("/sales");
     return ok;
   });
 }
