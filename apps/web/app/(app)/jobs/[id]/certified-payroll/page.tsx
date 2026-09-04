@@ -6,6 +6,11 @@ import { NoAccess } from "@/components/NoAccess";
 import { PrintButton } from "@/components/PrintButton";
 import { money } from "@/lib/money";
 import { buildCertifiedPayrollSummary, type CertifiedPayrollTimeEntryInput } from "@/lib/certified-payroll";
+import {
+  certifiedPayrollWeekStart,
+  certifiedPayrollWeekWindow,
+} from "@/lib/certified-payroll-week";
+import { loadCertifiedPayrollWeekEntries } from "@/lib/certified-payroll-query";
 import type { FringeRateScheduleInput } from "@/lib/labor-cost";
 
 const PAY_TYPE_COLUMNS = [
@@ -15,12 +20,9 @@ const PAY_TYPE_COLUMNS = [
   { value: "SHIFT_DIFFERENTIAL", label: "Diff" },
 ] as const;
 
-function startOfWeek(date: Date): Date {
-  const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
-  d.setUTCDate(d.getUTCDate() - d.getUTCDay()); // back up to Sunday
-  return d;
-}
-
+/** Only for the ±7 previous/next links. The week's own boundaries come
+ * from lib/certified-payroll-week.ts — deriving them here a second time is
+ * what let the printed Saturday and the queried Saturday disagree. */
 function addDays(date: Date, days: number): Date {
   const d = new Date(date);
   d.setUTCDate(d.getUTCDate() + days);
@@ -29,6 +31,17 @@ function addDays(date: Date, days: number): Date {
 
 function formatDate(date: Date): string {
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+}
+
+/** With the weekday, because the weekday is the thing a reviewer checks a
+ * payroll week against. */
+function dayLabel(date: Date): string {
+  return date.toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
 }
 
 function isoDate(date: Date): string {
@@ -58,17 +71,19 @@ export default async function CertifiedPayrollPage({
   }
 
   const requestedStart = weekStartParam ? new Date(`${weekStartParam}T00:00:00.000Z`) : new Date();
-  const weekStart = startOfWeek(Number.isNaN(requestedStart.getTime()) ? new Date() : requestedStart);
-  const weekEnd = addDays(weekStart, 6);
+  const weekStart = certifiedPayrollWeekStart(
+    Number.isNaN(requestedStart.getTime()) ? new Date() : requestedStart,
+  );
+  // The Saturday printed in the header is the query's OWN upper bound, not
+  // a second computation that happens to agree with it. It did not agree:
+  // the header said "– Aug 29" while the query ran to Aug 30, and nothing
+  // on the page could reveal the difference.
+  const weekEnd = certifiedPayrollWeekWindow(weekStart).lte;
   const previousWeek = addDays(weekStart, -7);
   const nextWeek = addDays(weekStart, 7);
 
   const [entries, craftClassifications] = await Promise.all([
-    prisma.timeEntry.findMany({
-      where: { jobId: job.id, date: { gte: weekStart, lte: addDays(weekEnd, 1) } },
-      include: { employeeUser: true, craftClassification: { include: { unionLocal: true } } },
-      orderBy: { date: "asc" },
-    }),
+    loadCertifiedPayrollWeekEntries(company.id, job.id, weekStart),
     prisma.craftClassification.findMany({
       where: { unionLocal: { companyAgreements: { some: { companyId: company.id } } } },
       include: { fringeRateSchedules: true },
@@ -107,6 +122,18 @@ export default async function CertifiedPayrollPage({
   const employeeSummaries = buildCertifiedPayrollSummary(summaryInputs, fringeSchedulesByCraft);
   const weekTotalHours = employeeSummaries.reduce((sum, e) => sum + e.totalHours, 0);
   const anyUncomputed = employeeSummaries.some((e) => e.hasUncomputedHours);
+
+  // Hours by day, PRINTED. Every other figure on this page is a week-level
+  // roll-up with no date on it, which is why an eight-day window could put
+  // a foreign Sunday on a filing and no printout showed it. A day listed
+  // here outside the header's range is a bug, visible on paper.
+  const hoursByDay = [...summaryInputs
+    .reduce((acc, entry) => {
+      const key = isoDate(entry.date);
+      acc.set(key, (acc.get(key) ?? 0) + entry.hours);
+      return acc;
+    }, new Map<string, number>())
+    .entries()].sort((a, b) => a[0].localeCompare(b[0]));
 
   return (
     <div className="mx-auto max-w-4xl p-6 print:p-0">
@@ -194,6 +221,14 @@ export default async function CertifiedPayrollPage({
 
           <div className="rounded-lg border border-slate-800 bg-slate-900 p-4 text-sm">
             <p className="text-slate-100">Week total: {weekTotalHours} hours across {employeeSummaries.length} employee(s)</p>
+            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 border-t border-slate-800 pt-2 text-xs text-slate-500">
+              <span className="text-slate-400">Hours by day:</span>
+              {hoursByDay.map(([iso, hours]) => (
+                <span key={iso}>
+                  {dayLabel(new Date(`${iso}T00:00:00.000Z`))} — {hours}
+                </span>
+              ))}
+            </div>
             {anyUncomputed && (
               <p className="mt-1 text-xs text-amber-400">
                 * Some hours have no craft tag or no effective fringe rate schedule and aren&rsquo;t priced above.
