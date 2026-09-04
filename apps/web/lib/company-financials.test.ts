@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   HEALTHY_MARGIN_RATE,
+  MIN_EARNED_COVERAGE,
   MIN_ESTIMATE_COVERAGE,
   calculateCompanyFinancials,
   jobCostVariance,
+  jobEarnedRevenue,
   jobHealthSentence,
   jobIsOverBudget,
+  jobOverUnderBilling,
   marginIsHealthy,
 } from "./company-financials";
 import type { WipJobResult } from "./wip";
@@ -16,6 +19,9 @@ const job = (over: Partial<WipJobResult> = {}): WipJobResult => ({
   actualCostToDate: 30_000,
   estimatedCostAtCompletion: 60_000,
   percentComplete: 0.5,
+  costCoverage: 1,
+  earnedCoverage: 1,
+  estimatedCoverage: 1,
   earnedRevenue: 50_000,
   billedToDate: 50_000,
   overUnderBilling: 0,
@@ -99,6 +105,73 @@ describe("calculateCompanyFinancials", () => {
       retainageBalances: [],
     });
     expect(result).toMatchObject({ estimatedRevenue: 0, grossMarginRate: null, retainageHeld: 0 });
+  });
+});
+
+describe("a billing position nobody can stand behind (#99)", () => {
+  it("refuses to state one on a half-estimated job", () => {
+    expect(jobOverUnderBilling(job({ overUnderBilling: 80_000, earnedCoverage: 0.5 }))).toBeNull();
+    expect(jobEarnedRevenue(job({ earnedRevenue: 50_000, earnedCoverage: 0.5 }))).toBeNull();
+    expect(jobOverUnderBilling(job({ overUnderBilling: 80_000, earnedCoverage: 1 }))).toBe(80_000);
+    expect(jobEarnedRevenue(job({ earnedRevenue: 50_000, earnedCoverage: 1 }))).toBe(50_000);
+  });
+
+  it("draws the line exactly at the coverage threshold", () => {
+    expect(jobOverUnderBilling(job({ earnedCoverage: MIN_EARNED_COVERAGE }))).not.toBeNull();
+    expect(jobOverUnderBilling(job({ earnedCoverage: MIN_EARNED_COVERAGE - 0.001 }))).toBeNull();
+  });
+
+  it("keeps the guard separate from the cost-side one, at the same number", () => {
+    // Same threshold, different question. Collapsing them into one constant
+    // invites reusing one ratio for both predicates, which is the hole: a
+    // line estimated at zero cost is covered on the cost side and not on the
+    // revenue side.
+    expect(MIN_EARNED_COVERAGE).toBe(MIN_ESTIMATE_COVERAGE);
+    expect(jobOverUnderBilling(job({ earnedCoverage: 0.5, estimatedCoverage: 1 }))).toBeNull();
+  });
+});
+
+describe("the company margin when the book is not substantially estimated (#99)", () => {
+  it("says nothing rather than blending a margin over jobs that earned nothing", () => {
+    const solid = job({ contractValue: 100_000, earnedRevenue: 100_000, actualCostToDate: 60_000 });
+    const half = job({
+      contractValue: 100_000,
+      earnedRevenue: 50_000,
+      actualCostToDate: 90_000,
+      earnedCoverage: 0.5,
+    });
+    const result = calculateCompanyFinancials({
+      jobs: [solid, half],
+      cashCollected: 0,
+      totalBilled: 0,
+      retainageBalances: [],
+    });
+    // 75% of the book carries an earned-revenue figure. Below the threshold,
+    // so the bar says "—" instead of a number.
+    expect(result.grossMarginRate).toBeNull();
+    expect(result.earnedCoverage).toBeCloseTo(0.75, 10);
+    // And the $90,000 of real spend is STILL in gross profit. Dropping the
+    // under-covered job out of both sums would report 40% margin here and
+    // colour it green, which is the opposite failure direction from the bug:
+    // an overstated overbilling makes a sub bill cautiously, a flattered
+    // margin makes them keep going.
+    expect(result.grossProfit).toBe(0);
+    expect(result.estimatedRevenue).toBe(200_000);
+  });
+
+  it("is not silenced by one small unbudgeted job in a large book", () => {
+    // Value-weighted, so a $20k job nobody has estimated does not blank the
+    // bar for a $2M book. It goes quiet only when a material share of the
+    // company's contract value is unestimated.
+    const big = job({ contractValue: 2_000_000, earnedRevenue: 1_000_000, actualCostToDate: 600_000 });
+    const scrap = job({ contractValue: 20_000, earnedRevenue: 0, actualCostToDate: 0, earnedCoverage: 0 });
+    const result = calculateCompanyFinancials({
+      jobs: [big, scrap],
+      cashCollected: 0,
+      totalBilled: 0,
+      retainageBalances: [],
+    });
+    expect(result.grossMarginRate).toBeCloseTo(0.4, 10);
   });
 });
 
