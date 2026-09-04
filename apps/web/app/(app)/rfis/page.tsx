@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@prova/db";
-import { requireCompanyContext } from "@/lib/auth";
+import { requireCapability } from "@/lib/authz";
+import { NoAccess } from "@/components/NoAccess";
 import { RfiForm } from "@/components/RfiForm";
 import { RfiRow } from "@/components/RfiRow";
 import { isOpen, isOverdue } from "@/components/rfiLabels";
@@ -17,7 +18,9 @@ export default async function RfisPage({
 }: {
   searchParams: Promise<{ job?: string; show?: string }>;
 }) {
-  const { company, ...currentUser } = await requireCompanyContext();
+  const { context, allowed } = await requireCapability("MANAGE_JOBS");
+  if (!allowed) return <NoAccess capability="MANAGE_JOBS" />;
+  const { company, ...currentUser } = context;
   const { job: jobFilter, show } = await searchParams;
   const showClosed = show === "all";
 

@@ -1,9 +1,15 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireCompanyContext } from "@/lib/auth";
+import { requireCapabilityForAction } from "@/lib/authz";
 import { prisma } from "@prova/db";
 import { assertOwner } from "./shared";
+
+/** Every entry point to these records is a page guarded by MANAGE_FIELD,
+ * so every write here answers to the same capability. A guarded page
+ * in front of an open action is not a guard: the action is its own
+ * endpoint and answers whoever posts to it. */
+const FIELD_ONLY = "Field records aren't part of your job function. The account owner sets who sees what, on the Team page.";
 
 /* `assignedJobIdFromForm` used to live here. Where a piece of equipment is
  * now comes from `EquipmentAssignment` — the newest stay with no return
@@ -14,7 +20,7 @@ import { assertOwner } from "./shared";
  * mapping that was collected, stored, displayed and never read. */
 
 export async function createEquipment(formData: FormData) {
-  const { company } = await requireCompanyContext();
+  const { company } = await requireCapabilityForAction("MANAGE_FIELD", FIELD_ONLY);
 
   const name = String(formData.get("name") ?? "").trim();
   if (!name) {
@@ -39,7 +45,7 @@ export async function createEquipment(formData: FormData) {
 }
 
 export async function updateEquipment(equipmentId: string, formData: FormData) {
-  const { company } = await requireCompanyContext();
+  const { company } = await requireCapabilityForAction("MANAGE_FIELD", FIELD_ONLY);
 
   const item = await prisma.equipment.findUnique({ where: { id: equipmentId } });
   if (!item || item.companyId !== company.id) {
@@ -69,7 +75,7 @@ export async function updateEquipment(equipmentId: string, formData: FormData) {
 }
 
 export async function deleteEquipment(equipmentId: string) {
-  const context = await requireCompanyContext();
+  const context = await requireCapabilityForAction("MANAGE_FIELD", FIELD_ONLY);
   assertOwner(context);
   const { company } = context;
 

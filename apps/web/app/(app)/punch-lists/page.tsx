@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@prova/db";
-import { requireCompanyContext } from "@/lib/auth";
+import { requireCapability } from "@/lib/authz";
+import { NoAccess } from "@/components/NoAccess";
 import { PunchListForm } from "@/components/PunchListForm";
 import { PunchListRow } from "@/components/PunchListRow";
 
@@ -9,7 +10,9 @@ export default async function PunchListsPage({
 }: {
   searchParams: Promise<{ job?: string; show?: string }>;
 }) {
-  const { company, ...currentUser } = await requireCompanyContext();
+  const { context, allowed } = await requireCapability("MANAGE_FIELD");
+  if (!allowed) return <NoAccess capability="MANAGE_FIELD" />;
+  const { company, ...currentUser } = context;
   const { job: jobFilter, show } = await searchParams;
   const showDone = show === "all";
 

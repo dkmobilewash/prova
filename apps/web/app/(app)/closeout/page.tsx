@@ -1,4 +1,5 @@
-import { requireCompanyContext } from "@/lib/auth";
+import { requireCapability } from "@/lib/authz";
+import { NoAccess } from "@/components/NoAccess";
 import { CloseoutJobCard } from "@/components/CloseoutJobCard";
 import { CloseoutPackagePanel } from "@/components/CloseoutPackagePanel";
 import { blockerLabel, plural, stageLabel } from "@/components/closeoutPackageLabels";
@@ -13,7 +14,9 @@ import { money } from "@/lib/money";
 import { can } from "@/lib/permissions";
 
 export default async function CloseoutPage() {
-  const { company, ...currentUser } = await requireCompanyContext();
+  const { context, allowed } = await requireCapability("MANAGE_JOBS");
+  if (!allowed) return <NoAccess capability="MANAGE_JOBS" />;
+  const { company, ...currentUser } = context;
   const today = new Date().toISOString().slice(0, 10);
 
   const withReadiness = await loadCloseoutJobs(company.id, today);
