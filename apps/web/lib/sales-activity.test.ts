@@ -156,6 +156,27 @@ describe("an activity dated in the future", () => {
   });
 });
 
+describe("supersession is derived, not stored", () => {
+  // Observed in the browser on 2026-09-04: deleting the superseding
+  // activity flipped the older email's follow-up back from "since
+  // superseded" to live. That is only true because nothing writes a
+  // done-flag anywhere — and it is the property that would quietly break
+  // the day somebody "optimises" this by storing one.
+  const email = activity("email", "EMAIL", "2026-08-20", "2026-08-27");
+  const laterCall = activity("call", "CALL", "2026-08-25", null);
+
+  it("suppresses the earlier follow-up while the later activity exists", () => {
+    expect(openFollowUp([email, laterCall], TODAY)).toBeNull();
+  });
+
+  it("restores it the moment the later activity is removed", () => {
+    expect(openFollowUp([email], TODAY)).toEqual({
+      activityId: "email",
+      dueOn: "2026-08-27",
+    });
+  });
+});
+
 describe("followUpStanding", () => {
   it("counts a follow-up due today as due, not late", () => {
     expect(followUpStanding("2026-09-04", "2026-09-04")).toBe("DUE_TODAY");
