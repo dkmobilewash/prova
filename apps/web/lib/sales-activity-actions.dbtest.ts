@@ -209,8 +209,8 @@ describe("the sales CRM's actions against real rows", () => {
 
     it("names both when both exist, and pluralises each", async () => {
       const lead = await makeLead("Both Kinds Of History");
-      await createSalesOpportunity(lead.id, form({ stage: "NEW" }));
-      await createSalesOpportunity(lead.id, form({ stage: "TRIAL" }));
+      await createSalesOpportunity(lead.id, form({ stage: "NEW", stageEffectiveOn: "2026-08-01" }));
+      await createSalesOpportunity(lead.id, form({ stage: "TRIAL", stageEffectiveOn: "2026-08-10" }));
       await createSalesActivity(
         lead.id,
         form({ type: "DEMO", occurredOn: "2026-09-01", summary: "demo" }),
@@ -233,7 +233,7 @@ describe("the sales CRM's actions against real rows", () => {
     it("refuses an opportunity belonging to a different lead", async () => {
       const mine = await makeLead("My Lead");
       const theirs = await makeLead("Someone Else's Lead");
-      await createSalesOpportunity(theirs.id, form({ stage: "NEW" }));
+      await createSalesOpportunity(theirs.id, form({ stage: "NEW", stageEffectiveOn: "2026-08-01" }));
       const foreign = await prisma.salesOpportunity.findFirstOrThrow({
         where: { leadId: theirs.id },
       });

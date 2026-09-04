@@ -12,6 +12,67 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+## A sales stage that moves without a trace answers nothing
+
+`SalesOpportunity.stage` was a single mutable field. It said WHERE a deal
+was and nothing about when it got there, so "how long has this sat in
+`DEMO_SCHEDULED`" — the most useful number a pipeline has — was
+unanswerable no matter how many times somebody updated the stage.
+
+`SalesStageChange` records every move. `lib/sales-stage-history.ts` reads
+it: time in the current stage, and one entry per stretch the deal spent in
+a stage. `/sales/[id]` shows both, per opportunity.
+
+**`effectiveOn` is entered, not stamped,** with `recordedAt` alongside it
+for audit. Recording on Wednesday that the demo happened Monday records
+Monday. A plain `changedAt DateTime @default(now())` would have measured
+when somebody got round to updating Prova, which is a different quantity
+wearing the same name.
+
+**A move is recorded only when the stage actually differs.** Writing a row
+on every save would reset a deal's time-in-stage to zero the moment
+somebody corrected its MRR — silently, and to a plausible number. That is
+the assertion the whole feature rests on, so it is a database test, and
+forcing `isMove` to `true` reds it.
+
+**Both writes are one transaction, and the test proves the rollback.** A
+move dated before the previous move is refused, and the opportunity's own
+stage and amount must come back untouched — not merely the history row
+skipped, which would leave the deal in TRIAL with a history saying NEW.
+Replacing the transaction with sequential calls reds that test.
+
+**No backfill.** The tempting migration is one row per existing
+opportunity with `effectiveOn = createdAt`. It would assert that every deal
+has been in its current stage since the day it was created — false for any
+that has moved, and false invisibly, as a plausible number. Deals that
+predate this read "stage not recorded" and their history starts at their
+next move. `createdAt` is not an answer to a question about the current
+stage.
+
+**A revisited stage stays two stretches, never summed.** A deal that goes
+TRIAL → LOST → TRIAL produces three entries, not two. Condensing per stage
+would report "19 days in Trial" and hide entirely that it was written off
+in between.
+
+**Nulls where a number would lie.** No history → null, not zero. A move
+dated in the FUTURE → null, because a deal cannot already have spent time
+in a stage it has not reached and "-4 days in Trial" is worse than saying
+nothing. Zero is kept as a real answer meaning "moved today".
+
+The page also renders a disagreement between the stored stage and where
+the history left the deal. It should be unreachable — the two writes share
+a transaction, and a grep confirms these are the only two writers of
+`stage` in the codebase — which is exactly why it is worth showing if it
+ever appears, same treatment as `enrollmentState`'s CONTRADICTORY.
+
+Two existing database tests went red on this change and were right to:
+`createSalesOpportunity` now requires the stage date, and they called it
+without one. Fixed at the call sites rather than by softening the
+requirement — the form always sends it, defaulted to the user's local
+today.
+
+---
+
 ## The internal sales CRM remembers a conversation now
 
 Phase B shipped `SalesLead` and `SalesOpportunity` with full CRUD and two
