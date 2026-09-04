@@ -21,7 +21,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * write were ever dropped.
  */
 
-const CUID_SHAPE = /^c[a-z0-9]{20,}$/;
 const HEX_48 = /^[0-9a-f]{48}$/;
 
 const COMPANY_ID = "cmp_alpha";
@@ -81,7 +80,14 @@ describe("the e-signature token is a secret, not a database id", () => {
     expect(typeof token, "createSignatureRequest must set `token` itself").toBe("string");
     // 24 bytes of randomBytes, hex encoded — 192 bits, same as portalToken.
     expect(token as string).toMatch(HEX_48);
-    expect(token as string).not.toMatch(CUID_SHAPE);
+    // NOT `expect(token).not.toMatch(/^c[a-z0-9]{20,}$/)`. That assertion was
+    // here and was FLAKY BY CONSTRUCTION: hex is a subset of [a-z0-9], so any
+    // token that happens to begin with `c` matches the cuid shape — roughly
+    // one run in sixteen, on every branch, unrelated to the code under test.
+    // CI caught it on an unrelated PR. HEX_48 already proves what matters:
+    // exactly 48 hex characters is a shape no cuid can take (a cuid is ~25
+    // characters over the full base36 alphabet), so the positive assertion
+    // subsumes the negative one without the false failures.
   });
 
   it("issues the same shape of token as the portal link it claims to match", async () => {

@@ -75,8 +75,9 @@ const RETAINAGE_COLUMN_FILES: Record<string, string> = {
   // ------------------------------ per-job / per-invoice, by necessity ---
   "app/(app)/cash-flow/page.tsx": "Retainage receivable TABLE — needs job rows, not a total.",
   "app/(app)/jobs/[id]/page.tsx": "One job's own retainage panel.",
-  "app/(app)/jobs/[id]/pay-applications/[invoiceId]/page.tsx":
-    "G702 retainage-to-date for one invoice, from that invoice's snapshot.",
+  "lib/pay-application-query.ts":
+    "Assembles one pay application. PR #156 moved this out of the page so the G702 arithmetic could be tested without a database; the page now renders what this returns.",
+  "lib/pay-application-query.test.ts": "Pins that assembly, including the removed-line close-out.",
   "lib/alerts-query.ts": "RETAINAGE_RELEASE alerts — one alert per job, with its name.",
   "lib/closeout-query.ts": "Retainage at stake on one job's closeout row.",
 
