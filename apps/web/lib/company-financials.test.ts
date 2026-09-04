@@ -140,7 +140,7 @@ describe("the company margin when the book is not substantially estimated (#99)"
       jobs: [solid, half],
       cashCollected: 0,
       totalBilled: 0,
-      retainageBalances: [],
+      retainageHeld: 0,
     });
     // 75% of the book carries an earned-revenue figure. Below the threshold,
     // so the bar says "—" instead of a number.
@@ -165,7 +165,7 @@ describe("the company margin when the book is not substantially estimated (#99)"
       jobs: [big, scrap],
       cashCollected: 0,
       totalBilled: 0,
-      retainageBalances: [],
+      retainageHeld: 0,
     });
     expect(result.grossMarginRate).toBeCloseTo(0.4, 10);
   });
