@@ -26,7 +26,20 @@ enum InvoiceStatus {
 /// A client e-signature request for a Job's contract. The unguessable
 /// `token` is the client's access control — there's no client login
 /// (that's a separate, not-yet-built phase), so the token stands in for
-/// one. Once signed, `snapshot` freezes what the client actually agreed to
+/// one.
+///
+/// DELIBERATELY NO `@default` ON `token`. It was `@default(cuid())` until
+/// 2026-09-03, which made a bearer credential out of an identifier
+/// generator: cuid is collision-resistant, not unguessable, and this token
+/// is the entire access control on an unauthenticated page that renders the
+/// contract and marks it legally SIGNED. `createSignatureRequest` now
+/// supplies it from `apps/web/lib/tokens.ts` (randomBytes(24), the same
+/// generator as Contact.portalToken). The default is absent rather than
+/// changed so that a create which forgets the token fails to compile
+/// instead of silently issuing a weak one. Rows created before that date
+/// still hold cuid tokens; issue a fresh link to replace one.
+///
+/// Once signed, `snapshot` freezes what the client actually agreed to
 /// at that moment: it's an audit record only, exactly like
 /// ChangeOrderLineItemEdit — nothing live (the contract summary, the
 /// budget) ever reads from it. See ARCHITECTURE.md.
@@ -34,7 +47,7 @@ model SignatureRequest {
   id     String          @id @default(cuid())
   jobId  String
   job    Job             @relation(fields: [jobId], references: [id])
-  token  String          @unique @default(cuid())
+  token  String          @unique
   status SignatureStatus @default(PENDING)
 
   signerName  String?
