@@ -171,45 +171,61 @@ async function main() {
   // One transaction. Every delete lands or none of them do — no swallowed
   // per-table failures, no half-deleted job.
   console.log("\nDELETING (one transaction, children first):");
-  const removed = await prisma.$transaction(async (tx) => {
-    const out = [];
-    const run = async (label, fn) => {
-      const r = await fn();
-      out.push([label, r.count]);
-    };
+  const removed = await prisma.$transaction(
+    async (tx) => {
+      const out = [];
+      const run = async (label, fn) => {
+        const r = await fn();
+        out.push([label, r.count]);
+      };
 
-    await run("CostEntry", () =>
-      tx.costEntry.deleteMany({ where: { lineItem: { jobId: { in: jobIds } } } }),
-    );
-    await run("InvoiceLineItem", () =>
-      tx.invoiceLineItem.deleteMany({ where: { invoiceId: { in: invoiceIds } } }),
-    );
-    await run("Payment", () =>
-      tx.payment.deleteMany({ where: { invoiceId: { in: invoiceIds } } }),
-    );
-    await run("QuickBooksSyncAttempt", () =>
-      tx.quickBooksSyncAttempt.deleteMany({ where: qbWhere }),
-    );
-    await run("QuickBooksEntityLink", () => tx.quickBooksEntityLink.deleteMany({ where: qbWhere }));
-
-    // The remaining job-scoped tables, in HANDLED_MODELS order — which is
-    // foreign-key order, not alphabetical.
-    for (const model of HANDLED_MODELS) {
-      if (["CostEntry", "InvoiceLineItem", "Payment"].includes(model)) continue;
-      await run(model, () =>
-        tx[delegateName(model)].deleteMany({ where: { jobId: { in: jobIds } } }),
+      await run("CostEntry", () =>
+        tx.costEntry.deleteMany({ where: { lineItem: { jobId: { in: jobIds } } } }),
       );
-    }
+      await run("InvoiceLineItem", () =>
+        tx.invoiceLineItem.deleteMany({ where: { invoiceId: { in: invoiceIds } } }),
+      );
+      await run("Payment", () =>
+        tx.payment.deleteMany({ where: { invoiceId: { in: invoiceIds } } }),
+      );
+      await run("QuickBooksSyncAttempt", () =>
+        tx.quickBooksSyncAttempt.deleteMany({ where: qbWhere }),
+      );
+      await run("QuickBooksEntityLink", () =>
+        tx.quickBooksEntityLink.deleteMany({ where: qbWhere }),
+      );
 
-    await run("Job", () => tx.job.deleteMany({ where: { id: { in: jobIds } } }));
+      // The remaining job-scoped tables, in HANDLED_MODELS order — which is
+      // foreign-key order, not alphabetical.
+      for (const model of HANDLED_MODELS) {
+        if (["CostEntry", "InvoiceLineItem", "Payment"].includes(model)) continue;
+        await run(model, () =>
+          tx[delegateName(model)].deleteMany({ where: { jobId: { in: jobIds } } }),
+        );
+      }
 
-    // Verified inside the transaction, so a job that somehow survived rolls
-    // the whole thing back rather than reporting success. "It said it
-    // worked" is the claim this repo has been burned by more than once.
-    const left = await tx.job.count({ where: { id: { in: jobIds } } });
-    if (left > 0) throw new Error(`${left} job(s) still present after delete — rolled back.`);
-    return out;
-  });
+      await run("Job", () => tx.job.deleteMany({ where: { id: { in: jobIds } } }));
+
+      // Verified inside the transaction, so a job that somehow survived rolls
+      // the whole thing back rather than reporting success. "It said it
+      // worked" is the claim this repo has been burned by more than once.
+      const left = await tx.job.count({ where: { id: { in: jobIds } } });
+      if (left > 0) throw new Error(`${left} job(s) still present after delete — rolled back.`);
+      return out;
+    },
+    // Prisma defaults an interactive transaction to timeout 5000ms and
+    // maxWait 2000ms, and this body is ~20 sequential round trips. That is
+    // nothing against a local socket — which is all this script was
+    // rehearsed against — and not nothing against Neon: a pooled
+    // connection, internet latency, and a compute that suspends when idle,
+    // so the first query of the day pays for the wake.
+    //
+    // Blowing the default is not dangerous — the transaction rolls back and
+    // nothing is deleted — but it ends the run in a P2028 that reads like a
+    // bug in the cleanup rather than a clock. Raised so the limit is the
+    // operator's patience, not an accident.
+    { maxWait: 15_000, timeout: 120_000 },
+  );
 
   removed.forEach(([label, n]) => {
     if (n > 0) console.log(`  removed ${label.padEnd(24)} ${n}`);
