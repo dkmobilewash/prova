@@ -1,6 +1,6 @@
 import { prisma } from "@prova/db";
 import { calculateJobWip, calculateLineItemWip, type WipJobResult } from "./wip";
-import { calculateRetainageSummary, totalRetainageHeld } from "./retainage";
+import { loadRetainageHeld } from "./retainage-query";
 import { calculatePaymentReliability, type PaymentReliability } from "./gc-reliability";
 import { daysPastDueFor, effectiveDueDateFor } from "./cash-flow";
 import { MIN_ESTIMATE_COVERAGE, jobHealthSentence, jobIsOverBudget } from "./company-financials";
@@ -60,7 +60,7 @@ export type GcReliabilityRow = {
 
 
 export async function loadTodayDashboard(companyId: string, now: Date) {
-  const [invoices, activeJobs, retainageJobs, contacts] = await Promise.all([
+  const [invoices, activeJobs, retainageHeld, contacts] = await Promise.all([
     prisma.invoice.findMany({
       where: { job: { companyId } },
       select: {
@@ -90,7 +90,6 @@ export async function loadTodayDashboard(companyId: string, now: Date) {
         id: true,
         name: true,
         status: true,
-        substantialCompletionDate: true,
         contact: { select: { name: true } },
         assignments: { select: { user: { select: { name: true, email: true } } } },
         lineItems: {
@@ -104,33 +103,20 @@ export async function loadTodayDashboard(companyId: string, now: Date) {
             costEntries: { select: { amount: true } },
           },
         },
-        invoices: { select: { amount: true, retainageWithheld: true } },
-        retainageReleases: { select: { amount: true } },
+        // amount only: this list computes job HEALTH. It used to select
+        // the retainage columns as well and read neither of them — a dead
+        // over-select, and the shape of the mistake that produced #97: a
+        // job list gathered for one question sitting one line away from
+        // the columns for a different one.
+        invoices: { select: { amount: true } },
       },
       orderBy: { createdAt: "desc" },
     }),
-    // Retainage needs its own query, and the reason is the bug it fixes.
-    // No substantialCompletionDate filter: that column is the date a job
-    // is EXPECTED to reach completion, so requiring it dropped real money
-    // held on jobs nobody had forecast yet.
-    // Job health is about jobs still running, so activeJobs is CONTRACTED
-    // and IN_PROGRESS. Retainage is the other end of a job's life: it is
-    // released after substantial completion, by which point the job is
-    // normally COMPLETE — the exact status activeJobs excludes. Reusing
-    // that query made the card structurally incapable of ever showing a
-    // number, and it showed $0.00 while $13,420 was genuinely held.
-    //
-    // Status is not filtered at all here. What makes retainage claimable
-    // is substantial completion, not a pipeline stage.
-    prisma.job.findMany({
-      where: { companyId },
-      select: {
-        id: true,
-        substantialCompletionDate: true,
-        invoices: { select: { retainageWithheld: true } },
-        retainageReleases: { select: { amount: true } },
-      },
-    }),
+    // ONE source for this figure, shared with the metric bar — see
+    // lib/retainage-query.ts, which owns the population and carries the
+    // #46/#97 history. This page and the bar rendered two different
+    // numbers under the same label because each assembled its own read.
+    loadRetainageHeld(companyId),
     prisma.contact.findMany({
       where: { companyId },
       select: {
@@ -264,30 +250,6 @@ export async function loadTodayDashboard(companyId: string, now: Date) {
       entry.wip.estimatedCoverage >= MIN_ESTIMATE_COVERAGE,
   ).length;
 
-  /* ---------------------------------------------------- retainage ---- */
-
-  // No calendar window, and that is the second half of the fix.
-  //
-  // "Releasing this month" dropped a job that completed on the 28th of
-  // last month with retainage still unpaid — which is not an edge case,
-  // it is the normal one. Retainage is chased for months, and a number
-  // that resets to zero on the 1st is telling a contractor that nothing
-  // is owed on the day it is most owed.
-  //
-  // What is summed is calculateRetainageSummary().balance — withheld
-  // minus released — which is an outstanding balance, not a release
-  // event. The card is renamed to say that: it reports what is HELD past
-  // substantial completion, which is the money a sub can actually chase.
-  const retainageHeldPastCompletion = totalRetainageHeld(
-    retainageJobs.map((job) => ({
-      substantialCompletionDate: job.substantialCompletionDate,
-      invoiceRetainageWithheld: job.invoices.map((invoice) =>
-        invoice.retainageWithheld === null ? null : Number(invoice.retainageWithheld),
-      ),
-      releaseAmounts: job.retainageReleases.map((release) => Number(release.amount)),
-    })),
-  );
-
   /* -------------------------------------------------------- crews ---- */
 
   const crews: CrewRow[] = activeJobs
@@ -337,7 +299,10 @@ export async function loadTodayDashboard(companyId: string, now: Date) {
     overdueTotal: overdue.reduce((sum, row) => sum + row.outstanding, 0),
     jobHealth,
     jobsOverBudget,
-    retainageHeldPastCompletion,
+    // Named for what it is. It was `retainageHeldPastCompletion` after the
+    // substantial-completion filter was removed, so the name asserted a
+    // narrowing the query had already stopped doing.
+    retainageHeld,
     crews,
     gcReliability,
   };

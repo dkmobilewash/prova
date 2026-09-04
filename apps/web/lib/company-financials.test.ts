@@ -34,7 +34,7 @@ describe("calculateCompanyFinancials", () => {
       jobs: [job({ contractValue: 100_000 }), job({ contractValue: 250_000 })],
       cashCollected: 0,
       totalBilled: 0,
-      retainageBalances: [],
+      retainageHeld: 0,
     });
     expect(result.estimatedRevenue).toBe(350_000);
   });
@@ -48,7 +48,7 @@ describe("calculateCompanyFinancials", () => {
       jobs: [big, small],
       cashCollected: 0,
       totalBilled: 0,
-      retainageBalances: [],
+      retainageHeld: 0,
     });
     // Blended: 209,000 / 1,010,000 ≈ 20.7%. A naive average would say 55%.
     expect(result.grossMarginRate).toBeCloseTo(0.2069, 3);
@@ -61,7 +61,7 @@ describe("calculateCompanyFinancials", () => {
       jobs: [job({ earnedRevenue: 0, actualCostToDate: 0 })],
       cashCollected: 0,
       totalBilled: 0,
-      retainageBalances: [],
+      retainageHeld: 0,
     });
     expect(result.grossMarginRate).toBeNull();
   });
@@ -71,7 +71,7 @@ describe("calculateCompanyFinancials", () => {
       jobs: [job({ earnedRevenue: 100_000, actualCostToDate: 130_000 })],
       cashCollected: 0,
       totalBilled: 0,
-      retainageBalances: [],
+      retainageHeld: 0,
     });
     expect(result.grossMarginRate).toBeCloseTo(-0.3, 5);
   });
@@ -81,28 +81,24 @@ describe("calculateCompanyFinancials", () => {
       jobs: [job()],
       cashCollected: 40_000,
       totalBilled: 65_000,
-      retainageBalances: [],
+      retainageHeld: 0,
     });
     expect(result.cashPosition).toBe(40_000);
     expect(result.outstandingReceivable).toBe(25_000);
   });
 
-  it("sums retainage held across jobs", () => {
-    const result = calculateCompanyFinancials({
-      jobs: [job()],
-      cashCollected: 0,
-      totalBilled: 0,
-      retainageBalances: [5_000, 2_500, 0],
-    });
-    expect(result.retainageHeld).toBe(7_500);
-  });
+  // The case that used to sit here summed `retainageBalances: [5_000,
+  // 2_500, 0]` to 7_500. Since #97 the input is the figure itself, so that
+  // assertion became `7_500 -> 7_500` and was deleted rather than kept as
+  // decoration. The figure is now proven where it can actually be wrong —
+  // in the query, in retainage-query.dbtest.ts.
 
   it("has nothing to say about no jobs, without dividing by zero", () => {
     const result = calculateCompanyFinancials({
       jobs: [],
       cashCollected: 0,
       totalBilled: 0,
-      retainageBalances: [],
+      retainageHeld: 0,
     });
     expect(result).toMatchObject({ estimatedRevenue: 0, grossMarginRate: null, retainageHeld: 0 });
   });
@@ -144,7 +140,7 @@ describe("the company margin when the book is not substantially estimated (#99)"
       jobs: [solid, half],
       cashCollected: 0,
       totalBilled: 0,
-      retainageBalances: [],
+      retainageHeld: 0,
     });
     // 75% of the book carries an earned-revenue figure. Below the threshold,
     // so the bar says "—" instead of a number.
@@ -169,7 +165,7 @@ describe("the company margin when the book is not substantially estimated (#99)"
       jobs: [big, scrap],
       cashCollected: 0,
       totalBilled: 0,
-      retainageBalances: [],
+      retainageHeld: 0,
     });
     expect(result.grossMarginRate).toBeCloseTo(0.4, 10);
   });
