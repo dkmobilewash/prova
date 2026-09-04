@@ -8,6 +8,7 @@ import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@prova/db";
 import { revokeToken, refreshTokens, getCompanyInfo, generateWipNarrative, type QuickBooksCompanyInfo } from "@prova/integrations";
 import { calculateLineItemWip, calculateJobWip } from "@/lib/wip";
+import { MIN_EARNED_COVERAGE } from "@/lib/company-financials";
 import {
   assertJobInCompany,
   assertLineItemOnJob,
@@ -16,6 +17,7 @@ import {
   enumFromForm,
   INVOICE_STATUSES,
   nullableDecimalFromForm,
+  type ActionResultWith,
 } from "./shared";
 
 /**
@@ -430,7 +432,9 @@ export async function testQuickBooksConnection(): Promise<QuickBooksCompanyInfo>
  * persisted — every click regenerates fresh rather than reading a cached
  * value, since there's no schema field to cache it in yet.
  */
-export async function generateJobWipNarrative(jobId: string): Promise<string> {
+export async function generateJobWipNarrative(
+  jobId: string,
+): Promise<ActionResultWith<string>> {
   const { company } = await requireCompanyContext();
   const job = await assertJobInCompany(jobId, company.id);
 
@@ -460,7 +464,22 @@ export async function generateJobWipNarrative(jobId: string): Promise<string> {
     billedToDate,
   );
 
-  return generateWipNarrative({
+  // The model's system prompt tells it every figure it receives is exact and
+  // final, and asks it to judge whether the job is overbilled. On a job
+  // whose lines are only half estimated, earnedRevenue is summed with `?? 0`
+  // against a contract value counted in full — so handing these numbers over
+  // would have Claude write confident prose about an artefact. The job page
+  // already refuses to print the same figure; this refuses to narrate it.
+  if (jobWip.earnedCoverage < MIN_EARNED_COVERAGE) {
+    return {
+      ok: false,
+      error: `Only ${Math.round(
+        jobWip.earnedCoverage * 100,
+      )}% of this job's value has a cost estimate, so the WIP figures aren't complete enough to interpret. Budget the remaining lines first.`,
+    };
+  }
+
+  const narrative = await generateWipNarrative({
     jobName: job.name,
     jobStatus: job.status,
     contractValue: jobWip.contractValue,
@@ -477,6 +496,8 @@ export async function generateJobWipNarrative(jobId: string): Promise<string> {
       actualCostToDate: wip.actualCostToDate,
     })),
   });
+
+  return { ok: true, value: narrative };
 }
 
 // --- Company profile: insurance/bonding and locations ---------------------

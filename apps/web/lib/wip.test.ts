@@ -166,3 +166,56 @@ describe("line-level WIP semantics the job math stands on", () => {
     expect(job.overUnderBilling).toBe(20_000);
   });
 });
+
+describe("how much of the job's VALUE has an earned-revenue figure (#99)", () => {
+  // earnedRevenue is summed with `?? 0` while contractValue counts in full,
+  // so a job whose lines are half estimated reports a billing position made
+  // mostly of lines assumed to have earned nothing. The sum itself stays as
+  // it is; this is the number that says whether the sum is a fact or an
+  // artefact — the same answer MIN_ESTIMATE_COVERAGE already gives on the
+  // cost side.
+  const priced = (over: Partial<WipLineItemInput> = {}) => line({ unitPrice: 100_000, ...over });
+
+  const budgeted = priced({ currentEstimatedUnitCost: 80_000, actualCostToDate: 40_000 });
+  const unbudgeted = priced();
+
+  it("still knows, per line, that one of them has no earned revenue", () => {
+    expect(budgeted.earnedRevenue).toBe(50_000);
+    expect(unbudgeted.earnedRevenue).toBeNull();
+  });
+
+  it("says how much of the contract value that figure actually covers", () => {
+    const job = calculateJobWip([budgeted, unbudgeted], 130_000);
+    // The panel is self-contradictory on its own face, which is the tell:
+    // 50% of $200,000 is $100,000, not $50,000. Both come out of this call.
+    expect(job.contractValue).toBe(200_000);
+    expect(job.earnedRevenue).toBe(50_000);
+    expect(job.overUnderBilling).toBe(80_000);
+    expect(job.earnedCoverage).toBe(0.5);
+  });
+
+  it("does not call a zero-cost estimate the same thing as no estimate", () => {
+    // currentEstimatedUnitCost 0 gives estimatedCostAtCompletion 0, which is
+    // NOT null: the cost-side ratio counts this line as covered, the
+    // revenue-side ratio must not. Two ratios, two predicates — which is
+    // exactly why they stay two constants and not one.
+    const zeroCost = priced({ currentEstimatedUnitCost: 0 });
+    expect(zeroCost.estimatedCostAtCompletion).toBe(0);
+    expect(zeroCost.earnedRevenue).toBeNull();
+
+    const job = calculateJobWip([budgeted, zeroCost], 0);
+    expect(job.estimatedCoverage).toBe(1);
+    expect(job.earnedCoverage).toBe(0.5);
+  });
+
+  it("reproduces the hand-rolled cost-side ratio it replaces, zero default and all", () => {
+    // today-dashboard.ts and ask/handlers.ts each carried their own copy,
+    // both `contractValue > 0 ? estimatedValue / contractValue : 0`. Same
+    // predicate, same zero default — replacing them must not quietly change
+    // what the dashboard's job-health sentence decides.
+    const costOnly = line({ currentEstimatedUnitCost: 10_000, actualCostToDate: 5_000 });
+    expect(calculateJobWip([costOnly], 0).estimatedCoverage).toBe(0);
+    expect(calculateJobWip([costOnly], 0).earnedCoverage).toBe(0);
+    expect(calculateJobWip([budgeted], 0).estimatedCoverage).toBe(1);
+  });
+});

@@ -12,6 +12,70 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### "Overbilled $80,000" on a job that is not overbilled (#99)
+`cyrus/wip-percent-and-earned-coverage`
+
+The revenue half of the asymmetry `MIN_ESTIMATE_COVERAGE` was invented to
+fix. `calculateJobWip` sums `earnedRevenue` with `?? 0` while contract
+value counts in full, so every line nobody has estimated is treated as
+having earned exactly nothing, and `billedToDate - earnedRevenue` reports
+a liability that does not exist.
+
+Two $100k lines, one budgeted and half spent, $130k invoiced. The panel
+prints Contract value $200,000, % complete 50.0%, Earned revenue $50,000,
+and — in amber — Overbilled $80,000. It contradicts itself on its own
+face: 50% of $200,000 is $100,000. If the second line were also half
+built the job would be UNDERbilled $30,000, so the sign was wrong, not
+just the size. Company-wide it is worse, because cost on an unestimated
+line counts in `costToDate` in full while its revenue does not: post $70k
+against that unbudgeted line and the MetricBar, which renders on every
+authenticated page, reads Gross margin -120.0% for a company that is fine.
+
+Fixed in the shape the cost side already uses — a coverage ratio, an
+exported threshold, and consumers that refuse to state the figure below
+it. `earnedCoverage` and `estimatedCoverage` now come off `calculateJobWip`
+itself, replacing two hand-rolled copies of the cost-side ratio in
+`today-dashboard.ts` and `ask/handlers.ts` and giving the job page the one
+it never had. `MIN_EARNED_COVERAGE` is deliberately a SECOND constant at
+the same 0.8: the two ratios have different predicates — a line estimated
+at zero cost is covered on the cost side and not on the revenue side — and
+one name would invite answering both questions with one ratio, which is
+the hole.
+
+What each surface does now: the job page shows "—" for earned revenue (the
+per-line rows below it already did) and, where the amber sentence was, the
+reason in slate. `/ask` receives null instead of a flattered number, plus
+both coverage ratios. "Explain this WIP" refuses rather than handing the
+model figures its system prompt tells it are exact and final — which meant
+converting `generateJobWipNarrative` from `Promise<string>` to a result
+type, since production redacts thrown Server Action messages.
+
+**The company margin goes quiet, it does NOT change population.** The
+tempting fix — drop under-covered jobs out of both company sums — was
+built and rejected: on the fixture above it reports 40% margin and colours
+it green while $90,000 of real spend vanishes, which is the opposite
+failure direction from the bug. An overstated overbilling makes a sub bill
+cautiously; a flattered margin makes them keep going. So `grossProfit`
+still sums every active job, and `grossMarginRate` returns null when less
+than 80% of the company's contract VALUE carries an earned-revenue figure.
+Value-weighted, so one small unbudgeted job cannot blank the bar for a
+large estimated book. "—" on the bar now carries its reason beside it.
+
+`estimatedRevenue` is untouched: it is contract value, correct today, and
+the backlog figure. Filtering it would be a new bug in the other
+direction, and there is a test pinning that.
+
+Also folded in: the dashboard's "N jobs over budget" count is gated on the
+same coverage its own sentences are, or the card says "3 jobs over budget"
+above three rows each saying we cannot forecast this job yet.
+
+**What this does NOT fix.** `earnedCoverage` answers "are the estimates
+there", not "do the figures agree". A cost-only line (unitPrice null —
+general conditions, overhead) has zero contract value and sits on neither
+side of the ratio, so a job can read fully covered and still show an
+earned revenue that is not percentComplete × contract value. Same family,
+different mechanism, not caught here.
+
 ### % complete could read 550%, because the numerator counted lines the denominator did not (#100)
 `cyrus/wip-percent-and-earned-coverage`
 

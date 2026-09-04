@@ -214,6 +214,12 @@ export function actionFail(error: string): ActionResult {
   return { ok: false, error };
 }
 
+/** ActionResult for an action that returns something on success — the same
+ * contract, with a payload. Here for the same reason ActionResult is: two
+ * feature modules exporting the same type name is a TS2308 build break,
+ * because the barrel `export *`s all of them. */
+export type ActionResultWith<T> = { ok: true; value: T } | { ok: false; error: string };
+
 /** True when a write failed a unique constraint (Prisma P2002).
  *
  * Checks the `code` property rather than `instanceof

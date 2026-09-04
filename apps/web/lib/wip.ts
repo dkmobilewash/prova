@@ -112,6 +112,26 @@ export interface WipJobResult {
    * the spend anyone has forecast. 1 when there is no spend at all — no
    * spend means no uncounted spend. */
   costCoverage: number;
+  /** Share of contract value sitting on lines that actually produced an
+   * earned-revenue figure, 0..1. earnedRevenue below is summed with `?? 0`
+   * while contractValue counts in full, so this is the number that says
+   * whether that sum is a fact or an artefact of lines nobody has estimated
+   * (issue #99). 0 when there is no contract value, matching the
+   * hand-rolled ratios this replaces.
+   *
+   * It answers "are the estimates there", not "do the figures agree". A
+   * cost-only line (unitPrice null — general conditions, overhead) has zero
+   * contract value and sits on neither side of this ratio, so a job can
+   * read fully covered and still show an earned revenue that does not equal
+   * percentComplete × contract value. That is a separate shape of the same
+   * family and this guard does not catch it. */
+  earnedCoverage: number;
+  /** The same question for the cost forecast, and NOT the same predicate:
+   * a line estimated at zero cost has a non-null estimatedCostAtCompletion
+   * and no earned revenue, so it is covered here and not above. Computed
+   * once here because today-dashboard.ts and ask/handlers.ts each carried
+   * their own hand-rolled copy and the job page had none. */
+  estimatedCoverage: number;
   earnedRevenue: number;
   billedToDate: number;
   /** billedToDate - earnedRevenue. Positive = overbilled (liability on the
@@ -143,12 +163,21 @@ export function calculateJobWip(lineItems: WipLineItemResult[], billedToDate: nu
 
   const percentComplete = forecastCost > 0 ? costOnForecastLines / forecastCost : null;
 
+  const earnedValue = lineItems
+    .filter((item) => item.earnedRevenue !== null)
+    .reduce((sum, item) => sum + item.contractValue, 0);
+  const estimatedValue = lineItems
+    .filter((item) => item.estimatedCostAtCompletion !== null)
+    .reduce((sum, item) => sum + item.contractValue, 0);
+
   return {
     contractValue,
     actualCostToDate,
     estimatedCostAtCompletion,
     percentComplete,
     costCoverage: actualCostToDate > 0 ? costOnForecastLines / actualCostToDate : 1,
+    earnedCoverage: contractValue > 0 ? earnedValue / contractValue : 0,
+    estimatedCoverage: contractValue > 0 ? estimatedValue / contractValue : 0,
     earnedRevenue,
     billedToDate,
     overUnderBilling: billedToDate - earnedRevenue,

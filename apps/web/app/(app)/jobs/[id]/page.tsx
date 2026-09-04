@@ -22,6 +22,7 @@ import { changeOrderValueDelta, pendingChangeOrderExposure, reopenBlockers } fro
 import { can } from "@/lib/permissions";
 import { money } from "@/lib/money";
 import { calculateLineItemWip, calculateJobWip } from "@/lib/wip";
+import { jobEarnedRevenue, jobOverUnderBilling } from "@/lib/company-financials";
 import { calculateTimeEntryLaborCost, findEffectiveFringeRateSchedule } from "@/lib/labor-cost";
 import { burdenedHourlyRate, estimateBurdenedLaborCost, laborRateDateFor } from "@/lib/estimate-labor-cost";
 import { LaborHoursField } from "@/components/LaborHoursField";
@@ -409,6 +410,10 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
     lineItemWip.map((l) => l.wip),
     billedToDate,
   );
+  // Null when too little of the job's value has an earned-revenue figure for
+  // the position to mean anything — see MIN_EARNED_COVERAGE.
+  const billingPosition = jobOverUnderBilling(jobWip);
+  const earnedRevenue = jobEarnedRevenue(jobWip);
 
   // Pay applications are just Invoices that carry a line-item breakdown —
   // see InvoiceLineItem in schema.prisma and lib/pay-application.ts.
@@ -811,21 +816,35 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                 {jobWip.percentComplete != null ? `${(jobWip.percentComplete * 100).toFixed(1)}%` : "—"}
               </p>
               {/* This tile is what a surety's WIP schedule gets typed from,
-                  so it says what it is based on. Cost-to-cost is computed
-                  over the lines that carry a cost forecast; spend on lines
-                  nobody has forecast is in "Actual cost to date" above and
-                  in neither side of this ratio. Without this line the two
-                  tiles disagree and nothing on screen says why. */}
-              {jobWip.percentComplete != null && jobWip.costCoverage < 1 && (
-                <p className="mt-1 text-xs text-amber-400">
-                  Based on {Math.round(jobWip.costCoverage * 100)}% of cost to date — the rest
-                  sits on lines with no cost forecast.
-                </p>
-              )}
+                  so it says what it is based on. Cost-to-cost runs over the
+                  lines that carry a cost forecast only: spend on unforecast
+                  lines is in "Actual cost to date" beside it and in neither
+                  side of this ratio, and their contract value is in
+                  "Contract value" beside that. Without this line the three
+                  tiles disagree, a reader multiplies this percentage by the
+                  contract value, and nothing on screen says why that is
+                  wrong. */}
+              {jobWip.percentComplete != null &&
+                (jobWip.estimatedCoverage < 1 || jobWip.costCoverage < 1) && (
+                  <p className="mt-1 text-xs text-amber-400">
+                    Over the {Math.round(jobWip.estimatedCoverage * 100)}% of contract value that
+                    carries a cost forecast
+                    {jobWip.costCoverage < 1
+                      ? `, and ${Math.round(jobWip.costCoverage * 100)}% of cost to date`
+                      : ""}
+                    .
+                  </p>
+                )}
             </div>
             <div>
               <p className="text-xs text-slate-500">Earned revenue</p>
-              <p className="text-slate-100">{money(jobWip.earnedRevenue)}</p>
+              {/* "—" for the same reason each per-line row below already
+                  shows one: a line with no cost estimate has no earned
+                  revenue, and summing it as zero is what turned this job
+                  total into a fact it is not. */}
+              <p className="text-slate-100">
+                {earnedRevenue != null ? money(earnedRevenue) : "—"}
+              </p>
             </div>
             <div>
               <p className="text-xs text-slate-500">Billed to date</p>
@@ -833,13 +852,21 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             </div>
             <div className="col-span-2 sm:col-span-1">
               <p className="text-xs text-slate-500">Over / under billed</p>
-              <p className={jobWip.overUnderBilling > 0 ? "text-amber-400" : "text-green-400"}>
-                {jobWip.overUnderBilling > 0
-                  ? `Overbilled ${money(jobWip.overUnderBilling)}`
-                  : jobWip.overUnderBilling < 0
-                    ? `Underbilled ${money(Math.abs(jobWip.overUnderBilling))}`
-                    : "Even"}
-              </p>
+              {billingPosition === null ? (
+                <p className="text-slate-400">
+                  Only {Math.round(jobWip.earnedCoverage * 100)}% of this job&apos;s value has an
+                  earned-revenue figure, so a billing position would be guesswork. Budget the rest
+                  to see where it lands.
+                </p>
+              ) : (
+                <p className={billingPosition > 0 ? "text-amber-400" : "text-green-400"}>
+                  {billingPosition > 0
+                    ? `Overbilled ${money(billingPosition)}`
+                    : billingPosition < 0
+                      ? `Underbilled ${money(Math.abs(billingPosition))}`
+                      : "Even"}
+                </p>
+              )}
             </div>
           </div>
 

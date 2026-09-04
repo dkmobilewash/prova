@@ -38,9 +38,22 @@ export interface CompanyFinancials {
    * across jobs by summing both sides first rather than averaging each
    * job's margin — a $2M job and a $20k job are not equal evidence of how
    * the business is doing. Null when nothing has been earned yet, because
-   * a margin on zero revenue is a division, not a fact. */
+   * a margin on zero revenue is a division, not a fact — and now also null
+   * when too little of the book carries an earned-revenue figure at all
+   * (see earnedCoverage below). */
   grossMarginRate: number | null;
+  /** Earned revenue minus cost incurred, over EVERY active job. Deliberately
+   * not narrowed to the jobs that clear the coverage threshold: a job whose
+   * lines are unestimated has still spent real money, and dropping it from
+   * both sums would report a healthy margin for a company that is bleeding.
+   * The coverage question is answered by silencing the RATE, never by
+   * quietly changing which jobs the sums are over. */
   grossProfit: number;
+  /** Share of the company's contract value sitting on lines that produced an
+   * earned-revenue figure, 0..1 — value-weighted across jobs, so one small
+   * unbudgeted job does not blank the bar for a large estimated book. This
+   * is why grossMarginRate can be null while grossProfit is a number. */
+  earnedCoverage: number;
   /** Billed and collected, less what is still owed. Cash in the door. */
   cashPosition: number;
   /** Billed but not yet paid — the money the margin above has already
@@ -56,10 +69,20 @@ export function calculateCompanyFinancials(input: CompanyFinancialsInput): Compa
 
   const grossProfit = earnedRevenue - costToDate;
 
+  // The same refusal jobHealthSentence makes, one level up. Below the
+  // threshold the blend is mostly made of jobs assumed to have earned
+  // nothing while their cost counts in full, so the rate is an artefact of
+  // missing estimates. Value-weighted rather than per-job: a $20k job
+  // nobody has budgeted must not blank the bar for a $2M book.
+  const coveredValue = input.jobs.reduce((sum, job) => sum + job.earnedCoverage * job.contractValue, 0);
+  const earnedCoverage = estimatedRevenue > 0 ? coveredValue / estimatedRevenue : 0;
+
   return {
     estimatedRevenue,
     grossProfit,
-    grossMarginRate: earnedRevenue > 0 ? grossProfit / earnedRevenue : null,
+    earnedCoverage,
+    grossMarginRate:
+      earnedRevenue > 0 && earnedCoverage >= MIN_EARNED_COVERAGE ? grossProfit / earnedRevenue : null,
     cashPosition: input.cashCollected,
     outstandingReceivable: input.totalBilled - input.cashCollected,
     retainageHeld: input.retainageBalances.reduce((sum, balance) => sum + balance, 0),
@@ -111,6 +134,45 @@ export const HEALTHY_MARGIN_RATE = 0.35;
  * data rather than a fact about the job.
  */
 export const MIN_ESTIMATE_COVERAGE = 0.8;
+
+/**
+ * How much of a job's contract value must have produced an earned-revenue
+ * figure before an over/under-billing position is worth stating.
+ *
+ * Same threshold and same reason as MIN_ESTIMATE_COVERAGE, deliberately a
+ * SECOND constant rather than a reuse of it. The two ratios have different
+ * predicates — a line estimated at zero cost is covered on the cost side and
+ * not on the revenue side — and one name would invite someone to answer both
+ * questions with one ratio, which is precisely the hole.
+ *
+ * Below this, the position is mostly made of lines assumed to have earned
+ * nothing while their billing counts in full, and "Overbilled $80,000" is an
+ * artefact of missing estimates rather than a fact about the job.
+ */
+export const MIN_EARNED_COVERAGE = 0.8;
+
+/**
+ * The billing position, or null for "we don't know" — same convention as
+ * jobCostVariance above.
+ *
+ * Worth knowing what this guard does NOT certify: billedToDate counts
+ * billing against every line, covered or not, so at exactly the threshold on
+ * a large job a six-figure slice of contract value can still be earning
+ * nothing while its invoices count in full. The guard says the estimates are
+ * substantially there, not that the dollar figure is exact.
+ */
+export function jobOverUnderBilling(job: WipJobResult): number | null {
+  if (job.earnedCoverage < MIN_EARNED_COVERAGE) return null;
+  return job.overUnderBilling;
+}
+
+/** Earned revenue, or null on the same grounds. The per-line rows on the job
+ * page already render "—" for a line with no earned revenue; this makes the
+ * job total behave the way its own rows do. */
+export function jobEarnedRevenue(job: WipJobResult): number | null {
+  if (job.earnedCoverage < MIN_EARNED_COVERAGE) return null;
+  return job.earnedRevenue;
+}
 
 export function marginIsHealthy(rate: number | null): boolean {
   return rate !== null && rate > HEALTHY_MARGIN_RATE;
