@@ -131,9 +131,19 @@ export function SalesPipelineBand({
         <div className="flex justify-between gap-3">
           <dt className="text-slate-500">No close date given</dt>
           <dd className="text-slate-300">
-            {pipeline.openWithoutCloseDate}
-            {pipeline.openWithoutCloseDate > 0 && (
-              <span className="text-slate-600"> — not counted in either line above</span>
+            {/* "none", not "0". Every other line in this band says none or
+                nothing here, and the band's whole design is to keep a
+                number from being read as a measurement — a bare 0 sitting
+                under three money figures is exactly that. Reported from a
+                browser run on 2026-09-04 as the one place it spoke in
+                digits. */}
+            {pipeline.openWithoutCloseDate === 0 ? (
+              "none"
+            ) : (
+              <>
+                {pipeline.openWithoutCloseDate}
+                <span className="text-slate-600"> — not counted in either line above</span>
+              </>
             )}
           </dd>
         </div>

@@ -626,6 +626,50 @@ argued from months later.
 
 ---
 
+## Two things a browser run found that no test was going to
+
+The full Phase C click-list ran end to end on production for the first
+time. Every assertion passed, including the two the lane rests on: three
+MRR-only saves left time-in-stage at 20 days and the history at one entry,
+and a backwards-dated stage move was refused with the deal coming back
+Trial at $500 — stage AND amount, which is the transaction rolling back
+rather than the history row merely being skipped.
+
+Two findings, both small, both real.
+
+**A bare `0` where every neighbour says "none".** "No close date given"
+was the one line in the pipeline band that answered in digits. The band's
+whole design is to keep a number from being read as a measurement, and a
+`0` sitting under three money figures is exactly that. Now "none".
+
+**Supersession is derived, and now something proves it.** Deleting the
+superseding activity flipped the older email's follow-up back from "since
+superseded" to live amber — observed in the browser, not asserted by
+anything. That only holds because no done-flag is stored anywhere, which
+is precisely the property that would break the day somebody "optimises"
+this by storing one. Two unit tests hold it now: suppressed while the
+later activity exists, restored the moment it is removed.
+
+**On #61, the run changes the diagnosis rather than adding to it.** No
+third reproduction — the create-then-navigate read was clean this time and
+so was lead creation. What the tester measured instead is that every write
+takes 5–7 seconds to surface, consistently. Both of the previous run's
+sightings were reads taken 2–3 seconds after a save, which is inside that
+window. So the shape is latency, not a missing revalidation. Recorded on
+the issue. It is not benign: 5–7 seconds is long enough that somebody
+clicks twice, and no create action here is idempotent — the sequence #19
+disabled 57 buttons for.
+
+**Also established, and not a code problem:** another session was writing
+test rows into the operator company's PRODUCTION data mid-run — an
+activity appeared on a lead between the tester's page load and their
+delete, which is why the delete guard fired on a lead they had just seen
+as empty. The guard was right; the data moved. A `CLAUDE-VERIFY` lead from
+the same source is still on the account and is skewing the live pipeline
+band by one Demo-scheduled deal at $1,200/mo.
+
+---
+
 ## A constant that stopped being an array when it crossed the RSC boundary
 
 `/sales/{id}` threw a 500 on any lead with at least one opportunity.
