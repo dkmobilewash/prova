@@ -244,9 +244,16 @@ things a person selling Prova cannot do with it today:
    `createSalesOpportunity`/`updateSalesOpportunity`, in one transaction
    with the row, and only when the stage actually differs — no new exported
    actions, no edit or delete path for a history row.
-3. **Pipeline by stage.** Counts, MRR and a forecast read across every
-   opportunity, the internal analogue of `/pipeline`. Zero schema — it is
-   a read over what items 1 and 2 leave behind.
+3. **Pipeline by stage.** *Built 4 Sep, not yet clicked.*
+   `lib/sales-pipeline.ts` + a band at the top of `/sales`: a card per open
+   stage (count, priced total, unpriced count, longest sitting), won/lost
+   with a win rate that is null until something is decided, close-date
+   buckets, and the deals sitting longest. Zero schema and zero shared
+   files — no route, no nav entry, no `middleware.ts` line.
+   **No weighted forecast**, which walks back what this entry originally
+   promised: stage probabilities do not exist and inventing them would
+   produce a confident number derived from nothing. The close-date lines
+   are read off entered dates instead, and the page says why.
 
 **Follow-ups deliberately do NOT go into `/alerts`.** The customer-facing
 CRM's `CONTACT_FOLLOW_UP` was the obvious precedent and it is the wrong

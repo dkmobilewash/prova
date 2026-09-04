@@ -11,6 +11,9 @@ import {
   summarizeLeadActivity,
   type LeadActivitySource,
 } from "@/lib/sales-activity";
+import { SalesPipelineBand } from "@/components/SalesPipelineBand";
+import { buildSalesPipeline, longestOpen, type PipelineOpportunity } from "@/lib/sales-pipeline";
+import { daysInCurrentStage, type RecordedStageChange } from "@/lib/sales-stage-history";
 
 /**
  * Prova's own sales pipeline -- for selling Prova itself, not a tenant's
@@ -53,6 +56,17 @@ export default async function SalesPage() {
       activities: {
         select: { id: true, type: true, occurredOn: true, followUpOn: true, createdAt: true },
       },
+      opportunities: {
+        select: {
+          id: true,
+          stage: true,
+          estimatedMrr: true,
+          expectedCloseDate: true,
+          stageChanges: {
+            select: { id: true, fromStage: true, toStage: true, effectiveOn: true, note: true, recordedAt: true },
+          },
+        },
+      },
     },
   });
 
@@ -72,6 +86,37 @@ export default async function SalesPage() {
     })),
   }));
 
+  // Time in stage comes from the same derivation /sales/[id] uses, rather
+  // than a second copy of the rule living here.
+  const pipelineOpportunities: PipelineOpportunity[] = leads.flatMap((lead) =>
+    lead.opportunities.map((opportunity) => {
+      const changes: RecordedStageChange[] = opportunity.stageChanges.map((change) => ({
+        id: change.id,
+        fromStage: change.fromStage,
+        toStage: change.toStage,
+        effectiveOn: toIsoDate(change.effectiveOn) as string,
+        note: change.note,
+        recordedAt: change.recordedAt.toISOString(),
+      }));
+
+      return {
+        id: opportunity.id,
+        leadId: lead.id,
+        companyName: lead.companyName,
+        stage: opportunity.stage,
+        // Decimal | null -> number | null. Never ?? 0: an unpriced deal is
+        // not a deal worth nothing, and every total downstream depends on
+        // the difference.
+        estimatedMrr: opportunity.estimatedMrr === null ? null : Number(opportunity.estimatedMrr),
+        expectedCloseDate: toIsoDate(opportunity.expectedCloseDate),
+        daysInStage: daysInCurrentStage(changes, today),
+      };
+    }),
+  );
+
+  const pipeline = buildSalesPipeline(pipelineOpportunities, today);
+  const sittingLongest = longestOpen(pipelineOpportunities, 3);
+
   const queue = followUpQueue(activitySources, today);
   const overdueCount = countOverdue(queue);
   const summaries = new Map(
@@ -85,6 +130,8 @@ export default async function SalesPage() {
         Prospective Prova customers and the deals in progress with them -- internal, not visible to
         any tenant.
       </p>
+
+      <SalesPipelineBand pipeline={pipeline} sittingLongest={sittingLongest} />
 
       {queue.length > 0 && (
         <section className="mb-6 rounded-lg border border-slate-800 bg-slate-900 p-4">
