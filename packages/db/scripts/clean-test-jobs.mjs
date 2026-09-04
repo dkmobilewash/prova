@@ -101,6 +101,38 @@ async function main() {
     return;
   }
 
+  // ONE COMPANY, OR NOTHING. Prova is multi-tenant and a job name is unique
+  // to nobody — two companies can each have a "ZZQB-TEST", and this script
+  // looks jobs up by name alone. Without this it would delete somebody
+  // else's job because ours happened to share a name, which is the worst
+  // thing a cleanup can do and would not even look wrong in the output.
+  //
+  // It refuses rather than picking one, deliberately. Scoping to "the
+  // oldest company" is a guess, and a guess is what this whole script is
+  // built to avoid; the operator can name the job differently or clear it
+  // by hand. Deleting the wrong tenant's data cannot be undone by being
+  // sorry about it afterwards.
+  const companyIds = [...new Set(jobs.map((j) => j.companyId))];
+  if (companyIds.length > 1) {
+    const companies = await prisma.company.findMany({
+      where: { id: { in: companyIds } },
+      select: { id: true, name: true },
+    });
+    const nameFor = new Map(companies.map((c) => [c.id, c.name]));
+    console.error(
+      `\nclean-test-jobs: REFUSING — those names match jobs in ${companyIds.length} different companies:`,
+    );
+    jobs.forEach((j) =>
+      console.error(`  "${j.name}" — ${nameFor.get(j.companyId) ?? j.companyId}`),
+    );
+    console.error(
+      "\nclean-test-jobs: nothing has been deleted. A job name is unique to nobody,\n" +
+        "clean-test-jobs: and this script matches on name alone. Rename the ones you mean\n" +
+        "clean-test-jobs: or remove them by hand.",
+    );
+    process.exit(1);
+  }
+
   const jobIds = jobs.map((j) => j.id);
   const invoices = await prisma.invoice.findMany({
     where: { jobId: { in: jobIds } },
