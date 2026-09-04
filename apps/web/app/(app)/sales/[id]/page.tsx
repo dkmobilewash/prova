@@ -9,6 +9,15 @@ import { SalesActivityRow } from "@/components/SalesActivityRow";
 import { OPPORTUNITY_STAGE_OPTIONS } from "@/components/SalesOpportunityFields";
 import { toIsoDate } from "@/lib/compliance-expiry";
 import { latestActivity, type LoggedActivity } from "@/lib/sales-activity";
+import { viewerToday } from "@/lib/viewerToday";
+import {
+  currentStageSince,
+  daysInCurrentStage,
+  historyDisagrees,
+  isFutureDated,
+  stageSpells,
+  type RecordedStageChange,
+} from "@/lib/sales-stage-history";
 
 export default async function SalesLeadPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -33,7 +42,10 @@ export default async function SalesLeadPage({ params }: { params: Promise<{ id: 
   const lead = await prisma.salesLead.findUnique({
     where: { id },
     include: {
-      opportunities: { orderBy: { createdAt: "desc" } },
+      opportunities: {
+        orderBy: { createdAt: "desc" },
+        include: { stageChanges: true },
+      },
       activities: {
         orderBy: [{ occurredOn: "desc" }, { createdAt: "desc" }],
         include: { loggedByUser: { select: { name: true, email: true } } },
@@ -44,6 +56,34 @@ export default async function SalesLeadPage({ params }: { params: Promise<{ id: 
   if (!lead || lead.companyId !== company.id) {
     notFound();
   }
+
+  // The viewer's calendar day, not the server's — a deal that moved today
+  // reads as moving tomorrow to anyone west of UTC once the server ticks over.
+  const today = await viewerToday();
+
+  const historyByOpportunity = new Map(
+    lead.opportunities.map((opportunity) => {
+      const changes: RecordedStageChange[] = opportunity.stageChanges.map((change) => ({
+        id: change.id,
+        fromStage: change.fromStage,
+        toStage: change.toStage,
+        effectiveOn: toIsoDate(change.effectiveOn) as string,
+        note: change.note,
+        recordedAt: change.recordedAt.toISOString(),
+      }));
+
+      return [
+        opportunity.id,
+        {
+          stageSince: currentStageSince(changes),
+          daysInStage: daysInCurrentStage(changes, today),
+          futureDated: isFutureDated(changes, today),
+          disagrees: historyDisagrees(changes, opportunity.stage),
+          spells: stageSpells(changes, today),
+        },
+      ];
+    }),
+  );
 
   const opportunityOptions = lead.opportunities.map((opportunity) => ({
     id: opportunity.id,
@@ -111,6 +151,15 @@ export default async function SalesLeadPage({ params }: { params: Promise<{ id: 
                   expectedCloseDate: toIsoDate(opportunity.expectedCloseDate),
                   notes: opportunity.notes,
                 }}
+                history={
+                  historyByOpportunity.get(opportunity.id) ?? {
+                    stageSince: null,
+                    daysInStage: null,
+                    futureDated: false,
+                    disagrees: false,
+                    spells: [],
+                  }
+                }
               />
             ))}
           </ul>

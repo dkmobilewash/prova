@@ -67,7 +67,8 @@ model SalesOpportunity {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  activities SalesActivity[]
+  activities   SalesActivity[]
+  stageChanges SalesStageChange[]
 
   @@index([companyId])
   @@index([leadId])
@@ -147,4 +148,56 @@ model SalesActivity {
   @@index([companyId])
   @@index([followUpOn])
   @@index([opportunityId])
+}
+
+/// When an opportunity moved from one stage to the next.
+///
+/// SalesOpportunity.stage is a single mutable field, so before this
+/// existed "how long has this sat in DEMO_SCHEDULED" -- the most useful
+/// number a pipeline has -- could not be answered at all, no matter how
+/// many times somebody updated the stage.
+///
+/// Written only by createSalesOpportunity and updateSalesOpportunity, in
+/// the same transaction as the row itself, and never edited or deleted.
+/// A wrong move is corrected by making the move again; the history keeps
+/// both rows, which is what an audit trail is for. There are deliberately
+/// no create/update/delete actions of its own.
+///
+/// NO BACKFILL, on purpose. The tempting migration is one row per existing
+/// opportunity with effectiveOn = createdAt, and it would assert that every
+/// deal has been in its current stage since the day it was created -- false
+/// for any that has moved, and false invisibly, as a plausible number.
+/// Opportunities that predate this model read "not recorded" and their
+/// history starts at their next change. Blank means nobody wrote it down.
+model SalesStageChange {
+  id            String           @id @default(cuid())
+  companyId     String
+  company       Company          @relation(fields: [companyId], references: [id])
+  opportunityId String
+  opportunity   SalesOpportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+
+  /// Null on the opening record -- the opportunity did not come from
+  /// anywhere, it was created at this stage. Every later row has one.
+  fromStage OpportunityStage?
+  toStage   OpportunityStage
+
+  /// The day the DEAL moved, entered by the person recording it. Not
+  /// stamped: recording on Wednesday that the demo happened on Monday must
+  /// record Monday, same rule as SalesActivity.occurredOn. A stamped
+  /// changedAt would measure when somebody got round to updating Prova,
+  /// which is a different quantity wearing the same name.
+  effectiveOn DateTime
+
+  /// Why it moved, if anyone said. Optional -- most moves need no
+  /// explanation and a required box would just collect "moved".
+  note String?
+
+  /// When the row was written, as distinct from when the deal moved.
+  /// Audit only, and the tie-break when two moves share an effectiveOn.
+  recordedAt       DateTime @default(now())
+  recordedByUserId String?
+  recordedByUser   User?    @relation("SalesStageChangeRecorder", fields: [recordedByUserId], references: [id])
+
+  @@index([opportunityId])
+  @@index([companyId])
 }

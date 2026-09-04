@@ -107,6 +107,28 @@ async function findOpportunity(opportunityId: string, companyId: string) {
   return opportunity;
 }
 
+/**
+ * A move dated before the move it follows is not a date somebody meant to
+ * type. Refused rather than stored: stageSpells() measures each stretch
+ * from its own move to the next, so an out-of-order row would produce a
+ * negative-length spell and shuffle the whole history.
+ */
+async function assertMoveNotBackwards(
+  tx: Pick<typeof prisma, "salesStageChange">,
+  opportunityId: string,
+  effectiveOn: Date,
+) {
+  const previous = await tx.salesStageChange.findFirst({
+    where: { opportunityId },
+    orderBy: [{ effectiveOn: "desc" }, { recordedAt: "desc" }],
+  });
+  if (previous !== null && effectiveOn < previous.effectiveOn) {
+    throw new InputError(
+      `This deal's last recorded move was ${previous.effectiveOn.toISOString().slice(0, 10)}. A move cannot be dated before it.`,
+    );
+  }
+}
+
 export async function createSalesLead(formData: FormData): Promise<ActionResult> {
   const context = await requireCompanyContext();
   return runAction(async () => {
@@ -212,6 +234,7 @@ export async function deleteSalesLead(leadId: string): Promise<ActionResult> {
 
 export async function createSalesOpportunity(leadId: string, formData: FormData): Promise<ActionResult> {
   const context = await requireCompanyContext();
+  const userId = context.id;
   return runAction(async () => {
     assertSalesAccess(context);
     const lead = await findLead(leadId, context.company.id);
@@ -221,16 +244,35 @@ export async function createSalesOpportunity(leadId: string, formData: FormData)
     const estimatedMrr = optionalDecimal(formData, "estimatedMrr");
     const expectedCloseDate = optionalDate(formData, "expectedCloseDate");
     const notes = text(formData, "notes");
+    const stageEffectiveOn = requiredDate(formData, "stageEffectiveOn", "The date it reached this stage");
+    const stageNote = text(formData, "stageNote");
 
-    await prisma.salesOpportunity.create({
-      data: {
-        companyId: context.company.id,
-        leadId,
-        stage,
-        estimatedMrr,
-        expectedCloseDate,
-        notes: notes || null,
-      },
+    // One transaction, so a stage and its history cannot come apart. The
+    // opening record has no fromStage: the deal was not moved here, it
+    // started here.
+    await prisma.$transaction(async (tx) => {
+      const opportunity = await tx.salesOpportunity.create({
+        data: {
+          companyId: context.company.id,
+          leadId,
+          stage,
+          estimatedMrr,
+          expectedCloseDate,
+          notes: notes || null,
+        },
+      });
+
+      await tx.salesStageChange.create({
+        data: {
+          companyId: context.company.id,
+          opportunityId: opportunity.id,
+          fromStage: null,
+          toStage: stage,
+          effectiveOn: stageEffectiveOn,
+          note: stageNote || null,
+          recordedByUserId: userId,
+        },
+      });
     });
 
     revalidatePath(`/sales/${leadId}`);
@@ -244,6 +286,7 @@ export async function createSalesOpportunity(leadId: string, formData: FormData)
 
 export async function updateSalesOpportunity(opportunityId: string, formData: FormData): Promise<ActionResult> {
   const context = await requireCompanyContext();
+  const userId = context.id;
   return runAction(async () => {
     assertSalesAccess(context);
     const opportunity = await findOpportunity(opportunityId, context.company.id);
@@ -254,9 +297,39 @@ export async function updateSalesOpportunity(opportunityId: string, formData: Fo
     const expectedCloseDate = optionalDate(formData, "expectedCloseDate");
     const notes = text(formData, "notes");
 
-    await prisma.salesOpportunity.update({
-      where: { id: opportunityId },
-      data: { stage, estimatedMrr, expectedCloseDate, notes: notes || null },
+    // The move is recorded ONLY when the stage actually differs. Editing
+    // the MRR on a deal is not a stage change, and writing a row for it
+    // would reset its time-in-stage to zero — the figure this history
+    // exists to make true.
+    const isMove = stage !== opportunity.stage;
+    const stageEffectiveOn = isMove
+      ? requiredDate(formData, "stageEffectiveOn", "The date it moved")
+      : null;
+    const stageNote = text(formData, "stageNote");
+
+    await prisma.$transaction(async (tx) => {
+      if (isMove && stageEffectiveOn !== null) {
+        await assertMoveNotBackwards(tx, opportunityId, stageEffectiveOn);
+      }
+
+      await tx.salesOpportunity.update({
+        where: { id: opportunityId },
+        data: { stage, estimatedMrr, expectedCloseDate, notes: notes || null },
+      });
+
+      if (isMove && stageEffectiveOn !== null) {
+        await tx.salesStageChange.create({
+          data: {
+            companyId: context.company.id,
+            opportunityId,
+            fromStage: opportunity.stage,
+            toStage: stage,
+            effectiveOn: stageEffectiveOn,
+            note: stageNote || null,
+            recordedByUserId: userId,
+          },
+        });
+      }
     });
 
     revalidatePath(`/sales/${opportunity.leadId}`);

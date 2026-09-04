@@ -235,10 +235,15 @@ things a person selling Prova cannot do with it today:
    on `/sales` went stale because create/delete revalidated only
    `/sales/[id]`, and `deleteSalesLead`'s guard did not count activities
    despite `SalesActivity.leadId` being `RESTRICT`.
-2. **Stage history.** A `stage` that moves with no record of when leaves
-   "how long has this sat in `DEMO_SCHEDULED`" unanswerable, which is the
-   most useful number a pipeline has. Recorded on every move; time-in-stage
-   derived from it, never stored.
+2. **Stage history.** *Built 4 Sep, not yet clicked.* `SalesStageChange`
+   (`20260904022832_add_sales_stage_history`, one table, no new enum, no
+   backfill) records every move: `fromStage` (null on the opening record),
+   `toStage`, `effectiveOn` entered and `recordedAt` stamped.
+   `lib/sales-stage-history.ts` derives time-in-stage and one entry per
+   stretch, both shown per opportunity on `/sales/[id]`. Written only by
+   `createSalesOpportunity`/`updateSalesOpportunity`, in one transaction
+   with the row, and only when the stage actually differs — no new exported
+   actions, no edit or delete path for a history row.
 3. **Pipeline by stage.** Counts, MRR and a forecast read across every
    opportunity, the internal analogue of `/pipeline`. Zero schema — it is
    a read over what items 1 and 2 leave behind.

@@ -76,6 +76,7 @@ model Company {
   salesLeads              SalesLead[]
   salesOpportunities      SalesOpportunity[]
   salesActivities         SalesActivity[]
+  salesStageChanges       SalesStageChange[]
   equipmentAssignments    EquipmentAssignment[]
 }
 
@@ -137,6 +138,7 @@ model User {
   loggedContactInteractions            ContactInteraction[] @relation("ContactInteractionLogger")
   assignedContactFollowUps             ContactInteraction[] @relation("ContactInteractionFollowUp")
   loggedSalesActivities                SalesActivity[]      @relation("SalesActivityLogger")
+  recordedSalesStageChanges            SalesStageChange[]   @relation("SalesStageChangeRecorder")
   recordedEquipmentAssignments         EquipmentAssignment[]
 
   @@index([companyId])
