@@ -810,6 +810,18 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
               <p className="text-slate-100">
                 {jobWip.percentComplete != null ? `${(jobWip.percentComplete * 100).toFixed(1)}%` : "—"}
               </p>
+              {/* This tile is what a surety's WIP schedule gets typed from,
+                  so it says what it is based on. Cost-to-cost is computed
+                  over the lines that carry a cost forecast; spend on lines
+                  nobody has forecast is in "Actual cost to date" above and
+                  in neither side of this ratio. Without this line the two
+                  tiles disagree and nothing on screen says why. */}
+              {jobWip.percentComplete != null && jobWip.costCoverage < 1 && (
+                <p className="mt-1 text-xs text-amber-400">
+                  Based on {Math.round(jobWip.costCoverage * 100)}% of cost to date — the rest
+                  sits on lines with no cost forecast.
+                </p>
+              )}
             </div>
             <div>
               <p className="text-xs text-slate-500">Earned revenue</p>

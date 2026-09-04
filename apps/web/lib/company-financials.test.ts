@@ -16,6 +16,7 @@ const job = (over: Partial<WipJobResult> = {}): WipJobResult => ({
   actualCostToDate: 30_000,
   estimatedCostAtCompletion: 60_000,
   percentComplete: 0.5,
+  costCoverage: 1,
   earnedRevenue: 50_000,
   billedToDate: 50_000,
   overUnderBilling: 0,
