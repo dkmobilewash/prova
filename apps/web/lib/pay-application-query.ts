@@ -60,6 +60,48 @@ export interface PayAppAssembly {
   summary: PayAppSummaryResult;
 }
 
+/**
+ * What a line still carries as scheduled value on this application.
+ *
+ * A live line is quantity x unitPrice, already change-order-aware, since an
+ * approved change order mutates the JobLineItem directly (ARCHITECTURE.md).
+ * A line a change order REMOVED is closed out at what it has earned to
+ * date, which is what a deductive change order does in AIA practice: it
+ * takes back the UNBILLED remainder, not work already performed and
+ * certified. So a removed line that was never billed lands at $0 and drops
+ * off the sheet through the zero-row filter below (#98: it used to appear
+ * at its full value, claiming scope the GC had already deducted), and a
+ * removed line that was already billed appears at exactly what it earned —
+ * 100%, balance to finish $0.
+ *
+ * Zeroing a removed-but-billed line instead is the tempting one-liner and
+ * it is wrong. `calculatePayAppSummary` derives balanceToFinish as
+ * contractSumToDate - totalEarnedLessRetainage, an identity that assumes
+ * every earned dollar sits inside the contract sum. Zeroing the line leaves
+ * its earnings in the numerator and removes them from the denominator, so
+ * balance-to-finish comes out understated by exactly the billed amount, and
+ * the row prints a negative balance — money claimed against nothing — on a
+ * document a GC reads. See pay-application-query.test.ts.
+ *
+ * The billed-to-date floor is for REMOVED lines only. A LIVE line with a
+ * null unitPrice is a cost-only budget line (general conditions, overhead)
+ * and genuinely has $0 of contract value; jobs.prisma says so explicitly.
+ */
+function scheduledValueFor(lineItem: PayAppJobLineItem | undefined, earnedToDate: number): number {
+  if (lineItem && !lineItem.isDeleted) {
+    return Number(lineItem.quantity) * Number(lineItem.unitPrice ?? 0);
+  }
+  return Math.max(0, earnedToDate);
+}
+
+/** A removed line keeps its real description — the placeholder is only for
+ * a lineItemId with no row behind it at all, which the InvoiceLineItem FK
+ * (Restrict, no onDelete) means cannot happen today. */
+function describe(lineItem: PayAppJobLineItem | undefined): string {
+  if (!lineItem) return "(line item removed)";
+  return lineItem.isDeleted ? `${lineItem.description} (removed by change order)` : lineItem.description;
+}
+
 export function assemblePayApplication(input: PayAppAssemblyInput): PayAppAssembly | null {
   const invoice = input.invoices.find((inv) => inv.id === input.invoiceId);
   if (!invoice) {
@@ -85,7 +127,6 @@ export function assemblePayApplication(input: PayAppAssemblyInput): PayAppAssemb
   const lineItemResults: PayAppLineItemResult[] = [...lineItemIds]
     .map((lineItemId) => {
       const lineItem = lineItemById.get(lineItemId);
-      const scheduledValue = lineItem ? Number(lineItem.quantity) * Number(lineItem.unitPrice ?? 0) : 0;
       const previousBilled = earlierInvoices.reduce(
         (sum, inv) => sum + Number(inv.lineItems.find((r) => r.lineItemId === lineItemId)?.thisPeriodBilled ?? 0),
         0,
@@ -100,15 +141,19 @@ export function assemblePayApplication(input: PayAppAssemblyInput): PayAppAssemb
         0,
       );
       const thisRow = invoice.lineItems.find((r) => r.lineItemId === lineItemId);
+      const thisPeriodBilled = Number(thisRow?.thisPeriodBilled ?? 0);
+      const materialsStoredValue = Number(thisRow?.materialsStoredValue ?? 0);
+      const earnedToDate =
+        previousBilled + thisPeriodBilled + previousMaterialsStored + materialsStoredValue;
 
       return {
         lineItemId,
-        description: lineItem?.description ?? "(line item removed)",
-        scheduledValue,
+        description: describe(lineItem),
+        scheduledValue: scheduledValueFor(lineItem, earnedToDate),
         previousBilled,
-        thisPeriodBilled: Number(thisRow?.thisPeriodBilled ?? 0),
+        thisPeriodBilled,
         previousMaterialsStored,
-        materialsStoredValue: Number(thisRow?.materialsStoredValue ?? 0),
+        materialsStoredValue,
       };
     })
     // Drop untouched, zero-value rows for lines that were never billed and
