@@ -57,6 +57,28 @@ export function latestActivity(activities: readonly LoggedActivity[]): LoggedAct
 }
 
 /**
+ * The activities that have ACTUALLY HAPPENED as of today.
+ *
+ * A row dated in the future has not happened, so it cannot be the last
+ * contact and it cannot have superseded anything. Found by a browser
+ * tester on 2026-09-04: a note dated tomorrow silently emptied the
+ * follow-up queue, marking a real outstanding email "since superseded"
+ * for a conversation that had not taken place. A private note quietly
+ * clearing what you owe somebody is the worst version of this feature's
+ * supersession rule, and the rule was never meant to reach forwards.
+ *
+ * createSalesActivity now refuses a future date outright, so new rows
+ * cannot be like this. This filter is what makes the rows already in the
+ * database read correctly.
+ */
+export function occurredBy(
+  activities: readonly LoggedActivity[],
+  todayIso: string,
+): LoggedActivity[] {
+  return activities.filter((a) => daysUntil(a.occurredOn, todayIso) <= 0);
+}
+
+/**
  * When we last actually spoke to them, or null when nobody has logged
  * contact.
  *
@@ -66,8 +88,11 @@ export function latestActivity(activities: readonly LoggedActivity[]): LoggedAct
  * logging it are indistinguishable from here, and saying so is the
  * honest answer.
  */
-export function lastContactOn(activities: readonly LoggedActivity[]): string | null {
-  const contacts = activities.filter((a) => isContact(a.type));
+export function lastContactOn(
+  activities: readonly LoggedActivity[],
+  todayIso: string,
+): string | null {
+  const contacts = occurredBy(activities, todayIso).filter((a) => isContact(a.type));
   return latestActivity(contacts)?.occurredOn ?? null;
 }
 
@@ -83,8 +108,10 @@ export function lastContactOn(activities: readonly LoggedActivity[]): string | n
  */
 export function openFollowUp(
   activities: readonly LoggedActivity[],
+  todayIso: string,
 ): { activityId: string; dueOn: string } | null {
-  const latest = latestActivity(activities);
+  // Only what has happened can supersede. See occurredBy.
+  const latest = latestActivity(occurredBy(activities, todayIso));
   if (latest === null || latest.followUpOn === null) return null;
   return { activityId: latest.id, dueOn: latest.followUpOn };
 }
@@ -132,8 +159,8 @@ export function summarizeLeadActivity(
   source: LeadActivitySource,
   todayIso: string,
 ): LeadActivitySummary {
-  const contactOn = lastContactOn(source.activities);
-  const followUp = openFollowUp(source.activities);
+  const contactOn = lastContactOn(source.activities, todayIso);
+  const followUp = openFollowUp(source.activities, todayIso);
   const standing = followUp === null ? null : followUpStanding(followUp.dueOn, todayIso);
 
   return {

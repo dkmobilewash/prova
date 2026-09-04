@@ -6,11 +6,11 @@ import { SalesOpportunityForm } from "@/components/SalesOpportunityForm";
 import { SalesOpportunityRow } from "@/components/SalesOpportunityRow";
 import { SalesActivityForm } from "@/components/SalesActivityForm";
 import { SalesActivityRow } from "@/components/SalesActivityRow";
-import { OPPORTUNITY_STAGE_OPTIONS } from "@/components/SalesOpportunityFields";
 import { toIsoDate } from "@/lib/compliance-expiry";
-import { latestActivity, type LoggedActivity } from "@/lib/sales-activity";
+import { openFollowUp, type LoggedActivity } from "@/lib/sales-activity";
 import { viewerToday } from "@/lib/viewerToday";
 import {
+  OPPORTUNITY_STAGE_OPTIONS,
   currentStageSince,
   daysInCurrentStage,
   historyDisagrees,
@@ -104,10 +104,11 @@ export default async function SalesLeadPage({ params }: { params: Promise<{ id: 
     createdAt: activity.createdAt.toISOString(),
   }));
 
-  // Which row carries the live follow-up. Derived by the same function
-  // /sales uses, rather than by "whatever the ORDER BY put first" — the
-  // query's ordering and the rule must not be able to drift apart.
-  const latestId = latestActivity(loggedActivities)?.id ?? null;
+  // Which row carries the live follow-up — asked of the same function
+  // /sales asks, rather than re-deciding it from the ORDER BY. The two
+  // must not be able to drift apart, and a future-dated row must not win
+  // here either.
+  const liveFollowUpId = openFollowUp(loggedActivities, today)?.activityId ?? null;
 
   const activityRows = lead.activities.map((activity) => ({
     id: activity.id,
@@ -117,6 +118,9 @@ export default async function SalesLeadPage({ params }: { params: Promise<{ id: 
     followUpOn: toIsoDate(activity.followUpOn),
     opportunityId: activity.opportunityId,
     loggedByName: activity.loggedByUser?.name ?? activity.loggedByUser?.email ?? null,
+    // Rows created before createSalesActivity refused future dates. They
+    // are read as not-yet-happened everywhere else, so they say so here.
+    hasOccurred: (toIsoDate(activity.occurredOn) as string) <= today,
   }));
 
   return (
@@ -187,7 +191,7 @@ export default async function SalesLeadPage({ params }: { params: Promise<{ id: 
                 key={activity.id}
                 activity={activity}
                 opportunityOptions={opportunityOptions}
-                isLatest={activity.id === latestId}
+                isLatest={activity.id === liveFollowUpId}
               />
             ))}
           </ul>

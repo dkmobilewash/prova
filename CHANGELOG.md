@@ -356,6 +356,70 @@ argued from months later.
 
 ---
 
+## A constant that stopped being an array when it crossed the RSC boundary
+
+`/sales/{id}` threw a 500 on any lead with at least one opportunity.
+Thirteen occurrences in production, digest `2853075237`, found by a browser
+tester on the first run after `Company.isProvaOperator` was finally set.
+
+```
+TypeError: OPPORTUNITY_STAGE_OPTIONS.find is not a function
+```
+
+**The constant was exported from a `"use client"` module and imported by a
+server component.** Across the RSC boundary a non-component export from a
+client module arrives as a client-reference proxy, not the value — so the
+array is not an array and `.find` does not exist. It typechecks perfectly,
+because the TYPES are real; only the runtime value is replaced. The call
+sat inside `lead.opportunities.map(...)`, so a lead with no opportunities
+never reached it and the page looked healthy right up until somebody added
+a deal.
+
+Both copies of the stage labels are gone: `OPPORTUNITY_STAGE_OPTIONS` now
+lives in `lib/sales-stage-history.ts`, a plain module, **derived from
+`OPPORTUNITY_STAGE_LABELS`** rather than typed out a second time.
+
+**The fix that lasts is `lib/client-boundary.test.ts`**, which walks every
+file and fails when a server module imports a non-component value from a
+`"use client"` module. Components are exempt — that is the boundary working
+— and type-only imports are exempt because types are erased. It found
+exactly one offender across 369 files: this one. Proven by putting the
+production defect back and watching it name the import.
+
+## A note dated tomorrow silently cleared a real follow-up
+
+Same run, second finding, and a consequence of this lane's own supersession
+rule: one open follow-up per lead, read off its latest activity. A note
+dated TOMORROW is the latest activity, so it superseded a genuine
+outstanding email and emptied the follow-up queue — for a conversation
+that had not happened.
+
+Supersession was never meant to reach forwards. Two changes, because the
+data already written needs different treatment from the data still to come:
+
+- `occurredBy()` filters to activities that have actually happened, and
+  both `openFollowUp` and `lastContactOn` now go through it. That makes the
+  rows already in the database read correctly.
+- `createSalesActivity` and `updateSalesActivity` refuse a future date
+  outright — the log records what happened, and the follow-up field is
+  where something upcoming belongs. That stops new ones.
+
+`/sales/{id}` marks any surviving future-dated row *"dated in the future —
+not counted yet"* rather than claiming it was superseded, and the live
+follow-up badge is now asked of `openFollowUp` rather than re-derived from
+the query's ORDER BY, so the page and the queue cannot disagree.
+
+**Two more reports from the same run are NOT fixed here and are not this
+lane's:** a new lead not appearing on `/sales` until a reload, and an
+edited activity's row showing its old date for seconds after a successful
+save. Both write paths already call `revalidatePath` on the right routes
+AND `router.refresh()` — checked rather than assumed — so neither is a
+missing revalidation, which CLAUDE.md records as eliminated everywhere.
+They are two fresh reproductions of #61, which has never had a reliable
+one, and they are recorded there.
+
+---
+
 ## The sales pipeline, with the forecast it does not have
 
 `/sales` listed leads. To learn what was in `TRIAL`, or what the open
