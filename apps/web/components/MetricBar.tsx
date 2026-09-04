@@ -1,5 +1,9 @@
 import { money } from "@/lib/money";
-import { marginIsHealthy, type CompanyFinancials } from "@/lib/company-financials";
+import {
+  MIN_EARNED_COVERAGE,
+  marginIsHealthy,
+  type CompanyFinancials,
+} from "@/lib/company-financials";
 
 /**
  * Four company-wide numbers, pinned under the content.
@@ -23,12 +27,25 @@ export function MetricBar({ financials }: { financials: CompanyFinancials }) {
       ? "—"
       : `${(financials.grossMarginRate * 100).toFixed(1)}%`;
 
+  // "—" used to mean only "nothing earned yet". It now also means "not
+  // enough of the book carries an earned-revenue figure to blend a margin
+  // over" — a dash with no reason beside it reads as broken, and the
+  // difference between the two is the difference between a quiet start and
+  // a book nobody has finished estimating.
+  const marginHint =
+    financials.grossMarginRate === null && financials.earnedCoverage < MIN_EARNED_COVERAGE
+      ? `${Math.round(financials.earnedCoverage * 100)}% estimated, needs ${Math.round(
+          MIN_EARNED_COVERAGE * 100,
+        )}%`
+      : undefined;
+
   return (
     <div className="print:hidden flex h-[52px] shrink-0 items-center gap-6 overflow-x-auto border-t border-slate-800 bg-slate-900 px-4 sm:px-6">
       <Metric label="Estimated revenue" value={money(financials.estimatedRevenue)} />
       <Metric
         label="Gross margin"
         value={marginText}
+        hint={marginHint}
         tone={marginIsHealthy(financials.grossMarginRate) ? "good" : "neutral"}
       />
       <Metric label="Cash collected" value={money(financials.cashPosition)} />
@@ -40,10 +57,12 @@ export function MetricBar({ financials }: { financials: CompanyFinancials }) {
 function Metric({
   label,
   value,
+  hint,
   tone = "neutral",
 }: {
   label: string;
   value: string;
+  hint?: string;
   tone?: "neutral" | "good";
 }) {
   return (
@@ -58,6 +77,7 @@ function Metric({
       >
         {value}
       </span>
+      {hint && <span className="text-[10px] text-slate-500">{hint}</span>}
     </div>
   );
 }

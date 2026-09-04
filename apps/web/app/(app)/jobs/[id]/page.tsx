@@ -22,6 +22,7 @@ import { changeOrderValueDelta, pendingChangeOrderExposure, reopenBlockers } fro
 import { can } from "@/lib/permissions";
 import { money } from "@/lib/money";
 import { calculateLineItemWip, calculateJobWip } from "@/lib/wip";
+import { jobEarnedRevenue, jobOverUnderBilling } from "@/lib/company-financials";
 import { calculateTimeEntryLaborCost, findEffectiveFringeRateSchedule } from "@/lib/labor-cost";
 import { burdenedHourlyRate, estimateBurdenedLaborCost, laborRateDateFor } from "@/lib/estimate-labor-cost";
 import { LaborHoursField } from "@/components/LaborHoursField";
@@ -409,6 +410,10 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
     lineItemWip.map((l) => l.wip),
     billedToDate,
   );
+  // Null when too little of the job's value has an earned-revenue figure for
+  // the position to mean anything — see MIN_EARNED_COVERAGE.
+  const billingPosition = jobOverUnderBilling(jobWip);
+  const earnedRevenue = jobEarnedRevenue(jobWip);
 
   // Pay applications are just Invoices that carry a line-item breakdown —
   // see InvoiceLineItem in schema.prisma and lib/pay-application.ts.
@@ -425,6 +430,19 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
     id: item.id,
     description: item.description,
     scheduledValue: Number(item.quantity) * Number(item.unitPrice ?? 0),
+    // materialsStoredValue is a per-period delta, so the running stored
+    // balance is the sum across every invoice — same summation
+    // lib/pay-application.ts does. Shown beside the entry box so a stored
+    // balance sitting on a line is visible at the moment somebody bills the
+    // installed work, which is when it otherwise gets billed twice (#95).
+    materialsStoredToDate: job.invoices.reduce(
+      (sum, invoice) =>
+        sum +
+        invoice.lineItems
+          .filter((row) => row.lineItemId === item.id)
+          .reduce((rowSum, row) => rowSum + Number(row.materialsStoredValue), 0),
+      0,
+    ),
   }));
 
   const addLineItemWithId = addLineItem.bind(null, job.id);
@@ -810,10 +828,36 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
               <p className="text-slate-100">
                 {jobWip.percentComplete != null ? `${(jobWip.percentComplete * 100).toFixed(1)}%` : "—"}
               </p>
+              {/* This tile is what a surety's WIP schedule gets typed from,
+                  so it says what it is based on. Cost-to-cost runs over the
+                  lines that carry a cost forecast only: spend on unforecast
+                  lines is in "Actual cost to date" beside it and in neither
+                  side of this ratio, and their contract value is in
+                  "Contract value" beside that. Without this line the three
+                  tiles disagree, a reader multiplies this percentage by the
+                  contract value, and nothing on screen says why that is
+                  wrong. */}
+              {jobWip.percentComplete != null &&
+                (jobWip.estimatedCoverage < 1 || jobWip.costCoverage < 1) && (
+                  <p className="mt-1 text-xs text-amber-400">
+                    Over the {Math.round(jobWip.estimatedCoverage * 100)}% of contract value that
+                    carries a cost forecast
+                    {jobWip.costCoverage < 1
+                      ? `, and ${Math.round(jobWip.costCoverage * 100)}% of cost to date`
+                      : ""}
+                    .
+                  </p>
+                )}
             </div>
             <div>
               <p className="text-xs text-slate-500">Earned revenue</p>
-              <p className="text-slate-100">{money(jobWip.earnedRevenue)}</p>
+              {/* "—" for the same reason each per-line row below already
+                  shows one: a line with no cost estimate has no earned
+                  revenue, and summing it as zero is what turned this job
+                  total into a fact it is not. */}
+              <p className="text-slate-100">
+                {earnedRevenue != null ? money(earnedRevenue) : "—"}
+              </p>
             </div>
             <div>
               <p className="text-xs text-slate-500">Billed to date</p>
@@ -821,13 +865,21 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             </div>
             <div className="col-span-2 sm:col-span-1">
               <p className="text-xs text-slate-500">Over / under billed</p>
-              <p className={jobWip.overUnderBilling > 0 ? "text-amber-400" : "text-green-400"}>
-                {jobWip.overUnderBilling > 0
-                  ? `Overbilled ${money(jobWip.overUnderBilling)}`
-                  : jobWip.overUnderBilling < 0
-                    ? `Underbilled ${money(Math.abs(jobWip.overUnderBilling))}`
-                    : "Even"}
-              </p>
+              {billingPosition === null ? (
+                <p className="text-slate-400">
+                  Only {Math.round(jobWip.earnedCoverage * 100)}% of this job&apos;s value has an
+                  earned-revenue figure, so a billing position would be guesswork. Budget the rest
+                  to see where it lands.
+                </p>
+              ) : (
+                <p className={billingPosition > 0 ? "text-amber-400" : "text-green-400"}>
+                  {billingPosition > 0
+                    ? `Overbilled ${money(billingPosition)}`
+                    : billingPosition < 0
+                      ? `Underbilled ${money(Math.abs(billingPosition))}`
+                      : "Even"}
+                </p>
+              )}
             </div>
           </div>
 

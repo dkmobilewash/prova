@@ -18,6 +18,13 @@ export type SalesActivityRowData = {
   opportunityId: string | null;
   /** Null when the row predates a logger, or the person has been deleted. */
   loggedByName: string | null;
+  /**
+   * False only for rows dated after today, which are no longer creatable —
+   * createSalesActivity refuses them — but exist in databases written
+   * before that guard. They supersede nothing and count as no contact, so
+   * the row says so rather than claiming to be superseded.
+   */
+  hasOccurred: boolean;
 };
 
 const TYPE_STYLE: Record<string, string> = {
@@ -105,14 +112,23 @@ export function SalesActivityRow({
               {typeLabel}
             </span>
             <span className="text-sm text-slate-300">{activity.occurredOn}</span>
+            {!activity.hasOccurred && (
+              <span className="rounded-full bg-slate-800 px-2 py-0.5 text-xs font-medium text-slate-400">
+                dated in the future — not counted yet
+              </span>
+            )}
             {activity.followUpOn &&
               (isLatest ? (
                 <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-300">
                   Follow up {activity.followUpOn}
                 </span>
-              ) : (
+              ) : activity.hasOccurred ? (
                 <span className="text-xs text-slate-500">
                   asked for a follow-up on {activity.followUpOn}, since superseded
+                </span>
+              ) : (
+                <span className="text-xs text-slate-500">
+                  asks for a follow-up on {activity.followUpOn}
                 </span>
               ))}
           </div>

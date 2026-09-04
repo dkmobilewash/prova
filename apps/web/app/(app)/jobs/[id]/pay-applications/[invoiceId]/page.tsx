@@ -1,11 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { prisma } from "@prova/db";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { PrintButton } from "@/components/PrintButton";
 import { money } from "@/lib/money";
-import { calculatePayAppLineItem, calculatePayAppSummary, type PayAppLineItemResult } from "@/lib/pay-application";
+import { loadPayApplication } from "@/lib/pay-application-query";
 
 function percent(value: number | null) {
   return value != null ? `${(value * 100).toFixed(1)}%` : "—";
@@ -24,90 +23,11 @@ export default async function PayApplicationPage({
   if (!allowed) return <NoAccess capability="MANAGE_BILLING" />;
   const { company } = context;
 
-  const job = await prisma.job.findUnique({
-    where: { id },
-    include: {
-      contact: true,
-      lineItems: true,
-      invoices: {
-        orderBy: { number: "asc" },
-        include: { lineItems: true },
-      },
-    },
-  });
-  if (!job || job.companyId !== company.id) {
+  const view = await loadPayApplication(id, invoiceId, company.id);
+  if (!view) {
     notFound();
   }
-
-  const invoice = job.invoices.find((inv) => inv.id === invoiceId);
-  if (!invoice) {
-    notFound();
-  }
-
-  const isPayApplication = invoice.lineItems.length > 0;
-  const earlierInvoices = job.invoices.filter((inv) => inv.number < invoice.number);
-
-  // Every line item this application should show a row for: everything
-  // currently on the SOV, plus anything billed on an earlier or later
-  // invoice for this job even if it was since removed by a change order —
-  // a removed line's final balance still belongs on the record.
-  const lineItemIds = new Set<string>(job.lineItems.map((item) => item.id));
-  for (const inv of job.invoices) {
-    for (const row of inv.lineItems) {
-      lineItemIds.add(row.lineItemId);
-    }
-  }
-
-  const lineItemById = new Map(job.lineItems.map((item) => [item.id, item]));
-
-  const lineItemResults: PayAppLineItemResult[] = [...lineItemIds]
-    .map((lineItemId) => {
-      const lineItem = lineItemById.get(lineItemId);
-      const scheduledValue = lineItem ? Number(lineItem.quantity) * Number(lineItem.unitPrice ?? 0) : 0;
-      const previousBilled = earlierInvoices.reduce(
-        (sum, inv) => sum + Number(inv.lineItems.find((r) => r.lineItemId === lineItemId)?.thisPeriodBilled ?? 0),
-        0,
-      );
-      // materialsStoredValue is a per-period delta, not a running balance —
-      // summed across every earlier invoice the same way previousBilled is,
-      // or a line's stored materials from an earlier application vanish
-      // from the total the moment a later application doesn't re-enter them.
-      const previousMaterialsStored = earlierInvoices.reduce(
-        (sum, inv) =>
-          sum + Number(inv.lineItems.find((r) => r.lineItemId === lineItemId)?.materialsStoredValue ?? 0),
-        0,
-      );
-      const thisRow = invoice.lineItems.find((r) => r.lineItemId === lineItemId);
-
-      return {
-        lineItemId,
-        description: lineItem?.description ?? "(line item removed)",
-        scheduledValue,
-        previousBilled,
-        thisPeriodBilled: Number(thisRow?.thisPeriodBilled ?? 0),
-        previousMaterialsStored,
-        materialsStoredValue: Number(thisRow?.materialsStoredValue ?? 0),
-      };
-    })
-    // Drop untouched, zero-value rows for lines that were never billed and
-    // aren't in this period's application — an all-zero row for every SOV
-    // line on every application would bury the ones that actually moved.
-    .filter(
-      (row) =>
-        row.scheduledValue > 0 ||
-        row.previousBilled > 0 ||
-        row.thisPeriodBilled > 0 ||
-        row.previousMaterialsStored > 0 ||
-        row.materialsStoredValue > 0,
-    )
-    .map(calculatePayAppLineItem);
-
-  const summary = calculatePayAppSummary({
-    lineItems: lineItemResults,
-    retainagePercent: job.retainagePercent != null ? Number(job.retainagePercent) : null,
-    previousRetainageWithheld: earlierInvoices.reduce((sum, inv) => sum + Number(inv.retainageWithheld ?? 0), 0),
-    thisPeriodRetainageWithheld: Number(invoice.retainageWithheld ?? 0),
-  });
+  const { job, invoice, isPayApplication, lineItems: lineItemResults, summary } = view;
 
   return (
     <div className="mx-auto max-w-4xl p-6 print:p-0">

@@ -3,7 +3,7 @@ import { calculateJobWip, calculateLineItemWip, type WipJobResult } from "./wip"
 import { loadRetainageHeld } from "./retainage-query";
 import { calculatePaymentReliability, type PaymentReliability } from "./gc-reliability";
 import { daysPastDueFor, effectiveDueDateFor } from "./cash-flow";
-import { jobHealthSentence, jobIsOverBudget } from "./company-financials";
+import { MIN_ESTIMATE_COVERAGE, jobHealthSentence, jobIsOverBudget } from "./company-financials";
 
 /**
  * Everything the "Today" screen puts in front of an owner on login.
@@ -208,14 +208,14 @@ export async function loadTodayDashboard(companyId: string, now: Date) {
     // What share of this job's contract value sits on lines that actually
     // carry a cost estimate. A job budgeted on one line out of seven is
     // not a job forecast to finish under budget; it is a job nobody has
-    // finished estimating.
-    const estimatedValue = lineItems
-      .filter((line) => line.estimatedCostAtCompletion !== null)
-      .reduce((sum, line) => sum + line.contractValue, 0);
-    const estimatedCoverage =
-      wip.contractValue > 0 ? estimatedValue / wip.contractValue : 0;
-
-    const health = jobHealthSentence({ name: job.name, wip, estimatedCoverage });
+    // finished estimating. Computed by calculateJobWip now — this was one
+    // of two hand-rolled copies of the same ratio, and ask/handlers.ts had
+    // the other.
+    const health = jobHealthSentence({
+      name: job.name,
+      wip,
+      estimatedCoverage: wip.estimatedCoverage,
+    });
 
     return {
       job,
@@ -238,7 +238,17 @@ export async function loadTodayDashboard(companyId: string, now: Date) {
     .map((entry) => entry.row)
     .sort((a, b) => TONE_ORDER[a.tone] - TONE_ORDER[b.tone] || a.name.localeCompare(b.name));
 
-  const jobsOverBudget = jobRows.filter((entry) => jobIsOverBudget(entry.wip) === true).length;
+  // Gated on the same coverage the sentence above is gated on, or the card
+  // contradicts itself: "3 jobs over budget" sitting above three rows that
+  // each say we cannot forecast this job yet. jobIsOverBudget reads
+  // estimatedCostAtCompletion, which is summed with `?? 0` — on a barely
+  // estimated job it is a forecast built out of lines assumed to cost
+  // nothing, which is the same artefact MIN_ESTIMATE_COVERAGE exists for.
+  const jobsOverBudget = jobRows.filter(
+    (entry) =>
+      jobIsOverBudget(entry.wip) === true &&
+      entry.wip.estimatedCoverage >= MIN_ESTIMATE_COVERAGE,
+  ).length;
 
   /* -------------------------------------------------------- crews ---- */
 
