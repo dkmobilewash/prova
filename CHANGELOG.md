@@ -85,6 +85,83 @@ enumerated list with that reason written down.
 
 ---
 
+### Certified payroll queried an EIGHT-day week, so every Sunday was certified on two consecutive filings (#96)
+`claude/certified-payroll-week-96`
+
+**Numbers on an already-printed certified payroll go DOWN after this.
+That is a correction to disclose, not a silent patch.**
+
+`/jobs/[id]/certified-payroll` computed `weekEnd = weekStart + 6` — a
+Sunday-to-Saturday week, which is what the header printed — and then
+queried `date: { gte: weekStart, lte: addDays(weekEnd, 1) }`. Eight days.
+`TimeEntry.date` is stored at UTC midnight, so the following Sunday's rows
+matched the bound exactly and were pulled into the week before. That same
+Sunday is also correctly on its own week's report, so **the identical
+hours and the identical dollars were certified twice**, on two documents
+filed with a government agency under penalty.
+
+The repro in the issue: Mon–Fri 8h straight plus a 6h Sunday makeup shift
+at overtime. The week of 2026-08-23 should print 40 hours and $3,094.00.
+It printed **46 hours and $3,714.10** — +20.04%, with an overtime column
+entry on a week in which no overtime was worked. Nothing on either page
+showed a date, so no printout could reveal where the extra day came from.
+
+Three things changed, and the second is the one that matters:
+
+- The bound is now `lte: weekEnd`, byte-for-byte the shape
+  `lib/prevailing-wage-query.ts` already used. Not `lt: weekEnd + 1` —
+  that would have been a third spelling of one window.
+- **The window is now importable.** It lived inline in an async server
+  component, which is the whole reason it had no test and had to be found
+  by reading. `lib/certified-payroll-week.ts` is pure — no Prisma — and
+  `lib/certified-payroll-week.test.ts` asserts the PROPERTY rather than a
+  magic date: consecutive weeks must partition the calendar. Under the old
+  bound that test names all 52 Sundays of 2026 as certified twice. It also
+  prices the repro end to end, so 40 hours / $3,094.00 is pinned as a
+  number and not as a comment. `lib/certified-payroll-query.ts` holds the
+  fetch, scoped by `companyId` the way `reviewJobWeek` is — an unscoped
+  time-entry query in `lib/` under a name that reads scoped is how the
+  next caller writes a cross-tenant read.
+- The header's Saturday is now the query's OWN upper bound, not a second
+  computation of it. The two disagreed, and that disagreement was the tell.
+  The page also prints **hours by day** now: every other figure on it is a
+  week-level roll-up with no date, which is what made a foreign day
+  invisible on paper.
+
+**Left undecided, deliberately, and it needs an answer.** Certified
+payroll uses a SUNDAY-start week. `lib/alerts-query.ts` and
+`lib/prevailing-wage-query.ts` both group by MONDAY, via
+`components/fieldReportWeeks.weekStart`, which carries its own written
+rationale for rejecting `getUTCDay()`. So the alert's "week of Mon 8/24 –
+Sun 8/30" and this page's "Aug 23 – Aug 29" are different seven-day spans,
+and anyone reconciling the two sees a one-day offset. That is not new —
+it predates this fix — but the old eight-day window accidentally covered
+the alert week's Sunday and this fix removes that cover. No hours are lost
+(the page's own Sun–Sat weeks still partition the calendar, and no caller
+passes a Monday), but the product has two payroll weeks with the same
+name. Changing it would shift every already-filed week by a day, which is
+a bigger change to a filed document than this one, so it is written down
+in `lib/certified-payroll-week.ts` instead of made silently.
+
+**Before this ships, run against `ep-little-sea` to name who is exposed**
+— every Sunday `TimeEntry` is a week whose PRECEDING week was printed
+inflated:
+
+    SELECT j."companyId", t."jobId", t.date, count(*), sum(t.hours)
+    FROM "TimeEntry" t JOIN "Job" j ON j.id = t."jobId"
+    WHERE extract(dow from t.date) = 0
+    GROUP BY 1, 2, 3 ORDER BY 3 DESC;
+
+That over-reports: a job that never had a certified payroll printed is in
+it too. Do not hand its row count over as "weeks filed wrong". And check
+the invariant the inclusive bound rests on — this must be 0, and if it is
+not, `prevailing-wage-query.ts` has the same exposure and the two get
+solved together rather than one of them respelled:
+
+    SELECT count(*) FROM "TimeEntry" WHERE date::time <> '00:00:00';
+
+---
+
 ### "Overbilled $80,000" on a job that is not overbilled (#99)
 `cyrus/wip-percent-and-earned-coverage`
 
