@@ -281,11 +281,51 @@ describe("noticesDue — standing conditions", () => {
     expect(noticesDue([worse], sent)).toHaveLength(1);
   });
 
-  it("never borrows the dated ladder", () => {
-    // A standing condition given 7 and 0 would claim a deadline it does
-    // not have, and would fire twice for one unchanging fact.
-    const due = noticesDue([standing], nothingSent);
-    expect(keysConsumed(due[0])).toEqual([`${standing.key}@${STANDING_RUNG}`]);
+  it("never borrows the dated ladder, not even carrying a date already past", () => {
+    // THE FIXTURE IS THE TEST. This assertion used to be made against the
+    // WIP_VARIANCE alert above, whose `dueOn` is null — the one STANDING
+    // shape that cannot reach the dated branch at all, so it passed
+    // whatever the branch did. #126.
+    //
+    // Three kinds are STANDING and DATED: a closeout package the GC has
+    // sat on, retainage past a forecast substantial completion, and a
+    // rejected closeout. Every one of them carries a date already behind
+    // it. Deciding on `dueOn` rather than on the severity sent all three
+    // up the dated ladder, where `days <= 0` fired the DUE rung — so the
+    // email said "Now due" about a condition that has no deadline, and it
+    // burned `@week` and `@due` instead of `@standing`, which is the one
+    // key that alert was ever going to have.
+    const satOn = alert({
+      key: "CLOSEOUT_WITH_GC:job_1:2026-07-15",
+      kind: "CLOSEOUT_WITH_GC",
+      severity: "STANDING",
+      title: "Closeout package on Riverside Tower has had no response",
+      detail: "Sent 49 days ago and nothing recorded back.",
+      href: "/closeout",
+      dueOn: "2026-07-15",
+      daysUntil: -49,
+    });
+
+    const due = noticesDue([satOn], nothingSent);
+    expect(due).toHaveLength(1);
+    expect(due[0].rung).toBe(STANDING_RUNG);
+    expect(due[0].alsoSpent).toEqual([]);
+    expect(keysConsumed(due[0])).toEqual([`${satOn.key}@${STANDING_RUNG}`]);
+  });
+
+  it("says nothing about a standing condition whose date has not arrived", () => {
+    // The other side of the same branch, and the reason the fix cannot be
+    // "STANDING always fires". A COI 55 days out is STANDING because it is
+    // outside its own horizon — nothing has happened yet, and a
+    // "Needs attention" email about it would spend the only key it has
+    // long before there is anything to say.
+    const farOut = alert({
+      key: "RENEWAL:coi_1:2026-11-30",
+      severity: "STANDING",
+      dueOn: "2026-11-30",
+      daysUntil: 55,
+    });
+    expect(noticesDue([farOut], nothingSent)).toEqual([]);
   });
 
   it("treats an undated renewal as standing, not as expired", () => {
@@ -532,5 +572,40 @@ describe("partitionOwned — who sends when two runs overlap", () => {
     const won = new Set(due.flatMap(keysConsumed));
     expect(partitionOwned(due, won).ours).toEqual(due);
     expect(partitionOwned(due, won).theirs).toEqual([]);
+  });
+});
+
+describe("CLOSEOUT_REJECTED does not borrow the dated ladder (issue #126)", () => {
+  // This kind did not exist when the fix was written — #128 landed it
+  // after. It is the third STANDING kind that carries a PAST dueOn, and
+  // the one that made #126 worth filing: the alert's own source comment
+  // says "No deadline exists to be past... the reason neither claims
+  // OVERDUE", while the digest was calling it "Now due" in an email.
+  const rejected: Alert = {
+    key: "CLOSEOUT_REJECTED:job_1:2026-08-03",
+    kind: "CLOSEOUT_REJECTED" as AlertKind,
+    severity: "STANDING" as AlertSeverity,
+    title: "Closeout package on Riverside Tower was sent back",
+    detail: "The GC returned it and nothing has gone back to them since.",
+    href: "/closeout",
+    dueOn: "2026-08-03",
+    daysUntil: -31,
+    amount: 42000,
+  };
+
+  it("reaches the standing rung, not 'due', with a month-old response date", () => {
+    const [notice] = noticesDue([rejected], new Set());
+    expect(notice.rung).toBe(STANDING_RUNG);
+    expect(DATED_RUNGS).not.toContain(notice.rung);
+  });
+
+  it("spends the standing key rather than the @week and @due keys", () => {
+    // The other half of the bug: the wrong rung burned dispatch keys the
+    // alert should never have consumed, so a later genuine notice found
+    // them already spent.
+    const [notice] = noticesDue([rejected], new Set());
+    const keys = consumed(notice).map((c) => c.dispatchKey);
+    expect(keys).toEqual([dispatchKey(rejected.key, STANDING_RUNG)]);
+    expect(keys.some((k) => k.endsWith("@due") || k.endsWith("@week"))).toBe(false);
   });
 });

@@ -73,6 +73,196 @@ today.
 
 ---
 
+### The digest now runs when nobody is looking (Cyrus)
+`cyrus/notification-schedule`
+
+Sheet 26 held five rows at Partial for one narrow reason — **nothing runs
+unattended.** The digest below sends beautifully and only when a person
+clicks a button on `/alerts`, which is the same reach the alert list
+already had. This is the schedule: a route handler at
+`/api/notifications/digest`, hit nightly at 13:00 UTC by a Vercel cron
+(06:00 Pacific, 09:00 Eastern — before either coast's working day).
+
+Nothing under it changed. `dispatchAlertDigest` already took `todayIso`
+and `baseUrl` as parameters precisely so a scheduled caller could supply
+them, and it already claimed each notice before calling the provider, so
+running it twice is silent. This adds a caller with no person behind it,
+and the loop semantics that a caller with no person behind it needs.
+
+**Two ways to fail closed, and neither is a formality.**
+
+`CRON_SECRET` unset → 503, nothing read, nothing sent. Vercel attaches
+`Authorization: Bearer $CRON_SECRET` to a cron request when that variable
+is set and attaches *nothing* when it is not — which is exactly why the
+missing-secret case has to reject. Unset must mean the schedule does not
+work; it must never mean the schedule works for anybody who knows the URL,
+and that URL is a button that mails every user of every company. Compared
+timing-safely, like the Resend webhook: a plain `===` on a secret leaks how
+much of it was right, one byte at a time, and this endpoint can be hit as
+often as anyone likes.
+
+`NOTIFY_BASE_URL` unset or not an origin → 503, nothing sent. Every link
+in the email body is built from it. **The button's host cannot be reused
+here and the docstring on `originFromRequest` says so in advance:** it
+reads `x-forwarded-host`, which the caller controls, and that is harmless
+only because the button mails the person who clicked it. This run mails
+other people. A host taken from whatever request triggered the cron would
+be the host in the links of everybody's email. There is no default either,
+because there is no safe guess — an email that looks right and whose every
+link goes to the wrong deployment is worse than no email.
+
+**Who, in what order, and what one failure costs.** Every user of every
+company with a real mailbox, one at a time, longest-unnotified first.
+
+- *One at a time* is not performance. Two different people never contend —
+  the ledger's key is `(userId, dispatchKey)` — but the same person
+  dispatched twice concurrently does, and the thing never to do is compute
+  one alert list per COMPANY and mail it to everybody in it: alerts are
+  capability-filtered per user, so that both mails people alerts their role
+  hides and collapses every person's claim into one.
+- *Longest-unnotified first* only shows when a run cannot finish, and then
+  it is the whole difference between "today's tail waits until tomorrow"
+  and "the same people are never reached, ever" — which the milestone
+  ledger would make permanent, since a rung nobody was there to fire still
+  passes. Never-mailed first, then oldest, then id so the order is total
+  and two runs cut the list in the same place.
+- *No one person can end the run.* A throw, a refused address, a provider
+  timeout: that person's outcome, and the loop continues. The one
+  exception is an unconfigured email provider, which `dispatchAlertDigest`
+  checks BEFORE claiming anything — it will be the identical answer for
+  everybody, it spends no milestone, and two hundred copies of it in a
+  report hide the one fact worth reading.
+- *The run stops itself at 45s* rather than being killed at the platform's
+  60. A kill lands wherever it lands, including between claiming a notice
+  and sending it, which is the one state the ledger cannot undo: milestone
+  spent, no email. Stopping between two people cannot produce it.
+
+**The status code answers "did this run do its whole job", not "did it
+respond".** A run that mailed forty people and threw on the forty-first
+returns 500, with the full report in the body. A green invocation nobody
+reads the body of is precisely how this repo has been fooled before. Safe
+to retry, for the same reason it is safe to run twice.
+
+Tested by putting each wrong behaviour back and watching the suite go red:
+no try/catch (a throw aborts the run), `break` instead of `continue` on a
+failure, `unconfigured` treated as ordinary, `Promise.all` over the
+recipients, no time budget, order by id, sorting the caller's array in
+place, `configuredBaseUrl` returning its input, and every dispatch handed
+the first recipient. Nine mutations, nine reds, restored green. A tenth —
+reading a null last-dispatch timestamp as the epoch — stayed GREEN, because
+epoch and never sort identically; the guard that claimed to distinguish
+them was removed rather than kept untested.
+
+No schema change. `NotificationDispatch` already carried everything, and
+there is deliberately no subscription column: `/alerts` already lets
+anybody dismiss or snooze anything, and a second, quieter place to be
+unsubscribed would be free to disagree with it. Addresses ending
+`@unknown.local` are skipped — that is `requireCompanyContext`'s
+placeholder for a Clerk account with no address, and it is a nightly bounce
+against our own sending reputation, not a mailbox.
+
+Needs `CRON_SECRET` and `NOTIFY_BASE_URL` on the Vercel project before
+anything sends. Both are in `.env.example` and the README table.
+
+Caught up to `main`, which had moved 65 commits underneath this branch.
+Two things came out of that. `scripts/preflight.sh` took `main`'s version
+of the worktree fix rather than this branch's: the same one-line change,
+but placed AFTER the `cd`, which the version here was not — so the older
+one was clearing a lock relative to wherever the caller happened to be
+standing. And Sheet 26 gained a seventh row on `main` while this was
+open — contact follow-up reminders — still reading *"still nothing that
+runs unattended"*, which this branch makes untrue. It now says what the
+other five say. That is the whole failure mode this sheet has drifted by
+twice: a row that was right when it was written and nobody re-read after
+the thing it describes changed underneath it.
+
+---
+
+
+---
+
+## Two notification bugs: a standing alert emailed as "Now due", and a digest that could go out with no record of it
+
+### A STANDING alert borrowed the dated ladder (#126)
+
+`crossedRungs` decided which ladder an alert climbed by asking whether
+`dueOn` was null. The severity is the claim being made; `dueOn` is only a
+date attached to it, and three kinds are STANDING **and** dated — a
+closeout package the GC has sat on, retainage past a forecast substantial
+completion, and (arriving with #128) a rejected closeout. Every one of them
+carries a date already BEHIND it, because what makes them standing is that
+the day cannot be met by acting sooner.
+
+So all three went up the dated ladder, `days <= 0` fired the DUE rung, and
+`rungLabel("due")` put **"Now due"** in an email about a condition that has
+no deadline at all. Worse than the wording: they spent `@week` and `@due`
+instead of `@standing`, so the one notice those alerts were ever going to
+send could never be sent — silently, for good, since a spent rung is spent.
+
+The split is now on `severity === "STANDING"`, with one wrinkle that is the
+reason a bare severity check is not enough. A COI fifty-five days out is
+also STANDING — because it is outside its own horizon, not because it is a
+standing condition — and firing its only key there would spend it long
+before there is anything to say. A STANDING alert therefore reaches its rung
+when it has no date, or when the date it has is behind it; a date still
+ahead, or a date with no distance computed, says nothing.
+
+**The guard test for this passed vacuously and had done since it was
+written.** It was named "never borrows the dated ladder" and its fixture was
+a `WIP_VARIANCE` alert with `dueOn: null` — the one STANDING shape that
+cannot reach the dated branch at all, so it would have passed whatever that
+branch did. It now uses a STANDING alert that HAS a past `dueOn`, which is
+the only fixture that exercises the thing it is named after, and it fails
+against the old code with `expected 'due' to be 'standing'`.
+
+### A sent digest could leave no record that it was sent (#116)
+
+`notification-dispatch.ts` opens with "THE ORDER IS THE DESIGN" — claims
+written before the provider is called, so a crash between sending and
+recording is a notice that was sent and recorded. That was true of the
+CLAIMS and false of the MESSAGE. The message row went first, but its
+handover event and its `providerMessageId` were written afterwards, in a
+`$transaction` that ran AFTER `sendEmail` returned.
+
+Everything between those two points was a window where the digest had
+reached a real person and the database said otherwise: no provider id, no
+events at all — which is exactly what a send that never left looks like.
+`/messages` reads such a row as "No word back yet", and `reachedProvider`,
+the guard on deletion, sees nothing to protect and would let the record of a
+delivered email be destroyed. Not a re-send risk: the dispatch claims were
+always safe, and that is the half that was already right.
+
+Fixed the same way `lib/actions/messages.ts` was. The QUEUED handover is
+written BEFORE the send. A provider that took it keeps that event and gains
+the reason (a second QUEUED would report one send as two). A send that
+never got there gives the claim back — deleted and re-recorded as FAILED in
+ONE transaction, because losing the claim without writing the failure is the
+same hole pointing the other way. And the write that follows a successful
+send no longer throws: it returns, because production redacts a thrown
+Server Action message and an opaque error on a digest that DID go out invites
+a second click.
+
+One thing not to overclaim, and it is written into the code: "provably never
+took it" is stronger than `mayHaveSent` can support. `sendEmail` treats every
+fetch rejection as never-reached, and a timeout after the body went out is a
+fetch rejection. The branch means "nothing came back that says it arrived".
+
+The cost of all this is the opposite error — a crash between the handover and
+the send leaves a message reading handed-over-and-unconfirmed that never
+went. That is the right way round: an overstated send goes stale in a day and
+somebody checks it, an understated one is evidence that no longer exists.
+
+Both fixes are pinned by tests watched failing first. The dispatch tests are
+unit tests over a small in-memory Prisma stand-in with two properties a naive
+fake lacks — lazy operations, and a `$transaction` that really rolls back —
+because without those the "second write of a failed transaction" case passes
+against the broken code.
+
+---
+
+
+---
+
 ## The internal sales CRM remembers a conversation now
 
 Phase B shipped `SalesLead` and `SalesOpportunity` with full CRUD and two

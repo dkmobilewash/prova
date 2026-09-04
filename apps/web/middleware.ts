@@ -56,6 +56,12 @@ const isProtectedRoute = createRouteMatcher([
 // signature over the raw body, and fails closed when no secret is set — an
 // unverified "delivered" is worse than no event, because the whole value of
 // the log is that a delivered in it means something.
+// /api/notifications/digest is deliberately NOT protected here either. It
+// is the nightly alert-digest run, and a scheduler has no Clerk session any
+// more than a webhook provider does. That route authenticates the request
+// itself with a timing-safe check of `Authorization: Bearer $CRON_SECRET`,
+// and fails closed when no secret is set — unset must mean the schedule
+// does not work, never that it works for anyone who knows the URL.
 // /api/quickbooks/callback is deliberately NOT protected here — see
 // QuickBooksOAuthCookiePayload in lib/quickbooks-constants.ts. Intuit's
 // redirect back to that route is a third-party-initiated navigation;

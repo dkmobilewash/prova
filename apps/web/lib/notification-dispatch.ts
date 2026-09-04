@@ -30,6 +30,20 @@ import {
  * recording is then a notice that was sent and recorded, not one that
  * goes again tomorrow.
  *
+ * That was true of the CLAIMS and, until #116, false of the MESSAGE. The
+ * message row went first but its handover event and its
+ * `providerMessageId` were written afterwards, in a transaction that
+ * followed the send. Everything between those two points was a window
+ * where the digest had reached a real person and the database said
+ * otherwise: no provider id and no events at all, which is exactly what a
+ * send that never left looks like. `/messages` read it as "No word back
+ * yet", and `reachedProvider` — the guard on deletion — saw nothing to
+ * protect. So the handover is now claimed before the send too, and given
+ * back only when nothing came back to say it arrived. The cost is the
+ * opposite error, and it is the right way round: an overstated send goes
+ * stale in a day and somebody checks it; an understated one is evidence
+ * that no longer exists.
+ *
  * The cost is that a failed send does not retry itself, and that is
  * deliberate. It is the same judgement `sendOutboundEmail` already makes
  * about `mayHaveSent`: a second copy is worse than a late one. Everything
@@ -172,6 +186,18 @@ export async function dispatchAlertDigest(
 
   await linkClaimsToMessage(recipient.id, ours, message.id);
 
+  // THE CLAIM ON THE MESSAGE ITSELF, and the last thing written before the
+  // provider is reached. The dispatch rows have always been claimed first;
+  // the message row was not, and the difference was the whole of #116.
+  // From here on there is no instant at which this digest can be mistaken
+  // for one that never left.
+  //
+  // Our own clock is right for this one: it happened in this process, not
+  // at a provider reporting a past event.
+  const handover = await prisma.outboundMessageEvent.create({
+    data: { messageId: message.id, type: "QUEUED", occurredAt: new Date() },
+  });
+
   const result = await sendEmail({
     to: recipient.email,
     toName: recipient.name,
@@ -182,17 +208,43 @@ export async function dispatchAlertDigest(
   if (!result.ok) {
     const mayHaveSent = result.mayHaveSent === true;
 
-    await prisma.outboundMessageEvent.create({
-      data: {
-        messageId: message.id,
-        // Same distinction the composer draws: a send the provider
-        // accepted without returning an id DID reach it, and recording
-        // that as failed invites a second copy.
-        type: mayHaveSent ? "QUEUED" : "FAILED",
-        occurredAt: new Date(),
-        detail: result.error,
-      },
-    });
+    // Same distinction the composer draws: a send the provider accepted
+    // without returning an id DID reach it, and recording that as failed
+    // invites a second copy.
+    if (mayHaveSent) {
+      // It got there. The handover above already says so and is the
+      // correct record — it only needs the reason. A second QUEUED event
+      // would report one send as two.
+      await prisma.outboundMessageEvent.update({
+        where: { id: handover.id },
+        data: { detail: result.error },
+      });
+    } else {
+      // It did not get there — as far as `sendEmail` can tell. The claim
+      // on the message is given back, because a QUEUED event is what makes
+      // this row undeletable evidence, and evidence of an email that does
+      // not exist is worse than none. Delete and re-record in ONE
+      // transaction: losing the claim without writing the failure is #116
+      // again, pointing the other way, and would leave a sent-looking
+      // message with no events at all.
+      //
+      // "Provably" is doing less work than it sounds like. `sendEmail`
+      // treats every fetch rejection as never-reached
+      // (packages/integrations/src/email.ts), and a timeout after the body
+      // went out is a fetch rejection. So this branch means "nothing came
+      // back that says it arrived", not "nothing arrived".
+      await prisma.$transaction([
+        prisma.outboundMessageEvent.delete({ where: { id: handover.id } }),
+        prisma.outboundMessageEvent.create({
+          data: {
+            messageId: message.id,
+            type: "FAILED",
+            occurredAt: new Date(),
+            detail: result.error,
+          },
+        }),
+      ]);
+    }
 
     // `mayHaveSent` decides whether the claim stands, and it is the only
     // thing that should.
@@ -222,18 +274,34 @@ export async function dispatchAlertDigest(
     return { ok: false, error: result.error, claimed: ours.length };
   }
 
-  await prisma.$transaction([
-    prisma.outboundMessage.update({
+  try {
+    await prisma.outboundMessage.update({
       where: { id: message.id },
       data: {
         providerMessageId: result.providerMessageId,
         fromAddress: result.from,
       },
-    }),
-    prisma.outboundMessageEvent.create({
-      data: { messageId: message.id, type: "QUEUED", occurredAt: new Date() },
-    }),
-  ]);
+    });
+  } catch {
+    // The digest HAS gone; only our note of the provider's id for it is
+    // lost. That costs this message the join key every later webhook needs,
+    // so it can never be confirmed delivered — it stays handed-over and
+    // unconfirmed, goes stale after a day, and that is a person's cue to
+    // look. The handover event above survives regardless, which is what
+    // keeps the record of a delivered email undeletable.
+    //
+    // Returned, not thrown, and not swallowed either. A thrown Server
+    // Action message is redacted in production, so `sendMyAlertDigest`
+    // would render an opaque failure for a digest that went out and the
+    // obvious next move is to click the button again. The claims stand for
+    // the same reason they stand on `mayHaveSent`: the email was sent.
+    return {
+      ok: false,
+      error:
+        "The digest sent, but we couldn't finish recording it. It's in the log as handed over and unconfirmed — don't send it again.",
+      claimed: ours.length,
+    };
+  }
 
   return {
     ok: true,
