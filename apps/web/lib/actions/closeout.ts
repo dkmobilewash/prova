@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
+import { can } from "@/lib/permissions";
 import { prisma } from "@prova/db";
 import {
   actionFail as fail,
@@ -10,6 +11,22 @@ import {
   isUniqueConstraintError,
   type ActionResult,
 } from "./shared";
+
+/** Every entry point to a closeout package is a page guarded by
+ * MANAGE_JOBS, so every write here answers to the same capability.
+ *
+ * A guarded page in front of an open action is not a guard — the action is
+ * its own endpoint and answers whoever posts to it. Before this, an
+ * ACCOUNTING or FIELD member could create, edit and SUBMIT a closeout
+ * package to the GC through a page that refuses to render for them, which
+ * is worse than the page having been open: the two disagreed.
+ *
+ * Returned rather than thrown, matching this module's contract — production
+ * redacts a thrown Server Action message, so the sentence explaining why
+ * the button did nothing would never arrive. */
+const JOBS_ONLY =
+  "Closeout isn't part of your job function. The account owner sets who sees what, on the Team page.";
+
 
 /** Actions in this module RETURN their failures instead of throwing them.
  * Production redacts thrown Server Action messages to an opaque digest, so
@@ -97,8 +114,11 @@ const STANDARD_CLOSEOUT_ITEMS: { name: string; isRequired: boolean }[] = [
 ];
 
 export async function addStandardCloseoutChecklist(jobId: string): Promise<ActionResult> {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  const { company } = context;
   return runAction(async () => {
+    if (!can(context, "MANAGE_JOBS")) return fail(JOBS_ONLY);
+
     await assertJob(jobId, company.id);
 
     // skipDuplicates so running this twice, or after adding one by hand,
@@ -119,8 +139,11 @@ export async function addStandardCloseoutChecklist(jobId: string): Promise<Actio
 }
 
 export async function addCloseoutItem(formData: FormData): Promise<ActionResult> {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  const { company } = context;
   return runAction(async () => {
+    if (!can(context, "MANAGE_JOBS")) return fail(JOBS_ONLY);
+
     const jobId = required(formData, "jobId", "Job");
     await assertJob(jobId, company.id);
     const name = required(formData, "name", "Item name");
@@ -148,8 +171,11 @@ export async function addCloseoutItem(formData: FormData): Promise<ActionResult>
 }
 
 export async function updateCloseoutItem(itemId: string, formData: FormData): Promise<ActionResult> {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  const { company } = context;
   return runAction(async () => {
+    if (!can(context, "MANAGE_JOBS")) return fail(JOBS_ONLY);
+
     const item = await prisma.closeoutItem.findUnique({ where: { id: itemId } });
     if (!item || item.companyId !== company.id) return fail("Checklist item not found");
 
@@ -203,8 +229,11 @@ export async function deleteCloseoutItem(itemId: string): Promise<ActionResult> 
 /** Creates or corrects the warranty clock on a job. One per job, enforced
  * by @@unique on jobId. */
 export async function setWarrantyPeriod(formData: FormData): Promise<ActionResult> {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  const { company } = context;
   return runAction(async () => {
+    if (!can(context, "MANAGE_JOBS")) return fail(JOBS_ONLY);
+
     const jobId = required(formData, "jobId", "Job");
     await assertJob(jobId, company.id);
 
@@ -254,8 +283,11 @@ export async function deleteWarrantyPeriod(jobId: string): Promise<ActionResult>
 /* -------------------------------------------------------- service requests */
 
 export async function recordServiceRequest(formData: FormData): Promise<ActionResult> {
-  const { company, ...user } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  const { company, ...user } = context;
   return runAction(async () => {
+    if (!can(context, "MANAGE_JOBS")) return fail(JOBS_ONLY);
+
     const jobId = required(formData, "jobId", "Job");
     await assertJob(jobId, company.id);
 
@@ -279,8 +311,11 @@ export async function recordServiceRequest(formData: FormData): Promise<ActionRe
 }
 
 export async function updateServiceRequest(requestId: string, formData: FormData): Promise<ActionResult> {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  const { company } = context;
   return runAction(async () => {
+    if (!can(context, "MANAGE_JOBS")) return fail(JOBS_ONLY);
+
     const request = await prisma.warrantyServiceRequest.findUnique({ where: { id: requestId } });
     if (!request || request.companyId !== company.id) return fail("Service request not found");
 
