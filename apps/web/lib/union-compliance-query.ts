@@ -282,8 +282,15 @@ export type FringeScheduleRow = {
 
 export type SetupCraftRow = CraftRow & {
   schedules: FringeScheduleRow[];
-  /** Records tagged with this craft. Deleting it is refused when non-zero,
-   * and the count is what makes that refusal explain itself. */
+  /** THIS COMPANY'S records tagged with this craft — not every company's.
+   *
+   * Deleting is refused when non-zero and the count is what makes that
+   * refusal explain itself, but the delete guard counts GLOBALLY on
+   * purpose: a craft is shared between contractors under the same hall,
+   * and deleting one out from under another company's costed work is
+   * worse than refusing here. So a zero on this page can still meet a
+   * refusal — deleteCraftClassification says so in those words rather
+   * than naming the other company's numbers. */
   usageCount: number;
 };
 
@@ -322,12 +329,20 @@ export async function loadUnionSetup(companyId: string): Promise<SetupLocalRow[]
             orderBy: { name: "asc" },
             include: {
               fringeRateSchedules: { orderBy: { effectiveFrom: "desc" } },
+              // Every one of these four is FILTERED to the viewing company.
+              // CraftClassification is global, so an unfiltered _count here
+              // counts every contractor's rows and renders them as this
+              // company's "N records tagged" — someone else's headcount and
+              // catalog size, read off a page you reach by typing a public
+              // local number. TimeEntry, JobLineItem and DispatchSlip reach a
+              // company only through Job; LineItemCatalogEntry carries
+              // companyId itself.
               _count: {
                 select: {
-                  timeEntries: true,
-                  jobLineItems: true,
-                  catalogEntries: true,
-                  dispatchSlips: true,
+                  timeEntries: { where: { job: { companyId } } },
+                  jobLineItems: { where: { job: { companyId } } },
+                  catalogEntries: { where: { companyId } },
+                  dispatchSlips: { where: { job: { companyId } } },
                 },
               },
             },

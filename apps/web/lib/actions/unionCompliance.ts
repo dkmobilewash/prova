@@ -335,16 +335,56 @@ export async function deleteCraftClassification(craftId: string): Promise<Action
     });
     if (!craft) return fail("That classification isn't under a local you hold an agreement with");
 
-    const [timeEntries, lineItems, catalogEntries, dispatchSlips] = await Promise.all([
-      prisma.timeEntry.count({ where: { craftClassificationId: craft.id } }),
-      prisma.jobLineItem.count({ where: { craftClassificationId: craft.id } }),
-      prisma.lineItemCatalogEntry.count({ where: { craftClassificationId: craft.id } }),
-      prisma.dispatchSlip.count({ where: { craftClassificationId: craft.id } }),
+    // The guard counts GLOBALLY and must keep doing so. A craft classification
+    // is shared by every contractor signatory to the same hall, so a count
+    // scoped to this company would happily delete a craft that another
+    // company has hours, line items and dispatch slips tagged with — turning
+    // a read leak into a cross-company destructive action, which is the worse
+    // of the two by a distance.
+    //
+    // The MESSAGE is a different question. Naming the global breakdown tells
+    // this company how much work every other contractor under the local has
+    // tagged, which is the same disclosure loadUnionSetup's _count was just
+    // filtered to stop. So the numbers quoted back are always this company's
+    // own, and use elsewhere is reported as the fact that it exists.
+    const companyId = context.company.id;
+    const [timeEntries, lineItems, catalogEntries, dispatchSlips, usedAnywhere] = await Promise.all([
+      prisma.timeEntry.count({
+        where: { craftClassificationId: craft.id, job: { companyId } },
+      }),
+      prisma.jobLineItem.count({
+        where: { craftClassificationId: craft.id, job: { companyId } },
+      }),
+      prisma.lineItemCatalogEntry.count({
+        where: { craftClassificationId: craft.id, companyId },
+      }),
+      prisma.dispatchSlip.count({
+        where: { craftClassificationId: craft.id, job: { companyId } },
+      }),
+      prisma.craftClassification.count({
+        where: {
+          id: craft.id,
+          OR: [
+            { timeEntries: { some: {} } },
+            { jobLineItems: { some: {} } },
+            { catalogEntries: { some: {} } },
+            { dispatchSlips: { some: {} } },
+          ],
+        },
+      }),
     ]);
     const used = timeEntries + lineItems + catalogEntries + dispatchSlips;
     if (used > 0) {
       return fail(
-        `${used} record${used === 1 ? " is" : "s are"} tagged with this classification (${plural(timeEntries, "time entry", "time entries")}, ${plural(lineItems, "line item", "line items")}, ${plural(catalogEntries, "catalog entry", "catalog entries")}, ${plural(dispatchSlips, "dispatch slip", "dispatch slips")}). Deleting it would strip the craft off work that has already been costed.`,
+        `${used} of your records ${used === 1 ? "is" : "are"} tagged with this classification (${plural(timeEntries, "time entry", "time entries")}, ${plural(lineItems, "line item", "line items")}, ${plural(catalogEntries, "catalog entry", "catalog entries")}, ${plural(dispatchSlips, "dispatch slip", "dispatch slips")}). Deleting it would strip the craft off work that has already been costed.`,
+      );
+    }
+    if (usedAnywhere > 0) {
+      // Nothing of this company's is tagged, so the page reads "nothing
+      // tagged yet" and the refusal would otherwise look like a bug. Says
+      // that it is in use without saying by how much or by whom.
+      return fail(
+        "Nothing of yours is tagged with this classification, but another contractor under this local has work tagged with it. Classifications are shared by everyone signatory to the same hall, so it can't be deleted here.",
       );
     }
 
