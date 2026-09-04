@@ -91,6 +91,111 @@ against the broken code.
 
 ---
 
+
+---
+
+## The internal sales CRM remembers a conversation now
+
+Phase B shipped `SalesLead` and `SalesOpportunity` with full CRUD and two
+pages. Read as a schema that is complete; read as a CRM it had no memory —
+the entire record of a deal was `SalesOpportunity.notes`, one mutable
+free-text field the next edit overwrote. Nothing recorded that a call
+happened, and nothing anywhere said you had promised to ring someone back.
+
+`SalesActivity` is that record: call / email / demo / meeting / note,
+dated (entered, not stamped), with an optional follow-up date and an
+optional link to the deal it was about. `/sales/[id]` grows an Activity
+section; `/sales` grows a follow-up queue and a per-lead last-contact line.
+
+**One follow-up per lead, read off its LATEST activity.** The alternative —
+every `followUpOn` stays open until somebody ticks it off — needs a stored
+done-flag, and would leave a lead owing four separate calls for one
+conversation. The trade is real and is stated on the column itself: logging
+the next activity replaces what the lead owed, so clearing a follow-up is
+the explicit act of logging the next contact with the date left blank. An
+older activity's follow-up renders as "since superseded" rather than
+disappearing, so the history still reads correctly.
+
+**Follow-ups deliberately do NOT go into `/alerts`,** which was the obvious
+reuse and the wrong one. `/alerts` gates on a `lib/permissions.ts`
+capability; this feature gates on `isProvaOperator` AND `role === "OWNER"`,
+and an OWNER holds every capability by definition, so the map cannot
+express owner-only — that is why `assertSalesAccess` exists at all. Routing
+these through the shared engine would show "Follow up with Acme Drywall" to
+every estimator at the operator company.
+
+**Nulls, not zeroes, throughout.** "No contact logged" is a statement about
+the log, not about the relationship — nobody wrote anything down, which is
+all the page can honestly claim. `daysSinceContact` is null when nothing is
+logged and `0` when contact was today, and the unit suite pins the two
+apart specifically because they would otherwise both render as "0". That
+assertion caught a real one: negating `daysUntil()` returns `-0` for a
+contact logged today, which renders as "-0 days ago".
+
+**Two Phase B bugs fixed in passing.** `createSalesOpportunity` and
+`deleteSalesOpportunity` revalidated `/sales/[id]` but not `/sales` — which
+is where the opportunity count is rendered — so adding a lead's first
+opportunity left the list reading zero. And `deleteSalesLead`'s guard
+counted opportunities only; `SalesActivity.leadId` is `RESTRICT`, so a lead
+with a call log and no deals would have thrown a raw Postgres constraint
+error instead of a sentence. The guard now names both and, per the lesson
+from `deleteContact`, never prints a zero for the half that is empty.
+
+**The gate is executed for the first time.** `assertSalesAccess`'s two
+checks have never run against a company where they were false — there is
+one user on the real account, so the browser can only ever exercise the
+passing branch. `sales-activity-actions.dbtest.ts` builds a second tenant
+and a MEMBER of the operator company and asserts both refusals, plus that
+neither company's owner can reach the other's rows by id. Every assertion
+in it was watched fail first: dropping the OWNER check reds two tests, and
+removing the activity count from the delete guard reproduces the raw
+`PrismaClientKnownRequestError` it exists to prevent.
+
+:warning: **Still true and still unclosed: nobody has ever loaded this
+feature.** `Company.isProvaOperator` is false on every row until it is
+flipped by hand, and no record exists of it ever being flipped. Every page
+under `/sales` correctly renders "Not part of your access" while it is
+false, which means a click-list against it passes while proving nothing.
+Flip it on a test company first or the test cannot fail.
+
+---
+
+## /pipeline, clicked — and a page that told people to do the impossible
+
+Every assertion passed, including the two that were the point: the counts
+on /pipeline equal what /bids reports for the same GC (1 + 1 = 2), and
+flipping a bid from LOST to WON moved the figures 67% -> 100% -> 67% with
+the won total tracking it and nothing touched on /pipeline. The derivation
+is proven against the data rather than against my description of it.
+
+THE REAL FINDING IS MY OWN COPY. The page said:
+
+  "worked out from the bid invitations on Bids, which is where a status
+   gets changed"
+
+`/bids` has no editing controls. Its rows are bare links; its only <select>
+elements are the trade and status FILTERS. `updateBidInvitationStatus` is
+called from exactly one place, `/contacts/[id]/page.tsx`. So that sentence
+sent a reader to a page where the action does not exist.
+
+It also propagated: my click-list said "on /bids change Tower C", because I
+wrote the click-list from my own wrong copy rather than from the code. The
+tester found the real control on the contact record, performed the flip
+there, preserved the intent of the step, and said plainly that they had
+deviated and why. Both halves of that are what made it useful.
+
+Corrected to name the contact record, and to say what /bids actually does:
+filters and reads.
+
+Filed rather than fixed, both outside this lane: a bid can only be created
+as INVITED with no amount, so every row starts in the state that makes a
+won-value total a floor (#133); and two contact pages return 503 on RSC
+prefetch while siblings in the same batch return 200 (#134).
+
+Not tested: the non-owner access check. There is still exactly one user on
+the account, so section 7 has now been skipped on every run that included
+it. It is the one assertion about /pipeline nobody has exercised.
+
 ## A sent email the app could not prove it sent, and one injury filed twice
 
 Two of the six findings in #111. Both are ordering bugs, and neither was
