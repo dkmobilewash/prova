@@ -8,6 +8,7 @@ import {
   idempotencyKeyFor,
   isAccidentalRepeat,
   isMissingDocumentError,
+  mayMeanDocumentIsGone,
   pushBlockers,
   type InvoiceToPush,
   verifyPushedInvoice,
@@ -363,5 +364,42 @@ describe("recognising a document QuickBooks no longer has", () => {
     expect(isMissingDocumentError("Required parameter Line.SalesItemLineDetail is missing")).toBe(false);
     expect(isMissingDocumentError("Duplicate Name Exists Error")).toBe(false);
     expect(isMissingDocumentError("")).toBe(false);
+  });
+});
+
+describe("deciding when it is worth ASKING whether a document is gone", () => {
+  // This predicate does not decide anything on its own — it decides whether
+  // to spend one read-only GET, and the GET decides. So the bar for a true
+  // is "plausibly about a missing document", not "certainly".
+  it("matches the wording a real deleted invoice actually produced", () => {
+    // Sandbox, 2026-09-03 21:50 UTC, invoice 1 on ZZQB-TEST, after the
+    // QuickBooks invoice had been deleted. This is the string that used to
+    // fall through to "open it there and decide which version is right".
+    expect(
+      mayMeanDocumentIsGone(
+        "Stale Object Error — Stale Object Error : You and Craig Carlson were working on this at the " +
+          "same time. Craig Carlson finished before you did, so your work was not saved.",
+      ),
+    ).toBe(true);
+  });
+
+  it("still matches Object Not Found", () => {
+    expect(mayMeanDocumentIsGone("Object Not Found : Something went wrong")).toBe(true);
+  });
+
+  it("does not match the Product/Service refusal", () => {
+    // Harmless if it did — the probe would find the invoice present — but
+    // this predicate should mean what it says.
+    const real =
+      "Invalid Reference Id : Product/Service assigned to this transaction has been deleted. " +
+      "Before you can modify this transaction, you must restore Prova — Construction services (deleted).";
+    expect(mayMeanDocumentIsGone(real)).toBe(false);
+  });
+
+  it("does not match refusals that are about the payload", () => {
+    expect(mayMeanDocumentIsGone("Required parameter Line.SalesItemLineDetail is missing")).toBe(false);
+    expect(mayMeanDocumentIsGone("Duplicate Name Exists Error")).toBe(false);
+    expect(mayMeanDocumentIsGone("Couldn't reach QuickBooks.")).toBe(false);
+    expect(mayMeanDocumentIsGone("")).toBe(false);
   });
 });
