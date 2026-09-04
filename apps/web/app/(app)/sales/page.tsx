@@ -1,7 +1,16 @@
+import Link from "next/link";
 import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@prova/db";
 import { SalesLeadForm } from "@/components/SalesLeadForm";
 import { SalesLeadRow } from "@/components/SalesLeadRow";
+import { toIsoDate } from "@/lib/compliance-expiry";
+import { viewerToday } from "@/lib/viewerToday";
+import {
+  countOverdue,
+  followUpQueue,
+  summarizeLeadActivity,
+  type LeadActivitySource,
+} from "@/lib/sales-activity";
 
 /**
  * Prova's own sales pipeline -- for selling Prova itself, not a tenant's
@@ -39,8 +48,35 @@ export default async function SalesPage() {
   const leads = await prisma.salesLead.findMany({
     where: { companyId: company.id },
     orderBy: { createdAt: "desc" },
-    include: { _count: { select: { opportunities: true } } },
+    include: {
+      _count: { select: { opportunities: true } },
+      activities: {
+        select: { id: true, type: true, occurredOn: true, followUpOn: true, createdAt: true },
+      },
+    },
   });
+
+  // The viewer's calendar day, not the server's — a follow-up due today
+  // reads OVERDUE to anyone west of UTC once the server has ticked over.
+  const today = await viewerToday();
+
+  const activitySources: LeadActivitySource[] = leads.map((lead) => ({
+    leadId: lead.id,
+    companyName: lead.companyName,
+    activities: lead.activities.map((a) => ({
+      id: a.id,
+      type: a.type,
+      occurredOn: toIsoDate(a.occurredOn) as string,
+      followUpOn: toIsoDate(a.followUpOn),
+      createdAt: a.createdAt.toISOString(),
+    })),
+  }));
+
+  const queue = followUpQueue(activitySources, today);
+  const overdueCount = countOverdue(queue);
+  const summaries = new Map(
+    activitySources.map((source) => [source.leadId, summarizeLeadActivity(source, today)]),
+  );
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-8">
@@ -49,6 +85,43 @@ export default async function SalesPage() {
         Prospective Prova customers and the deals in progress with them -- internal, not visible to
         any tenant.
       </p>
+
+      {queue.length > 0 && (
+        <section className="mb-6 rounded-lg border border-slate-800 bg-slate-900 p-4">
+          <h2 className="mb-1 text-sm font-semibold text-slate-100">
+            {queue.length} {queue.length === 1 ? "lead owes" : "leads owe"} a follow-up
+            {overdueCount > 0 && <span className="text-red-400"> — {overdueCount} overdue</span>}
+          </h2>
+          <p className="mb-3 text-xs text-slate-500">
+            Read from each lead&apos;s most recent activity. Logging the next one with the follow-up
+            date left blank is what takes a lead off this list.
+          </p>
+          <ul className="divide-y divide-slate-800">
+            {queue.map((row) => (
+              <li key={row.leadId} className="flex items-center justify-between gap-3 py-2">
+                <Link href={`/sales/${row.leadId}`} className="text-sm text-slate-200 hover:underline">
+                  {row.companyName}
+                </Link>
+                <span
+                  className={`text-xs ${
+                    row.followUpStanding === "OVERDUE"
+                      ? "text-red-400"
+                      : row.followUpStanding === "DUE_TODAY"
+                        ? "text-amber-300"
+                        : "text-slate-500"
+                  }`}
+                >
+                  {row.followUpStanding === "OVERDUE"
+                    ? `${row.daysOverdue} ${row.daysOverdue === 1 ? "day" : "days"} overdue — was due ${row.followUpOn}`
+                    : row.followUpStanding === "DUE_TODAY"
+                      ? "Due today"
+                      : `Due ${row.followUpOn}`}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {leads.length === 0 ? (
         <p className="mb-4 text-sm text-slate-400">No leads recorded yet.</p>
@@ -65,6 +138,10 @@ export default async function SalesPage() {
                 phone: lead.phone,
                 source: lead.source,
                 opportunityCount: lead._count.opportunities,
+                lastContactOn: summaries.get(lead.id)?.lastContactOn ?? null,
+                daysSinceContact: summaries.get(lead.id)?.daysSinceContact ?? null,
+                followUpOn: summaries.get(lead.id)?.followUpOn ?? null,
+                followUpStanding: summaries.get(lead.id)?.followUpStanding ?? null,
               }}
             />
           ))}
