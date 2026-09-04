@@ -4,7 +4,20 @@ import { prisma } from "@prova/db";
 import { SalesLeadEditForm } from "@/components/SalesLeadEditForm";
 import { SalesOpportunityForm } from "@/components/SalesOpportunityForm";
 import { SalesOpportunityRow } from "@/components/SalesOpportunityRow";
+import { SalesActivityForm } from "@/components/SalesActivityForm";
+import { SalesActivityRow } from "@/components/SalesActivityRow";
+import { OPPORTUNITY_STAGE_OPTIONS } from "@/components/SalesOpportunityFields";
 import { toIsoDate } from "@/lib/compliance-expiry";
+import { latestActivity, type LoggedActivity } from "@/lib/sales-activity";
+import { viewerToday } from "@/lib/viewerToday";
+import {
+  currentStageSince,
+  daysInCurrentStage,
+  historyDisagrees,
+  isFutureDated,
+  stageSpells,
+  type RecordedStageChange,
+} from "@/lib/sales-stage-history";
 
 export default async function SalesLeadPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -28,12 +41,83 @@ export default async function SalesLeadPage({ params }: { params: Promise<{ id: 
 
   const lead = await prisma.salesLead.findUnique({
     where: { id },
-    include: { opportunities: { orderBy: { createdAt: "desc" } } },
+    include: {
+      opportunities: {
+        orderBy: { createdAt: "desc" },
+        include: { stageChanges: true },
+      },
+      activities: {
+        orderBy: [{ occurredOn: "desc" }, { createdAt: "desc" }],
+        include: { loggedByUser: { select: { name: true, email: true } } },
+      },
+    },
   });
 
   if (!lead || lead.companyId !== company.id) {
     notFound();
   }
+
+  // The viewer's calendar day, not the server's — a deal that moved today
+  // reads as moving tomorrow to anyone west of UTC once the server ticks over.
+  const today = await viewerToday();
+
+  const historyByOpportunity = new Map(
+    lead.opportunities.map((opportunity) => {
+      const changes: RecordedStageChange[] = opportunity.stageChanges.map((change) => ({
+        id: change.id,
+        fromStage: change.fromStage,
+        toStage: change.toStage,
+        effectiveOn: toIsoDate(change.effectiveOn) as string,
+        note: change.note,
+        recordedAt: change.recordedAt.toISOString(),
+      }));
+
+      return [
+        opportunity.id,
+        {
+          stageSince: currentStageSince(changes),
+          daysInStage: daysInCurrentStage(changes, today),
+          futureDated: isFutureDated(changes, today),
+          disagrees: historyDisagrees(changes, opportunity.stage),
+          spells: stageSpells(changes, today),
+        },
+      ];
+    }),
+  );
+
+  const opportunityOptions = lead.opportunities.map((opportunity) => ({
+    id: opportunity.id,
+    label: [
+      OPPORTUNITY_STAGE_OPTIONS.find((o) => o.value === opportunity.stage)?.label ?? opportunity.stage,
+      opportunity.estimatedMrr === null ? null : `$${opportunity.estimatedMrr.toString()}/mo`,
+      toIsoDate(opportunity.expectedCloseDate),
+    ]
+      .filter(Boolean)
+      .join(" · "),
+  }));
+
+  const loggedActivities: LoggedActivity[] = lead.activities.map((activity) => ({
+    id: activity.id,
+    type: activity.type,
+    occurredOn: toIsoDate(activity.occurredOn) as string,
+    followUpOn: toIsoDate(activity.followUpOn),
+    createdAt: activity.createdAt.toISOString(),
+  }));
+
+  // Which row carries the live follow-up. Derived by the same function
+  // /sales uses, rather than by "whatever the ORDER BY put first" — the
+  // query's ordering and the rule must not be able to drift apart.
+  const latestId = latestActivity(loggedActivities)?.id ?? null;
+
+  const activityRows = lead.activities.map((activity) => ({
+    id: activity.id,
+    type: activity.type,
+    occurredOn: toIsoDate(activity.occurredOn) as string,
+    summary: activity.summary,
+    followUpOn: toIsoDate(activity.followUpOn),
+    opportunityId: activity.opportunityId,
+    loggedByName: activity.loggedByUser?.name ?? activity.loggedByUser?.email ?? null,
+  }));
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-8">
@@ -67,11 +151,48 @@ export default async function SalesLeadPage({ params }: { params: Promise<{ id: 
                   expectedCloseDate: toIsoDate(opportunity.expectedCloseDate),
                   notes: opportunity.notes,
                 }}
+                history={
+                  historyByOpportunity.get(opportunity.id) ?? {
+                    stageSince: null,
+                    daysInStage: null,
+                    futureDated: false,
+                    disagrees: false,
+                    spells: [],
+                  }
+                }
               />
             ))}
           </ul>
         )}
         <SalesOpportunityForm leadId={lead.id} />
+      </section>
+
+      <section className="mt-10">
+        <h2 className="mb-1 text-lg font-semibold text-slate-100">Activity</h2>
+        <p className="mb-3 text-sm text-slate-400">
+          Every call, email, demo and meeting on record. The follow-up on the most recent entry is
+          what {lead.companyName} owes — an older entry&apos;s follow-up was superseded when the
+          next activity was logged.
+        </p>
+        {activityRows.length === 0 ? (
+          <p className="mb-4 text-sm text-slate-400">
+            Nothing logged with {lead.companyName} yet. Until something is, this lead reads &ldquo;No
+            contact logged&rdquo; on the list — which means nobody wrote it down, not that nobody
+            called.
+          </p>
+        ) : (
+          <ul className="mb-4 divide-y divide-slate-800 border-y border-slate-800">
+            {activityRows.map((activity) => (
+              <SalesActivityRow
+                key={activity.id}
+                activity={activity}
+                opportunityOptions={opportunityOptions}
+                isLatest={activity.id === latestId}
+              />
+            ))}
+          </ul>
+        )}
+        <SalesActivityForm leadId={lead.id} opportunityOptions={opportunityOptions} />
       </section>
     </div>
   );

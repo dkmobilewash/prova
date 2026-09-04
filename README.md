@@ -54,6 +54,8 @@ Fill in:
 | `QUICKBOOKS_REDIRECT_URI` | `apps/web/.env` | `<your origin>/api/quickbooks/callback`, must exactly match a redirect URI registered on that Intuit app |
 | `ANTHROPIC_API_KEY` | `apps/web/.env` | From your Anthropic Console — required for all three AI features (compliance document extraction, draft-estimate-from-text, WIP summaries). Without it, those features fail at request time rather than at startup. |
 | `BLOB_READ_WRITE_TOKEN` | `apps/web/.env` | From your Vercel project's Blob store (Storage tab → create a store with "Add a read-write token" checked). Required for any file upload — compliance documents and subcontract agreement PDFs. Without it, uploads fail. |
+| `CRON_SECRET` | `apps/web/.env` + Vercel | Any long random string. Vercel sends it as `Authorization: Bearer …` on the nightly alert-digest cron; the route rejects every request without it, including when the variable is unset. Nothing unattended sends until this exists. |
+| `NOTIFY_BASE_URL` | `apps/web/.env` + Vercel | The origin links in a scheduled email point at — `https://app.cstream.ai` in production. Deliberately configuration rather than a request header: the cron mails other people, so the host cannot come from whoever triggered it. No default; unset means the run refuses to send. |
 
 The remaining `NEXT_PUBLIC_CLERK_*_URL` vars in `apps/web/.env.example`
 are already set to sensible defaults (`/sign-in`, `/sign-up`,

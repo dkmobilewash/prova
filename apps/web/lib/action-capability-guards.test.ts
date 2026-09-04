@@ -361,24 +361,24 @@ function assertsCapability(action: string, capability: Capability): boolean {
  * rather than the code: `closeoutSubmissions.ts` and `integrations.ts`
  * belong to other lanes (WORK-SPLIT.md — closeout submissions to the third
  * lane, integrations to Diego's), and touching another lane's file is
+ * NINE of these were paid off — every non-delete write to a closeout
+ * package now asserts MANAGE_JOBS. What remains below is the four DELETES,
+ * and they are a different axis rather than an unpaid debt: each already
+ * calls `assertOwner`, and an OWNER holds every capability by construction,
+ * so no principal exists who is refused by the page and admitted by them.
+ * They stay listed because this file records what the code ASSERTS, and an
+ * owner check stops covering for them the moment the role model gains a
+ * third value.
+ *
  * supposed to be announced first. `closeout.ts` is in this lane and could
  * have been done here; gating nine of the thirteen actions on one page and
  * leaving four would make `/closeout` half-enforced, which is harder to
  * reason about than a whole page consistently listed as debt. They go
  * together, in one pass, with the ping that the agreement asks for. */
 const OPEN_BEHIND_A_NEWLY_CLOSED_PAGE: Record<string, Capability> = {
-  "closeout.addStandardCloseoutChecklist": "MANAGE_JOBS",
-  "closeout.addCloseoutItem": "MANAGE_JOBS",
-  "closeout.updateCloseoutItem": "MANAGE_JOBS",
   "closeout.deleteCloseoutItem": "MANAGE_JOBS",
-  "closeout.setWarrantyPeriod": "MANAGE_JOBS",
   "closeout.deleteWarrantyPeriod": "MANAGE_JOBS",
-  "closeout.recordServiceRequest": "MANAGE_JOBS",
-  "closeout.updateServiceRequest": "MANAGE_JOBS",
   "closeout.deleteServiceRequest": "MANAGE_JOBS",
-  "closeoutSubmissions.submitCloseoutPackage": "MANAGE_JOBS",
-  "closeoutSubmissions.recordCloseoutResponse": "MANAGE_JOBS",
-  "closeoutSubmissions.reopenCloseoutSubmission": "MANAGE_JOBS",
   "closeoutSubmissions.deleteCloseoutSubmission": "MANAGE_JOBS",
   "integrations.connectSandboxIntegration": "MANAGE_COMPLIANCE",
   "integrations.disconnectSandboxIntegration": "MANAGE_COMPLIANCE",
@@ -651,6 +651,8 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   rfis: () => import("./actions/rfis"),
   submittals: () => import("./actions/submittals"),
   drawings: () => import("./actions/drawings"),
+  closeout: () => import("./actions/closeout"),
+  closeoutSubmissions: () => import("./actions/closeoutSubmissions"),
 };
 
 /** The sentence both guard messages share. Asserting on this rather than on

@@ -191,6 +191,415 @@ argued from months later.
 
 ---
 
+
+---
+
+### Asking QuickBooks whether a document is gone, instead of guessing from its prose (Diego)
+`claude/prova-vercel-direct-url-hg1acx`
+
+The self-healing added one commit ago worked on a string match, and the
+string was the wrong one. This replaces the guess with a question.
+
+**The sandbox settled it.** The QuickBooks invoice behind invoice 1 on
+ZZQB-TEST was deleted on purpose, and the refusal that came back at
+2026-09-03 21:50 UTC was not `Object Not Found`. It was `Stale Object
+Error : You and Craig Carlson were working on this at the same time.` A
+deleted document, reported as a concurrent edit. Intuit checks the
+SyncToken before it decides a record is absent, so a delete surfaces as
+either fault depending on which check trips first — and the match written
+for this only knew one of them.
+
+**What that cost, in the shipped code.** The stale branch ran first, so
+the far more common wording never reached the recovery at all. The person
+was told to open the invoice in QuickBooks and decide which version was
+right, about a document that was not there to open, and the link was left
+in place so every later click failed identically forever. The exact
+never-heals shape the commit was written to end, still present, one fault
+code along.
+
+**A string no longer decides.** On a failure that could mean the document
+is missing, Prova now reads it back — one GET, read-only — and clears the
+link only on a definite "there is no such record". Widening the match is
+safe now for the reason it was dangerous before: it buys an API call, not
+a deletion.
+
+**"Could not check" is not "confirmed gone", and they are now different
+values.** An expired token, a 503, a throttle, a socket that never
+reached Intuit, a 200 with no id in it — every one of those leaves the
+link alone. Clearing a link is the one recovery in this codebase that can
+put a SECOND invoice in somebody's books, because the next push builds a
+CREATE; a wrong guess the other way only produces a confusing message.
+That asymmetry is the whole design, and `documentPresence` lives in its
+own file rather than inside the `"use server"` module purely so a test can
+reach it. Nine of them do, including the outage cases nobody can
+reproduce by hand.
+
+**The payment push gains more than the invoice one.** It had no stale
+branch at all, so a deleted QuickBooks payment fell straight through to
+the generic refusal and its link was never cleared under any wording.
+
+**The sync log now says what was concluded, not just what Intuit said.**
+A refusal row reading `Stale Object Error` next to an on-screen message
+saying the invoice no longer exists cost an hour of working out whether
+the two came from the same click. They could not have — but nothing in
+the row said so. Rows now carry the answer the read-back gave, and name
+the QuickBooks id they checked.
+
+---
+
+## A sales stage that moves without a trace answers nothing
+
+`SalesOpportunity.stage` was a single mutable field. It said WHERE a deal
+was and nothing about when it got there, so "how long has this sat in
+`DEMO_SCHEDULED`" — the most useful number a pipeline has — was
+unanswerable no matter how many times somebody updated the stage.
+
+`SalesStageChange` records every move. `lib/sales-stage-history.ts` reads
+it: time in the current stage, and one entry per stretch the deal spent in
+a stage. `/sales/[id]` shows both, per opportunity.
+
+**`effectiveOn` is entered, not stamped,** with `recordedAt` alongside it
+for audit. Recording on Wednesday that the demo happened Monday records
+Monday. A plain `changedAt DateTime @default(now())` would have measured
+when somebody got round to updating Prova, which is a different quantity
+wearing the same name.
+
+**A move is recorded only when the stage actually differs.** Writing a row
+on every save would reset a deal's time-in-stage to zero the moment
+somebody corrected its MRR — silently, and to a plausible number. That is
+the assertion the whole feature rests on, so it is a database test, and
+forcing `isMove` to `true` reds it.
+
+**Both writes are one transaction, and the test proves the rollback.** A
+move dated before the previous move is refused, and the opportunity's own
+stage and amount must come back untouched — not merely the history row
+skipped, which would leave the deal in TRIAL with a history saying NEW.
+Replacing the transaction with sequential calls reds that test.
+
+**No backfill.** The tempting migration is one row per existing
+opportunity with `effectiveOn = createdAt`. It would assert that every deal
+has been in its current stage since the day it was created — false for any
+that has moved, and false invisibly, as a plausible number. Deals that
+predate this read "stage not recorded" and their history starts at their
+next move. `createdAt` is not an answer to a question about the current
+stage.
+
+**A revisited stage stays two stretches, never summed.** A deal that goes
+TRIAL → LOST → TRIAL produces three entries, not two. Condensing per stage
+would report "19 days in Trial" and hide entirely that it was written off
+in between.
+
+**Nulls where a number would lie.** No history → null, not zero. A move
+dated in the FUTURE → null, because a deal cannot already have spent time
+in a stage it has not reached and "-4 days in Trial" is worse than saying
+nothing. Zero is kept as a real answer meaning "moved today".
+
+The page also renders a disagreement between the stored stage and where
+the history left the deal. It should be unreachable — the two writes share
+a transaction, and a grep confirms these are the only two writers of
+`stage` in the codebase — which is exactly why it is worth showing if it
+ever appears, same treatment as `enrollmentState`'s CONTRADICTORY.
+
+Two existing database tests went red on this change and were right to:
+`createSalesOpportunity` now requires the stage date, and they called it
+without one. Fixed at the call sites rather than by softening the
+requirement — the form always sends it, defaulted to the user's local
+today.
+
+---
+
+### The digest now runs when nobody is looking (Cyrus)
+`cyrus/notification-schedule`
+
+Sheet 26 held five rows at Partial for one narrow reason — **nothing runs
+unattended.** The digest below sends beautifully and only when a person
+clicks a button on `/alerts`, which is the same reach the alert list
+already had. This is the schedule: a route handler at
+`/api/notifications/digest`, hit nightly at 13:00 UTC by a Vercel cron
+(06:00 Pacific, 09:00 Eastern — before either coast's working day).
+
+Nothing under it changed. `dispatchAlertDigest` already took `todayIso`
+and `baseUrl` as parameters precisely so a scheduled caller could supply
+them, and it already claimed each notice before calling the provider, so
+running it twice is silent. This adds a caller with no person behind it,
+and the loop semantics that a caller with no person behind it needs.
+
+**Two ways to fail closed, and neither is a formality.**
+
+`CRON_SECRET` unset → 503, nothing read, nothing sent. Vercel attaches
+`Authorization: Bearer $CRON_SECRET` to a cron request when that variable
+is set and attaches *nothing* when it is not — which is exactly why the
+missing-secret case has to reject. Unset must mean the schedule does not
+work; it must never mean the schedule works for anybody who knows the URL,
+and that URL is a button that mails every user of every company. Compared
+timing-safely, like the Resend webhook: a plain `===` on a secret leaks how
+much of it was right, one byte at a time, and this endpoint can be hit as
+often as anyone likes.
+
+`NOTIFY_BASE_URL` unset or not an origin → 503, nothing sent. Every link
+in the email body is built from it. **The button's host cannot be reused
+here and the docstring on `originFromRequest` says so in advance:** it
+reads `x-forwarded-host`, which the caller controls, and that is harmless
+only because the button mails the person who clicked it. This run mails
+other people. A host taken from whatever request triggered the cron would
+be the host in the links of everybody's email. There is no default either,
+because there is no safe guess — an email that looks right and whose every
+link goes to the wrong deployment is worse than no email.
+
+**Who, in what order, and what one failure costs.** Every user of every
+company with a real mailbox, one at a time, longest-unnotified first.
+
+- *One at a time* is not performance. Two different people never contend —
+  the ledger's key is `(userId, dispatchKey)` — but the same person
+  dispatched twice concurrently does, and the thing never to do is compute
+  one alert list per COMPANY and mail it to everybody in it: alerts are
+  capability-filtered per user, so that both mails people alerts their role
+  hides and collapses every person's claim into one.
+- *Longest-unnotified first* only shows when a run cannot finish, and then
+  it is the whole difference between "today's tail waits until tomorrow"
+  and "the same people are never reached, ever" — which the milestone
+  ledger would make permanent, since a rung nobody was there to fire still
+  passes. Never-mailed first, then oldest, then id so the order is total
+  and two runs cut the list in the same place.
+- *No one person can end the run.* A throw, a refused address, a provider
+  timeout: that person's outcome, and the loop continues. The one
+  exception is an unconfigured email provider, which `dispatchAlertDigest`
+  checks BEFORE claiming anything — it will be the identical answer for
+  everybody, it spends no milestone, and two hundred copies of it in a
+  report hide the one fact worth reading.
+- *The run stops itself at 45s* rather than being killed at the platform's
+  60. A kill lands wherever it lands, including between claiming a notice
+  and sending it, which is the one state the ledger cannot undo: milestone
+  spent, no email. Stopping between two people cannot produce it.
+
+**The status code answers "did this run do its whole job", not "did it
+respond".** A run that mailed forty people and threw on the forty-first
+returns 500, with the full report in the body. A green invocation nobody
+reads the body of is precisely how this repo has been fooled before. Safe
+to retry, for the same reason it is safe to run twice.
+
+Tested by putting each wrong behaviour back and watching the suite go red:
+no try/catch (a throw aborts the run), `break` instead of `continue` on a
+failure, `unconfigured` treated as ordinary, `Promise.all` over the
+recipients, no time budget, order by id, sorting the caller's array in
+place, `configuredBaseUrl` returning its input, and every dispatch handed
+the first recipient. Nine mutations, nine reds, restored green. A tenth —
+reading a null last-dispatch timestamp as the epoch — stayed GREEN, because
+epoch and never sort identically; the guard that claimed to distinguish
+them was removed rather than kept untested.
+
+No schema change. `NotificationDispatch` already carried everything, and
+there is deliberately no subscription column: `/alerts` already lets
+anybody dismiss or snooze anything, and a second, quieter place to be
+unsubscribed would be free to disagree with it. Addresses ending
+`@unknown.local` are skipped — that is `requireCompanyContext`'s
+placeholder for a Clerk account with no address, and it is a nightly bounce
+against our own sending reputation, not a mailbox.
+
+Needs `CRON_SECRET` and `NOTIFY_BASE_URL` on the Vercel project before
+anything sends. Both are in `.env.example` and the README table.
+
+Caught up to `main`, which had moved 65 commits underneath this branch.
+Two things came out of that. `scripts/preflight.sh` took `main`'s version
+of the worktree fix rather than this branch's: the same one-line change,
+but placed AFTER the `cd`, which the version here was not — so the older
+one was clearing a lock relative to wherever the caller happened to be
+standing. And Sheet 26 gained a seventh row on `main` while this was
+open — contact follow-up reminders — still reading *"still nothing that
+runs unattended"*, which this branch makes untrue. It now says what the
+other five say. That is the whole failure mode this sheet has drifted by
+twice: a row that was right when it was written and nobody re-read after
+the thing it describes changed underneath it.
+
+---
+
+
+---
+
+## Two notification bugs: a standing alert emailed as "Now due", and a digest that could go out with no record of it
+
+### A STANDING alert borrowed the dated ladder (#126)
+
+`crossedRungs` decided which ladder an alert climbed by asking whether
+`dueOn` was null. The severity is the claim being made; `dueOn` is only a
+date attached to it, and three kinds are STANDING **and** dated — a
+closeout package the GC has sat on, retainage past a forecast substantial
+completion, and (arriving with #128) a rejected closeout. Every one of them
+carries a date already BEHIND it, because what makes them standing is that
+the day cannot be met by acting sooner.
+
+So all three went up the dated ladder, `days <= 0` fired the DUE rung, and
+`rungLabel("due")` put **"Now due"** in an email about a condition that has
+no deadline at all. Worse than the wording: they spent `@week` and `@due`
+instead of `@standing`, so the one notice those alerts were ever going to
+send could never be sent — silently, for good, since a spent rung is spent.
+
+The split is now on `severity === "STANDING"`, with one wrinkle that is the
+reason a bare severity check is not enough. A COI fifty-five days out is
+also STANDING — because it is outside its own horizon, not because it is a
+standing condition — and firing its only key there would spend it long
+before there is anything to say. A STANDING alert therefore reaches its rung
+when it has no date, or when the date it has is behind it; a date still
+ahead, or a date with no distance computed, says nothing.
+
+**The guard test for this passed vacuously and had done since it was
+written.** It was named "never borrows the dated ladder" and its fixture was
+a `WIP_VARIANCE` alert with `dueOn: null` — the one STANDING shape that
+cannot reach the dated branch at all, so it would have passed whatever that
+branch did. It now uses a STANDING alert that HAS a past `dueOn`, which is
+the only fixture that exercises the thing it is named after, and it fails
+against the old code with `expected 'due' to be 'standing'`.
+
+### A sent digest could leave no record that it was sent (#116)
+
+`notification-dispatch.ts` opens with "THE ORDER IS THE DESIGN" — claims
+written before the provider is called, so a crash between sending and
+recording is a notice that was sent and recorded. That was true of the
+CLAIMS and false of the MESSAGE. The message row went first, but its
+handover event and its `providerMessageId` were written afterwards, in a
+`$transaction` that ran AFTER `sendEmail` returned.
+
+Everything between those two points was a window where the digest had
+reached a real person and the database said otherwise: no provider id, no
+events at all — which is exactly what a send that never left looks like.
+`/messages` reads such a row as "No word back yet", and `reachedProvider`,
+the guard on deletion, sees nothing to protect and would let the record of a
+delivered email be destroyed. Not a re-send risk: the dispatch claims were
+always safe, and that is the half that was already right.
+
+Fixed the same way `lib/actions/messages.ts` was. The QUEUED handover is
+written BEFORE the send. A provider that took it keeps that event and gains
+the reason (a second QUEUED would report one send as two). A send that
+never got there gives the claim back — deleted and re-recorded as FAILED in
+ONE transaction, because losing the claim without writing the failure is the
+same hole pointing the other way. And the write that follows a successful
+send no longer throws: it returns, because production redacts a thrown
+Server Action message and an opaque error on a digest that DID go out invites
+a second click.
+
+One thing not to overclaim, and it is written into the code: "provably never
+took it" is stronger than `mayHaveSent` can support. `sendEmail` treats every
+fetch rejection as never-reached, and a timeout after the body went out is a
+fetch rejection. The branch means "nothing came back that says it arrived".
+
+The cost of all this is the opposite error — a crash between the handover and
+the send leaves a message reading handed-over-and-unconfirmed that never
+went. That is the right way round: an overstated send goes stale in a day and
+somebody checks it, an understated one is evidence that no longer exists.
+
+Both fixes are pinned by tests watched failing first. The dispatch tests are
+unit tests over a small in-memory Prisma stand-in with two properties a naive
+fake lacks — lazy operations, and a `$transaction` that really rolls back —
+because without those the "second write of a failed transaction" case passes
+against the broken code.
+
+---
+
+
+---
+
+## The internal sales CRM remembers a conversation now
+
+Phase B shipped `SalesLead` and `SalesOpportunity` with full CRUD and two
+pages. Read as a schema that is complete; read as a CRM it had no memory —
+the entire record of a deal was `SalesOpportunity.notes`, one mutable
+free-text field the next edit overwrote. Nothing recorded that a call
+happened, and nothing anywhere said you had promised to ring someone back.
+
+`SalesActivity` is that record: call / email / demo / meeting / note,
+dated (entered, not stamped), with an optional follow-up date and an
+optional link to the deal it was about. `/sales/[id]` grows an Activity
+section; `/sales` grows a follow-up queue and a per-lead last-contact line.
+
+**One follow-up per lead, read off its LATEST activity.** The alternative —
+every `followUpOn` stays open until somebody ticks it off — needs a stored
+done-flag, and would leave a lead owing four separate calls for one
+conversation. The trade is real and is stated on the column itself: logging
+the next activity replaces what the lead owed, so clearing a follow-up is
+the explicit act of logging the next contact with the date left blank. An
+older activity's follow-up renders as "since superseded" rather than
+disappearing, so the history still reads correctly.
+
+**Follow-ups deliberately do NOT go into `/alerts`,** which was the obvious
+reuse and the wrong one. `/alerts` gates on a `lib/permissions.ts`
+capability; this feature gates on `isProvaOperator` AND `role === "OWNER"`,
+and an OWNER holds every capability by definition, so the map cannot
+express owner-only — that is why `assertSalesAccess` exists at all. Routing
+these through the shared engine would show "Follow up with Acme Drywall" to
+every estimator at the operator company.
+
+**Nulls, not zeroes, throughout.** "No contact logged" is a statement about
+the log, not about the relationship — nobody wrote anything down, which is
+all the page can honestly claim. `daysSinceContact` is null when nothing is
+logged and `0` when contact was today, and the unit suite pins the two
+apart specifically because they would otherwise both render as "0". That
+assertion caught a real one: negating `daysUntil()` returns `-0` for a
+contact logged today, which renders as "-0 days ago".
+
+**Two Phase B bugs fixed in passing.** `createSalesOpportunity` and
+`deleteSalesOpportunity` revalidated `/sales/[id]` but not `/sales` — which
+is where the opportunity count is rendered — so adding a lead's first
+opportunity left the list reading zero. And `deleteSalesLead`'s guard
+counted opportunities only; `SalesActivity.leadId` is `RESTRICT`, so a lead
+with a call log and no deals would have thrown a raw Postgres constraint
+error instead of a sentence. The guard now names both and, per the lesson
+from `deleteContact`, never prints a zero for the half that is empty.
+
+**The gate is executed for the first time.** `assertSalesAccess`'s two
+checks have never run against a company where they were false — there is
+one user on the real account, so the browser can only ever exercise the
+passing branch. `sales-activity-actions.dbtest.ts` builds a second tenant
+and a MEMBER of the operator company and asserts both refusals, plus that
+neither company's owner can reach the other's rows by id. Every assertion
+in it was watched fail first: dropping the OWNER check reds two tests, and
+removing the activity count from the delete guard reproduces the raw
+`PrismaClientKnownRequestError` it exists to prevent.
+
+:warning: **Still true and still unclosed: nobody has ever loaded this
+feature.** `Company.isProvaOperator` is false on every row until it is
+flipped by hand, and no record exists of it ever being flipped. Every page
+under `/sales` correctly renders "Not part of your access" while it is
+false, which means a click-list against it passes while proving nothing.
+Flip it on a test company first or the test cannot fail.
+
+---
+
+## /pipeline, clicked — and a page that told people to do the impossible
+
+Every assertion passed, including the two that were the point: the counts
+on /pipeline equal what /bids reports for the same GC (1 + 1 = 2), and
+flipping a bid from LOST to WON moved the figures 67% -> 100% -> 67% with
+the won total tracking it and nothing touched on /pipeline. The derivation
+is proven against the data rather than against my description of it.
+
+THE REAL FINDING IS MY OWN COPY. The page said:
+
+  "worked out from the bid invitations on Bids, which is where a status
+   gets changed"
+
+`/bids` has no editing controls. Its rows are bare links; its only <select>
+elements are the trade and status FILTERS. `updateBidInvitationStatus` is
+called from exactly one place, `/contacts/[id]/page.tsx`. So that sentence
+sent a reader to a page where the action does not exist.
+
+It also propagated: my click-list said "on /bids change Tower C", because I
+wrote the click-list from my own wrong copy rather than from the code. The
+tester found the real control on the contact record, performed the flip
+there, preserved the intent of the step, and said plainly that they had
+deviated and why. Both halves of that are what made it useful.
+
+Corrected to name the contact record, and to say what /bids actually does:
+filters and reads.
+
+Filed rather than fixed, both outside this lane: a bid can only be created
+as INVITED with no amount, so every row starts in the state that makes a
+won-value total a floor (#133); and two contact pages return 503 on RSC
+prefetch while siblings in the same batch return 200 (#134).
+
+Not tested: the non-owner access check. There is still exactly one user on
+the account, so section 7 has now been skipped on every run that included
+it. It is the one assertion about /pipeline nobody has exercised.
+
 ## A sent email the app could not prove it sent, and one injury filed twice
 
 Two of the six findings in #111. Both are ordering bugs, and neither was

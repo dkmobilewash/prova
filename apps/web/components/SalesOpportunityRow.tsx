@@ -4,7 +4,9 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { deleteSalesOpportunity, updateSalesOpportunity } from "@/lib/actions";
 import { OPPORTUNITY_STAGE_OPTIONS, SalesOpportunityFields } from "@/components/SalesOpportunityFields";
+import { localToday } from "@/components/localToday";
 import { money } from "@/lib/money";
+import { stageTiming, type StageSpell } from "@/lib/sales-stage-history";
 
 export type SalesOpportunityRowData = {
   id: string;
@@ -12,6 +14,23 @@ export type SalesOpportunityRowData = {
   estimatedMrr: string | null;
   expectedCloseDate: string | null;
   notes: string | null;
+};
+
+/**
+ * Everything about WHEN this deal moved, derived server-side from
+ * SalesStageChange by lib/sales-stage-history.ts. Every field here is
+ * nullable and null never means zero — an opportunity that predates the
+ * history, or one nobody has moved yet, genuinely does not know.
+ */
+export type SalesOpportunityHistory = {
+  /** Null when nothing is recorded. NOT the day the row was created. */
+  stageSince: string | null;
+  /** Null when nothing is recorded or the move is dated in the future. */
+  daysInStage: number | null;
+  futureDated: boolean;
+  /** The stored stage is not where the history left the deal. */
+  disagrees: boolean;
+  spells: StageSpell[];
 };
 
 const STAGE_STYLE: Record<string, string> = {
@@ -26,9 +45,16 @@ const STAGE_STYLE: Record<string, string> = {
 const btn =
   "rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:border-slate-500 disabled:opacity-50";
 
-export function SalesOpportunityRow({ opportunity }: { opportunity: SalesOpportunityRowData }) {
+export function SalesOpportunityRow({
+  opportunity,
+  history,
+}: {
+  opportunity: SalesOpportunityRowData;
+  history: SalesOpportunityHistory;
+}) {
   const [mode, setMode] = useState<"view" | "edit">("view");
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
+  const [showsHistory, setShowsHistory] = useState(false);
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -57,7 +83,12 @@ export function SalesOpportunityRow({ opportunity }: { opportunity: SalesOpportu
           }}
           className="flex flex-col gap-3"
         >
-          <SalesOpportunityFields defaults={opportunity} />
+          <SalesOpportunityFields
+            mode="edit"
+            // The move date defaults to TODAY, not to when the deal last
+            // moved: this field records the move you are making now.
+            defaults={{ ...opportunity, stageEffectiveOn: localToday() }}
+          />
           {error && <p className="text-sm text-red-400">{error}</p>}
           <div className="flex gap-2">
             <button
@@ -90,9 +121,48 @@ export function SalesOpportunityRow({ opportunity }: { opportunity: SalesOpportu
             {opportunity.expectedCloseDate && (
               <span className="text-xs text-slate-500">expected {opportunity.expectedCloseDate}</span>
             )}
+            <span className="text-xs text-slate-500">
+              {history.stageSince === null
+                ? "stage not recorded"
+                : history.futureDated
+                  ? `recorded as moving ${history.stageSince}, which has not happened yet`
+                  : `in this stage ${stageTiming(history.daysInStage)}`}
+            </span>
           </div>
+          {history.disagrees && (
+            <p className="mt-1 text-xs text-amber-300">
+              The recorded history leaves this deal somewhere else. Something changed the stage
+              without recording the move — the two disagree and one of them is wrong.
+            </p>
+          )}
           {opportunity.notes && <p className="mt-1 text-sm text-slate-400">{opportunity.notes}</p>}
           {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
+
+          {history.spells.length > 0 && (
+            <>
+              <button
+                type="button"
+                onClick={() => setShowsHistory((open) => !open)}
+                className="mt-2 text-xs text-slate-500 underline underline-offset-2 hover:text-slate-300"
+              >
+                {showsHistory ? "Hide stage history" : `Stage history (${history.spells.length})`}
+              </button>
+              {showsHistory && (
+                <ol className="mt-2 space-y-1 border-l border-slate-800 pl-3">
+                  {history.spells.map((spell, index) => (
+                    <li key={`${spell.enteredOn}-${index}`} className="text-xs text-slate-400">
+                      <span className="text-slate-300">
+                        {OPPORTUNITY_STAGE_OPTIONS.find((o) => o.value === spell.stage)?.label ?? spell.stage}
+                      </span>{" "}
+                      from {spell.enteredOn}
+                      {spell.leftOn === null ? " (still)" : ` to ${spell.leftOn}`} —{" "}
+                      {stageTiming(spell.days)}
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </>
+          )}
         </div>
 
         <div className="flex shrink-0 flex-wrap items-center gap-2">

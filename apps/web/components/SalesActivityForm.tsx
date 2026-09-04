@@ -2,11 +2,20 @@
 
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { createSalesOpportunity } from "@/lib/actions";
-import { SalesOpportunityFields } from "@/components/SalesOpportunityFields";
+import { createSalesActivity } from "@/lib/actions";
+import {
+  SalesActivityFields,
+  type OpportunityOption,
+} from "@/components/SalesActivityFields";
 import { localToday } from "@/components/localToday";
 
-export function SalesOpportunityForm({ leadId }: { leadId: string }) {
+export function SalesActivityForm({
+  leadId,
+  opportunityOptions,
+}: {
+  leadId: string;
+  opportunityOptions: readonly OpportunityOption[];
+}) {
   const [isOpen, setIsOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
@@ -20,7 +29,7 @@ export function SalesOpportunityForm({ leadId }: { leadId: string }) {
         onClick={() => setIsOpen(true)}
         className="rounded-md bg-slate-800 px-3 py-2 text-sm font-medium text-slate-100 hover:bg-slate-700"
       >
-        Add an opportunity
+        Log an activity
       </button>
     );
   }
@@ -34,7 +43,7 @@ export function SalesOpportunityForm({ leadId }: { leadId: string }) {
         const formData = new FormData(event.currentTarget);
         startTransition(async () => {
           try {
-            const result = await createSalesOpportunity(leadId, formData);
+            const result = await createSalesActivity(leadId, formData);
             if (!result.ok) {
               setError(result.error);
               return;
@@ -43,25 +52,27 @@ export function SalesOpportunityForm({ leadId }: { leadId: string }) {
             formRef.current?.reset();
             setIsOpen(false);
           } catch {
-            setError("Could not add this opportunity");
+            setError("Could not log this activity");
           }
         });
       }}
       className="flex flex-col gap-3 rounded-lg border border-slate-800 bg-slate-900 p-4"
     >
-      <h3 className="text-sm font-semibold text-slate-300">Add an opportunity</h3>
+      <h3 className="text-sm font-semibold text-slate-300">Log an activity</h3>
 
-      <SalesOpportunityFields
-        mode="create"
-        // localToday(), not the server's date: this form only renders after
-        // a click, so there is no server markup to disagree with.
+      <SalesActivityFields
+        // localToday(), not the server's date: this form only ever renders
+        // after a click, so there is no server markup for it to disagree
+        // with, and someone logging a call at 5pm in Los Angeles must not
+        // have it dated tomorrow.
         defaults={{
-          stage: "NEW",
-          estimatedMrr: null,
-          expectedCloseDate: null,
-          notes: null,
-          stageEffectiveOn: localToday(),
+          type: "CALL",
+          occurredOn: localToday(),
+          summary: "",
+          followUpOn: null,
+          opportunityId: null,
         }}
+        opportunityOptions={opportunityOptions}
       />
 
       {error && <p className="text-sm text-red-400">{error}</p>}

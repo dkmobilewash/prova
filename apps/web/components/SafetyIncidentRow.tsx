@@ -144,7 +144,15 @@ export function SafetyIncidentRow({
               <button
                 type="button"
                 disabled={isPending}
-                onClick={() => run(() => deleteSafetyIncident(incident.id), "Could not remove the case")}
+                onClick={() =>
+                  run(async () => {
+                    // Returns rather than throws: production redacts a
+                    // thrown message, and the reason a recordable case
+                    // cannot be deleted is the whole point of saying it.
+                    const result = await deleteSafetyIncident(incident.id);
+                    if (!result.ok) throw new Error(result.error);
+                  }, "Could not remove the case")
+                }
                 className="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50"
               >
                 {isPending ? "Removing…" : "Confirm remove"}

@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@prova/db";
 import { accountPurpose } from "@/lib/quickbooks-constants";
-import { isMissingDocumentError } from "@/lib/quickbooks-sync";
+import { mayMeanDocumentIsGone } from "@/lib/quickbooks-sync";
+import { documentPresence } from "@/lib/quickbooks-presence";
 import {
   QuickBooksApiError,
   createCustomer,
@@ -628,6 +629,54 @@ export async function pushInvoiceToQuickBooks(invoiceId: string): Promise<Action
   } catch (error) {
     const detail =
       error instanceof QuickBooksApiError ? error.detail : "Couldn't reach QuickBooks.";
+
+    // DID SOMEBODY DELETE THE QUICKBOOKS INVOICE WE WERE UPDATING?
+    //
+    // We ask QuickBooks. We used to answer it by matching Intuit's prose
+    // for "Object Not Found", and that was wrong in the direction that
+    // costs money.
+    //
+    // A real sandbox run on 2026-09-03 settled it: the QuickBooks invoice
+    // for invoice 1 on ZZQB-TEST was deleted, and the refusal that came
+    // back was `Stale Object Error`, naming a concurrent editor. Intuit
+    // compares the SyncToken before it decides the record is absent, so a
+    // deleted document surfaces as EITHER fault depending on which check
+    // trips first. The old match saw "stale", took the branch above this
+    // one, and told the person to open the invoice in QuickBooks and decide
+    // which version was right — about a document that was not there to
+    // open, on a link that then never healed no matter how many times they
+    // clicked.
+    //
+    // So the string now only decides whether to spend one read-only GET,
+    // and the GET decides. That is worth the round trip precisely because
+    // clearing a link is the one recovery here that can produce a DUPLICATE
+    // invoice: the next push builds a CREATE. A guess in that direction is
+    // a second invoice in somebody's books; a guess the other way is a
+    // confusing message. Only `GONE` — a definite answer, not a failure to
+    // get one — clears anything.
+    //
+    // Still nothing is CREATED here. The person clicks again, knowing what
+    // they are making. See the retry rules.
+    const linkedQboId = link ? link.qboId : null;
+    const presence =
+      linkedQboId && mayMeanDocumentIsGone(detail)
+        ? await documentPresence(() =>
+            getInvoice(token.realmId, token.accessToken, linkedQboId),
+          )
+        // null, NOT "PRESENT": nothing was checked. They are different
+        // facts, and the messages below say which one they are standing on
+        // — claiming a check that never happened is the same species of
+        // lie as a green tick for a commit nobody built.
+        : null;
+
+    // The row says what was concluded, not just what Intuit said.
+    //
+    // Without this, a refusal row and the message on screen could disagree
+    // and there was no way to tell which click each belonged to — which is
+    // exactly what happened while testing this: a `Stale Object Error` row
+    // sitting next to a "no longer exists" message, and an hour spent
+    // working out whether they came from the same click. A row that
+    // explains itself is cheaper than that hour.
     await log({
       companyId: company.id,
       userId: user.id,
@@ -636,49 +685,36 @@ export async function pushInvoiceToQuickBooks(invoiceId: string): Promise<Action
       idempotencyKey,
       outcome: "FAILED",
       summary: `Invoice ${invoice.number} on ${invoice.job.name} was not accepted.`,
-      detail,
+      detail:
+        presence === "GONE"
+          ? `${detail} — Checked QuickBooks directly: invoice ${linkedQboId} is no longer there. Clearing the link, so sending again creates a new invoice.`
+          : presence === "UNKNOWN"
+            ? `${detail} — Could not check whether QuickBooks still has invoice ${linkedQboId}, so the link was left alone.`
+            : detail,
     });
-    // A stale SyncToken means someone edited this invoice inside
-    // QuickBooks. Saying so is the point — the alternative is overwriting
-    // their edit, which is exactly how the two systems drift.
-    if (error instanceof QuickBooksApiError && /stale|sync token/i.test(error.detail)) {
-      return actionFail(
-        "This invoice was changed inside QuickBooks since we last sent it. Open it there and decide which version is right before pushing again.",
-      );
-    }
 
-    // THE DOCUMENT WE ARE UPDATING NO LONGER EXISTS.
-    //
-    // Somebody deleted the invoice inside QuickBooks. The stored link still
-    // names its id, so every later push addresses a record that is gone and
-    // fails identically forever — the same shape as the item-id cache that
-    // bricked invoicing until the fix in #85, arriving one entity along.
-    //
-    // Dropping the link is what makes recovery possible: with no link the
-    // next push builds a CREATE rather than an update, and lands.
-    //
-    // IT DOES NOT CREATE ONE HERE, AND THAT IS DELIBERATE. Retrying a write
-    // inside the failure handler is exactly what the retry rules forbid —
-    // a create is the one call that can duplicate a document, and doing it
-    // automatically off the back of an error we matched by string is how a
-    // second invoice ends up in somebody's books. The person clicks again,
-    // knowing what they are making.
-    //
-    // Matched narrowly on Intuit's "Object Not Found" rather than on the
-    // word "deleted", because the Product/Service refusal contains
-    // "has been deleted" and means something completely different — that
-    // one is about the ITEM and clearing the invoice link would be wrong.
-    // If Intuit's wording differs from this, the fallback is the generic
-    // message below, which is what happens today.
-    if (error instanceof QuickBooksApiError && isMissingDocumentError(error.detail)) {
+    if (presence === "GONE" && link) {
       await prisma.quickBooksEntityLink.deleteMany({
         where: { companyId: company.id, entityType: "Invoice", entityId: invoice.id },
       });
       revalidatePath(`/jobs/${invoice.jobId}`);
       return actionFail(
-        "The QuickBooks invoice this was linked to no longer exists — someone deleted it there. " +
+        "The QuickBooks invoice this was linked to no longer exists — we checked, and it is gone. " +
           "The link has been cleared, so sending again will create a new invoice in QuickBooks rather " +
           "than failing. Check QuickBooks first if you are not sure it was deleted on purpose.",
+      );
+    }
+
+    // A stale SyncToken with the document still in place means someone
+    // edited this invoice inside QuickBooks. Saying so is the point — the
+    // alternative is overwriting their edit, which is exactly how the two
+    // systems drift. Reaching here means the probe found it PRESENT, or
+    // could not tell; either way the link stays.
+    if (error instanceof QuickBooksApiError && /stale|sync token/i.test(error.detail)) {
+      return actionFail(
+        presence === "PRESENT"
+          ? "This invoice was changed inside QuickBooks since we last sent it — we checked, and it is still there. Open it there and decide which version is right before pushing again."
+          : "This invoice was changed inside QuickBooks since we last sent it. Open it there and decide which version is right before pushing again.",
       );
     }
 
@@ -903,6 +939,30 @@ export async function pushPaymentToQuickBooks(paymentId: string): Promise<Action
   } catch (error) {
     const detail =
       error instanceof QuickBooksApiError ? error.detail : "Couldn't reach QuickBooks.";
+
+    // Same question as the invoice push, asked the same way and for the
+    // same reason: has the QuickBooks payment we are updating been deleted
+    // there? Answered by reading it back, never by matching Intuit's
+    // wording — see the long note at the invoice call site for what that
+    // wording actually turned out to be.
+    //
+    // This path gains more from the change than the invoice one did. There
+    // was no stale-token branch here at all, so a deleted payment reporting
+    // `Stale Object Error` fell straight through to the generic refusal and
+    // the link was never cleared: the push failed identically forever with
+    // a message about a concurrent editor who did not exist.
+    const linkedQboId = link ? link.qboId : null;
+    const presence =
+      linkedQboId && mayMeanDocumentIsGone(detail)
+        ? await documentPresence(() =>
+            getPayment(token.realmId, token.accessToken, linkedQboId),
+          )
+        // null, NOT "PRESENT": nothing was checked. They are different
+        // facts, and the messages below say which one they are standing on
+        // — claiming a check that never happened is the same species of
+        // lie as a green tick for a commit nobody built.
+        : null;
+
     await log({
       companyId: company.id,
       userId: user.id,
@@ -911,24 +971,26 @@ export async function pushPaymentToQuickBooks(paymentId: string): Promise<Action
       idempotencyKey,
       outcome: "FAILED",
       summary: `Payment on invoice ${payment.invoice.number} was not sent.`,
-      detail,
+      detail:
+        presence === "GONE"
+          ? `${detail} — Checked QuickBooks directly: payment ${linkedQboId} is no longer there. Clearing the link, so sending again creates a new payment.`
+          : presence === "UNKNOWN"
+            ? `${detail} — Could not check whether QuickBooks still has payment ${linkedQboId}, so the link was left alone.`
+            : detail,
     });
 
-    // Same self-healing as the invoice push above, one entity along: the
-    // stored link names a QuickBooks payment somebody deleted there, so
-    // every later push updates a record that is gone. Clearing the link
-    // lets the next push CREATE instead — and it is the next push, not
-    // this one, for the reason written out at the invoice call site: a
-    // create is the only call that can duplicate, and doing it inside a
-    // failure handler on a string match is how a second payment lands in
-    // somebody's books.
-    if (error instanceof QuickBooksApiError && isMissingDocumentError(detail)) {
+    // Clearing the link lets the next push CREATE instead — and it is the
+    // NEXT push, not this one, for the reason written out at the invoice
+    // call site: a create is the only call that can duplicate, and doing it
+    // inside a failure handler is how a second payment lands in somebody's
+    // books.
+    if (presence === "GONE" && link) {
       await prisma.quickBooksEntityLink.deleteMany({
         where: { companyId: company.id, entityType: "Payment", entityId: payment.id },
       });
       revalidatePath(`/jobs/${payment.invoice.jobId}`);
       return actionFail(
-        "The QuickBooks payment this was linked to no longer exists — someone deleted it there. " +
+        "The QuickBooks payment this was linked to no longer exists — we checked, and it is gone. " +
           "The link has been cleared, so sending again will create a new payment rather than failing. " +
           "Check QuickBooks first if you are not sure it was deleted on purpose.",
       );

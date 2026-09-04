@@ -72,8 +72,27 @@ jobs:
       # Prints which database it is talking to, refuses to run if
       # DATABASE_URL and DIRECT_URL are different databases, applies, then
       # reads back `migrate status` to verify rather than trust.
+      #
+      # MIGRATE_EXPECT_HOST is the check that catches a secret holding the
+      # WRONG connection string — everything else here only compares the two
+      # URLs against each other, which stays happy if both point somewhere
+      # nobody intended. Until now only migrate-demo.yml set it, so the demo
+      # database was guarded against a wrong secret and PRODUCTION was not:
+      # the weaker protection was on the real data. (Added 2026-09-03.)
+      #
+      # Hardcoded, not a secret, on purpose. It is an assertion about which
+      # database this workflow is for, and its whole value is that a reviewer
+      # can read it in the diff — CLAUDE.md publishes the same endpoint id.
+      # `wrongTarget` substring-matches the host, so this one value covers
+      # both the pooled and direct endpoints of that branch.
+      #
+      # If Neon ever moves production to a new endpoint, this job FAILS and
+      # applies nothing until somebody changes this line. That is the correct
+      # failure: loud, and in front of a person, rather than a silent migrate
+      # against whatever the secret happens to hold.
       - name: Apply and verify
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           DIRECT_URL: ${{ secrets.DIRECT_URL }}
+          MIGRATE_EXPECT_HOST: ep-little-sea-a6bdnaw2
         run: pnpm --filter @prova/db run migrate:deploy
