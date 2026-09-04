@@ -37,6 +37,7 @@ export type AlertKind =
   | "BACKCHARGE_RESPONSE"
   | "RETAINAGE_RELEASE"
   | "CLOSEOUT_WITH_GC"
+  | "CLOSEOUT_REJECTED"
   | "CERTIFIED_PAYROLL"
   | "APPRENTICE_RATIO"
   | "WIP_VARIANCE"
@@ -90,6 +91,9 @@ export const ALERT_CAPABILITY: Record<AlertKind, Capability> = {
   // Not billing: whether the GC has answered the closeout package is
   // operational, and the money on it is dropped separately below.
   CLOSEOUT_WITH_GC: "MANAGE_JOBS",
+  // Same gate, same reason: whose move it is on the closeout package is
+  // operational. The retainage it is holding up is dropped separately.
+  CLOSEOUT_REJECTED: "MANAGE_JOBS",
   CERTIFIED_PAYROLL: "MANAGE_COMPLIANCE",
   APPRENTICE_RATIO: "MANAGE_COMPLIANCE",
   WIP_VARIANCE: "VIEW_JOB_COSTS",
@@ -165,6 +169,43 @@ export const CLOSEOUT_CHASE_DAYS = 21;
  * silences a licence forever. */
 export function alertKey(kind: AlertKind, subjectId: string, fact: string): string {
   return `${kind}:${subjectId}:${fact}`;
+}
+
+/**
+ * A fixed-width stand-in for a fact that is a SET rather than a value.
+ *
+ * Most facts are one date and go in the key as themselves, which is worth
+ * keeping: a key you can read tells you why a dismissal lapsed. A set of
+ * dates cannot, because it has no bound. `assertKeyShape` caps a key at
+ * 200 characters, and an apprentice-ratio alert listing its offending days
+ * crossed that at fifteen of them — so "Seen it" answered "That alert
+ * reference is not one of ours" exactly on the jobs that were persistently
+ * over ratio, and only on those. Issue #111.
+ *
+ * What this must preserve is the property the fact was there for: add or
+ * remove a day and the digest changes, so an old dismissal lapses. So it
+ * is order-independent — the caller's ordering is not part of the fact —
+ * and it carries the count in the clear, because a digest that reads
+ * `17d-a3f19c2b` still says something to a person reading the table.
+ *
+ * FNV-1a, 32-bit, written out rather than imported: this module is pure
+ * and has no dependencies, and `node:crypto` would make it unimportable
+ * from anywhere that is not Node. Collisions are not a security question
+ * here — the worst a collision does is let one dismissal cover a different
+ * set of days on the same job.
+ */
+export function factDigest(values: string[]): string {
+  let hash = 0x811c9dc5;
+  for (const value of [...values].sort()) {
+    for (let i = 0; i < value.length; i += 1) {
+      hash ^= value.charCodeAt(i);
+      hash = Math.imul(hash, 0x01000193) >>> 0;
+    }
+    // Separator, so ["ab","c"] and ["a","bc"] are not the same fact.
+    hash ^= 0x1f;
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return `${values.length}d-${hash.toString(16).padStart(8, "0")}`;
 }
 
 function severityForDate(dateIso: string | null, todayIso: string, horizon: number): AlertSeverity | null {
@@ -336,15 +377,86 @@ export type CloseoutAlertSource = {
   jobName: string;
   submittedOn: string;
   retainageBalance: number;
+  /**
+   * Where the LATEST attempt stands.
+   *
+   * Required rather than optional, because the whole of issue #111 item 3
+   * was a caller that only ever passed one of the three enum values and a
+   * function that could not tell. CloseoutSubmissionStatus has three:
+   * ACCEPTED is not a chase and the caller drops it (retainageAlerts picks
+   * that case up instead); the other two both are, and they are chases of
+   * completely different things.
+   */
+  status: "SUBMITTED" | "REJECTED";
+  /** The day the GC answered, on a REJECTED attempt. Null while it is
+   * still with them — and, on bad data, on a rejection nobody dated. */
+  respondedOn: string | null;
 };
 
-/** A closeout package the GC has had longer than anyone should have to
- * wait, with no response recorded. Callers pass only submissions still
- * outstanding. */
+/**
+ * A closeout package that somebody has to do something about.
+ *
+ * TWO ALERTS, NOT ONE, and the difference is whose move it is.
+ *
+ * SUBMITTED is the GC sitting on it. Nothing is wrong yet, so it waits out
+ * CLOSEOUT_CHASE_DAYS before it says anything — chasing a GC on day three
+ * is how a list stops being read.
+ *
+ * REJECTED is the ball back in our court, and it raised NOTHING at all
+ * until issue #111: alerts-query fed through `status === "SUBMITTED"`
+ * only, so the moment the GC bounced the package the chase vanished — at
+ * exactly the point the retainage stopped moving and somebody had to
+ * assemble a second attempt. It gets no threshold, because there is
+ * nothing to wait for: /closeout's own needsAttention already lists a
+ * REJECTED job the same day, and the two screens disagreeing about that
+ * is the bug in miniature.
+ *
+ * The wording is separate for the same reason. "Sent 31 days ago and
+ * nothing recorded back" is false about a package they answered, and an
+ * alert that misdescribes the record it is derived from is worse than no
+ * alert — it is the thing this file's header calls furniture.
+ *
+ * Callers pass ACCEPTED submissions nowhere near this function.
+ */
 export function closeoutAlerts(sources: CloseoutAlertSource[], todayIso: string): Alert[] {
   const alerts: Alert[] = [];
 
   for (const job of sources) {
+    const amount = job.retainageBalance > 0 ? job.retainageBalance : null;
+
+    if (job.status === "REJECTED") {
+      // Dated from the response, so a package bounced today reads as
+      // today rather than as however long the GC took to bounce it.
+      //
+      // Falling back to submittedOn is for bad data, not for a state the
+      // app can produce: recordCloseoutResponse requires a respondedOn.
+      // Staying silent on a row missing it would hide a live rejection to
+      // punish a data problem, so it is raised on the date we do have and
+      // the wording stops claiming to know when.
+      const since = job.respondedOn ?? job.submittedOn;
+      const days = daysUntilIso(since, todayIso);
+      const ago = Math.abs(days);
+      const elapsed = ago === 0 ? "today" : `${ago} ${ago === 1 ? "day" : "days"} ago`;
+
+      alerts.push({
+        key: alertKey("CLOSEOUT_REJECTED", job.jobId, since),
+        kind: "CLOSEOUT_REJECTED",
+        // No deadline exists to be past: most subcontracts say nothing
+        // about how fast a bounced package must go back. Same argument as
+        // the SUBMITTED case, and the reason neither claims OVERDUE.
+        severity: "STANDING",
+        title: `Closeout package on ${job.jobName} was sent back`,
+        detail: job.respondedOn
+          ? `The GC returned it ${elapsed} and nothing has gone back to them since.`
+          : "The GC returned it and no response date was recorded. Nothing has gone back to them since.",
+        href: "/closeout",
+        dueOn: since,
+        daysUntil: days,
+        amount,
+      });
+      continue;
+    }
+
     const daysWith = -daysUntilIso(job.submittedOn, todayIso);
     if (daysWith < CLOSEOUT_CHASE_DAYS) continue;
 
@@ -357,7 +469,7 @@ export function closeoutAlerts(sources: CloseoutAlertSource[], todayIso: string)
       href: "/closeout",
       dueOn: job.submittedOn,
       daysUntil: -daysWith,
-      amount: job.retainageBalance > 0 ? job.retainageBalance : null,
+      amount,
     });
   }
 
@@ -468,6 +580,11 @@ export type ApprenticeRatioAlertSource = {
  * Keyed on the offending dates, so a dismissal lapses the moment another
  * day breaches — the same mechanism every other alert here uses, applied
  * to a set rather than a single date.
+ *
+ * Through factDigest(), NOT by listing them. A set has no bound and the
+ * joined list went past `assertKeyShape`'s 200-character cap at fifteen
+ * days, which made "Seen it" fail outright on precisely the jobs worth
+ * dismissing — see issue #111 and factDigest's own note.
  */
 export function apprenticeRatioAlerts(sources: ApprenticeRatioAlertSource[]): Alert[] {
   const alerts: Alert[] = [];
@@ -477,7 +594,7 @@ export function apprenticeRatioAlerts(sources: ApprenticeRatioAlertSource[]): Al
     const count = job.offendingDates.length;
 
     alerts.push({
-      key: alertKey("APPRENTICE_RATIO", job.jobId, job.offendingDates.join(",")),
+      key: alertKey("APPRENTICE_RATIO", job.jobId, factDigest(job.offendingDates)),
       kind: "APPRENTICE_RATIO",
       severity: "STANDING",
       title: `${job.jobName} ran over its apprentice ratio`,
@@ -625,7 +742,43 @@ export type Acknowledgement = {
   alertKey: string;
   /** Null = dismissed until the underlying fact changes. */
   snoozedUntil: string | null;
+  /**
+   * How bad it was when they said they had seen it. Null on rows written
+   * before AlertAcknowledgement carried the column — read as
+   * ACK_SEVERITY_WHEN_UNRECORDED, never as "matches anything".
+   */
+  acknowledgedSeverity: AlertSeverity | null;
 };
+
+/**
+ * What an acknowledgement with no recorded severity is taken to have meant.
+ *
+ * Every row written before the column existed is NULL, and the choice for
+ * them is a real trade with no free option:
+ *
+ * - Treat NULL as "matches anything" and today's behaviour is preserved
+ *   exactly — including issue #110 staying live for those rows, forever.
+ *   A licence somebody dismissed at sixty days would still never be
+ *   mentioned again, and its "due" email would still never send.
+ * - Treat NULL as STANDING (the mildest) and every dated dismissal anyone
+ *   has ever made comes back at once, whether or not anything escalated.
+ *   Correct, and it un-silences a pile of things nobody escalated.
+ *
+ * DUE_SOON is the middle and it is the one that matches what the failure
+ * actually is. #110 is not "a dismissal lasted too long", it is "a
+ * dismissal survived the transition to OVERDUE" — the moment the sentence
+ * changes from a warning into a fact. Reading NULL as DUE_SOON keeps every
+ * old dismissal working for STANDING and DUE_SOON alerts, so nothing
+ * resurfaces that has not actually got worse, and guarantees that nothing
+ * stays silenced once its date has passed.
+ *
+ * The one cost is a row genuinely acknowledged while already OVERDUE: it
+ * reappears once. It then self-heals, because the next "Seen it" writes a
+ * real severity. Being shown an overdue thing one extra time is the safe
+ * direction of that error; never being shown it is the one that costs
+ * money.
+ */
+export const ACK_SEVERITY_WHEN_UNRECORDED: AlertSeverity = "DUE_SOON";
 
 export type PartitionedAlerts = {
   /** What to show. */
@@ -637,13 +790,42 @@ export type PartitionedAlerts = {
 };
 
 /**
+ * True when `severity` is a worse situation than `than` — strictly worse,
+ * so equal is not worse.
+ *
+ * OVERDUE beats DUE_SOON beats STANDING, the same order the list is ranked
+ * in, read from the one table rather than re-encoded.
+ */
+export function severityIsWorseThan(severity: AlertSeverity, than: AlertSeverity): boolean {
+  return SEVERITY_ORDER[severity] < SEVERITY_ORDER[than];
+}
+
+/**
  * Splits alerts by what this person has already dealt with.
  *
  * A snooze whose date has passed is spent and the alert returns — the
  * acknowledgement row stays, because deleting it would lose the record
- * that somebody looked. Matching is on the whole key, so an alert whose
- * underlying fact has moved never matches an old acknowledgement at all;
- * that is the mechanism, and there is no expiry logic beyond it.
+ * that somebody looked.
+ *
+ * TWO things must match, not one, and the second is issue #110.
+ *
+ * The KEY carries the fact, so an alert whose underlying fact has moved —
+ * a renewed licence, a reissued backcharge deadline — never matches an old
+ * acknowledgement at all. That half has always worked.
+ *
+ * The SEVERITY carries what the key deliberately cannot: how bad an
+ * UNCHANGED fact has become. A COI sixty days out and the same COI after
+ * it lapses are byte-identical keys, so on the key alone one "Seen it" in
+ * November silenced the expiry itself, and every one after it, forever —
+ * and because the notifier reads `visible`, it silenced the "week" and
+ * "due" emails too. An acknowledgement now covers the situation it was
+ * made about and anything NO WORSE than it; the moment the alert escalates
+ * past that, it is a different sentence and it comes back.
+ *
+ * It does not work the other way round. An alert that has got BETTER —
+ * OVERDUE back to DUE_SOON, which happens when a date is corrected rather
+ * than met — stays silenced under the same rule, and should: the person
+ * already said they had seen the worse version of it.
  */
 export function partitionAlerts(
   alerts: Alert[],
@@ -656,8 +838,14 @@ export function partitionAlerts(
 
   for (const alert of alerts) {
     const ack = byKey.get(alert.key);
-    const stillQuiet = ack !== undefined && (ack.snoozedUntil === null || ack.snoozedUntil > todayIso);
-    (stillQuiet ? silenced : visible).push(alert);
+    const unspent = ack !== undefined && (ack.snoozedUntil === null || ack.snoozedUntil > todayIso);
+    const escalated =
+      ack !== undefined &&
+      severityIsWorseThan(
+        alert.severity,
+        ack.acknowledgedSeverity ?? ACK_SEVERITY_WHEN_UNRECORDED,
+      );
+    (unspent && !escalated ? silenced : visible).push(alert);
   }
 
   return { visible: rankAlerts(visible), silenced: rankAlerts(silenced) };

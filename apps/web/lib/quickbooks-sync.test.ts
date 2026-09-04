@@ -169,6 +169,37 @@ describe("buildInvoicePayload", () => {
     const payload = buildInvoicePayload(invoice({ lines: [], totalCents: 500_00 }), ITEM);
     expect(payload.Line).toHaveLength(1);
     expect(payload.Line[0].Amount).toBe(500);
+    // The Description was asserted by NOTHING, so flipping the `||` in the
+    // fallback to `&&` stayed green (issue #108) -- and this is the only
+    // human-readable line the invoice has in the GC's books. With no memo
+    // it must name the job and the invoice number.
+    expect(payload.Line[0].Description).toBe("Riverside Medical — Level 4 — invoice 3");
+  });
+
+  it("uses the MEMO as the lump-sum description when there is one", () => {
+    const payload = buildInvoicePayload(
+      invoice({ lines: [], totalCents: 500_00, memo: "Deposit — Level 4 layout" }),
+      ITEM,
+    );
+    expect(payload.Line[0].Description).toBe("Deposit — Level 4 layout");
+  });
+
+  it("ignores a memo that is only whitespace and names the job instead", () => {
+    const payload = buildInvoicePayload(
+      invoice({ lines: [], totalCents: 500_00, memo: "   " }),
+      ITEM,
+    );
+    expect(payload.Line[0].Description).toBe("Riverside Medical — Level 4 — invoice 3");
+  });
+
+  it("never sends a lump-sum line with an empty description", () => {
+    // A blank line on an invoice in somebody else's ledger is unreadable
+    // and unreconcilable, whichever branch produced it.
+    for (const memo of [null, "", "  ", "Deposit"]) {
+      const payload = buildInvoicePayload(invoice({ lines: [], totalCents: 500_00, memo }), ITEM);
+      expect(payload.Line[0].Description, JSON.stringify(memo)).toBeTruthy();
+      expect(payload.Line[0].Description.trim().length, JSON.stringify(memo)).toBeGreaterThan(0);
+    }
   });
 
   it("does NOT deduct retainage from the invoice total", () => {

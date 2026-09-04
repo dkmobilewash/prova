@@ -23,24 +23,32 @@ in flight. Left as-is here rather than guessed at from the outside; the next
 update to touch those sheets should come from whoever actually verified them
 against a fresh clone.
 
-**123 items audited — 91 built / 22 partial / 8 missing / 2 descoped**
+**119 items audited — 93 built / 19 partial / 6 missing / 1 descoped**
 
-(Recomputed 3 Sep 2026 by counting every `| Built |`/`| Partial |`/
-`| Missing |`/`| Descoped |` row across the per-sheet tables below.
-Recomputed AGAIN on merging #82 and this branch together, since each
-corrected this header independently against a different set of rows and
-neither number survived the other's. Counting beats arithmetic on a file
-two lanes edit concurrently — third time this exact conflict shape has
-hit this file. Recomputed again the same day for the Sheet 15 Cash flow
-forecast correction: Missing → Built, found already-shipped while
-auditing the nav for NAV-IA-AUDIT.md.)
+(Recounted from the rows on merging `main` into this branch, which is the
+only thing that settles it — the fourth time this exact conflict shape has
+hit this file. Both sides were internally correct and neither number
+survived the other's: this branch had 117 / 90 / 19 / 7 / 1 against ITS
+rows, `main` had 119 / 90 / 21 / 7 / 1 against ITS. Against the shared
+merge base of 117 / 87 / 21 / 8 / 1, this branch moved Sheets 18 and 20 to
+fully Built (+3 built, -2 partial, -1 missing) and `main` moved Sheet 15's
+cash flow forecast Missing -> Built, added two rows and a Partial to
+Sheet 26. Both apply: 87+3+3 = 93 built, 21-2 = 19 partial, 8-1-1 = 6
+missing, 1 descoped, and 93 + 19 + 6 + 1 = 119.
+
+Count only rows beneath a `## NN.` sheet header — a naive grep for
+`^| Built |` also matches this summary table's own four rows and
+overcounts by exactly four, which `main` has done twice. All 26 per-sheet
+headers agree with their own rows, 0 mismatches; that is the stronger
+check, because a total can hide two errors that cancel and a per-sheet
+header cannot.)
 
 | Status | Count |
 | --- | --- |
-| Built | 91 |
-| Partial | 22 |
-| Missing | 8 |
-| Descoped | 2 |
+| Built | 93 |
+| Partial | 19 |
+| Missing | 6 |
+| Descoped | 1 |
 
 
 ## 01. Company / Org Setup — 6 built · 0 partial · 0 missing
@@ -273,13 +281,13 @@ elsewhere in this pass. Reasoning in `NAV-IA-AUDIT.md`.*
 | Built | Toolbox talk / safety meeting logs | `ToolboxTalk`, `/safety` |
 | Built | Daily field reports (crew present, work performed, weather, delays) | `DailyFieldReport`, one per job per day enforced by the database. Filed from the job page or from `/field-reports`, which groups every job's reports into Mon–Sun weeks, derives coverage and NAMES the finished weekdays nothing was filed for (never today, never a day still to come, never a weekend), and writes the week out as plain text to hand a GC — missing days included in that text rather than omitted |
 
-## 18. Scheduling & Crew Dispatch — 1 built · 1 partial · 1 missing
+## 18. Scheduling & Crew Dispatch — 3 built · 0 partial · 0 missing
 
 | Status | Feature | Note |
 | --- | --- | --- |
 | Built | Crew assignment across concurrent jobs | `JobAssignment` — assign/unassign a user to a job |
-| Partial | Multi-job scheduling view (which crews are where, by trade) | `/schedule` lists jobs with dates and crew, and the dashboard's Crews today card shows who is on each in-progress job — both job-first; still no crew-first calendar/board |
-| Missing | Equipment/scaffolding/lift allocation per job | not modeled |
+| Built | Multi-job scheduling view (which crews are where, by trade) | `/deployment` — crew-first, one row per person naming every active job they're on and flagging anyone split across more than one, plus the inverse by-job view with crew and equipment together. `/schedule` still answers when jobs run; this answers where everybody is |
+| Built | Equipment/scaffolding/lift allocation per job | `EquipmentAssignment` — which piece went to which job, when it left and when it came back, both dates entered not stamped. Shown per job on `/deployment`, with a separate list of gear still recorded as out on a job that isn't running |
 
 ## 19. Materials & Vendor Management — 3 built · 0 partial · 0 missing
 
@@ -293,12 +301,12 @@ same reasoning as `/safety` above. Reasoning in `NAV-IA-AUDIT.md`.*
 | Built | Material order tracking and delivery status per job | `MaterialOrder` + `MaterialOrderDelivery` + `MaterialOrderCounter`, `/material-orders` — numbers issued per job and never reissued, ordered/promised/delivered dates all entered, partial deliveries as their own rows, late and delivery state derived and never stored. Carries no quantity or unit price by design: that would be a second copy of line-item data (see ARCHITECTURE.md), and material cost already lives on `CostEntry`. Nav entry disabled 3 Sep 2026 — see `NAV-IA-AUDIT.md` |
 | Built | Vendor pricing history for estimating | `VendorPriceQuote`, `/vendors/pricing` — what a supplier quoted, on a date entered not stamped, with the source (written quote / invoice / price list / verbal) recorded because the four are not equally trustworthy. Current, expired, stale, cheapest and every movement figure are derived per read, never stored. Compared only WITHIN a unit: MSF is never converted to SF, since the factor is the vendor's to state. Carries no job and no line item by design — a quote is reference data for pricing, and job cost has one home, `CostEntry`. Warns when a `LineItemCatalogEntry` default sits under the cheapest live quote in the same unit, and changes nothing |
 
-## 20. Equipment & Tool Tracking — 1 built · 1 partial · 0 missing
+## 20. Equipment & Tool Tracking — 2 built · 0 partial · 0 missing
 
 | Status | Feature | Note |
 | --- | --- | --- |
 | Built | Company-owned equipment inventory (scaffolding, lifts, mixers) | `Equipment`, `/equipment` |
-| Partial | Equipment assignment/utilization per job (feeds job costing) | `Equipment.jobId` records where a piece is — nothing computes utilisation or pushes cost into job costing yet |
+| Built | Equipment assignment/utilization per job | `EquipmentAssignment` history — current location and utilisation both derived per read, never stored, so `Equipment.assignedJobId` is no longer consulted by anything. Utilisation is measured over a 90-day window clamped to when the record was created (we have no acquisition date), reads null rather than 0% when that window is empty, and counts distinct days so contradictory records can't push it past 100%. Overlapping stays are refused on write and surfaced on `/deployment`. Pushing equipment cost INTO job costing is deliberately not built — that is job costing's lane |
 
 ## 21. Multi-State / Multi-Jurisdiction Support — 2 built · 1 partial · 0 missing
 
@@ -366,26 +374,33 @@ meaning exactly what it meant.*
 
 ## 26. Notifications & Alerts — 1 built · 6 partial · 0 missing
 
-*Updated 1 Sep 2026 — the alert engine shipped, and then a sender was
-wired to it. Every row below can now be EMAILED, once per thing per stage,
-with a ledger that makes a second run silent. They still are not Built, and
-the reason is now a narrow one worth stating exactly: **nothing runs
-without a person clicking.** The digest goes out from a button on /alerts,
-so it reaches somebody who opens the app — which is the same reach the list
-already had. The bar this sheet set ("NOT Built until something pushes it")
-is met by the sending path and not by the trigger. A scheduled run is the
-whole remaining gap, and it is one job away. Updated again 3 Sep 2026: a
-seventh row, contact follow-up reminders (CRM lane, Sheet 02) — the same
-generic dispatch layer picked it up with no changes of its own, since it
-reads only `Alert.severity`/`.key` and knows nothing about individual
-kinds.*
+*Updated 3 Sep 2026 — the schedule is built. The previous note said
+"nothing runs without a person clicking" and named a scheduled run as the
+whole remaining gap; `/api/notifications/digest` plus a Vercel cron at
+13:00 UTC is that run. It authenticates itself with `CRON_SECRET`, takes
+the host for its links from `NOTIFY_BASE_URL` rather than from the
+request that triggered it, mails every user of every company one at a
+time longest-unnotified-first, and cannot be ended by one person's
+failure. See `lib/notification-run.ts`.*
+
+***These rows stay Partial for a reason that is now purely operational,
+and it is the last one.*** The code path is complete and tested; what has
+not happened is a run in production. `CRON_SECRET` and `NOTIFY_BASE_URL`
+have to exist on the Vercel project — without either, the route returns
+503 and sends nothing, deliberately — and one nightly invocation has to be
+observed doing it. **Flipping these six to Built is a one-line edit after
+that, not more building.** Writing them Built today would be this sheet
+doing the exact thing it has drifted by twice: recording an intention as a
+fact.*
+
+*Also 3 Sep 2026: a further row, contact follow-up reminders (CRM lane, Sheet 02) — the same generic dispatch layer picked it up with no changes of its own, since it reads only `Alert.severity`/`.key` and knows nothing about individual kinds.*
 
 | Status | Feature | Note |
 | --- | --- | --- |
 | Built | In-app alert delivery: one ranked list, acknowledgement, and a count in the chrome | `lib/alerts.ts` (derivation and ranking), `lib/alerts-query.ts` (assembly), `AlertAcknowledgement` (the ONLY stored part — a person deciding they have seen one), `/alerts`, and a bell with a live count in the top bar on every screen. Alerts are never stored: each is derived from the record it is about on every render, so fixing the thing removes it. An alert's key carries the fact that would change it (`RENEWAL:lic_1:2026-11-30`), so a dismissal lapses by itself when the situation moves — no expiry logic. Per-user, not per-company: dismissing on a colleague's behalf is the worse of the two failures. **Not push on its own** — it reaches whoever opens the app. `NotificationDispatch` + `notification-milestones.ts` + `notification-dispatch.ts` add the sending half: one email per person covering what they have not been told, keyed on the alert key PLUS a rung so an unchanged fact goes quiet while a tightening one speaks again. Claimed before the provider call, so a crash cannot resend; a failed send does not retry itself, deliberately |
-| Partial | COI/license/bond expiration alerts | now an alert with an identity, a severity comparable against everything else, and a place reachable from every page — through `lib/compliance-expiry.ts`'s existing ranking, not a second expiry rule. Now emailable: a licence fires at its own 60-day horizon, a COI at 30, because the rung reads `severity` rather than a horizon table of the notifier's own — see `notification-milestones.ts`, where getting that wrong dropped the 60-day warning silently. Still nothing that runs unattended |
-| Partial | Certified payroll submission deadline reminders | derived: a job carrying a `PrevailingWageDetermination`, a finished week with `TimeEntry` rows, and no `CERTIFIED_PAYROLL` document whose period covers that whole week. Gated on the determination on purpose — certified payroll isn't required on private work, and a job where nobody recorded one raises nothing rather than a guess. Now emailable. Still nothing that runs unattended |
-| Partial | Retainage release eligibility alerts | derived from `lib/retainage.ts`'s balance plus the closeout package's state. An ACCEPTED package is an event and reads as collectable; `Job.substantialCompletionDate` is a FORECAST and reads as "worth confirming", never as money owed. Now emailable. Still nothing that runs unattended |
-| Partial | Apprentice ratio out-of-compliance alerts | no longer blocked — `lib/apprentice-ratio.ts` finds the days a job ran over, and the alert engine raises them (STANDING, not dated: the day is past and cannot be fixed by acting sooner; what can change is tomorrow's crew). Keyed on the offending dates, so a dismissal lapses the moment another day breaches. Now emailable — as a STANDING notice, which fires once per key rather than climbing a ladder of deadlines it does not have. Still nothing that runs unattended |
-| Partial | WIP variance alerts | jobs forecast past contract value now appear in the one alert list alongside everything else, through `jobIsOverBudget` rather than a second threshold, and can be acknowledged. Deliberately a STANDING severity with no date: it is true today and tomorrow, and escalating it with the calendar would invent urgency the data doesn't have — the digest respects that and sends it once per key, never on a ladder. Still nothing that runs unattended |
-| Partial | Contact follow-up reminders | `ContactInteraction.followUpOn` (A2) now raises a `CONTACT_FOLLOW_UP` alert through the same engine, gated behind `MANAGE_ESTIMATING`, keyed on the follow-up date so rescheduling it lapses an old dismissal. Horizon fixed at 7 days — the floor `notification-milestones.ts` requires for any kind, not chosen for feel; a lower one would drop its own earlier warning silently, since the "week" rung fires at 7 days regardless of a kind's own horizon. Not scoped to the specific assignee — every other kind here is capability-gated only, and this stays consistent rather than becoming the first per-user-scoped one; the assignee is named in the alert text instead. Now emailable via the existing digest, no changes to the sending layer. Still nothing that runs unattended |
+| Partial | COI/license/bond expiration alerts | now an alert with an identity, a severity comparable against everything else, and a place reachable from every page — through `lib/compliance-expiry.ts`'s existing ranking, not a second expiry rule. Now emailable: a licence fires at its own 60-day horizon, a COI at 30, because the rung reads `severity` rather than a horizon table of the notifier's own — see `notification-milestones.ts`, where getting that wrong dropped the 60-day warning silently. Now also sent unattended, by the nightly cron — pending the two environment variables and one observed run |
+| Partial | Certified payroll submission deadline reminders | derived: a job carrying a `PrevailingWageDetermination`, a finished week with `TimeEntry` rows, and no `CERTIFIED_PAYROLL` document whose period covers that whole week. Gated on the determination on purpose — certified payroll isn't required on private work, and a job where nobody recorded one raises nothing rather than a guess. Now emailable. Now also sent unattended, by the nightly cron — pending the two environment variables and one observed run |
+| Partial | Retainage release eligibility alerts | derived from `lib/retainage.ts`'s balance plus the closeout package's state. An ACCEPTED package is an event and reads as collectable; `Job.substantialCompletionDate` is a FORECAST and reads as "worth confirming", never as money owed. Now emailable. Now also sent unattended, by the nightly cron — pending the two environment variables and one observed run |
+| Partial | Apprentice ratio out-of-compliance alerts | no longer blocked — `lib/apprentice-ratio.ts` finds the days a job ran over, and the alert engine raises them (STANDING, not dated: the day is past and cannot be fixed by acting sooner; what can change is tomorrow's crew). Keyed on the offending dates, so a dismissal lapses the moment another day breaches. Now emailable — as a STANDING notice, which fires once per key rather than climbing a ladder of deadlines it does not have. Now also sent unattended, by the nightly cron — pending the two environment variables and one observed run |
+| Partial | WIP variance alerts | jobs forecast past contract value now appear in the one alert list alongside everything else, through `jobIsOverBudget` rather than a second threshold, and can be acknowledged. Deliberately a STANDING severity with no date: it is true today and tomorrow, and escalating it with the calendar would invent urgency the data doesn't have — the digest respects that and sends it once per key, never on a ladder. Now also sent unattended, by the nightly cron — pending the two environment variables and one observed run |
+| Partial | Contact follow-up reminders | `ContactInteraction.followUpOn` (A2) now raises a `CONTACT_FOLLOW_UP` alert through the same engine, gated behind `MANAGE_ESTIMATING`, keyed on the follow-up date so rescheduling it lapses an old dismissal. Horizon fixed at 7 days — the floor `notification-milestones.ts` requires for any kind, not chosen for feel; a lower one would drop its own earlier warning silently, since the "week" rung fires at 7 days regardless of a kind's own horizon. Not scoped to the specific assignee — every other kind here is capability-gated only, and this stays consistent rather than becoming the first per-user-scoped one; the assignee is named in the alert text instead. Now emailable via the existing digest, no changes to the sending layer. Now also sent unattended, by the nightly cron — it needed no change of its own, since the run reads the same alert list |

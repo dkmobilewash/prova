@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useTransition } from "react";
 import { deleteDailyFieldReport, updateDailyFieldReport } from "@/lib/actions";
 import {
@@ -88,7 +89,16 @@ export function FieldReportEntry({
         <div className="min-w-0">
           <p className="flex flex-wrap items-baseline gap-x-2">
             <span className="font-medium text-slate-100">{dayLabel(report.reportDate)}</span>
-            <span className="text-sm text-blue-400">{report.jobName}</span>
+            {/* A report is evidence ABOUT a job, so the job is where you go
+                next. This was already styled link-blue and wasn't a link,
+                which is worse than plain text: it invites a click that does
+                nothing. */}
+            <Link
+              href={`/jobs/${report.jobId}`}
+              className="text-sm text-blue-400 hover:text-blue-300 hover:underline"
+            >
+              {report.jobName}
+            </Link>
           </p>
           {report.crewPresent && <p className="text-sm text-slate-400">{report.crewPresent}</p>}
           <p className="mt-1 text-sm text-slate-300">{report.workPerformed}</p>

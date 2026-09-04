@@ -145,27 +145,59 @@ export function noticesDue(
 
 /** Which rungs this alert has reached, tightest last.
  *
- * A standing condition has exactly one and reaches it immediately. A dated
- * one has reached every rung at or above its remaining days — an expired
- * record (negative days) has crossed all of them, including zero.
+ * A standing condition has exactly one. A dated one has reached every rung
+ * at or above its remaining days — an expired record (negative days) has
+ * crossed all of them, including zero.
+ *
+ * **WHICH LADDER IS DECIDED BY THE SEVERITY, NEVER BY `dueOn`.** The
+ * severity is the claim the engine is making; `dueOn` is only a date
+ * attached to it, and a STANDING alert is perfectly entitled to carry one.
+ * Three kinds do — CLOSEOUT_WITH_GC, RETAINAGE_RELEASE past a forecast
+ * substantial completion, CLOSEOUT_REJECTED — and every one of them carries
+ * a date ALREADY BEHIND IT, because what makes them standing is that the
+ * day cannot be met by acting sooner. Splitting on `dueOn` sent all three up
+ * the dated ladder, where `days <= 0` fired the DUE rung: the email said
+ * "Now due" about a condition with no deadline, and it spent `@week` and
+ * `@due` rather than `@standing`, so the one notice those alerts were ever
+ * going to send could never be sent. #126.
  */
 function crossedRungs(alert: Alert): Rung[] {
-  if (alert.dueOn === null) return [STANDING_RUNG];
+  if (alert.severity === "STANDING") return standingRungs(alert);
 
+  // Severity is DUE_SOON or OVERDUE by here, which IS the engine saying it
+  // has started warning about this date — so `approaching` is crossed
+  // unconditionally rather than re-tested. Horizons are per kind and the
+  // engine has already applied the right one; a numeric ladder here could
+  // not, and would quietly drop the sixty-day licence warning.
+  //
   // `null <= 0` is TRUE in JavaScript, so an alert carrying a date but no
   // computed distance would cross the DUE rung and be reported as lapsed.
   // The two fields are set independently and this costs nothing to check.
   const days = alert.daysUntil;
   if (days === null) return [];
 
-  const crossed: Rung[] = [];
-  // The engine's own judgement, per kind. A dated alert it still calls
-  // STANDING is outside its horizon and has reached nothing yet.
-  if (alert.severity === "DUE_SOON" || alert.severity === "OVERDUE")
-    crossed.push("approaching");
+  const crossed: Rung[] = ["approaching"];
   if (days <= WEEK_RUNG_DAYS) crossed.push("week");
   if (days <= 0) crossed.push("due");
   return crossed;
+}
+
+/** The single rung a standing condition gets, if it has reached it.
+ *
+ * Undated: reached immediately, because a condition with no date is true
+ * now by construction. Dated: reached once the date is behind it. A
+ * STANDING alert whose date is still AHEAD is one the engine has not
+ * started warning about — a COI fifty-five days out is STANDING for
+ * exactly that reason — and firing its only key there would spend it long
+ * before there was anything to say. A date with no distance computed
+ * cannot be placed either side, so it says nothing, for the same reason
+ * the dated branch above refuses one.
+ */
+function standingRungs(alert: Alert): Rung[] {
+  if (alert.dueOn === null) return [STANDING_RUNG];
+  return alert.daysUntil !== null && alert.daysUntil <= 0
+    ? [STANDING_RUNG]
+    : [];
 }
 
 /** Tightest = furthest along the ladder. A standing rung is alone in its

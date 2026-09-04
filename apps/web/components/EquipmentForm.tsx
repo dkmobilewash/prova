@@ -43,7 +43,7 @@ export function EquipmentForm({ jobs }: { jobs: JobOption[] }) {
     <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
       <h2 className="mb-3 text-sm font-semibold text-slate-300">Add equipment</h2>
       <form ref={formRef} onSubmit={handleSubmit} className="flex flex-col gap-3">
-        <EquipmentFields jobs={jobs} />
+        <EquipmentFields />
 
         {error && <p className="text-sm text-red-400">{error}</p>}
 

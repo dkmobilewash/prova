@@ -4,6 +4,7 @@ import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createSalesOpportunity } from "@/lib/actions";
 import { SalesOpportunityFields } from "@/components/SalesOpportunityFields";
+import { localToday } from "@/components/localToday";
 
 export function SalesOpportunityForm({ leadId }: { leadId: string }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -50,7 +51,18 @@ export function SalesOpportunityForm({ leadId }: { leadId: string }) {
     >
       <h3 className="text-sm font-semibold text-slate-300">Add an opportunity</h3>
 
-      <SalesOpportunityFields defaults={{ stage: "NEW", estimatedMrr: null, expectedCloseDate: null, notes: null }} />
+      <SalesOpportunityFields
+        mode="create"
+        // localToday(), not the server's date: this form only renders after
+        // a click, so there is no server markup to disagree with.
+        defaults={{
+          stage: "NEW",
+          estimatedMrr: null,
+          expectedCloseDate: null,
+          notes: null,
+          stageEffectiveOn: localToday(),
+        }}
+      />
 
       {error && <p className="text-sm text-red-400">{error}</p>}
 
