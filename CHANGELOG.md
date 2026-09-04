@@ -62,6 +62,59 @@ excluded rather than sorted as if they were fresh — treating that null as
 
 ---
 
+### Asking QuickBooks whether a document is gone, instead of guessing from its prose (Diego)
+`claude/prova-vercel-direct-url-hg1acx`
+
+The self-healing added one commit ago worked on a string match, and the
+string was the wrong one. This replaces the guess with a question.
+
+**The sandbox settled it.** The QuickBooks invoice behind invoice 1 on
+ZZQB-TEST was deleted on purpose, and the refusal that came back at
+2026-09-03 21:50 UTC was not `Object Not Found`. It was `Stale Object
+Error : You and Craig Carlson were working on this at the same time.` A
+deleted document, reported as a concurrent edit. Intuit checks the
+SyncToken before it decides a record is absent, so a delete surfaces as
+either fault depending on which check trips first — and the match written
+for this only knew one of them.
+
+**What that cost, in the shipped code.** The stale branch ran first, so
+the far more common wording never reached the recovery at all. The person
+was told to open the invoice in QuickBooks and decide which version was
+right, about a document that was not there to open, and the link was left
+in place so every later click failed identically forever. The exact
+never-heals shape the commit was written to end, still present, one fault
+code along.
+
+**A string no longer decides.** On a failure that could mean the document
+is missing, Prova now reads it back — one GET, read-only — and clears the
+link only on a definite "there is no such record". Widening the match is
+safe now for the reason it was dangerous before: it buys an API call, not
+a deletion.
+
+**"Could not check" is not "confirmed gone", and they are now different
+values.** An expired token, a 503, a throttle, a socket that never
+reached Intuit, a 200 with no id in it — every one of those leaves the
+link alone. Clearing a link is the one recovery in this codebase that can
+put a SECOND invoice in somebody's books, because the next push builds a
+CREATE; a wrong guess the other way only produces a confusing message.
+That asymmetry is the whole design, and `documentPresence` lives in its
+own file rather than inside the `"use server"` module purely so a test can
+reach it. Nine of them do, including the outage cases nobody can
+reproduce by hand.
+
+**The payment push gains more than the invoice one.** It had no stale
+branch at all, so a deleted QuickBooks payment fell straight through to
+the generic refusal and its link was never cleared under any wording.
+
+**The sync log now says what was concluded, not just what Intuit said.**
+A refusal row reading `Stale Object Error` next to an on-screen message
+saying the invoice no longer exists cost an hour of working out whether
+the two came from the same click. They could not have — but nothing in
+the row said so. Rows now carry the answer the read-back gave, and name
+the QuickBooks id they checked.
+
+---
+
 ## A sales stage that moves without a trace answers nothing
 
 `SalesOpportunity.stage` was a single mutable field. It said WHERE a deal
