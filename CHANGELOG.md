@@ -12,6 +12,73 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### The demo seed left the yard empty and both cleanups could not finish — #147, #148, #154 (Cyrus)
+`cyrus/seed-and-cleanup-fixes`
+
+Three script bugs, all the same shape: a script reporting success while
+doing something other than what it claimed.
+
+**`seed-demo` wrote the DEPRECATED `Equipment.assignedJobId` and created
+zero `EquipmentAssignment` rows.** Every reader moved off that column when
+#45 landed, so a fresh seed showed "8 items, 8 in the yard", a blank
+utilisation on every row, and "Equipment: none on site" on every job —
+including the texture rig the dataset exists to show still sitting on
+Cedar Park after closeout.
+
+Two details are load-bearing and neither is in the issue. `createdAt` is
+now BACKDATED, because `utilisation` clamps its window to the day the
+record was created — a row created at `now()` has a zero-day window and
+reports "too new to say how used it is" rather than a low percentage, so
+the assignment rows alone would have fixed nothing visible on that line.
+And no two stays for one piece may overlap, because that is the
+contradiction `/deployment` reports in red, and seeding one would ship a
+demo that opens on an error.
+
+**`--undo` DELETED the company's `SafetyCaseCounter`.** Deleting a
+high-water mark is worse than the `max(n)+1` this repo already forbids:
+that reissues one number, this reissues all of them, and two cases sharing
+a number on an OSHA 300 log is an audit finding. Both scripts leave it
+alone now. The seed's WRITE side had the same defect and nobody had
+reported it — `update: { lastCaseNumber: 2 }` SET the counter, lowering it
+on any company past 2, and hardcoded numbers 1 and 2 collide with
+`@@unique([companyId, caseYear, caseNumber])` on a company that has filed
+real cases this year. Numbers come out of the counter incremented now,
+mirroring `issueCaseNumber`.
+
+**`clean-scratch-data` deleted `Job` and `Contact` without their RESTRICT
+children.** The issue said five. Deriving it from the foreign keys the
+migrations actually created gives THIRTEEN missing, out of 32 such
+children in total — and running the same derivation against `seed-demo`'s
+undo found seven more that nobody had reported. On a database holding any
+of those rows Postgres refuses the parent delete and the run ends
+half-done, which is the state both scripts exist to prevent.
+
+Prisma's referential default differs by optionality — required to
+`RESTRICT`, optional to `SET NULL` — which is exactly why reading the
+schema by eye undercounts, and why this was missed twice.
+
+**The check is a test now, not a habit.** `scratch-cleanup-order.test.ts`
+derives the blocking set from the migration SQL, then reads the delete
+order out of each script and requires every blocker to go first. Add a
+model with a required `jobId` and it fails on a laptop in a second instead
+of on somebody's database halfway through a cleanup. Verified against the
+weakness that shape usually has: removing a delete entirely turns it red,
+and so does moving one after the parent it blocks — ordering as well as
+absence.
+
+**Stated plainly: nothing was executed against a database.** Model names
+and every field written were checked against the generated Prisma DMMF and
+both files pass `node --check`, but no seed, undo or clean was run
+anywhere. That the new `deleteMany` calls succeed against Postgres, and
+that the per-model count output reads well, are the parts only the
+click-list can settle.
+
+Both scripts also stopped swallowing a missing `deleteMany` as a benign
+skip. That existed while `EquipmentAssignment` lived on an unmerged
+branch; the branch merged, and all it could still hide was a stale Prisma
+client or a renamed model, reported as a clean run.
+
+
 ### "Retainage held" was two different numbers on one screen — #97, which is #46 again (Cyrus)
 `fix/retainage-single-source`
 
