@@ -416,7 +416,7 @@ export async function setApprenticeRatioRule(formData: FormData): Promise<Action
     // column to say so until now.
     await prisma.$transaction(async (tx) => {
       await tx.apprenticeRatioRule.deleteMany({
-        where: { unionLocalId, companyId: company.id },
+        where: { unionLocalId },
       });
       await tx.apprenticeRatioRule.create({
         data: {
@@ -488,7 +488,7 @@ export async function endFringeRateSchedule(scheduleId: string, formData: FormDa
     // rate (issue #136). A NULL-companyId orphan matches nobody, which is
     // the intended failure: it cannot be edited by the wrong person.
     const schedule = await prisma.fringeRateSchedule.findFirst({
-      where: { id: scheduleId, companyId: company.id },
+      where: { id: scheduleId, craftClassification: { unionLocal: { companyAgreements: { some: { companyId: company.id } } } } },
     });
     if (!schedule) return fail("Rate schedule not found");
 
@@ -513,7 +513,7 @@ export async function deleteFringeRateSchedule(scheduleId: string): Promise<Acti
     // this DELETED another contractor's rate schedule outright, from a
     // page that had just shown it to you as though it were yours.
     const schedule = await prisma.fringeRateSchedule.findFirst({
-      where: { id: scheduleId, companyId: context.company.id },
+      where: { id: scheduleId, craftClassification: { unionLocal: { companyAgreements: { some: { companyId: context.company.id } } } } },
     });
     if (!schedule) return fail("Rate schedule not found");
 
