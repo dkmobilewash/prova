@@ -12,6 +12,66 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### Three things /equipment said that were not true — #149, #151, #150 item 1 (Cyrus)
+`cyrus/equipment-page-truth`
+
+A hydration break, a machine reported on a job it had not left for, and a
+lift that worked ten days in the quarter reported as idle. All three
+shipped with #45, on a page nobody had loaded.
+
+**`EquipmentRow` opened an `<li>` inside the `<li>` the page had already
+opened.** The HTML parser resolves that by closing the outer one, so the
+DOM the browser builds is not the tree React hydrates against — a real
+structural hydration break, live on main, with typecheck, lint and 1,400
+tests green about it the whole time because not one of them had ever
+produced the markup. The check is a test that renders the component with
+`renderToStaticMarkup` and asserts the string contains no `<li>`. It is
+the only markup-level test in this app and it exists because this defect
+is invisible everywhere else. The inline edit branch sits behind a click
+no server render reaches, so a second assertion reads the source for the
+tag. Worth noting against #61, which spent sessions on a hydration
+mismatch that turned out to be a browser extension: this one was ours.
+
+**A stay dated ahead is a PLAN, not a deployment.** `currentAssignment`
+answers a date-free question — which stay has nobody closed — so on Friday
+it named Tuesday's job: the row printed "On Riverside Medical", the piece
+dropped out of "N in the yard", and the line directly beneath it said "due
+out Tuesday", because `stayLength` already knew. One card, two
+contradictory statements. `deploymentToday()` is the date-aware answer and
+distinguishes out / planned / yard. `currentAssignment` is deliberately
+unchanged and still backs the overlap rules and Ask's
+`equipment_location`, because "is a stay open" is the right question for
+both of those.
+
+**`utilisation` inlined a second copy of `daysOutWithin`'s rule and the
+two disagreed about the exact case that docstring makes a point of.** A
+half-open `for (let d = from; d < to)` counts a same-day stay as nothing,
+so a lift dispatched for ten separate one-day jobs rendered "out 0 of the
+last 90 days (0%)" — reported idle while it worked every one of those
+days. It now reads "out 10 of the last 90 days (11%)". `daysOutWithin`
+returns the days rather than a count, because deduping overlapping records
+has to happen against that rule and not a second one. It had been
+exported, documented and tested and called by nothing: the fourth instance
+of that shape in a week, after `factDigest`, `acknowledgedSeverity` and
+the 161 dbtests.
+
+**`newestFirst`'s only test used two SAME-DAY stays**, so the date
+comparison the function exists for could be reversed without turning it
+red. Verified by doing exactly that, twice — once by the author and once
+during consolidation: with the comparison reversed the old test file
+produced ZERO `newestFirst` failures, and the new distinct-date assertions
+fail. Every fix here was checked the same way, defect reintroduced and the
+named test confirmed red before it was removed again.
+
+**Not clicked, and saying so.** Rendering the component proves the `<li>`
+is gone from the markup. It does not prove the page hydrates clean on a
+real screen, and nothing here proves the yard count reads right to a
+person. See also #173: both this page and /deployment still take "today"
+from the server's UTC clock while their own form defaults come from the
+viewer's day, so `deploymentToday()` judges against the wrong date at
+certain hours. Filed rather than folded in.
+
+
 ### "Retainage held" was two different numbers on one screen — #97, which is #46 again (Cyrus)
 `fix/retainage-single-source`
 
