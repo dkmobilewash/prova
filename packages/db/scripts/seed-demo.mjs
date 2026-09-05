@@ -15,12 +15,12 @@ import { describe } from "./connection-target.mjs";
  * retainage held — every one of those is a good feature that shows nothing
  * at all against a job called "test" worth $0.00.
  *
- * This docstring promised "equipment utilisation" for a while and the seed
- * wrote no equipment at all, which is a worse failure than not mentioning
- * it: nothing computes utilisation (see FEATURE-AUDIT sheet 20, where that
- * row is Partial for exactly that reason), so the promise could not have
- * been kept by adding rows. What /equipment does derive is where each item
- * is, and how many are in the yard.
+ * This docstring promised "equipment utilisation" for a while when nothing
+ * computed one; then something did, and the seed still wrote only the
+ * deprecated `Equipment.assignedJobId`, so the promise stayed unkept for a
+ * second, different reason and the demo showed eight machines in an empty
+ * yard. /equipment and /deployment both derive location and utilisation
+ * from `EquipmentAssignment`, and the seed writes those rows now.
  *
  * SAFETY. This writes a lot of rows, so it refuses to run unless you name
  * the database you mean. It prints the host first and compares it against
@@ -751,22 +751,38 @@ async function main() {
   }
 
   // ------------------------------------------------------------- safety
+  //
+  // Case numbers come OUT of the counter, incremented, instead of being
+  // written as a hardcoded 1 and 2. Two reasons, both with teeth on a
+  // company that is not empty. `SafetyIncident` is unique on
+  // (companyId, caseYear, caseNumber), so a literal 1 collides with any
+  // real case already filed this year and the whole seed dies. And
+  // `update: { lastCaseNumber: 2 }` SET the counter to 2 — on a company
+  // that had climbed past 2 that is a reset downwards, and every number in
+  // between gets reissued to a future case. The counter only ever
+  // increments. Mirrors `issueCaseNumber` in apps/web/lib/actions/safety.ts,
+  // which is the reference implementation of this rule.
   const year = new Date().getUTCFullYear();
-  await prisma.safetyCaseCounter.upsert({
-    where: { companyId_caseYear: { companyId: company.id, caseYear: year } },
-    create: { companyId: company.id, caseYear: year, lastCaseNumber: 2 },
-    update: { lastCaseNumber: 2 },
-  });
   const incidents = [
-    [1, -63, "Luis Arredondo", "Laceration to forearm from track edge while loading", "INJURY", "FIRST_AID_ONLY", null],
-    [2, -28, "Dane Whitfield", "Slip on wet deck, twisted ankle; two days off", "INJURY", "DAYS_AWAY", 2],
+    [-63, "Luis Arredondo", "Laceration to forearm from track edge while loading", "INJURY", "FIRST_AID_ONLY", null],
+    [-28, "Dane Whitfield", "Slip on wet deck, twisted ankle; two days off", "INJURY", "DAYS_AWAY", 2],
   ];
-  for (const [caseNumber, at, employeeName, description, classification, outcome, daysAway] of incidents) {
+  const caseCounter = await prisma.safetyCaseCounter.upsert({
+    where: { companyId_caseYear: { companyId: company.id, caseYear: year } },
+    create: { companyId: company.id, caseYear: year, lastCaseNumber: incidents.length },
+    update: { lastCaseNumber: { increment: incidents.length } },
+    select: { lastCaseNumber: true },
+  });
+  // The block just reserved is [last - n + 1 .. last]. Reserving the whole
+  // run in one increment rather than one at a time keeps the numbers
+  // contiguous even if somebody files a real case while this is running.
+  const firstCaseNumber = caseCounter.lastCaseNumber - incidents.length + 1;
+  for (const [i, [at, employeeName, description, classification, outcome, daysAway]] of incidents.entries()) {
     await prisma.safetyIncident.create({
       data: {
         companyId: company.id,
         jobId: riverside.id,
-        caseNumber,
+        caseNumber: firstCaseNumber + i,
         caseYear: year,
         occurredAt: day(at),
         employeeName,
@@ -852,38 +868,153 @@ async function main() {
 
   // ---------------------------------------------------------------- equipment
   //
-  // The one number /equipment derives is "N in the yard", counted from a
-  // NULL assignedJobId — so a set where everything is on a job demos the
-  // page with that figure stuck at zero and nothing to explain it. Both
-  // `type` and `assetTag` are nullable on purpose ("plenty of small
-  // equipment has neither"), so some rows leave them out rather than
-  // inventing an asset tag for a wheelbarrow.
+  // Where a piece is NOW is DERIVED — the newest stay in EquipmentAssignment
+  // that nobody closed. `Equipment.assignedJobId` is deprecated and read by
+  // nothing. This seed wrote only that column and created zero assignments,
+  // so a fresh demo showed "8 items, 8 in the yard", every utilisation
+  // blank, and /deployment saying "Equipment: none on site" for every job.
+  // The row that exists specifically to demo the feature — the texture rig
+  // still on Cedar after closeout — was the one that vanished. Issue #147.
   //
-  // One item is deliberately still assigned to the FINISHED job. Gear left
-  // on a closed job is the thing this screen is for noticing, and it only
-  // exists in the data if the seed puts it there.
+  // Two things this data has to get right, both easy to miss:
+  //
+  //   - `createdAt` is BACKDATED, deliberately. Utilisation clamps its
+  //     window to the day the record was created ("since we started
+  //     tracking it"), so a row created a moment ago has a ZERO-day window
+  //     and reads "too new to say how used it is" no matter how many stays
+  //     hang off it. A seed that leaves createdAt at now() cannot show a
+  //     percentage at all — not a low one, none.
+  //   - No two stays for one piece may OVERLAP. Overlapping records are the
+  //     contradiction /deployment reports in a red banner, and seeding one
+  //     would ship a demo that opens on an error. Every range below is
+  //     disjoint per piece. (Nothing here demonstrates that banner; if it
+  //     should be demoed, that is a decision to make on purpose, not a
+  //     side effect of seed data.)
+  //
+  // `type` and `assetTag` stay nullable on purpose ("plenty of small
+  // equipment has neither") rather than inventing an asset tag for a
+  // wheelbarrow. The spread puts a row on every branch of the two screens:
+  // out on a running job, due out on one that hasn't started, still out on
+  // a FINISHED one, back in the yard with a history behind it, never used,
+  // and too new to judge.
+  //
+  // `known` is the createdAt offset; each stay is [job, sentOut, returned].
   const equipment = [
-    ["Genie S-45 boom lift", "Lift", "EQ-1042", riverside, "Certified through next spring."],
-    ["Genie GS-1930 scissor lift", "Lift", "EQ-1043", riverside, null],
-    ["Baker scaffold set (12 frames)", "Scaffolding", null, riverside, null],
-    ["Stud crimper, Malco", null, null, northgate, null],
-    ["Graco Mark V texture rig", "Sprayer", "EQ-2011", cedar, "Still on Cedar after closeout — needs collecting."],
-    ["Mud mixer, 1/2in drill", "Mixer", "EQ-2044", null, null],
-    ["Laser level, Hilti PM 30-MG", "Layout", "EQ-3001", null, "In the yard. Calibration due."],
-    ["Wheelbarrow (x3)", null, null, null, null],
+    {
+      name: "Genie S-45 boom lift",
+      type: "Lift",
+      assetTag: "EQ-1042",
+      notes: "Certified through next spring.",
+      known: -200,
+      stays: [
+        [cedar, -80, -60, "Punch list access, classroom wing."],
+        [riverside, -35, null, null],
+      ],
+    },
+    {
+      name: "Genie GS-1930 scissor lift",
+      type: "Lift",
+      assetTag: "EQ-1043",
+      notes: null,
+      known: -200,
+      stays: [[riverside, -21, null, null]],
+    },
+    {
+      name: "Baker scaffold set (12 frames)",
+      type: "Scaffolding",
+      assetTag: null,
+      notes: null,
+      known: -200,
+      stays: [[riverside, -46, null, null]],
+    },
+    {
+      name: "Stud crimper, Malco",
+      type: null,
+      assetTag: null,
+      notes: null,
+      known: -200,
+      // The second stay is dated FORWARD on purpose. Northgate is
+      // CONTRACTED and does not start for three weeks; a stay in the
+      // future is a plan, not a deployment, and `stayLength` says "due
+      // out" rather than reporting a machine as on site while it is still
+      // sitting in the yard. That branch has no other row exercising it.
+      stays: [
+        [riverside, -70, -50, null],
+        [northgate, 21, null, "Goes out with the first framing load."],
+      ],
+    },
+    {
+      name: "Graco Mark V texture rig",
+      type: "Sprayer",
+      assetTag: "EQ-2011",
+      notes: "Still on Cedar after closeout — needs collecting.",
+      known: -240,
+      // Open, on a job that FINISHED. The whole "out on a job that isn't
+      // running" section on /deployment exists for this row, and the
+      // section cannot appear unless the seed puts it there.
+      stays: [[cedar, -120, null, "Left after the final walkthrough. No return logged."]],
+    },
+    {
+      name: "Mud mixer, 1/2in drill",
+      type: "Mixer",
+      assetTag: "EQ-2044",
+      notes: null,
+      known: -200,
+      stays: [[riverside, -60, -40, null]],
+    },
+    {
+      name: "Laser level, Hilti PM 30-MG",
+      type: "Layout",
+      assetTag: "EQ-3001",
+      notes: "In the yard. Calibration due.",
+      known: -200,
+      stays: [],
+    },
+    {
+      name: "Wheelbarrow (x3)",
+      type: null,
+      assetTag: null,
+      notes: null,
+      // Created today, so its window is zero days long and the page says
+      // "too new to say how used it is" — the honest answer, and not the
+      // same thing as a confident 0%.
+      known: 0,
+      stays: [],
+    },
   ];
-  for (const [name, type, assetTag, job, notes] of equipment) {
-    await prisma.equipment.create({
+  let equipmentStays = 0;
+  for (const item of equipment) {
+    const row = await prisma.equipment.create({
       data: {
         companyId: company.id,
-        name: `${name} ${MARK}`,
-        type,
-        assetTag,
-        assignedJobId: job?.id ?? null,
-        notes,
+        name: `${item.name} ${MARK}`,
+        type: item.type,
+        assetTag: item.assetTag,
+        notes: item.notes,
+        // Explicit, overriding @default(now()). See the note above: the
+        // utilisation denominator is measured from this date.
+        createdAt: day(item.known),
       },
     });
+    for (const [job, sentOut, returned, note] of item.stays) {
+      await prisma.equipmentAssignment.create({
+        data: {
+          companyId: company.id,
+          equipmentId: row.id,
+          jobId: job.id,
+          sentOutOn: day(sentOut),
+          returnedOn: returned === null ? null : day(returned),
+          notes: note,
+          recordedByUserId: user?.id ?? null,
+        },
+      });
+      equipmentStays += 1;
+    }
   }
+  console.log(
+    `seed: equipment       ${equipment.length} items, ${equipmentStays} assignment(s), ` +
+      `${equipment.filter((e) => !e.stays.some((s) => s[2] === null)).length} in the yard`,
+  );
 
   // -------------------------------------------------- prevailing wage rules
   //
@@ -1151,15 +1282,13 @@ async function undo(companyId) {
       counts[label] = r.count ?? 0;
     } catch (e) {
       const msg = e.message.split("\n")[0];
-      // A model that doesn't exist on this branch is not a failed delete —
-      // EquipmentAssignment lives on an unmerged branch, and there is
-      // nothing of it here to remove.
-      if (/reading 'deleteMany'/.test(msg)) {
-        counts[label] = "n/a on this branch";
-        return;
-      }
-      // Everything else is loud on purpose. A swallowed failure here left
-      // two of every job behind and the next seed built a second set on top.
+      // Loud, with no exceptions. This used to swallow "reading
+      // 'deleteMany'" as "n/a on this branch", for EquipmentAssignment
+      // while it lived on an unmerged branch. That branch merged. What is
+      // left for the swallow to hide is a stale Prisma client or a renamed
+      // model, reported as a benign skip — and a swallowed failure here
+      // left two of every job behind once already, with the next seed
+      // building a second set on top of them.
       counts[label] = `FAILED (${msg.slice(0, 70)})`;
       failed.push(label);
     }
@@ -1283,22 +1412,57 @@ async function undo(companyId) {
     await del("jobAssignment", () =>
       prisma.jobAssignment.deleteMany({ where: { jobId: { in: jobIds } } }),
     );
+    // Six more RESTRICT children of Job that this path never deleted. The
+    // seed writes none of them today, which is exactly why they were
+    // missed — but the same argument already written above about bid
+    // invitations applies: a contract document or a dispatch slip somebody
+    // adds by hand while clicking through a demo job is untagged, hangs off
+    // a demo job, and blocks `job.deleteMany` with the whole dataset half
+    // removed. Found by apps/web/lib/scratch-cleanup-order.test.ts, which
+    // derives this set from the migrations rather than from memory.
+    await del("changeOrderCounter", () =>
+      prisma.changeOrderCounter.deleteMany({ where: { jobId: { in: jobIds } } }),
+    );
+    await del("contractDocument", () =>
+      prisma.contractDocument.deleteMany({ where: { jobId: { in: jobIds } } }),
+    );
+    await del("signatureRequest", () =>
+      prisma.signatureRequest.deleteMany({ where: { jobId: { in: jobIds } } }),
+    );
+    await del("retainageRelease", () =>
+      prisma.retainageRelease.deleteMany({ where: { jobId: { in: jobIds } } }),
+    );
+    await del("estimateVersion", () =>
+      prisma.estimateVersion.deleteMany({ where: { jobId: { in: jobIds } } }),
+    );
+    await del("dispatchSlip", () =>
+      prisma.dispatchSlip.deleteMany({ where: { jobId: { in: jobIds } } }),
+    );
     await del("jobLineItem", () => prisma.jobLineItem.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("job", () => prisma.job.deleteMany({ where: { id: { in: jobIds } } }));
   }
-  await del("safetyCaseCounter", () =>
-    prisma.safetyCaseCounter.deleteMany({ where: { companyId } }),
-  );
+  // SafetyCaseCounter is deliberately NOT deleted, and this line is the
+  // whole of that decision. It is a high-water mark, not demo data.
+  // Deleting it reset it to zero, so the next REAL safety case filed on
+  // this company reissued a number a retired case already carried — two
+  // cases sharing a number on an OSHA 300 log is an audit finding, and
+  // there is nothing left afterwards to explain it with. This is worse
+  // than the `max(n)+1` the repo rule already forbids: that reissues one
+  // number, this reissues all of them. Leaving the counter high costs a
+  // gap in the numbering, which is precisely the outcome a counter that
+  // only ever increments exists to produce. Issue #148.
+  counts.safetyCaseCounter = "kept — high-water mark, never reset";
   await del("vendorPriceQuote", () =>
     prisma.vendorPriceQuote.deleteMany({ where: { companyId, description: { contains: MARK } } }),
   );
   await del("vendor", () => prisma.vendor.deleteMany({ where: { companyId, name: { contains: MARK } } }));
-  // Equipment.assignedJobId is ON DELETE SET NULL, so this is safe after
-  // the jobs have gone: a demo item assigned to a demo job has simply been
-  // returned to the yard by then and is still found by its tagged name.
-  // The same action is what keeps a HAND-ADDED item assigned to a demo job
-  // from blocking anything — it goes back to the yard rather than being
-  // deleted, which is the right outcome for a row a person entered.
+  // Safe here for two separate reasons, and both are needed. The seed's own
+  // EquipmentAssignment rows went above, scoped by jobId, before the jobs
+  // did. A HAND-ADDED assignment of a demo item to a NON-demo job survives
+  // that and is removed by cascade from this line (EquipmentAssignment ->
+  // Equipment is ON DELETE CASCADE), so it cannot block. And the legacy
+  // `Equipment.assignedJobId` is ON DELETE SET NULL, so a hand-set value
+  // pointing at a demo job was nulled rather than blocking the job delete.
   await del("equipment", () =>
     prisma.equipment.deleteMany({ where: { companyId, name: { contains: MARK } } }),
   );
@@ -1315,6 +1479,13 @@ async function undo(companyId) {
   );
   await del("contactInteraction", () =>
     prisma.contactInteraction.deleteMany({ where: { contactId: { in: contactIds } } }),
+  );
+  // The third RESTRICT child of Contact, and the one nobody thought of: the
+  // named people at the GC. Its foreign key blocks contact.deleteMany
+  // exactly the way bidInvitation's would. ContactInteraction.contactPersonId
+  // is SET NULL and already gone above, so nothing blocks this in turn.
+  await del("contactPerson", () =>
+    prisma.contactPerson.deleteMany({ where: { contactId: { in: contactIds } } }),
   );
   await del("contact", () => prisma.contact.deleteMany({ where: { id: { in: contactIds } } }));
 
