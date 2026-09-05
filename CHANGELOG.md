@@ -12,6 +12,56 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### A snooze was validated on one calendar and spent on another — #155 (Cyrus)
+`cyrus/snooze-viewer-day-and-enum-guard`
+
+**If you snooze an alert and it comes straight back with no message, this
+was why.** `snoozeAlert` checked the date against the server's UTC day,
+while `partitionAlerts` has spent snoozes against the VIEWER's day since
+#111. One validation, one consumer, two different answers to which day it
+is.
+
+East of UTC the gap swallowed the input: at 08:00 in Tokyo the UTC day is
+still yesterday, so the check accepted the user's own today, the form
+succeeded, and the list spent the snooze on arrival. West of UTC it ran
+the other way — at 18:00 in Los Angeles a genuine tomorrow was refused as
+"already over". Not two bugs. One producer and one consumer disagreeing
+about the date, which is the same shape as the retainage population rule
+and every other number in here that was plausible and wrong.
+
+**This reverses a call made deliberately.** The old line carried a comment
+saying the UTC day was left there on purpose and that it was a product
+decision. That reasoning only ever looked west of UTC, where refusing is
+defensible. East of UTC the identical line discards input silently, which
+is not a product question.
+
+The fix is to stop having two expressions. `snoozeIsUnspent(snoozedUntil,
+todayIso)` is now the only place that question is answered; the list calls
+it and so does the action, with the same `viewerToday()` it hands to
+`severityForKey` — so the action reads the clock exactly once. They can
+only disagree now if a caller passes two different days, which is a
+visible mistake rather than an invisible one.
+
+The check is both sides of UTC, from instants that actually straddle
+midnight, with the straddle asserted BEFORE anything is asserted about it,
+and one case sweeping four dates across the boundary that requires both
+outcomes to occur so the loop cannot pass by never disagreeing. Plus a
+source guard, because no pure test can see WHICH CLOCK the action reads
+and that was the entire defect.
+
+### The safety enum guard could not fire — #150 item 2 (Cyrus)
+
+`safetyLabels.test.ts` hand-wrote the `IncidentOutcome` enum it existed to
+guard, so adding a member to the schema never touched the test file and it
+stayed green through exactly the change it was named for. It reads the
+enum out of `packages/db/prisma/schema` now — every `.prisma` file, so
+moving the enum between them cannot quietly empty the list — and asserts
+it found the enum before looping over it.
+
+Proven the only way this shape can be: with an unlabelled member added to
+the schema, the old test was 3/3 green and the new one fails twice.
+
+
 ### "Retainage held" was two different numbers on one screen — #97, which is #46 again (Cyrus)
 `fix/retainage-single-source`
 
