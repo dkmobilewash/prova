@@ -12,6 +12,72 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### An armed delete now empties its row, structurally — #152 (Cyrus)
+`cyrus/armed-delete-isolates-row`
+
+**The issue named four instances. A sweep found twenty-one hand-rolled
+two-step deletes, twenty of them leaking.** So this does not fix four
+bugs; it removes the place the bug lives.
+
+The two sharpest were not in the issue. `RfiRow` had **"Mark sent"** — an
+irreversible send to the GC — live beside the armed delete, and both are
+gated on `DRAFT`, so they were ALWAYS co-visible. `SubmittalRow` had the
+same shape with "Record as sent". `UnionLocalCard` left a `<select>` that
+writes on change still writable on the record being deleted.
+
+**Why a component and not a convention.** `{!confirming && …}` failed
+twice. Diego fixed one instance by wrapping the one button he could see;
+#119 then added a second button into the position that fix had just
+emptied, git merged the two with NO conflict, and typecheck, lint, test
+and build were green the whole way. A guard someone has to remember leaves
+an unguarded position next to it.
+
+`RowActions` takes ordinary actions as CHILDREN and the delete as a
+`destructive` prop, and renders no children at all while armed. There is
+no sibling position for the next merge to fill — a button added six months
+from now is covered without anyone remembering to cover it. Cancel renders
+before the confirm, so a hurried second click on the pixel "Delete" just
+vacated costs a click rather than the record.
+
+**The tell that somebody half-noticed:** an `onClick` calling
+`setIsConfirmingDelete(false)`. That disarms AFTER the click lands. It is
+not a fix, and it is exactly what made `EquipmentDeploymentControls` read
+as already-handled to three verifiers on the audit.
+
+**Two tests doing different jobs, because one of them cannot do the
+other's.** `rowActions.test.ts` mounts the component in a DOM and clicks
+it, so an inverted guard goes red — a source scan cannot see that, which
+is the `MODULE_IMPORTS` lesson from #87. `rowActionsCensus.test.ts` looks
+for the MECHANISM, a component holding its own armed `useState`, and fails
+when a new hand-rolled copy appears. It is allowed to be a source scan
+precisely because behaviour is tested once, in the one place behaviour
+now lives. The census earned its keep during the work: it caught
+`IntegrationControls`, a twenty-first instance the opening grep missed
+because `confirming` does not match `isConfirming`.
+
+**Sales CRM left alone, deliberately.** `SalesActivityRow` is still broken
+and is named in the census exception list so the guard reports it on every
+run. `SalesLeadRow` and `SalesOpportunityRow` were converted and then
+REVERTED unshipped — they are the other lane, and the agreement says post
+and wait rather than ask forgiveness inside a thirty-five file diff. The
+conversions are done and one `git checkout` away.
+
+**Three behaviour changes worth knowing.** A failed delete now leaves the
+row armed with the confirm greyed out, and retry is Cancel then Delete;
+several rows used to auto-disarm on failure, and re-arming a destructive
+action after it failed is the behaviour worth having. Arming no longer
+clears a stale error message on about five rows. `PunchListRow`'s
+done/not-done checkbox stays clickable while armed — it is the row's
+content control rather than an action, and it is fully reversible.
+
+**New devDependency: `happy-dom`.** Needed to render and click; `jsdom` v30
+breaks on Node 20 with `ERR_REQUIRE_ESM` and `ci.yml` pins Node 20. It
+changes `pnpm-lock.yaml`, so anything merging around this wants a
+`pnpm install` afterwards.
+
+**Not clicked.** Nothing here was loaded in a browser.
+
+
 ### "Retainage held" was two different numbers on one screen — #97, which is #46 again (Cyrus)
 `fix/retainage-single-source`
 

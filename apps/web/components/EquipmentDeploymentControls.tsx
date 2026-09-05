@@ -15,6 +15,7 @@ import {
   dayLabel,
   stayLength,
 } from "@/components/equipmentDeployment";
+import { ConfirmDelete, RowActions } from "@/components/RowActions";
 
 export type JobChoice = { id: string; name: string };
 
@@ -41,7 +42,6 @@ export function EquipmentDeploymentControls({
 }) {
   const [mode, setMode] = useState<"idle" | "send" | "return">("idle");
   const [showHistory, setShowHistory] = useState(false);
-  const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -326,58 +326,47 @@ export function EquipmentDeploymentControls({
                 </span>
                 {stay.notes && <p className="text-xs text-slate-600">{stay.notes}</p>}
               </div>
-              <span className="flex shrink-0 gap-2">
-              <button
-                type="button"
-                disabled={isPending}
-                onClick={() => {
-                  setEditingId(stay.id);
-                  setConfirmingId(null);
-                  setError(null);
-                }}
-                className="rounded border border-slate-700 px-2 py-1 text-xs text-slate-400 hover:border-slate-500"
-              >
-                Edit
-              </button>
-              {canDelete &&
-                (confirmingId === stay.id ? (
-                  <span className="flex shrink-0 gap-2">
-                    <button
-                      type="button"
-                      disabled={isPending}
-                      onClick={() => {
+              {/* Arming "Remove" empties this row of its other actions:
+                  "Edit" is a CHILD of RowActions, so it is not rendered at
+                  all while the confirm is up and cannot be hit by the click
+                  that meant to cancel. Each row owns its own armed state, so
+                  the keyed `confirmingId` is gone. */}
+              <RowActions
+                as="span"
+                className="flex shrink-0 gap-2"
+                destructive={
+                  canDelete ? (
+                    <ConfirmDelete
+                      label="Remove"
+                      confirmLabel="Confirm"
+                      pending={isPending}
+                      onConfirm={() => {
                         setError(null);
                         startTransition(async () => {
                           const result = await deleteEquipmentAssignment(stay.id);
                           if (!result.ok) setError(result.error);
                           else router.refresh();
-                          setConfirmingId(null);
                         });
                       }}
-                      className="rounded border border-red-500 px-2 py-1 text-xs text-red-400"
-                    >
-                      Confirm
-                    </button>
-                    <button
-                      type="button"
-                      disabled={isPending}
-                      onClick={() => setConfirmingId(null)}
-                      className="rounded border border-slate-700 px-2 py-1 text-xs text-slate-300"
-                    >
-                      Cancel
-                    </button>
-                  </span>
-                ) : (
-                  <button
-                    type="button"
-                    disabled={isPending}
-                    onClick={() => setConfirmingId(stay.id)}
-                    className="shrink-0 rounded border border-slate-700 px-2 py-1 text-xs text-slate-400 hover:border-red-500 hover:text-red-400"
-                  >
-                    Remove
-                  </button>
-                ))}
-              </span>
+                      deleteClassName="shrink-0 rounded border border-slate-700 px-2 py-1 text-xs text-slate-400 hover:border-red-500 hover:text-red-400"
+                      cancelClassName="rounded border border-slate-700 px-2 py-1 text-xs text-slate-300"
+                      confirmClassName="rounded border border-red-500 px-2 py-1 text-xs text-red-400"
+                    />
+                  ) : null
+                }
+              >
+                <button
+                  type="button"
+                  disabled={isPending}
+                  onClick={() => {
+                    setEditingId(stay.id);
+                    setError(null);
+                  }}
+                  className="rounded border border-slate-700 px-2 py-1 text-xs text-slate-400 hover:border-slate-500"
+                >
+                  Edit
+                </button>
+              </RowActions>
             </li>
             ),
           )}

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { deletePrevailingWageRuleSet, updatePrevailingWageRuleSet } from "@/lib/actions";
 import type { ActionResult } from "@/lib/actions/shared";
 import { RuleSetFields, type RuleSetDefaults } from "@/components/RuleSetFields";
+import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import {
   authorityLabel,
   filingFrequencyLabel,
@@ -29,7 +30,6 @@ export function RuleSetRow({
   canDelete: boolean;
 }) {
   const [mode, setMode] = useState<"view" | "edit">("view");
-  const [confirming, setConfirming] = useState(false);
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -146,39 +146,31 @@ export function RuleSetRow({
         {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
       </div>
 
-      <div className="flex shrink-0 flex-wrap items-center gap-2">
+      {/* Arming "Delete" empties this cluster, so "Edit" cannot be clicked
+          by someone aiming for a cancel. This row was also the one place
+          where "Edit" did NOT clear the armed flag, so leaving the edit form
+          dropped you back onto a still-armed row; RowActions owns that state
+          per-arming now and the inconsistency is gone. */}
+      <RowActions
+        className="flex shrink-0 flex-wrap items-center gap-2"
+        destructive={
+          canDelete ? (
+            <ConfirmDelete
+              confirmLabel="Confirm delete"
+              pendingLabel="Deleting…"
+              pending={isPending}
+              onConfirm={() => run(() => deletePrevailingWageRuleSet(ruleSet.id))}
+              deleteClassName={btn}
+              cancelClassName={btn}
+              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+            />
+          ) : null
+        }
+      >
         <button type="button" disabled={isPending} onClick={() => setMode("edit")} className={btn}>
           Edit
         </button>
-        {canDelete &&
-          (confirming ? (
-            <>
-              <button
-                type="button"
-                disabled={isPending}
-                onClick={() => run(() => deletePrevailingWageRuleSet(ruleSet.id), () => setConfirming(false))}
-                className="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50"
-              >
-                {isPending ? "Deleting…" : "Confirm delete"}
-              </button>
-              <button type="button" disabled={isPending} onClick={() => setConfirming(false)} className={btn}>
-                Cancel
-              </button>
-            </>
-          ) : (
-            <button
-              type="button"
-              disabled={isPending}
-              onClick={() => {
-                setConfirming(true);
-                setError(null);
-              }}
-              className={btn}
-            >
-              Delete
-            </button>
-          ))}
-      </div>
+      </RowActions>
     </li>
   );
 }

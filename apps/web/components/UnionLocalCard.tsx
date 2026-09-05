@@ -15,6 +15,7 @@ import { CraftTierPicker } from "@/components/CraftTierPicker";
 import { FringeScheduleList } from "@/components/FringeScheduleList";
 import { localToday } from "@/components/localToday";
 import { ratioLabel } from "@/lib/apprentice-ratio";
+import { ConfirmDelete, RowActions } from "@/components/RowActions";
 
 const btn =
   "rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:border-slate-500 disabled:opacity-50";
@@ -31,7 +32,6 @@ export function UnionLocalCard({
   canDelete: boolean;
 }) {
   const [open, setOpen] = useState<"none" | "craft" | "ratio" | "end">("none");
-  const [confirming, setConfirming] = useState<string | null>(null);
   const [tier, setTier] = useState("");
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
@@ -187,48 +187,42 @@ export function UnionLocalCard({
                         : "nothing tagged yet"}
                     </p>
                   </div>
-                  <div className="flex flex-col items-end gap-1">
+                  {/* The tier picker is a live write — a <select> that saves on
+                      change and an apprentice-period box that saves on blur —
+                      and it used to stay live beside an armed "confirm delete",
+                      so a click meant for cancel could re-classify the record
+                      you were about to destroy. It is a child of RowActions
+                      now, so arming empties this cluster of everything but the
+                      cancel/confirm pair. Per-row state too: each craft owns
+                      its own armed flag, so the keyed `confirming === craft.id`
+                      is gone. */}
+                  <RowActions
+                    className="flex flex-col items-end gap-1"
+                    destructive={
+                      canDelete ? (
+                        <ConfirmDelete
+                          label="delete"
+                          confirmLabel="confirm delete"
+                          cancelLabel="cancel"
+                          // This cluster is a COLUMN (the tier picker sits
+                          // above), so the armed pair needs its own row or
+                          // it stacks.
+                          armedClassName="flex gap-2"
+                          pending={isPending}
+                          onConfirm={() => run(() => deleteCraftClassification(craft.id))}
+                          deleteClassName="text-xs text-slate-500 underline disabled:opacity-50"
+                          cancelClassName="text-xs text-slate-400 underline disabled:opacity-50"
+                          confirmClassName="text-xs text-red-400 underline disabled:opacity-50"
+                        />
+                      ) : null
+                    }
+                  >
                     <CraftTierPicker
                       craftId={craft.id}
                       tier={craft.tier}
                       apprenticePeriod={craft.apprenticePeriod}
                     />
-                    {canDelete &&
-                      (confirming === craft.id ? (
-                        <span className="flex gap-2">
-                          <button
-                            type="button"
-                            disabled={isPending}
-                            onClick={() =>
-                              run(() => deleteCraftClassification(craft.id), () => setConfirming(null))
-                            }
-                            className="text-xs text-red-400 underline"
-                          >
-                            confirm delete
-                          </button>
-                          <button
-                            type="button"
-                            disabled={isPending}
-                            onClick={() => setConfirming(null)}
-                            className="text-xs text-slate-400 underline"
-                          >
-                            cancel
-                          </button>
-                        </span>
-                      ) : (
-                        <button
-                          type="button"
-                          disabled={isPending}
-                          onClick={() => {
-                            setConfirming(craft.id);
-                            setError(null);
-                          }}
-                          className="text-xs text-slate-500 underline disabled:opacity-50"
-                        >
-                          delete
-                        </button>
-                      ))}
-                  </div>
+                  </RowActions>
                 </div>
 
                 <FringeScheduleList

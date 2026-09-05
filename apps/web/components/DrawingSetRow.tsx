@@ -20,6 +20,7 @@ import {
   stateLabel,
 } from "@/components/drawingLabels";
 import { localToday } from "@/components/localToday";
+import { ConfirmDelete, RowActions } from "@/components/RowActions";
 
 export type DrawingSetRowData = DrawingSetDefaults & {
   id: string;
@@ -104,8 +105,6 @@ export function DrawingSetRow({
 }) {
   const [mode, setMode] = useState<"view" | "edit" | "issue">("view");
   const [editingRevisionId, setEditingRevisionId] = useState<string | null>(null);
-  const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
-  const [confirmingRevisionId, setConfirmingRevisionId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -285,57 +284,48 @@ export function DrawingSetRow({
                         : ` · NOT RECEIVED${days !== null ? ` · waiting ${days} day${days === 1 ? "" : "s"}` : ""}`}
                       {!isCurrent && " · superseded"}
                       {rev.description && <span className="text-slate-500"> — {rev.description}</span>}
-                      {rev.fileUrl && (
-                        <a
-                          href={rev.fileUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="ml-2 text-blue-400 underline"
-                        >
-                          {rev.fileName || "open"}
-                        </a>
-                      )}
-                      <button
-                        type="button"
-                        disabled={isPending}
-                        onClick={() => {
-                          setEditingRevisionId(rev.id);
-                          setConfirmingRevisionId(null);
-                        }}
-                        className="ml-2 text-slate-500 underline disabled:opacity-50"
+                      {/* Only the actions go inside RowActions — the
+                          revision's own text above stays visible while a
+                          delete is armed. The file link and "Mark received"
+                          used to stay live next to the armed confirm (issue
+                          #152), so a click meant to cancel a remove marked
+                          the revision received instead. */}
+                      <RowActions
+                        as="span"
+                        destructive={
+                          canDelete ? (
+                            <ConfirmDelete
+                              label="Remove"
+                              confirmLabel="Confirm remove"
+                              pendingLabel="Removing…"
+                              pending={isPending}
+                              onConfirm={() => run(() => deleteDrawingRevision(rev.id))}
+                              deleteClassName="ml-2 text-slate-500 underline disabled:opacity-50"
+                              cancelClassName="ml-2 text-slate-400 underline disabled:opacity-50"
+                              confirmClassName="ml-2 text-red-400 underline disabled:opacity-50"
+                            />
+                          ) : null
+                        }
                       >
-                        {rev.receivedOn ? "Edit" : "Mark received"}
-                      </button>
-                      {canDelete &&
-                        (confirmingRevisionId === rev.id ? (
-                          <>
-                            <button
-                              type="button"
-                              disabled={isPending}
-                              onClick={() => run(() => deleteDrawingRevision(rev.id))}
-                              className="ml-2 text-red-400 underline disabled:opacity-50"
-                            >
-                              {isPending ? "Removing…" : "Confirm remove"}
-                            </button>
-                            <button
-                              type="button"
-                              disabled={isPending}
-                              onClick={() => setConfirmingRevisionId(null)}
-                              className="ml-2 text-slate-400 underline disabled:opacity-50"
-                            >
-                              Cancel
-                            </button>
-                          </>
-                        ) : (
-                          <button
-                            type="button"
-                            disabled={isPending}
-                            onClick={() => setConfirmingRevisionId(rev.id)}
-                            className="ml-2 text-slate-500 underline disabled:opacity-50"
+                        {rev.fileUrl && (
+                          <a
+                            href={rev.fileUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="ml-2 text-blue-400 underline"
                           >
-                            Remove
-                          </button>
-                        ))}
+                            {rev.fileName || "open"}
+                          </a>
+                        )}
+                        <button
+                          type="button"
+                          disabled={isPending}
+                          onClick={() => setEditingRevisionId(rev.id)}
+                          className="ml-2 text-slate-500 underline disabled:opacity-50"
+                        >
+                          {rev.receivedOn ? "Edit" : "Mark received"}
+                        </button>
+                      </RowActions>
                     </>
                   )}
                 </li>
@@ -349,7 +339,27 @@ export function DrawingSetRow({
         {error && !editingRevisionId && <p className="mt-1 text-sm text-red-400">{error}</p>}
       </div>
 
-      <div className="flex shrink-0 flex-wrap items-center gap-2">
+      {/* Arming the delete empties this cluster. "Record an issue" and
+          "Edit" both stayed live beside the armed confirm — issue #152 —
+          and recording an issue on a set you were about to delete is the
+          one action that then makes the delete impossible, since it only
+          offers itself while the set has no revisions. */}
+      <RowActions
+        className="flex shrink-0 flex-wrap items-center gap-2"
+        destructive={
+          canDelete && set.revisions.length === 0 ? (
+            <ConfirmDelete
+              confirmLabel="Confirm delete"
+              pendingLabel="Deleting…"
+              pending={isPending}
+              onConfirm={() => run(() => deleteDrawingSet(set.id))}
+              deleteClassName={btn}
+              cancelClassName={btn}
+              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+            />
+          ) : null
+        }
+      >
         <button
           type="button"
           disabled={isPending}
@@ -359,50 +369,10 @@ export function DrawingSetRow({
           Record an issue
         </button>
 
-        <button
-          type="button"
-          disabled={isPending}
-          onClick={() => {
-            setMode("edit");
-            setIsConfirmingDelete(false);
-          }}
-          className={btn}
-        >
+        <button type="button" disabled={isPending} onClick={() => setMode("edit")} className={btn}>
           Edit
         </button>
-
-        {canDelete &&
-          set.revisions.length === 0 &&
-          (isConfirmingDelete ? (
-            <>
-              <button
-                type="button"
-                disabled={isPending}
-                onClick={() => run(() => deleteDrawingSet(set.id))}
-                className="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50"
-              >
-                {isPending ? "Deleting…" : "Confirm delete"}
-              </button>
-              <button
-                type="button"
-                disabled={isPending}
-                onClick={() => setIsConfirmingDelete(false)}
-                className={btn}
-              >
-                Cancel
-              </button>
-            </>
-          ) : (
-            <button
-              type="button"
-              disabled={isPending}
-              onClick={() => setIsConfirmingDelete(true)}
-              className={btn}
-            >
-              Delete
-            </button>
-          ))}
-      </div>
+      </RowActions>
     </li>
   );
 }

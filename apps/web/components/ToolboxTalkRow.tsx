@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { deleteToolboxTalk } from "@/lib/actions";
+import { ConfirmDelete, RowActions } from "@/components/RowActions";
 
 export type ToolboxTalkRowData = {
   id: string;
@@ -15,7 +16,6 @@ export type ToolboxTalkRowData = {
 };
 
 export function ToolboxTalkRow({ talk, canDelete }: { talk: ToolboxTalkRowData; canDelete: boolean }) {
-  const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -41,46 +41,30 @@ export function ToolboxTalkRow({ talk, canDelete }: { talk: ToolboxTalkRowData; 
       </div>
 
       {canDelete && (
-        <div className="flex shrink-0 items-center gap-2">
-          {isConfirmingDelete ? (
-            <>
-              <button
-                type="button"
-                disabled={isPending}
-                onClick={() => {
-                  setError(null);
-                  startTransition(async () => {
-                    try {
-                      await deleteToolboxTalk(talk.id);
-                    } catch (err) {
-                      setError(err instanceof Error ? err.message : "Could not remove the talk");
-                    }
-                  });
-                }}
-                className="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50"
-              >
-                {isPending ? "Removing…" : "Confirm remove"}
-              </button>
-              <button
-                type="button"
-                disabled={isPending}
-                onClick={() => setIsConfirmingDelete(false)}
-                className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50"
-              >
-                Cancel
-              </button>
-            </>
-          ) : (
-            <button
-              type="button"
-              disabled={isPending}
-              onClick={() => setIsConfirmingDelete(true)}
-              className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:border-red-500 hover:text-red-400 disabled:opacity-50"
-            >
-              Remove
-            </button>
-          )}
-        </div>
+        <RowActions
+          className="flex shrink-0 items-center gap-2"
+          destructive={
+            <ConfirmDelete
+              label="Remove"
+              confirmLabel="Confirm remove"
+              pendingLabel="Removing…"
+              pending={isPending}
+              onConfirm={() => {
+                setError(null);
+                startTransition(async () => {
+                  try {
+                    await deleteToolboxTalk(talk.id);
+                  } catch (err) {
+                    setError(err instanceof Error ? err.message : "Could not remove the talk");
+                  }
+                });
+              }}
+              deleteClassName="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:border-red-500 hover:text-red-400 disabled:opacity-50"
+              cancelClassName="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50"
+              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+            />
+          }
+        />
       )}
     </li>
   );

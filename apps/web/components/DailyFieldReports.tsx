@@ -8,6 +8,7 @@ import {
 } from "@/lib/actions";
 import { localToday } from "@/components/localToday";
 import type { ActionResult } from "@/lib/actions/shared";
+import { ConfirmDelete, RowActions } from "@/components/RowActions";
 
 export const inputClass =
   "rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none";
@@ -99,7 +100,11 @@ export function DailyFieldReports({
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
+  /* NOT the armed-delete state — each row's <RowActions> owns its own arming
+     now. This only says which row's delete produced the `error` below, so a
+     failure prints under the report it belongs to instead of under all of
+     them. */
+  const [deleteErrorId, setDeleteErrorId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
@@ -232,57 +237,45 @@ export function DailyFieldReports({
                       <p className="mt-1 text-xs text-slate-500">filed by {report.filedByName}</p>
                     )}
                   </div>
-                  <div className="flex shrink-0 items-center gap-2">
+                  {/* Each report row arms its own remove — the arming used to
+                      be one id on the whole list, which is fine, but "Edit"
+                      stayed live beside the armed confirm, so a click meant
+                      for Cancel opened the edit form on the report you were
+                      trying to leave alone. Ordinary actions are children of
+                      RowActions and are gone while armed. */}
+                  <RowActions
+                    className="flex shrink-0 items-center gap-2"
+                    destructive={
+                      canDelete ? (
+                        <ConfirmDelete
+                          label="Remove"
+                          confirmLabel="Confirm remove"
+                          pending={isPending}
+                          onConfirm={() => {
+                            setDeleteErrorId(report.id);
+                            run(() => deleteDailyFieldReport(report.id), "Could not delete the report");
+                          }}
+                          deleteClassName="rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:border-red-500 hover:text-red-400 disabled:opacity-50"
+                          cancelClassName="rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:border-slate-500 disabled:opacity-50"
+                          confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+                        />
+                      ) : null
+                    }
+                  >
                     <button
                       type="button"
                       disabled={isPending}
                       onClick={() => {
                         setEditingId(report.id);
-                        setConfirmingDeleteId(null);
                         setError(null);
                       }}
                       className="rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:border-slate-500 disabled:opacity-50"
                     >
                       Edit
                     </button>
-                    {canDelete &&
-                      (confirmingDeleteId === report.id ? (
-                        <>
-                          <button
-                            type="button"
-                            disabled={isPending}
-                            onClick={() =>
-                              run(
-                                () => deleteDailyFieldReport(report.id),
-                                "Could not delete the report",
-                              )
-                            }
-                            className="rounded-md border border-red-500 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 disabled:opacity-50"
-                          >
-                            Confirm remove
-                          </button>
-                          <button
-                            type="button"
-                            disabled={isPending}
-                            onClick={() => setConfirmingDeleteId(null)}
-                            className="rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:border-slate-500 disabled:opacity-50"
-                          >
-                            Cancel
-                          </button>
-                        </>
-                      ) : (
-                        <button
-                          type="button"
-                          disabled={isPending}
-                          onClick={() => setConfirmingDeleteId(report.id)}
-                          className="rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:border-red-500 hover:text-red-400 disabled:opacity-50"
-                        >
-                          Remove
-                        </button>
-                      ))}
-                  </div>
+                  </RowActions>
                 </div>
-                {error && confirmingDeleteId === report.id && (
+                {error && deleteErrorId === report.id && (
                   <p className="mt-1 text-sm text-red-400">{error}</p>
                 )}
               </li>

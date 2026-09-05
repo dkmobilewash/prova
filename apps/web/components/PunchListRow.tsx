@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { deletePunchListItem, setPunchListItemDone, updatePunchListItem } from "@/lib/actions";
 import type { JobOption } from "@/components/PunchListForm";
+import { ConfirmDelete, RowActions } from "@/components/RowActions";
 
 const inputClass =
   "rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none";
@@ -23,7 +24,6 @@ type PunchListRowProps = {
 
 export function PunchListRow({ canDelete, jobs, item, showJob }: PunchListRowProps) {
   const [isEditing, setIsEditing] = useState(false);
-  const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -111,50 +111,38 @@ export function PunchListRow({ canDelete, jobs, item, showJob }: PunchListRowPro
         {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
       </div>
 
-      <div className="flex shrink-0 items-center gap-2">
+      {/* Arming "Remove" empties this cluster: "Edit" used to stay live
+          beside the armed "Confirm remove", so one click past where you
+          meant to stop opened the edit form instead of cancelling. It is a
+          child of RowActions now, and so is whatever gets added here next.
+          The done/not-done checkbox is deliberately NOT in here — it lives
+          in the row body above, not the action cluster. */}
+      <RowActions
+        className="flex shrink-0 items-center gap-2"
+        destructive={
+          canDelete ? (
+            <ConfirmDelete
+              label="Remove"
+              confirmLabel="Confirm remove"
+              pendingLabel="Removing…"
+              pending={isPending}
+              onConfirm={() => run(() => deletePunchListItem(item.id), "Could not delete item")}
+              deleteClassName="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:border-red-500 hover:text-red-400 disabled:opacity-50"
+              cancelClassName="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50"
+              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+            />
+          ) : null
+        }
+      >
         <button
           type="button"
           disabled={isPending}
-          onClick={() => {
-            setIsEditing(true);
-            setIsConfirmingDelete(false);
-          }}
+          onClick={() => setIsEditing(true)}
           className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50"
         >
           Edit
         </button>
-
-        {canDelete &&
-          (isConfirmingDelete ? (
-            <>
-              <button
-                type="button"
-                disabled={isPending}
-                onClick={() => run(() => deletePunchListItem(item.id), "Could not delete item")}
-                className="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50"
-              >
-                {isPending ? "Removing…" : "Confirm remove"}
-              </button>
-              <button
-                type="button"
-                disabled={isPending}
-                onClick={() => setIsConfirmingDelete(false)}
-                className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50"
-              >
-                Cancel
-              </button>
-            </>
-          ) : (
-            <button
-              type="button"
-              disabled={isPending}
-              onClick={() => setIsConfirmingDelete(true)}
-              className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:border-red-500 hover:text-red-400 disabled:opacity-50"
-            >
-              Remove
-            </button>
-          ))}
-      </div>
+      </RowActions>
     </li>
   );
 }
