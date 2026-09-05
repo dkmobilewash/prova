@@ -80,6 +80,26 @@ model ContractDocument {
   fileName String
   note     String?
 
+  /// Set ONLY on a document recorded as an already-executed subcontract —
+  /// the GC issued it, signed it, and sent it back, on paper or through
+  /// the GC's own system. Null on an ordinary upload, which is why this is
+  /// nullable rather than backfilled: every document that existed before
+  /// this field was an ordinary upload and guessing a date for one would
+  /// invent evidence.
+  ///
+  /// The date the GC SIGNED, ENTERED by whoever recorded it — not the
+  /// moment anybody clicked. Stored at UTC midnight like every other
+  /// entered date here. `createdAt` is the stamped audit companion (when
+  /// Prova was told) and `uploadedByUserId` is who asserted it; the three
+  /// together are the evidence record, and none of them is ever updated —
+  /// ContractDocument has no update path at all, only create and an
+  /// owner-only delete.
+  ///
+  /// Which route a job took to CONTRACTED is DERIVED from this and from
+  /// SignatureRequest, never stored as a third flag — see
+  /// apps/web/lib/contract-execution.ts.
+  executedSignedDate DateTime?
+
   uploadedByUserId String?
   uploadedByUser   User?    @relation(fields: [uploadedByUserId], references: [id])
   createdAt        DateTime @default(now())

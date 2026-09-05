@@ -17,6 +17,15 @@ import { pushBlockers } from "@/lib/quickbooks-sync";
 import { paymentPushBlockers } from "@/lib/quickbooks-payment-sync";
 import { accountPurpose } from "@/lib/quickbooks-constants";
 import { MarkContractedButton } from "@/components/MarkContractedButton";
+import { JobStatusControl } from "@/components/JobStatusControl";
+import { RecordExecutedSubcontract } from "@/components/RecordExecutedSubcontract";
+import {
+  contractExecutionFor,
+  contractIsExecuted,
+  describeContractExecution,
+  formatUtcDate,
+} from "@/lib/contract-execution";
+import type { JobStatusValue } from "@/lib/job-status-transitions";
 import { ChangeOrders, type ChangeOrderView } from "@/components/ChangeOrders";
 import { changeOrderValueDelta, pendingChangeOrderExposure, reopenBlockers } from "@/lib/change-order";
 import { can } from "@/lib/permissions";
@@ -565,6 +574,25 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
   const pendingSignature = job.signatureRequests.find((r) => r.status === "PENDING");
   const signedSignature = job.signatureRequests.find((r) => r.status === "SIGNED");
 
+  // Which of the two routes this contract took, DERIVED from the evidence
+  // rather than stored as a flag — see lib/contract-execution.ts. A reader
+  // must never be left unable to tell an e-signature from somebody's
+  // assertion that the GC signed a piece of paper, so this is computed once
+  // here and rendered in full below rather than reconstructed per section.
+  const showsJobManagement = can(principal, "MANAGE_JOBS");
+  const contractExecution = contractExecutionFor(
+    signedSignature ? { signerName: signedSignature.signerName, signedAt: signedSignature.signedAt } : null,
+    job.contractDocuments.map((doc) => ({
+      versionNumber: doc.versionNumber,
+      fileName: doc.fileName,
+      fileUrl: doc.fileUrl,
+      executedSignedDate: doc.executedSignedDate,
+      recordedAt: doc.createdAt,
+      recordedByName: doc.uploadedByUser?.name ?? doc.uploadedByUser?.email ?? null,
+    })),
+  );
+  const isContractExecuted = contractIsExecuted(contractExecution);
+
   return (
     <div className="mx-auto max-w-3xl px-6 py-8 print:max-w-none print:px-0 print:py-0">
       {/* Contract-style summary — the same JobLineItem rows used as the
@@ -593,6 +621,19 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
       )}
 
       <div className="print:hidden">
+        {/* Where the job is in its life. First thing under the contract
+            summary on purpose: everything below reads differently
+            depending on it, and until now nothing in the app could move a
+            job past CONTRACTED at all. Not a new slot at the bottom —
+            the fixed lower slots (Retainage → Field Reports → Pay Apps)
+            are untouched. */}
+        {showsJobManagement && (
+        <section className="mb-10">
+          <h2 className="mb-3 text-lg font-semibold text-slate-100">Job status</h2>
+          <JobStatusControl jobId={job.id} status={job.status as JobStatusValue} />
+        </section>
+        )}
+
         <section className="mb-10">
           <h2 className="mb-3 text-lg font-semibold text-slate-100">Schedule</h2>
           <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
@@ -691,6 +732,46 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
         {showsJobMoney && (
         <section className="mb-10">
           <h2 className="mb-3 text-lg font-semibold text-slate-100">Contract signature</h2>
+
+          {/* WHICH ROUTE THIS CONTRACT TOOK, said outright.
+              An e-signature and somebody's assertion that the GC signed a
+              piece of paper are not the same evidence, and a reader who
+              cannot tell them apart has been misled by omission. Both are
+              named, with who said so and when. */}
+          <div
+            className={`mb-3 rounded-lg border p-4 ${
+              isContractExecuted
+                ? "border-green-900 bg-green-950/40"
+                : "border-slate-800 bg-slate-900"
+            }`}
+          >
+            <p className="text-xs uppercase tracking-wide text-slate-500">How this contract was executed</p>
+            <p
+              className={`mt-1 text-sm ${isContractExecuted ? "text-green-300" : "text-slate-300"}`}
+            >
+              {describeContractExecution(contractExecution)}
+            </p>
+            {(contractExecution.route === "OFF_PLATFORM" || contractExecution.route === "BOTH") && (
+              <p className="mt-1 text-xs text-slate-400">
+                Evidence: v{contractExecution.document.versionNumber}{" "}
+                <a
+                  href={contractExecution.document.fileUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-blue-400 hover:underline"
+                >
+                  {contractExecution.document.fileName}
+                </a>{" "}
+                — an off-platform signature Prova did not witness. The file is the record.
+              </p>
+            )}
+            {!isContractExecuted && showsJobManagement && (
+              <div className="mt-3">
+                <RecordExecutedSubcontract jobId={job.id} />
+              </div>
+            )}
+          </div>
+
           <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
             {signedSignature ? (
               <p className="text-sm text-green-400">
@@ -747,8 +828,18 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                     <p className="font-medium text-slate-100">
                       v{doc.versionNumber}
                       {doc.versionNumber === 1 ? " (original)" : " (amendment)"}
+                      {/* An ordinary upload and a recorded EXECUTED
+                          subcontract look identical in this list otherwise,
+                          and only one of them is the evidence that made this
+                          job billable. */}
+                      {doc.executedSignedDate && (
+                        <span className="ml-2 rounded-full bg-green-950 px-2 py-0.5 text-xs font-medium text-green-300">
+                          Executed — GC signed {formatUtcDate(doc.executedSignedDate)}
+                        </span>
+                      )}
                     </p>
                     <p className="text-sm text-slate-400">
+                      {doc.executedSignedDate ? "Recorded " : ""}
                       {doc.createdAt.toLocaleDateString()}
                       {doc.uploadedByUser?.name || doc.uploadedByUser?.email
                         ? ` · ${doc.uploadedByUser.name ?? doc.uploadedByUser.email}`
@@ -1961,11 +2052,13 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                 Once contracted, line items can only change through a change order — this keeps an
                 audit trail of anything that changes after the client agrees to it.
               </p>
-              {signedSignature ? (
+              {isContractExecuted ? (
                 <MarkContractedButton markContracted={markContractedWithId} />
               ) : (
                 <p className="text-sm text-amber-400">
-                  Get the client&apos;s signature above before contracting this job.
+                  This job has no executed contract yet. Either send the GC a signing link above and
+                  wait for them to sign it in Prova, or — if they already sent you the executed
+                  subcontract — record it above under Contract signature.
                 </p>
               )}
             </section>

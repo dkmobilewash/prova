@@ -1,53 +1,43 @@
-import { createJob } from "@/lib/actions";
-import { SubmitButton } from "@/components/SubmitButton";
+import { prisma } from "@prova/db";
+import { requireCompanyContext } from "@/lib/auth";
+import { NewJobForm } from "@/components/NewJobForm";
 
-export default function NewJobPage() {
+/**
+ * The GC list is loaded here rather than inside the form so the picker
+ * shows real rows on first paint — a picker that fills in after a spinner
+ * invites the "add a new one" click this page exists to stop.
+ *
+ * Ordered by how much work is on record with each, so the GC somebody is
+ * most likely opening a job for is near the top and the accidental
+ * duplicate with nothing on it sits at the bottom.
+ */
+export default async function NewJobPage() {
+  const { company } = await requireCompanyContext();
+
+  const contacts = await prisma.contact.findMany({
+    where: { companyId: company.id },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      _count: { select: { jobs: true } },
+    },
+    orderBy: [{ name: "asc" }],
+  });
+
+  const options = contacts
+    .map((contact) => ({
+      id: contact.id,
+      name: contact.name,
+      email: contact.email,
+      jobCount: contact._count.jobs,
+    }))
+    .sort((a, b) => b.jobCount - a.jobCount || a.name.localeCompare(b.name));
+
   return (
     <div className="mx-auto max-w-xl px-6 py-8">
       <h1 className="mb-6 text-xl font-semibold text-slate-100">New job</h1>
-      <form action={createJob} className="flex flex-col gap-4">
-        <label className="flex flex-col gap-1 text-sm text-slate-300">
-          Job name
-          <input
-            name="jobName"
-            required
-            className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
-            placeholder="Smith kitchen remodel"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-sm text-slate-300">
-          Scope
-          <textarea
-            name="scope"
-            className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
-            placeholder="Full kitchen remodel including cabinets, countertops, and flooring."
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-sm text-slate-300">
-          Client name
-          <input
-            name="contactName"
-            required
-            className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
-            placeholder="Jane Smith"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-sm text-slate-300">
-          Client email
-          <input
-            name="contactEmail"
-            type="email"
-            className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
-            placeholder="jane@example.com"
-          />
-        </label>
-        <SubmitButton
-          type="submit"
-          className="mt-2 inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
-        >
-          Create job
-        </SubmitButton>
-      </form>
+      <NewJobForm contacts={options} />
     </div>
   );
 }
