@@ -217,7 +217,15 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
     prisma.lineItemCatalogEntry.findMany({ where: { companyId: company.id }, orderBy: { description: "asc" } }),
     prisma.craftClassification.findMany({
       where: { unionLocal: { companyAgreements: { some: { companyId: company.id } } } },
-      include: { unionLocal: true, fringeRateSchedules: true },
+      // The classification list is agreement-gated (it is a global table),
+      // but the RATES on it are this company's own — issue #136. Without
+      // this filter every burdened labour figure on this page, at bid time
+      // and on logged time alike, could be priced off another contractor's
+      // negotiated wage.
+      include: {
+        unionLocal: true,
+        fringeRateSchedules: { where: { companyId: company.id } },
+      },
       orderBy: { name: "asc" },
     }),
   ]);

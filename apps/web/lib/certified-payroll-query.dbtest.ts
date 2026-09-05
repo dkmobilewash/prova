@@ -65,6 +65,10 @@ describe("loadCertifiedPayrollWeekEntries against real rows", () => {
     await prisma.fringeRateSchedule.create({
       data: {
         craftClassificationId: craft.id,
+        // The classification is global; the wage on it is this company's
+        // own (issue #136). Without companyId this is an unattributed row
+        // the certified-payroll page would not read.
+        companyId: company.id,
         effectiveFrom: utc("2026-01-01"),
         baseWage: "52.00",
         pensionRate: "9.50",
@@ -153,8 +157,11 @@ describe("loadCertifiedPayrollWeekEntries against real rows", () => {
 
   it("reports 40 hours and $3,094.00 for the week of 2026-08-23", async () => {
     const entries = await loadCertifiedPayrollWeekEntries(companyId, jobId, WEEK);
+    // Scoped the way the certified-payroll page now scopes it, so this
+    // test exercises the shape the page actually reads rather than a
+    // looser one that would still pass if the page's filter were dropped.
     const schedules = await prisma.fringeRateSchedule.findMany({
-      where: { craftClassificationId: craftId },
+      where: { craftClassificationId: craftId, companyId },
     });
     const byCraft = new Map([
       [

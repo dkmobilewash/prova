@@ -104,8 +104,15 @@ export async function loadRemittance(companyId: string, month: string): Promise<
   });
 
   const craftIds = [...new Set(entries.map((e) => e.craftClassificationId).filter(Boolean))] as string[];
+  // `companyId` and not the classification join. The classification is
+  // GLOBAL, so `craftClassificationId IN (...)` alone returned every
+  // contractor's rates for a hall this company happens to share — issue
+  // #136. A row whose companyId is NULL (the backfill could not name one
+  // company for it) belongs to nobody and is read by nobody; the
+  // remittance then reports that craft as having no rate, which is the
+  // honest answer rather than someone else's money.
   const schedules = await prisma.fringeRateSchedule.findMany({
-    where: { craftClassificationId: { in: craftIds } },
+    where: { craftClassificationId: { in: craftIds }, companyId },
     orderBy: { effectiveFrom: "desc" },
   });
 
@@ -203,8 +210,16 @@ export async function loadRatioReviews(companyId: string, month: string): Promis
   // answer that could change between reads with nothing to explain it.
   // setApprenticeRatioRule now replaces rather than adds, so in practice
   // there is one; this makes the read safe regardless.
+  // Scoped on the rule's OWN companyId, not on holding an agreement with
+  // its local. The agreement join let every contractor under a shared hall
+  // read the same rule, and this rule is the denominator of a compliance
+  // judgement — another company's 1:5 read as yours turns a day that is
+  // over ratio into a day that reads compliant, on a page written to be
+  // shown to an inspector (issue #136). A rule with a NULL companyId is
+  // read by nobody; reviewRatioByDay treats a missing rule as INCOMPLETE,
+  // never as compliant, so losing one fails in the safe direction.
   const rules = await prisma.apprenticeRatioRule.findMany({
-    where: { unionLocal: { companyAgreements: { some: { companyId } } } },
+    where: { companyId },
     orderBy: { createdAt: "asc" },
   });
   const ruleByLocal = new Map<string, RatioRuleInput>(
@@ -299,6 +314,21 @@ export type SetupLocalRow = {
   effectiveTo: string | null;
   ratio: { apprenticeCount: number; journeymenCount: number; programStandardReference: string | null } | null;
   crafts: SetupCraftRow[];
+  /**
+   * Rows recorded under this local that carry no companyId, so nobody
+   * reads them.
+   *
+   * COUNTS ONLY, never the amounts — the amounts are the thing that was
+   * leaking. This exists so that rates which stop appearing after #136
+   * have a visible reason instead of vanishing without trace: the
+   * migration's backfill deliberately refuses to guess an owner for a row
+   * under a hall shared by more than one contractor, and this is where
+   * that refusal shows up to a person.
+   *
+   * A shared hall shows the same count to both contractors. That is
+   * honest and costs nothing: a count is not a wage.
+   */
+  unattributed: { schedules: number; ratioRules: number };
 };
 
 /**
@@ -317,11 +347,18 @@ export async function loadUnionSetup(companyId: string): Promise<SetupLocalRow[]
     include: {
       unionLocal: {
         include: {
-          apprenticeRatioRules: { orderBy: { createdAt: "desc" }, take: 1 },
+          apprenticeRatioRules: {
+            where: { companyId },
+            orderBy: { createdAt: "desc" },
+            take: 1,
+          },
           craftClassifications: {
             orderBy: { name: "asc" },
             include: {
-              fringeRateSchedules: { orderBy: { effectiveFrom: "desc" } },
+              fringeRateSchedules: {
+                where: { companyId },
+                orderBy: { effectiveFrom: "desc" },
+              },
               _count: {
                 select: {
                   timeEntries: true,
@@ -336,6 +373,31 @@ export async function loadUnionSetup(companyId: string): Promise<SetupLocalRow[]
       },
     },
   });
+
+  // Orphan tallies, for the `unattributed` field above. Selected as bare
+  // identifiers — no wage, no fringe, no ratio — so surfacing the fact
+  // that rows exist can never re-open the leak that made them orphans.
+  const localIds = [...new Set(agreements.map((a) => a.unionLocalId))];
+  const [orphanSchedules, orphanRules] = await Promise.all([
+    prisma.fringeRateSchedule.findMany({
+      where: { companyId: null, craftClassification: { unionLocalId: { in: localIds } } },
+      select: { craftClassification: { select: { unionLocalId: true } } },
+    }),
+    prisma.apprenticeRatioRule.groupBy({
+      by: ["unionLocalId"],
+      where: { companyId: null, unionLocalId: { in: localIds } },
+      _count: { _all: true },
+    }),
+  ]);
+
+  const orphanScheduleCount = new Map<string, number>();
+  for (const row of orphanSchedules) {
+    const id = row.craftClassification.unionLocalId;
+    orphanScheduleCount.set(id, (orphanScheduleCount.get(id) ?? 0) + 1);
+  }
+  const orphanRuleCount = new Map<string, number>(
+    orphanRules.map((r) => [r.unionLocalId, r._count._all]),
+  );
 
   return agreements.map((agreement) => {
     const local = agreement.unionLocal;
@@ -358,6 +420,10 @@ export async function loadUnionSetup(companyId: string): Promise<SetupLocalRow[]
             programStandardReference: rule.programStandardReference,
           }
         : null,
+      unattributed: {
+        schedules: orphanScheduleCount.get(local.id) ?? 0,
+        ratioRules: orphanRuleCount.get(local.id) ?? 0,
+      },
       crafts: local.craftClassifications.map((craft) => ({
         id: craft.id,
         name: craft.name,

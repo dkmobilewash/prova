@@ -233,6 +233,29 @@ model FringeRateSchedule {
   craftClassificationId String
   craftClassification   CraftClassification @relation(fields: [craftClassificationId], references: [id])
 
+  /// WHOSE rates these are. `CraftClassification` and `UnionLocal` are
+  /// global — two contractors under one hall work under the SAME real
+  /// local — but a base wage and its fringes are a NEGOTIATED TERM, and
+  /// hanging them off shared identity meant typing a public local number
+  /// into /union-compliance showed you another contractor's money.
+  ///
+  /// NULLABLE, and that is the whole design. A schedule reaches a company
+  /// in two hops (schedule -> classification -> local -> agreement), and
+  /// where a local has agreements with more than one company NO single
+  /// value is correct. Nobody can run the production query that would say
+  /// how many rows that is, so the backfill claims only the rows whose
+  /// company is unambiguous and leaves the rest NULL. Every read is scoped
+  /// `companyId = <viewer>`, so a NULL row is invisible to EVERYONE rather
+  /// than visible to the wrong person: the failure is "re-enter your own
+  /// rates", never "you are quietly reading someone else's". Orphans are
+  /// surfaced as a count on the local in loadUnionSetup so they do not
+  /// vanish without trace.
+  ///
+  /// Not made required later without a migration that can name a company
+  /// for every remaining row — see CHANGELOG.
+  companyId String?
+  company   Company? @relation(fields: [companyId], references: [id])
+
   baseWage          Decimal  @db.Decimal(12, 2)
   pensionRate       Decimal? @db.Decimal(12, 2)
   vacationRate      Decimal? @db.Decimal(12, 2)
@@ -246,6 +269,7 @@ model FringeRateSchedule {
 
   @@index([craftClassificationId])
   @@index([effectiveFrom])
+  @@index([companyId])
 }
 
 /// Captures the ratio rule itself (e.g. 1 apprentice per 3 journeymen).
@@ -265,5 +289,21 @@ model ApprenticeRatioRule {
   programStandardReference String?
   createdAt                DateTime   @default(now())
 
+  /// WHOSE ratio this is. Same reasoning as FringeRateSchedule.companyId
+  /// above, and the stakes are higher rather than lower: this rule is not
+  /// a display value, it is the denominator of a COMPLIANCE JUDGEMENT.
+  /// Another contractor's 1:5 read as yours turns a day that is over ratio
+  /// into a day that reads compliant, on a page written to be shown to an
+  /// inspector.
+  ///
+  /// Nullable for the same reason — one hop rather than two (rule ->
+  /// local -> agreement), but a local with two companies under it still
+  /// has no single right answer. A NULL rule is read by nobody, and
+  /// loadRatioReviews already treats a missing rule as INCOMPLETE rather
+  /// than compliant, so losing one fails in the safe direction.
+  companyId String?
+  company   Company? @relation(fields: [companyId], references: [id])
+
   @@index([unionLocalId])
+  @@index([companyId])
 }

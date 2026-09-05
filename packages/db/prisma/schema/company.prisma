@@ -78,6 +78,8 @@ model Company {
   salesActivities         SalesActivity[]
   salesStageChanges       SalesStageChange[]
   equipmentAssignments    EquipmentAssignment[]
+  fringeRateSchedules     FringeRateSchedule[]
+  apprenticeRatioRules    ApprenticeRatioRule[]
 }
 
 enum UserRole {

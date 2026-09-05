@@ -348,10 +348,37 @@ export async function deleteCraftClassification(craftId: string): Promise<Action
       );
     }
 
-    // Rate schedules belong to the classification and mean nothing without
-    // it, so they go with it. Nothing else references them.
+    // The classification is GLOBAL and the rates hanging off it are not.
+    // This deleteMany was scoped by the classification alone, so deleting
+    // a classification under a shared hall took ANOTHER CONTRACTOR'S rate
+    // schedules with it (issue #136). Refused rather than scoped-and-
+    // proceeded: the classification itself is shared too, so removing it
+    // while someone else is still pricing work against it is not ours to
+    // do. The count is deliberately all that is said about their rows.
+    // `{ companyId: null }` is spelled out alongside the inequality on
+    // purpose. In SQL `companyId <> 'x'` is NULL — not true — for a NULL
+    // row, so an inequality alone would miss exactly the unattributed
+    // rows the migration's backfill leaves behind. Missing them would let
+    // the delete proceed and then fail on the foreign key, which
+    // production redacts to a digest: the person would be told nothing.
+    const othersRates = await prisma.fringeRateSchedule.count({
+      where: {
+        craftClassificationId: craft.id,
+        OR: [{ companyId: null }, { companyId: { not: context.company.id } }],
+      },
+    });
+    if (othersRates > 0) {
+      return fail(
+        `${plural(othersRates, "rate schedule is", "rate schedules are")} recorded against this classification and not attributed to you. Classifications are shared with every contractor under this local, so deleting it would take those rates with it.`,
+      );
+    }
+
+    // Your own rate schedules belong to the classification and mean
+    // nothing without it, so they go with it. Nothing else references them.
     await prisma.$transaction([
-      prisma.fringeRateSchedule.deleteMany({ where: { craftClassificationId: craft.id } }),
+      prisma.fringeRateSchedule.deleteMany({
+        where: { craftClassificationId: craft.id, companyId: context.company.id },
+      }),
       prisma.craftClassification.delete({ where: { id: craft.id } }),
     ]);
 
@@ -381,10 +408,24 @@ export async function setApprenticeRatioRule(formData: FormData): Promise<Action
     const journeymenCount = setupCount(formData, "journeymenCount", "Journeymen");
     const programStandardReference = setupText(formData, "programStandardReference") || null;
 
+    // BOTH halves carry companyId. The deleteMany was scoped by the local
+    // alone, and the local is GLOBAL — so setting your own ratio under a
+    // hall you share with another contractor DELETED THEIR RULE, silently,
+    // as a side effect of saving yours (issue #136). "One rule per local"
+    // was always meant to be one rule per local PER COMPANY; there was no
+    // column to say so until now.
     await prisma.$transaction(async (tx) => {
-      await tx.apprenticeRatioRule.deleteMany({ where: { unionLocalId } });
+      await tx.apprenticeRatioRule.deleteMany({
+        where: { unionLocalId, companyId: company.id },
+      });
       await tx.apprenticeRatioRule.create({
-        data: { unionLocalId, apprenticeCount, journeymenCount, programStandardReference },
+        data: {
+          unionLocalId,
+          companyId: company.id,
+          apprenticeCount,
+          journeymenCount,
+          programStandardReference,
+        },
       });
     });
 
@@ -417,6 +458,9 @@ export async function createFringeRateSchedule(formData: FormData): Promise<Acti
     await prisma.fringeRateSchedule.create({
       data: {
         craftClassificationId: craft.id,
+        // Whose rates these are. The classification is global; this is
+        // not. Without it the row is an orphan nobody can read back.
+        companyId: company.id,
         baseWage,
         pensionRate: setupRate(formData, "pensionRate", "Pension"),
         vacationRate: setupRate(formData, "vacationRate", "Vacation"),
@@ -438,13 +482,13 @@ export async function createFringeRateSchedule(formData: FormData): Promise<Acti
 export async function endFringeRateSchedule(scheduleId: string, formData: FormData): Promise<ActionResult> {
   const { company } = await requireCompanyContext();
   return runSetup(async () => {
+    // `companyId`, not the agreement join. The join reached through a
+    // GLOBAL classification and local, so it matched every rate schedule
+    // under a shared hall — this action could end another contractor's
+    // rate (issue #136). A NULL-companyId orphan matches nobody, which is
+    // the intended failure: it cannot be edited by the wrong person.
     const schedule = await prisma.fringeRateSchedule.findFirst({
-      where: {
-        id: scheduleId,
-        craftClassification: {
-          unionLocal: { companyAgreements: { some: { companyId: company.id } } },
-        },
-      },
+      where: { id: scheduleId, companyId: company.id },
     });
     if (!schedule) return fail("Rate schedule not found");
 
@@ -465,13 +509,11 @@ export async function deleteFringeRateSchedule(scheduleId: string): Promise<Acti
     if (context.role !== "OWNER") {
       return fail("Only the account owner can delete a rate schedule");
     }
+    // The destructive half of the same leak. Scoped by the agreement join
+    // this DELETED another contractor's rate schedule outright, from a
+    // page that had just shown it to you as though it were yours.
     const schedule = await prisma.fringeRateSchedule.findFirst({
-      where: {
-        id: scheduleId,
-        craftClassification: {
-          unionLocal: { companyAgreements: { some: { companyId: context.company.id } } },
-        },
-      },
+      where: { id: scheduleId, companyId: context.company.id },
     });
     if (!schedule) return fail("Rate schedule not found");
 

@@ -86,7 +86,11 @@ export default async function CertifiedPayrollPage({
     loadCertifiedPayrollWeekEntries(company.id, job.id, weekStart),
     prisma.craftClassification.findMany({
       where: { unionLocal: { companyAgreements: { some: { companyId: company.id } } } },
-      include: { fringeRateSchedules: true },
+      // Rates are this company's own even though the classification is
+      // global (issue #136). A certified payroll report is signed and
+      // filed with a government body; the wage on it being another
+      // contractor's is the worst version of this bug.
+      include: { fringeRateSchedules: { where: { companyId: company.id } } },
     }),
   ]);
 

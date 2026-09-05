@@ -87,6 +87,33 @@ export function UnionLocalCard({
         )}
       </div>
 
+      {/* ------------------------------------------- unattributed --- */}
+      {/*
+       * Placed ABOVE the ratio and the rates, not below them, because its
+       * whole job is to explain a blank before the blank is read as "we
+       * never entered that". Rates and ratios are this company's own as of
+       * issue #136; rows recorded under this local before that, which
+       * could not be attributed to one company without guessing, are held
+       * back rather than shown to whoever asked. Counts only — the amounts
+       * are the thing that was leaking.
+       */}
+      {(local.unattributed.schedules > 0 || local.unattributed.ratioRules > 0) && (
+        <p className="rounded border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-200">
+          {[
+            local.unattributed.schedules > 0 &&
+              `${local.unattributed.schedules} rate schedule${local.unattributed.schedules === 1 ? "" : "s"}`,
+            local.unattributed.ratioRules > 0 &&
+              `${local.unattributed.ratioRules} apprentice ratio rule${local.unattributed.ratioRules === 1 ? "" : "s"}`,
+          ]
+            .filter(Boolean)
+            .join(" and ")}{" "}
+          recorded under this local predate rates being kept per contractor,
+          and more than one contractor works under it — so we can&apos;t tell
+          whose they are and nobody is shown them. Re-enter your own below;
+          the old rows are not used in any figure on this site.
+        </p>
+      )}
+
       {/* ---------------------------------------------------- ratio --- */}
       <div className="text-sm">
         <span className="text-slate-400">Apprentice ratio: </span>

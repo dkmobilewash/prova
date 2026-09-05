@@ -97,12 +97,19 @@ describe("union compliance against a real database", () => {
       data: { unionLocalId: otherLocal.id, name: "Not ours" },
     });
 
+    // companyId on both: negotiated terms are this company's own as of
+    // issue #136, and a fixture that omits it builds an UNATTRIBUTED row
+    // — which by design is read by nobody, so every report below would
+    // correctly find nothing and the test would be asserting about a
+    // state no real account can be in. See unionTermsTenancy.dbtest.ts for
+    // the two-company case this scoping exists for.
     await prisma.apprenticeRatioRule.create({
-      data: { unionLocalId: local.id, apprenticeCount: 1, journeymenCount: 3 },
+      data: { unionLocalId: local.id, companyId: company.id, apprenticeCount: 1, journeymenCount: 3 },
     });
     await prisma.fringeRateSchedule.create({
       data: {
         craftClassificationId: journeyman.id,
+        companyId: company.id,
         baseWage: "45",
         pensionRate: "8",
         vacationRate: "3",
