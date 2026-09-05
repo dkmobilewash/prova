@@ -16,6 +16,8 @@ import { money } from "@/lib/money";
 import { SubmitButton } from "@/components/SubmitButton";
 import { ConfirmDeleteButton } from "@/components/ConfirmDeleteButton";
 import { CompanyLicenses } from "@/components/CompanyLicenses";
+import { CompanyProfile } from "@/components/CompanyProfile";
+import { CompanyTradeScopes } from "@/components/CompanyTradeScopes";
 import { QuickBooksMapping, QuickBooksSyncLog } from "@/components/QuickBooksMapping";
 import { QuickBooksReconcile } from "@/components/QuickBooksReconcile";
 import {
@@ -127,7 +129,17 @@ export default async function SettingsPage({
     );
   }
 
-  const [connection, locations, insurancePolicies, bonds, licences, accountMappings, rawSyncAttempts, classifications] = await Promise.all([
+  const [
+    connection,
+    locations,
+    insurancePolicies,
+    bonds,
+    licences,
+    accountMappings,
+    rawSyncAttempts,
+    classifications,
+    tradeScopes,
+  ] = await Promise.all([
     prisma.quickBooksConnection.findUnique({
       where: { companyId: company.id },
       include: { connectedByUser: true },
@@ -157,6 +169,11 @@ export default async function SettingsPage({
     prisma.licenseClassificationReference.findMany({
       orderBy: [{ jurisdictionName: "asc" }, { code: "asc" }],
       select: { jurisdictionName: true, code: true, label: true },
+    }),
+    // Primary first, so the trade this company leads with reads first.
+    prisma.companyTradeScope.findMany({
+      where: { companyId: company.id },
+      orderBy: [{ isPrimary: "desc" }, { createdAt: "asc" }],
     }),
   ]);
 
@@ -209,6 +226,53 @@ export default async function SettingsPage({
           {(qb_detail && QB_ERROR_MESSAGES[qb_detail]) ?? "Couldn't connect to QuickBooks — please try again."}
         </p>
       )}
+
+      {/* First on the page, and above QuickBooks, because it is the one
+          record here that a GC reads back to you. Everything below is
+          something you keep; this is who you are on the contract. */}
+      <section className="mb-10">
+        <h2 className="mb-3 text-sm font-semibold text-slate-300">Company profile</h2>
+        <p className="mb-4 text-sm text-slate-400">
+          Your legal name and details. The name was generated when you first signed in and used to
+          be permanent — it appears in the sidebar, in the client portal, and on the contract your
+          GC e-signs. Changing it here does NOT alter a contract that has already been signed: that
+          document keeps the name it was signed under, on purpose.
+        </p>
+        <CompanyProfile
+          profile={{
+            name: company.name,
+            dbaName: company.dbaName,
+            ein: company.ein,
+            hqAddressLine1: company.hqAddressLine1,
+            hqAddressLine2: company.hqAddressLine2,
+            hqCity: company.hqCity,
+            hqState: company.hqState,
+            hqZip: company.hqZip,
+            phone: company.phone,
+            website: company.website,
+          }}
+          canManage={currentUser.role === "OWNER"}
+        />
+      </section>
+
+      <section className="mb-10">
+        <h2 className="mb-3 text-sm font-semibold text-slate-300">Trades you self-perform</h2>
+        <p className="mb-4 text-sm text-slate-400">
+          The wall-and-ceiling trade families this company holds in house — several, not one. Tag
+          the primary trade so it is clear what you lead with.
+        </p>
+        <CompanyTradeScopes
+          scopes={tradeScopes.map((scope) => ({
+            id: scope.id,
+            tradeScope: scope.tradeScope,
+            isPrimary: scope.isPrimary,
+            // Rendered in UTC by the same helper the licence rows use, so a
+            // date never shifts a day between server and browser.
+            activeSince: toIsoDate(scope.activeSince),
+          }))}
+          canManage={currentUser.role === "OWNER"}
+        />
+      </section>
 
       <section className="mb-10">
         <h2 className="mb-3 text-sm font-semibold text-slate-300">QuickBooks Online</h2>

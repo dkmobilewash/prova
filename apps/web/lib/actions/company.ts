@@ -2,16 +2,19 @@
 
 import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
+import { can } from "@/lib/permissions";
 import { Prisma, prisma } from "@prova/db";
 import {
   CONTACT_STATUSES,
   CONTACT_TYPES,
   LOCATION_TYPES,
+  TRADE_SCOPES,
   type ActionResult,
   actionFail as fail,
   actionOk as ok,
   assertOwner,
   enumFromForm,
+  isUniqueConstraintError,
   nullableDecimalFromForm,
   optionalEnumFromForm,
 } from "./shared";
@@ -278,4 +281,248 @@ export async function deleteCompanyLocation(locationId: string) {
   await prisma.companyLocation.delete({ where: { id: locationId } });
 
   revalidatePath("/settings");
+}
+
+/**
+ * assertOwner converted into a RETURNED failure.
+ *
+ * The actions below return `ActionResult`, and a thrown guard message is
+ * redacted to a digest in production — so the sentence explaining what
+ * happened never reaches the person it was written for. `deleteContact`
+ * above does this conversion inline; it is named here because four
+ * actions need it.
+ */
+/**
+ * The capability `/settings` itself is guarded by, asserted again in each
+ * action below.
+ *
+ * Redundant TODAY, on purpose. Every action here also calls `assertOwner`,
+ * and an OWNER holds every capability by construction — so no principal
+ * currently exists who is refused by the page and admitted by the endpoint.
+ * It is here because a page guard is not an action guard (a Server Action
+ * is its own endpoint and answers whoever posts to it), and because the
+ * moment `UserRole` gains a third value the owner check stops covering for
+ * a missing capability check. lib/action-capability-guards.test.ts walks
+ * the app for exactly this and would otherwise have four new entries on its
+ * debt list, which that file says may only ever shrink.
+ */
+const COMPANY_RECORDS_ONLY =
+  "Company records aren't part of your job function. The account owner sets who sees what, on the Team page.";
+
+function ownerFailure(context: { role: string }, message: string): ActionResult | null {
+  try {
+    assertOwner(context, message);
+    return null;
+  } catch (err) {
+    return fail(err instanceof Error ? err.message : message);
+  }
+}
+
+/**
+ * The company's own identity: the name a GC reads, plus the legal and
+ * contact details every prequalification packet asks for.
+ *
+ * Until this existed there was NO WRITE TO `Company` ANYWHERE in the app.
+ * The name is generated once at first sign-in as `"${name}'s Company"` or
+ * `"My Company"` (lib/auth.ts) and was then permanent — so a real
+ * subcontractor was stuck being "Dave's Company" in the nav rail, on the
+ * client portal, and inside the signed-contract snapshot. Everything from
+ * `dbaName` down had been in the schema since it was added with no code
+ * that could ever set it.
+ *
+ * A BLANK NAME IS REFUSED, NOT DEFAULTED. Falling back to anything — the
+ * old name, the owner's name, "My Company" — means the field a GC reads on
+ * a subcontract can be changed by a mechanism the person editing it never
+ * saw happen. A refusal with a sentence is the only version where what is
+ * on the contract is always what somebody typed on purpose.
+ *
+ * Renaming does NOT reach back into a signed contract. `SignatureRequest.
+ * snapshot` is a JSON copy taken at the moment of signing, written in
+ * exactly one place (`signRequest` in lib/actions/billing.ts, which
+ * refuses once status is SIGNED) and read in exactly one place
+ * (app/esign/[token]/page.tsx, on the SIGNED branch). Nothing here — and
+ * nothing anywhere — recomputes it. company.test.ts pins that.
+ */
+export async function updateCompanyProfile(formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  return runAction(async () => {
+    if (!can(context, "MANAGE_COMPLIANCE")) return fail(COMPANY_RECORDS_ONLY);
+    const denied = ownerFailure(
+      context,
+      "Only the account owner can change the company profile — this name is what a GC sees on your contracts.",
+    );
+    if (denied) return denied;
+
+    const name = text(formData, "name");
+    if (!name) {
+      return fail(
+        "Company name is required — it prints on your contracts and in the client portal, so it can't be blank. Type the name you want a GC to see.",
+      );
+    }
+
+    await prisma.company.update({
+      where: { id: context.company.id },
+      data: {
+        name,
+        dbaName: text(formData, "dbaName") || null,
+        ein: text(formData, "ein") || null,
+        hqAddressLine1: text(formData, "hqAddressLine1") || null,
+        hqAddressLine2: text(formData, "hqAddressLine2") || null,
+        hqCity: text(formData, "hqCity") || null,
+        hqState: text(formData, "hqState") || null,
+        hqZip: text(formData, "hqZip") || null,
+        phone: text(formData, "phone") || null,
+        website: text(formData, "website") || null,
+      },
+    });
+
+    revalidatePath("/settings");
+    // The name is in the nav rail and the mobile drawer, which live in the
+    // (app) layout — so every cached page still holds the old one until the
+    // layout itself is invalidated. Rare enough (an owner renaming their
+    // company) that the cost of purging is irrelevant next to the rail
+    // disagreeing with the settings page.
+    revalidatePath("/", "layout");
+    return ok;
+  });
+}
+
+/**
+ * Which of the five WWCCA trade families this company self-performs.
+ *
+ * `CompanyTradeScope` shipped as a model, a migration and a unique index on
+ * 24 Aug and had ZERO references in the web app until this — FEATURE-AUDIT
+ * sheet 01 called it Built for that whole time. Same shape as the licence
+ * and union rows before them.
+ *
+ * `isPrimary` means one scope, so setting one clears the rest inside the
+ * same transaction. A flag that several rows can hold at once says nothing,
+ * and "primary" is not something that can be derived from the others.
+ */
+export async function addCompanyTradeScope(formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  return runAction(async () => {
+    if (!can(context, "MANAGE_COMPLIANCE")) return fail(COMPANY_RECORDS_ONLY);
+    const denied = ownerFailure(
+      context,
+      "Only the account owner can change which trades this company self-performs.",
+    );
+    if (denied) return denied;
+
+    const tradeScope = enumFromForm(formData, "tradeScope", TRADE_SCOPES);
+    const isPrimary = formData.get("isPrimary") === "on";
+    const activeSince = optionalDate(formData, "activeSince");
+
+    try {
+      await prisma.$transaction(async (tx) => {
+        if (isPrimary) await clearOtherPrimaries(tx, context.company.id, null);
+        await tx.companyTradeScope.create({
+          data: { companyId: context.company.id, tradeScope, isPrimary, activeSince },
+        });
+      });
+    } catch (err) {
+      if (isUniqueConstraintError(err)) {
+        return fail("That trade scope is already on this company's list.");
+      }
+      throw err;
+    }
+
+    revalidatePath("/settings");
+    return ok;
+  });
+}
+
+/** Inline edit of one trade scope row. The scope itself can be corrected —
+ * picking the wrong one from a list of five is exactly the mistake this
+ * needs to be able to undo — so the unique constraint applies here too. */
+export async function updateCompanyTradeScope(
+  tradeScopeId: string,
+  formData: FormData,
+): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  return runAction(async () => {
+    if (!can(context, "MANAGE_COMPLIANCE")) return fail(COMPANY_RECORDS_ONLY);
+    const denied = ownerFailure(
+      context,
+      "Only the account owner can change which trades this company self-performs.",
+    );
+    if (denied) return denied;
+
+    const existing = await prisma.companyTradeScope.findUnique({ where: { id: tradeScopeId } });
+    if (!existing || existing.companyId !== context.company.id) {
+      return fail("Trade scope not found");
+    }
+
+    const tradeScope = enumFromForm(formData, "tradeScope", TRADE_SCOPES);
+    const isPrimary = formData.get("isPrimary") === "on";
+    const activeSince = optionalDate(formData, "activeSince");
+
+    try {
+      await prisma.$transaction(async (tx) => {
+        if (isPrimary) await clearOtherPrimaries(tx, context.company.id, tradeScopeId);
+        await tx.companyTradeScope.update({
+          where: { id: tradeScopeId },
+          data: { tradeScope, isPrimary, activeSince },
+        });
+      });
+    } catch (err) {
+      if (isUniqueConstraintError(err)) {
+        return fail("That trade scope is already on this company's list.");
+      }
+      throw err;
+    }
+
+    revalidatePath("/settings");
+    return ok;
+  });
+}
+
+/** Removes a trade scope. Nothing points at a CompanyTradeScope row — it is
+ * a tag on the company, not a parent of any record — so this is a plain
+ * delete with no orphan to strand. */
+export async function removeCompanyTradeScope(tradeScopeId: string): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  return runAction(async () => {
+    if (!can(context, "MANAGE_COMPLIANCE")) return fail(COMPANY_RECORDS_ONLY);
+    const denied = ownerFailure(
+      context,
+      "Only the account owner can remove a trade scope from this company.",
+    );
+    if (denied) return denied;
+
+    const existing = await prisma.companyTradeScope.findUnique({ where: { id: tradeScopeId } });
+    if (!existing || existing.companyId !== context.company.id) {
+      return fail("Trade scope not found");
+    }
+
+    await prisma.companyTradeScope.delete({ where: { id: tradeScopeId } });
+
+    revalidatePath("/settings");
+    return ok;
+  });
+}
+
+/** Clears `isPrimary` on every OTHER scope this company holds. Read-then-
+ * write rather than `updateMany` so it is one explicit statement per row
+ * that actually changes — there are at most five. */
+async function clearOtherPrimaries(
+  tx: {
+    companyTradeScope: {
+      findMany: (args: { where: Record<string, unknown> }) => PromiseLike<{ id: string }[]>;
+      update: (args: {
+        where: { id: string };
+        data: Record<string, unknown>;
+      }) => PromiseLike<unknown>;
+    };
+  },
+  companyId: string,
+  exceptId: string | null,
+) {
+  const primaries = await tx.companyTradeScope.findMany({
+    where: { companyId, isPrimary: true },
+  });
+  for (const row of primaries) {
+    if (row.id === exceptId) continue;
+    await tx.companyTradeScope.update({ where: { id: row.id }, data: { isPrimary: false } });
+  }
 }

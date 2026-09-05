@@ -653,6 +653,10 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   drawings: () => import("./actions/drawings"),
   closeout: () => import("./actions/closeout"),
   closeoutSubmissions: () => import("./actions/closeoutSubmissions"),
+  // Joined the moment the company-profile actions asserted MANAGE_COMPLIANCE
+  // rather than taking a place on the debt list below. The two location
+  // actions in the same module are still on that list and unchanged.
+  company: () => import("./actions/company"),
 };
 
 /** The sentence both guard messages share. Asserting on this rather than on
