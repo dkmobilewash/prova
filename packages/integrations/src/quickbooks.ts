@@ -22,7 +22,21 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export const QUICKBOOKS_SCOPES = "com.intuit.quickbooks.accounting openid profile email phone address";
+// Accounting only. This used to also request `openid profile email phone
+// address`, which existed for exactly one function — `getUserInfo`, the
+// OpenID userinfo call — and that was self-labelled "not currently
+// persisted" and called by nothing. Five scopes' worth of somebody's
+// personal data was being asked for on the consent screen to feed dead
+// code, so the code and the scopes were removed together.
+//
+// Nothing reads an `id_token` here; the token response type does not even
+// carry one. If a "you connected as X" confirmation is ever wanted, add
+// the scope back in the same commit as the code that consumes it.
+//
+// Narrowing takes effect on the next AUTHORIZATION, not on refresh — an
+// existing connection keeps the scopes it was granted until someone
+// disconnects and reconnects.
+export const QUICKBOOKS_SCOPES = "com.intuit.quickbooks.accounting";
 
 const AUTHORIZE_URL = "https://appcenter.intuit.com/connect/oauth2";
 const TOKEN_URL = "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer";
@@ -60,12 +74,6 @@ function accountingApiBase(environment: QuickBooksEnvironment): string {
   return environment === "production"
     ? "https://quickbooks.api.intuit.com"
     : "https://sandbox-quickbooks.api.intuit.com";
-}
-
-function userInfoUrl(environment: QuickBooksEnvironment): string {
-  return environment === "production"
-    ? "https://accounts.platform.intuit.com/v1/openid_connect/userinfo"
-    : "https://sandbox-accounts.platform.intuit.com/v1/openid_connect/userinfo";
 }
 
 export interface QuickBooksTokens {
@@ -228,46 +236,6 @@ export async function getCompanyInfo(
     companyName: body.CompanyInfo.CompanyName,
     legalName: body.CompanyInfo.LegalName,
     country: body.CompanyInfo.Country,
-  };
-}
-
-export interface QuickBooksUserInfo {
-  sub: string;
-  email?: string;
-  givenName?: string;
-  familyName?: string;
-}
-
-/// Fetches the OpenID Connect userinfo for the person who authorized the
-/// connection — not currently persisted, but useful for a one-time "you
-/// connected as X" confirmation.
-export async function getUserInfo(accessToken: string): Promise<QuickBooksUserInfo> {
-  const config = readQuickBooksConfig();
-
-  const response = await fetch(userInfoUrl(config.environment), {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      Accept: "application/json",
-    },
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`QuickBooks userinfo request returned ${response.status}: ${text}`);
-  }
-
-  const body = (await response.json()) as {
-    sub: string;
-    email?: string;
-    givenName?: string;
-    familyName?: string;
-  };
-
-  return {
-    sub: body.sub,
-    email: body.email,
-    givenName: body.givenName,
-    familyName: body.familyName,
   };
 }
 

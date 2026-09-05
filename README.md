@@ -123,8 +123,15 @@ so no secrets are required in the repo for CI to pass.
   the schema, so a Preview build that can't see it fails with a P1012 schema
   validation error before it connects to anything — and any branch that isn't
   the project's Production Branch builds as a Preview.
-- **Database** → migrations run during the deploy. `apps/web/vercel.json`
-  sets the build command to `pnpm --filter @prova/db run migrate:deploy &&
-  pnpm turbo run build --filter=@prova/web`; keep it there rather than in the
-  Vercel dashboard, so a schema change that needs a new env var is visible in
-  code review.
+- **Database** → migrations do **not** run during the deploy. They are applied
+  by CI when a PR merges to main (`.github/workflows/migrate.yml`). Merging is
+  the decision to change production; a build is not — and a build-time migrate
+  is invisible to a PROMOTION, which reuses the preview's already-built output
+  and so never re-runs the build command at all.
+  `apps/web/vercel.json` sets the build command to `pnpm --filter @prova/db run
+  check:schema && pnpm turbo run build --filter=@prova/web` — it CHECKS the
+  schema and applies nothing. Keep it in the file rather than in the Vercel
+  dashboard, so a change to it is visible in code review.
+  (This entry read `migrate:deploy` here for a long time after the build
+  stopped migrating, which is the promotion scar re-asserted as fact in the
+  README — the exact way it came to be believed the first time.)

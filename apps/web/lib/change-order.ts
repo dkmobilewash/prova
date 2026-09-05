@@ -130,13 +130,23 @@ export function changeOrderValueDelta(
   );
 }
 
-/** Statuses whose proposals have NOT been written to JobLineItem. */
-export const PENDING_CHANGE_ORDER_STATUSES = ["DRAFT", "SUBMITTED"] as const;
-
 /**
  * Pending change orders, by value — "what we've asked the GC for that they
  * haven't answered". Never added to contract value; it is precisely the
  * money that is not yet ours to count.
+ *
+ * SUBMITTED only, and that is the definition of "pending" for this figure.
+ * A DRAFT has not been asked for, so it is not outstanding with anybody.
+ *
+ * An exported `PENDING_CHANGE_ORDER_STATUSES = ["DRAFT", "SUBMITTED"]` used
+ * to sit directly above this function, documented as "statuses whose
+ * proposals have NOT been written to JobLineItem" — a different question
+ * with a different answer. Nothing called it, so the two definitions never
+ * met; wiring it in here, which is what its name and position invited,
+ * would have silently added every draft to a money figure on the job page.
+ * It was deleted rather than corrected: the filter below is the single
+ * definition, and a constant that only ever has one call site is how the
+ * disagreement got in.
  */
 export function pendingChangeOrderExposure(
   changeOrders: { status: string; proposals: ProposalForCalc[] }[],

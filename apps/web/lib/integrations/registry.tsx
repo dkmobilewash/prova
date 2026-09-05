@@ -130,12 +130,3 @@ export const PROVIDERS: ProviderEntry[] = [
     ),
   },
 ];
-
-/** The providers this framework itself connects. Only SANDBOX, this phase. */
-export function builtinProviders(): ProviderEntry[] {
-  return PROVIDERS.filter((entry) => entry.implementation.kind === "builtin");
-}
-
-export function providerEntry(provider: IntegrationProvider): ProviderEntry | undefined {
-  return PROVIDERS.find((entry) => entry.provider === provider);
-}

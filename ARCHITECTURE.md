@@ -904,10 +904,18 @@ OAuth client and `apps/web/app/api/quickbooks/callback/route.ts` +
 `initiateQuickBooksConnect`/`disconnectQuickBooks`/`testQuickBooksConnection`
 in `apps/web/lib/actions.ts` for how it's wired up.
 
-Only the `com.intuit.quickbooks.accounting` and OpenID profile scopes are
-requested — QuickBooks Payments is not, since this app already has its
-own manual `Payment` tracking (see above) and isn't charging cards
-through Intuit.
+Only `com.intuit.quickbooks.accounting` is requested — QuickBooks Payments
+is not, since this app already has its own manual `Payment` tracking (see
+above) and isn't charging cards through Intuit.
+
+The OpenID scopes (`openid profile email phone address`) were requested
+too, until it turned out they existed for a single function — `getUserInfo`,
+self-labelled "not currently persisted" — that nothing ever called. Asking
+a user to consent to their name, email, phone and address to feed dead code
+is a bad trade at any size, so the scopes and the function were removed
+together. Narrowing applies to the next authorization, not to a refresh: an
+existing connection keeps what it was granted until someone disconnects and
+reconnects.
 
 Tokens are stored as plain columns, not encrypted at rest. That's a
 sandbox-appropriate tradeoff, made explicitly (not an oversight) — revisit

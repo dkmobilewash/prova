@@ -100,8 +100,73 @@ jobs:
               exit 1
               ;;
           esac
+          # The scripts compare with `target.host.includes(expect)` — a
+          # SUBSTRING match. That is deliberate (one value covers both the
+          # pooled and the direct endpoint of a branch) and it means a short
+          # entry asserts almost nothing: "ep" is a substring of every Neon
+          # host there is, so a typo that loses most of the name passes the
+          # guard and seeds whatever the secret happens to hold. The check
+          # would report a match, which is worse than no check.
+          #
+          # A Neon endpoint id is `ep-` plus a two-word slug and a suffix —
+          # ep-patient-lake, ep-little-sea-a6bdnaw2, ep-icy-hat-afqau56u.
+          # Requiring the prefix and 8 more characters admits all three and
+          # rejects the abbreviations that would match everything.
+          case "$trimmed" in
+            ep-*) ;;
+            *)
+              echo "::error::\"$trimmed\" is not a Neon endpoint id — they start with 'ep-'."
+              echo "Nothing ran."
+              exit 1
+              ;;
+          esac
+          if [ "${#trimmed}" -lt 11 ]; then
+            echo "::error::\"$trimmed\" is too short to identify one database."
+            echo "The scripts match it as a SUBSTRING of the host, so a stub like"
+            echo "'ep-' matches every Neon endpoint and would assert nothing."
+            echo "Type the full endpoint id, e.g. ep-patient-lake. Nothing ran."
+            exit 1
+          fi
 
       - uses: actions/checkout@v4
+
+      # Cheap refusals come before the expensive install. This check used to
+      # sit BELOW `pnpm install`, so a missing script cost a full install
+      # before saying so.
+      #
+      # Without it the failure is ERR_MODULE_NOT_FOUND, which reads as a
+      # broken workflow rather than as a missing file. That is not
+      # hypothetical: this workflow merged to main while the scripts it
+      # calls were still on the unmerged cyrus/demo-seed (PR #51), so the
+      # button existed and could not succeed for as long as that took. #51
+      # has since merged — the scripts are on main — and the guard stays
+      # because the failure mode it names is about any absent file, not
+      # about that one PR.
+      #
+      # The two entry scripts are not the whole dependency: both import
+      # load-env.mjs and connection-target.mjs, and a missing one of THOSE
+      # produces exactly the bare module error this step exists to prevent.
+      # `plumbing.test.ts` checks the entry scripts on every PR but does not
+      # follow imports, so this list is the only thing covering them.
+      - name: Check the scripts are present
+        working-directory: packages/db
+        run: |
+          set -e
+          set -o pipefail
+          missing=""
+          for f in scripts/seed-demo.mjs \
+                   scripts/clean-scratch-data.mjs \
+                   scripts/load-env.mjs \
+                   scripts/connection-target.mjs; do
+            [ -f "$f" ] || missing="$missing packages/db/$f"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Missing on this branch:$missing"
+            echo "Nothing ran. Either the file was deleted or this ref predates it —"
+            echo "check it out on main and compare before changing this workflow."
+            exit 1
+          fi
+          echo "All four demo-dataset files are present."
 
       - uses: pnpm/action-setup@v4
         with:
@@ -127,23 +192,13 @@ jobs:
             exit 1
           fi
 
+      # `postinstall` in packages/db runs `prisma generate`, so this single
+      # step is also what produces the client both scripts import. No
+      # separate generate step is needed — verified by running install into
+      # a clean worktree and by running `prisma generate` with DATABASE_URL
+      # and .env both absent, which succeeds. (ci.yml runs `pnpm db:generate`
+      # explicitly; that is belt-and-braces there, not a requirement here.)
       - run: pnpm install --frozen-lockfile
-
-      # This workflow can land on main before the scripts it calls do — it
-      # was written against an unmerged branch. Without this the failure is
-      # ERR_MODULE_NOT_FOUND, which reads as a broken workflow rather than
-      # as "that PR has not merged yet".
-      - name: Check the scripts are present
-        working-directory: packages/db
-        run: |
-          set -e
-          for f in scripts/seed-demo.mjs scripts/clean-scratch-data.mjs; do
-            if [ ! -f "$f" ]; then
-              echo "::error::packages/db/$f is missing on this branch."
-              echo "The demo dataset scripts arrive with PR #51. Nothing ran."
-              exit 1
-            fi
-          done
 
       # The demo secrets are mapped onto the names the scripts read, HERE and
       # nowhere else. Both guard variables get the same typed value because
