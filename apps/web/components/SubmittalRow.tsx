@@ -21,6 +21,7 @@ import {
   type RevisionData,
 } from "@/components/submittalLabels";
 import { localToday } from "@/components/localToday";
+import { ConfirmDelete, RowActions } from "@/components/RowActions";
 
 export type SubmittalRowData = SubmittalDefaults & {
   id: string;
@@ -47,7 +48,6 @@ export function SubmittalRow({
   showJob: boolean;
 }) {
   const [mode, setMode] = useState<"view" | "edit" | "send" | "respond">("view");
-  const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -286,7 +286,27 @@ export function SubmittalRow({
         {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
       </div>
 
-      <div className="flex shrink-0 flex-wrap items-center gap-2">
+      {/* Arming the delete empties this row. "Record as sent" is gated on
+          exactly the state the delete is gated on (NOT_SENT), so it was
+          always live beside the armed confirm — one click past where you
+          meant to stop sent the submittal you were trying to delete. Every
+          ordinary action here is a child of RowActions, so the guard covers
+          the next button added here too. */}
+      <RowActions
+        className="flex shrink-0 flex-wrap items-center gap-2"
+        destructive={
+          canDelete && state === "NOT_SENT" ? (
+            <ConfirmDelete
+              pending={isPending}
+              pendingLabel="Deleting…"
+              onConfirm={() => run(() => deleteSubmittal(submittal.id))}
+              deleteClassName={btn}
+              cancelClassName={btn}
+              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+            />
+          ) : null
+        }
+      >
         {state === "NOT_SENT" && (
           <button
             type="button"
@@ -330,47 +350,12 @@ export function SubmittalRow({
         <button
           type="button"
           disabled={isPending}
-          onClick={() => {
-            setMode("edit");
-            setIsConfirmingDelete(false);
-          }}
+          onClick={() => setMode("edit")}
           className={btn}
         >
           Edit
         </button>
-
-        {canDelete &&
-          state === "NOT_SENT" &&
-          (isConfirmingDelete ? (
-            <>
-              <button
-                type="button"
-                disabled={isPending}
-                onClick={() => run(() => deleteSubmittal(submittal.id))}
-                className="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50"
-              >
-                {isPending ? "Deleting…" : "Confirm delete"}
-              </button>
-              <button
-                type="button"
-                disabled={isPending}
-                onClick={() => setIsConfirmingDelete(false)}
-                className={btn}
-              >
-                Cancel
-              </button>
-            </>
-          ) : (
-            <button
-              type="button"
-              disabled={isPending}
-              onClick={() => setIsConfirmingDelete(true)}
-              className={btn}
-            >
-              Delete
-            </button>
-          ))}
-      </div>
+      </RowActions>
     </li>
   );
 }

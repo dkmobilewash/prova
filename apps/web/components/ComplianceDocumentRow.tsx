@@ -7,6 +7,7 @@ import {
   updateComplianceDocument,
 } from "@/lib/actions";
 import { money } from "@/lib/money";
+import { ConfirmDelete, RowActions } from "@/components/RowActions";
 
 const TYPE_LABELS: Record<string, string> = {
   LIEN_WAIVER: "Lien waiver",
@@ -60,7 +61,6 @@ export interface ComplianceDocumentRowData {
  * it isn't a lock) as well as for editing a manually-entered record. */
 export function ComplianceDocumentRow({ doc, canDelete }: { doc: ComplianceDocumentRowData; canDelete: boolean }) {
   const [isEditing, setIsEditing] = useState(false);
-  const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -217,7 +217,24 @@ export function ComplianceDocumentRow({ doc, canDelete }: { doc: ComplianceDocum
             </a>
           )}
         </div>
-        <div className="flex flex-wrap items-center gap-3">
+        {/* Two steps, like every other list. A compliance document is
+            evidence — a signed waiver or a certificate someone sent you —
+            and one stray click should not be able to destroy it.
+
+            Arming it also empties this row: "Edit" and "Mark received" both
+            used to stay live beside the armed confirm, which is issue #152's
+            fourth instance and how somebody marks a document received while
+            trying to cancel a delete. They are children of RowActions now,
+            so the next button added here is covered without anyone
+            remembering to cover it. */}
+        <RowActions
+          className="flex flex-wrap items-center gap-3"
+          destructive={
+            canDelete ? (
+              <ConfirmDelete action={deleteComplianceDocument.bind(null, doc.id)} />
+            ) : null
+          }
+        >
           <button
             type="button"
             onClick={() => setIsEditing(true)}
@@ -235,38 +252,7 @@ export function ComplianceDocumentRow({ doc, canDelete }: { doc: ComplianceDocum
               </button>
             </form>
           )}
-          {/* Two steps, like every other list. A compliance document is
-              evidence — a signed waiver or a certificate someone sent you —
-              and one stray click should not be able to destroy it. */}
-          {canDelete &&
-            (isConfirmingDelete ? (
-              <>
-                <form action={deleteComplianceDocument.bind(null, doc.id)}>
-                  <button
-                    type="submit"
-                    className="rounded-md border border-red-500 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10"
-                  >
-                    Confirm delete
-                  </button>
-                </form>
-                <button
-                  type="button"
-                  onClick={() => setIsConfirmingDelete(false)}
-                  className="rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:border-slate-500"
-                >
-                  Cancel
-                </button>
-              </>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setIsConfirmingDelete(true)}
-                className="rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:border-red-500 hover:text-red-400"
-              >
-                Delete
-              </button>
-            ))}
-        </div>
+        </RowActions>
       </div>
     </li>
   );

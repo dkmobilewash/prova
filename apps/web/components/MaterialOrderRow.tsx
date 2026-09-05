@@ -24,6 +24,7 @@ import {
   stateLabel,
 } from "@/components/materialOrderLabels";
 import { localToday } from "@/components/localToday";
+import { ConfirmDelete, RowActions } from "@/components/RowActions";
 
 export type MaterialOrderRowData = MaterialOrderDefaults & {
   id: string;
@@ -58,8 +59,6 @@ export function MaterialOrderRow({
   showJob: boolean;
 }) {
   const [mode, setMode] = useState<"view" | "edit" | "receive">("view");
-  const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
-  const [confirmingDeliveryId, setConfirmingDeliveryId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -221,35 +220,27 @@ export function MaterialOrderRow({
               } after ordering`}
               {delivery.completesOrder && " · closed the order out"}
               {delivery.notes && <span className="text-slate-500"> — {delivery.notes}</span>}
-              {confirmingDeliveryId === delivery.id ? (
-                <>
-                  <button
-                    type="button"
-                    disabled={isPending}
-                    onClick={() => run(() => deleteMaterialDelivery(delivery.id))}
-                    className="ml-2 text-red-400 underline disabled:opacity-50"
-                  >
-                    {isPending ? "Removing…" : "Confirm remove"}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={isPending}
-                    onClick={() => setConfirmingDeliveryId(null)}
-                    className="ml-2 text-slate-400 underline disabled:opacity-50"
-                  >
-                    Cancel
-                  </button>
-                </>
-              ) : (
-                <button
-                  type="button"
-                  disabled={isPending}
-                  onClick={() => setConfirmingDeliveryId(delivery.id)}
-                  className="ml-2 text-slate-500 underline disabled:opacity-50"
-                >
-                  Remove
-                </button>
-              )}
+              {/* A delivery line has no other action TODAY. It goes through
+                  RowActions anyway so that it cannot grow one: the next
+                  button added here becomes a child and is covered by the
+                  armed state without anyone remembering to cover it. Each
+                  delivery owns its own armed state, so the keyed
+                  `confirmingDeliveryId` is gone. */}
+              <RowActions
+                as="span"
+                destructive={
+                  <ConfirmDelete
+                    label="Remove"
+                    confirmLabel="Confirm remove"
+                    pendingLabel="Removing…"
+                    pending={isPending}
+                    onConfirm={() => run(() => deleteMaterialDelivery(delivery.id))}
+                    deleteClassName="ml-2 text-slate-500 underline disabled:opacity-50"
+                    cancelClassName="ml-2 text-slate-400 underline disabled:opacity-50"
+                    confirmClassName="ml-2 text-red-400 underline disabled:opacity-50"
+                  />
+                }
+              />
             </li>
           ))}
         </ul>
@@ -269,7 +260,28 @@ export function MaterialOrderRow({
         {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
       </div>
 
-      <div className="flex shrink-0 flex-wrap items-center gap-2">
+      {/* Arming "Delete" empties this row: "Record delivery" and "Edit" are
+          children of RowActions and are not rendered while the confirm is
+          up. "Record delivery" beside an armed confirm was the exact shape
+          of issue #152 — a click meant to cancel a delete instead recorded
+          an arrival that never happened. */}
+      <RowActions
+        className="flex shrink-0 flex-wrap items-center gap-2"
+        destructive={
+          canDelete && order.deliveries.length === 0 ? (
+            <ConfirmDelete
+              label="Delete"
+              confirmLabel="Confirm delete"
+              pendingLabel="Deleting…"
+              pending={isPending}
+              onConfirm={() => run(() => deleteMaterialOrder(order.id))}
+              deleteClassName={btn}
+              cancelClassName={btn}
+              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+            />
+          ) : null
+        }
+      >
         {state !== "COMPLETE" && (
           <button
             type="button"
@@ -284,47 +296,12 @@ export function MaterialOrderRow({
         <button
           type="button"
           disabled={isPending}
-          onClick={() => {
-            setMode("edit");
-            setIsConfirmingDelete(false);
-          }}
+          onClick={() => setMode("edit")}
           className={btn}
         >
           Edit
         </button>
-
-        {canDelete &&
-          order.deliveries.length === 0 &&
-          (isConfirmingDelete ? (
-            <>
-              <button
-                type="button"
-                disabled={isPending}
-                onClick={() => run(() => deleteMaterialOrder(order.id))}
-                className="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50"
-              >
-                {isPending ? "Deleting…" : "Confirm delete"}
-              </button>
-              <button
-                type="button"
-                disabled={isPending}
-                onClick={() => setIsConfirmingDelete(false)}
-                className={btn}
-              >
-                Cancel
-              </button>
-            </>
-          ) : (
-            <button
-              type="button"
-              disabled={isPending}
-              onClick={() => setIsConfirmingDelete(true)}
-              className={btn}
-            >
-              Delete
-            </button>
-          ))}
-      </div>
+      </RowActions>
     </li>
   );
 }

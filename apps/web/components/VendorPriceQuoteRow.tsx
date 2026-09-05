@@ -17,12 +17,17 @@ import {
   sourceNote,
   unitLabel,
 } from "@/components/vendorPricing";
+import { ConfirmDelete, RowActions } from "@/components/RowActions";
 
 /** One quote in an item's history: reading, editing, or confirming a
- * delete. Delete asks twice — it sits beside Edit, and removing a quote
- * silently changes what "current" and "cheapest" mean for everyone reading
- * the page. A two-step button, not window.confirm(), which some embedded
- * browsers block and none of it can be styled. */
+ * delete. Delete asks twice, because removing a quote silently changes what
+ * "current" and "cheapest" mean for everyone reading the page. A two-step
+ * button, not window.confirm(), which some embedded browsers block and none
+ * of it can be styled.
+ *
+ * Arming it no longer leaves Edit sitting beside the confirm: the actions go
+ * through <RowActions>, which renders nothing but the cancel/confirm pair
+ * while the delete is armed. Issue #152. */
 export function VendorPriceQuoteRow({
   quote,
   today,
@@ -39,7 +44,6 @@ export function VendorPriceQuoteRow({
   isCheapest: boolean;
 }) {
   const [isEditing, setIsEditing] = useState(false);
-  const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -142,59 +146,38 @@ export function VendorPriceQuoteRow({
         {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
       </div>
 
-      <div className="flex shrink-0 items-center gap-2">
+      <RowActions
+        className="flex shrink-0 items-center gap-2"
+        destructive={
+          canDelete ? (
+            <ConfirmDelete
+              label="Remove"
+              confirmLabel="Confirm remove"
+              pendingLabel="Removing…"
+              pending={isPending}
+              onConfirm={() => {
+                setError(null);
+                startTransition(async () => {
+                  const result = await deleteVendorPriceQuote(quote.id);
+                  if (!result.ok) setError(result.error);
+                });
+              }}
+              deleteClassName="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:border-red-500 hover:text-red-400 disabled:opacity-50"
+              cancelClassName="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50"
+              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+            />
+          ) : null
+        }
+      >
         <button
           type="button"
           disabled={isPending}
-          onClick={() => {
-            setIsEditing(true);
-            setIsConfirmingDelete(false);
-          }}
+          onClick={() => setIsEditing(true)}
           className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50"
         >
           Edit
         </button>
-
-        {canDelete &&
-          (isConfirmingDelete ? (
-            <>
-              <button
-                type="button"
-                disabled={isPending}
-                onClick={() => {
-                  setError(null);
-                  startTransition(async () => {
-                    const result = await deleteVendorPriceQuote(quote.id);
-                    if (!result.ok) {
-                      setError(result.error);
-                      setIsConfirmingDelete(false);
-                    }
-                  });
-                }}
-                className="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50"
-              >
-                {isPending ? "Removing…" : "Confirm remove"}
-              </button>
-              <button
-                type="button"
-                disabled={isPending}
-                onClick={() => setIsConfirmingDelete(false)}
-                className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50"
-              >
-                Cancel
-              </button>
-            </>
-          ) : (
-            <button
-              type="button"
-              disabled={isPending}
-              onClick={() => setIsConfirmingDelete(true)}
-              className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:border-red-500 hover:text-red-400 disabled:opacity-50"
-            >
-              Remove
-            </button>
-          ))}
-      </div>
+      </RowActions>
     </li>
   );
 }

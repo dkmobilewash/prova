@@ -15,6 +15,7 @@ import { categoryLabel, statusBadgeClass, statusLabel } from "@/components/backc
 import { concededAmount, daysToRespond, isResponseOverdue } from "@/lib/backcharges";
 import { localToday } from "@/components/localToday";
 import { money } from "@/lib/money";
+import { ConfirmDelete, RowActions } from "@/components/RowActions";
 
 export type BackchargeRowData = BackchargeDefaults & {
   id: string;
@@ -44,7 +45,6 @@ export function BackchargeRow({
   showJob: boolean;
 }) {
   const [mode, setMode] = useState<"view" | "edit" | "dispute" | "resolve">("view");
-  const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -342,7 +342,35 @@ export function BackchargeRow({
         {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
       </div>
 
-      <div className="flex shrink-0 flex-wrap items-center gap-2">
+      {/* Two rules live in RowActions/ConfirmDelete now, so neither depends on
+          anybody remembering them here.
+
+          Arming the delete hides every ordinary action in this row. "Object",
+          "Close out", "Reopen" and "Edit" were siblings of the armed confirm,
+          so one click past where you meant to stop reopened or edited a
+          backcharge you were trying to leave alone.
+
+          And Cancel is rendered before the confirm. The confirm step replaces
+          "Delete" in place, so whichever button lands there is what a second
+          click at the same spot hits -- a two-step delete whose second step is
+          under the first click is a one-step delete with extra rendering.
+          Browser testing hit exactly this class of thing, clicking through to
+          a control that had shifted underneath. */}
+      <RowActions
+        className="flex shrink-0 flex-wrap items-center gap-2"
+        destructive={
+          canDelete && backcharge.status === "RECEIVED" ? (
+            <ConfirmDelete
+              pendingLabel="Deleting…"
+              pending={isPending}
+              onConfirm={() => run(() => deleteBackcharge(backcharge.id), "Could not delete it")}
+              deleteClassName={btn}
+              cancelClassName={btn}
+              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+            />
+          ) : null
+        }
+      >
         {backcharge.status === "RECEIVED" && (
           <button
             type="button"
@@ -374,55 +402,12 @@ export function BackchargeRow({
         <button
           type="button"
           disabled={isPending}
-          onClick={() => {
-            setMode("edit");
-            setIsConfirmingDelete(false);
-          }}
+          onClick={() => setMode("edit")}
           className={btn}
         >
           Edit
         </button>
-
-        {canDelete &&
-          backcharge.status === "RECEIVED" &&
-          (isConfirmingDelete ? (
-            <>
-              {/* Cancel comes FIRST on purpose. The confirm step replaces
-                  "Delete" in place, so whichever button lands here is what a
-                  second click at the same spot hits -- and a two-step delete
-                  whose second step is under the first click is a one-step
-                  delete with extra rendering. Browser testing hit exactly
-                  this class of thing, clicking through to a control that had
-                  shifted underneath. Cancel here means a hurried double-click
-                  costs a click, not a record. */}
-              <button
-                type="button"
-                disabled={isPending}
-                onClick={() => setIsConfirmingDelete(false)}
-                className={btn}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={isPending}
-                onClick={() => run(() => deleteBackcharge(backcharge.id), "Could not delete it")}
-                className="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50"
-              >
-                {isPending ? "Deleting…" : "Confirm delete"}
-              </button>
-            </>
-          ) : (
-            <button
-              type="button"
-              disabled={isPending}
-              onClick={() => setIsConfirmingDelete(true)}
-              className={btn}
-            >
-              Delete
-            </button>
-          ))}
-      </div>
+      </RowActions>
     </li>
   );
 }

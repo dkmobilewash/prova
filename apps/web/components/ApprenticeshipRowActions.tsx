@@ -7,6 +7,7 @@ import {
   recordApprenticeshipPeriod,
   updateApprenticeshipEnrollment,
 } from "@/lib/actions";
+import { ConfirmDelete, RowActions } from "@/components/RowActions";
 
 const field =
   "rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-600 focus:border-blue-500 focus:outline-none";
@@ -37,7 +38,6 @@ export function ApprenticeshipRowActions({
   };
 }) {
   const [mode, setMode] = useState<"view" | "period" | "edit">("view");
-  const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const formRef = useRef<HTMLFormElement>(null);
@@ -258,79 +258,63 @@ export function ApprenticeshipRowActions({
   }
 
   return (
-    <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-800 pt-3">
-      {/* BOTH hidden while a delete is armed. Browser testing found "Record
-          a period" sitting live beside "Confirm remove" -- an ordinary
-          action adjacent to a destructive one, both enabled, is how
-          somebody confirms a removal they meant to cancel.
+    <div className="mt-3 border-t border-slate-800 pt-3">
+      {/* Every ordinary action here is hidden while a delete is armed, and
+          that is now STRUCTURAL rather than remembered. The history is the
+          reason: browser testing found "Record a period" sitting live beside
+          "Confirm remove" (#117) and it was fixed with a hand-written guard
+          around that one button; the very next branch added "Edit enrolment"
+          into the position the fix had just emptied (#119), git merged the
+          two cleanly, and every check stayed green. A guard you have to
+          remember to extend is a guard that lasts until the next merge.
 
-          "Edit enrolment" is inside the same guard rather than beside it.
-          Merging this branch with that fix produced a CLEAN merge that put
-          the new button in exactly the position the fix had just emptied,
-          so the guard wraps the group and not one button -- otherwise the
-          next action added here reintroduces the bug for a third time. */}
-      {!confirming && (
-        <>
-          <button
-            type="button"
-            disabled={isPending}
-            onClick={() => setMode("period")}
-            className={btn}
-          >
-            Record a period
-          </button>
+          <RowActions> removes the position instead of covering it: ordinary
+          actions are `children` and are not rendered at all while armed, so
+          the button somebody adds below is covered without anybody deciding
+          to cover it. Cancel still comes before the confirm, so a hurried
+          second click costs a click rather than the record — that rule lives
+          in the component now too. */}
+      <RowActions
+        className="flex flex-wrap items-center gap-2"
+        destructive={
+          canDelete ? (
+            <ConfirmDelete
+              label="Remove"
+              confirmLabel="Confirm remove"
+              pendingLabel="Removing…"
+              pending={isPending}
+              onConfirm={() => run(() => deleteApprenticeshipEnrollment(enrollmentId))}
+              hint="Removes the registration and its periods. No timesheet is touched."
+              deleteClassName={btn}
+              cancelClassName={btn}
+              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+            />
+          ) : null
+        }
+      >
+        <button
+          type="button"
+          disabled={isPending}
+          onClick={() => setMode("period")}
+          className={btn}
+        >
+          Record a period
+        </button>
 
-          <button
-            type="button"
-            disabled={isPending}
-            onClick={() => setMode("edit")}
-            className={btn}
-          >
-            Edit enrolment
-          </button>
-        </>
-      )}
+        <button
+          type="button"
+          disabled={isPending}
+          onClick={() => setMode("edit")}
+          className={btn}
+        >
+          Edit enrolment
+        </button>
+      </RowActions>
 
-      {canDelete &&
-        (confirming ? (
-          <>
-            {/* Cancel takes the position "Remove" occupied, so a hurried
-                second click costs a click rather than the record. */}
-            <button
-              type="button"
-              disabled={isPending}
-              onClick={() => setConfirming(false)}
-              className={btn}
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              disabled={isPending}
-              onClick={() =>
-                run(() => deleteApprenticeshipEnrollment(enrollmentId), () => setConfirming(false))
-              }
-              className="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50"
-            >
-              {isPending ? "Removing…" : "Confirm remove"}
-            </button>
-            <span className="text-xs text-slate-500">
-              Removes the registration and its periods. No timesheet is touched.
-            </span>
-          </>
-        ) : (
-          <button
-            type="button"
-            disabled={isPending}
-            onClick={() => setConfirming(true)}
-            className={btn}
-          >
-            Remove
-          </button>
-        ))}
-
+      {/* Outside RowActions on purpose: an error hidden by arming a delete
+          would be a new bug. */}
       {error && (
-        <p role="alert" className="w-full text-sm text-red-400">
+        <p role="alert" className="mt-2 text-sm text-red-400">
           {error}
         </p>
       )}

@@ -9,6 +9,7 @@ import {
   type MemberOption,
   type PersonOption,
 } from "@/components/ContactInteractionFields";
+import { ConfirmDelete, RowActions } from "@/components/RowActions";
 
 export type ContactInteractionRowData = {
   id: string;
@@ -36,7 +37,6 @@ export function ContactInteractionRow({
   people: PersonOption[];
 }) {
   const [mode, setMode] = useState<"view" | "edit">("view");
-  const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -110,46 +110,41 @@ export function ContactInteractionRow({
           {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
         </div>
 
-        <div className="flex shrink-0 flex-wrap items-center gap-2">
+        {/* Arming the delete empties this row: "Edit" used to stay live next
+            to the armed confirm, so a click meant for Cancel opened the edit
+            form on a record that was one click from being gone. Everything
+            ordinary is a child of RowActions and disappears while armed. */}
+        <RowActions
+          className="flex shrink-0 flex-wrap items-center gap-2"
+          destructive={
+            <ConfirmDelete
+              pendingLabel="Deleting…"
+              pending={isPending}
+              onConfirm={() => {
+                setError(null);
+                startTransition(async () => {
+                  try {
+                    const result = await deleteContactInteraction(interaction.id);
+                    if (!result.ok) {
+                      setError(result.error);
+                      return;
+                    }
+                    router.refresh();
+                  } catch {
+                    setError("Could not delete it");
+                  }
+                });
+              }}
+              deleteClassName={btn}
+              cancelClassName={btn}
+              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+            />
+          }
+        >
           <button type="button" disabled={isPending} onClick={() => setMode("edit")} className={btn}>
             Edit
           </button>
-          {isConfirmingDelete ? (
-            <>
-              <button
-                type="button"
-                disabled={isPending}
-                onClick={() => {
-                  setError(null);
-                  startTransition(async () => {
-                    try {
-                      const result = await deleteContactInteraction(interaction.id);
-                      if (!result.ok) {
-                        setError(result.error);
-                        setIsConfirmingDelete(false);
-                        return;
-                      }
-                      router.refresh();
-                    } catch {
-                      setError("Could not delete it");
-                      setIsConfirmingDelete(false);
-                    }
-                  });
-                }}
-                className="rounded-md border border-red-500 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 disabled:opacity-50"
-              >
-                {isPending ? "Deleting…" : "Confirm delete"}
-              </button>
-              <button type="button" disabled={isPending} onClick={() => setIsConfirmingDelete(false)} className={btn}>
-                Cancel
-              </button>
-            </>
-          ) : (
-            <button type="button" disabled={isPending} onClick={() => setIsConfirmingDelete(true)} className={btn}>
-              Delete
-            </button>
-          )}
-        </div>
+        </RowActions>
       </div>
     </li>
   );

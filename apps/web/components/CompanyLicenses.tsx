@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { createCompanyLicense, deleteCompanyLicense, updateCompanyLicense } from "@/lib/actions";
 import { classifyRenewal, renewalTiming } from "@/lib/compliance-expiry";
+import { ConfirmDelete, RowActions } from "@/components/RowActions";
 
 /**
  * Contractor licences a company holds.
@@ -204,7 +205,6 @@ function LicenceRow({
   canManage: boolean;
 }) {
   const [isEditing, setIsEditing] = useState(false);
-  const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -303,48 +303,34 @@ function LicenceRow({
       </div>
 
       {canManage && (
-        <div className="flex flex-wrap items-center gap-2">
+        /* Arming the delete empties this row. "Edit" used to stay live beside
+           the armed confirm — one click past where you meant to stop and you
+           are editing the licence you were trying to leave alone — and Cancel
+           now renders before the confirm, so a second click on the pixel the
+           Delete button just vacated costs a click rather than the record.
+           Both rules live in RowActions/ConfirmDelete rather than here. */
+        <RowActions
+          className="flex flex-wrap items-center gap-2"
+          destructive={
+            <ConfirmDelete
+              pendingLabel="Removing…"
+              pending={isPending}
+              onConfirm={handleDelete}
+              deleteClassName="rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:border-red-500 hover:text-red-400 disabled:opacity-50"
+              cancelClassName="rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:border-slate-500 disabled:opacity-50"
+              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+            />
+          }
+        >
           <button
             type="button"
             disabled={isPending}
-            onClick={() => {
-              setIsEditing(true);
-              setIsConfirmingDelete(false);
-            }}
+            onClick={() => setIsEditing(true)}
             className="rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:border-slate-500 disabled:opacity-50"
           >
             Edit
           </button>
-          {isConfirmingDelete ? (
-            <>
-              <button
-                type="button"
-                disabled={isPending}
-                onClick={handleDelete}
-                className="rounded-md border border-red-500 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 disabled:opacity-50"
-              >
-                {isPending ? "Removing…" : "Confirm delete"}
-              </button>
-              <button
-                type="button"
-                disabled={isPending}
-                onClick={() => setIsConfirmingDelete(false)}
-                className="rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:border-slate-500 disabled:opacity-50"
-              >
-                Cancel
-              </button>
-            </>
-          ) : (
-            <button
-              type="button"
-              disabled={isPending}
-              onClick={() => setIsConfirmingDelete(true)}
-              className="rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:border-red-500 hover:text-red-400 disabled:opacity-50"
-            >
-              Delete
-            </button>
-          )}
-        </div>
+        </RowActions>
       )}
     </li>
   );
