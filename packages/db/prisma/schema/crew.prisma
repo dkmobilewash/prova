@@ -1,0 +1,155 @@
+// Crew members: the people who work the hours but do not log in.
+//
+// Part of the multi-file Prisma schema in this folder.
+//
+// SHIPS DELIBERATELY UNWIRED. Nothing in the application reads or writes
+// CrewMember yet, and TimeEntry.crewMemberId is NULL on every row. That is
+// the exception CLAUDE.md's "written, documented, and never called" rule
+// warns about, taken on purpose and stated here so the next reader does not
+// mistake it for the accident: the structure is the half that needs a
+// migration against real production data and a Slack announcement, and the
+// wiring is the half that can be reverted with a revert. They are separated
+// so the irreversible half lands alone and small.
+//
+// WHY THIS EXISTS.
+//
+//   TimeEntry.employeeUserId is a required foreign key to User, and User
+//   carries a globally-unique clerkId and a globally-unique email. So an
+//   hour can only be recorded against somebody who has completed a Clerk
+//   sign-up. A framing sub with a 25-hand crew therefore needs 25 Clerk
+//   accounts before it can record one hour, and certified payroll, fringe
+//   remittance, the apprentice ratio check and job labour cost all read
+//   TimeEntry. That is not a small friction; it is the reason the labour
+//   half of this product cannot be used by the trade it was built for.
+//
+//   A carpenter does not need an inbox. They need to be NAMED, correctly
+//   and permanently, on a document their employer signs and files with a
+//   government agency.
+//
+// WHY NOT A User THAT CANNOT SIGN IN. It would reuse every existing
+// foreign key and every read path, which is genuinely tempting. It was
+// rejected on three counts, all of them structural:
+//
+//   1. User.clerkId and User.email are BOTH globally unique. Twenty-five
+//      crew members need twenty-five synthetic clerkIds and twenty-five
+//      synthetic emails, in columns where a collision is a hard failure
+//      and where the uniqueness is global rather than per-company.
+//   2. requireCompanyContext() adopts a User row found by a VERIFIED
+//      email (see apps/web/lib/auth.ts, and the Clerk entry in CLAUDE.md).
+//      A placeholder address that somebody later registers for real would
+//      inherit that company. The unique-email rule is load-bearing
+//      security, and filling it with invented values is exactly the
+//      cross-tenant problem it exists to prevent.
+//   3. A User is enumerated everywhere — the team page, job assignment,
+//      permissions, notification dispatch. A non-signing User would wire
+//      itself into all of them by existing, which is the opposite of what
+//      this change is trying to do.
+//
+// The cost of a separate model is honest and is paid later: every place
+// that names a worker will need to read one of two identities. That cost
+// is bounded (five modules, listed in the report) and it buys an identity
+// record that cannot be confused with an account.
+
+/// One person on the crew who has no login — the identity a filed
+/// certified payroll names.
+///
+/// This is an EVIDENCE record in the sense CLAUDE.md uses the word:
+/// identity fields are locked after creation, and a row is archived rather
+/// than deleted. Once a WH-347 naming this person has been signed and
+/// filed, the row it was built from has to keep saying the same thing. The
+/// lock is a database trigger (see the migration), not a convention in an
+/// action, because a convention is precisely what an unwired model has no
+/// way to enforce.
+model CrewMember {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  /// The legal name, in three fields rather than one, because that is how
+  /// a payroll form is laid out and because splitting a single string back
+  /// into parts is a guess that fails on the first two-word surname.
+  /// LOCKED after creation by trigger. A misspelling is corrected by
+  /// archiving the row and creating a new one, which leaves both the old
+  /// filing and the correction on the record — a silent UPDATE would make
+  /// a filed document and its source disagree with nothing to show for it.
+  legalFirstName  String
+  legalMiddleName String?
+  legalLastName   String
+
+  /// The LAST FOUR DIGITS of the SSN, and nothing more.
+  ///
+  /// WH-347 column 1E wants an "individual identifying number", and the
+  /// Department of Labor's instructions accept EITHER the last four digits
+  /// of the SSN OR any number specific to the individual worker — and say
+  /// plainly that the full SSN must not be included.
+  /// (https://www.dol.gov/agencies/whd/forms/wh347)
+  ///
+  /// That is why there are two columns, not one. This one is the SSN-derived
+  /// identifier and is CHECKed in the migration to exactly four digits,
+  /// which is what stops somebody pasting a whole SSN into it — the full
+  /// number is deliberately not a column anywhere in this schema, because a
+  /// column that could hold it would eventually hold it.
+  /// `employeeNumber` below is the other permitted form, the contractor's
+  /// own worker-specific number. Whichever exists is what a future filing
+  /// prints; a company that uses badge numbers never has to supply an SSN
+  /// digit to this app at all.
+  ///
+  /// Nullable because a crew member is worth recording before payroll has
+  /// sent the number over. LOCKED after creation by trigger.
+  identifyingNumberLast4 String?
+
+  /// Davis-Bacon's basic-records rule (29 CFR 5.5(a)(3)) requires the
+  /// contractor to KEEP the name and address of every labourer and
+  /// mechanic, separately from what the weekly WH-347 prints. Recorded here
+  /// because the record itself is the obligation. Not locked — an address
+  /// genuinely changes, and no filing asserts it.
+  addressLine1 String?
+  addressLine2 String?
+  city         String?
+  state        String?
+  zip          String?
+
+  phone String?
+
+  /// The payroll/badge number the contractor already uses, if any — and
+  /// the OTHER thing WH-347 column 1E accepts as an individual identifying
+  /// number, per the note on identifyingNumberLast4 above. Unique per
+  /// company where present; Postgres treats NULLs as distinct, so any
+  /// number of crew members can have none. This is the only identifier
+  /// that can safely be unique — a name cannot, because two real people
+  /// share one.
+  employeeNumber String?
+
+  /// ENTERED, not stamped, like every date that matters in this schema.
+  hiredOn DateTime?
+
+  /// Set WHEN AND IF this person later completes a real sign-up — see the
+  /// report's answer on transitions. It is a forward pointer that says
+  /// "this login is the same human as this crew record". It is NOT a
+  /// redirect: nothing about a historical TimeEntry changes when it is
+  /// set, because every read of a crew member's name reads the locked
+  /// fields above rather than the mutable User.name. Unique, so two crew
+  /// records can never claim one login, and locked once set by the same
+  /// trigger, so a login cannot be moved from one person's history to
+  /// another's.
+  linkedUserId String?   @unique
+  linkedUser   User?     @relation(fields: [linkedUserId], references: [id], onDelete: Restrict)
+  linkedAt     DateTime?
+
+  /// Left the crew. There is no delete: a person named on a filed payroll
+  /// cannot stop having existed. The relation from TimeEntry is
+  /// onDelete: Restrict for the same reason — the database refuses to
+  /// orphan the identity behind an hour that has been certified.
+  archivedAt DateTime?
+
+  note String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  timeEntries TimeEntry[]
+
+  @@unique([companyId, employeeNumber])
+  @@index([companyId])
+  @@index([archivedAt])
+}

@@ -33,6 +33,28 @@ model TimeEntry {
   employeeUserId String
   employeeUser   User   @relation(fields: [employeeUserId], references: [id])
 
+  /// The crew member this entry is for, when the worker has no login. See
+  /// crew.prisma. NULL on every row today and read by nothing — this ships
+  /// deliberately unwired, and the report and crew.prisma both say so, so
+  /// that it is not mistaken for the "written, documented, never called"
+  /// defect CLAUDE.md warns about.
+  ///
+  /// employeeUserId above stays REQUIRED in this change. Relaxing it is a
+  /// one-line, additive follow-up migration
+  /// (ALTER COLUMN "employeeUserId" DROP NOT NULL), deliberately held back
+  /// because the moment the Prisma type becomes `User | null` every module
+  /// that prints `entry.employeeUser.name ?? entry.employeeUser.email`
+  /// stops compiling — including jobs/[id]/page.tsx:1054, which is another
+  /// person's lane. The structural half lands first; the read paths and
+  /// the NOT NULL come together, in one reviewable change.
+  ///
+  /// A CHECK constraint in the migration forbids an entry naming BOTH a
+  /// User and a CrewMember: one hour, one name on the form.
+  /// onDelete: Restrict — the database refuses to orphan the identity
+  /// behind an hour that may already have been certified.
+  crewMemberId String?
+  crewMember   CrewMember? @relation(fields: [crewMemberId], references: [id], onDelete: Restrict)
+
   craftClassificationId String?
   craftClassification   CraftClassification? @relation(fields: [craftClassificationId], references: [id])
 
@@ -53,6 +75,7 @@ model TimeEntry {
   @@index([jobId])
   @@index([lineItemId])
   @@index([employeeUserId])
+  @@index([crewMemberId])
   @@index([craftClassificationId])
 }
 

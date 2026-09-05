@@ -78,6 +78,7 @@ model Company {
   salesActivities         SalesActivity[]
   salesStageChanges       SalesStageChange[]
   equipmentAssignments    EquipmentAssignment[]
+  crewMembers             CrewMember[]
 }
 
 enum UserRole {
@@ -140,6 +141,12 @@ model User {
   loggedSalesActivities                SalesActivity[]      @relation("SalesActivityLogger")
   recordedSalesStageChanges            SalesStageChange[]   @relation("SalesStageChangeRecorder")
   recordedEquipmentAssignments         EquipmentAssignment[]
+
+  /// The crew record for this same human, if they worked on the crew
+  /// BEFORE they had a login. Back-relation only — see crew.prisma. It
+  /// does not make this User's historical time entries change hands, and
+  /// it is not how anything reads a worker's name.
+  crewMemberRecord CrewMember?
 
   @@index([companyId])
   apprenticeshipEnrollments ApprenticeshipEnrollment[] @relation("ApprenticeEnrollments")
