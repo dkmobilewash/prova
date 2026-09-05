@@ -55,6 +55,44 @@ export function currentAssignment(assignments: AssignmentData[]): AssignmentData
   return newestFirst(assignments).find((a) => a.returnedOn === null) ?? null;
 }
 
+/** Out, spoken for, or in the yard — as of a given day. */
+export type DeploymentToday =
+  | { kind: "out"; stay: AssignmentData }
+  | { kind: "planned"; stay: AssignmentData }
+  | { kind: "yard" };
+
+/** Where a piece is TODAY, which is not the same question as which stay is
+ * open.
+ *
+ * Dispatching ahead is ordinary: "the lift goes to Maple on Tuesday" is
+ * written down on Friday. `currentAssignment` answers a date-free question
+ * — what stay has nobody closed — so on Friday it names Tuesday's job, and
+ * `/equipment` printed "On Maple St Tower" and dropped the lift out of "N
+ * in the yard" for a machine still sitting in the yard. The line directly
+ * beneath said "due out Tuesday", because `stayLength` already knew. One
+ * card, two contradictory statements. See issue #149.
+ *
+ * So: a stay that has not started yet is a PLAN. The piece is in the yard
+ * and counted there, and the row says what it is spoken for instead of
+ * claiming it has gone. `currentAssignment` is unchanged and is still what
+ * the overlap rules and Ask use, because "is a stay open" is the right
+ * question for both. */
+export function deploymentToday(assignments: AssignmentData[], today: string): DeploymentToday {
+  const ordered = newestFirst(assignments);
+
+  // Out means gone, so the stay has to have started. An open stay dated
+  // ahead of an older open one is a contradiction `contradictions()`
+  // reports; it must not hide the deployment the machine is actually on.
+  const out = ordered.find((a) => a.returnedOn === null && a.sentOutOn <= today);
+  if (out) return { kind: "out", stay: out };
+
+  // Not gone. It may still be spoken for — the SOONEST stay that has not
+  // started, which is the last of a newest-first list.
+  const upcoming = ordered.filter((a) => a.sentOutOn > today);
+  const next = upcoming.length > 0 ? upcoming[upcoming.length - 1] : null;
+  return next ? { kind: "planned", stay: next } : { kind: "yard" };
+}
+
 /** Do two stays overlap?
  *
  * A null return date means "still out", which extends the range forward
@@ -103,22 +141,48 @@ export function findOverlap(
   );
 }
 
-/** Whole days a stay covers inside a window, counting the day it went out
- * and not the day it came back — a lift that leaves and returns the same
- * day was out for a day's work, and a stay from the 1st to the 8th is seven
- * days, not eight. */
+function nextDay(iso: string): string {
+  return new Date(Date.parse(`${iso}T00:00:00.000Z`) + DAY_MS).toISOString().slice(0, 10);
+}
+
+/** The days a stay covers inside a window, counting the day it went out and
+ * not the day it came back — a lift that leaves and returns the same day
+ * was out for a day's work, and a stay from the 1st to the 8th is seven
+ * days, not eight. The window itself is half-open the same way: `windowEnd`
+ * is the first day NOT measured.
+ *
+ * Returns the days rather than a count because `utilisation` has to dedupe
+ * across overlapping records, and it must do that against THIS rule. There
+ * used to be a second copy of the rule inlined in `utilisation`'s loop, and
+ * the two disagreed about the case this docstring makes a point of: a
+ * same-day stay counted as one day here and as nothing there, so a lift
+ * working ten single-day jobs rendered "out 0 of the last 90 days (0%)"
+ * while the test suite stayed green about the opposite. One rule now, and it
+ * is this one. See issue #151. */
 export function daysOutWithin(
   assignment: AssignmentData,
   windowStart: string,
   windowEnd: string,
-): number {
+): string[] {
   const start = assignment.sentOutOn > windowStart ? assignment.sentOutOn : windowStart;
   const rawEnd = assignment.returnedOn ?? windowEnd;
   const end = rawEnd < windowEnd ? rawEnd : windowEnd;
-  const days = daysBetween(start, end);
-  // A stay entirely outside the window, or one that returned the same day
-  // it left, contributes at least nothing and never a negative.
-  if (days <= 0) return assignment.returnedOn === assignment.sentOutOn && start === end ? 1 : 0;
+
+  const days: string[] = [];
+  for (let d = start; d < end; d = nextDay(d)) days.push(d);
+
+  // Out and back the same day is a day's work, and the half-open range above
+  // is empty for it. A stay wholly outside the window is empty for a
+  // different reason and stays empty.
+  if (
+    days.length === 0 &&
+    assignment.returnedOn === assignment.sentOutOn &&
+    assignment.sentOutOn >= windowStart &&
+    assignment.sentOutOn < windowEnd
+  ) {
+    days.push(assignment.sentOutOn);
+  }
+
   return days;
 }
 
@@ -154,15 +218,12 @@ export function utilisation(
   if (daysTracked <= 0) return { daysOut: 0, daysTracked: 0, percent: null };
 
   // Overlapping records are a contradiction the UI reports separately; they
-  // must not let a piece be counted as out twice and read over 100%.
+  // must not let a piece be counted as out twice and read over 100%. Which
+  // days a stay covers is `daysOutWithin`'s question, not this function's —
+  // asking it twice is how the two answers came to disagree.
   const days = new Set<string>();
   for (const a of assignments) {
-    const from = a.sentOutOn > start ? a.sentOutOn : start;
-    const rawTo = a.returnedOn ?? windowEnd;
-    const to = rawTo < windowEnd ? rawTo : windowEnd;
-    for (let d = from; d < to; d = new Date(Date.parse(`${d}T00:00:00.000Z`) + DAY_MS).toISOString().slice(0, 10)) {
-      days.add(d);
-    }
+    for (const day of daysOutWithin(a, start, windowEnd)) days.add(day);
   }
 
   const daysOut = days.size;
