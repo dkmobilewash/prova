@@ -4,7 +4,6 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { deleteSalesOpportunity, updateSalesOpportunity } from "@/lib/actions";
 import { SalesOpportunityFields } from "@/components/SalesOpportunityFields";
-import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { localToday } from "@/components/localToday";
 import { money } from "@/lib/money";
 import { OPPORTUNITY_STAGE_OPTIONS, stageTiming, type StageSpell } from "@/lib/sales-stage-history";
@@ -54,6 +53,7 @@ export function SalesOpportunityRow({
   history: SalesOpportunityHistory;
 }) {
   const [mode, setMode] = useState<"view" | "edit">("view");
+  const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
   const [showsHistory, setShowsHistory] = useState(false);
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
@@ -165,42 +165,46 @@ export function SalesOpportunityRow({
           )}
         </div>
 
-        {/* Arming "Delete" empties this cluster, so "Edit" is not sitting
-            live next to an armed confirm. The "Stage history" toggle is not
-            in here — it is in the content column above, and reading history
-            is not an action a mis-click can cost you anything. */}
-        <RowActions
-          className="flex shrink-0 flex-wrap items-center gap-2"
-          destructive={
-            <ConfirmDelete
-              confirmLabel="Confirm delete"
-              pendingLabel="Deleting…"
-              pending={isPending}
-              onConfirm={() => {
-                setError(null);
-                startTransition(async () => {
-                  try {
-                    const result = await deleteSalesOpportunity(opportunity.id);
-                    if (!result.ok) {
-                      setError(result.error);
-                      return;
-                    }
-                    router.refresh();
-                  } catch {
-                    setError("Could not delete it");
-                  }
-                });
-              }}
-              deleteClassName={btn}
-              cancelClassName={btn}
-              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 disabled:opacity-50"
-            />
-          }
-        >
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
           <button type="button" disabled={isPending} onClick={() => setMode("edit")} className={btn}>
             Edit
           </button>
-        </RowActions>
+          {isConfirmingDelete ? (
+            <>
+              <button
+                type="button"
+                disabled={isPending}
+                onClick={() => {
+                  setError(null);
+                  startTransition(async () => {
+                    try {
+                      const result = await deleteSalesOpportunity(opportunity.id);
+                      if (!result.ok) {
+                        setError(result.error);
+                        setIsConfirmingDelete(false);
+                        return;
+                      }
+                      router.refresh();
+                    } catch {
+                      setError("Could not delete it");
+                      setIsConfirmingDelete(false);
+                    }
+                  });
+                }}
+                className="rounded-md border border-red-500 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+              >
+                {isPending ? "Deleting…" : "Confirm delete"}
+              </button>
+              <button type="button" disabled={isPending} onClick={() => setIsConfirmingDelete(false)} className={btn}>
+                Cancel
+              </button>
+            </>
+          ) : (
+            <button type="button" disabled={isPending} onClick={() => setIsConfirmingDelete(true)} className={btn}>
+              Delete
+            </button>
+          )}
+        </div>
       </div>
     </li>
   );

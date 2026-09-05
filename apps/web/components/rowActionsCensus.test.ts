@@ -35,6 +35,10 @@ const KNOWN_EXCEPTIONS: Record<string, string> = {
     "the shared component itself — this is where the arming state is supposed to live",
   "components/SalesActivityRow.tsx":
     "STILL BROKEN: 'Edit' stays live beside the armed 'Confirm delete'. Sales CRM is the other lane, so issue #152 says report it rather than edit it. Delete this line when that lane fixes it.",
+  "components/SalesLeadRow.tsx":
+    "Sales CRM, the other lane. Converted on this branch and then reverted before the PR: the working agreement says post and wait before touching the other person's files, and that message had not been answered. The RowActions conversion is ready and is one `git checkout` away. Delete this line when that lane takes it.",
+  "components/SalesOpportunityRow.tsx":
+    "Sales CRM, the other lane. Same as SalesLeadRow above — converted, then reverted unshipped rather than cross a lane boundary unanswered.",
 };
 
 function tsxFiles(dir: string, out: string[] = []) {
