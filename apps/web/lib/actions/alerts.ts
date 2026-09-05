@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
 import { loadAlerts } from "@/lib/alerts-query";
-import type { AlertSeverity } from "@/lib/alerts";
+import { snoozeIsUnspent, type AlertSeverity } from "@/lib/alerts";
 import { prisma } from "@prova/db";
 import { viewerToday } from "@/lib/viewerToday";
 import { actionFail as fail, actionOk as ok, type ActionResult } from "./shared";
@@ -79,6 +79,7 @@ async function severityForKey(
   companyId: string,
   user: { id: string; role: string; jobFunction: string | null },
   alertKey: string,
+  todayIso?: string,
 ): Promise<AlertSeverity | null> {
   // Same call as lib/actions/notifications.ts makes, and dated the same
   // way /alerts is. This used to read the server's UTC clock, with a
@@ -88,7 +89,11 @@ async function severityForKey(
   // matters more here than almost anywhere, because this answer decides
   // which severity a dismissal is recorded at and that is what the row is
   // measured against for the rest of its life -- see #110.
-  const today = await viewerToday();
+  //
+  // `todayIso` is passed by snoozeAlert, which has already worked out the
+  // viewer's day to validate against and must not be able to end up with
+  // two of them. Absent, this reads it itself.
+  const today = todayIso ?? (await viewerToday());
   const { visible, silenced } = await loadAlerts(companyId, user.id, today, {
     role: user.role,
     jobFunction: user.jobFunction,
@@ -150,21 +155,25 @@ export async function snoozeAlert(alertKey: string, formData: FormData): Promise
     // alert would come straight back with no explanation. Refusing says
     // what happened instead of silently doing nothing.
     //
-    // STILL THE SERVER'S UTC DAY, ON PURPOSE, and left that way by the
-    // change that moved severityForKey above onto viewerToday(). This is
-    // issue #111 item 4, which is an open product question rather than a
-    // clear bug: west of UTC after 17:00 this refuses a "tomorrow" the
-    // person picked off their own calendar, and the fix is not only which
-    // clock to read — the date input has no `min` and no default, so the
-    // choice is between refusing later, warning earlier, or defaulting the
-    // field. Cyrus owns that decision. Changing this line alone would make
-    // the refusal disagree with the same reasoning applied one screen over.
-    const today = new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00.000Z`);
-    if (snoozedUntil <= today) {
+    // MEASURED AGAINST THE VIEWER'S CALENDAR DAY, using the very predicate
+    // the list itself will apply — `snoozeIsUnspent` in lib/alerts.ts, the
+    // one partitionAlerts calls. This used to read the server's UTC day
+    // while the list read the viewer's, which is issue #155: east of UTC
+    // the UTC check accepted a date the list then treated as already spent,
+    // so the form succeeded and the alert was back on the next render with
+    // nothing said; west of UTC, after 17:00, it refused a "tomorrow" the
+    // person had picked off their own calendar and told them it was
+    // "already over". Not two bugs — one validation and one consumer
+    // disagreeing about which day it is. They now cannot: same function,
+    // same day, computed once here and handed to severityForKey below so
+    // this action reads the clock exactly once.
+    const today = await viewerToday();
+    const snoozedUntilIso = snoozedUntil.toISOString().slice(0, 10);
+    if (!snoozeIsUnspent(snoozedUntilIso, today)) {
       return fail("Pick a date in the future — a snooze until today is already over.");
     }
 
-    const acknowledgedSeverity = await severityForKey(company.id, user, alertKey);
+    const acknowledgedSeverity = await severityForKey(company.id, user, alertKey, today);
     if (acknowledgedSeverity === null) {
       return fail("That alert is not on your list any more — reload the page to see where it went.");
     }

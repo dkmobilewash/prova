@@ -14,12 +14,16 @@ import {
   rankAlerts,
   renewalAlert,
   retainageAlerts,
+  snoozeIsUnspent,
   summarizeAlerts,
   visibleToPrincipal,
   wipAlerts,
   type Alert,
 } from "./alerts";
 import { classifyRenewal, type RenewalSource } from "./compliance-expiry";
+import { todayInZone } from "./viewer-timezone";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 const TODAY = "2026-09-01";
 
@@ -518,6 +522,171 @@ describe("partitionAlerts", () => {
       TODAY,
     );
     expect(backAgain.visible.map((a) => a.key)).toEqual([overdue.key]);
+  });
+});
+
+/* ------------------------------- issue #155: which day is a snooze spent on */
+
+describe("snoozeIsUnspent, across the day boundary in both directions", () => {
+  const one: Alert = {
+    key: "RENEWAL:lic_1:2026-11-30",
+    kind: "RENEWAL",
+    severity: "DUE_SOON",
+    title: "California C-9",
+    detail: "due in 90 days",
+    href: "/settings",
+    dueOn: "2026-11-30",
+    daysUntil: 90,
+    amount: null,
+  };
+
+  /** Two real instants at which the server's UTC calendar and the reader's
+   * calendar are on different dates, one on each side of UTC. A test that
+   * only ever ran one side of the line proves nothing about the other: the
+   * old code was WRONG IN BOTH DIRECTIONS and wrong differently in each,
+   * which is why #155 was reopened after being closed as a product call. */
+  const STRADDLES = [
+    {
+      where: "Asia/Tokyo",
+      // 08:00 on the 5th in Tokyo; UTC is still on the 4th.
+      instant: new Date("2026-09-04T23:00:00.000Z"),
+      viewerDay: "2026-09-05",
+      utcDay: "2026-09-04",
+      /** The reader's OWN today, picked off their own calendar. */
+      picked: "2026-09-05",
+      /** The old UTC check saw a date after "today" and let it through... */
+      oldCheckAccepts: true,
+      /** ...and the list, on the reader's day, spent it on arrival. */
+      listKeepsQuiet: false,
+    },
+    {
+      where: "America/Los_Angeles",
+      // 18:00 on the 4th in Los Angeles; UTC has already rolled to the 5th.
+      instant: new Date("2026-09-05T01:00:00.000Z"),
+      viewerDay: "2026-09-04",
+      utcDay: "2026-09-05",
+      /** The reader's TOMORROW. */
+      picked: "2026-09-05",
+      /** The old UTC check called this "today" and refused it... */
+      oldCheckAccepts: false,
+      /** ...while the list would happily have stayed quiet all day. */
+      listKeepsQuiet: true,
+    },
+  ] as const;
+
+  for (const s of STRADDLES) {
+    describe(s.where, () => {
+      it("straddles the boundary at all — the fixture, not the assertion", () => {
+        // #150's lesson: a fixture that cannot reach the condition makes
+        // every assertion below decorative. If these three ever stop
+        // holding, the cases in this block are testing nothing and the
+        // failure should say so here rather than somewhere subtler.
+        expect(todayInZone(s.where, s.instant)).toBe(s.viewerDay);
+        expect(s.instant.toISOString().slice(0, 10)).toBe(s.utcDay);
+        expect(s.viewerDay).not.toBe(s.utcDay);
+      });
+
+      it("is exactly where the old code and the list disagreed", () => {
+        // This is the bug, written as an assertion. The left-hand side is
+        // what lib/actions/alerts.ts used to compute (UTC day); the
+        // right-hand side is what partitionAlerts has computed since #111
+        // (the viewer's day). They differ, which is the whole of #155.
+        expect(snoozeIsUnspent(s.picked, s.utcDay)).toBe(s.oldCheckAccepts);
+        expect(snoozeIsUnspent(s.picked, s.viewerDay)).toBe(s.listKeepsQuiet);
+        expect(s.oldCheckAccepts).not.toBe(s.listKeepsQuiet);
+      });
+
+      it("agrees with partitionAlerts about every date near the boundary", () => {
+        // The property the fix buys: on ONE day, the answer the form gives
+        // and the answer the list gives are the same answer. Asserted over
+        // a span rather than a point, so an off-by-one in either cannot
+        // hide between the fixtures.
+        const candidates = ["2026-09-03", "2026-09-04", "2026-09-05", "2026-09-06"];
+        const verdicts = candidates.map((picked) => {
+          const accepted = snoozeIsUnspent(picked, s.viewerDay);
+          const { silenced } = partitionAlerts(
+            [one],
+            [{ alertKey: one.key, snoozedUntil: picked, acknowledgedSeverity: "DUE_SOON" }],
+            s.viewerDay,
+          );
+          expect(silenced.length === 1).toBe(accepted);
+          return accepted;
+        });
+        // Both outcomes actually occur in that span, so the loop above is
+        // not passing by never disagreeing about anything.
+        expect(verdicts).toContain(true);
+        expect(verdicts).toContain(false);
+      });
+    });
+  }
+
+  it("east of UTC, refuses the date the UTC check used to accept and eat", () => {
+    // The reported symptom of #155: in Tokyo the person picks a date, the
+    // form says fine, and the alert is back on the next render with no
+    // explanation. The snooze was never wrong — it was spent before it was
+    // written, because two clocks were consulted.
+    const tokyo = STRADDLES[0];
+    expect(snoozeIsUnspent(tokyo.picked, tokyo.viewerDay)).toBe(false);
+    const { visible } = partitionAlerts(
+      [one],
+      [{ alertKey: one.key, snoozedUntil: tokyo.picked, acknowledgedSeverity: "DUE_SOON" }],
+      tokyo.viewerDay,
+    );
+    expect(visible.map((a) => a.key)).toEqual([one.key]);
+  });
+
+  it("west of UTC, accepts the tomorrow the UTC check used to call today", () => {
+    // The other half, and the one that reads as a lie to the person: "a
+    // snooze until today is already over", about a date on tomorrow's row
+    // of their own calendar.
+    const la = STRADDLES[1];
+    expect(snoozeIsUnspent(la.picked, la.viewerDay)).toBe(true);
+    const { silenced } = partitionAlerts(
+      [one],
+      [{ alertKey: one.key, snoozedUntil: la.picked, acknowledgedSeverity: "DUE_SOON" }],
+      la.viewerDay,
+    );
+    expect(silenced.map((a) => a.key)).toEqual([one.key]);
+  });
+
+  it("treats a dismissal, which has no date, as never running out", () => {
+    expect(snoozeIsUnspent(null, "2026-09-05")).toBe(true);
+  });
+});
+
+/* ------------------------------------------------------------ the guard */
+
+/**
+ * The pure tests above cannot see WHICH CLOCK the action reads, and that
+ * was the entire defect — `snoozeIsUnspent` would have been just as correct
+ * handed `new Date().toISOString().slice(0, 10)`. Nothing above goes red if
+ * somebody puts the UTC day back, so this reads the action's source and
+ * requires the shared predicate and the viewer's day by name.
+ *
+ * Honest about its limits, like page-money-guards.test.ts: it is a static
+ * check and it cannot prove behaviour. What it catches is the realistic
+ * regression — the one that already happened once.
+ */
+describe("lib/actions/alerts.ts dates a snooze the way the list does", () => {
+  const source = readFileSync(join(process.cwd(), "lib/actions/alerts.ts"), "utf8");
+  const snoozeBody = source.slice(source.indexOf("export async function snoozeAlert"));
+
+  it("uses the same predicate the list uses", () => {
+    expect(source).toContain('from "@/lib/alerts"');
+    expect(source).toContain("snoozeIsUnspent");
+    expect(snoozeBody).toContain("snoozeIsUnspent(");
+  });
+
+  it("measures it against the viewer's calendar day", () => {
+    expect(snoozeBody).toContain("await viewerToday()");
+  });
+
+  it("derives no calendar day from the server's clock", () => {
+    // `new Date().toISOString().slice(0, 10)` is the exact expression that
+    // was here, and it is the server's day wherever it appears. `new Date()`
+    // on its own is fine and used for acknowledgedAt — that is an INSTANT,
+    // not a calendar day, and instants are the one thing UTC is right for.
+    expect(source).not.toMatch(/new Date\(\)\.toISOString\(\)/);
   });
 });
 
