@@ -20,6 +20,8 @@ import { ContactInteractionForm } from "@/components/ContactInteractionForm";
 import { ContactInteractionRow } from "@/components/ContactInteractionRow";
 import { ContactPersonForm } from "@/components/ContactPersonForm";
 import { ContactPersonRow } from "@/components/ContactPersonRow";
+import { MergeContactForm, type MergeCandidate } from "@/components/MergeContactForm";
+import { planContactMerge } from "@/lib/contact-merge";
 import { toIsoDate } from "@/lib/compliance-expiry";
 import { serverToday } from "@/lib/serverToday";
 
@@ -143,6 +145,54 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
         select: { qboId: true },
       })
     : null;
+
+  // Merging is owner-only and irreversible, so the screen has to show what
+  // would move BEFORE anyone commits — not a count read back afterwards.
+  // The fields half is decided by planContactMerge, the same function the
+  // action runs, against the same two rows: the preview and the write cannot
+  // drift apart.
+  const canMerge = currentUser.role === "OWNER";
+  let mergeCandidates: MergeCandidate[] = [];
+  let winnerHasQuickBooksLink = false;
+  if (canMerge) {
+    const others = await prisma.contact.findMany({
+      where: { companyId: company.id, id: { not: contact.id } },
+      orderBy: { name: "asc" },
+      include: {
+        _count: { select: { jobs: true, bidInvitations: true, interactions: true, people: true } },
+      },
+    });
+    // One query for every contact link in the company rather than one per
+    // candidate: there is no foreign key here, so this is a plain string
+    // lookup and the set is small.
+    const contactLinks = await prisma.quickBooksEntityLink.findMany({
+      where: { companyId: company.id, entityType: "Contact" },
+      select: { entityId: true },
+    });
+    const linkedContactIds = new Set(contactLinks.map((l) => l.entityId));
+    winnerHasQuickBooksLink = linkedContactIds.has(contact.id);
+    mergeCandidates = others.map((other) => {
+      const plan = planContactMerge(contact, other);
+      const preview = (f: { key: MergeCandidate["fills"][number]["key"]; label: string; keep: string | null; duplicate: string | null }) => ({
+        key: f.key,
+        label: f.label,
+        keep: f.keep,
+        duplicate: f.duplicate,
+      });
+      return {
+        id: other.id,
+        name: other.name,
+        jobs: other._count.jobs,
+        bidInvitations: other._count.bidInvitations,
+        interactions: other._count.interactions,
+        people: other._count.people,
+        hasPortalLink: other.portalToken !== null,
+        hasQuickBooksLink: linkedContactIds.has(other.id),
+        fills: plan.fills.map(preview),
+        conflicts: plan.conflicts.map(preview),
+      };
+    });
+  }
 
   const enablePortalWithId = enablePortalAccess.bind(null, contact.id);
   const createBidInvitationWithId = createBidInvitation.bind(null, contact.id);
@@ -441,6 +491,18 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
           </div>
         )}
       </section>
+
+      {canMerge && (
+        <section className="mb-10 rounded-lg border border-slate-800 bg-slate-900 p-6">
+          <h2 className="mb-3 text-lg font-semibold text-slate-100">Merge a duplicate</h2>
+          <MergeContactForm
+            winnerId={contact.id}
+            winnerName={contact.name}
+            winnerHasQuickBooksLink={winnerHasQuickBooksLink}
+            candidates={mergeCandidates}
+          />
+        </section>
+      )}
 
       <section>
         <h2 className="mb-3 text-lg font-semibold text-slate-100">Jobs</h2>
