@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
+import { contactDeleteRefusal } from "@/components/contactHistoryLabels";
 import { Prisma, prisma } from "@prova/db";
 import {
   CONTACT_STATUSES,
@@ -143,10 +144,13 @@ export async function createContact(formData: FormData): Promise<ActionResult> {
   });
 }
 
-/** Deletes a contact with no history. A contact that has jobs or bid
- * invitations stays — same reasoning as deleteSubmittal refusing to delete
- * a sent package: there's real correspondence/work on record, and deleting
- * the contact would strand it with nothing to point at. */
+/** Deletes a contact with no history. A contact that has jobs, bid
+ * invitations, logged interactions or people on file stays — same
+ * reasoning as deleteSubmittal refusing to delete a sent package: there's
+ * real correspondence/work on record, and deleting the contact would
+ * strand it with nothing to point at. (This comment named only the first
+ * two long after the guard grew to four; the list of what counts as
+ * history now lives in exactly one place, components/contactHistoryLabels.ts.) */
 export async function deleteContact(contactId: string): Promise<ActionResult> {
   const context = await requireCompanyContext();
   return runAction(async () => {
@@ -162,16 +166,14 @@ export async function deleteContact(contactId: string): Promise<ActionResult> {
     });
     if (!contact || contact.companyId !== context.company.id) return fail("Contact not found");
 
-    if (
-      contact._count.jobs > 0 ||
-      contact._count.bidInvitations > 0 ||
-      contact._count.interactions > 0 ||
-      contact._count.people > 0
-    ) {
-      return fail(
-        `${contact.name} has ${contact._count.jobs} job(s), ${contact._count.bidInvitations} bid invitation(s), ${contact._count.interactions} logged interaction(s), and ${contact._count.people} people on file, so its record stays. Only a contact with no history can be deleted.`,
-      );
-    }
+    // The refusal and the decision to refuse are the same expression: a
+    // null here IS "no history on file". It used to be a four-way `||`
+    // beside a message that interpolated all four counts unconditionally,
+    // so a contact with only bid invitations was told it had zero jobs as
+    // part of the reason — see components/contactHistoryLabels.ts and
+    // issue #76.
+    const refusal = contactDeleteRefusal(contact.name, contact._count);
+    if (refusal) return fail(refusal);
 
     await prisma.contact.delete({ where: { id: contactId } });
     revalidatePath("/contacts");
