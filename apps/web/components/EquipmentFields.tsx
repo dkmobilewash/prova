@@ -11,8 +11,6 @@ export type EquipmentFieldValues = {
   notes: string | null;
 };
 
-export type JobOption = { id: string; name: string };
-
 /** Shared by the create form and the inline edit form, same as
  * VendorFields — one definition so the two can't drift apart. */
 export function EquipmentFields({ defaults }: { defaults?: Partial<EquipmentFieldValues> }) {
