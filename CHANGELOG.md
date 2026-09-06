@@ -12,6 +12,48 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### An email address was being filed as a worker's name (Diego)
+`claude/prova-vercel-direct-url-hg1acx`
+
+Cyrus found this while building crew members and handed it over. Verified
+before acting on it, and it is wider than reported: `User.name` is
+nullable, and SEVEN call sites read `employeeUser.name ?? employeeUser.email`.
+
+**On an internal screen that fallback is fine.** It identifies a person.
+The one that is not fine is `jobs/[id]/certified-payroll` — the worker-name
+column of a WH-347 is a statement to a government agency about who did the
+work, and an email address is not that. A wrong name on a filed form is a
+correction to an agency rather than a patch, which is a different order of
+problem from a scruffy screen.
+
+**So the fix is narrow on purpose.** `lib/worker-name.ts` never returns the
+email; it returns "Name not recorded" and says the name is missing. The
+page then does what the rest of this codebase does with something it cannot
+compute — shows the gap rather than filling it, exactly as
+`hasUncomputedHours` already marks hours with no fringe schedule instead of
+silently pricing them at zero.
+
+The warning sits ABOVE the summaries, not in a footnote. A note under the
+last table is the thing nobody reads before printing, and this one decides
+whether the week can be filed at all. It names the accounts by email, so
+the fix is a click away rather than a hunt.
+
+A whitespace-only name counts as missing. Otherwise it prints an empty cell,
+which reads as a formatting bug and gets skimmed past; a sentence gets acted
+on.
+
+**Deliberately NOT changed:** `lib/union-compliance-query.ts` (twice) and
+`lib/prevailing-wage-query.ts` carry the same fallback and the same argument
+applies to fringe remittance and prevailing wage. Cyrus said in
+`#prova-build` that he is in those files right now for #104/#62/#63, and
+editing them would be the merge damage the post-and-wait rule exists to
+prevent. The helper is there for him to adopt in one line per site. The two
+display sites on `jobs/[id]/page.tsx` are left alone because identifying a
+person on screen is what the fallback is good at.
+
+Mutation-verified: putting the email fallback back turns two tests red.
+
+
 ### "Retainage held" was two different numbers on one screen — #97, which is #46 again (Cyrus)
 `fix/retainage-single-source`
 
