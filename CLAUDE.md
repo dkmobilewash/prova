@@ -417,27 +417,118 @@ scrollback gets broken by whoever didn't scroll far enough.
   its own `revalidateBoth()` helper. "Somebody forgot to revalidate" is
   eliminated everywhere, so do not go looking for it.
 
-  **What is left.** The code cannot settle this, and that is itself the
-  finding — do not spend another session reading source for it. Exactly
-  two possibilities survive, neither visible from the repo: the
-  post-action re-render read data that did not yet include the row, or
-  something between Vercel's edge and the function drops the flight half
-  of the response. Settling it needs ONE signed-in click-through with the
-  network tab open, all extensions disabled: on the `POST` carrying
-  `Next-Action`, read the `x-action-revalidated` response header and
-  whether the body carries flight (tens of KB with page copy) or only the
-  action result (a few hundred bytes), check the console for
-  `SERVER ACTION APPLY FAILED`, then REPEAT IT IDENTICALLY on the working
-  `TakeoffForm` in the same tab. The differential is the whole value; a
-  single failing capture with nothing to compare against is how this has
-  already burned several sessions. Top suspect is
-  `components/CompanyLicenses.tsx:368` on `/settings` — reported failing,
-  still has no refresh, list server-rendered on the same route.
+  **Dead explanation 3 — and the differential that killed it. THE CAPTURE
+  THIS ENTRY ASKED FOR HAS NOW BEEN RUN** (2026-09-05, production, signed
+  in, both submits in one tab). `/settings` add-a-licence against
+  `/jobs/[id]` add-a-takeoff-line, instrumented from the page rather than
+  read off DevTools — a `fetch` wrapper for the `Next-Action` POST, a
+  `console.error` wrapper, and Resource Timing for sizes.
+
+  | | A: licence | B: takeoff |
+  | --- | --- | --- |
+  | `x-action-revalidated` | `[[],1,0]` | `[[],1,0]` |
+  | decoded response | 34,342 B | 75,806 B |
+  | action round-trip | 1,544 ms | 1,519 ms |
+  | first byte -> stream end | 1,543 -> 3,749 ms | 1,516 -> 4,411 ms |
+  | console | clean | clean |
+
+  **There is no difference.** Both surviving possibilities die on this:
+  the flight half was NOT dropped (34 KB of page payload arrived on the
+  suspect), and revalidation WAS signalled (byte-identical header). A
+  fourth hypothesis raised for that run — that `<form action={fn}>`
+  behaves differently from `<form onSubmit>`, which is the one structural
+  difference between these two components — is not supported either.
+
+  What the numbers do show is the response STARTING at ~1.5s and finishing
+  streaming at 3.7-4.4s, scaling with payload. That is the server
+  re-rendering the whole page after the action, and the DOM cannot update
+  before it lands. A human tester independently measured 5-7s on unrelated
+  routes the day before. **So the shape is post-action server render cost,
+  not a lost update** — which makes it #118's territory (Neon compute wake,
+  `connection_limit=5`) rather than this issue's.
+
+  Do NOT re-run the capture. It has been run and it answered. What remains
+  genuinely unexplained is only the ORIGINAL observation — a committed row,
+  an empty list, a reload that fixes it — IF it was seen well after the
+  render had finished. Nobody recorded how long they waited, which is why
+  a report of this shape now needs a timestamp before it counts as
+  evidence.
 
   What IS established, and was from the start: a page that fails after a
   commit invites a second click, and no create action is idempotent. #19
   disabled 57 create buttons while their form is in flight and added an
   error boundary that says not to resubmit before reloading.
+
+- **A watcher whose needle is ALREADY ON THE PAGE cannot fail, and it will
+  report a fast, confident, wrong number.** Born from the #61 capture
+  above, and the same shape as every other vacuous test in this file — it
+  just wears a stopwatch instead of an assertion.
+
+  The timing instrument was `document.body.innerText.includes(needle)`,
+  polled every 100ms from the click, to measure when a newly saved row
+  appears. It fired at 101ms — the first tick — on BOTH runs, for two
+  different reasons:
+
+    - on `/settings`, a row containing the needle string was ALREADY THERE
+      when the run began (left by another agent session writing to the same
+      account — see the concurrent-writes note below);
+    - on `/jobs/[id]`, the takeoff form renders a live "what will be added"
+      preview AS YOU TYPE, so the label was in page text before Save was
+      ever clicked.
+
+  Both would have returned 101ms if the save had failed outright. The
+  browser tester caught it, said so before presenting any figure, ran the
+  prescribed version anyway for the record, and built a second signal that
+  can only change on a real save — an occurrence COUNT (1 -> 2), and the
+  disappearance of "No line items yet".
+
+  **The rule: a timing signal must be something that cannot be true
+  before the event.** A count crossing a threshold, an empty-state string
+  disappearing, an element with a server-generated id appearing. Never a
+  substring that a form preview, a placeholder, or a pre-existing row
+  could already be rendering.
+
+  **And the reason this belongs in this file rather than in the issue:
+  earlier timings of #61 may be artefacts of exactly this.** Anyone who
+  measured the takeoff form as the fast control was measuring its preview.
+  That makes the control look instant and the suspect look worse by
+  comparison than it is.
+
+  Two smaller lessons from the same run, both cheap: `content-length` is
+  null on these responses (brotli-streamed), so sizes must come from
+  Resource Timing's `encodedBodySize`/`decodedBodySize`, not headers. And
+  an instrumentation patch installed via the console dies on a full page
+  reload — take every reading first, do the reload checks last, and move
+  between pages by in-app links only.
+
+- **MORE THAN ONE AGENT SESSION WRITES TO PRODUCTION, AND ONE OF THEM IS
+  NOT ANNOUNCING IT.** Three sightings on `ep-little-sea` in two days,
+  4-5 Sep 2026, all on the operator company's own rows:
+
+    - a `SalesActivity` reading "ZZ-TEST Phase C verification call —
+      logged by Claude on 2026-09-04 to verify SalesActivity persistence",
+      which appeared on a lead BETWEEN a tester's page load and their
+      delete attempt — so the delete guard refused a lead they had just
+      seen as empty. The guard was right; the data moved underneath them;
+    - a `SalesLead` named "CLAUDE-VERIFY Phase C (delete me)" with a
+      $1,200/mo opportunity, which sat in the `/sales` pipeline band
+      inflating the live figures;
+    - a `CompanyLicense` named "ZZTEST Nevada — ZZ-TEST 61A" on
+      `/settings`, which is what made the #61 watcher above false-positive.
+
+  **That third one is the cost worth naming: a stray test row did not just
+  clutter a page, it corrupted an experiment and nearly produced a wrong
+  answer to a question two sessions had already burned days on.** A
+  measurement taken on this account is not taken on a quiet one.
+
+  So: **before timing or counting anything on production, screenshot or
+  record the starting state of the rows you are about to measure**, and
+  say in the report that you did. And if you are the session writing:
+  demo-project or scratch database, never `ep-little-sea`; if a production
+  write is genuinely unavoidable, post it in Slack BEFORE the write, not
+  after, and delete it in the same sitting. The demo project exists
+  precisely so this does not have to happen — see the three-Neon-projects
+  table above.
 - **`./scripts/preflight.sh` used to die on its first line inside a git
   worktree.** It ran `rm -f .git/index.lock`, but in a worktree `.git` is
   a FILE, not a directory — so that is `ENOTDIR`, which `rm -f` does NOT
