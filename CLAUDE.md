@@ -459,6 +459,39 @@ scrollback gets broken by whoever didn't scroll far enough.
   disabled 57 create buttons while their form is in flight and added an
   error boundary that says not to resubmit before reloading.
 
+- **"Cancel first" is not the rule for an armed delete — "Cancel takes the
+  pixel Delete vacated" is, and which end that is depends on the cluster's
+  alignment.** Issue #152's rule 2 says the confirm button must not occupy
+  the position the delete button just vacated, so a hurried second click
+  costs a click rather than the record. The mitigation everyone reaches for
+  is "render Cancel first". That is correct in exactly one geometry.
+
+  Measured in real Chromium (Playwright, the actual class strings, a real
+  box model — a DOM-only test environment like happy-dom or jsdom does no
+  layout and returns zeros from `getBoundingClientRect`, so no unit test in
+  this repo can see any of this):
+
+  | cluster | unarmed | armed `[Cancel][Confirm]` | overlap |
+  | --- | --- | --- | --- |
+  | right-pinned (`justify-between` parent + `shrink-0`) | `[Edit][Delete]` | Confirm is last | **60.7px, 100%** |
+  | left, one ordinary action | `[Edit][Delete]` | | 44.0px, 72% |
+  | left, two ordinary actions (`ApprenticeshipRowActions`) | `[Record][Edit][Remove]` | | 0px |
+
+  The reference row this rule was written from is the third line — the one
+  case where it happens to work — which is why the wrong version of it read
+  as correct for a week.
+
+  **In a right-pinned cluster the LAST control keeps its position**, so
+  Cancel goes last and the confirm sits clear of it. In a left-aligned
+  cluster the FIRST slot is the stable one, so Cancel goes first. Same rule,
+  opposite order. State it as "Cancel inherits the Delete pixel" and it
+  survives the translation; state it as "Cancel first" and it does not.
+
+  `SalesActivityRow`, `SalesOpportunityRow` and `SalesLeadRow` were checked
+  by measurement rather than by reading: all three already had the ORDER
+  right and only rule 1 (hide every ordinary action, not just the one
+  somebody remembered) was broken on the first two.
+
 - **A watcher whose needle is ALREADY ON THE PAGE cannot fail, and it will
   report a fast, confident, wrong number.** Born from the #61 capture
   above, and the same shape as every other vacuous test in this file — it
