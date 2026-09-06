@@ -80,6 +80,10 @@ export async function loadAlerts(
       select: {
         id: true,
         name: true,
+        // Whether the work is finished decides whether held retainage is
+        // normal accrual or money nobody is chasing — see the third branch
+        // of retainageAlerts.
+        status: true,
         substantialCompletionDate: true,
 
         invoices: { select: { amount: true, retainageWithheld: true } },
@@ -188,6 +192,11 @@ export async function loadAlerts(
       closeoutAcceptedOn:
         latest?.status === "ACCEPTED" ? isoDate(latest.respondedOn) : null,
       substantialCompletionDate: isoDate(job.substantialCompletionDate),
+      workIsFinished: job.status === "COMPLETE",
+      // `take: 1` above, so this is "does one exist" — which is the
+      // question: a job with any submission at all is already being chased
+      // by closeoutAlerts or has been accepted.
+      hasCloseoutSubmission: job.closeoutSubmissions.length > 0,
     });
 
     // Both unfinished states, not just SUBMITTED. CloseoutSubmissionStatus

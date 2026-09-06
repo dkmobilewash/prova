@@ -166,9 +166,80 @@ export const CLOSEOUT_CHASE_DAYS = 21;
 /** The ONLY way an alert key is built. Kept in one function because the
  * `fact` segment is what makes a dismissal lapse when the situation
  * changes, and a call site that forgot it would produce a key that
- * silences a licence forever. */
-export function alertKey(kind: AlertKind, subjectId: string, fact: string): string {
-  return `${kind}:${subjectId}:${fact}`;
+ * silences a licence forever.
+ *
+ * Several facts are joined with `~` rather than passed as one string,
+ * because `assertKeyShape` in lib/actions/alerts.ts splits on `:` and
+ * requires exactly three parts. An alert whose situation is "this date AND
+ * this much money" therefore keys on both, in one segment.
+ *
+ * NOTHING A CAPABILITY FILTER STRIPS MAY APPEAR HERE. The key is a prop of
+ * the client component AlertRow, so it is in the RSC flight payload and in
+ * view-source for everyone the alert reaches — including the people
+ * `visibleToPrincipal` exists to keep a dollar figure away from. Money goes
+ * in through `moneyFact` below, never as itself. Issue #109.
+ */
+export function alertKey(kind: AlertKind, subjectId: string, ...facts: string[]): string {
+  return `${kind}:${subjectId}:${facts.join("~")}`;
+}
+
+/** FNV-1a, 32 bits, hex. Written out rather than imported: this module is
+ * pure and has no dependencies, and `node:crypto` would make it
+ * unimportable from anywhere that is not Node. */
+function fnv1a(values: string[]): string {
+  let hash = 0x811c9dc5;
+  for (const value of values) {
+    for (let i = 0; i < value.length; i += 1) {
+      hash ^= value.charCodeAt(i);
+      hash = Math.imul(hash, 0x01000193) >>> 0;
+    }
+    // Separator, so ["ab","c"] and ["a","bc"] are not the same fact.
+    hash ^= 0x1f;
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(16).padStart(8, "0");
+}
+
+/**
+ * Which doubling a figure sits in. Null for "no money on this".
+ *
+ * A key must lapse a dismissal when the situation MATERIALLY changes, and
+ * for money that is neither "any change at all" nor "never". Cent-exact
+ * was the old answer for WIP_VARIANCE and it made that alert undismissable
+ * on any job with daily cost entries: one $12.40 delivery ticket minted a
+ * new key and the alert came straight back. Ignoring the amount entirely
+ * was the answer everywhere else, and it meant a retainage alert dismissed
+ * at $500 stayed dismissed at $42,000 — the same sentence about a
+ * completely different problem.
+ *
+ * A doubling is the line between those. $47,231.88 and $47,244.28 are the
+ * same band; $500 and $42,000 are six bands apart. Near a boundary a small
+ * change does flip the band and the alert returns once — being shown
+ * something an extra time is the safe direction of that error.
+ */
+export function amountBand(amount: number | null): number | null {
+  if (amount === null || !Number.isFinite(amount) || amount <= 0) return null;
+  return Math.floor(Math.log2(amount));
+}
+
+/**
+ * The money part of a key: which band, hashed, never the figure.
+ *
+ * Hashed because of where a key ends up. `visibleToPrincipal` nulls
+ * `amount` for anyone without a money capability, and the key travels to
+ * that same person's browser — so a readable band would hand a foreman
+ * "somewhere between $32,768 and $65,536", which is the margin
+ * conversation the filter exists to withhold, only vaguer.
+ *
+ * Said honestly, because a security claim that oversells is worse than
+ * none: this is obfuscation, not encryption. Someone holding this source
+ * could enumerate the few dozen possible bands and invert one. What it
+ * removes is the exact figure sitting in plain text in view-source for
+ * anyone who opens it, which is what issue #109 found.
+ */
+export function moneyFact(amount: number | null): string {
+  const band = amountBand(amount);
+  return band === null ? "m-none" : `m-${fnv1a([`band${band}`])}`;
 }
 
 /**
@@ -188,24 +259,12 @@ export function alertKey(kind: AlertKind, subjectId: string, fact: string): stri
  * and it carries the count in the clear, because a digest that reads
  * `17d-a3f19c2b` still says something to a person reading the table.
  *
- * FNV-1a, 32-bit, written out rather than imported: this module is pure
- * and has no dependencies, and `node:crypto` would make it unimportable
- * from anywhere that is not Node. Collisions are not a security question
- * here — the worst a collision does is let one dismissal cover a different
- * set of days on the same job.
+ * FNV-1a, through the shared `fnv1a` above. Collisions are not a security
+ * question here — the worst a collision does is let one dismissal cover a
+ * different set of days on the same job.
  */
 export function factDigest(values: string[]): string {
-  let hash = 0x811c9dc5;
-  for (const value of [...values].sort()) {
-    for (let i = 0; i < value.length; i += 1) {
-      hash ^= value.charCodeAt(i);
-      hash = Math.imul(hash, 0x01000193) >>> 0;
-    }
-    // Separator, so ["ab","c"] and ["a","bc"] are not the same fact.
-    hash ^= 0x1f;
-    hash = Math.imul(hash, 0x01000193) >>> 0;
-  }
-  return `${values.length}d-${hash.toString(16).padStart(8, "0")}`;
+  return `${values.length}d-${fnv1a([...values].sort())}`;
 }
 
 function severityForDate(dateIso: string | null, todayIso: string, horizon: number): AlertSeverity | null {
@@ -278,7 +337,11 @@ export function backchargeAlerts(
 
     const days = daysUntilIso(bc.respondByDate, todayIso);
     alerts.push({
-      key: alertKey("BACKCHARGE_RESPONSE", bc.id, bc.respondByDate),
+      // Both facts. The deadline moving is one situation changing; the
+      // claimed amount moving by a doubling is another, and a backcharge
+      // dismissed at $500 is not the same sentence at $42,000 — issue
+      // #109. Neither the figure nor its magnitude is readable here.
+      key: alertKey("BACKCHARGE_RESPONSE", bc.id, bc.respondByDate, moneyFact(bc.claimedAmount)),
       kind: "BACKCHARGE_RESPONSE",
       severity,
       title: `Backcharge ${bc.number} on ${bc.jobName} is unanswered`,
@@ -306,6 +369,13 @@ export type RetainageAlertSource = {
   closeoutAcceptedOn: string | null;
   /** The forecast anchor, used only when there is no accepted package. */
   substantialCompletionDate: string | null;
+  /** `Job.status === "COMPLETE"`. The work is done, so held money is no
+   * longer normal accrual — see the third branch below. */
+  workIsFinished: boolean;
+  /** Whether ANY closeout submission exists on this job, in any state. A
+   * job with one is already being chased by `closeoutAlerts`; a job with
+   * none is the case nothing was saying anything about at all. */
+  hasCloseoutSubmission: boolean;
 };
 
 /**
@@ -321,26 +391,55 @@ export type RetainageAlertSource = {
  * as a claim that money is due.
  *
  * Nothing is raised on a zero balance: there is no money to release.
+ *
+ * THREE grounds now, not two. The third is money held on a finished job
+ * that neither of the first two can see — issue #109, and the largest sum
+ * this app tracks was the one thing it said nothing about.
  */
 export function retainageAlerts(
   sources: RetainageAlertSource[],
   todayIso: string,
 ): Alert[] {
+  const chase = ALERT_HORIZON_DAYS.RETAINAGE_RELEASE ?? 14;
   const alerts: Alert[] = [];
 
   for (const job of sources) {
     if (job.balance <= 0) continue;
 
     if (job.closeoutAcceptedOn) {
-      const days = daysUntilIso(job.closeoutAcceptedOn, todayIso);
+      const sinceAccepted = -daysUntilIso(job.closeoutAcceptedOn, todayIso);
+      // NOT overdue the instant acceptance is recorded, which is what this
+      // did before: it hardcoded OVERDUE, so "the GC accepted the closeout
+      // package 0 days ago and this is still held" sorted above genuinely
+      // blown deadlines on the strength of carrying the biggest number.
+      // ALERT_HORIZON_DAYS.RETAINAGE_RELEASE existed the whole time and
+      // nothing read it. Issue #109.
+      //
+      // What that 14 is, said plainly: OUR chasing threshold, the same
+      // kind of number as CLOSEOUT_CHASE_DAYS, not a contractual one. Most
+      // subcontracts say payment is due some number of days after
+      // acceptance and this app does not record which; asserting a
+      // deadline we were never told is the one thing it must not do.
+      const chaseFrom = addDays(job.closeoutAcceptedOn, chase);
+      const days = daysUntilIso(chaseFrom, todayIso);
+      const elapsed = `${sinceAccepted} ${sinceAccepted === 1 ? "day" : "days"} ago`;
+
       alerts.push({
-        key: alertKey("RETAINAGE_RELEASE", job.jobId, job.closeoutAcceptedOn),
+        key: alertKey(
+          "RETAINAGE_RELEASE",
+          job.jobId,
+          job.closeoutAcceptedOn,
+          moneyFact(job.balance),
+        ),
         kind: "RETAINAGE_RELEASE",
-        severity: "OVERDUE",
+        severity: days < 0 ? "OVERDUE" : "DUE_SOON",
         title: `Retainage on ${job.jobName} is collectable`,
-        detail: `The GC accepted the closeout package ${Math.abs(days)} ${Math.abs(days) === 1 ? "day" : "days"} ago and this is still held.`,
+        detail:
+          days < 0
+            ? `The GC accepted the closeout package ${elapsed} and this is still held — past the ${chase} days this app waits before chasing. What the contract allows after acceptance is not recorded here.`
+            : `The GC accepted the closeout package ${elapsed} and this is still held. What the contract allows after acceptance is not recorded here.`,
         href: "/closeout",
-        dueOn: job.closeoutAcceptedOn,
+        dueOn: chaseFrom,
         daysUntil: days,
         amount: job.balance,
       });
@@ -349,7 +448,12 @@ export function retainageAlerts(
 
     if (job.substantialCompletionDate && job.substantialCompletionDate <= todayIso) {
       alerts.push({
-        key: alertKey("RETAINAGE_RELEASE", job.jobId, job.substantialCompletionDate),
+        key: alertKey(
+          "RETAINAGE_RELEASE",
+          job.jobId,
+          job.substantialCompletionDate,
+          moneyFact(job.balance),
+        ),
         kind: "RETAINAGE_RELEASE",
         severity: "STANDING",
         title: `Retainage on ${job.jobName} may be due`,
@@ -362,6 +466,46 @@ export function retainageAlerts(
         href: "/closeout",
         dueOn: job.substantialCompletionDate,
         daysUntil: daysUntilIso(job.substantialCompletionDate, todayIso),
+        amount: job.balance,
+      });
+      continue;
+    }
+
+    // Money held on a finished job with NOTHING to date it from.
+    //
+    // This raised nothing at all before — on the largest sum the app
+    // tracks. The two branches above both need an anchor: an accepted
+    // package, or a forecast completion date that has passed. A job that
+    // finished, never had a closeout package assembled, and never had a
+    // substantial completion date entered has neither, so its retainage
+    // was invisible to every alert here, and to closeoutAlerts as well,
+    // which only ever sees jobs that DID submit something. Issue #109.
+    //
+    // Gated on the work being finished, and that gate is the honesty of
+    // it: retainage held on a job still being built is the contract
+    // working as written, and alerting on every active job would turn this
+    // list into the furniture the header of this file warns about. Gated
+    // on there being no submission for the same reason — a job with one is
+    // already being chased by name.
+    //
+    // No date, so STANDING and no dueOn. The alert's whole content is that
+    // the date does not exist, and inventing one to sort by would be the
+    // same mistake in a new place.
+    if (
+      job.workIsFinished &&
+      !job.hasCloseoutSubmission &&
+      job.substantialCompletionDate === null
+    ) {
+      alerts.push({
+        key: alertKey("RETAINAGE_RELEASE", job.jobId, "unanchored", moneyFact(job.balance)),
+        kind: "RETAINAGE_RELEASE",
+        severity: "STANDING",
+        title: `Retainage on ${job.jobName} is held with nothing to date it`,
+        detail:
+          "The job is marked complete, no closeout package has been submitted, and no substantial completion date is recorded — so nothing here can say when this becomes collectable.",
+        href: "/closeout",
+        dueOn: null,
+        daysUntil: null,
         amount: job.balance,
       });
     }
@@ -439,7 +583,7 @@ export function closeoutAlerts(sources: CloseoutAlertSource[], todayIso: string)
       const elapsed = ago === 0 ? "today" : `${ago} ${ago === 1 ? "day" : "days"} ago`;
 
       alerts.push({
-        key: alertKey("CLOSEOUT_REJECTED", job.jobId, since),
+        key: alertKey("CLOSEOUT_REJECTED", job.jobId, since, moneyFact(amount)),
         kind: "CLOSEOUT_REJECTED",
         // No deadline exists to be past: most subcontracts say nothing
         // about how fast a bounced package must go back. Same argument as
@@ -461,7 +605,7 @@ export function closeoutAlerts(sources: CloseoutAlertSource[], todayIso: string)
     if (daysWith < CLOSEOUT_CHASE_DAYS) continue;
 
     alerts.push({
-      key: alertKey("CLOSEOUT_WITH_GC", job.jobId, job.submittedOn),
+      key: alertKey("CLOSEOUT_WITH_GC", job.jobId, job.submittedOn, moneyFact(amount)),
       kind: "CLOSEOUT_WITH_GC",
       severity: "STANDING",
       title: `Closeout package on ${job.jobName} has had no response`,
@@ -629,7 +773,14 @@ export function wipAlerts(sources: WipAlertSource[]): Alert[] {
   for (const job of sources) {
     if (job.overrun <= 0) continue;
     alerts.push({
-      key: alertKey("WIP_VARIANCE", job.jobId, job.overrun.toFixed(2)),
+      // The overrun's BAND, hashed — not the figure, and not to the cent.
+      // This key was `WIP_VARIANCE:<jobId>:47231.88`: the exact overrun,
+      // in the flight payload and in view-source, on an alert whose whole
+      // money filter exists to keep that number away from a foreman. And
+      // because it was cent-exact, one $12.40 delivery ticket minted a new
+      // key and the alert came back — on a job with daily cost entries it
+      // could never be dismissed at all. Both halves of issue #109.
+      key: alertKey("WIP_VARIANCE", job.jobId, moneyFact(job.overrun)),
       kind: "WIP_VARIANCE",
       severity: "STANDING",
       title: `${job.jobName} is forecast over its contract value`,

@@ -4,12 +4,14 @@ import {
   ALERT_HORIZON_DAYS,
   CLOSEOUT_CHASE_DAYS,
   alertKey,
+  amountBand,
   apprenticeRatioAlerts,
   backchargeAlerts,
   certifiedPayrollAlerts,
   closeoutAlerts,
   contactFollowUpAlerts,
   factDigest,
+  moneyFact,
   partitionAlerts,
   rankAlerts,
   renewalAlert,
@@ -129,7 +131,9 @@ describe("backchargeAlerts", () => {
     expect(alert.severity).toBe("OVERDUE");
     expect(alert.amount).toBe(4200);
     expect(alert.detail).toContain("7 days ago");
-    expect(alert.key).toBe("BACKCHARGE_RESPONSE:bc_1:2026-08-25");
+    // The deadline AND the money's band — see "money in an alert key".
+    expect(alert.key).toBe(alertKey("BACKCHARGE_RESPONSE", "bc_1", "2026-08-25", moneyFact(4200)));
+    expect(alert.key).toContain("2026-08-25");
   });
 
   it("warns inside the horizon and stays quiet outside it", () => {
@@ -163,6 +167,8 @@ describe("retainageAlerts", () => {
     balance: 13420,
     closeoutAcceptedOn: null as string | null,
     substantialCompletionDate: null as string | null,
+    workIsFinished: false,
+    hasCloseoutSubmission: false,
   };
 
   it("asserts money is collectable only on an accepted closeout package", () => {
@@ -170,6 +176,83 @@ describe("retainageAlerts", () => {
     expect(alert.severity).toBe("OVERDUE");
     expect(alert.amount).toBe(13420);
     expect(alert.detail).toContain("accepted the closeout package");
+  });
+
+  /**
+   * Issue #109: this used to be OVERDUE the instant acceptance was
+   * recorded, so it read "the GC accepted the closeout package 0 days ago
+   * and this is still held" and then sorted ABOVE genuinely blown
+   * deadlines, because rankAlerts breaks a severity tie on money and
+   * retainage carries the biggest number in the app.
+   */
+  describe("the 14-day chasing threshold", () => {
+    const accepted = { ...job, closeoutAcceptedOn: "2026-09-01" };
+
+    it("does not call money accepted today overdue", () => {
+      const [alert] = retainageAlerts([accepted], TODAY);
+      expect(alert.severity).toBe("DUE_SOON");
+      expect(alert.detail).toContain("0 days ago");
+      // Never a deadline we were not told about.
+      expect(alert.detail).toContain("not recorded here");
+    });
+
+    it("still says nothing about a deadline it does not know", () => {
+      const [alert] = retainageAlerts([{ ...job, closeoutAcceptedOn: "2026-08-01" }], TODAY);
+      expect(alert.severity).toBe("OVERDUE");
+      expect(alert.detail).toContain("31 days ago");
+      expect(alert.detail).toContain(`past the ${ALERT_HORIZON_DAYS.RETAINAGE_RELEASE} days`);
+    });
+
+    it("turns over exactly on the horizon, and reads it from the table", () => {
+      const horizon = ALERT_HORIZON_DAYS.RETAINAGE_RELEASE as number;
+      expect(horizon).toBe(14);
+      // Accepted 14 days ago: the threshold day itself, not yet past.
+      const onIt = retainageAlerts([{ ...job, closeoutAcceptedOn: "2026-08-18" }], TODAY);
+      expect(onIt[0].severity).toBe("DUE_SOON");
+      expect(onIt[0].dueOn).toBe("2026-09-01");
+      // Fifteen.
+      const past = retainageAlerts([{ ...job, closeoutAcceptedOn: "2026-08-17" }], TODAY);
+      expect(past[0].severity).toBe("OVERDUE");
+    });
+  });
+
+  /**
+   * Issue #109, the silent one: money held on a finished job that neither
+   * of the other two branches can see. No accepted package, no submission
+   * at all, no substantial completion date — so nothing anywhere said a
+   * word about the largest sum this app tracks.
+   */
+  describe("retainage nothing else can see", () => {
+    const stranded = { ...job, workIsFinished: true };
+
+    it("raises the held money on a finished job with no anchor at all", () => {
+      const [alert] = retainageAlerts([stranded], TODAY);
+      expect(alert).toBeDefined();
+      expect(alert.kind).toBe("RETAINAGE_RELEASE");
+      expect(alert.amount).toBe(13420);
+      // No date exists, so none is invented to sort by.
+      expect(alert.severity).toBe("STANDING");
+      expect(alert.dueOn).toBeNull();
+      expect(alert.daysUntil).toBeNull();
+      expect(alert.detail).toContain("nothing here can say when");
+    });
+
+    it("stays quiet on a job still being built", () => {
+      // Retainage held while the work runs is the contract working as
+      // written. Alerting on it would make this list furniture.
+      expect(retainageAlerts([{ ...stranded, workIsFinished: false }], TODAY)).toEqual([]);
+    });
+
+    it("stays quiet on a job whose package is already being chased", () => {
+      // closeoutAlerts names that job by itself, carrying the same money.
+      expect(retainageAlerts([{ ...stranded, hasCloseoutSubmission: true }], TODAY)).toEqual([]);
+    });
+
+    it("does not name the figure in the detail a foreman can read", () => {
+      const [alert] = retainageAlerts([stranded], TODAY);
+      expect(alert.detail).not.toContain("13420");
+      expect(alert.detail).not.toContain("13,420");
+    });
   });
 
   it("hedges when the only evidence is a forecast date", () => {
@@ -256,7 +339,10 @@ describe("closeoutAlerts", () => {
     it("hangs on the day they sent it back, not the day we sent it", () => {
       const [alert] = closeoutAlerts([rejected], TODAY);
       expect(alert.dueOn).toBe("2026-08-29");
-      expect(alert.key).toBe(alertKey("CLOSEOUT_REJECTED", "job_1", "2026-08-29"));
+      expect(alert.key).toBe(
+        alertKey("CLOSEOUT_REJECTED", "job_1", "2026-08-29", moneyFact(alert.amount)),
+      );
+      expect(alert.key).toContain("2026-08-29");
     });
 
     it("does not wait out the 21-day chase threshold", () => {
@@ -360,6 +446,169 @@ describe("wipAlerts", () => {
   it("says nothing about a job forecast under its contract value", () => {
     expect(wipAlerts([{ jobId: "job_1", jobName: "Mercy Tower", overrun: -5000 }])).toEqual([]);
     expect(wipAlerts([{ jobId: "job_1", jobName: "Mercy Tower", overrun: 0 }])).toEqual([]);
+  });
+});
+
+/* ------------------------------------------------------------ issue #109 */
+
+/**
+ * A key must not carry the one figure the capability filter exists to
+ * withhold, and it must still lapse a dismissal when the money materially
+ * moves. Those two pull in opposite directions, which is why they are
+ * tested together: satisfying either one alone is easy and wrong.
+ */
+describe("money in an alert key", () => {
+  const wip = (overrun: number) =>
+    wipAlerts([{ jobId: "job_1", jobName: "Mercy Tower", overrun }])[0];
+
+  /** Every plain way a figure could end up in a string. */
+  const renderings = (amount: number) => [
+    String(amount),
+    amount.toFixed(2),
+    amount.toFixed(0),
+    Math.round(amount).toString(),
+    amount.toLocaleString("en-US"),
+  ];
+
+  it("keeps the exact overrun out of the WIP key entirely", () => {
+    // It used to be the key: `WIP_VARIANCE:job_1:47231.88`. The whole
+    // Alert is a prop of the client component AlertRow, so that figure was
+    // in the RSC flight payload and in view-source for a foreman whose
+    // `amount` the filter had just nulled.
+    const alert = wip(47231.88);
+    expect(alert.amount).toBe(47231.88);
+    for (const rendering of renderings(47231.88)) {
+      expect(alert.key, `key leaks ${rendering}`).not.toContain(rendering);
+    }
+  });
+
+  it("keeps it out of every other money alert's key too", () => {
+    const backcharge = backchargeAlerts(
+      [
+        {
+          id: "bc_1",
+          number: 4,
+          jobName: "Mercy Tower",
+          status: "RECEIVED",
+          claimedAmount: 42000,
+          respondByDate: "2026-09-05",
+        },
+      ],
+      TODAY,
+    )[0];
+    const retainage = retainageAlerts(
+      [
+        {
+          jobId: "job_1",
+          jobName: "Mercy Tower",
+          balance: 42000,
+          closeoutAcceptedOn: "2026-08-01",
+          substantialCompletionDate: null,
+          workIsFinished: true,
+          hasCloseoutSubmission: true,
+        },
+      ],
+      TODAY,
+    )[0];
+    const closeout = closeoutAlerts(
+      [
+        {
+          jobId: "job_1",
+          jobName: "Mercy Tower",
+          submittedOn: "2026-08-01",
+          retainageBalance: 42000,
+          status: "SUBMITTED" as const,
+          respondedOn: null,
+        },
+      ],
+      TODAY,
+    )[0];
+
+    for (const alert of [backcharge, retainage, closeout]) {
+      expect(alert.amount).toBe(42000);
+      for (const rendering of renderings(42000)) {
+        expect(alert.key, `${alert.kind} key leaks ${rendering}`).not.toContain(rendering);
+      }
+    }
+  });
+
+  it("does not mint a new key for a $12.40 delivery ticket", () => {
+    // The cent-exact key made WIP_VARIANCE undismissable on any job with
+    // daily cost entries: every ticket was a new alert.
+    expect(wip(47231.88).key).toBe(wip(47244.28).key);
+  });
+
+  it("does mint a new key when the money doubles", () => {
+    expect(wip(47231.88).key).not.toBe(wip(94463.76).key);
+    expect(amountBand(500)).not.toBe(amountBand(42000));
+  });
+
+  it("has no band for money that is not there", () => {
+    expect(amountBand(null)).toBeNull();
+    expect(amountBand(0)).toBeNull();
+    expect(moneyFact(null)).toBe(moneyFact(0));
+    // A closeout package holding nothing and one holding $42,000 are not
+    // the same situation, so they are not the same key.
+    expect(moneyFact(null)).not.toBe(moneyFact(42000));
+  });
+});
+
+/**
+ * A dismissal that outlives the fact it dismissed hides a live problem,
+ * which is worse than never having offered to dismiss anything.
+ *
+ * Each of these DISMISSES, then CHANGES THE UNDERLYING FACT, then asserts
+ * what happened — a test that only dismisses proves nothing about this.
+ * The severity recorded is the alert's own, so escalation can never be the
+ * reason something comes back here; the key is the only mechanism under
+ * test.
+ */
+describe("a dismissal against money that has moved", () => {
+  const held = (balance: number) =>
+    retainageAlerts(
+      [
+        {
+          jobId: "job_1",
+          jobName: "Mercy Tower",
+          balance,
+          closeoutAcceptedOn: "2026-08-01",
+          substantialCompletionDate: null,
+          workIsFinished: true,
+          hasCloseoutSubmission: true,
+        },
+      ],
+      TODAY,
+    )[0];
+
+  const dismissed = (alert: Alert) => [
+    { alertKey: alert.key, snoozedUntil: null, acknowledgedSeverity: alert.severity },
+  ];
+
+  it("comes back when a retainage alert dismissed at $500 is now $42,000", () => {
+    const small = held(500);
+    const large = held(42000);
+    expect(small.severity).toBe(large.severity); // so escalation cannot explain it
+
+    const { visible, silenced } = partitionAlerts([large], dismissed(small), TODAY);
+    expect(silenced).toEqual([]);
+    expect(visible).toHaveLength(1);
+    expect(visible[0].amount).toBe(42000);
+  });
+
+  it("stays dismissed while the money has not moved", () => {
+    // The control. Without it the test above would pass on an
+    // implementation that simply never silences anything.
+    const alert = held(42000);
+    const { visible, silenced } = partitionAlerts([alert], dismissed(alert), TODAY);
+    expect(visible).toEqual([]);
+    expect(silenced).toHaveLength(1);
+  });
+
+  it("stays dismissed through a $12.40 change on a WIP alert", () => {
+    const before = wipAlerts([{ jobId: "job_1", jobName: "Mercy Tower", overrun: 47231.88 }])[0];
+    const after = wipAlerts([{ jobId: "job_1", jobName: "Mercy Tower", overrun: 47244.28 }])[0];
+    const { silenced } = partitionAlerts([after], dismissed(before), TODAY);
+    expect(silenced).toHaveLength(1);
   });
 });
 

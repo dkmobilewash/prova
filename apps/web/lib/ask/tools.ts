@@ -114,25 +114,25 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: "compliance_status",
     description:
-      "Certificates of insurance, contractor licences, insurance policies and bonds that are expired, expiring soon, or missing a date — ranked worst first. Answers 'is that certificate still active'. Covers the company's OWN records; it does not track a subcontractor's certificates unless one has been filed here.",
+      "Certificates of insurance, contractor licences, insurance policies and bonds that are expired, expiring soon, or missing a date — ranked worst first, with a count of how many records exist at all. Answers 'is that certificate still active'. Covers the company's OWN records; it does not track a subcontractor's certificates unless one has been filed here. A company with nothing recorded gets a statement that there is nothing to check, which is NOT a statement that anything is current.",
     input_schema: noInput,
   },
   {
     name: "drawing_currency",
     description:
-      "Per drawing set: which revision is current, whether a newer revision has been issued but not received, and how old each is. Answers 'am I building off the latest sheet'. Current means most recently ISSUED by the architect, not most recently received.",
+      "Per drawing set: which revision is current, the day it was issued and how many days ago that was, and any revision issued but not received with the same two figures. Answers 'am I building off the latest sheet'. Current means most recently ISSUED by the architect, not most recently received.",
     input_schema: jobFilter,
   },
   {
     name: "job_margin",
     description:
-      "Contract value, cost to date, forecast cost at completion, percent complete, earned revenue and over/under billing for active jobs, plus how much of each job's value actually carries a cost estimate. Answers 'are we making money on this'. Does NOT know vendor price changes — there is no vendor price history.",
+      "Contract value, cost to date, forecast cost at completion, percent complete, earned revenue and over/under billing for active jobs, plus how much of each job's value actually carries a cost estimate. Every percentage comes back already written as a percentage, e.g. \"40.0%\" — say it exactly as given and never rescale it. Answers 'are we making money on this'. Does NOT know vendor price changes — there is no vendor price history.",
     input_schema: jobFilter,
   },
   {
     name: "bid_status",
     description:
-      "Bid invitations by status — invited, submitted, won, lost, declined — with the GC, trade and due date. Answers 'which bids are outstanding and who has not come back to us'.",
+      "Bid invitations by status — invited, submitted, won, lost, declined — with the GC, trade and due date, plus a count of each status across every invitation on record. Undecided ones (invited, submitted) come first, so a long history never crowds them out of the rows you are shown. Answers 'which bids are outstanding and who has not come back to us'.",
     input_schema: noInput,
   },
   {
@@ -144,7 +144,7 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: "material_deliveries",
     description:
-      "Material orders with their delivery state — delivered, partly delivered, nothing yet — and how many days late against the promised date. Answers 'did the material actually turn up'.",
+      "Material orders with their delivery state — delivered, partly delivered, nothing yet — and how many days late against the promised date, plus counts of how many are outstanding and how many are late. Orders that have not fully arrived come first. Answers 'did the material actually turn up'.",
     input_schema: jobFilter,
   },
   {

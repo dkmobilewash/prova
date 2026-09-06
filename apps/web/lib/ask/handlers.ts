@@ -10,7 +10,12 @@ import { renewalSourcesForCompany } from "@/lib/renewals";
 import { serverToday } from "@/lib/serverToday";
 import { daysPastDueFor, effectiveDueDateFor } from "@/lib/cash-flow";
 import { currentRevision, setState, stateLabel, unreceivedRevisions } from "@/components/drawingLabels";
-import { orderState, stateLabel as orderStateLabel, daysLate } from "@/components/materialOrderLabels";
+import {
+  orderState,
+  stateLabel as orderStateLabel,
+  daysLate,
+  daysBetween,
+} from "@/components/materialOrderLabels";
 import { currentAssignment } from "@/components/equipmentDeployment";
 import { matchesJobName, type ToolName, type ToolResult } from "./tools";
 
@@ -32,6 +37,54 @@ import { matchesJobName, type ToolName, type ToolResult } from "./tools";
 type Input = { jobName?: string };
 
 const iso = (date: Date | null) => (date ? date.toISOString().slice(0, 10) : null);
+
+/**
+ * A rate as the pages render it, and as a percentage rather than a raw
+ * fraction.
+ *
+ * lib/wip.ts returns 0..1. This handler used to hand that straight over as
+ * `percentComplete: 0.4` while /jobs/[id] rendered "40.0%" off the same
+ * number, and the system prompt says "never do arithmetic, say the number
+ * the tool gave you". So the model had two choices and both were wrong: say
+ * "0.4% complete", or multiply by a hundred and break the one rule the
+ * feature is built on. On a margin figure that is 100x. Issue #103.
+ *
+ * A STRING with the unit attached, not a scaled number, deliberately. A
+ * bare 40 is still a value whose unit the model has to infer, and the whole
+ * point here is that it never has to. `"40.0%"` is the same text the page
+ * shows, so an answer and the screen it came from cannot disagree.
+ */
+const percent = (rate: number | null) =>
+  rate === null ? null : `${(rate * 100).toFixed(1)}%`;
+
+/**
+ * The honest empty answer when a job name was asked about.
+ *
+ * "Nothing is open on the punch list for that job" and "there is no job by
+ * that name" are completely different answers, and this used to give the
+ * first for both — so "what RFIs are open on Rivrside?" (a typo) came back
+ * as company-wide good news that never mentioned the job. The person reads
+ * a clean bill of health for a job the app never looked at. Issue #103.
+ *
+ * The job query only runs on the empty path, which is the only place the
+ * distinction can matter, and it reads names alone.
+ */
+async function emptyAnswer(
+  companyId: string,
+  jobName: string | undefined,
+  forTheJob: (names: string) => string,
+  forEverything: string,
+): Promise<string> {
+  const filter = jobName?.trim();
+  if (!filter) return forEverything;
+
+  const jobs = await prisma.job.findMany({ where: { companyId }, select: { name: true } });
+  const matched = jobs.filter((job) => matchesJobName(job.name, filter));
+  if (matched.length === 0) {
+    return `No job here matches "${filter}", so this is not an answer about that job — check the name against the jobs list.`;
+  }
+  return forTheJob(matched.map((job) => job.name).join(", "));
+}
 
 /** Dispatch as a record rather than a switch, so a test can assert that
  * every declared tool has a handler AND that every handler is declared.
@@ -138,7 +191,14 @@ async function openPunchList(companyId: string, input: Input): Promise<ToolResul
     })),
     citations: [{ label: "Punch lists", href: "/punch-lists" }],
     unavailable:
-      filtered.length === 0 ? "Nothing is open on the punch list for that job." : undefined,
+      filtered.length === 0
+        ? await emptyAnswer(
+            companyId,
+            input.jobName,
+            (names) => `Nothing is open on the punch list for ${names}.`,
+            "Nothing is open on the punch list on any job.",
+          )
+        : undefined,
   };
 }
 
@@ -157,11 +217,20 @@ async function complianceStatus(companyId: string): Promise<ToolResult> {
       expiresOn: alert.date,
       conflict: alert.disagreement,
     })),
+    summary: { recordsOnFile: sources.length, needingAttention: alerts.length },
     citations: [{ label: "Compliance", href: "/compliance" }],
     unavailable:
-      alerts.length === 0
-        ? "Nothing is expired or expiring: every certificate, licence, policy and bond on file is current."
-        : undefined,
+      // ZERO SOURCES IS NOT A CLEAN BILL OF HEALTH, and this used to
+      // answer as though it were: no records yields no alerts yields
+      // "every certificate, licence, policy and bond on file is current."
+      // The prompt tells the model an `unavailable` message IS the answer,
+      // so "is my GL still good?" from a company that has never filed a
+      // COI came back as reassurance. Issue #103.
+      sources.length === 0
+        ? "There is nothing on file to check — no certificates of insurance, licences, policies or bonds have been recorded here. That is not the same as everything being current: it means this app cannot tell you either way."
+        : alerts.length === 0
+          ? "Nothing is expired or expiring: every certificate, licence, policy and bond on file is current. That covers what has been recorded here and nothing else."
+          : undefined,
   };
 }
 
@@ -207,13 +276,35 @@ async function drawingCurrency(companyId: string, input: Input): Promise<ToolRes
         // dangerous rather than pending.
         buildFrom: current?.label ?? null,
         currentIssuedOn: current?.issuedOn ?? null,
+        // The age the tool description promises, computed here.
+        //
+        // It was promised and never returned, so the model was handed an
+        // issue date and a question about age and did the only thing left:
+        // subtracted the dates itself and stated the result as fact — the
+        // one thing this design forbids, on a tool whose description told
+        // it the number would be there. A promise a handler does not keep
+        // is an instruction to do arithmetic. Issue #103.
+        currentIssuedDaysAgo:
+          current === null ? null : daysBetween(current.issuedOn, today),
         state: stateLabel(state),
-        issuedButNotReceived: unreceivedRevisions(revisions).map((r) => r.label),
+        issuedButNotReceived: unreceivedRevisions(revisions).map((r) => ({
+          revision: r.label,
+          issuedOn: r.issuedOn,
+          issuedDaysAgo: daysBetween(r.issuedOn, today),
+        })),
         asOf: today,
       };
     }),
     citations: [{ label: "Drawings", href: "/drawings" }],
-    unavailable: filtered.length === 0 ? "No drawing sets are recorded for that job." : undefined,
+    unavailable:
+      filtered.length === 0
+        ? await emptyAnswer(
+            companyId,
+            input.jobName,
+            (names) => `No drawing sets are recorded for ${names}.`,
+            "No drawing sets are recorded on any job.",
+          )
+        : undefined,
   };
 }
 
@@ -265,7 +356,8 @@ async function jobMargin(companyId: string, input: Input): Promise<ToolResult> {
         contractValue: wip.contractValue,
         costToDate: wip.actualCostToDate,
         forecastCostAtCompletion: wip.estimatedCostAtCompletion,
-        percentComplete: wip.percentComplete,
+        // "40.0%", not 0.4 — see `percent` above.
+        percentComplete: percent(wip.percentComplete),
         // Null rather than a flattered number: earnedRevenue is summed with
         // `?? 0` while contract value counts in full, so on a half-estimated
         // job the model would otherwise be handed "overbilled $80,000" as a
@@ -279,14 +371,18 @@ async function jobMargin(companyId: string, input: Input): Promise<ToolResult> {
         // while their contract value still counts. Two ratios, because a
         // line estimated at zero cost is covered on the cost side and not on
         // the revenue side.
-        shareOfValueWithACostEstimate: wip.estimatedCoverage,
-        shareOfValueWithAnEarnedRevenueFigure: wip.earnedCoverage,
+        shareOfValueWithACostEstimate: percent(wip.estimatedCoverage),
+        shareOfValueWithAnEarnedRevenueFigure: percent(wip.earnedCoverage),
       };
     }),
     citations: [{ label: "Today", href: "/dashboard" }],
     unavailable: filtered.length === 0 ? "No active job matches that name." : undefined,
   };
 }
+
+/** Still open, in the sense the question "which bids are outstanding?"
+ * means: nobody has decided yet. WON, LOST and DECLINED are decided. */
+const BID_IS_UNDECIDED = (status: string) => status === "INVITED" || status === "SUBMITTED";
 
 async function bidStatus(companyId: string): Promise<ToolResult> {
   const bids = await prisma.bidInvitation.findMany({
@@ -302,8 +398,29 @@ async function bidStatus(companyId: string): Promise<ToolResult> {
     orderBy: { dueDate: "asc" },
   });
 
+  // UNDECIDED FIRST, and this ordering is the whole fix for issue #103.
+  //
+  // The rows get truncated at MAX_ROWS_PER_TOOL (40) on the way to the
+  // model — see forModel in answer.ts. Ordered by due date alone, the head
+  // of that list is the OLDEST invitations, which on any company with a
+  // history are the ones already won and lost. So a company with 41
+  // lifetime invitations, asked "which bids are outstanding?", handed the
+  // model 40 decided bids and zero INVITED ones, and the answer was built
+  // from a slice that contained none of the rows the question was about.
+  //
+  // Sorting the live ones to the front means the truncation can only ever
+  // drop history, which is the half nobody asked about. The counts below
+  // cover what it does drop.
+  const ordered = [...bids].sort((a, b) => {
+    const byOpen = Number(BID_IS_UNDECIDED(b.status)) - Number(BID_IS_UNDECIDED(a.status));
+    if (byOpen !== 0) return byOpen;
+    return (iso(a.dueDate) ?? "9999-12-31").localeCompare(iso(b.dueDate) ?? "9999-12-31");
+  });
+
+  const count = (status: string) => bids.filter((bid) => bid.status === status).length;
+
   return {
-    data: bids.map((bid) => ({
+    data: ordered.map((bid) => ({
       project: bid.projectName,
       gc: bid.contact.name,
       status: bid.status,
@@ -311,6 +428,18 @@ async function bidStatus(companyId: string): Promise<ToolResult> {
       trade: bid.tradeScope,
       notes: bid.notes,
     })),
+    // Computed here rather than left to the model, over ALL the rows and
+    // not just the ones that survive truncation. Counting a list is
+    // arithmetic and the model is told not to do arithmetic, so a count it
+    // is not given is a count it cannot honestly produce.
+    summary: {
+      invitedCount: count("INVITED"),
+      submittedCount: count("SUBMITTED"),
+      wonCount: count("WON"),
+      lostCount: count("LOST"),
+      declinedCount: count("DECLINED"),
+      undecidedCount: bids.filter((bid) => BID_IS_UNDECIDED(bid.status)).length,
+    },
     citations: [{ label: "Bids", href: "/bids" }],
     unavailable: bids.length === 0 ? "No bid invitations are recorded." : undefined,
   };
@@ -353,7 +482,14 @@ async function openRfis(companyId: string, input: Input): Promise<ToolResult> {
     })),
     citations: [{ label: "RFIs", href: "/rfis" }],
     unavailable:
-      filtered.length === 0 ? "No RFIs are sent and awaiting an answer." : undefined,
+      filtered.length === 0
+        ? await emptyAnswer(
+            companyId,
+            input.jobName,
+            (names) => `No RFIs are sent and awaiting an answer on ${names}.`,
+            "No RFIs are sent and awaiting an answer.",
+          )
+        : undefined,
   };
 }
 
@@ -376,27 +512,54 @@ async function materialDeliveries(companyId: string, input: Input): Promise<Tool
   const today = serverToday();
   const filtered = orders.filter((order) => matchesJobName(order.job.name, input.jobName));
 
+  const rows = filtered.map((order) => {
+    const deliveries = order.deliveries.map((delivery) => ({
+      ...delivery,
+      deliveredOn: delivery.deliveredOn.toISOString().slice(0, 10),
+    }));
+    const promised = iso(order.promisedFor);
+    const state = orderState(deliveries);
+    return {
+      order: order.number,
+      what: order.description,
+      job: order.job.name,
+      vendor: order.vendor.name,
+      vendorPhone: order.vendor.phone,
+      promisedFor: promised,
+      state: orderStateLabel(state),
+      daysLate: daysLate(deliveries, promised, today),
+      isComplete: state === "COMPLETE",
+    };
+  });
+
+  // Undelivered first, exactly as bid_status sorts undecided first and for
+  // the same reason: forModel keeps the head of the list, and ordering by
+  // promised date alone put the oldest COMPLETE orders there. "Did the
+  // material turn up?" was being answered from a slice that could contain
+  // nothing still outstanding. Issue #103.
+  const ordered = [...rows].sort((a, b) => {
+    const byOpen = Number(a.isComplete) - Number(b.isComplete);
+    if (byOpen !== 0) return byOpen;
+    return (a.promisedFor ?? "9999-12-31").localeCompare(b.promisedFor ?? "9999-12-31");
+  });
+
   return {
-    data: filtered.map((order) => {
-      const deliveries = order.deliveries.map((delivery) => ({
-        ...delivery,
-        deliveredOn: delivery.deliveredOn.toISOString().slice(0, 10),
-      }));
-      const promised = iso(order.promisedFor);
-      return {
-        order: order.number,
-        what: order.description,
-        job: order.job.name,
-        vendor: order.vendor.name,
-        vendorPhone: order.vendor.phone,
-        promisedFor: promised,
-        state: orderStateLabel(orderState(deliveries)),
-        daysLate: daysLate(deliveries, promised, today),
-      };
-    }),
+    data: ordered,
+    summary: {
+      orderCount: rows.length,
+      notFullyDeliveredCount: rows.filter((row) => !row.isComplete).length,
+      lateCount: rows.filter((row) => row.daysLate !== null).length,
+    },
     citations: [{ label: "Material orders", href: "/material-orders" }],
     unavailable:
-      filtered.length === 0 ? "No material orders are recorded for that job." : undefined,
+      filtered.length === 0
+        ? await emptyAnswer(
+            companyId,
+            input.jobName,
+            (names) => `No material orders are recorded for ${names}.`,
+            "No material orders are recorded on any job.",
+          )
+        : undefined,
   };
 }
 
