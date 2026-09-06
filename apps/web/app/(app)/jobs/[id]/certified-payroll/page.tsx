@@ -12,6 +12,7 @@ import {
 } from "@/lib/certified-payroll-week";
 import { loadCertifiedPayrollWeekEntries } from "@/lib/certified-payroll-query";
 import type { FringeRateScheduleInput } from "@/lib/labor-cost";
+import { payrollWorkerName } from "@/lib/worker-name";
 
 const PAY_TYPE_COLUMNS = [
   { value: "STRAIGHT", label: "ST" },
@@ -105,9 +106,21 @@ export default async function CertifiedPayrollPage({
     ]),
   );
 
+  // Who has no name on their account. Collected before the summary is built,
+  // because it groups by employeeUserId and the identity is gone by the time
+  // the rows come back out.
+  const missingName = new Map<string, string>();
+  for (const entry of entries) {
+    if (payrollWorkerName(entry.employeeUser).nameMissing) {
+      missingName.set(entry.employeeUserId, entry.employeeUser.email);
+    }
+  }
+
   const summaryInputs: CertifiedPayrollTimeEntryInput[] = entries.map((entry) => ({
     employeeUserId: entry.employeeUserId,
-    employeeName: entry.employeeUser.name ?? entry.employeeUser.email,
+    // NOT `name ?? email`. See lib/worker-name.ts — this column is a
+    // statement to a government agency about who did the work.
+    employeeName: payrollWorkerName(entry.employeeUser).label,
     craftClassificationId: entry.craftClassificationId,
     craftLabel: entry.craftClassification
       ? `${entry.craftClassification.unionLocal.parentInternational} ${entry.craftClassification.unionLocal.localNumber} — ${entry.craftClassification.name}`
@@ -174,9 +187,38 @@ export default async function CertifiedPayrollPage({
         <p className="mt-8 text-sm text-slate-500">No time entries logged on this job for this week.</p>
       ) : (
         <div className="mt-4 flex flex-col gap-6">
+          {/* Ahead of the summaries rather than as a footnote: this decides
+              whether the week can be filed at all, and a note under the last
+              table is the thing nobody reads before printing. */}
+          {missingName.size > 0 && (
+            <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-4 text-sm">
+              <p className="font-medium text-amber-300">
+                {missingName.size === 1
+                  ? "One person on this week has no name on their account."
+                  : `${missingName.size} people on this week have no name on their account.`}
+              </p>
+              <p className="mt-1 text-xs text-amber-200/80">
+                The worker-name column on a WH-347 is a statement about who did the work, so it is
+                left as &ldquo;Name not recorded&rdquo; rather than filled with an email address.
+                Set the name on each account under Team, then reload this page before filing.
+              </p>
+              <ul className="mt-2 flex flex-col gap-0.5 text-xs text-amber-200/80">
+                {[...missingName.values()].map((email) => (
+                  <li key={email}>{email}</li>
+                ))}
+              </ul>
+            </div>
+          )}
           {employeeSummaries.map((employee) => (
             <div key={employee.employeeUserId} className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-              <p className="font-medium text-slate-100">{employee.employeeName}</p>
+              <p className="font-medium text-slate-100">
+                {employee.employeeName}
+                {missingName.has(employee.employeeUserId) && (
+                  <span className="ml-2 text-xs font-normal text-amber-400">
+                    — no name on {missingName.get(employee.employeeUserId)}
+                  </span>
+                )}
+              </p>
               <div className="mt-2 overflow-x-auto">
                 <table className="w-full min-w-[480px] text-left text-sm">
                   <thead>
