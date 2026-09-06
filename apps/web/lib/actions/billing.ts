@@ -194,9 +194,14 @@ export async function signRequest(token: string, formData: FormData): Promise<Ac
  * between the read and the write.
  */
 export async function revokeSignatureRequest(signatureRequestId: string): Promise<ActionResult> {
-  const context = await requireCompanyContext();
-  assertOwner(context, "Only the account owner can revoke a signing link");
-  const { company } = context;
+  const { company, ...user } = await requireCompanyContext();
+  if (user.role !== "OWNER") {
+    // Returned rather than thrown. `assertOwner` throws, and production
+    // redacts a thrown Server Action message to a digest — so the sentence
+    // explaining why the button did nothing would never arrive. Same
+    // reasoning as deleteBackcharge.
+    return actionFail("Only the account owner can revoke a signing link");
+  }
 
   const request = await prisma.signatureRequest.findUnique({
     where: { id: signatureRequestId },
@@ -258,9 +263,11 @@ export async function enablePortalAccess(contactId: string) {
  * off from their own portal mid-job is a decision, not a tidy-up.
  */
 export async function revokePortalAccess(contactId: string): Promise<ActionResult> {
-  const context = await requireCompanyContext();
-  assertOwner(context, "Only the account owner can revoke a client's portal link");
-  const { company } = context;
+  const { company, ...user } = await requireCompanyContext();
+  if (user.role !== "OWNER") {
+    // Returned, not thrown — see revokeSignatureRequest.
+    return actionFail("Only the account owner can revoke a client's portal link");
+  }
 
   const contact = await prisma.contact.findUnique({ where: { id: contactId } });
   if (!contact || contact.companyId !== company.id) {
