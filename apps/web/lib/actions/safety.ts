@@ -9,6 +9,7 @@ import {
   actionFail,
   actionOk,
   assertOwner,
+  ownerRefusal,
   type ActionResult,
 } from "./shared";
 // The one definition of what OSHA counts as recordable, shared with the log
@@ -284,7 +285,12 @@ export async function deleteSafetyIncident(
   // docstring argues against.
   const context = await requireCompanyContext();
   if (!can(context, "MANAGE_FIELD")) return actionFail(FIELD_ONLY);
-  assertOwner(context, "Only the account owner can remove a safety case");
+  // Returned, not thrown, for exactly the reason the comment above gives:
+  // this was the one line where the rule had been affirmed and not applied
+  // — an ACCOUNTING member got a sentence and a non-owner MEMBER got a
+  // digest, from two adjacent guards in the same function (#166).
+  const denied = ownerRefusal(context, "Only the account owner can remove a safety case");
+  if (denied) return denied;
   const { company } = context;
 
   const incident = await prisma.safetyIncident.findUnique({ where: { id: incidentId } });

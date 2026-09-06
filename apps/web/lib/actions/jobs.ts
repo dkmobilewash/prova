@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import { requireCompanyContext } from "@/lib/auth";
 import { Prisma, prisma } from "@prova/db";
 import { draftEstimateLineItems } from "@prova/integrations";
-import { actionFail, actionOk, type ActionResult, assertEditableDirectly, assertJobInCompany, assertLineItemOnJob, COST_CATEGORIES, craftClassificationIdFromForm, decimalFromForm, nullableDecimalFromForm, tradeScopeFromForm } from "./shared";
+import { actionFail, actionOk, type ActionResult, assertEditableDirectly, assertJobInCompany, assertLineItemOnJob, COST_CATEGORIES, craftClassificationIdFromForm, decimalFromForm, isUniqueConstraintError, nullableDecimalFromForm, tradeScopeFromForm } from "./shared";
 
 /** Creates a Job with a new Contact. This is the start of the estimate. */
 export async function createJob(formData: FormData) {
@@ -399,7 +399,13 @@ export async function assignCrewMember(jobId: string, formData: FormData) {
   try {
     await prisma.jobAssignment.create({ data: { jobId, userId } });
   } catch (error) {
-    if (!(error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002")) {
+    // `isUniqueConstraintError`, NOT `instanceof
+    // Prisma.PrismaClientKnownRequestError` — that instanceof is false at
+    // runtime under Next's bundling, so this guard never fired and the
+    // no-op below never happened: assigning an already-assigned teammate
+    // rethrew a raw Prisma error and 500'd the page (#26). The logic was
+    // always right; only the class test was wrong.
+    if (!isUniqueConstraintError(error)) {
       throw error;
     }
     // Already assigned — treat as a no-op rather than an error.

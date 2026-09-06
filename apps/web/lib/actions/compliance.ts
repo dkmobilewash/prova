@@ -5,7 +5,7 @@ import { putDocument } from "@/lib/blob";
 import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@prova/db";
 import { extractComplianceDocument } from "@prova/integrations";
-import { BOND_TYPES, COMPLIANCE_DOCUMENT_TYPES, INSURANCE_POLICY_TYPES, JURISDICTION_TYPES, SETTABLE_LICENSE_STATUSES, type ActionResult, actionFail, actionOk, assertOwner, enumFromForm, nullableDecimalFromForm } from "./shared";
+import { BOND_TYPES, COMPLIANCE_DOCUMENT_TYPES, INSURANCE_POLICY_TYPES, JURISDICTION_TYPES, SETTABLE_LICENSE_STATUSES, type ActionResult, actionFail, actionOk, assertOwner, ownerRefusal, enumFromForm, nullableDecimalFromForm } from "./shared";
 
 /** Adds a company insurance policy record (GL, workers' comp, auto, umbrella). */
 export async function createInsurancePolicy(formData: FormData) {
@@ -309,7 +309,8 @@ function licenceFieldsFromForm(formData: FormData) {
 
 export async function createCompanyLicense(formData: FormData): Promise<ActionResult> {
   const context = await requireCompanyContext();
-  assertOwner(context, "Only the account owner can add a licence");
+  const denied = ownerRefusal(context, "Only the account owner can add a licence");
+  if (denied) return denied;
   const { company } = context;
 
   const fields = licenceFieldsFromForm(formData);
@@ -341,7 +342,8 @@ export async function updateCompanyLicense(
   formData: FormData,
 ): Promise<ActionResult> {
   const context = await requireCompanyContext();
-  assertOwner(context, "Only the account owner can edit a licence");
+  const denied = ownerRefusal(context, "Only the account owner can edit a licence");
+  if (denied) return denied;
   const { company } = context;
 
   const licence = await prisma.companyLicense.findUnique({ where: { id: licenseId } });
@@ -373,7 +375,8 @@ export async function updateCompanyLicense(
 
 export async function deleteCompanyLicense(licenseId: string): Promise<ActionResult> {
   const context = await requireCompanyContext();
-  assertOwner(context, "Only the account owner can remove a licence");
+  const denied = ownerRefusal(context, "Only the account owner can remove a licence");
+  if (denied) return denied;
   const { company } = context;
 
   const licence = await prisma.companyLicense.findUnique({ where: { id: licenseId } });

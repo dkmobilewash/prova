@@ -105,9 +105,73 @@ export async function craftClassificationIdFromForm(formData: FormData, companyI
   return craft.id;
 }
 
+/**
+ * The owner rule, as a VALUE rather than a control-flow effect.
+ *
+ * Returns the refusal to hand straight back to the caller, or `null` when
+ * the person really is the owner. The polarity is deliberate and is why it
+ * is not called `checkOwner`: the thing returned IS the refusal, so
+ * `if (denied) return denied` reads the way it behaves.
+ *
+ *   const denied = ownerRefusal(context, "Only the account owner can …");
+ *   if (denied) return denied;
+ *
+ * `{ ok: false; error: string }` rather than `ActionResult`, so one helper
+ * serves every action shape in this folder: it is assignable to
+ * `ActionResult`, to `ActionResultWith<T>`, and to the bespoke
+ * `{ ok: true; rows: … } | { ok: false; error: string }` unions in
+ * quickbooks.ts. A helper that only fit `ActionResult` would have left
+ * those last two to hand-roll it again, which is the defect this replaces.
+ *
+ * WHY IT EXISTS (#166). `assertOwner` below THROWS, and production redacts
+ * a thrown Server Action message to a digest — verified 2026-08-27 on a
+ * real production build. So an action whose declared contract is "my
+ * refusals are legible" could not keep that promise while refusing through
+ * `assertOwner`: in `deleteSafetyIncident` an ACCOUNTING member got a
+ * sentence from the capability check and a non-owner MEMBER got a digest
+ * from the line below it. Diego's rule, affirmed on #87: A GUARD WHOSE
+ * REASON CANNOT BE READ IS A GUARD THAT ONLY LOOKS LIKE IT IS PROTECTING
+ * SOMETHING.
+ *
+ * Thirteen call sites had already noticed and each written its own
+ * five-line `try`/`catch` around one helper — and they had already drifted,
+ * integrations.ts falling back to "Not permitted" where the other twelve
+ * said "Only the account owner can do that". Thirteen independent copies
+ * of the same wrapper is evidence the HELPER was the wrong shape, not that
+ * thirteen authors were being careful, so the fix is here rather than at
+ * twenty-four call sites.
+ */
+export function ownerRefusal(
+  user: { role: string },
+  message?: string,
+): { ok: false; error: string } | null {
+  if (user.role === "OWNER") return null;
+  return { ok: false, error: message ?? "Only the account owner can do that" };
+}
+
+/**
+ * The throwing form, for actions that make no legibility promise.
+ *
+ * Kept, and deliberately not deprecated: twenty-two call sites sit in
+ * actions that return `void` and signal every other failure by throwing
+ * too (`billing.ts`, `estimating.ts`, `punchLists.ts`, `rfis.ts`,
+ * `vendors.ts`, `equipment.ts` and friends). Converting those means
+ * changing their return types and the components that call them, which is
+ * several other people's lanes — and a half-converted module is worse than
+ * either whole.
+ *
+ * This is NOT "two ways to do it". There is one rule and one message,
+ * defined once above; this is a two-line adapter that turns that value
+ * into a throw. The two cannot disagree about who an owner is, which was
+ * the actual risk. The choice at a call site is not "which helper do I
+ * prefer" but a fact about the enclosing function: IF IT RETURNS AN
+ * `ok`-SHAPED RESULT, USE `ownerRefusal` — and `owner-refusal-legibility.test.ts`
+ * fails the build if a new one does not.
+ */
 export function assertOwner(user: { role: string }, message?: string) {
-  if (user.role !== "OWNER") {
-    throw new Error(message ?? "Only the account owner can do that");
+  const refusal = ownerRefusal(user, message);
+  if (refusal) {
+    throw new Error(refusal.error);
   }
 }
 

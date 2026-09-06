@@ -1,7 +1,8 @@
 import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
-import { cancelInvite, inviteTeamMember, removeTeamMember } from "@/lib/actions";
+import { cancelInvite, removeTeamMember } from "@/lib/actions";
 import { SubmitButton } from "@/components/SubmitButton";
+import { InviteTeamMemberForm } from "@/components/InviteTeamMemberForm";
 import { JobFunctionPicker } from "@/components/JobFunctionPicker";
 import { capabilityCount, jobFunctionLabel } from "@/components/permissionLabels";
 
@@ -72,24 +73,7 @@ export default async function TeamPage() {
         <>
           <section className="mb-10">
             <h2 className="mb-3 text-sm font-semibold text-slate-300">Invite a teammate</h2>
-            <form action={inviteTeamMember} className="flex flex-wrap items-end gap-3">
-              <label className="flex flex-col gap-1 text-sm text-slate-300">
-                Email
-                <input
-                  name="email"
-                  type="email"
-                  required
-                  placeholder="teammate@example.com"
-                  className="w-64 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
-                />
-              </label>
-              <SubmitButton
-                type="submit"
-                className="inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
-              >
-                Invite
-              </SubmitButton>
-            </form>
+            <InviteTeamMemberForm />
             <p className="mt-2 text-xs text-slate-500">
               This doesn&apos;t send an email — share the sign-up link with them yourself. When they
               sign up with this email, they&apos;ll join your company automatically.

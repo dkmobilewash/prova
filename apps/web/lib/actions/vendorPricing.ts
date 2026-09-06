@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@prova/db";
-import { actionFail as fail, actionOk as ok, assertOwner, type ActionResult } from "./shared";
+import { actionFail as fail, actionOk as ok, ownerRefusal, type ActionResult } from "./shared";
 
 /** Vendor price quotes — what a supplier said something costs, on a date.
  *
@@ -176,13 +176,8 @@ export async function updateVendorPriceQuote(
 export async function deleteVendorPriceQuote(quoteId: string): Promise<ActionResult> {
   const context = await requireCompanyContext();
   return runAction(async () => {
-    // assertOwner THROWS, and a thrown message is redacted in production —
-    // so it is caught and returned like every other guard here.
-    try {
-      assertOwner(context, "Only the account owner can remove a price quote");
-    } catch (err) {
-      return fail(err instanceof Error ? err.message : "Only the account owner can do that");
-    }
+    const denied = ownerRefusal(context, "Only the account owner can remove a price quote");
+    if (denied) return denied;
     const { company } = context;
 
     const existing = await prisma.vendorPriceQuote.findUnique({ where: { id: quoteId } });

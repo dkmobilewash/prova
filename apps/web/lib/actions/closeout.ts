@@ -7,7 +7,7 @@ import { prisma } from "@prova/db";
 import {
   actionFail as fail,
   actionOk as ok,
-  assertOwner,
+  ownerRefusal,
   isUniqueConstraintError,
   type ActionResult,
 } from "./shared";
@@ -210,11 +210,8 @@ export async function updateCloseoutItem(itemId: string, formData: FormData): Pr
 export async function deleteCloseoutItem(itemId: string): Promise<ActionResult> {
   const context = await requireCompanyContext();
   return runAction(async () => {
-    try {
-      assertOwner(context, "Only the account owner can delete a checklist item");
-    } catch (err) {
-      return fail(err instanceof Error ? err.message : "Only the account owner can do that");
-    }
+    const denied = ownerRefusal(context, "Only the account owner can delete a checklist item");
+    if (denied) return denied;
     const item = await prisma.closeoutItem.findUnique({ where: { id: itemId } });
     if (!item || item.companyId !== context.company.id) return fail("Checklist item not found");
 
@@ -266,11 +263,8 @@ export async function setWarrantyPeriod(formData: FormData): Promise<ActionResul
 export async function deleteWarrantyPeriod(jobId: string): Promise<ActionResult> {
   const context = await requireCompanyContext();
   return runAction(async () => {
-    try {
-      assertOwner(context, "Only the account owner can remove a warranty period");
-    } catch (err) {
-      return fail(err instanceof Error ? err.message : "Only the account owner can do that");
-    }
+    const denied = ownerRefusal(context, "Only the account owner can remove a warranty period");
+    if (denied) return denied;
     const period = await prisma.warrantyPeriod.findUnique({ where: { jobId } });
     if (!period || period.companyId !== context.company.id) return fail("Warranty period not found");
 
@@ -354,11 +348,8 @@ export async function updateServiceRequest(requestId: string, formData: FormData
 export async function deleteServiceRequest(requestId: string): Promise<ActionResult> {
   const context = await requireCompanyContext();
   return runAction(async () => {
-    try {
-      assertOwner(context, "Only the account owner can delete a service request");
-    } catch (err) {
-      return fail(err instanceof Error ? err.message : "Only the account owner can do that");
-    }
+    const denied = ownerRefusal(context, "Only the account owner can delete a service request");
+    if (denied) return denied;
     const request = await prisma.warrantyServiceRequest.findUnique({ where: { id: requestId } });
     if (!request || request.companyId !== context.company.id) return fail("Service request not found");
 

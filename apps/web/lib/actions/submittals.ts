@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
 import { Prisma, prisma } from "@prova/db";
-import { actionFail as fail, actionOk as ok, assertOwner, type ActionResult } from "./shared";
+import { actionFail as fail, actionOk as ok, ownerRefusal, type ActionResult } from "./shared";
 import { can } from "@/lib/permissions";
 
 /** Every entry point to these records is a page guarded by MANAGE_JOBS,
@@ -278,11 +278,8 @@ export async function deleteSubmittal(submittalId: string): Promise<ActionResult
   const context = await requireCompanyContext();
   return runAction(async () => {
     if (!can(context, "MANAGE_JOBS")) return fail(JOBS_ONLY);
-    try {
-      assertOwner(context, "Only the account owner can delete a submittal");
-    } catch (err) {
-      return fail(err instanceof Error ? err.message : "Only the account owner can do that");
-    }
+    const denied = ownerRefusal(context, "Only the account owner can delete a submittal");
+    if (denied) return denied;
     const submittal = await findSubmittal(submittalId, context.company.id);
     if (!submittal) return fail("Submittal not found");
 

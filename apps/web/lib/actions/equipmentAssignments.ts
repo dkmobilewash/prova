@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@prova/db";
-import { actionFail as fail, actionOk as ok, assertOwner, type ActionResult } from "./shared";
+import { actionFail as fail, actionOk as ok, ownerRefusal, type ActionResult } from "./shared";
 import { can } from "@/lib/permissions";
 import { findOverlap, type AssignmentData } from "@/components/equipmentDeployment";
 
@@ -250,11 +250,8 @@ export async function deleteEquipmentAssignment(assignmentId: string): Promise<A
   const context = await requireCompanyContext();
   return runAction(async () => {
     if (!can(context, "MANAGE_FIELD")) return fail(FIELD_ONLY);
-    try {
-      assertOwner(context, "Only the account owner can remove an equipment assignment");
-    } catch (err) {
-      return fail(err instanceof Error ? err.message : "Only the account owner can do that");
-    }
+    const denied = ownerRefusal(context, "Only the account owner can remove an equipment assignment");
+    if (denied) return denied;
 
     const assignment = await prisma.equipmentAssignment.findUnique({ where: { id: assignmentId } });
     if (!assignment || assignment.companyId !== context.company.id) {

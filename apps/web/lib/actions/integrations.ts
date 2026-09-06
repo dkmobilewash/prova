@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@prova/db";
-import { actionFail as fail, actionOk as ok, assertOwner, type ActionResult } from "./shared";
+import { actionFail as fail, actionOk as ok, ownerRefusal, type ActionResult } from "./shared";
 
 /**
  * Connect and disconnect for the framework's own providers.
@@ -25,11 +25,8 @@ const SANDBOX = "SANDBOX" as const;
 
 export async function connectSandboxIntegration(): Promise<ActionResult> {
   const { company, ...user } = await requireCompanyContext();
-  try {
-    assertOwner(user, "Only the account owner can connect an integration");
-  } catch (error) {
-    return fail(error instanceof Error ? error.message : "Not permitted");
-  }
+  const denied = ownerRefusal(user, "Only the account owner can connect an integration");
+  if (denied) return denied;
 
   const now = new Date();
 
@@ -85,11 +82,8 @@ export async function connectSandboxIntegration(): Promise<ActionResult> {
 
 export async function disconnectSandboxIntegration(): Promise<ActionResult> {
   const { company, ...user } = await requireCompanyContext();
-  try {
-    assertOwner(user, "Only the account owner can disconnect an integration");
-  } catch (error) {
-    return fail(error instanceof Error ? error.message : "Not permitted");
-  }
+  const denied = ownerRefusal(user, "Only the account owner can disconnect an integration");
+  if (denied) return denied;
 
   const existing = await prisma.integrationConnection.findUnique({
     where: { companyId_provider: { companyId: company.id, provider: SANDBOX } },

@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@prova/db";
 import { looksLikeEmail, readEmailConfig, sendEmail } from "@prova/integrations";
-import { actionFail as fail, actionOk as ok, assertOwner, type ActionResult } from "./shared";
+import { actionFail as fail, actionOk as ok, ownerRefusal, type ActionResult } from "./shared";
 import { failureEventType, reachedProvider } from "@/components/messageLabels";
 
 /** Actions here RETURN their failures. Production redacts thrown Server
@@ -206,11 +206,8 @@ export async function sendOutboundEmail(formData: FormData): Promise<ActionResul
 export async function deleteOutboundMessage(messageId: string): Promise<ActionResult> {
   const context = await requireCompanyContext();
   return runAction(async () => {
-    try {
-      assertOwner(context, "Only the account owner can delete a message record");
-    } catch (err) {
-      return fail(err instanceof Error ? err.message : "Only the account owner can do that");
-    }
+    const denied = ownerRefusal(context, "Only the account owner can delete a message record");
+    if (denied) return denied;
 
     const message = await prisma.outboundMessage.findUnique({
       where: { id: messageId },

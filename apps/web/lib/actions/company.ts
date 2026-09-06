@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
-import { Prisma, prisma } from "@prova/db";
+import { prisma } from "@prova/db";
 import {
   CONTACT_STATUSES,
   CONTACT_TYPES,
@@ -11,7 +11,9 @@ import {
   actionFail as fail,
   actionOk as ok,
   assertOwner,
+  ownerRefusal,
   enumFromForm,
+  isUniqueConstraintError,
   nullableDecimalFromForm,
   optionalEnumFromForm,
 } from "./shared";
@@ -50,33 +52,53 @@ async function runAction(fn: () => Promise<ActionResult>): Promise<ActionResult>
 }
 
 /** Invites a teammate by email. They join the OWNER's Company as a MEMBER
- * the next time they sign up with that email — see requireCompanyContext(). */
-export async function inviteTeamMember(formData: FormData) {
+ * the next time they sign up with that email — see requireCompanyContext().
+ *
+ * Returns `ActionResult` rather than throwing, and that is the point of the
+ * change rather than tidying. EVERY outcome this function can reach is one
+ * the person typing the address needs to read and can act on: the address is
+ * blank, somebody already has an account, the invitation is already pending.
+ * All three were thrown, and production redacts a thrown Server Action
+ * message to a digest — so fixing the dead P2002 guard below (#25) on its
+ * own would have turned a raw 500 into an unreadable one. That is not what
+ * the issue asked for; it asked for the sentence to render. */
+export async function inviteTeamMember(formData: FormData): Promise<ActionResult> {
   const { company, ...user } = await requireCompanyContext();
-  assertOwner(user);
+  const denied = ownerRefusal(user);
+  if (denied) return denied;
 
   const email = String(formData.get("email") ?? "")
     .trim()
     .toLowerCase();
   if (!email) {
-    throw new Error("Email is required");
+    return fail("Email is required");
   }
 
   const existingUser = await prisma.user.findUnique({ where: { email } });
   if (existingUser) {
-    throw new Error("Someone with that email already has an account");
+    return fail("Someone with that email already has an account");
   }
 
   try {
     await prisma.invite.create({ data: { companyId: company.id, email } });
   } catch (error) {
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-      throw new Error("That email has already been invited (here or elsewhere)");
+    // `isUniqueConstraintError`, NOT `instanceof
+    // Prisma.PrismaClientKnownRequestError` — that instanceof is false at
+    // runtime under Next's bundling, so this branch never ran and the
+    // sentence below was unreachable: a duplicate invite escaped as a raw
+    // Prisma error (#25).
+    //
+    // Invite.email is unique GLOBALLY, not per company, which is why the
+    // message says "here or elsewhere" — the address may be pending inside
+    // somebody else's company, and this deliberately does not say whose.
+    if (isUniqueConstraintError(error)) {
+      return fail("That email has already been invited (here or elsewhere)");
     }
     throw error;
   }
 
   revalidatePath("/team");
+  return ok;
 }
 
 /** Cancels a pending invite (e.g. to fix a typo). */
@@ -150,11 +172,8 @@ export async function createContact(formData: FormData): Promise<ActionResult> {
 export async function deleteContact(contactId: string): Promise<ActionResult> {
   const context = await requireCompanyContext();
   return runAction(async () => {
-    try {
-      assertOwner(context, "Only the account owner can delete a contact");
-    } catch (err) {
-      return fail(err instanceof Error ? err.message : "Only the account owner can do that");
-    }
+    const denied = ownerRefusal(context, "Only the account owner can delete a contact");
+    if (denied) return denied;
 
     const contact = await prisma.contact.findUnique({
       where: { id: contactId },

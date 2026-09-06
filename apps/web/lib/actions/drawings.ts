@@ -6,7 +6,7 @@ import { prisma } from "@prova/db";
 import {
   actionFail as fail,
   actionOk as ok,
-  assertOwner,
+  ownerRefusal,
   isUniqueConstraintError,
   type ActionResult,
 } from "./shared";
@@ -171,11 +171,8 @@ export async function deleteDrawingSet(setId: string): Promise<ActionResult> {
   const context = await requireCompanyContext();
   return runAction(async () => {
     if (!can(context, "MANAGE_JOBS")) return fail(JOBS_ONLY);
-    try {
-      assertOwner(context, "Only the account owner can delete a drawing set");
-    } catch (err) {
-      return fail(err instanceof Error ? err.message : "Only the account owner can do that");
-    }
+    const denied = ownerRefusal(context, "Only the account owner can delete a drawing set");
+    if (denied) return denied;
     const set = await findSet(setId, context.company.id);
     if (!set) return fail("Drawing set not found");
 
@@ -281,11 +278,8 @@ export async function deleteDrawingRevision(revisionId: string): Promise<ActionR
   const context = await requireCompanyContext();
   return runAction(async () => {
     if (!can(context, "MANAGE_JOBS")) return fail(JOBS_ONLY);
-    try {
-      assertOwner(context, "Only the account owner can delete a drawing revision");
-    } catch (err) {
-      return fail(err instanceof Error ? err.message : "Only the account owner can do that");
-    }
+    const denied = ownerRefusal(context, "Only the account owner can delete a drawing revision");
+    if (denied) return denied;
     const revision = await prisma.drawingRevision.findUnique({
       where: { id: revisionId },
       include: { set: { select: { companyId: true } } },
