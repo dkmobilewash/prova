@@ -140,9 +140,25 @@ export function SalesActivityRow({
         </div>
 
         <div className="flex shrink-0 flex-wrap items-center gap-2">
-          <button type="button" disabled={isPending} onClick={() => setMode("edit")} className={btn}>
-            Edit
-          </button>
+          {/* Issue #152 rule 1: an armed confirm hides EVERY ordinary action in
+              its row, and the guard wraps the GROUP rather than one button, so
+              the next action added here is covered by it automatically.
+
+              Rule 2 (the confirm must not take the pixel "Delete" vacated) is
+              already satisfied here by ORDER, and it is worth writing down why,
+              because the reasoning is geometry-dependent and the wrong version
+              of it looks identical. This cluster is the last child of a
+              `justify-between` parent and is `shrink-0`, so its RIGHT edge is
+              pinned and the LAST control is the one that keeps its position.
+              "Cancel" is last, so Cancel inherits the Delete pixel and the
+              confirm sits clear of it. Measured in Chromium: 0px overlap.
+              Putting Cancel FIRST here -- correct for a left-aligned cluster --
+              would pin "Confirm delete" to that pixel instead, at 100% overlap. */}
+          {!isConfirmingDelete && (
+            <button type="button" disabled={isPending} onClick={() => setMode("edit")} className={btn}>
+              Edit
+            </button>
+          )}
           {isConfirmingDelete ? (
             <>
               <button

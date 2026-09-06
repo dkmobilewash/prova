@@ -60,6 +60,98 @@ it found the enum before looping over it.
 
 Proven the only way this shape can be: with an unlabelled member added to
 the schema, the old test was 3/3 green and the new one fails twice.
+### Every contractor's record counts were rendering as yours on /union-compliance — #136 (Cyrus)
+`cyrus/union-count-company-scope`
+
+**What you saw: a classification on `/union-compliance` reading "11 records
+tagged" when your company had tagged nothing at all.** Those eleven were
+somebody else's — another contractor signatory to the same local. The
+number is now your company's own, so expect it to FALL, in some cases to
+"nothing tagged yet".
+
+`CraftClassification` hangs off `UnionLocal`, and `UnionLocal` is global on
+purpose: two contractors under the same hall mean the same real local, and
+duplicating it per company would be the wrong fix. What that makes easy to
+get wrong is counting. `loadUnionSetup` asked for a relation `_count` of
+`timeEntries`, `jobLineItems`, `catalogEntries` and `dispatchSlips` with no
+filter on it, and a relation count on a global row counts every company's
+rows. `UnionLocalCard` then rendered that total as this company's "N
+records tagged". Since an agreement is self-asserted and a local number is
+public, the way in was to type one.
+
+All four counts are now filtered to the viewing company. Three of them
+reach a company only through `Job`; `LineItemCatalogEntry` carries
+`companyId` itself.
+
+**The same numbers had a second way out, through the delete refusal, and
+fixing only the display would have left it.** `deleteCraftClassification`
+counted the same four tables globally and quoted the breakdown back in its
+refusal message — "11 records are tagged (3 time entries, 2 line items, 4
+catalog entries, 2 dispatch slips)". One click, same disclosure, different
+channel. That is the shape this repo keeps hitting: a fix that reads
+complete in the diff because nothing calls the half that was missed.
+
+**The guard itself still counts globally, and that is deliberate.** Scoping
+it would let one contractor delete a classification another has hours, line
+items and dispatch slips tagged with — turning a read leak into a
+cross-company destructive action, which is worse. So the guard is unchanged
+and only the message moved: the numbers quoted are always your own, and use
+by anyone else is reported as the fact that it exists, without a count or a
+name. A craft you have nothing tagged with can therefore still refuse to
+delete, and it now says why in those words rather than looking like a bug.
+
+**No migration, and no dependency on the `companyId` schema decision.**
+This is the read half of #136's union exposure. The destructive paths —
+`deleteFringeRateSchedule` and the `apprenticeRatioRule.deleteMany` at
+`unionCompliance.ts` — still need option A's `companyId` and are not
+touched here.
+
+Three database tests carry it, and none of them can pass on the old code:
+two contractors are built under one local, only the second is given work,
+and the first is asserted to read `0`, to be refused a delete whose message
+contains no digit at all, and to be quoted its own `0 catalog entries`
+where eleven of somebody else's records exist. The unfiltered version
+passes every other test in that file.
+### An email address was being filed as a worker's name (Diego)
+`claude/prova-vercel-direct-url-hg1acx`
+
+Cyrus found this while building crew members and handed it over. Verified
+before acting on it, and it is wider than reported: `User.name` is
+nullable, and SEVEN call sites read `employeeUser.name ?? employeeUser.email`.
+
+**On an internal screen that fallback is fine.** It identifies a person.
+The one that is not fine is `jobs/[id]/certified-payroll` — the worker-name
+column of a WH-347 is a statement to a government agency about who did the
+work, and an email address is not that. A wrong name on a filed form is a
+correction to an agency rather than a patch, which is a different order of
+problem from a scruffy screen.
+
+**So the fix is narrow on purpose.** `lib/worker-name.ts` never returns the
+email; it returns "Name not recorded" and says the name is missing. The
+page then does what the rest of this codebase does with something it cannot
+compute — shows the gap rather than filling it, exactly as
+`hasUncomputedHours` already marks hours with no fringe schedule instead of
+silently pricing them at zero.
+
+The warning sits ABOVE the summaries, not in a footnote. A note under the
+last table is the thing nobody reads before printing, and this one decides
+whether the week can be filed at all. It names the accounts by email, so
+the fix is a click away rather than a hunt.
+
+A whitespace-only name counts as missing. Otherwise it prints an empty cell,
+which reads as a formatting bug and gets skimmed past; a sentence gets acted
+on.
+
+**Deliberately NOT changed:** `lib/union-compliance-query.ts` (twice) and
+`lib/prevailing-wage-query.ts` carry the same fallback and the same argument
+applies to fringe remittance and prevailing wage. Cyrus said in
+`#prova-build` that he is in those files right now for #104/#62/#63, and
+editing them would be the merge damage the post-and-wait rule exists to
+prevent. The helper is there for him to adopt in one line per site. The two
+display sites on `jobs/[id]/page.tsx` are left alone because identifying a
+person on screen is what the fallback is good at.
+
+Mutation-verified: putting the email fallback back turns two tests red.
 
 
 ### "Retainage held" was two different numbers on one screen — #97, which is #46 again (Cyrus)
