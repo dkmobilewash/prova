@@ -1,6 +1,6 @@
-# CLAUDE.md — how agents work on Prova
+# CLAUDE.md — how agents work on cstream
 
-Prova is an operating system for specialty-trade construction
+cstream is an operating system for specialty-trade construction
 subcontractors (framing/drywall, plaster, EIFS, ceilings, fireproofing)
 working under GCs. Every design decision is made for the sub, not the GC.
 Two people build it: Cyrus (cyrusobiz-coder — not an engineer; he runs

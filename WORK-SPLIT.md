@@ -162,11 +162,11 @@ Phase B below):
    `BidInvitation` per GC, derived and stored nowhere. Struck rather than
    duplicated.
 
-Then Phase B: an internal, owner-only sales CRM for selling Prova itself.
+Then Phase B: an internal, owner-only sales CRM for selling cstream itself.
 *Shipped 3 Sep.* `SalesLead`/`SalesOpportunity` (new file `sales.prisma`) —
-prospective Prova customers and the deals in progress with them, not a
+prospective cstream customers and the deals in progress with them, not a
 second `Contact` (every tenant has their own GCs; this belongs only to
-Prova's own operating company). Gated on two independent checks, neither
+cstream's own operating company). Gated on two independent checks, neither
 expressible as a `lib/permissions.ts` `Capability` (that map is about job
 function *within* a company, and an OWNER always holds every capability in
 it regardless — there's no way to express "owner only" there): a new
@@ -206,7 +206,7 @@ built the nouns; this lane builds the memory and the read.
 **What Phase B actually left.** `SalesLead` and `SalesOpportunity` with
 full CRUD, `/sales` (a flat list of leads) and `/sales/[id]` (edit the
 lead, list its opportunities). That is a filing cabinet, not a CRM. Three
-things a person selling Prova cannot do with it today:
+things a person selling cstream cannot do with it today:
 
 - **Remember a conversation.** There is no activity record at all. The
   entire memory of a deal is `SalesOpportunity.notes`, one mutable

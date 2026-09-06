@@ -12,6 +12,44 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### The product is called cstream now, not Prova (Cyrus)
+`cyrus/rename-to-cstream`
+
+The name in the documents follows the app, which is already served at
+`app.cstream.ai`. 27 occurrences across CLAUDE.md, ARCHITECTURE.md,
+FEATURE-AUDIT.md, WORK-SPLIT.md, this file, README.md and ONBOARDING.md.
+
+**Deliberately NOT renamed, and each for a reason worth knowing before
+somebody finishes the job:**
+
+- **`@prova/db`, `@prova/web`, `@prova/ui`, `@prova/integrations`** —
+  referenced by 142 files. Renaming them is a mechanical change that would
+  conflict with every one of the eighteen branches currently open, for no
+  user-visible gain. It is a job for a quiet moment when nothing is in
+  flight, not a rename that rides along with the documents.
+- **`prova_tz`** (`lib/viewer-timezone.ts`) — this is a LIVE COOKIE NAME
+  read by deployed code. Renaming it silently discards the stored zone for
+  every signed-in person, which puts them back on the server's UTC day —
+  reintroducing the exact defect #155 was opened for. If it is ever
+  renamed it needs a migration that reads the old name and writes the new
+  one, for at least one release.
+- **`prova_crew_member_identity_lock` / `prova_time_entry_crew_member_lock`**
+  — plpgsql function names inside a migration. Migrations are immutable
+  history; editing an applied one makes the file disagree with the
+  database.
+- **`prova-demo` and `ep-patient-lake`, `prova_dbtest`** — external Neon
+  and CI resources. Renaming the string here without renaming the resource
+  is how a script points at a database that does not exist.
+- **The repository and the Slack channel.** Both are shared with Diego and
+  both break links that exist outside this repo.
+
+The rule this follows is the one already in CLAUDE.md about naming: say
+which thing you mean. A product name in prose is not the same object as a
+package identifier, a cookie key, or a database host, and renaming all of
+them in one pass because they share a string is how the three-Neon-project
+confusion happened in the first place.
+
+
 ### "Retainage held" was two different numbers on one screen — #97, which is #46 again (Cyrus)
 `fix/retainage-single-source`
 
@@ -751,7 +789,7 @@ items 1 and 2 left behind.
 **THERE IS DELIBERATELY NO WEIGHTED FORECAST, and that is a walk-back of
 my own plan.** The lane claim and both earlier PRs said this item would
 carry one. The usual weighted forecast multiplies each stage by a
-probability — 10% for New, 50% for Trial — and nobody at Prova has ever
+probability — 10% for New, 50% for Trial — and nobody at cstream has ever
 supplied those numbers. Inventing them produces a confident dollar figure
 derived from nothing, which is the same failure as the `createdAt`
 backfill this lane refused two days running. What replaces it is built
@@ -777,7 +815,7 @@ date is history, not a forecast; counting it would show revenue as still
 to land after it already had. Dropping the open filter reds a test.
 
 **"Sitting longest" has no staleness threshold.** Nobody has decided what
-too long means for Prova's own sales, so the list is ordered by the fact
+too long means for cstream's own sales, so the list is ordered by the fact
 and judged by the reader. Deals whose time in stage is unrecorded are
 excluded rather than sorted as if they were fresh — treating that null as
 0 reds two tests.
@@ -899,7 +937,7 @@ never-heals shape the commit was written to end, still present, one fault
 code along.
 
 **A string no longer decides.** On a failure that could mean the document
-is missing, Prova now reads it back — one GET, read-only — and clears the
+is missing, cstream now reads it back — one GET, read-only — and clears the
 link only on a definite "there is no such record". Widening the match is
 safe now for the reason it was dangerous before: it buys an API call, not
 a deletion.
@@ -942,7 +980,7 @@ a stage. `/sales/[id]` shows both, per opportunity.
 **`effectiveOn` is entered, not stamped,** with `recordedAt` alongside it
 for audit. Recording on Wednesday that the demo happened Monday records
 Monday. A plain `changedAt DateTime @default(now())` would have measured
-when somebody got round to updating Prova, which is a different quantity
+when somebody got round to updating cstream, which is a different quantity
 wearing the same name.
 
 **A move is recorded only when the stage actually differs.** Writing a row
@@ -1680,7 +1718,7 @@ been carrying a money-moving path nobody had executed. That is closed now.
 
 **Read in the books rather than from our own success message.** QuickBooks
 invoice 146 went from balance $1,000.00 to $500.00, status Partial, after
-one click. `"Applied to the invoice in QuickBooks and verified."` is Prova
+one click. `"Applied to the invoice in QuickBooks and verified."` is cstream
 reporting on itself and was never going to be enough — the invoice ledger
 moving is the evidence.
 
@@ -1718,7 +1756,7 @@ is what invites the second click.
 
 The sandbox item deletion was the one blocker that was not ours.
 
-**Still not two-way, and still sandbox.** Prova does not pull QuickBooks
+**Still not two-way, and still sandbox.** cstream does not pull QuickBooks
 edits back and does not pretend to. `QUICKBOOKS_ENVIRONMENT=sandbox`
 remains the only thing between this path and a real ledger.
 
@@ -3306,7 +3344,7 @@ Still not verified, and still can't be by me: a real send with a real key.
 ### The app can now send things, and knows whether they arrived (Cyrus)
 `cyrus/messaging`
 
-Until this, Prova could not send anything to anyone. No email, no SMS —
+Until this, cstream could not send anything to anyone. No email, no SMS —
 every "sent on" date in RFIs, submittals and material orders recorded that
 a human sent something through some other channel. The app was a filing
 cabinet for correspondence it could not deliver.
@@ -3379,7 +3417,7 @@ The sync refuses an edit made inside QuickBooks rather than overwriting
 it. That is right — overwriting a person's edit is how every platform in
 the research ends up "silently diverging". But refusing and then never
 mentioning it is half an answer. An invoice sat at $200.00 in QuickBooks
-while Prova showed $123.45, and nothing anywhere said so until someone
+while cstream showed $123.45, and nothing anywhere said so until someone
 happened to press a button.
 
 Settings now has "Does QuickBooks still agree?" — one call, on demand,
@@ -3442,7 +3480,7 @@ finding something no test found, and the last one leaves nothing unproven.
 | **A QuickBooks-side edit is refused, not overwritten** | stale SyncToken path fired |
 
 The last row is the one this design cares most about. The invoice was
-changed to $200.00 inside QuickBooks; Prova's re-send came back with "This
+changed to $200.00 inside QuickBooks; cstream's re-send came back with "This
 invoice was changed inside QuickBooks since we last sent it. Open it there
 and decide which version is right before pushing again." A person edited
 that record and we stopped. Every competitor in the research quietly
@@ -3457,7 +3495,7 @@ by reintroducing a production bug as a mutation and watching them fail —
 but across five rounds it has never once found something new.
 
 The honest limit of what shipped: this is one-directional. An edit made in
-QuickBooks is refused rather than absorbed, and nothing in Prova shows that
+QuickBooks is refused rather than absorbed, and nothing in cstream shows that
 the two have drifted until someone presses the button. That is a real gap,
 deliberately not papered over, and the right fix is a reconciliation view
 rather than pretending to a two-way sync nobody in this market has managed.
@@ -3479,7 +3517,7 @@ settled it: `getInvoice` asks about one id. It structurally cannot answer
 **Then the same session found a real bug, by doing the thing nobody had
 done: editing the invoice inside QuickBooks.**
 
-Changed to $200.00 there, then re-sent from Prova. Prova said "Sent to
+Changed to $200.00 there, then re-sent from cstream. cstream said "Sent to
 QuickBooks and verified." QuickBooks stayed at $200.00.
 
 The idempotency key is derived entirely from OUR data — invoice id, total,
@@ -3617,7 +3655,7 @@ not work in many areas." "It doesn't work. We ended up just not trying
 anymore and now pay for an outside bookkeeping service." Three design
 commitments come straight out of that:
 
-**One direction, said out loud.** Prova writes to QuickBooks. It does not
+**One direction, said out loud.** cstream writes to QuickBooks. It does not
 pull. Every platform in that research advertises bidirectional sync and
 gets savaged because it isn't really one, and a sync that quietly loses an
 edit someone made in QuickBooks is worse than one that never claimed to

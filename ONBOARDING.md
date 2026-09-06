@@ -10,7 +10,7 @@ Start here, then go to `WORK-SPLIT.md` for your first task.
 
 ## 1. What we're building
 
-Prova is an operating system for a specialty-trade construction
+cstream is an operating system for a specialty-trade construction
 subcontractor — specifically the kind of company that self-performs metal
 framing/drywall, lath & plaster, EIFS (exterior insulation finish
 systems), acoustical ceilings, and fireproofing work as a subcontractor

@@ -809,19 +809,19 @@ No new "resolved" state either — a follow-up is retired by clearing
 which is also what changes the alert's key and lets a dismissal lapse
 naturally, same mechanism as every other kind here.
 
-### Phase B — `SalesLead`/`SalesOpportunity`, Prova's own sales CRM
+### Phase B — `SalesLead`/`SalesOpportunity`, cstream's own sales CRM
 
 Everything above this point is for a tenant to run their own construction
 business. This is different in kind: it's Diego/Cyrus's own tool for
-tracking *other subcontractors* as prospective Prova customers, not a
+tracking *other subcontractors* as prospective cstream customers, not a
 tenant-facing feature at all. New file `sales.prisma`, same "new domain,
 new file" reasoning as `crm.prisma`.
 
 **Not a second `Contact`.** `Contact` is a tenant's own GC/developer/vendor,
 and every tenant rightly has their own; a `SalesLead` is a company that
-might become a *tenant*, and belongs only to Prova's own operating company.
+might become a *tenant*, and belongs only to cstream's own operating company.
 Conflating the two would mean every subcontractor's owner sees a "Sales
-CRM" nav item for tracking leads to sell them Prova, which is nonsensical
+CRM" nav item for tracking leads to sell them cstream, which is nonsensical
 from that customer's side of the product.
 
 **Scoped like everything else, restricted like nothing else.**
