@@ -116,3 +116,42 @@ export function winRateLabel(record: GcRecord): string {
   if (record.winRate === null) return "no decided bids yet";
   return `${Math.round(record.winRate * 100)}%`;
 }
+
+/**
+ * The won-value line, as words: the figure, and what the figure left out.
+ *
+ * A function rather than markup in a page, because this is the sentence the
+ * defect lived in and a sentence assembled inline in JSX has nowhere for a
+ * test to reach it. Two separate mistakes are being fixed here and only the
+ * first is arithmetic:
+ *
+ *  - /bids summed only the PRICED won bids and called the result the total.
+ *  - and it rendered the line only when at least one won bid had a price on
+ *    it. So a company whose won bids are ALL unpriced saw no line at all —
+ *    and an absent line reads as "no won bids", which is the opposite of
+ *    what is true. Returning null is reserved for genuinely having won
+ *    nothing.
+ *
+ * Split into two strings so a renderer can colour the caveat without
+ * rebuilding the wording, which is how the two pages drifted apart in the
+ * first place.
+ */
+export function wonValueSummary(
+  record: GcRecord,
+  formatMoney: (value: number) => string,
+): { headline: string; unpricedNote: string | null } | null {
+  if (record.won === 0) return null;
+
+  const headline = `${formatMoney(record.valueWon)} in ${record.won} won ${
+    record.won === 1 ? "bid" : "bids"
+  }`;
+
+  if (!valueIsPartial(record)) return { headline, unpricedNote: null };
+
+  return {
+    headline,
+    unpricedNote: `at least — ${record.valueWonUnpriced} won ${
+      record.valueWonUnpriced === 1 ? "bid has" : "bids have"
+    } no amount recorded`,
+  };
+}

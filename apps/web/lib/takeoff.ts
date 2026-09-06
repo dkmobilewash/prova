@@ -138,7 +138,16 @@ export function studsRequired(
   // which is nine. floor gives eight. I shipped floor first, while the
   // docstring above already described the bug it caused — enumerating the
   // positions is what caught it, not reading the code.
-  return Math.ceil(lengthFt / spacing) + 1;
+  //
+  // Rounded before the ceil because binary floating point puts an exact
+  // multiple a hair OVER the integer, and ceil turns that hair into a whole
+  // bay. 19.2" o.c. is the case that bites: the form divides 19.2 by 12 to
+  // get 1.5999999999999999, and 24 / that is 15.000000000000002 — so a
+  // 24 ft wall billed 17 studs where 16 close it, and 48 ft billed 32 for
+  // 31. Nine decimal places is far finer than any wall anyone measures and
+  // far coarser than the error, so a genuine remainder still rounds up.
+  const bays = Math.ceil(Number((lengthFt / spacing).toFixed(9)));
+  return bays + 1;
 }
 
 /**

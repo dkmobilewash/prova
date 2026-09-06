@@ -1,11 +1,27 @@
 import { describe, expect, it } from "vitest";
-import { catalogActuals, CATALOG_MIN_SAMPLE, CATALOG_VARIANCE_THRESHOLD } from "./catalog-actuals";
+import {
+  catalogActuals,
+  CATALOG_MIN_SAMPLE,
+  CATALOG_VARIANCE_THRESHOLD,
+  type JobStatusForActuals,
+} from "./catalog-actuals";
 
-const line = (quantity: number, actualCost: number, hasCosts = true) => ({
+/** A costed line on a FINISHED job — the only kind that counts toward an
+ * actual unit cost. See the running-job cases below for why. */
+const line = (
+  quantity: number,
+  actualCost: number,
+  hasCosts = true,
+  jobStatus: JobStatusForActuals = "COMPLETE",
+) => ({
   quantity,
   actualCost,
   hasCosts,
+  jobStatus,
 });
+
+const runningLine = (quantity: number, actualCost: number) =>
+  line(quantity, actualCost, true, "IN_PROGRESS");
 
 describe("catalogActuals", () => {
   it("reports nothing when no line has been costed", () => {
@@ -72,5 +88,64 @@ describe("catalogActuals", () => {
     const result = catalogActuals([line(100, 5000), line(100, 0, false)], 5);
     expect(result.linesWithCosts).toBe(1);
     expect(result.isFlagged).toBe(false);
+  });
+});
+
+describe("jobs that are still running", () => {
+  // The defect this describes was one-directional, which is what made it
+  // dangerous. Cost lands on a line over the months the work takes;
+  // quantity is the whole scope from day one. Every unfinished job
+  // therefore reads LOW, the errors reinforce instead of cancelling, and
+  // "update default from actuals" walks the catalog toward zero.
+
+  it("does not price a template off work that is only part built", () => {
+    // Hand-worked: 1,000 SF lines truly running at $2.00/SF. Two are
+    // finished and cost $2,000 each. Two are 40% built, so $800 of cost
+    // has landed on each. Counting all four gives $5,600 / 4,000 SF =
+    // $1.40/SF — 30% under, amber, and one click from becoming the
+    // default. The finished two alone give the truth: $2.00/SF.
+    const result = catalogActuals(
+      [line(1000, 2000), line(1000, 2000), runningLine(1000, 800), runningLine(1000, 800)],
+      2,
+    );
+
+    expect(result.actualUnitCost).toBe(2);
+    expect(result.linesWithCosts).toBe(2);
+    expect(result.linesExcludedUnfinished).toBe(2);
+    expect(result.variance).toBe(0);
+    expect(result.isFlagged).toBe(false);
+
+    // What the old arithmetic said, spelled out so the fix cannot be
+    // reverted without this failing.
+    expect(result.actualUnitCost).not.toBeCloseTo(5600 / 4000, 6);
+  });
+
+  it("reports nothing at all when every costed job is still running", () => {
+    const result = catalogActuals([runningLine(1000, 800), runningLine(1000, 800)], 2);
+    expect(result.actualUnitCost).toBeNull();
+    expect(result.linesWithCosts).toBe(0);
+    expect(result.linesExcludedUnfinished).toBe(2);
+    expect(result.isFlagged).toBe(false);
+  });
+
+  it("excludes a contracted job that has not started, and an estimate", () => {
+    const result = catalogActuals(
+      [line(100, 600, true, "CONTRACTED"), line(100, 600, true, "ESTIMATE")],
+      5,
+    );
+    expect(result.actualUnitCost).toBeNull();
+    expect(result.linesExcludedUnfinished).toBe(2);
+  });
+
+  it("counts an uncosted running job as neither sample nor exclusion", () => {
+    // Nothing has been booked against it, so there is nothing to leave
+    // out — saying "1 line excluded" here would be reporting an absence
+    // as evidence.
+    const result = catalogActuals(
+      [line(100, 600), line(100, 600), line(100, 0, false, "IN_PROGRESS")],
+      5,
+    );
+    expect(result.linesWithCosts).toBe(2);
+    expect(result.linesExcludedUnfinished).toBe(0);
   });
 });

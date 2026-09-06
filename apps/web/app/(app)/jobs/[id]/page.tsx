@@ -18,7 +18,14 @@ import { paymentPushBlockers } from "@/lib/quickbooks-payment-sync";
 import { accountPurpose } from "@/lib/quickbooks-constants";
 import { MarkContractedButton } from "@/components/MarkContractedButton";
 import { ChangeOrders, type ChangeOrderView } from "@/components/ChangeOrders";
-import { changeOrderValueDelta, pendingChangeOrderExposure, reopenBlockers } from "@/lib/change-order";
+import { SaveAsCatalogItem } from "@/components/SaveAsCatalogItem";
+import {
+  changeOrderValueDelta,
+  countUnbookable,
+  pendingChangeOrderExposure,
+  pendingChangeOrderUnbookable,
+  reopenBlockers,
+} from "@/lib/change-order";
 import { can } from "@/lib/permissions";
 import { money } from "@/lib/money";
 import { calculateLineItemWip, calculateJobWip } from "@/lib/wip";
@@ -50,7 +57,6 @@ import {
   markJobContracted,
   deleteContractDocument,
   saveEstimateVersion,
-  saveLineItemAsCatalogEntry,
   unassignCrewMember,
   updateJobSchedule,
   updateLineItem,
@@ -506,6 +512,11 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
       const delta = Number(changeOrderValueDelta(co.proposals, changeOrderTargetsById));
       return `${delta >= 0 ? "+" : "−"}${money(Math.abs(delta))}`;
     })(),
+    // Proposals that delta could not include, because they target scope
+    // another change order already removed. A total that drops rows says so
+    // -- otherwise this reads as a change order worth less than it claims,
+    // with nothing on screen explaining the difference.
+    unbookableProposals: countUnbookable(co.proposals, changeOrderTargetsById),
     proposals: co.proposals.map((proposal) => ({
       id: proposal.id,
       changeType: proposal.changeType,
@@ -524,6 +535,10 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
 
   const pendingExposure = Number(
     pendingChangeOrderExposure(job.changeOrders, changeOrderTargetsById),
+  );
+  const pendingUnbookableCount = pendingChangeOrderUnbookable(
+    job.changeOrders,
+    changeOrderTargetsById,
   );
 
   const updateLineItemWithId = (lineItemId: string) => updateLineItem.bind(null, job.id, lineItemId);
@@ -1786,11 +1801,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                       </SubmitButton>
                     </div>
                   </form>
-                  <form action={saveLineItemAsCatalogEntry.bind(null, item.id)} className="mt-1">
-                    <SubmitButton type="submit" className="text-xs text-slate-500 hover:text-slate-300 hover:underline">
-                      Save as catalog item
-                    </SubmitButton>
-                  </form>
+                  <SaveAsCatalogItem lineItemId={item.id} />
                   </div>
                 ))}
               </div>
@@ -1976,6 +1987,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             changeOrders={changeOrderViews}
             lineItems={changeOrderTargets}
             pendingExposure={money(pendingExposure)}
+            pendingUnbookable={pendingUnbookableCount}
           />
         )}
 

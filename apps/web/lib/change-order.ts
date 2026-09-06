@@ -63,17 +63,50 @@ function lineValue(quantity: Prisma.Decimal | null, unitPrice: Prisma.Decimal | 
 }
 
 /**
+ * Whether a proposal could still be approved as written.
+ *
+ * An unapplied EDIT or REMOVE against a line that has already gone —
+ * soft-deleted by an earlier change order, or missing entirely —
+ * cannot be booked: approveChangeOrder refuses exactly this case
+ * ("was already removed by an earlier change order"). It is NOT a
+ * neutral row to leave in a total. Removing five thousand dollars of
+ * scope that is already gone would take another five thousand off the
+ * contract, so the exposure figure asked the GC for money that could
+ * never be booked, and the change order it sat on could never be
+ * approved to book it.
+ *
+ * An APPLIED proposal is always bookable-past-tense: it has already
+ * landed, and its snapshot is the record of what it moved. The live row
+ * being deleted afterwards says nothing about what this one did.
+ */
+export function proposalIsBookable(
+  proposal: ProposalForCalc,
+  target: LineItemForChangeOrder | null,
+): boolean {
+  if (proposal.changeType === "ADD") return true;
+  if (isApplied(proposal)) return true;
+  return target !== null && !target.isDeleted;
+}
+
+/**
  * The delta a single proposal would apply to contract value.
  *
  * EDIT is the subtle one: a proposal stores only the fields being changed,
  * so a null quantity means "leave quantity alone", not "quantity is zero".
  * Falling back to the line item's current value is what makes a
  * price-only change come out as a price-only delta.
+ *
+ * Zero for a proposal that can no longer be booked — see
+ * proposalIsBookable. Whatever renders a total containing one has to SAY
+ * so rather than let it silently shrink the number; countUnbookable is
+ * there for that.
  */
 export function proposalValueDelta(
   proposal: ProposalForCalc,
   target: LineItemForChangeOrder | null,
 ): Prisma.Decimal {
+  if (!proposalIsBookable(proposal, target)) return ZERO;
+
   switch (proposal.changeType) {
     case "ADD":
       return lineValue(proposal.quantity, proposal.unitPrice);
@@ -130,6 +163,26 @@ export function changeOrderValueDelta(
   );
 }
 
+/**
+ * How many of these proposals can no longer be booked.
+ *
+ * The companion to changeOrderValueDelta, and not optional: a total that
+ * drops rows has to say how many it dropped, or it is a floor presented
+ * as a total. Same rule as the unpriced won bids on /pipeline.
+ */
+export function countUnbookable(
+  proposals: ProposalForCalc[],
+  targets: Map<string, LineItemForChangeOrder>,
+): number {
+  return proposals.filter(
+    (proposal) =>
+      !proposalIsBookable(
+        proposal,
+        proposal.lineItemId ? targets.get(proposal.lineItemId) ?? null : null,
+      ),
+  ).length;
+}
+
 /** Statuses whose proposals have NOT been written to JobLineItem. */
 export const PENDING_CHANGE_ORDER_STATUSES = ["DRAFT", "SUBMITTED"] as const;
 
@@ -145,6 +198,54 @@ export function pendingChangeOrderExposure(
   return changeOrders
     .filter((co) => co.status === "SUBMITTED")
     .reduce((sum, co) => sum.add(changeOrderValueDelta(co.proposals, targets)), ZERO);
+}
+
+/** How many pending proposals the exposure figure above had to drop. */
+export function pendingChangeOrderUnbookable(
+  changeOrders: { status: string; proposals: ProposalForCalc[] }[],
+  targets: Map<string, LineItemForChangeOrder>,
+): number {
+  return changeOrders
+    .filter((co) => co.status === "SUBMITTED")
+    .reduce((count, co) => count + countUnbookable(co.proposals, targets), 0);
+}
+
+/**
+ * Which of the approved change orders that also touched these lines landed
+ * AFTER this one, phrased as a blocker.
+ *
+ * Split out from the query for the usual reason: the deciding is worth a
+ * test with hand-written inputs, and the ordering rule is the whole of the
+ * bug. Reopening CO #2 restores the values CO #2 replaced. If CO #4 has
+ * since changed the same line, that restore silently reverts CO #4 while
+ * CO #4 goes on rendering its delta -- so the log claims two changes and
+ * the contract value agrees with neither.
+ *
+ * An EARLIER approved change order is not a conflict: this one's snapshot
+ * was taken after theirs landed, so putting it back restores the state
+ * they left. Order is therefore the entire question, and where it cannot
+ * be established -- either side missing appliedAt, which happens on rows
+ * approved before that column was written -- this refuses. A false block
+ * costs a revision instead of a reopen; a false allow silently rewrites a
+ * contract value.
+ */
+export function laterApprovedConflict(
+  appliedAt: Date | null,
+  others: { number: number; appliedAt: Date | null }[],
+): string | null {
+  const later = others
+    .filter((other) => appliedAt === null || other.appliedAt === null || other.appliedAt > appliedAt)
+    .map((other) => other.number);
+
+  const numbers = [...new Set(later)].sort((a, b) => a - b);
+  if (numbers.length === 0) return null;
+
+  const labels = numbers.map((n) => `CO #${n}`);
+  const list =
+    labels.length === 1
+      ? labels[0]
+      : `${labels.slice(0, -1).join(", ")} and ${labels[labels.length - 1]}`;
+  return `${list} ${labels.length === 1 ? "has" : "have"} since changed a line it changed, and putting its values back would silently revert ${labels.length === 1 ? "that" : "those"}`;
 }
 
 /**
@@ -163,10 +264,17 @@ export function pendingChangeOrderExposure(
  *   contract value back underneath it would make the two disagree.
  * - REMOVE is reversed by un-deleting the line, which is purely additive.
  *   Nothing can be broken by scope coming back, so nothing blocks it.
+ *
+ * The fourth thing that breaks is not billing at all but ANOTHER CHANGE
+ * ORDER — see laterApprovedConflict.
  */
 export async function reopenBlockers(changeOrder: {
   id: string;
   jobId: string;
+  /** When this change order's proposals were written onto the line items.
+   * Null on one approved before appliedAt existed, which is why the
+   * ordering below treats null as "cannot establish". */
+  appliedAt?: Date | null;
   proposals: { id: string; changeType: string; lineItemId: string | null; previousIsDeleted: boolean | null }[];
 }) {
   const addedLineItems = await prisma.jobLineItem.findMany({
@@ -207,6 +315,38 @@ export async function reopenBlockers(changeOrder: {
       blockers.push(
         `${billed} pay application ${billed === 1 ? "line was" : "lines were"} billed against a line it changed`,
       );
+  }
+
+  // Whether a LATER approved change order has since written to the same
+  // rows. Reversing an EDIT restores this change order's snapshot, and a
+  // snapshot taken before somebody else's approved change knows nothing
+  // about it -- so the restore lands on top of theirs and the two
+  // documents disagree about a contract value only one of them can be
+  // right about. EDIT and REMOVE both restore quantity, price AND
+  // isDeleted, so a reopened EDIT can also resurrect a line a later
+  // change order removed.
+  const touchedIds = changeOrder.proposals
+    .filter((p) => p.changeType !== "ADD" && p.lineItemId)
+    .map((p) => p.lineItemId as string);
+
+  if (touchedIds.length > 0) {
+    const others = await prisma.changeOrderProposal.findMany({
+      where: {
+        lineItemId: { in: touchedIds },
+        changeOrderId: { not: changeOrder.id },
+        // Applied, so it has actually written to the row. A draft or
+        // pending proposal has moved nothing and blocks nothing.
+        previousIsDeleted: { not: null },
+        changeOrder: { status: "APPROVED" },
+      },
+      select: { changeOrder: { select: { number: true, appliedAt: true } } },
+    });
+
+    const conflict = laterApprovedConflict(
+      changeOrder.appliedAt ?? null,
+      others.map((row) => row.changeOrder),
+    );
+    if (conflict) blockers.push(conflict);
   }
 
   // A change order approved before reversal snapshots existed can't be put

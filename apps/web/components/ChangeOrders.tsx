@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
+import type { ActionResult } from "@/lib/actions/shared";
 import {
   approveChangeOrder,
   createChangeOrder,
@@ -22,6 +24,58 @@ const inputClass =
   "rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none";
 const labelClass = "flex flex-col gap-1 text-sm text-slate-300";
 
+/**
+ * A form whose server action answers instead of throwing.
+ *
+ * All twelve change-order actions used to throw their refusals, and every
+ * one of those messages tells a PM what to do next — "CO #3 has already
+ * been sent — void it and raise a new one", "A change order can't be
+ * answered before it was sent". Production redacts a thrown Server Action
+ * message to a digest, so on the deployed app those twelve sentences were
+ * reference numbers. They return { ok: false, error } now; this renders it
+ * beside the button that caused it.
+ *
+ * Still `action=` rather than `onSubmit=`, so SubmitButton's useFormStatus
+ * keeps disabling the button in flight — a change order approval is not
+ * something to let anyone double-submit.
+ */
+function ActionForm({
+  action,
+  className,
+  children,
+}: {
+  action: (formData: FormData) => Promise<ActionResult>;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  const router = useRouter();
+  const [error, setError] = useState<string | null>(null);
+
+  return (
+    <form
+      action={async (formData: FormData) => {
+        setError(null);
+        try {
+          const result = await action(formData);
+          if (!result.ok) {
+            setError(result.error);
+            return;
+          }
+          router.refresh();
+        } catch {
+          // A genuine bug, redacted on purpose. The sentences worth reading
+          // come back through result.error above.
+          setError("Something went wrong saving that. Reload the page before trying again.");
+        }
+      }}
+      className={className}
+    >
+      {children}
+      {error && <p className="mt-2 w-full text-xs text-rose-300">{error}</p>}
+    </form>
+  );
+}
+
 export type ProposalView = {
   id: string;
   changeType: "ADD" | "EDIT" | "REMOVE";
@@ -40,6 +94,11 @@ export type ChangeOrderView = {
   decisionNotes: string | null;
   /** Signed contract-value delta, formatted. */
   valueDelta: string;
+  /** Proposals valueDelta could not include, because they target scope
+   * another change order has already removed. Approval refuses those, so
+   * counting their money would be asking the GC for something that can
+   * never be booked. */
+  unbookableProposals: number;
   /** Empty when this change order can be reopened; otherwise the reasons it
    * can't, ready to show without the user having to click and get an error. */
   reopenBlockers: string[];
@@ -130,7 +189,7 @@ function ProposalForms({ changeOrder, lineItems }: { changeOrder: ChangeOrderVie
       </div>
 
       {kind === "ADD" && (
-        <form action={proposeAddedScope.bind(null, changeOrder.id)} className="flex flex-wrap items-end gap-3">
+        <ActionForm action={proposeAddedScope.bind(null, changeOrder.id)} className="flex flex-wrap items-end gap-3">
           <label className={labelClass}>
             Description
             <input name="itemDescription" required className={`${inputClass} w-56`} placeholder="Tile backsplash" />
@@ -165,11 +224,11 @@ function ProposalForms({ changeOrder, lineItems }: { changeOrder: ChangeOrderVie
           <SubmitButton className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500">
             Add to CO
           </SubmitButton>
-        </form>
+        </ActionForm>
       )}
 
       {kind === "EDIT" && (
-        <form action={proposeLineItemChange.bind(null, changeOrder.id)} className="flex flex-wrap items-end gap-3">
+        <ActionForm action={proposeLineItemChange.bind(null, changeOrder.id)} className="flex flex-wrap items-end gap-3">
           <label className={labelClass}>
             Line item
             <select name="lineItemId" required className={`${inputClass} w-64`}>
@@ -192,11 +251,11 @@ function ProposalForms({ changeOrder, lineItems }: { changeOrder: ChangeOrderVie
             Add to CO
           </SubmitButton>
           <p className="w-full text-xs text-slate-500">Leave a field blank to leave it unchanged.</p>
-        </form>
+        </ActionForm>
       )}
 
       {kind === "REMOVE" && (
-        <form action={proposeScopeRemoval.bind(null, changeOrder.id)} className="flex flex-wrap items-end gap-3">
+        <ActionForm action={proposeScopeRemoval.bind(null, changeOrder.id)} className="flex flex-wrap items-end gap-3">
           <label className={labelClass}>
             Line item to remove
             <select name="lineItemId" required className={`${inputClass} w-64`}>
@@ -210,7 +269,7 @@ function ProposalForms({ changeOrder, lineItems }: { changeOrder: ChangeOrderVie
           <SubmitButton className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500">
             Add to CO
           </SubmitButton>
-        </form>
+        </ActionForm>
       )}
     </div>
   );
@@ -224,7 +283,7 @@ function Decision({ changeOrder }: { changeOrder: ChangeOrderView }) {
         budget; rejecting keeps the record without touching it.
       </p>
       <div className="flex flex-wrap items-end gap-3">
-        <form action={approveChangeOrder.bind(null, changeOrder.id)} className="flex flex-wrap items-end gap-2">
+        <ActionForm action={approveChangeOrder.bind(null, changeOrder.id)} className="flex flex-wrap items-end gap-2">
           <label className={labelClass}>
             Decision date
             <input name="decidedOn" type="date" defaultValue={today()} className={`${inputClass} w-40`} />
@@ -236,19 +295,19 @@ function Decision({ changeOrder }: { changeOrder: ChangeOrderView }) {
           <SubmitButton className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-500">
             Approve
           </SubmitButton>
-        </form>
-        <form action={rejectChangeOrder.bind(null, changeOrder.id)} className="flex items-end gap-2">
+        </ActionForm>
+        <ActionForm action={rejectChangeOrder.bind(null, changeOrder.id)} className="flex items-end gap-2">
           <input type="hidden" name="decidedOn" value={today()} />
           <SubmitButton className="rounded-md border border-rose-700 px-3 py-2 text-sm font-medium text-rose-300 hover:bg-rose-950">
             Reject
           </SubmitButton>
-        </form>
-        <form action={voidChangeOrder.bind(null, changeOrder.id)} className="flex items-end gap-2">
+        </ActionForm>
+        <ActionForm action={voidChangeOrder.bind(null, changeOrder.id)} className="flex items-end gap-2">
           <input type="hidden" name="decidedOn" value={today()} />
           <SubmitButton className="rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-400 hover:bg-slate-800">
             Withdraw
           </SubmitButton>
-        </form>
+        </ActionForm>
       </div>
     </div>
   );
@@ -268,7 +327,7 @@ function Correction({ changeOrder }: { changeOrder: ChangeOrderView }) {
   return (
     <div className="mt-3 flex flex-col gap-2 rounded-md border border-slate-800 bg-slate-950 p-3">
       {canReopen ? (
-        <form action={reopenChangeOrder.bind(null, changeOrder.id)} className="flex flex-wrap items-end gap-2">
+        <ActionForm action={reopenChangeOrder.bind(null, changeOrder.id)} className="flex flex-wrap items-end gap-2">
           <label className={labelClass}>
             Reopen to correct it
             <input name="reopenNote" className={`${inputClass} w-64`} placeholder="Priced at the wrong rate" />
@@ -281,14 +340,14 @@ function Correction({ changeOrder }: { changeOrder: ChangeOrderView }) {
             depends on what it changed, so there is nothing to break — reversing an edit restores the
             previous values and leaves any costs or hours on that line untouched.
           </p>
-        </form>
+        </ActionForm>
       ) : (
         <div className="flex flex-col gap-2">
           <p className="text-xs text-amber-300">
             This change order can no longer be reopened: {changeOrder.reopenBlockers.join("; ")}. Revising it
             corrects the scope without contradicting what has already been costed or billed.
           </p>
-          <form action={reviseChangeOrder.bind(null, changeOrder.id)} className="flex flex-wrap items-end gap-2">
+          <ActionForm action={reviseChangeOrder.bind(null, changeOrder.id)} className="flex flex-wrap items-end gap-2">
             <label className={labelClass}>
               Raise a revision
               <input
@@ -300,7 +359,7 @@ function Correction({ changeOrder }: { changeOrder: ChangeOrderView }) {
             <SubmitButton className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500">
               Revise
             </SubmitButton>
-          </form>
+          </ActionForm>
         </div>
       )}
     </div>
@@ -312,11 +371,14 @@ export function ChangeOrders({
   changeOrders,
   lineItems,
   pendingExposure,
+  pendingUnbookable,
 }: {
   jobId: string;
   changeOrders: ChangeOrderView[];
   lineItems: LineItemChoice[];
   pendingExposure: string;
+  /** How many pending proposals that exposure figure had to leave out. */
+  pendingUnbookable: number;
 }) {
   const pendingCount = changeOrders.filter((co) => co.status === "SUBMITTED").length;
 
@@ -327,11 +389,20 @@ export function ChangeOrders({
         {pendingCount > 0 && (
           <p className="text-sm text-amber-300">
             {pendingCount} pending with the GC · {pendingExposure} not in the contract value
+            {/* A total that skipped rows has to say so. */}
+            {pendingUnbookable > 0 && (
+              <>
+                {" "}
+                · excludes {pendingUnbookable} proposed{" "}
+                {pendingUnbookable === 1 ? "change" : "changes"} against scope already removed,
+                which cannot be approved as written
+              </>
+            )}
           </p>
         )}
       </div>
 
-      <form
+      <ActionForm
         action={createChangeOrder.bind(null, jobId)}
         className="mb-4 flex flex-wrap items-end gap-3 rounded-md border border-slate-800 bg-slate-900 p-3"
       >
@@ -349,7 +420,7 @@ export function ChangeOrders({
         <p className="w-full text-xs text-slate-500">
           A draft changes nothing until the GC approves it — the contract value only moves on approval.
         </p>
-      </form>
+      </ActionForm>
 
       {changeOrders.length === 0 ? (
         <div className="rounded-md border border-slate-800 bg-slate-900 p-4 text-sm text-slate-400">
@@ -371,6 +442,18 @@ export function ChangeOrders({
                 </div>
               </div>
               {co.description && <p className="mt-1 text-sm text-slate-400">{co.description}</p>}
+
+              {/* Why the figure above is not the whole story. Left silent,
+                  a change order whose proposals target removed scope reads
+                  as one worth nothing rather than one that cannot be
+                  approved. */}
+              {co.unbookableProposals > 0 && (
+                <p className="mt-1 text-xs text-amber-300">
+                  {co.unbookableProposals === 1
+                    ? "1 proposed change targets scope an earlier change order already removed, so it is not in the figure above and this change order cannot be approved as written."
+                    : `${co.unbookableProposals} proposed changes target scope an earlier change order already removed, so they are not in the figure above and this change order cannot be approved as written.`}
+                </p>
+              )}
 
               {co.supersedesLabel && (
                 <p className="mt-1 text-xs text-blue-300">Raised to correct {co.supersedesLabel}.</p>
@@ -406,9 +489,9 @@ export function ChangeOrders({
                         {proposal.summary}
                       </span>
                       {co.status === "DRAFT" && (
-                        <form action={removeProposal.bind(null, proposal.id)}>
+                        <ActionForm action={removeProposal.bind(null, proposal.id)}>
                           <SubmitButton className="text-xs text-slate-500 hover:text-rose-400">remove</SubmitButton>
-                        </form>
+                        </ActionForm>
                       )}
                     </li>
                   ))}
@@ -432,7 +515,7 @@ export function ChangeOrders({
                 <>
                   <ProposalForms changeOrder={co} lineItems={lineItems} />
                   <div className="mt-3 flex flex-wrap items-end gap-3">
-                    <form action={submitChangeOrder.bind(null, co.id)} className="flex flex-wrap items-end gap-2">
+                    <ActionForm action={submitChangeOrder.bind(null, co.id)} className="flex flex-wrap items-end gap-2">
                       <label className={labelClass}>
                         Date sent to GC
                         <input name="submittedOn" type="date" defaultValue={today()} className={`${inputClass} w-40`} />
@@ -443,12 +526,12 @@ export function ChangeOrders({
                       >
                         Send to GC
                       </SubmitButton>
-                    </form>
-                    <form action={deleteChangeOrderDraft.bind(null, co.id)}>
+                    </ActionForm>
+                    <ActionForm action={deleteChangeOrderDraft.bind(null, co.id)}>
                       <SubmitButton className="rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-400 hover:bg-slate-800">
                         Discard draft
                       </SubmitButton>
-                    </form>
+                    </ActionForm>
                   </div>
                 </>
               )}

@@ -4,17 +4,13 @@ import { headers } from "next/headers";
 import { StatusBadge } from "@prova/ui";
 import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
-import {
-  createBidInvitation,
-  deleteBidInvitation,
-  enablePortalAccess,
-  updateBidInvitationStatus,
-} from "@/lib/actions";
+import { enablePortalAccess } from "@/lib/actions";
 import { money } from "@/lib/money";
 import { can } from "@/lib/permissions";
 import { calculatePaymentReliability } from "@/lib/gc-reliability";
 import { SubmitButton } from "@/components/SubmitButton";
 import { LinkContactToQuickBooks } from "@/components/LinkContactToQuickBooks";
+import { BidInvitations } from "@/components/BidInvitations";
 import { ContactEditForm } from "@/components/ContactEditForm";
 import { ContactInteractionForm } from "@/components/ContactInteractionForm";
 import { ContactInteractionRow } from "@/components/ContactInteractionRow";
@@ -22,34 +18,6 @@ import { ContactPersonForm } from "@/components/ContactPersonForm";
 import { ContactPersonRow } from "@/components/ContactPersonRow";
 import { toIsoDate } from "@/lib/compliance-expiry";
 import { serverToday } from "@/lib/serverToday";
-
-const TRADE_SCOPE_OPTIONS = [
-  { value: "METAL_FRAMING_DRYWALL", label: "Metal framing / drywall" },
-  { value: "LATH_PLASTER", label: "Lath & plaster" },
-  { value: "EIFS", label: "EIFS" },
-  { value: "ACOUSTICAL_CEILINGS", label: "Acoustical ceilings" },
-  { value: "FIREPROOFING", label: "Fireproofing" },
-] as const;
-
-const BID_STATUS_OPTIONS = [
-  { value: "INVITED", label: "Invited" },
-  { value: "SUBMITTED", label: "Submitted" },
-  { value: "WON", label: "Won" },
-  { value: "LOST", label: "Lost" },
-  { value: "DECLINED", label: "Declined" },
-] as const;
-
-const BID_STATUS_STYLE: Record<string, string> = {
-  INVITED: "bg-slate-800 text-slate-300",
-  SUBMITTED: "bg-blue-500/15 text-blue-300",
-  WON: "bg-green-500/15 text-green-300",
-  LOST: "bg-red-950 text-red-400",
-  DECLINED: "bg-slate-800 text-slate-500",
-};
-
-function formatDate(date: Date | null) {
-  return date ? date.toLocaleDateString() : "—";
-}
 
 function percent(value: number) {
   return `${Math.round(value * 100)}%`;
@@ -145,7 +113,6 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
     : null;
 
   const enablePortalWithId = enablePortalAccess.bind(null, contact.id);
-  const createBidInvitationWithId = createBidInvitation.bind(null, contact.id);
 
   const headerList = await headers();
   const origin = `${headerList.get("x-forwarded-proto") ?? "https"}://${headerList.get("host")}`;
@@ -210,121 +177,19 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
       )}
 
       {showsEstimating && (
-      <section className="mb-10 rounded-lg border border-slate-800 bg-slate-900 p-6">
-        <h2 className="mb-3 text-lg font-semibold text-slate-100">Bid invitations</h2>
-        {contact.bidInvitations.length === 0 ? (
-          <p className="mb-4 text-sm text-slate-400">No bid invitations logged from {contact.name} yet.</p>
-        ) : (
-          <ul className="mb-4 divide-y divide-slate-800 border-y border-slate-800">
-            {contact.bidInvitations.map((bid) => (
-              <li key={bid.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <p className="font-medium text-slate-100">{bid.projectName}</p>
-                    <span
-                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${BID_STATUS_STYLE[bid.status]}`}
-                    >
-                      {BID_STATUS_OPTIONS.find((o) => o.value === bid.status)?.label ?? bid.status}
-                    </span>
-                  </div>
-                  <p className="text-sm text-slate-400">
-                    {bid.tradeScope && (
-                      <>{TRADE_SCOPE_OPTIONS.find((t) => t.value === bid.tradeScope)?.label} · </>
-                    )}
-                    {bid.dueDate && <>Due {formatDate(bid.dueDate)}</>}
-                  </p>
-                  {bid.bidAmount != null && (
-                    <p className="text-sm text-slate-300">{money(Number(bid.bidAmount))}</p>
-                  )}
-                  {bid.notes && <p className="text-sm text-slate-500">{bid.notes}</p>}
-                </div>
-                <div className="flex items-center gap-2">
-                  <form action={updateBidInvitationStatus.bind(null, bid.id)} className="flex items-center gap-2">
-                    <select
-                      key={bid.status}
-                      name="status"
-                      defaultValue={bid.status}
-                      className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
-                    >
-                      {BID_STATUS_OPTIONS.map((o) => (
-                        <option key={o.value} value={o.value}>
-                          {o.label}
-                        </option>
-                      ))}
-                    </select>
-                    <input
-                      name="bidAmount"
-                      defaultValue={bid.bidAmount?.toString() ?? ""}
-                      placeholder="Bid $"
-                      title="Amount bid, once known"
-                      className="w-24 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-600 focus:border-blue-500 focus:outline-none"
-                    />
-                    <SubmitButton
-                      type="submit"
-                      className="rounded-md bg-slate-800 px-2 py-1 text-xs font-medium text-slate-100 hover:bg-slate-700"
-                    >
-                      Update
-                    </SubmitButton>
-                  </form>
-                  <form action={deleteBidInvitation.bind(null, bid.id)}>
-                    <SubmitButton type="submit" className="text-xs text-red-400 hover:underline">
-                      Delete
-                    </SubmitButton>
-                  </form>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-        <form action={createBidInvitationWithId} className="flex flex-wrap items-end gap-3">
-          <label className="flex flex-col gap-1 text-sm text-slate-300">
-            Project name
-            <input
-              name="projectName"
-              required
-              placeholder="Downtown office build-out"
-              className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-sm text-slate-300">
-            Trade
-            <select
-              name="tradeScope"
-              defaultValue=""
-              className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
-            >
-              <option value="">No trade tag</option>
-              {TRADE_SCOPE_OPTIONS.map((t) => (
-                <option key={t.value} value={t.value}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1 text-sm text-slate-300">
-            Bid due date
-            <input
-              name="dueDate"
-              type="date"
-              className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
-            />
-          </label>
-          <label className="flex flex-1 min-w-[180px] flex-col gap-1 text-sm text-slate-300">
-            Notes
-            <input
-              name="notes"
-              placeholder="Optional"
-              className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
-            />
-          </label>
-          <SubmitButton
-            type="submit"
-            className="inline-flex items-center justify-center rounded-md bg-slate-800 px-4 py-2 text-sm font-medium text-slate-100 hover:bg-slate-700"
-          >
-            Log invitation
-          </SubmitButton>
-        </form>
-      </section>
+        <BidInvitations
+          contactId={contact.id}
+          contactName={contact.name}
+          bids={contact.bidInvitations.map((bid) => ({
+            id: bid.id,
+            projectName: bid.projectName,
+            status: bid.status,
+            tradeScope: bid.tradeScope,
+            dueDate: toIsoDate(bid.dueDate),
+            bidAmount: bid.bidAmount?.toString() ?? null,
+            notes: bid.notes,
+          }))}
+        />
       )}
 
       {showsEstimating && (

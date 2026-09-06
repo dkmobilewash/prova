@@ -6,9 +6,10 @@ import { prisma } from "@prova/db";
 import { reopenBlockers } from "@/lib/change-order";
 import { Prisma } from "@prova/db";
 import {
+  ActionResult,
+  actionFail,
+  actionOk,
   assertEditableViaChangeOrder,
-  assertJobInCompany,
-  assertLineItemOnJob,
   decimalFromForm,
   nullableDecimalFromForm,
   tradeScopeFromForm,
@@ -26,14 +27,87 @@ import {
  * learn that this lifecycle exists.
  */
 
+/* ------------------------------------------------------------------ */
+/* Refusing, in a way a PM can actually read                           */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Every guard in this file used to throw, and every one of its messages is
+ * an instruction: "CO #3 has already been sent — void it and raise a new
+ * one", "A change order can't be answered before it was sent", "was already
+ * removed by an earlier change order". Next.js redacts a thrown Server
+ * Action message in production, so all twelve reached a real user as a
+ * reference number — the sentence saying what to do next replaced by a
+ * digest, on the one workflow where getting the next step wrong changes a
+ * contract value. They return { ok: false, error } now and the forms render
+ * it. See lib/actions/shared.ts.
+ *
+ * Inside a transaction a refusal still has to THROW, or the writes already
+ * made would commit. So it throws a tagged error that the wrapper unwraps
+ * back into an ActionResult. Tagged with a property rather than checked with
+ * instanceof, for the reason isUniqueConstraintError documents: class
+ * identity is not reliable across this app's bundling, and a guard that
+ * silently never fires is worse than no guard.
+ */
+const REFUSAL = "__provaChangeOrderRefusal";
+
+function refuse(message: string): never {
+  throw Object.assign(new Error(message), { [REFUSAL]: true });
+}
+
+function refusalMessage(error: unknown): string | null {
+  if (typeof error !== "object" || error === null) return null;
+  const tagged = error as Record<string, unknown>;
+  return tagged[REFUSAL] === true ? String((error as Error).message) : null;
+}
+
+/**
+ * Runs a body that may refuse, turning a refusal into a result.
+ *
+ * Anything NOT tagged is re-thrown untouched: a genuine bug should still
+ * be an error, still be redacted, and still reach the error boundary. The
+ * point of this file's change is not to stop throwing — it is to stop
+ * throwing the sentences that were written for a person to read.
+ */
+async function attempt(body: () => Promise<void>): Promise<ActionResult> {
+  try {
+    await body();
+    return actionOk;
+  } catch (error) {
+    const message = refusalMessage(error);
+    if (message !== null) return actionFail(message);
+    throw error;
+  }
+}
+
 function text(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();
 }
 
 function required(formData: FormData, key: string, label: string) {
   const value = text(formData, key);
-  if (!value) throw new Error(`${label} is required`);
+  if (!value) refuse(`${label} is required.`);
   return value;
+}
+
+/** decimalFromForm and its nullable twin throw a message written for a
+ * person ("quantity" must be a number). Only the throwing was wrong, so
+ * they are caught here and refused rather than reimplemented — one parser,
+ * one rule about what a number is. */
+function decimal(formData: FormData, key: string): string {
+  try {
+    return decimalFromForm(formData, key);
+  } catch {
+    refuse(`${key} has to be a number.`);
+  }
+}
+
+function nullableDecimal(formData: FormData, key: string): string | null {
+  try {
+    return nullableDecimalFromForm(formData, key);
+  } catch {
+    refuse(`${key} has to be a number, or blank.`);
+  }
 }
 
 /** Dates are stored at UTC midnight so comparisons are between calendar
@@ -53,7 +127,7 @@ function enteredDate(formData: FormData, key: string): Date {
   const raw = text(formData, key);
   if (!raw) return utcMidnight(new Date());
   const date = new Date(`${raw}T00:00:00.000Z`);
-  if (Number.isNaN(date.getTime())) throw new Error("Date is not valid");
+  if (Number.isNaN(date.getTime())) refuse("That date isn't a real date.");
   return date;
 }
 
@@ -77,13 +151,42 @@ async function issueChangeOrderNumber(tx: Prisma.TransactionClient, jobId: strin
   return counter.lastNumber;
 }
 
+/** The job, if it belongs to this company. Looked up here rather than
+ * through assertJobInCompany because that one throws, and a database
+ * failure inside it must NOT be converted into a friendly refusal. */
+async function requireJob(jobId: string, companyId: string) {
+  const job = await prisma.job.findUnique({ where: { id: jobId } });
+  if (!job || job.companyId !== companyId) refuse("That job no longer exists.");
+  return job;
+}
+
+/** The one gate on contracted scope, kept as the single copy it has to be
+ * (lib/actions/shared.ts). It throws on exactly one condition and does
+ * nothing else, so catching around it converts that condition and nothing
+ * else. */
+function requireContracted(job: { status: string }) {
+  try {
+    assertEditableViaChangeOrder(job);
+  } catch {
+    refuse("This job isn't contracted yet — edit its line items directly instead.");
+  }
+}
+
+async function requireLineItemOnJob(lineItemId: string, jobId: string) {
+  const lineItem = await prisma.jobLineItem.findUnique({ where: { id: lineItemId } });
+  if (!lineItem || lineItem.jobId !== jobId) {
+    refuse("That line item isn't on this job any more.");
+  }
+  return lineItem;
+}
+
 async function assertChangeOrder(changeOrderId: string, companyId: string) {
   const changeOrder = await prisma.changeOrder.findUnique({
     where: { id: changeOrderId },
     include: { job: true, proposals: true },
   });
   if (!changeOrder || changeOrder.job.companyId !== companyId) {
-    throw new Error("Change order not found");
+    refuse("That change order no longer exists.");
   }
   return changeOrder;
 }
@@ -96,7 +199,7 @@ async function assertChangeOrder(changeOrderId: string, companyId: string) {
  */
 function assertDraft(changeOrder: { status: string; number: number }) {
   if (changeOrder.status !== "DRAFT") {
-    throw new Error(
+    refuse(
       `CO #${changeOrder.number} has already been sent — void it and raise a new one instead of editing it.`,
     );
   }
@@ -110,22 +213,24 @@ function assertDraft(changeOrder: { status: string; number: number }) {
  * Opens a new change order as a DRAFT with no proposals yet. The budget does
  * not move — nothing here touches JobLineItem.
  */
-export async function createChangeOrder(jobId: string, formData: FormData) {
-  const { company } = await requireCompanyContext();
-  const job = await assertJobInCompany(jobId, company.id);
-  assertEditableViaChangeOrder(job);
+export async function createChangeOrder(jobId: string, formData: FormData): Promise<ActionResult> {
+  return attempt(async () => {
+    const { company } = await requireCompanyContext();
+    const job = await requireJob(jobId, company.id);
+    requireContracted(job);
 
-  const title = required(formData, "title", "Change order title");
-  const description = text(formData, "description");
+    const title = required(formData, "title", "Change order title");
+    const description = text(formData, "description");
 
-  await prisma.$transaction(async (tx) => {
-    const number = await issueChangeOrderNumber(tx, jobId);
-    await tx.changeOrder.create({
-      data: { jobId, number, title, description: description || null, status: "DRAFT" },
+    await prisma.$transaction(async (tx) => {
+      const number = await issueChangeOrderNumber(tx, jobId);
+      await tx.changeOrder.create({
+        data: { jobId, number, title, description: description || null, status: "DRAFT" },
+      });
     });
-  });
 
-  revalidatePath(`/jobs/${jobId}`);
+    revalidatePath(`/jobs/${jobId}`);
+  });
 }
 
 /**
@@ -133,98 +238,132 @@ export async function createChangeOrder(jobId: string, formData: FormData) {
  * JobLineItem tagged with originChangeOrderId — the same row shape the
  * estimate was built from.
  */
-export async function proposeAddedScope(changeOrderId: string, formData: FormData) {
-  const { company } = await requireCompanyContext();
-  const changeOrder = await assertChangeOrder(changeOrderId, company.id);
-  assertDraft(changeOrder);
+export async function proposeAddedScope(
+  changeOrderId: string,
+  formData: FormData,
+): Promise<ActionResult> {
+  return attempt(async () => {
+    const { company } = await requireCompanyContext();
+    const changeOrder = await assertChangeOrder(changeOrderId, company.id);
+    assertDraft(changeOrder);
 
-  const description = required(formData, "itemDescription", "Line item description");
-  const unit = text(formData, "unit");
-  const budgetedUnitCost = nullableDecimalFromForm(formData, "budgetedUnitCost");
+    const description = required(formData, "itemDescription", "Line item description");
+    const unit = text(formData, "unit");
+    const budgetedUnitCost = nullableDecimal(formData, "budgetedUnitCost");
 
-  await prisma.changeOrderProposal.create({
-    data: {
-      changeOrderId,
-      changeType: "ADD",
-      description,
-      unit: unit || null,
-      quantity: decimalFromForm(formData, "quantity"),
-      unitPrice: nullableDecimalFromForm(formData, "unitPrice"),
-      budgetedUnitCost,
-      currentEstimatedUnitCost:
-        nullableDecimalFromForm(formData, "currentEstimatedUnitCost") ?? budgetedUnitCost,
-      tradeScope: tradeScopeFromForm(formData),
-    },
+    await prisma.changeOrderProposal.create({
+      data: {
+        changeOrderId,
+        changeType: "ADD",
+        description,
+        unit: unit || null,
+        quantity: decimal(formData, "quantity"),
+        unitPrice: nullableDecimal(formData, "unitPrice"),
+        budgetedUnitCost,
+        currentEstimatedUnitCost:
+          nullableDecimal(formData, "currentEstimatedUnitCost") ?? budgetedUnitCost,
+        tradeScope: tradeScopeFromForm(formData),
+      },
+    });
+
+    revalidatePath(`/jobs/${changeOrder.jobId}`);
   });
-
-  revalidatePath(`/jobs/${changeOrder.jobId}`);
 }
 
 /**
  * Proposes a change to an EXISTING line item. A null field means "leave it
  * alone", so a price-only change stores only a price.
  */
-export async function proposeLineItemChange(changeOrderId: string, formData: FormData) {
-  const { company } = await requireCompanyContext();
-  const changeOrder = await assertChangeOrder(changeOrderId, company.id);
-  assertDraft(changeOrder);
+export async function proposeLineItemChange(
+  changeOrderId: string,
+  formData: FormData,
+): Promise<ActionResult> {
+  return attempt(async () => {
+    const { company } = await requireCompanyContext();
+    const changeOrder = await assertChangeOrder(changeOrderId, company.id);
+    assertDraft(changeOrder);
 
-  const lineItemId = required(formData, "lineItemId", "Target line item");
-  await assertLineItemOnJob(lineItemId, changeOrder.jobId);
+    const lineItemId = required(formData, "lineItemId", "Target line item");
+    const lineItem = await requireLineItemOnJob(lineItemId, changeOrder.jobId);
 
-  const quantity = nullableDecimalFromForm(formData, "quantity");
-  const unitPrice = nullableDecimalFromForm(formData, "unitPrice");
-  if (quantity === null && unitPrice === null) {
-    throw new Error("Set a new quantity or a new unit price — otherwise this changes nothing.");
-  }
+    // Scope an approved change order has already removed. Proposing against
+    // it is a dead end -- approval refuses it, and until then it sits in the
+    // pending-exposure figure as money that can never be booked.
+    if (lineItem.isDeleted) {
+      refuse(
+        `"${lineItem.description}" was already removed from this contract by an earlier change order. Add it back as new scope instead of editing it.`,
+      );
+    }
 
-  await prisma.changeOrderProposal.create({
-    data: { changeOrderId, changeType: "EDIT", lineItemId, quantity, unitPrice },
+    const quantity = nullableDecimal(formData, "quantity");
+    const unitPrice = nullableDecimal(formData, "unitPrice");
+    if (quantity === null && unitPrice === null) {
+      refuse("Set a new quantity or a new unit price — otherwise this changes nothing.");
+    }
+
+    await prisma.changeOrderProposal.create({
+      data: { changeOrderId, changeType: "EDIT", lineItemId, quantity, unitPrice },
+    });
+
+    revalidatePath(`/jobs/${changeOrder.jobId}`);
   });
-
-  revalidatePath(`/jobs/${changeOrder.jobId}`);
 }
 
 /** Proposes removing scope. Applied as a soft delete on approval. */
-export async function proposeScopeRemoval(changeOrderId: string, formData: FormData) {
-  const { company } = await requireCompanyContext();
-  const changeOrder = await assertChangeOrder(changeOrderId, company.id);
-  assertDraft(changeOrder);
+export async function proposeScopeRemoval(
+  changeOrderId: string,
+  formData: FormData,
+): Promise<ActionResult> {
+  return attempt(async () => {
+    const { company } = await requireCompanyContext();
+    const changeOrder = await assertChangeOrder(changeOrderId, company.id);
+    assertDraft(changeOrder);
 
-  const lineItemId = required(formData, "lineItemId", "Target line item");
-  await assertLineItemOnJob(lineItemId, changeOrder.jobId);
+    const lineItemId = required(formData, "lineItemId", "Target line item");
+    const lineItem = await requireLineItemOnJob(lineItemId, changeOrder.jobId);
 
-  await prisma.changeOrderProposal.create({
-    data: { changeOrderId, changeType: "REMOVE", lineItemId },
+    if (lineItem.isDeleted) {
+      refuse(
+        `"${lineItem.description}" has already been removed from this contract by an earlier change order — there is nothing left to take out.`,
+      );
+    }
+
+    await prisma.changeOrderProposal.create({
+      data: { changeOrderId, changeType: "REMOVE", lineItemId },
+    });
+
+    revalidatePath(`/jobs/${changeOrder.jobId}`);
   });
-
-  revalidatePath(`/jobs/${changeOrder.jobId}`);
 }
 
-export async function removeProposal(proposalId: string) {
-  const { company } = await requireCompanyContext();
-  const proposal = await prisma.changeOrderProposal.findUnique({
-    where: { id: proposalId },
-    include: { changeOrder: { include: { job: true } } },
-  });
-  if (!proposal || proposal.changeOrder.job.companyId !== company.id) {
-    throw new Error("Proposal not found");
-  }
-  assertDraft(proposal.changeOrder);
+export async function removeProposal(proposalId: string): Promise<ActionResult> {
+  return attempt(async () => {
+    const { company } = await requireCompanyContext();
+    const proposal = await prisma.changeOrderProposal.findUnique({
+      where: { id: proposalId },
+      include: { changeOrder: { include: { job: true } } },
+    });
+    if (!proposal || proposal.changeOrder.job.companyId !== company.id) {
+      refuse("That proposed change no longer exists.");
+    }
+    assertDraft(proposal.changeOrder);
 
-  await prisma.changeOrderProposal.delete({ where: { id: proposalId } });
-  revalidatePath(`/jobs/${proposal.changeOrder.jobId}`);
+    await prisma.changeOrderProposal.delete({ where: { id: proposalId } });
+    revalidatePath(`/jobs/${proposal.changeOrder.jobId}`);
+  });
 }
 
 /** A draft nobody has seen can be thrown away. Anything sent cannot — see
  * voidChangeOrder. */
-export async function deleteChangeOrderDraft(changeOrderId: string) {
-  const { company } = await requireCompanyContext();
-  const changeOrder = await assertChangeOrder(changeOrderId, company.id);
-  assertDraft(changeOrder);
+export async function deleteChangeOrderDraft(changeOrderId: string): Promise<ActionResult> {
+  return attempt(async () => {
+    const { company } = await requireCompanyContext();
+    const changeOrder = await assertChangeOrder(changeOrderId, company.id);
+    assertDraft(changeOrder);
 
-  await prisma.changeOrder.delete({ where: { id: changeOrderId } });
-  revalidatePath(`/jobs/${changeOrder.jobId}`);
+    await prisma.changeOrder.delete({ where: { id: changeOrderId } });
+    revalidatePath(`/jobs/${changeOrder.jobId}`);
+  });
 }
 
 /* ------------------------------------------------------------------ */
@@ -232,21 +371,26 @@ export async function deleteChangeOrderDraft(changeOrderId: string) {
 /* ------------------------------------------------------------------ */
 
 /** DRAFT -> SUBMITTED. This is the PCO state: priced, sent, unanswered. */
-export async function submitChangeOrder(changeOrderId: string, formData: FormData) {
-  const { company } = await requireCompanyContext();
-  const changeOrder = await assertChangeOrder(changeOrderId, company.id);
-  assertDraft(changeOrder);
+export async function submitChangeOrder(
+  changeOrderId: string,
+  formData: FormData,
+): Promise<ActionResult> {
+  return attempt(async () => {
+    const { company } = await requireCompanyContext();
+    const changeOrder = await assertChangeOrder(changeOrderId, company.id);
+    assertDraft(changeOrder);
 
-  if (changeOrder.proposals.length === 0) {
-    throw new Error("Add at least one proposed change before sending this to the GC.");
-  }
+    if (changeOrder.proposals.length === 0) {
+      refuse("Add at least one proposed change before sending this to the GC.");
+    }
 
-  await prisma.changeOrder.update({
-    where: { id: changeOrderId },
-    data: { status: "SUBMITTED", submittedOn: enteredDate(formData, "submittedOn") },
+    await prisma.changeOrder.update({
+      where: { id: changeOrderId },
+      data: { status: "SUBMITTED", submittedOn: enteredDate(formData, "submittedOn") },
+    });
+
+    revalidatePath(`/jobs/${changeOrder.jobId}`);
   });
-
-  revalidatePath(`/jobs/${changeOrder.jobId}`);
 }
 
 /**
@@ -257,138 +401,143 @@ export async function submitChangeOrder(changeOrderId: string, formData: FormDat
  * change order would put the contract value somewhere neither party agreed
  * to, which is worse than an error message.
  */
-export async function approveChangeOrder(changeOrderId: string, formData: FormData) {
-  const { company } = await requireCompanyContext();
-  const changeOrder = await assertChangeOrder(changeOrderId, company.id);
+export async function approveChangeOrder(
+  changeOrderId: string,
+  formData: FormData,
+): Promise<ActionResult> {
+  return attempt(async () => {
+    const { company } = await requireCompanyContext();
+    const changeOrder = await assertChangeOrder(changeOrderId, company.id);
 
-  if (changeOrder.status !== "SUBMITTED") {
-    throw new Error(
-      `Only a change order that's been sent to the GC can be approved — CO #${changeOrder.number} is ${changeOrder.status}.`,
-    );
-  }
-  // Belt and braces alongside the status check: appliedAt is what actually
-  // guarantees the budget can't absorb the same change order twice.
-  if (changeOrder.appliedAt) {
-    throw new Error(`CO #${changeOrder.number} has already been applied to the budget.`);
-  }
-
-  const decidedOn = enteredDate(formData, "decidedOn");
-  if (changeOrder.submittedOn && decidedOn < changeOrder.submittedOn) {
-    throw new Error("A change order can't be answered before it was sent.");
-  }
-  const decisionNotes = text(formData, "decisionNotes");
-
-  await prisma.$transaction(async (tx) => {
-    for (const proposal of changeOrder.proposals) {
-      if (proposal.changeType === "ADD") {
-        await tx.jobLineItem.create({
-          data: {
-            jobId: changeOrder.jobId,
-            description: proposal.description ?? "Added scope",
-            unit: proposal.unit,
-            quantity: proposal.quantity ?? "1",
-            unitPrice: proposal.unitPrice,
-            budgetedUnitCost: proposal.budgetedUnitCost,
-            currentEstimatedUnitCost: proposal.currentEstimatedUnitCost,
-            tradeScope: proposal.tradeScope,
-            originChangeOrderId: changeOrder.id,
-          },
-        });
-        continue;
-      }
-
-      if (!proposal.lineItemId) {
-        throw new Error("A change to existing scope has lost its target line item.");
-      }
-      const lineItem = await tx.jobLineItem.findUnique({ where: { id: proposal.lineItemId } });
-      if (!lineItem || lineItem.jobId !== changeOrder.jobId) {
-        throw new Error("A line item this change order targets is no longer on this job.");
-      }
-      // A line another change order has already removed can't be changed or
-      // removed again — approving that would silently do nothing, or worse,
-      // resurrect it into the budget.
-      if (lineItem.isDeleted) {
-        throw new Error(
-          `"${lineItem.description}" was already removed by an earlier change order. Void CO #${changeOrder.number} and raise a new one against the current scope.`,
-        );
-      }
-
-      // Snapshot what this proposal is about to overwrite, so reopening can
-      // put it back without reading the audit log. See ChangeOrderProposal.
-      await tx.changeOrderProposal.update({
-        where: { id: proposal.id },
-        data: {
-          previousQuantity: lineItem.quantity,
-          previousUnitPrice: lineItem.unitPrice,
-          previousIsDeleted: lineItem.isDeleted,
-        },
-      });
-
-      if (proposal.changeType === "REMOVE") {
-        await tx.jobLineItem.update({
-          where: { id: lineItem.id },
-          data: { isDeleted: true },
-        });
-        await tx.changeOrderLineItemEdit.create({
-          data: {
-            changeOrderId: changeOrder.id,
-            lineItemId: lineItem.id,
-            field: "deleted",
-            oldValue: "false",
-            newValue: "true",
-          },
-        });
-        continue;
-      }
-
-      // EDIT — write only the fields the proposal actually set, and log the
-      // before/after for each one that genuinely moved.
-      const newQuantity = proposal.quantity ?? lineItem.quantity;
-      const newUnitPrice = proposal.unitPrice ?? lineItem.unitPrice;
-
-      if (!lineItem.quantity.equals(newQuantity)) {
-        await tx.changeOrderLineItemEdit.create({
-          data: {
-            changeOrderId: changeOrder.id,
-            lineItemId: lineItem.id,
-            field: "quantity",
-            oldValue: lineItem.quantity.toString(),
-            newValue: newQuantity.toString(),
-          },
-        });
-      }
-      const oldPriceText = lineItem.unitPrice?.toString() ?? "(none)";
-      const newPriceText = newUnitPrice?.toString() ?? "(none)";
-      if (oldPriceText !== newPriceText) {
-        await tx.changeOrderLineItemEdit.create({
-          data: {
-            changeOrderId: changeOrder.id,
-            lineItemId: lineItem.id,
-            field: "unitPrice",
-            oldValue: oldPriceText,
-            newValue: newPriceText,
-          },
-        });
-      }
-
-      await tx.jobLineItem.update({
-        where: { id: lineItem.id },
-        data: { quantity: newQuantity, unitPrice: newUnitPrice },
-      });
+    if (changeOrder.status !== "SUBMITTED") {
+      refuse(
+        `Only a change order that's been sent to the GC can be approved — CO #${changeOrder.number} is ${changeOrder.status}.`,
+      );
+    }
+    // Belt and braces alongside the status check: appliedAt is what actually
+    // guarantees the budget can't absorb the same change order twice.
+    if (changeOrder.appliedAt) {
+      refuse(`CO #${changeOrder.number} has already been applied to the budget.`);
     }
 
-    await tx.changeOrder.update({
-      where: { id: changeOrderId },
-      data: {
-        status: "APPROVED",
-        decidedOn,
-        decisionNotes: decisionNotes || null,
-        appliedAt: new Date(),
-      },
-    });
-  });
+    const decidedOn = enteredDate(formData, "decidedOn");
+    if (changeOrder.submittedOn && decidedOn < changeOrder.submittedOn) {
+      refuse("A change order can't be answered before it was sent.");
+    }
+    const decisionNotes = text(formData, "decisionNotes");
 
-  revalidatePath(`/jobs/${changeOrder.jobId}`);
+    await prisma.$transaction(async (tx) => {
+      for (const proposal of changeOrder.proposals) {
+        if (proposal.changeType === "ADD") {
+          await tx.jobLineItem.create({
+            data: {
+              jobId: changeOrder.jobId,
+              description: proposal.description ?? "Added scope",
+              unit: proposal.unit,
+              quantity: proposal.quantity ?? "1",
+              unitPrice: proposal.unitPrice,
+              budgetedUnitCost: proposal.budgetedUnitCost,
+              currentEstimatedUnitCost: proposal.currentEstimatedUnitCost,
+              tradeScope: proposal.tradeScope,
+              originChangeOrderId: changeOrder.id,
+            },
+          });
+          continue;
+        }
+
+        if (!proposal.lineItemId) {
+          refuse("A change to existing scope has lost its target line item.");
+        }
+        const lineItem = await tx.jobLineItem.findUnique({ where: { id: proposal.lineItemId } });
+        if (!lineItem || lineItem.jobId !== changeOrder.jobId) {
+          refuse("A line item this change order targets is no longer on this job.");
+        }
+        // A line another change order has already removed can't be changed or
+        // removed again — approving that would silently do nothing, or worse,
+        // resurrect it into the budget.
+        if (lineItem.isDeleted) {
+          refuse(
+            `"${lineItem.description}" was already removed by an earlier change order. Void CO #${changeOrder.number} and raise a new one against the current scope.`,
+          );
+        }
+
+        // Snapshot what this proposal is about to overwrite, so reopening can
+        // put it back without reading the audit log. See ChangeOrderProposal.
+        await tx.changeOrderProposal.update({
+          where: { id: proposal.id },
+          data: {
+            previousQuantity: lineItem.quantity,
+            previousUnitPrice: lineItem.unitPrice,
+            previousIsDeleted: lineItem.isDeleted,
+          },
+        });
+
+        if (proposal.changeType === "REMOVE") {
+          await tx.jobLineItem.update({
+            where: { id: lineItem.id },
+            data: { isDeleted: true },
+          });
+          await tx.changeOrderLineItemEdit.create({
+            data: {
+              changeOrderId: changeOrder.id,
+              lineItemId: lineItem.id,
+              field: "deleted",
+              oldValue: "false",
+              newValue: "true",
+            },
+          });
+          continue;
+        }
+
+        // EDIT — write only the fields the proposal actually set, and log the
+        // before/after for each one that genuinely moved.
+        const newQuantity = proposal.quantity ?? lineItem.quantity;
+        const newUnitPrice = proposal.unitPrice ?? lineItem.unitPrice;
+
+        if (!lineItem.quantity.equals(newQuantity)) {
+          await tx.changeOrderLineItemEdit.create({
+            data: {
+              changeOrderId: changeOrder.id,
+              lineItemId: lineItem.id,
+              field: "quantity",
+              oldValue: lineItem.quantity.toString(),
+              newValue: newQuantity.toString(),
+            },
+          });
+        }
+        const oldPriceText = lineItem.unitPrice?.toString() ?? "(none)";
+        const newPriceText = newUnitPrice?.toString() ?? "(none)";
+        if (oldPriceText !== newPriceText) {
+          await tx.changeOrderLineItemEdit.create({
+            data: {
+              changeOrderId: changeOrder.id,
+              lineItemId: lineItem.id,
+              field: "unitPrice",
+              oldValue: oldPriceText,
+              newValue: newPriceText,
+            },
+          });
+        }
+
+        await tx.jobLineItem.update({
+          where: { id: lineItem.id },
+          data: { quantity: newQuantity, unitPrice: newUnitPrice },
+        });
+      }
+
+      await tx.changeOrder.update({
+        where: { id: changeOrderId },
+        data: {
+          status: "APPROVED",
+          decidedOn,
+          decisionNotes: decisionNotes || null,
+          appliedAt: new Date(),
+        },
+      });
+    });
+
+    revalidatePath(`/jobs/${changeOrder.jobId}`);
+  });
 }
 
 /**
@@ -396,31 +545,36 @@ export async function approveChangeOrder(changeOrderId: string, formData: FormDa
  * refused change order is evidence that the work was priced, asked for, and
  * turned down, which is precisely what a later claim is built on.
  */
-export async function rejectChangeOrder(changeOrderId: string, formData: FormData) {
-  const { company } = await requireCompanyContext();
-  const changeOrder = await assertChangeOrder(changeOrderId, company.id);
+export async function rejectChangeOrder(
+  changeOrderId: string,
+  formData: FormData,
+): Promise<ActionResult> {
+  return attempt(async () => {
+    const { company } = await requireCompanyContext();
+    const changeOrder = await assertChangeOrder(changeOrderId, company.id);
 
-  if (changeOrder.status !== "SUBMITTED") {
-    throw new Error(
-      `Only a change order that's been sent to the GC can be rejected — CO #${changeOrder.number} is ${changeOrder.status}.`,
-    );
-  }
+    if (changeOrder.status !== "SUBMITTED") {
+      refuse(
+        `Only a change order that's been sent to the GC can be rejected — CO #${changeOrder.number} is ${changeOrder.status}.`,
+      );
+    }
 
-  const decidedOn = enteredDate(formData, "decidedOn");
-  if (changeOrder.submittedOn && decidedOn < changeOrder.submittedOn) {
-    throw new Error("A change order can't be answered before it was sent.");
-  }
+    const decidedOn = enteredDate(formData, "decidedOn");
+    if (changeOrder.submittedOn && decidedOn < changeOrder.submittedOn) {
+      refuse("A change order can't be answered before it was sent.");
+    }
 
-  await prisma.changeOrder.update({
-    where: { id: changeOrderId },
-    data: {
-      status: "REJECTED",
-      decidedOn,
-      decisionNotes: text(formData, "decisionNotes") || null,
-    },
+    await prisma.changeOrder.update({
+      where: { id: changeOrderId },
+      data: {
+        status: "REJECTED",
+        decidedOn,
+        decisionNotes: text(formData, "decisionNotes") || null,
+      },
+    });
+
+    revalidatePath(`/jobs/${changeOrder.jobId}`);
   });
-
-  revalidatePath(`/jobs/${changeOrder.jobId}`);
 }
 
 /**
@@ -428,24 +582,29 @@ export async function rejectChangeOrder(changeOrderId: string, formData: FormDat
  * deleted once it has been sent — the GC has a copy, so the record that CO
  * #N existed and was pulled has to survive.
  */
-export async function voidChangeOrder(changeOrderId: string, formData: FormData) {
-  const { company } = await requireCompanyContext();
-  const changeOrder = await assertChangeOrder(changeOrderId, company.id);
+export async function voidChangeOrder(
+  changeOrderId: string,
+  formData: FormData,
+): Promise<ActionResult> {
+  return attempt(async () => {
+    const { company } = await requireCompanyContext();
+    const changeOrder = await assertChangeOrder(changeOrderId, company.id);
 
-  if (changeOrder.status !== "DRAFT" && changeOrder.status !== "SUBMITTED") {
-    throw new Error(`CO #${changeOrder.number} is already ${changeOrder.status}.`);
-  }
+    if (changeOrder.status !== "DRAFT" && changeOrder.status !== "SUBMITTED") {
+      refuse(`CO #${changeOrder.number} is already ${changeOrder.status}.`);
+    }
 
-  await prisma.changeOrder.update({
-    where: { id: changeOrderId },
-    data: {
-      status: "VOID",
-      decidedOn: enteredDate(formData, "decidedOn"),
-      decisionNotes: text(formData, "decisionNotes") || null,
-    },
+    await prisma.changeOrder.update({
+      where: { id: changeOrderId },
+      data: {
+        status: "VOID",
+        decidedOn: enteredDate(formData, "decidedOn"),
+        decisionNotes: text(formData, "decisionNotes") || null,
+      },
+    });
+
+    revalidatePath(`/jobs/${changeOrder.jobId}`);
   });
-
-  revalidatePath(`/jobs/${changeOrder.jobId}`);
 }
 
 /* ------------------------------------------------------------------ */
@@ -457,66 +616,75 @@ export async function voidChangeOrder(changeOrderId: string, formData: FormData)
  * so it can be corrected and re-approved.
  *
  * Only while its scope is untouched. Once anyone has costed, logged hours
- * against, or billed that scope, unwinding it would put the contract value
- * somewhere that contradicts a pay application already sent to the GC --
- * reviseChangeOrder is the way through at that point.
+ * against, or billed that scope — or once a LATER approved change order has
+ * written to the same lines — unwinding it would put the contract value
+ * somewhere that contradicts a pay application already sent to the GC, or
+ * silently revert somebody else's approved change. reviseChangeOrder is the
+ * way through at that point.
  */
-export async function reopenChangeOrder(changeOrderId: string, formData: FormData) {
-  const { company } = await requireCompanyContext();
-  const changeOrder = await assertChangeOrder(changeOrderId, company.id);
+export async function reopenChangeOrder(
+  changeOrderId: string,
+  formData: FormData,
+): Promise<ActionResult> {
+  return attempt(async () => {
+    const { company } = await requireCompanyContext();
+    const changeOrder = await assertChangeOrder(changeOrderId, company.id);
 
-  if (changeOrder.status !== "APPROVED") {
-    throw new Error(`Only an approved change order can be reopened — CO #${changeOrder.number} is ${changeOrder.status}.`);
-  }
-
-  const blockers = await reopenBlockers(changeOrder);
-  if (blockers.length > 0) {
-    throw new Error(
-      `CO #${changeOrder.number} can't be reopened: ${blockers.join("; ")}. ` +
-        "Raise a revision instead — it corrects the scope without contradicting what has already been costed or billed.",
-    );
-  }
-
-  await prisma.$transaction(async (tx) => {
-    for (const proposal of changeOrder.proposals) {
-      if (proposal.changeType === "ADD") continue;
-      if (!proposal.lineItemId) continue;
-      await tx.jobLineItem.update({
-        where: { id: proposal.lineItemId },
-        data: {
-          quantity: proposal.previousQuantity ?? undefined,
-          unitPrice: proposal.previousUnitPrice,
-          isDeleted: proposal.previousIsDeleted ?? false,
-        },
-      });
-      await tx.changeOrderProposal.update({
-        where: { id: proposal.id },
-        data: { previousQuantity: null, previousUnitPrice: null, previousIsDeleted: null },
-      });
+    if (changeOrder.status !== "APPROVED") {
+      refuse(
+        `Only an approved change order can be reopened — CO #${changeOrder.number} is ${changeOrder.status}.`,
+      );
     }
 
-    // Added scope goes away entirely. reopenBlockers has already established
-    // nothing points at these rows, so there is nothing to orphan.
-    await tx.jobLineItem.deleteMany({ where: { originChangeOrderId: changeOrder.id } });
+    const blockers = await reopenBlockers(changeOrder);
+    if (blockers.length > 0) {
+      refuse(
+        `CO #${changeOrder.number} can't be reopened: ${blockers.join("; ")}. ` +
+          "Raise a revision instead — it corrects the scope without contradicting what has already been costed or billed.",
+      );
+    }
 
-    // The edits describe a change that no longer happened.
-    await tx.changeOrderLineItemEdit.deleteMany({ where: { changeOrderId: changeOrder.id } });
+    await prisma.$transaction(async (tx) => {
+      for (const proposal of changeOrder.proposals) {
+        if (proposal.changeType === "ADD") continue;
+        if (!proposal.lineItemId) continue;
+        await tx.jobLineItem.update({
+          where: { id: proposal.lineItemId },
+          data: {
+            quantity: proposal.previousQuantity ?? undefined,
+            unitPrice: proposal.previousUnitPrice,
+            isDeleted: proposal.previousIsDeleted ?? false,
+          },
+        });
+        await tx.changeOrderProposal.update({
+          where: { id: proposal.id },
+          data: { previousQuantity: null, previousUnitPrice: null, previousIsDeleted: null },
+        });
+      }
 
-    await tx.changeOrder.update({
-      where: { id: changeOrderId },
-      data: {
-        status: "DRAFT",
-        appliedAt: null,
-        decidedOn: null,
-        decisionNotes: null,
-        submittedOn: null,
-        reopenedAt: new Date(),
-        reopenNote: text(formData, "reopenNote") || null,
-      },
+      // Added scope goes away entirely. reopenBlockers has already established
+      // nothing points at these rows, so there is nothing to orphan.
+      await tx.jobLineItem.deleteMany({ where: { originChangeOrderId: changeOrder.id } });
+
+      // The edits describe a change that no longer happened.
+      await tx.changeOrderLineItemEdit.deleteMany({ where: { changeOrderId: changeOrder.id } });
+
+      await tx.changeOrder.update({
+        where: { id: changeOrderId },
+        data: {
+          status: "DRAFT",
+          appliedAt: null,
+          decidedOn: null,
+          decisionNotes: null,
+          submittedOn: null,
+          reopenedAt: new Date(),
+          reopenNote: text(formData, "reopenNote") || null,
+        },
+      });
     });
-  });
 
-  revalidatePath(`/jobs/${changeOrder.jobId}`);
+    revalidatePath(`/jobs/${changeOrder.jobId}`);
+  });
 }
 
 /**
@@ -529,31 +697,36 @@ export async function reopenChangeOrder(changeOrderId: string, formData: FormDat
  * corrects — so it goes through the same submit/approve workflow and the GC
  * sees a document rather than a silent adjustment.
  */
-export async function reviseChangeOrder(changeOrderId: string, formData: FormData) {
-  const { company } = await requireCompanyContext();
-  const original = await assertChangeOrder(changeOrderId, company.id);
+export async function reviseChangeOrder(
+  changeOrderId: string,
+  formData: FormData,
+): Promise<ActionResult> {
+  return attempt(async () => {
+    const { company } = await requireCompanyContext();
+    const original = await assertChangeOrder(changeOrderId, company.id);
 
-  if (original.status !== "APPROVED") {
-    throw new Error(
-      `Only an approved change order needs revising — CO #${original.number} is ${original.status}, so edit or void it directly.`,
-    );
-  }
+    if (original.status !== "APPROVED") {
+      refuse(
+        `Only an approved change order needs revising — CO #${original.number} is ${original.status}, so edit or void it directly.`,
+      );
+    }
 
-  const title = text(formData, "title") || `Revision of CO #${original.number}`;
+    const title = text(formData, "title") || `Revision of CO #${original.number}`;
 
-  await prisma.$transaction(async (tx) => {
-    const number = await issueChangeOrderNumber(tx, original.jobId);
-    await tx.changeOrder.create({
-      data: {
-        jobId: original.jobId,
-        number,
-        title,
-        description: text(formData, "description") || null,
-        status: "DRAFT",
-        supersedesId: original.id,
-      },
+    await prisma.$transaction(async (tx) => {
+      const number = await issueChangeOrderNumber(tx, original.jobId);
+      await tx.changeOrder.create({
+        data: {
+          jobId: original.jobId,
+          number,
+          title,
+          description: text(formData, "description") || null,
+          status: "DRAFT",
+          supersedesId: original.id,
+        },
+      });
     });
-  });
 
-  revalidatePath(`/jobs/${original.jobId}`);
+    revalidatePath(`/jobs/${original.jobId}`);
+  });
 }

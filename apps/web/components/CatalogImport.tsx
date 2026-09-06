@@ -1,11 +1,12 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { importCatalogEntries } from "@/lib/actions";
 import { MAX_IMPORT_ROWS, parseCatalogImport, splitAgainstExisting } from "@/lib/catalog-import";
 import { money } from "@/lib/money";
 import { tradeScopeLabel } from "@/lib/trade-scopes";
-import { SubmitButton } from "@/components/SubmitButton";
+
 
 /**
  * Paste a price list, see exactly what will happen, then commit.
@@ -32,6 +33,12 @@ export function CatalogImport({ existingDescriptions }: { existingDescriptions: 
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
   const [fileError, setFileError] = useState<string | null>(null);
+  // What the SERVER said, as opposed to what the preview predicted. The
+  // action re-parses the same text and decides for itself, so it can
+  // legitimately refuse an import the preview thought was fine.
+  const [importError, setImportError] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
+  const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
 
   const parsed = useMemo(() => (text.trim() ? parseCatalogImport(text) : null), [text]);
@@ -204,18 +211,44 @@ export function CatalogImport({ existingDescriptions }: { existingDescriptions: 
             </div>
           )}
 
-          <form action={importCatalogEntries} className="mt-3 flex flex-wrap items-center gap-3">
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              setImportError(null);
+              const formData = new FormData(event.currentTarget);
+              startTransition(async () => {
+                try {
+                  const result = await importCatalogEntries(formData);
+                  if (!result.ok) {
+                    setImportError(result.error);
+                    return;
+                  }
+                  setText("");
+                  setOpen(false);
+                  router.refresh();
+                } catch {
+                  setImportError("Could not import that price list");
+                }
+              });
+            }}
+            className="mt-3 flex flex-wrap items-center gap-3"
+          >
             <input type="hidden" name="csv" value={text} />
-            <SubmitButton
+            <button
               type="submit"
-              disabled={split.fresh.length === 0}
-              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
+              disabled={isPending || split.fresh.length === 0}
+              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
             >
-              {split.fresh.length === 1 ? "Add 1 entry" : `Add ${split.fresh.length} entries`}
-            </SubmitButton>
+              {isPending
+                ? "Importing…"
+                : split.fresh.length === 1
+                  ? "Add 1 entry"
+                  : `Add ${split.fresh.length} entries`}
+            </button>
             <span className="text-xs text-slate-500">
               Nothing already in the catalog is changed. Up to {MAX_IMPORT_ROWS} rows at a time.
             </span>
+            {importError && <p className="w-full text-sm text-red-400">{importError}</p>}
           </form>
         </div>
       )}

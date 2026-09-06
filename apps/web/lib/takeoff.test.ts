@@ -114,6 +114,26 @@ describe("studs", () => {
   it("returns nothing for a wall with no length", () => {
     expect(studsRequired(0)).toBe(0);
   });
+
+  it("does not invent a bay out of floating-point dust at 19.2 in o.c.", () => {
+    // 19.2" o.c. is a real spacing (five bays per 8 ft sheet) and the form
+    // takes it as a number of inches, so this is exactly what the app
+    // computes: 19.2 / 12 is 1.5999999999999999, and 24 / that is
+    // 15.000000000000002 — one hair over fifteen bays, which ceil rounded
+    // to sixteen. Seventeen studs billed where sixteen close the wall.
+    const spacingFt = 19.2 / 12;
+    expect(spacingFt).not.toBe(1.6); // the dust is real, not hypothetical
+
+    expect(studsRequired(24, { spacingFt })).toBe(16);
+    expect(studsRequired(40, { spacingFt })).toBe(26);
+    expect(studsRequired(48, { spacingFt })).toBe(31);
+  });
+
+  it("still rounds a genuine part-bay up at 19.2 in o.c.", () => {
+    // The guard against over-correcting: 25 ft is 15.625 bays, a real
+    // remainder, and the stud closing it is a stud that has to be bought.
+    expect(studsRequired(25, { spacingFt: 19.2 / 12 })).toBe(17);
+  });
 });
 
 describe("track", () => {

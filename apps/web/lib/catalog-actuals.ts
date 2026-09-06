@@ -20,11 +20,52 @@ export type CatalogSourcedLine = {
   actualCost: number;
   /** Whether any cost has been logged at all. */
   hasCosts: boolean;
+  /**
+   * Status of the job this line sits on.
+   *
+   * Load-bearing, not decoration — see FINISHED_JOB_STATUSES. Cost lands
+   * on a line over the months the work takes; quantity is the whole scope
+   * from day one. Divide one by the other before the work is done and the
+   * answer is not a unit cost, it is a fraction of one.
+   */
+  jobStatus: JobStatusForActuals;
 };
 
+export type JobStatusForActuals = "ESTIMATE" | "CONTRACTED" | "IN_PROGRESS" | "COMPLETE";
+
+/**
+ * The only status whose costs are finished arriving.
+ *
+ * This is the whole of the fix for a defect that was quietly one-directional:
+ * a line 40% built at a true $2.00/SF booked 40% of its cost against 100% of
+ * its quantity and reported $0.80. That is 60% under, it goes amber saying
+ * "worth re-pricing", and one click writes it into the template that prices
+ * every future bid and grounds the AI drafts. Every unfinished job biases the
+ * same way — DOWN — so the errors reinforce rather than cancel, and the
+ * catalog walks its own prices toward zero as long as anyone keeps clicking.
+ *
+ * A partially-costed COMPLETE job is a different thing and stays in: the work
+ * is done, so what it cost is what it cost.
+ */
+export const FINISHED_JOB_STATUSES: readonly JobStatusForActuals[] = ["COMPLETE"];
+
+export function isFinishedForActuals(line: CatalogSourcedLine): boolean {
+  return FINISHED_JOB_STATUSES.includes(line.jobStatus);
+}
+
 export type CatalogActuals = {
-  /** Lines that have real costs behind them — the sample size. */
+  /** Costed lines on FINISHED jobs — the sample size, and the only lines
+   * any figure here is computed from. */
   linesWithCosts: number;
+  /**
+   * Costed lines left out because their job is still running.
+   *
+   * Reported rather than dropped in silence: "no costed jobs have used this
+   * entry yet" and "three jobs have used it and none has finished" are
+   * different sentences, and an estimator who cannot tell them apart will
+   * read a missing figure as a missing feature.
+   */
+  linesExcludedUnfinished: number;
   /** Total cost across those lines, over total quantity. Null when nothing
    * has been costed, or when the quantities sum to zero. */
   actualUnitCost: number | null;
@@ -59,7 +100,8 @@ export function catalogActuals(
   lines: CatalogSourcedLine[],
   defaultBudgetedUnitCost: number | null,
 ): CatalogActuals {
-  const costed = lines.filter((line) => line.hasCosts);
+  const costedAnywhere = lines.filter((line) => line.hasCosts);
+  const costed = costedAnywhere.filter(isFinishedForActuals);
   const totalQuantity = costed.reduce((sum, line) => sum + line.quantity, 0);
   const totalCost = costed.reduce((sum, line) => sum + line.actualCost, 0);
 
@@ -75,6 +117,7 @@ export function catalogActuals(
 
   return {
     linesWithCosts: costed.length,
+    linesExcludedUnfinished: costedAnywhere.length - costed.length,
     actualUnitCost,
     defaultBudgetedUnitCost,
     variance,

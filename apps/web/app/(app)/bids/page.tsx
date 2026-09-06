@@ -3,6 +3,8 @@ import { BidInvitationStatus, prisma, TradeScope } from "@prova/db";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { money } from "@/lib/money";
+import { summariseGc, wonValueSummary } from "@/lib/bid-pipeline";
+import { serverToday } from "@/lib/serverToday";
 
 const TRADE_SCOPE_OPTIONS = [
   { value: "METAL_FRAMING_DRYWALL", label: "Metal framing / drywall" },
@@ -55,8 +57,21 @@ export default async function BidsPage({
     include: { contact: true },
   });
 
-  const wonBids = bids.filter((b) => b.status === "WON" && b.bidAmount != null);
-  const totalWonValue = wonBids.reduce((sum, b) => sum + Number(b.bidAmount), 0);
+  // Summed by the same function /pipeline uses, rather than a second copy
+  // of the arithmetic here. The copy that used to be here filtered the
+  // unpriced won bids out and reported what was left as the total (#79).
+  // summariseGc keeps the count of what it could not add, which is what
+  // turns a floor back into an honest figure. The date argument only
+  // affects the overdue counts, which this page does not render.
+  const wonRecord = summariseGc(
+    bids.map((bid) => ({
+      status: bid.status,
+      bidAmount: bid.bidAmount === null ? null : Number(bid.bidAmount),
+      dueDate: null,
+    })),
+    serverToday(),
+  );
+  const wonSummary = wonValueSummary(wonRecord, money);
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-8">
@@ -110,9 +125,23 @@ export default async function BidsPage({
         )}
       </form>
 
+      {/* The won-value line, and what it could not count.
+          It used to appear only when at least one won bid had an amount on
+          it — so a filter where every won bid was unpriced showed no line
+          at all, and an absent line reads as "no won bids" rather than "no
+          priced won bids". It renders whenever there is a win now, and says
+          plainly when the figure is a floor. Same wording as /pipeline. */}
       <p className="mb-4 text-sm text-slate-400">
         {bids.length} bid{bids.length === 1 ? "" : "s"}
-        {wonBids.length > 0 && <> · {money(totalWonValue)} in won bids with a recorded amount</>}
+        {wonSummary && (
+          <>
+            {" · "}
+            {wonSummary.headline}
+            {wonSummary.unpricedNote && (
+              <span className="text-amber-300"> {wonSummary.unpricedNote}</span>
+            )}
+          </>
+        )}
       </p>
 
       {bids.length === 0 ? (
@@ -137,7 +166,13 @@ export default async function BidsPage({
                   <p className="text-sm text-slate-400">
                     {bid.contact.name}
                     {bid.tradeScope && <> · {labelFor(TRADE_SCOPE_OPTIONS, bid.tradeScope)}</>}
-                    {bid.dueDate && <> · Due {bid.dueDate.toLocaleDateString()}</>}
+                    {/* UTC, because the value is a UTC-midnight calendar
+                        day — rendered locally it reads a day early for
+                        anyone west of UTC, and a bid due Friday that says
+                        Thursday is worse than an ugly date. */}
+                    {bid.dueDate && (
+                      <> · Due {bid.dueDate.toLocaleDateString(undefined, { timeZone: "UTC" })}</>
+                    )}
                   </p>
                 </div>
                 {bid.bidAmount != null && (

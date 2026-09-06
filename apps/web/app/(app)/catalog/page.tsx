@@ -1,21 +1,22 @@
 import { prisma } from "@prova/db";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
-import {
-  createLineItemCatalogEntry,
-  updateCatalogDefaultsFromActuals,
-} from "@/lib/actions";
-import { catalogActuals } from "@/lib/catalog-actuals";
+import { catalogActuals, type JobStatusForActuals } from "@/lib/catalog-actuals";
 import { CatalogImport } from "@/components/CatalogImport";
 import { CatalogEntryRow } from "@/components/CatalogEntryRow";
-import { TRADE_SCOPE_OPTIONS, tradeScopeLabel } from "@/lib/trade-scopes";
+import { CatalogEntryForm } from "@/components/CatalogEntryForm";
+import { CatalogRepriceForm } from "@/components/CatalogRepriceForm";
+import { tradeScopeLabel } from "@/lib/trade-scopes";
 import { money } from "@/lib/money";
-import { SubmitButton } from "@/components/SubmitButton";
 
 type CatalogEntryWithLines = {
   id: string;
   defaultBudgetedUnitCost: unknown;
-  jobLineItems: { quantity: unknown; costEntries: { amount: unknown }[] }[];
+  jobLineItems: {
+    quantity: unknown;
+    costEntries: { amount: unknown }[];
+    job: { status: string };
+  }[];
 };
 
 /**
@@ -44,14 +45,35 @@ function ActualsLine({ entry }: { entry: CatalogEntryWithLines }) {
       quantity: Number(line.quantity),
       actualCost: line.costEntries.reduce((sum, cost) => sum + Number(cost.amount), 0),
       hasCosts: line.costEntries.length > 0,
+      // Load-bearing: cost arrives over the life of a job while quantity is
+      // the whole scope from day one, so a line that is only part built
+      // reports a fraction of its unit cost. See FINISHED_JOB_STATUSES.
+      jobStatus: line.job.status as JobStatusForActuals,
     })),
     entry.defaultBudgetedUnitCost != null ? Number(entry.defaultBudgetedUnitCost) : null,
   );
 
+  // What was left out, said out loud. "Nothing has used this entry" and
+  // "things have used it but none of them has finished" are different
+  // facts, and only one of them means there is nothing to do.
+  const unfinishedNote =
+    actuals.linesExcludedUnfinished > 0 ? (
+      <>
+        {" "}
+        {actuals.linesExcludedUnfinished} costed{" "}
+        {actuals.linesExcludedUnfinished === 1 ? "line is" : "lines are"} on a job that hasn&apos;t
+        finished and {actuals.linesExcludedUnfinished === 1 ? "is" : "are"} not counted — cost
+        booked part-way through a job is not a unit cost.
+      </>
+    ) : null;
+
   if (actuals.actualUnitCost === null) {
     return (
       <p className="mt-1 text-xs text-slate-500">
-        No costed jobs have used this entry yet — nothing to compare its default against.
+        {actuals.linesExcludedUnfinished > 0
+          ? "No FINISHED job has used this entry yet, so there is nothing to compare its default against."
+          : "No costed jobs have used this entry yet — nothing to compare its default against."}
+        {unfinishedNote}
       </p>
     );
   }
@@ -60,7 +82,7 @@ function ActualsLine({ entry }: { entry: CatalogEntryWithLines }) {
   return (
     <div className="mt-1 flex flex-wrap items-center gap-2">
       <p className={`text-xs ${actuals.isFlagged ? "text-amber-300" : "text-slate-500"}`}>
-        Actual {money(actuals.actualUnitCost)}/unit across {actuals.linesWithCosts}{" "}
+        Actual {money(actuals.actualUnitCost)}/unit across {actuals.linesWithCosts} finished{" "}
         {actuals.linesWithCosts === 1 ? "costed line" : "costed lines"}
         {actuals.defaultBudgetedUnitCost != null && (
           <>
@@ -70,24 +92,13 @@ function ActualsLine({ entry }: { entry: CatalogEntryWithLines }) {
           </>
         )}
         {actuals.isFlagged && " — worth re-pricing"}
+        {unfinishedNote}
       </p>
       {actuals.isFlagged && (
-        <form
-          action={updateCatalogDefaultsFromActuals.bind(null, entry.id)}
-          className="flex flex-wrap items-center gap-2"
-        >
-          <input type="hidden" name="actualUnitCost" value={actuals.actualUnitCost.toFixed(2)} />
-          <label className="flex items-center gap-1 text-xs text-slate-400">
-            <input type="checkbox" name="alsoUpdatePrice" className="accent-blue-500" />
-            also move the sale price, holding margin
-          </label>
-          <SubmitButton
-            type="submit"
-            className="rounded-md border border-amber-700 px-2 py-1 text-xs text-amber-300 hover:bg-amber-950"
-          >
-            Update default from actuals
-          </SubmitButton>
-        </form>
+        <CatalogRepriceForm
+          entryId={entry.id}
+          previewUnitCost={money(actuals.actualUnitCost)}
+        />
       )}
     </div>
   );
@@ -108,7 +119,14 @@ export default async function CatalogPage() {
         // the entry is a template and nothing here writes back to these rows.
         jobLineItems: {
           where: { isDeleted: false },
-          select: { quantity: true, costEntries: { select: { amount: true } } },
+          select: {
+            quantity: true,
+            costEntries: { select: { amount: true } },
+            // Whether the work is finished. Without it, cost booked
+            // part-way through a job divides by the full scope and reports
+            // a fraction of the true unit cost — biased DOWN, every time.
+            job: { select: { status: true } },
+          },
         },
       },
     }),
@@ -171,86 +189,12 @@ export default async function CatalogPage() {
 
       <section className="rounded-lg border border-slate-800 bg-slate-900 p-4">
         <h2 className="mb-3 text-sm font-semibold text-slate-300">Add a catalog entry</h2>
-        <form action={createLineItemCatalogEntry} className="flex flex-wrap items-end gap-3">
-          <label className="flex flex-1 min-w-[200px] flex-col gap-1 text-sm text-slate-300">
-            Description
-            <input
-              name="description"
-              required
-              className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-sm text-slate-300">
-            Unit
-            <input
-              name="unit"
-              placeholder="e.g. sq ft"
-              className="w-28 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-sm text-slate-300">
-            Default unit price
-            <input
-              name="defaultUnitPrice"
-              placeholder="optional"
-              className="w-32 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-sm text-slate-300">
-            Default budgeted cost
-            <input
-              name="defaultBudgetedUnitCost"
-              placeholder="optional"
-              className="w-32 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-sm text-slate-300">
-            Default labor hrs
-            <input
-              name="defaultLaborHours"
-              placeholder="optional"
-              className="w-28 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-sm text-slate-300">
-            Trade
-            <select
-              name="tradeScope"
-              defaultValue=""
-              className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
-            >
-              <option value="">No trade tag</option>
-              {TRADE_SCOPE_OPTIONS.map((t) => (
-                <option key={t.value} value={t.value}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          {craftClassifications.length > 0 && (
-            <label className="flex flex-col gap-1 text-sm text-slate-300">
-              Craft
-              <select
-                name="craftClassificationId"
-                defaultValue=""
-                className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
-              >
-                <option value="">No craft tag</option>
-                {craftClassifications.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.unionLocal.parentInternational} {c.unionLocal.localNumber} — {c.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-          <SubmitButton
-            type="submit"
-            className="inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
-          >
-            Add entry
-          </SubmitButton>
-        </form>
+        <CatalogEntryForm
+          craftOptions={craftClassifications.map((c) => ({
+            id: c.id,
+            label: `${c.unionLocal.parentInternational} ${c.unionLocal.localNumber} — ${c.name}`,
+          }))}
+        />
       </section>
     </div>
   );

@@ -4,6 +4,7 @@ import {
   rankGcs,
   summariseGc,
   valueIsPartial,
+  wonValueSummary,
   winRateLabel,
   type PipelineBid,
 } from "./bid-pipeline";
@@ -86,6 +87,90 @@ describe("value won", () => {
     );
 
     expect(record.valueWon).toBe(10);
+  });
+});
+
+describe("wonValueSummary", () => {
+  // The words /bids and /pipeline both print. Both halves are asserted —
+  // the figure AND the sentence about what the figure left out — because
+  // the defect on /bids was in the sentence, not the arithmetic: it summed
+  // the priced won bids correctly and then called the answer the total.
+  const money = (value: number) =>
+    value.toLocaleString("en-US", { style: "currency", currency: "USD" });
+
+  it("says the whole figure when every win carries an amount", () => {
+    // Hand-worked: $120,000 + $80,000 across two wins.
+    const record = summariseGc(
+      [bid({ status: "WON", bidAmount: 120_000 }), bid({ status: "WON", bidAmount: 80_000 })],
+      TODAY,
+    );
+
+    expect(wonValueSummary(record, money)).toEqual({
+      headline: "$200,000.00 in 2 won bids",
+      unpricedNote: null,
+    });
+  });
+
+  it("names the figure AND the wins it could not add", () => {
+    // Hand-worked: three wins at $120,000, unpriced, $80,000. The honest
+    // line is $200,000 across three, one of which nobody priced — not
+    // $200,000 flat, and certainly not $200,000 across two.
+    const record = summariseGc(
+      [
+        bid({ status: "WON", bidAmount: 120_000 }),
+        bid({ status: "WON", bidAmount: null }),
+        bid({ status: "WON", bidAmount: 80_000 }),
+      ],
+      TODAY,
+    );
+
+    expect(wonValueSummary(record, money)).toEqual({
+      headline: "$200,000.00 in 3 won bids",
+      unpricedNote: "at least — 1 won bid has no amount recorded",
+    });
+  });
+
+  it("STILL SHOWS THE LINE when every won bid is unpriced", () => {
+    // The /bids defect in one case. That page gated the whole line on the
+    // count of PRICED wins, so a company with two unpriced wins saw no
+    // line at all — and an absent line reads as "no won bids", which is
+    // the opposite of the truth. $0.00 is right here only because it is
+    // accompanied by the sentence saying both wins are unpriced.
+    const record = summariseGc(
+      [bid({ status: "WON", bidAmount: null }), bid({ status: "WON", bidAmount: null })],
+      TODAY,
+    );
+
+    const summary = wonValueSummary(record, money);
+    expect(summary).not.toBeNull();
+    expect(summary).toEqual({
+      headline: "$0.00 in 2 won bids",
+      unpricedNote: "at least — 2 won bids have no amount recorded",
+    });
+  });
+
+  it("says nothing at all when nothing has been won", () => {
+    // The one case where silence is correct, and the reason the check is
+    // on `won` rather than on the amounts.
+    const record = summariseGc(
+      [bid({ status: "LOST", bidAmount: 500 }), bid({ status: "INVITED", bidAmount: null })],
+      TODAY,
+    );
+    expect(wonValueSummary(record, money)).toBeNull();
+  });
+
+  it("gets the singular right", () => {
+    const record = summariseGc(
+      [bid({ status: "WON", bidAmount: 5_000 }), bid({ status: "WON", bidAmount: null })],
+      TODAY,
+    );
+    expect(wonValueSummary(record, money)?.headline).toBe("$5,000.00 in 2 won bids");
+
+    const one = summariseGc([bid({ status: "WON", bidAmount: null })], TODAY);
+    expect(wonValueSummary(one, money)).toEqual({
+      headline: "$0.00 in 1 won bid",
+      unpricedNote: "at least — 1 won bid has no amount recorded",
+    });
   });
 });
 

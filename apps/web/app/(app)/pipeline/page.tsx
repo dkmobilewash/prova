@@ -2,7 +2,7 @@ import Link from "next/link";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { loadBidPipeline } from "@/lib/bid-pipeline-query";
-import { valueIsPartial, winRateLabel } from "@/lib/bid-pipeline";
+import { winRateLabel, wonValueSummary } from "@/lib/bid-pipeline";
 import { money } from "@/lib/money";
 
 /**
@@ -141,24 +141,25 @@ export default async function PipelinePage() {
                     >
                       {winRateLabel(row.record)}
                     </span>
-                    {row.record.won > 0 && (
-                      <>
-                        <span className="text-slate-400"> · won </span>
-                        <span className="text-slate-200">{money(row.record.valueWon)}</span>
-                        {/* A sum that skipped rows must say so. /bids drops
-                            unpriced won bids from its total silently, which
-                            is the same shape as the $0.00 the browser test
-                            found on the fringe report. */}
-                        {valueIsPartial(row.record) && (
-                          <span className="text-amber-300">
-                            {" "}
-                            at least — {row.record.valueWonUnpriced} won{" "}
-                            {row.record.valueWonUnpriced === 1 ? "bid has" : "bids have"} no amount
-                            recorded
-                          </span>
-                        )}
-                      </>
-                    )}
+                    {/* A sum that skipped rows must say so. The wording is
+                        assembled by wonValueSummary rather than here, so
+                        this page and /bids cannot drift — /bids used to
+                        drop unpriced won bids from its total silently,
+                        which is the same shape as the $0.00 the browser
+                        test found on the fringe report (#79). */}
+                    {(() => {
+                      const summary = wonValueSummary(row.record, money);
+                      if (!summary) return null;
+                      return (
+                        <>
+                          <span className="text-slate-400"> · won </span>
+                          <span className="text-slate-200">{summary.headline}</span>
+                          {summary.unpricedNote && (
+                            <span className="text-amber-300"> {summary.unpricedNote}</span>
+                          )}
+                        </>
+                      );
+                    })()}
                   </p>
                 </li>
               ))}
