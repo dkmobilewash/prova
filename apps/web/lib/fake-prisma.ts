@@ -110,6 +110,9 @@ export class FakeDb {
   }
 
   private note(what: string) {
+    if (this.rawQueriesBeforeFirstWrite === -1) {
+      this.rawQueriesBeforeFirstWrite = this.rawQueries.length;
+    }
     this.writes.push(what);
     if (this.failNext === what) {
       this.failNext = null;
@@ -307,6 +310,58 @@ export class FakeDb {
     }
   }
 
+  /**
+   * Every raw query this fake was asked to run, in order, as the SQL
+   * fragments the template literal was built from.
+   *
+   * Exposed so a test can assert that the advisory lock was taken and,
+   * more importantly, that it was taken FIRST — see `$queryRaw` below.
+   */
+  readonly rawQueries: string[] = [];
+
+  /**
+   * How many raw queries had been run when the FIRST write happened —
+   * `-1` until a write happens at all.
+   *
+   * This is the ordering fact worth asserting, and it is why `$queryRaw`
+   * records anything. #102's rule is that a guard running before the
+   * transaction it protects is not a guard, and its corollary here is that
+   * the lock must be taken before the counter is bumped: a lock taken
+   * afterwards leaves a sequence number burned on a write that was then
+   * refused, which is the unexplained gap in a filed log that
+   * `SafetyCaseCounter` cannot undo.
+   */
+  rawQueriesBeforeFirstWrite = -1;
+
+  /**
+   * `$queryRaw`, and a warning about what it can and cannot prove.
+   *
+   * The #102 guards call `pg_advisory_xact_lock` through this before doing
+   * anything else, so without it every action that takes a lock dies here
+   * with "tx.$queryRaw is not a function" — which is what five safety
+   * tests did the moment the guards landed.
+   *
+   * IT DOES NOT LOCK ANYTHING, AND IT CANNOT. There is no second
+   * connection here, nothing to contend with, and no SQL engine — this is
+   * a Map. So a test using this fake can only ever show that the call was
+   * MADE and in what order; whether it actually serializes two concurrent
+   * submissions is a question only a real Postgres can answer, and it is
+   * answered in lib/actions/duplicate-writes.dbtest.ts, which holds the
+   * lock from outside a transaction and watches the action stop at the
+   * door. Do not add an assertion here that reads as proof of exclusion.
+   *
+   * The call is RECORDED rather than ignored so the ordering property is
+   * still checkable: a lock taken after the counter has been bumped is a
+   * lock that burns a sequence number on a refused write, which is the
+   * defect this fake's own docstring already exists for.
+   */
+  private queryRaw(strings: TemplateStringsArray | string[]): PromiseLike<unknown[]> {
+    return op(() => {
+      this.rawQueries.push(Array.from(strings).join("?"));
+      return [{ locked: "" }];
+    });
+  }
+
   /** The object the action sees as `prisma`. */
   client() {
     return new Proxy(
@@ -315,6 +370,9 @@ export class FakeDb {
         // Arrow rather than a method: `this` has to stay the FakeDb.
         get: (_target, property) => {
           if (property === "$transaction") return (arg: unknown) => this.transaction(arg);
+          if (property === "$queryRaw") {
+            return (strings: TemplateStringsArray | string[]) => this.queryRaw(strings);
+          }
           return this.model(String(property));
         },
       },

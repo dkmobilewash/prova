@@ -128,4 +128,27 @@ describe("createSafetyIncident files one case per injury", () => {
     expect(incidents()).toHaveLength(2);
     expect(caseNumbers()).toEqual([1, 2]);
   });
+
+  /**
+   * The ORDER of the guard, which is the half #102 says is easy to get
+   * wrong: "a guard that runs BEFORE the transaction it protects is not a
+   * guard, it is a race with a smaller window."
+   *
+   * What this fake can show is that the advisory lock is requested, and
+   * that it is requested as the FIRST thing the transaction does — before
+   * the duplicate check and before the counter is bumped. What it cannot
+   * show is that the lock excludes anything, because there is no second
+   * connection here and no SQL engine; that is proven against a real
+   * Postgres in lib/actions/duplicate-writes.dbtest.ts, which holds the
+   * lock from outside and watches this action stop at the door.
+   */
+  it("asks for the advisory lock before it touches the counter", async () => {
+    await createSafetyIncident(report());
+
+    expect(db.rawQueries).toHaveLength(1);
+    expect(db.rawQueries[0]).toContain("pg_advisory_xact_lock");
+    // Requested inside the transaction that files the case, not before it:
+    // a lock taken outside would be released before the insert it protects.
+    expect(db.rawQueriesBeforeFirstWrite).toBe(1);
+  });
 });

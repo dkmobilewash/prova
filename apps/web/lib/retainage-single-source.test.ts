@@ -95,6 +95,8 @@ const RETAINAGE_COLUMN_FILES: Record<string, string> = {
   "lib/closeout-query.dbtest.ts": "Proves the closeout row reads the same sum.",
   "lib/actions/quickbooks-invoice-push.test.ts":
     "Pins the invoice-push idempotency path, which asserts on the retainage snapshot it sends. Arrived with #160.",
+  "lib/actions/duplicate-writes.dbtest.ts":
+    "Runs each write action TWICE and counts (#102). Names the column because the snapshot is taken per invoice, so a duplicated invoice or pay application withholds retainage a second time — the row count alone would not show that, and the dollar figure is the point.",
 };
 
 /** Case-sensitive, and not matched inside a longer identifier: this is the

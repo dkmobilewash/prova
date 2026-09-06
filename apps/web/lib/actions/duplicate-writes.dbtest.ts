@@ -37,6 +37,7 @@ const { createBackcharge } = await import("./backcharges");
 const { createRfi } = await import("./rfis");
 const { createSubmittal } = await import("./submittals");
 const { createSafetyIncident } = await import("./safety");
+const { addCostEntry } = await import("./jobs");
 const { lockAgainstDuplicates } = await import("./duplicates");
 
 /**
@@ -150,6 +151,7 @@ describe("write paths that must not duplicate money or evidence (#102)", () => {
     await prisma.submittalCounter.deleteMany({ where: { job: { companyId } } });
     await prisma.safetyIncident.deleteMany({ where: { companyId } });
     await prisma.safetyCaseCounter.deleteMany({ where: { companyId } });
+    await prisma.costEntry.deleteMany({ where: { lineItem: { jobId } } });
     await prisma.jobLineItem.deleteMany({ where: { jobId } });
     await prisma.job.deleteMany({ where: { companyId } });
     await prisma.contact.deleteMany({ where: { companyId } });
@@ -278,6 +280,94 @@ describe("write paths that must not duplicate money or evidence (#102)", () => {
       await logTimeEntry(jobId, form({ ...base, lineItemId: otherLineItemId }));
 
       const rows = await prisma.timeEntry.findMany({ where: { jobId, date: new Date("2026-08-19") } });
+      expect(rows).toHaveLength(2);
+    });
+  });
+
+  /* ---------------------------------------------------------------- */
+  /* addCostEntry — cost-to-date drives percent complete, which drives  */
+  /* the over/under billing figure quoted to a bonding company.        */
+  /* ---------------------------------------------------------------- */
+
+  describe("addCostEntry", () => {
+    it("books ONE $40,000 delivery when the form is submitted twice", async () => {
+      const delivery = () =>
+        form({ description: "Board delivery — ticket 88213", amount: "40000", category: "MATERIAL" });
+      await addCostEntry(jobId, lineItemId, delivery());
+      await addCostEntry(jobId, lineItemId, delivery());
+
+      const rows = await prisma.costEntry.findMany({
+        where: { lineItemId, description: "Board delivery — ticket 88213" },
+      });
+      expect(rows).toHaveLength(1);
+      // The dollar figure, not just the count: $80,000 of cost against a
+      // $100,000 line is 80% complete on a line that is 40% complete, and
+      // that percentage is what the WIP over/under billing figure is
+      // computed from.
+      expect(rows.reduce((sum, r) => sum + money(r.amount), 0)).toBe(40000);
+    });
+
+    it("waits behind another transaction booking the same cost", async () => {
+      // The in-transaction read alone is a SELECT under READ COMMITTED and
+      // two simultaneous submissions would both see nothing. This proves
+      // addCostEntry takes the advisory lock, and takes it on the key its
+      // own arguments produce.
+      const outcome = await runsWhileLockHeld(
+        "costEntry",
+        [lineItemId, "Crane day", "2750.00", "SUBCONTRACTOR", null],
+        () =>
+          addCostEntry(
+            jobId,
+            lineItemId,
+            form({ description: "Crane day", amount: "2750", category: "SUBCONTRACTOR" }),
+          ),
+      );
+      expect(outcome).toBe("blocked");
+
+      const rows = await prisma.costEntry.findMany({ where: { lineItemId, description: "Crane day" } });
+      expect(rows).toHaveLength(1);
+      expect(rows.reduce((sum, r) => sum + money(r.amount), 0)).toBe(2750);
+    });
+
+    it("does NOT wait behind an unrelated cost's lock", async () => {
+      // The companion to the test above. A key coarse enough to queue
+      // every cost entry behind every other would pass that test and
+      // serialize job costing across the whole app.
+      const outcome = await runsWhileLockHeld(
+        "costEntry",
+        [lineItemId, "Something else entirely", "1.00", "OTHER", null],
+        () =>
+          addCostEntry(
+            jobId,
+            lineItemId,
+            form({ description: "Dumpster pull", amount: "610", category: "OTHER" }),
+          ),
+      );
+      expect(outcome).toBe("ran");
+      expect(await prisma.costEntry.count({ where: { lineItemId, description: "Dumpster pull" } })).toBe(1);
+    });
+
+    it("still books a genuinely different second cost", async () => {
+      await addCostEntry(
+        jobId,
+        lineItemId,
+        form({ description: "Board delivery — ticket 88999", amount: "40000", category: "MATERIAL" }),
+      );
+      const rows = await prisma.costEntry.findMany({
+        where: { lineItemId, description: "Board delivery — ticket 88999" },
+      });
+      expect(rows).toHaveLength(1);
+    });
+
+    it("still books the same cost against a different line item", async () => {
+      const same = () =>
+        form({ description: "Shared scaffold hire", amount: "1500", category: "OTHER" });
+      await addCostEntry(jobId, lineItemId, same());
+      await addCostEntry(jobId, otherLineItemId, same());
+
+      const rows = await prisma.costEntry.findMany({
+        where: { description: "Shared scaffold hire", lineItem: { jobId } },
+      });
       expect(rows).toHaveLength(2);
     });
   });

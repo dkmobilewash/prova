@@ -6,6 +6,8 @@ import { redirect } from "next/navigation";
 import { requireCompanyContext } from "@/lib/auth";
 import { Prisma, prisma } from "@prova/db";
 import { draftEstimateLineItems } from "@prova/integrations";
+import { isRepeatOf, moneyPart } from "@/lib/duplicate-writes";
+import { lockAgainstDuplicates } from "./duplicates";
 import { actionFail, actionOk, type ActionResult, assertEditableDirectly, assertJobInCompany, assertLineItemOnJob, COST_CATEGORIES, craftClassificationIdFromForm, decimalFromForm, nullableDecimalFromForm, tradeScopeFromForm } from "./shared";
 
 /** Creates a Job with a new Contact. This is the start of the estimate. */
@@ -311,6 +313,30 @@ export async function markJobContracted(jobId: string): Promise<ActionResult> {
  * Logs an actual expense against a line item. Not gated by job status —
  * real spending happens throughout the job, including after it's
  * contracted and in progress, unlike scope/pricing changes.
+ *
+ * Entered twice, the cost is counted twice, and the damage is entirely in
+ * what this feeds rather than in the list itself (#102). Cost-to-date is
+ * SUM(costEntries.amount), so a duplicated $40,000 material delivery moves
+ * percent complete on the whole line item, and percent complete is the
+ * input to the over/under billing figure in lib/wip.ts — the number a sub
+ * hands a bonding company and a bank. Overstated cost reads as underbilled
+ * work, which is the direction that makes a job look like it is bleeding
+ * money it is not. Two identical rows also look completely plausible on
+ * screen: two deliveries of the same material at the same price on one day
+ * is an ordinary thing, so nothing about the page gives it away.
+ *
+ * Same accidental-repeat window as logPayment, and silent for the same
+ * reason: this is a plain `<form action>` in a server component (the cost
+ * form on jobs/[id]/page.tsx), so the action returns void and has nowhere
+ * to put a sentence anybody would read, and a `throw` would be redacted to
+ * a digest in production and take the page down through the error
+ * boundary. The truthful outcome of a second click is the one cost entry
+ * that already exists, which the revalidate below puts on screen.
+ *
+ * A WINDOW rather than a constraint, because two genuinely separate
+ * expenses can be identical: a second load of the same board at the same
+ * price on the same day is real spending, and a unique index would make
+ * recording it impossible forever.
  */
 export async function addCostEntry(jobId: string, lineItemId: string, formData: FormData) {
   const { company } = await requireCompanyContext();
@@ -329,8 +355,34 @@ export async function addCostEntry(jobId: string, lineItemId: string, formData: 
     throw new Error("Description is required");
   }
 
-  await prisma.costEntry.create({
-    data: { lineItemId, description, amount, category, tradeScope },
+  await prisma.$transaction(async (tx) => {
+    // The FIRST statement in the transaction, before the read below. That
+    // read is a SELECT under READ COMMITTED, where two submissions arriving
+    // together both see nothing and both insert — being inside the
+    // transaction narrows that window without closing it. See
+    // lib/actions/duplicates.ts.
+    await lockAgainstDuplicates(tx, "costEntry", [
+      lineItemId,
+      description,
+      moneyPart(amount),
+      category,
+      tradeScope,
+    ]);
+
+    // `incurredAt` is deliberately NOT part of the match. It defaults to
+    // `now()`, so two clicks a second apart carry two different instants
+    // and matching on it would make this miss the exact case it exists for
+    // — the same mistake `createRetainageRelease` avoids for `releasedAt`.
+    const prior = await tx.costEntry.findFirst({
+      where: { lineItemId, description, amount, category, tradeScope },
+      orderBy: { createdAt: "desc" },
+      select: { createdAt: true },
+    });
+    if (isRepeatOf(prior?.createdAt, new Date())) return;
+
+    await tx.costEntry.create({
+      data: { lineItemId, description, amount, category, tradeScope },
+    });
   });
 
   revalidatePath(`/jobs/${jobId}`);
