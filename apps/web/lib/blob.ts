@@ -1,4 +1,4 @@
-import { put, type PutBlobResult } from "@vercel/blob";
+import { del, put, type PutBlobResult } from "@vercel/blob";
 
 /**
  * The one way this app uploads a document, and the one place the upload
@@ -64,4 +64,29 @@ export function putDocument(
     addRandomSuffix: true,
     contentType,
   });
+}
+
+/**
+ * Removes a document from the blob store. The companion `putDocument` never
+ * had.
+ *
+ * `del` was imported NOWHERE in this repo. `deleteContractDocument` deleted
+ * the ContractDocument row and left the file behind — and every upload here
+ * is `access: "public"`, so "deleted" meant the row disappeared from the job
+ * page while the subcontract PDF stayed downloadable, permanently, by anyone
+ * who still held the URL. The one action a person reaches for when a
+ * contract was uploaded to the wrong job, or contains something that should
+ * never have been shared, did not do the thing its name says.
+ *
+ * TAKES THE STORED URL, not a pathname. `del` accepts either, and the URL is
+ * what the row carries — rebuilding a pathname from `jobId` + filename would
+ * be wrong now that `putDocument` adds a random suffix, and wrong in the
+ * silent way: it would delete nothing and report success.
+ *
+ * IDEMPOTENT BY CONTRACT. `del` does not throw for a URL that is already
+ * gone, which is what makes it safe to call before the row delete — see the
+ * ordering note in `deleteContractDocument`.
+ */
+export function deleteDocument(url: string): Promise<void> {
+  return del(url);
 }

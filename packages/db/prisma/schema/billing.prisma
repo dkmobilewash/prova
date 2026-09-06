@@ -88,6 +88,29 @@ model ContractDocument {
   @@index([jobId])
 }
 
+/// Issues ContractDocument version numbers per job.
+///
+/// Never max(versionNumber) + 1. That is what `uploadContractDocument` did,
+/// and it is the failure `issueChangeOrderNumber` carries a five-line
+/// comment about: a number derived from the rows that still exist is freed
+/// again the moment one is deleted. Delete v2 and upload again, and two
+/// DIFFERENT legal documents have both been called "Version 2" — on the one
+/// artifact where the version number is how a GC and a sub agree which
+/// piece of paper they are arguing about. Same mechanism as
+/// ChangeOrderCounter, RfiCounter and SafetyCaseCounter: a row that only
+/// increments, bumped inside the same transaction as the insert so two
+/// people uploading an amendment at once cannot collide.
+///
+/// `lastNumber` starts at 0 and the first upload issues 1, so version 1 is
+/// still "the original" exactly as ContractDocument's comment says.
+model ContractDocumentCounter {
+  jobId      String @id
+  job        Job    @relation(fields: [jobId], references: [id])
+  lastNumber Int    @default(0)
+
+  updatedAt DateTime @updatedAt
+}
+
 /// A bill against a Job. Amount paid and balance are always
 /// SUM(payments.amount) vs. amount — computed, never stored, same rule as
 /// actual cost on JobLineItem. Only creatable once a job is CONTRACTED or

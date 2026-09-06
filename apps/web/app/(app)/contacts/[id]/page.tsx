@@ -20,6 +20,7 @@ import { ContactInteractionForm } from "@/components/ContactInteractionForm";
 import { ContactInteractionRow } from "@/components/ContactInteractionRow";
 import { ContactPersonForm } from "@/components/ContactPersonForm";
 import { ContactPersonRow } from "@/components/ContactPersonRow";
+import { RevokeLinkButton } from "@/components/RevokeLinkButton";
 import { toIsoDate } from "@/lib/compliance-expiry";
 import { serverToday } from "@/lib/serverToday";
 
@@ -423,6 +424,20 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
             <p className="break-all rounded-md bg-slate-950 px-3 py-2 font-mono text-xs text-blue-400">
               {origin}/portal/{contact.portalToken}
             </p>
+            {/* This URL is the whole of the login. Until now nothing could
+                take it back — see revokePortalAccess. Owner-only, like
+                every other destructive action. */}
+            <p className="mt-2 text-xs text-slate-500">
+              Anyone with this link can see this client&apos;s jobs, prices and invoice balances
+              without signing in.
+              {contact.status === "INACTIVE" &&
+                " This contact is marked inactive, so the link is already refused."}
+            </p>
+            {currentUser.role === "OWNER" && (
+              <div className="mt-3">
+                <RevokeLinkButton kind="portal" contactId={contact.id} clientName={contact.name} />
+              </div>
+            )}
           </div>
         ) : (
           <div>

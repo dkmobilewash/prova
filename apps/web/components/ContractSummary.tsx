@@ -20,6 +20,33 @@ export type ContractSummaryLineItem = {
  * view) so they can never drift apart. Same JobLineItem data, same markup,
  * two places it's read from.
  */
+/**
+ * WHICH DOCUMENT THIS IS — the live one, or the frozen one.
+ *
+ * The footnote under the table used to say, unconditionally, "the CURRENT
+ * agreed scope and pricing, including any approved change orders". On the
+ * signed e-sign page that sentence sat about forty lines below a green
+ * banner saying the opposite — that what follows is what was agreed AT THE
+ * TIME OF SIGNING — with both on screen at once. One of them was wrong
+ * about a legal document, and the reader had no way to tell which.
+ *
+ * The frozen one is the truthful reading there: `SignatureRequest.snapshot`
+ * is a value copy taken at the instant of signing and nothing recomputes
+ * it, which is the whole reason it exists. So the caption follows the data,
+ * and the component that renders a snapshot says so.
+ *
+ * Defaults to "current" so every existing caller keeps the sentence it
+ * already had, and only the snapshot renderer opts in.
+ */
+export type ContractSummaryBasis = "current" | "signed";
+
+const BASIS_FOOTNOTE: Record<ContractSummaryBasis, string> = {
+  current:
+    "This reflects the current agreed scope and pricing for this job, including any approved change orders.",
+  signed:
+    "This is the scope and pricing exactly as it stood when this contract was signed. It is a frozen record and does not change — later change orders, if any, are agreed separately.",
+};
+
 export function ContractSummary({
   companyName,
   jobName,
@@ -27,6 +54,7 @@ export function ContractSummary({
   clientName,
   scope,
   lineItems,
+  basis = "current",
   footer,
 }: {
   companyName: string;
@@ -35,6 +63,7 @@ export function ContractSummary({
   clientName: string;
   scope: string | null;
   lineItems: ContractSummaryLineItem[];
+  basis?: ContractSummaryBasis;
   footer?: ReactNode;
 }) {
   const total = lineItems.reduce(
@@ -107,8 +136,7 @@ export function ContractSummary({
       <p className="mt-4 text-right text-lg font-semibold">Total: {money(total)}</p>
 
       <p className="mt-6 text-xs text-ink-body print:mt-16 print:text-slate-500">
-        This reflects the current agreed scope and pricing for this job, including any approved
-        change orders.
+        {BASIS_FOOTNOTE[basis]}
       </p>
 
       {footer && <div className="mt-4 print:hidden">{footer}</div>}

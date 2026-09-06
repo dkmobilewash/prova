@@ -2,10 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
-import { putDocument } from "@/lib/blob";
+import { deleteDocument, putDocument } from "@/lib/blob";
 import { linkToken } from "@/lib/tokens";
+import { SIGNING_LINK_MESSAGES, signingLinkState } from "@/lib/link-access";
 import { requireCompanyContext } from "@/lib/auth";
-import { prisma } from "@prova/db";
+import { Prisma, prisma } from "@prova/db";
 import { revokeToken, refreshTokens, getCompanyInfo, generateWipNarrative, type QuickBooksCompanyInfo } from "@prova/integrations";
 import { calculateLineItemWip, calculateJobWip } from "@/lib/wip";
 import { MIN_EARNED_COVERAGE } from "@/lib/company-financials";
@@ -62,27 +63,53 @@ export async function createSignatureRequest(jobId: string) {
  * control. Captures signer name, IP, user agent, and an immutable snapshot
  * of what was signed at this moment (audit-only — see SignatureRequest in
  * schema.prisma and ARCHITECTURE.md).
+ *
+ * RETURNS AN ActionResult AND THROWS NOTHING IT CAN HELP. Production
+ * redacts a thrown Server Action message to a digest, and this is the one
+ * action in the app whose caller is a stranger with no account, no support
+ * channel and no way to check whether it worked. "An unexpected error
+ * occurred" on a page that has already recorded a legal signature is the
+ * exact wrong answer, and it is what this used to say.
+ *
+ * DOUBLE-SUBMIT IS THE FAILURE THIS SHAPE EXISTS FOR. The old code read the
+ * row, checked `status === "SIGNED"`, and then updated — check-then-act,
+ * across an await, on a page with a bare `<button>` that stayed clickable
+ * for the whole round trip. Two clicks: the first signs, the second reads a
+ * row the first has already updated and THROWS "already been signed". The
+ * signature is committed and the GC is looking at a crash. The update below
+ * is a conditional `updateMany` gated on the row still being PENDING, so the
+ * race is decided by Postgres rather than by this function, and a loser is
+ * told the truth — it is signed, by you, just now.
  */
-export async function signRequest(token: string, formData: FormData) {
+export async function signRequest(token: string, formData: FormData): Promise<ActionResult> {
   const request = await prisma.signatureRequest.findUnique({
     where: { token },
     include: { job: { include: { company: true, contact: true } } },
   });
   if (!request) {
-    throw new Error("Signing link not found");
+    return actionFail("This signing link is not valid. Ask for a fresh link.");
   }
   if (request.status === "SIGNED") {
-    throw new Error("This contract has already been signed");
+    return actionFail("This contract has already been signed — reload the page to see it.");
+  }
+
+  // The same gate the page rendered with, re-checked at the moment of the
+  // write. A form that was open in a tab when the link expired, or when the
+  // job went under contract by the other route, must not still be able to
+  // sign: the page's check is a courtesy to the reader, this one is the rule.
+  const linkState = signingLinkState(request, request.job, new Date());
+  if (linkState.state === "EXPIRED" || linkState.state === "JOB_NOT_ESTIMATE") {
+    return actionFail(SIGNING_LINK_MESSAGES[linkState.state]);
   }
 
   const signerName = String(formData.get("signerName") ?? "").trim();
   const signerEmail = String(formData.get("signerEmail") ?? "").trim();
   const agreed = formData.get("agree") === "on";
   if (!signerName) {
-    throw new Error("Name is required");
+    return actionFail("Type your full name to sign.");
   }
   if (!agreed) {
-    throw new Error("You must confirm you agree before signing");
+    return actionFail("Tick the box confirming you agree before signing.");
   }
 
   const headerList = await headers();
@@ -110,8 +137,14 @@ export async function signRequest(token: string, formData: FormData) {
     })),
   };
 
-  await prisma.signatureRequest.update({
-    where: { id: request.id },
+  // Conditional, not `update({ where: { id } })`. `updateMany` lets the
+  // WHERE carry `status: "PENDING"`, so the second of two concurrent clicks
+  // matches zero rows instead of overwriting the first one's snapshot,
+  // signer name, IP and timestamp with its own. The snapshot is evidence —
+  // the record of what was agreed, at the instant it was agreed — and a
+  // second write to it is not a duplicate, it is a rewrite of the evidence.
+  const signed = await prisma.signatureRequest.updateMany({
+    where: { id: request.id, status: "PENDING" },
     data: {
       status: "SIGNED",
       signedAt: new Date(),
@@ -125,6 +158,63 @@ export async function signRequest(token: string, formData: FormData) {
 
   revalidatePath(`/esign/${token}`);
   revalidatePath(`/jobs/${request.jobId}`);
+
+  if (signed.count === 0) {
+    // Somebody else won the race — almost always this person's own second
+    // click. Nothing failed; say so, because the alternative reading is
+    // "sign it again".
+    return actionFail("This contract has already been signed — reload the page to see it.");
+  }
+
+  return actionOk;
+}
+
+/**
+ * Withdraws an UNSIGNED signing link. The revocation half of the bearer
+ * credential that had no revocation at all.
+ *
+ * `createSignatureRequest` issued a token and nothing could ever take it
+ * back: no delete, no expiry, no button. That link renders LIVE line items,
+ * so a link emailed in week one and forgotten still binds whatever the
+ * prices are in week nine — and it keeps doing so after the PM who received
+ * it has left the GC.
+ *
+ * DELETES THE ROW RATHER THAN MARKING IT. A PENDING SignatureRequest is not
+ * evidence of anything: nobody signed it, there is no snapshot, no signer,
+ * no timestamp. The evidence rule ("sent correspondence can close but never
+ * delete") is about records of things that HAPPENED, and this is a record of
+ * something that did not. Marking it instead would need a third
+ * SignatureStatus value, and a REVOKED row would then be the only thing
+ * standing between `createSignatureRequest`'s idempotent reuse and a second
+ * live link.
+ *
+ * REFUSES A SIGNED ONE, explicitly and in the WHERE. A signed contract is
+ * the record, and `deleteMany` gated on `status: "PENDING"` means no
+ * ordering mistake here can ever reach one — not even if the row is signed
+ * between the read and the write.
+ */
+export async function revokeSignatureRequest(signatureRequestId: string): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  assertOwner(context, "Only the account owner can revoke a signing link");
+  const { company } = context;
+
+  const request = await prisma.signatureRequest.findUnique({
+    where: { id: signatureRequestId },
+    include: { job: true },
+  });
+  if (!request || request.job.companyId !== company.id) {
+    return actionFail("Signing link not found");
+  }
+  if (request.status === "SIGNED") {
+    return actionFail("This contract has already been signed — a signed contract is the record and can't be withdrawn.");
+  }
+
+  await prisma.signatureRequest.deleteMany({
+    where: { id: request.id, status: "PENDING" },
+  });
+
+  revalidatePath(`/jobs/${request.jobId}`);
+  return actionOk;
 }
 
 /**
@@ -146,6 +236,44 @@ export async function enablePortalAccess(contactId: string) {
   await prisma.contact.update({ where: { id: contactId }, data: { portalToken: linkToken() } });
 
   revalidatePath(`/contacts/${contactId}`);
+}
+
+/**
+ * Takes the portal link back.
+ *
+ * There was no way to. `enablePortalAccess` was the only writer of
+ * `Contact.portalToken` and nothing ever cleared it, so a link handed to a
+ * GC's project manager kept returning that client's every job, price,
+ * change order and invoice balance forever — after the PM left, after the
+ * job closed, after the contact was marked INACTIVE.
+ *
+ * REVOCATION IS REMOVING THE CREDENTIAL, not setting a flag beside it. The
+ * token IS the access control (lib/tokens.ts), so nulling it is the whole
+ * of it: there is no state left that could disagree with itself, and the
+ * unique index means the value never comes back by accident. Re-enabling
+ * issues a NEW 192-bit token, so the old URL stays dead — which is the
+ * point, and is why this is not a toggle.
+ *
+ * Owner-gated, like every other destructive action here. Cutting a client
+ * off from their own portal mid-job is a decision, not a tidy-up.
+ */
+export async function revokePortalAccess(contactId: string): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  assertOwner(context, "Only the account owner can revoke a client's portal link");
+  const { company } = context;
+
+  const contact = await prisma.contact.findUnique({ where: { id: contactId } });
+  if (!contact || contact.companyId !== company.id) {
+    return actionFail("Contact not found");
+  }
+  if (!contact.portalToken) {
+    return actionFail("This contact has no portal link to revoke.");
+  }
+
+  await prisma.contact.update({ where: { id: contactId }, data: { portalToken: null } });
+
+  revalidatePath(`/contacts/${contactId}`);
+  return actionOk;
 }
 
 async function nextInvoiceNumber(jobId: string) {
@@ -567,6 +695,31 @@ const CONTRACT_DOCUMENT_MEDIA_TYPES = ["application/pdf", "image/png", "image/jp
 
 const CONTRACT_DOCUMENT_MAX_BYTES = 15 * 1024 * 1024;
 
+/**
+ * Issues the next version number for a job's contract documents.
+ *
+ * Never max(versionNumber) + 1, which is what this was. A number derived
+ * from the rows that still exist is freed again the moment one is deleted:
+ * delete v2, upload again, and two DIFFERENT executed agreements have both
+ * been "Version 2" — on the one artifact where the version number is how a
+ * GC and a sub agree which piece of paper they are arguing about. This is
+ * the failure `issueChangeOrderNumber` carries a five-line comment about,
+ * and it was live one function away from it.
+ *
+ * Incremented inside the same transaction as the insert, so two people
+ * uploading an amendment at once cannot collide. Same mechanism as
+ * ChangeOrderCounter, RfiCounter and SafetyCaseCounter.
+ */
+async function issueContractDocumentVersion(tx: Prisma.TransactionClient, jobId: string) {
+  const counter = await tx.contractDocumentCounter.upsert({
+    where: { jobId },
+    create: { jobId, lastNumber: 1 },
+    update: { lastNumber: { increment: 1 } },
+    select: { lastNumber: true },
+  });
+  return counter.lastNumber;
+}
+
 /** Uploads the actual subcontract agreement file (or a later amendment) —
  * distinct from SignatureRequest.snapshot, which is Prova's own line-item
  * data at the moment of e-signing, not a document the GC handed over.
@@ -591,27 +744,52 @@ export async function uploadContractDocument(jobId: string, formData: FormData) 
 
   const note = String(formData.get("note") ?? "").trim();
 
-  const [buffer, lastVersion] = await Promise.all([
-    file.arrayBuffer().then(Buffer.from),
-    prisma.contractDocument.findFirst({ where: { jobId }, orderBy: { versionNumber: "desc" } }),
-  ]);
+  const buffer = await file.arrayBuffer().then(Buffer.from);
 
   const blob = await putDocument(`contracts/${jobId}/${file.name}`, buffer, file.type);
 
-  await prisma.contractDocument.create({
-    data: {
-      jobId,
-      versionNumber: (lastVersion?.versionNumber ?? 0) + 1,
-      fileUrl: blob.url,
-      fileName: file.name,
-      note: note || null,
-      uploadedByUserId: user.id,
-    },
+  // The number and the row are issued together, inside one transaction, so
+  // two people uploading an amendment at the same second cannot both be
+  // handed the same version. Same mechanism as issueChangeOrderNumber.
+  //
+  // The blob is uploaded BEFORE the transaction on purpose: an upload that
+  // fails must not burn a version number, and a transaction must not sit
+  // open across a file upload.
+  await prisma.$transaction(async (tx) => {
+    const versionNumber = await issueContractDocumentVersion(tx, jobId);
+    await tx.contractDocument.create({
+      data: {
+        jobId,
+        versionNumber,
+        fileUrl: blob.url,
+        fileName: file.name,
+        note: note || null,
+        uploadedByUserId: user.id,
+      },
+    });
   });
 
   revalidatePath(`/jobs/${jobId}`);
 }
 
+/**
+ * Deletes a contract document — the row AND the file.
+ *
+ * It used to delete only the row. Every upload here is `access: "public"`,
+ * so the PDF stayed downloadable by anyone still holding the URL, forever,
+ * while the job page showed it as gone. `del` was imported nowhere in this
+ * repo. The one action a person reaches for when a subcontract landed on
+ * the wrong job — or contains something that should never have left the
+ * office — did not remove the thing they were trying to remove.
+ *
+ * THE FILE GOES FIRST, and the ordering is deliberate. If the blob delete
+ * fails, this throws and the row survives, so the document is still listed
+ * and the person can try again — nothing is lost and nothing is silently
+ * left public. The other order fails the other way: a deleted row pointing
+ * at a live public URL is a leak nobody can see any more, which is exactly
+ * the bug being fixed. `del` is idempotent for a URL that is already gone,
+ * so a retry after a half-completed delete works.
+ */
 export async function deleteContractDocument(contractDocumentId: string) {
   const context = await requireCompanyContext();
   assertOwner(context);
@@ -624,6 +802,8 @@ export async function deleteContractDocument(contractDocumentId: string) {
   if (!document || document.job.companyId !== company.id) {
     throw new Error("Contract document not found");
   }
+
+  await deleteDocument(document.fileUrl);
 
   await prisma.contractDocument.delete({ where: { id: contractDocumentId } });
 

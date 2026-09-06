@@ -1,7 +1,8 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@prova/db";
 import { ContractSummary } from "@/components/ContractSummary";
-import { signRequest } from "@/lib/actions";
+import { EsignForm } from "@/components/EsignForm";
+import { SIGNING_LINK_MESSAGES, signingLinkState } from "@/lib/link-access";
 
 type Snapshot = {
   companyName: string;
@@ -11,6 +12,26 @@ type Snapshot = {
   total: number;
   lineItems: { description: string; quantity: string; unit: string | null; unitPrice: string | null }[];
 };
+
+/**
+ * A link that no longer opens, said in words rather than as a 404.
+ *
+ * The person reading this was handed the URL by a contractor and has done
+ * nothing wrong. A blank "not found" reads as "you were sent a broken
+ * link"; this reads as "ask for a new one". The 404 is kept for a token
+ * that never existed at all, where saying anything more would confirm to
+ * someone trying tokens which guesses landed on a real contract.
+ */
+function LinkUnavailable({ message }: { message: string }) {
+  return (
+    <main className="mx-auto max-w-2xl px-6 py-12">
+      <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-5">
+        <h1 className="text-lg font-semibold text-amber-100">This signing link is no longer live</h1>
+        <p className="mt-2 text-sm text-amber-100/90">{message}</p>
+      </div>
+    </main>
+  );
+}
 
 export default async function EsignPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
@@ -35,20 +56,33 @@ export default async function EsignPage({ params }: { params: Promise<{ token: s
     notFound();
   }
 
-  const signRequestWithToken = signRequest.bind(null, token);
+  // Whether this bearer link is still allowed to sign anything — see
+  // lib/link-access.ts. `signRequest` re-checks the identical thing at the
+  // moment of the write, so a form left open in a tab cannot outlive the
+  // gate this page rendered with.
+  const linkState = signingLinkState(request, request.job, new Date());
 
-  if (request.status === "SIGNED") {
+  if (linkState.state === "SIGNED") {
     const snapshot = request.snapshot as unknown as Snapshot;
     return (
       <main className="mx-auto max-w-2xl px-6 py-12">
         <div className="mb-6 rounded-lg border border-green-500/30 bg-green-500/10 p-4 text-sm text-green-300">
           Signed by {request.signerName} on{" "}
+          {/* UTC, EXPLICITLY. Without a timeZone this rendered the SERVER's
+              calendar day, which on Vercel is UTC — so a contract signed at
+              6pm in California was dated tomorrow, on the single date a
+              dispute over this document would turn on. Every other date in
+              this app is stored and rendered at UTC (CLAUDE.md), so the fix
+              is to say so rather than to guess at the signer's zone: the
+              zone is named on screen, which is what makes the date
+              checkable against the timestamp rather than merely plausible. */}
           {request.signedAt?.toLocaleDateString("en-US", {
             month: "short",
             day: "numeric",
             year: "numeric",
-          })}
-          . This reflects exactly what was agreed to at the time of signing.
+            timeZone: "UTC",
+          })}{" "}
+          (UTC). This reflects exactly what was agreed to at the time of signing.
         </div>
         <ContractSummary
           companyName={snapshot.companyName}
@@ -60,6 +94,10 @@ export default async function EsignPage({ params }: { params: Promise<{ token: s
           status="SIGNED"
           clientName={snapshot.clientName}
           scope={snapshot.scope}
+          // This is the frozen snapshot, so the footnote must not call it
+          // "current" — it sat forty lines under the banner above saying the
+          // opposite. See ContractSummaryBasis.
+          basis="signed"
           lineItems={snapshot.lineItems.map((item, i) => ({
             id: String(i),
             description: item.description,
@@ -71,6 +109,10 @@ export default async function EsignPage({ params }: { params: Promise<{ token: s
         />
       </main>
     );
+  }
+
+  if (linkState.state === "EXPIRED" || linkState.state === "JOB_NOT_ESTIMATE") {
+    return <LinkUnavailable message={SIGNING_LINK_MESSAGES[linkState.state]} />;
   }
 
   const { job } = request;
@@ -93,43 +135,11 @@ export default async function EsignPage({ params }: { params: Promise<{ token: s
         }))}
       />
 
-      <form
-        action={signRequestWithToken}
-        className="mt-6 flex flex-col gap-4 rounded-lg border border-slate-800 bg-slate-900 p-6"
-      >
-        <h2 className="text-lg font-semibold text-slate-100">Sign to accept</h2>
-        <label className="flex flex-col gap-1 text-sm text-slate-300">
-          Your full name
-          <input
-            name="signerName"
-            required
-            defaultValue={job.contact.name}
-            className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-sm text-slate-300">
-          Email (optional)
-          <input
-            name="signerEmail"
-            type="email"
-            defaultValue={job.contact.email ?? ""}
-            className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
-          />
-        </label>
-        <label className="flex items-start gap-2 text-sm text-slate-300">
-          <input type="checkbox" name="agree" required className="mt-1" />
-          <span>
-            I have reviewed the scope and pricing above and agree that typing my name and submitting
-            this form constitutes my legal signature accepting this contract.
-          </span>
-        </label>
-        <button
-          type="submit"
-          className="inline-flex w-fit items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
-        >
-          Sign contract
-        </button>
-      </form>
+      <EsignForm
+        token={token}
+        defaultName={job.contact.name}
+        defaultEmail={job.contact.email ?? ""}
+      />
     </main>
   );
 }

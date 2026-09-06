@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ContractSummary } from "@/components/ContractSummary";
 import { prisma } from "@prova/db";
+import { portalAccessFor, signingLinkState } from "@/lib/link-access";
 import { money } from "@/lib/money";
 
 export default async function PortalJobPage({
@@ -12,7 +13,11 @@ export default async function PortalJobPage({
   const { token, jobId } = await params;
 
   const contact = await prisma.contact.findUnique({ where: { portalToken: token } });
-  if (!contact) {
+  // Same gate, same 404, same reason as /portal/[token] — see there and in
+  // lib/link-access.ts. Repeated rather than shared because this page is
+  // reachable directly: a GC bookmarks a job, and a check that only ran on
+  // the index would be no check at all.
+  if (!contact || !portalAccessFor(contact).ok) {
     notFound();
   }
 
@@ -26,7 +31,17 @@ export default async function PortalJobPage({
         orderBy: { createdAt: "asc" },
         include: { originChangeOrder: true },
       },
+      // APPROVED ONLY. This list had no status filter, so the GC's own
+      // portal showed them our DRAFTS — change orders written but never
+      // sent — alongside the ones we VOIDED before ever asking, and the
+      // numbering gaps that reveal both. This is the only surface in the
+      // app where the client sees the sub's unsent internal state, in a
+      // product whose stated rule is that every decision is made for the
+      // sub. An approved change order is the only one the GC has any
+      // business reading here: it is the one they already agreed to, and
+      // the only one whose line items are already in the summary above.
       changeOrders: {
+        where: { status: "APPROVED" },
         orderBy: { number: "asc" },
         include: { edits: true },
       },
@@ -46,7 +61,13 @@ export default async function PortalJobPage({
     notFound();
   }
 
-  const pendingSignature = job.signatureRequests[0];
+  // Only offer the signing button while the link behind it would actually
+  // open. A "Review and sign contract" button that lands on "this link is no
+  // longer live" is the sub looking broken in front of their client, on the
+  // one screen where that costs them something.
+  const pendingSignature = job.signatureRequests.find(
+    (request) => signingLinkState(request, job, new Date()).state === "SIGNABLE",
+  );
 
   return (
     <main className="mx-auto max-w-2xl px-6 py-12">

@@ -84,7 +84,22 @@ const prisma = {
       return rows.reduce((a, b) => (Number(a.versionNumber) > Number(b.versionNumber) ? a : b));
     },
   },
+  // Version numbers now come from a counter row rather than max+1 — a
+  // number derived from surviving rows is reissued when one is deleted.
+  // The behaviour of that counter is pinned in lib/gc-surfaces.test.ts;
+  // this fake exists so THIS suite still exercises the real upload path.
+  contractDocumentCounter: {
+    upsert: async ({ where, create }: { where: { jobId: string }; create: { lastNumber: number } }) => {
+      const current = counters.get(where.jobId);
+      const next = current === undefined ? create.lastNumber : current + 1;
+      counters.set(where.jobId, next);
+      return { lastNumber: next };
+    },
+  },
+  $transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn(prisma),
 };
+
+const counters = new Map<string, number>();
 
 vi.mock("@vercel/blob", () => ({
   put: (pathname: string, body: unknown, options: PutOptions) => fakePut(pathname, body, options),
@@ -124,6 +139,7 @@ beforeEach(() => {
   putCalls.length = 0;
   storedPaths.clear();
   suffixSeed = 0;
+  counters.clear();
   for (const key of Object.keys(created)) delete created[key];
 });
 

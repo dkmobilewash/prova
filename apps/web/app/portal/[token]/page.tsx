@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { StatusBadge } from "@prova/ui";
 import { prisma } from "@prova/db";
+import { portalAccessFor } from "@/lib/link-access";
 import { money } from "@/lib/money";
 
 export default async function PortalPage({ params }: { params: Promise<{ token: string }> }) {
@@ -18,7 +19,11 @@ export default async function PortalPage({ params }: { params: Promise<{ token: 
     },
   });
 
-  if (!contact) {
+  // A token that never existed and a token that is no longer allowed are the
+  // same 404 on purpose. Anything more would tell someone trying tokens
+  // which of their guesses hit a real contact — and there is no login here
+  // to slow them down. See lib/link-access.ts.
+  if (!contact || !portalAccessFor(contact).ok) {
     notFound();
   }
 

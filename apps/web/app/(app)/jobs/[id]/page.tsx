@@ -17,6 +17,8 @@ import { pushBlockers } from "@/lib/quickbooks-sync";
 import { paymentPushBlockers } from "@/lib/quickbooks-payment-sync";
 import { accountPurpose } from "@/lib/quickbooks-constants";
 import { MarkContractedButton } from "@/components/MarkContractedButton";
+import { RevokeLinkButton } from "@/components/RevokeLinkButton";
+import { signingLinkExpiresOn } from "@/lib/link-access";
 import { ChangeOrders, type ChangeOrderView } from "@/components/ChangeOrders";
 import { changeOrderValueDelta, pendingChangeOrderExposure, reopenBlockers } from "@/lib/change-order";
 import { can } from "@/lib/permissions";
@@ -710,6 +712,28 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                 <p className="break-all rounded-md bg-slate-950 px-3 py-2 font-mono text-xs text-blue-400">
                   {origin}/esign/{pendingSignature.token}
                 </p>
+                {/* This link renders LIVE line items and legally signs
+                    them, and until now nothing could withdraw it — see
+                    revokeSignatureRequest and lib/link-access.ts. It also
+                    stops working on its own after
+                    SIGNING_LINK_MAX_AGE_DAYS, which is what the expiry
+                    line below is telling you. */}
+                <p className="mt-2 text-xs text-slate-500">
+                  Anyone with this link can sign this contract at today&apos;s prices, without
+                  signing in. It stops working{" "}
+                  {signingLinkExpiresOn(pendingSignature.createdAt).toLocaleDateString("en-US", {
+                    month: "short",
+                    day: "numeric",
+                    year: "numeric",
+                    timeZone: "UTC",
+                  })}
+                  .
+                </p>
+                {currentUser.role === "OWNER" && (
+                  <div className="mt-3">
+                    <RevokeLinkButton kind="signing" signatureRequestId={pendingSignature.id} />
+                  </div>
+                )}
               </div>
             ) : (
               <div>
