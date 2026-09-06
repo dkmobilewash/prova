@@ -2,15 +2,25 @@
 
 import { useState, useTransition } from "react";
 import { deleteEquipment, updateEquipment } from "@/lib/actions";
-import { EquipmentFields, type EquipmentFieldValues, type JobOption } from "@/components/EquipmentFields";
+import { EquipmentFields, type EquipmentFieldValues } from "@/components/EquipmentFields";
 
 type EquipmentRowProps = {
   canDelete: boolean;
-  jobs: JobOption[];
-  item: EquipmentFieldValues & { id: string; assignedJobName: string | null };
+  item: EquipmentFieldValues & { id: string };
 };
 
-export function EquipmentRow({ canDelete, jobs, item }: EquipmentRowProps) {
+/** The name, the detail line, and the row's own buttons.
+ *
+ * Renders a DIV, not an LI. The page already wraps each piece in an `<li>`,
+ * and this component used to open a second one inside it. The HTML parser
+ * resolves that by closing the outer `<li>` early, so the DOM the browser
+ * builds is not the tree React expects and hydration breaks — silently, and
+ * with typecheck, lint and the whole test suite green. See issue #149.
+ *
+ * Where the piece is deliberately is NOT printed here. The page prints it
+ * once, alongside the utilisation figure and from the same derived value;
+ * two lines derived from one fact read as two separate facts. */
+export function EquipmentRow({ canDelete, item }: EquipmentRowProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -44,7 +54,7 @@ export function EquipmentRow({ canDelete, jobs, item }: EquipmentRowProps) {
 
   if (isEditing) {
     return (
-      <li className="p-4">
+      <div>
         <form onSubmit={handleSave} className="flex flex-col gap-3">
           <EquipmentFields defaults={item} />
 
@@ -71,20 +81,17 @@ export function EquipmentRow({ canDelete, jobs, item }: EquipmentRowProps) {
             </button>
           </div>
         </form>
-      </li>
+      </div>
     );
   }
 
   const detail = [item.type, item.assetTag].filter(Boolean).join(" · ");
 
   return (
-    <li className="flex items-start justify-between gap-3 p-4">
+    <div className="flex items-start justify-between gap-3">
       <div className="min-w-0">
         <p className="font-medium text-slate-100">{item.name}</p>
         {detail && <p className="text-sm text-slate-400">{detail}</p>}
-        <p className={item.assignedJobName ? "text-xs text-blue-400" : "text-xs text-slate-500"}>
-          {item.assignedJobName ? `On ${item.assignedJobName}` : "In the yard"}
-        </p>
         {item.notes && <p className="mt-1 text-sm text-slate-500">{item.notes}</p>}
         {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
       </div>
@@ -133,6 +140,6 @@ export function EquipmentRow({ canDelete, jobs, item }: EquipmentRowProps) {
             </button>
           ))}
       </div>
-    </li>
+    </div>
   );
 }

@@ -4,6 +4,7 @@ import {
   contradictions,
   currentAssignment,
   daysOutWithin,
+  deploymentToday,
   findOverlap,
   newestFirst,
   rangesOverlap,
@@ -191,25 +192,160 @@ describe("utilisation", () => {
     expect(u.percent).toBe(0);
     expect(u.daysTracked).toBe(30);
   });
+
+  it("counts a single same-day job as a day out, not as nothing", () => {
+    // `daysOutWithin`'s docstring has always said a lift that leaves and
+    // returns the same day was out for a day's work. `utilisation` inlined a
+    // second, half-open rule that said zero, and this is the assertion that
+    // makes the two agree. Issue #151.
+    const u = utilisation(
+      [stay({ sentOutOn: "2026-01-10", returnedOn: "2026-01-10" })],
+      WINDOW_START,
+      WINDOW_END,
+      LONG_KNOWN,
+    );
+    expect(u.daysOut).toBe(1);
+  });
+
+  it("reports a lift doing ten separate one-day jobs as worked, not idle", () => {
+    // The rendered sentence this exists for: it used to read "out 0 of the
+    // last 90 days (0%)" for a machine that went out ten times.
+    const singleDays = [
+      "2026-01-02",
+      "2026-01-04",
+      "2026-01-06",
+      "2026-01-08",
+      "2026-01-10",
+      "2026-01-12",
+      "2026-01-14",
+      "2026-01-16",
+      "2026-01-18",
+      "2026-01-20",
+    ].map((day) => stay({ sentOutOn: day, returnedOn: day }));
+
+    const u = utilisation(singleDays, WINDOW_START, WINDOW_END, LONG_KNOWN);
+    expect(u.daysOut).toBe(10);
+    expect(u.daysTracked).toBe(30);
+    expect(u.percent).toBe(33);
+  });
+
+  it("does not double-count a same-day trip that lands inside a longer stay", () => {
+    // Contradictory records still must not read over 100%.
+    const u = utilisation(
+      [
+        stay({ sentOutOn: "2026-01-01", returnedOn: "2026-01-11" }),
+        stay({ sentOutOn: "2026-01-05", returnedOn: "2026-01-05" }),
+      ],
+      WINDOW_START,
+      WINDOW_END,
+      LONG_KNOWN,
+    );
+    expect(u.daysOut).toBe(10);
+  });
+});
+
+describe("deploymentToday", () => {
+  const TODAY = "2026-03-01";
+
+  it("is out when the stay has already started and nobody closed it", () => {
+    const open = stay({ sentOutOn: "2026-02-20", returnedOn: null });
+    expect(deploymentToday([open], TODAY)).toEqual({ kind: "out", stay: open });
+  });
+
+  it("calls a stay dated AHEAD a plan, so the piece is still in the yard", () => {
+    // The bug: /equipment printed "On Maple St Tower" and dropped the lift
+    // out of "N in the yard" while the line below it said "due out Mar 10".
+    const planned = stay({ sentOutOn: "2026-03-10", returnedOn: null });
+    expect(deploymentToday([planned], TODAY).kind).toBe("planned");
+  });
+
+  it("is out on the very day it leaves, not planned", () => {
+    // The boundary the whole distinction turns on.
+    expect(deploymentToday([stay({ sentOutOn: TODAY, returnedOn: null })], TODAY).kind).toBe("out");
+  });
+
+  it("is the yard when everything has come back", () => {
+    expect(deploymentToday([stay({ sentOutOn: "2026-01-01", returnedOn: "2026-01-10" })], TODAY)).toEqual({
+      kind: "yard",
+    });
+  });
+
+  it("is the yard with no history at all", () => {
+    expect(deploymentToday([], TODAY)).toEqual({ kind: "yard" });
+  });
+
+  it("does not let a future dispatch hide the job the machine is ACTUALLY on", () => {
+    // Two open stays are a contradiction `contradictions()` reports. Until
+    // somebody fixes it, the row must name the one the lift has left for.
+    const outNow = stay({ id: "now", sentOutOn: "2026-02-20", returnedOn: null });
+    const later = stay({ id: "later", sentOutOn: "2026-03-20", returnedOn: null });
+    const where = deploymentToday([later, outNow], TODAY);
+    expect(where.kind).toBe("out");
+    expect(where.kind === "out" && where.stay.id).toBe("now");
+  });
+
+  it("names the SOONEST upcoming stay when several are planned", () => {
+    const soon = stay({ id: "soon", sentOutOn: "2026-03-05", returnedOn: null });
+    const later = stay({ id: "later", sentOutOn: "2026-04-05", returnedOn: null });
+    const where = deploymentToday([later, soon], TODAY);
+    expect(where.kind === "planned" && where.stay.id).toBe("soon");
+  });
+
+  it("counts a fully planned future stay — both dates ahead — as planned", () => {
+    // currentAssignment cannot see this one at all: it is closed.
+    const trip = stay({ sentOutOn: "2026-03-10", returnedOn: "2026-03-14" });
+    expect(currentAssignment([trip])).toBeNull();
+    expect(deploymentToday([trip], TODAY).kind).toBe("planned");
+  });
 });
 
 describe("daysOutWithin", () => {
   it("counts the day it left and not the day it came back", () => {
-    expect(
-      daysOutWithin(stay({ sentOutOn: "2026-01-01", returnedOn: "2026-01-08" }), "2026-01-01", "2026-01-31"),
-    ).toBe(7);
+    const days = daysOutWithin(
+      stay({ sentOutOn: "2026-01-01", returnedOn: "2026-01-08" }),
+      "2026-01-01",
+      "2026-01-31",
+    );
+    expect(days).toHaveLength(7);
+    expect(days[0]).toBe("2026-01-01");
+    expect(days[6]).toBe("2026-01-07");
+    expect(days).not.toContain("2026-01-08");
   });
 
   it("counts a same-day trip as a day's work, not nothing", () => {
     expect(
       daysOutWithin(stay({ sentOutOn: "2026-01-05", returnedOn: "2026-01-05" }), "2026-01-01", "2026-01-31"),
-    ).toBe(1);
+    ).toEqual(["2026-01-05"]);
   });
 
-  it("is zero for a stay entirely outside the window", () => {
+  it("is empty for a stay entirely outside the window", () => {
     expect(
       daysOutWithin(stay({ sentOutOn: "2025-01-01", returnedOn: "2025-01-08" }), "2026-01-01", "2026-01-31"),
-    ).toBe(0);
+    ).toEqual([]);
+  });
+
+  it("does not smuggle a same-day trip in from OUTSIDE the window", () => {
+    // The same-day rule has to respect the window like every other day does,
+    // or a trip last year adds a day to this quarter's utilisation.
+    expect(
+      daysOutWithin(stay({ sentOutOn: "2025-06-05", returnedOn: "2025-06-05" }), "2026-01-01", "2026-01-31"),
+    ).toEqual([]);
+    // windowEnd is the first day NOT measured, same as everywhere else.
+    expect(
+      daysOutWithin(stay({ sentOutOn: "2026-01-31", returnedOn: "2026-01-31" }), "2026-01-01", "2026-01-31"),
+    ).toEqual([]);
+  });
+
+  it("clips a stay to the window at both ends", () => {
+    expect(
+      daysOutWithin(stay({ sentOutOn: "2025-12-20", returnedOn: "2026-03-01" }), "2026-01-01", "2026-01-31"),
+    ).toHaveLength(30);
+  });
+
+  it("runs an open stay to the end of the window", () => {
+    expect(
+      daysOutWithin(stay({ sentOutOn: "2026-01-16", returnedOn: null }), "2026-01-01", "2026-01-31"),
+    ).toHaveLength(15);
   });
 });
 
@@ -234,6 +370,30 @@ describe("contradictions", () => {
 });
 
 describe("newestFirst", () => {
+  it("puts the newer stay first", () => {
+    // The one assertion this describe block did not have. Every fixture in
+    // it used two SAME-DAY stays, so the comparison could have been reversed
+    // — the one thing the function is named for — and the suite stayed
+    // green. Issue #150.
+    const older = stay({ id: "older", sentOutOn: "2026-01-01" });
+    const newer = stay({ id: "newer", sentOutOn: "2026-06-01" });
+    expect(newestFirst([older, newer]).map((x) => x.id)).toEqual(["newer", "older"]);
+    expect(newestFirst([newer, older]).map((x) => x.id)).toEqual(["newer", "older"]);
+  });
+
+  it("orders three distinct days newest to oldest", () => {
+    const a = stay({ id: "jan", sentOutOn: "2026-01-15" });
+    const b = stay({ id: "mar", sentOutOn: "2026-03-15" });
+    const c = stay({ id: "feb", sentOutOn: "2026-02-15" });
+    expect(newestFirst([a, b, c]).map((x) => x.id)).toEqual(["mar", "feb", "jan"]);
+  });
+
+  it("does not mutate the array it was handed", () => {
+    const input = [stay({ id: "one", sentOutOn: "2026-01-01" }), stay({ id: "two", sentOutOn: "2026-06-01" })];
+    newestFirst(input);
+    expect(input.map((x) => x.id)).toEqual(["one", "two"]);
+  });
+
   it("breaks a same-day tie on id so the order is total and stable", () => {
     const a = stay({ id: "sa", sentOutOn: "2026-01-01" });
     const b = stay({ id: "sb", sentOutOn: "2026-01-01" });
