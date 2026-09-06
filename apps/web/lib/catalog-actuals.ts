@@ -128,3 +128,91 @@ export function catalogActuals(
       Math.abs(variancePct) >= CATALOG_VARIANCE_THRESHOLD,
   };
 }
+
+/** What "update default from actuals" would write, or why it won't. */
+export type RepriceDecision =
+  | { ok: false; error: string }
+  | {
+      ok: true;
+      /** The new default budgeted cost, as a decimal string. */
+      defaultBudgetedUnitCost: string;
+      /** The new default sale price, only when asked for AND derivable. */
+      defaultUnitPrice?: string;
+    };
+
+/**
+ * The whole of the re-price decision, as a function of the actuals.
+ *
+ * Pure, and its arguments are the point. The number that gets written is
+ * derived from `actuals` — there is NOWHERE in this signature for a figure
+ * the browser sent to enter. That used to be the defect: `actualUnitCost`
+ * arrived in a hidden input and the action wrote whatever it received,
+ * checking only that it parsed, for the one control in the app that edits a
+ * price every future bid and every AI draft reads. A stale tab, an edited
+ * field or a replayed post could set a catalog default to anything.
+ *
+ * The only thing the request still decides is the boolean: whether to move
+ * the sale price too. That is a margin call belonging to the estimator, not
+ * a fact the jobs measured, which is why "our cost went up 20%" must not
+ * silently become "we now charge 20% more".
+ *
+ * It re-checks the conditions the page rendered the button behind rather
+ * than assuming them, because the page may be minutes old and a costed line
+ * may have landed since.
+ */
+export function repriceDecision(
+  actuals: CatalogActuals,
+  currentDefaultUnitPrice: number | null,
+  alsoUpdatePrice: boolean,
+): RepriceDecision {
+  if (actuals.actualUnitCost === null) {
+    const unfinished = actuals.linesExcludedUnfinished;
+    return {
+      ok: false,
+      error:
+        unfinished > 0
+          ? `Nothing to re-price from: the ${unfinished} costed ${
+              unfinished === 1 ? "line" : "lines"
+            } using this entry ${
+              unfinished === 1 ? "is" : "are"
+            } on a job that hasn't finished, so the cost booked so far isn't a unit cost yet.`
+          : "Nothing to re-price from — no finished job has used this entry yet.",
+    };
+  }
+
+  if (!actuals.isFlagged) {
+    return {
+      ok: false,
+      error:
+        "This entry's default is no longer far enough from actuals to be worth changing. Reload the page to see the current figures.",
+    };
+  }
+
+  const defaultBudgetedUnitCost = actuals.actualUnitCost.toFixed(2);
+  if (!alsoUpdatePrice) return { ok: true, defaultBudgetedUnitCost };
+
+  // Hold the existing margin over the new cost, so the price moves by the
+  // same proportion rather than collapsing to cost. With no prior price
+  // there is no margin to preserve, and inventing one would be a pricing
+  // decision this has no business making — the cost still updates and the
+  // price is left alone.
+  //
+  // The null/zero prior COST arm is a backstop rather than a live branch:
+  // isFlagged already requires a variancePct, which requires a prior cost
+  // that is neither, so a flagged entry always has one. It is here so that
+  // loosening isFlagged cannot silently start dividing by zero and writing
+  // an infinite sale price.
+  const oldCost = actuals.defaultBudgetedUnitCost;
+  if (oldCost === null || oldCost <= 0 || currentDefaultUnitPrice === null) {
+    return { ok: true, defaultBudgetedUnitCost };
+  }
+
+  return {
+    ok: true,
+    defaultBudgetedUnitCost,
+    defaultUnitPrice: (
+      (currentDefaultUnitPrice / oldCost) *
+      Number(defaultBudgetedUnitCost)
+    ).toFixed(2),
+  };
+}

@@ -152,7 +152,7 @@ export default async function PipelinePage() {
                       if (!summary) return null;
                       return (
                         <>
-                          <span className="text-slate-400"> · won </span>
+                          <span className="text-slate-400"> · </span>
                           <span className="text-slate-200">{summary.headline}</span>
                           {summary.unpricedNote && (
                             <span className="text-amber-300"> {summary.unpricedNote}</span>

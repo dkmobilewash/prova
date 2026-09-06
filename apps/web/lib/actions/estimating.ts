@@ -3,31 +3,15 @@
 import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@prova/db";
-import { parseCatalogImport, splitAgainstExisting } from "@/lib/catalog-import";
-import { ActionResult, actionFail, actionOk, BID_INVITATION_STATUSES, assertEditableDirectly, assertJobInCompany, craftClassificationIdFromForm, decimalFromForm, enumFromForm, optionalEnumFromForm, tradeScopeFromForm } from "./shared";
-import { catalogActuals, type JobStatusForActuals } from "@/lib/catalog-actuals";
+import { catalogKey, parseCatalogImport, splitAgainstExisting } from "@/lib/catalog-import";
+import { ActionResult, actionFail, actionOk, BID_INVITATION_STATUSES, assertEditableDirectly, assertJobInCompany, craftClassificationIdFromForm, decimalFromForm, enumFromForm, nullableMoneyFromForm, optionalEnumFromForm, tradeScopeFromForm } from "./shared";
+import { catalogActuals, repriceDecision, type JobStatusForActuals } from "@/lib/catalog-actuals";
 
-/**
- * A money field a user typed, as a number or a sentence saying it wasn't one.
- *
- * nullableDecimalFromForm THROWS on unparseable input, and a thrown message
- * is redacted to a digest in production — so "Bid $" with a stray comma in
- * it would reach a real user as a reference number. Blank still means "not
- * recorded": an amount nobody supplied is absent, never zero.
- */
-function moneyFromForm(
-  formData: FormData,
-  key: string,
-  label: string,
-): { ok: true; value: string | null } | { ok: false; error: string } {
-  const raw = formData.get(key);
-  const value = typeof raw === "string" ? raw.trim() : "";
-  if (!value) return { ok: true, value: null };
-  if (Number.isNaN(Number(value))) {
-    return { ok: false, error: `${label} has to be a number — "${value}" isn't one. Leave it blank if you don't know it yet.` };
-  }
-  return { ok: true, value };
-}
+/** Local alias for the shared money parser, kept short because this file
+ * calls it five times. See nullableMoneyFromForm in ./shared — it lives
+ * there rather than here so a test can reach it: this module is
+ * "use server" and may only export async functions. */
+const moneyFromForm = nullableMoneyFromForm;
 
 /** Logs a GC inviting this company to bid — tracked independent of Job,
  * since most invitations are declined or lost and never become one.
@@ -154,10 +138,18 @@ export async function deleteBidInvitation(bidInvitationId: string): Promise<Acti
  * catch the wrong one goes quiet.
  */
 async function duplicateCatalogEntry(companyId: string, description: string) {
-  return prisma.lineItemCatalogEntry.findFirst({
-    where: { companyId, description: { equals: description.trim(), mode: "insensitive" } },
+  // Compared in JS against catalogKey rather than matched in the query.
+  // Prisma's `mode: "insensitive"` equals lowers to ILIKE on Postgres, where
+  // `%` and `_` in the description are WILDCARDS — so "TYPE_X BOARD" would
+  // match entries it is not, and refuse a create that is legitimate. This is
+  // the same call importCatalogEntries already makes for the whole company,
+  // and a catalog is bounded by what a person types into it.
+  const key = catalogKey(description);
+  const entries = await prisma.lineItemCatalogEntry.findMany({
+    where: { companyId },
     select: { id: true, description: true },
   });
+  return entries.find((entry) => catalogKey(entry.description) === key) ?? null;
 }
 
 /** Adds a reusable line-item template, scoped to the company. Not tied to
@@ -408,41 +400,22 @@ export async function updateCatalogDefaultsFromActuals(
     entry.defaultBudgetedUnitCost != null ? Number(entry.defaultBudgetedUnitCost) : null,
   );
 
-  // Exactly the condition the page renders the button behind. Re-checked
-  // rather than assumed, because the page that rendered it may be minutes
-  // old and a costed line may have landed since.
-  if (actuals.actualUnitCost === null) {
-    const unfinished = actuals.linesExcludedUnfinished;
-    return actionFail(
-      unfinished > 0
-        ? `Nothing to re-price from: the ${unfinished} costed ${unfinished === 1 ? "line" : "lines"} using this entry ${unfinished === 1 ? "is" : "are"} on a job that hasn't finished, so the cost booked so far isn't a unit cost yet.`
-        : "Nothing to re-price from — no finished job has used this entry yet.",
-    );
-  }
-  if (!actuals.isFlagged) {
-    return actionFail(
-      "This entry's default is no longer far enough from actuals to be worth changing. Reload the page to see the current figures.",
-    );
-  }
-
-  const actualUnitCost = actuals.actualUnitCost.toFixed(2);
+  // The figure and the refusals are decided by repriceDecision, whose
+  // arguments have nowhere for a number the browser sent to enter. The only
+  // thing taken from the request is the margin checkbox.
+  const decision = repriceDecision(
+    actuals,
+    entry.defaultUnitPrice != null ? Number(entry.defaultUnitPrice) : null,
+    String(formData.get("alsoUpdatePrice") ?? "") === "on",
+  );
+  if (!decision.ok) return actionFail(decision.error);
 
   // Only ever the entry's own defaults — no JobLineItem is in scope here.
   const data: { defaultBudgetedUnitCost: string; defaultUnitPrice?: string } = {
-    defaultBudgetedUnitCost: actualUnitCost,
+    defaultBudgetedUnitCost: decision.defaultBudgetedUnitCost,
   };
-
-  // Opt-in: hold the existing margin over the new cost, so the price moves
-  // by the same proportion rather than collapsing to cost.
-  if (String(formData.get("alsoUpdatePrice") ?? "") === "on") {
-    const oldCost = entry.defaultBudgetedUnitCost != null ? Number(entry.defaultBudgetedUnitCost) : null;
-    const oldPrice = entry.defaultUnitPrice != null ? Number(entry.defaultUnitPrice) : null;
-    if (oldCost && oldCost > 0 && oldPrice != null) {
-      data.defaultUnitPrice = ((oldPrice / oldCost) * Number(actualUnitCost)).toFixed(2);
-    }
-    // With no prior cost or price there is no margin to preserve, and
-    // inventing one would be a pricing decision this action has no business
-    // making — the cost still updates, the price is left alone.
+  if (decision.defaultUnitPrice !== undefined) {
+    data.defaultUnitPrice = decision.defaultUnitPrice;
   }
 
   await prisma.lineItemCatalogEntry.update({ where: { id: entryId }, data });

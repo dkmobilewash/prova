@@ -285,15 +285,35 @@ export function parseCatalogImport(text: string): ParsedImport {
 }
 
 /**
+ * What "the same catalog item" means, in one place.
+ *
+ * Trimmed and lower-cased — case-insensitive, because that is what a person
+ * means by the same item, and because re-importing an updated price list is
+ * the normal case rather than the exception.
+ *
+ * Exported so the OTHER two ways an entry can be created — the add form and
+ * "save as catalog item" — decide it with this function rather than with
+ * their own approximation of it. They did not, and the disagreement was the
+ * defect: the import refused a duplicate while both of the others happily
+ * made one. Deliberately a plain string key compared in JS rather than a
+ * Prisma `mode: "insensitive"` query, whose Postgres lowering carries
+ * `ILIKE` wildcard semantics — a description containing `%` or `_` is a
+ * pattern there and a literal here, and only one of those is what anybody
+ * means.
+ */
+export function catalogKey(description: string) {
+  return description.trim().toLowerCase();
+}
+
+/**
  * Splits parsed rows against what the catalog already holds.
  *
- * Matching on description, case-insensitively, because that is what a
- * person means by "the same item" — and because re-importing an updated
- * price list is the normal case, not the exception. Silently creating a
- * second "5/8in Type X board" is how a catalog becomes untrustworthy.
+ * Silently creating a second "5/8in Type X board" is how a catalog becomes
+ * untrustworthy: each copy accumulates its own actuals, so a split sample
+ * can suppress a variance flag the merged one would raise.
  */
 export function splitAgainstExisting(rows: ImportRow[], existingDescriptions: string[]) {
-  const existing = new Set(existingDescriptions.map((d) => d.trim().toLowerCase()));
+  const existing = new Set(existingDescriptions.map(catalogKey));
   const seenInFile = new Set<string>();
 
   const fresh: ImportRow[] = [];
@@ -301,7 +321,7 @@ export function splitAgainstExisting(rows: ImportRow[], existingDescriptions: st
   const duplicatesWithinFile: ImportRow[] = [];
 
   for (const row of rows) {
-    const key = row.description.trim().toLowerCase();
+    const key = catalogKey(row.description);
     if (seenInFile.has(key)) {
       duplicatesWithinFile.push(row);
       continue;

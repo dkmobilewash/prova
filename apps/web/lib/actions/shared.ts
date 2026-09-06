@@ -220,6 +220,41 @@ export function actionFail(error: string): ActionResult {
  * because the barrel `export *`s all of them. */
 export type ActionResultWith<T> = { ok: true; value: T } | { ok: false; error: string };
 
+/**
+ * A money field a user typed: the string to store, or a sentence saying
+ * why it isn't one. Blank is valid and means "nobody has recorded an
+ * amount" — never zero.
+ *
+ * The returning twin of nullableDecimalFromForm, and it exists because
+ * that one THROWS. A thrown Server Action message is redacted to a digest
+ * in production, so "Bid $" with a stray comma in it reached a real user
+ * as a reference number rather than as the one sentence that would have
+ * told them to delete the comma.
+ *
+ * Number.isFinite rather than !Number.isNaN, which is the check
+ * nullableDecimalFromForm makes: Number("Infinity") is Infinity, not NaN,
+ * so the looser test lets the literal word through. Prisma.Decimal accepts
+ * it and Postgres numeric stores it, and a bid amount of Infinity poisons
+ * every total it is ever added to. Number("") is 0, which is why the blank
+ * case has to be taken first.
+ */
+export function nullableMoneyFromForm(
+  formData: FormData,
+  key: string,
+  label: string,
+): ActionResultWith<string | null> {
+  const raw = formData.get(key);
+  const value = typeof raw === "string" ? raw.trim() : "";
+  if (!value) return { ok: true, value: null };
+  if (!Number.isFinite(Number(value))) {
+    return {
+      ok: false,
+      error: `${label} has to be a number — "${value}" isn't one. Leave it blank if you don't know it yet.`,
+    };
+  }
+  return { ok: true, value };
+}
+
 /** True when a write failed a unique constraint (Prisma P2002).
  *
  * Checks the `code` property rather than `instanceof

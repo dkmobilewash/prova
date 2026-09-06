@@ -132,9 +132,19 @@ export function winRateLabel(record: GcRecord): string {
  *    what is true. Returning null is reserved for genuinely having won
  *    nothing.
  *
+ * And the third mistake, which was in the first attempt at this function
+ * rather than in either page: when NO won bid carries an amount, valueWon
+ * is 0 because there was nothing to add — not because the work was free.
+ * Printing "$0.00 in 2 won bids" is the same defect in the other
+ * direction, and the same shape as the $0.00 the browser run found in the
+ * fringe-remittance columns. A figure nobody supplied reads as absent, so
+ * that case prints no money at all.
+ *
  * Split into two strings so a renderer can colour the caveat without
  * rebuilding the wording, which is how the two pages drifted apart in the
- * first place.
+ * first place. The headline is a standalone phrase in every branch — no
+ * page should be prefixing it with "won", or the wording only reads
+ * correctly on the page it was written against.
  */
 export function wonValueSummary(
   record: GcRecord,
@@ -142,16 +152,33 @@ export function wonValueSummary(
 ): { headline: string; unpricedNote: string | null } | null {
   if (record.won === 0) return null;
 
-  const headline = `${formatMoney(record.valueWon)} in ${record.won} won ${
-    record.won === 1 ? "bid" : "bids"
-  }`;
+  const priced = record.won - record.valueWonUnpriced;
 
-  if (!valueIsPartial(record)) return { headline, unpricedNote: null };
+  if (priced === 0) {
+    return {
+      headline: "won value not recorded",
+      unpricedNote:
+        record.won === 1
+          ? "the one won bid has no amount on it"
+          : `none of the ${record.won} won bids has an amount on it`,
+    };
+  }
 
+  if (!valueIsPartial(record)) {
+    return {
+      headline: `${formatMoney(record.valueWon)} across ${record.won} won ${
+        record.won === 1 ? "bid" : "bids"
+      }`,
+      unpricedNote: null,
+    };
+  }
+
+  // priced >= 1 and unpriced >= 1, so there are at least two won bids here
+  // and the plural is not a guess.
   return {
-    headline,
-    unpricedNote: `at least — ${record.valueWonUnpriced} won ${
-      record.valueWonUnpriced === 1 ? "bid has" : "bids have"
+    headline: `at least ${formatMoney(record.valueWon)} across ${record.won} won bids`,
+    unpricedNote: `${record.valueWonUnpriced} of them ${
+      record.valueWonUnpriced === 1 ? "has" : "have"
     } no amount recorded`,
   };
 }

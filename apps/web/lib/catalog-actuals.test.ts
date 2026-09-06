@@ -3,6 +3,7 @@ import {
   catalogActuals,
   CATALOG_MIN_SAMPLE,
   CATALOG_VARIANCE_THRESHOLD,
+  repriceDecision,
   type JobStatusForActuals,
 } from "./catalog-actuals";
 
@@ -147,5 +148,112 @@ describe("jobs that are still running", () => {
     );
     expect(result.linesWithCosts).toBe(2);
     expect(result.linesExcludedUnfinished).toBe(0);
+  });
+});
+
+describe("repriceDecision", () => {
+  /**
+   * The write side: what "update default from actuals" actually sets.
+   *
+   * The defect this exists to keep dead is one of provenance rather than
+   * arithmetic. `actualUnitCost` used to arrive in a HIDDEN INPUT and be
+   * written after being checked only for parsing as a number — on the one
+   * control in the app that edits a price every future bid and every AI
+   * draft reads. The fix is visible in this function's SIGNATURE: there is
+   * no argument a browser-supplied figure could come in through. Every
+   * assertion below is on a number derived from the lines.
+   */
+
+  // Two finished lines at a true $2.00/SF, against a default of $5.00 —
+  // 60% under, comfortably past CATALOG_VARIANCE_THRESHOLD, so flagged.
+  const flagged = catalogActuals([line(1000, 2000), line(1000, 2000)], 5);
+
+  it("writes the cost it derived from the lines, to the cent", () => {
+    expect(flagged.isFlagged).toBe(true);
+    expect(repriceDecision(flagged, null, false)).toEqual({
+      ok: true,
+      defaultBudgetedUnitCost: "2.00",
+    });
+  });
+
+  it("leaves the sale price alone unless asked", () => {
+    // Cost is a fact the jobs measured; price is a margin call belonging to
+    // the estimator. "Our cost went up 20%" must not silently become "we
+    // now charge 20% more".
+    const result = repriceDecision(flagged, 8, false);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("unreachable");
+    expect(result.defaultUnitPrice).toBeUndefined();
+  });
+
+  it("holds the margin when asked, rather than collapsing price to cost", () => {
+    // Hand-worked: default cost $5.00 carried a price of $8.00, a margin
+    // multiple of 1.6. The new cost is $2.00, so the held price is $3.20 —
+    // NOT $2.00, which would give the work away.
+    expect(repriceDecision(flagged, 8, true)).toEqual({
+      ok: true,
+      defaultBudgetedUnitCost: "2.00",
+      defaultUnitPrice: "3.20",
+    });
+  });
+
+  it("invents no price when there is no margin to hold", () => {
+    // No prior price, so there is no margin. Making one up would be a
+    // pricing decision this has no business making; the cost still moves.
+    const result = repriceDecision(flagged, null, true);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("unreachable");
+    expect(result.defaultUnitPrice).toBeUndefined();
+
+    // The other half of that guard — a prior cost of null or 0 — is
+    // deliberately NOT asserted here, because it cannot be reached:
+    // isFlagged requires a variancePct, which requires a prior cost that is
+    // neither null nor zero, so those cases refuse at the gate above. The
+    // check stays in as a backstop against isFlagged loosening, and this
+    // comment stands in for the test it cannot have.
+    const noPriorCost = catalogActuals([line(1000, 2000), line(1000, 2000)], 0);
+    expect(noPriorCost.isFlagged).toBe(false);
+    expect(repriceDecision(noPriorCost, 8, true).ok).toBe(false);
+  });
+
+  it("refuses when no FINISHED job has costed this entry", () => {
+    // And says which of the two situations it is, because "nothing has used
+    // this entry" and "things have used it and none has finished" call for
+    // different actions.
+    const onlyRunning = catalogActuals([runningLine(1000, 800), runningLine(1000, 800)], 2);
+    const result = repriceDecision(onlyRunning, null, false);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("unreachable");
+    expect(result.error).toContain("hasn't finished");
+
+    const nothingAtAll = catalogActuals([line(100, 0, false)], 2);
+    const none = repriceDecision(nothingAtAll, null, false);
+    expect(none.ok).toBe(false);
+    if (none.ok) throw new Error("unreachable");
+    expect(none.error).toContain("no finished job has used this entry");
+  });
+
+  it("refuses when the entry is no longer far enough off to be worth changing", () => {
+    // The re-check that makes the hidden input unnecessary. The page that
+    // rendered the button may be minutes old, and a costed line landing
+    // since can move the entry back inside the threshold — at which point
+    // the click must do nothing rather than write a number nobody would
+    // now propose.
+    const onTarget = catalogActuals([line(1000, 2000), line(1000, 2000)], 2);
+    expect(onTarget.isFlagged).toBe(false);
+
+    const result = repriceDecision(onTarget, null, false);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("unreachable");
+    expect(result.error).toContain("Reload the page");
+  });
+
+  it("refuses on a single costed line, however far off it is", () => {
+    // CATALOG_MIN_SAMPLE, enforced on the WRITE and not only on the badge.
+    // One job that went badly is not evidence the template is wrong, and
+    // re-pricing off it propagates that job's problem into every future bid.
+    const oneLine = catalogActuals([line(1000, 2000)], 5);
+    expect(oneLine.actualUnitCost).toBe(2);
+    expect(repriceDecision(oneLine, null, false).ok).toBe(false);
   });
 });

@@ -106,15 +106,15 @@ describe("wonValueSummary", () => {
     );
 
     expect(wonValueSummary(record, money)).toEqual({
-      headline: "$200,000.00 in 2 won bids",
+      headline: "$200,000.00 across 2 won bids",
       unpricedNote: null,
     });
   });
 
   it("names the figure AND the wins it could not add", () => {
     // Hand-worked: three wins at $120,000, unpriced, $80,000. The honest
-    // line is $200,000 across three, one of which nobody priced — not
-    // $200,000 flat, and certainly not $200,000 across two.
+    // line is at least $200,000 across three, one of which nobody priced —
+    // not $200,000 flat, and certainly not $200,000 across two.
     const record = summariseGc(
       [
         bid({ status: "WON", bidAmount: 120_000 }),
@@ -125,17 +125,22 @@ describe("wonValueSummary", () => {
     );
 
     expect(wonValueSummary(record, money)).toEqual({
-      headline: "$200,000.00 in 3 won bids",
-      unpricedNote: "at least — 1 won bid has no amount recorded",
+      headline: "at least $200,000.00 across 3 won bids",
+      unpricedNote: "1 of them has no amount recorded",
     });
   });
 
-  it("STILL SHOWS THE LINE when every won bid is unpriced", () => {
-    // The /bids defect in one case. That page gated the whole line on the
-    // count of PRICED wins, so a company with two unpriced wins saw no
-    // line at all — and an absent line reads as "no won bids", which is
-    // the opposite of the truth. $0.00 is right here only because it is
-    // accompanied by the sentence saying both wins are unpriced.
+  it("STILL SHOWS THE LINE when every won bid is unpriced, and shows NO $0.00", () => {
+    // Two defects meeting in one case.
+    //
+    // /bids gated the whole line on the count of PRICED wins, so a company
+    // with two unpriced wins saw no line at all — and an absent line reads
+    // as "no won bids", the opposite of the truth. So there must be a line.
+    //
+    // But valueWon is 0 here because there was nothing to add, not because
+    // the work was free, and "$0.00 in 2 won bids" states a price nobody
+    // supplied. Both halves are asserted, and the $0.00 is asserted ABSENT
+    // rather than merely not asserted present.
     const record = summariseGc(
       [bid({ status: "WON", bidAmount: null }), bid({ status: "WON", bidAmount: null })],
       TODAY,
@@ -144,9 +149,10 @@ describe("wonValueSummary", () => {
     const summary = wonValueSummary(record, money);
     expect(summary).not.toBeNull();
     expect(summary).toEqual({
-      headline: "$0.00 in 2 won bids",
-      unpricedNote: "at least — 2 won bids have no amount recorded",
+      headline: "won value not recorded",
+      unpricedNote: "none of the 2 won bids has an amount on it",
     });
+    expect(`${summary?.headline} ${summary?.unpricedNote}`).not.toContain("$");
   });
 
   it("says nothing at all when nothing has been won", () => {
@@ -164,12 +170,18 @@ describe("wonValueSummary", () => {
       [bid({ status: "WON", bidAmount: 5_000 }), bid({ status: "WON", bidAmount: null })],
       TODAY,
     );
-    expect(wonValueSummary(record, money)?.headline).toBe("$5,000.00 in 2 won bids");
+    expect(wonValueSummary(record, money)?.headline).toBe("at least $5,000.00 across 2 won bids");
 
-    const one = summariseGc([bid({ status: "WON", bidAmount: null })], TODAY);
+    const one = summariseGc([bid({ status: "WON", bidAmount: 12_500 })], TODAY);
     expect(wonValueSummary(one, money)).toEqual({
-      headline: "$0.00 in 1 won bid",
-      unpricedNote: "at least — 1 won bid has no amount recorded",
+      headline: "$12,500.00 across 1 won bid",
+      unpricedNote: null,
+    });
+
+    const onlyUnpriced = summariseGc([bid({ status: "WON", bidAmount: null })], TODAY);
+    expect(wonValueSummary(onlyUnpriced, money)).toEqual({
+      headline: "won value not recorded",
+      unpricedNote: "the one won bid has no amount on it",
     });
   });
 });

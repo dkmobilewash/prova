@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { MAX_IMPORT_ROWS, parseCatalogImport, parseCsv, splitAgainstExisting } from "./catalog-import";
+import {
+  catalogKey,
+  MAX_IMPORT_ROWS,
+  parseCatalogImport,
+  parseCsv,
+  splitAgainstExisting,
+} from "./catalog-import";
 
 describe("parseCsv", () => {
   it("keeps a comma that lives inside quotes", () => {
@@ -231,5 +237,37 @@ describe("splitAgainstExisting", () => {
     expect(result.fresh).toHaveLength(0);
     expect(result.duplicatesOfExisting).toHaveLength(1);
     expect(result.duplicatesWithinFile).toHaveLength(1);
+  });
+
+  describe("catalogKey", () => {
+    // The one definition of "the same catalog item". Exported and shared
+    // rather than duplicated because the three ways an entry can be created
+    // disagreed about it: the import refused a duplicate while the add form
+    // and "save as catalog item" happily made one.
+
+    it("ignores case and surrounding space", () => {
+      expect(catalogKey("  5/8in Type X Board ")).toBe(catalogKey("5/8IN TYPE X BOARD"));
+    });
+
+    it("does not treat a description as a pattern", () => {
+      // Why the duplicate check compares these strings in JS instead of
+      // asking Postgres with a `mode: "insensitive"` equals, which lowers
+      // to ILIKE: there, `%` and `_` are wildcards. "TYPE_X BOARD" would
+      // match "TYPEXBOARD" and refuse a create that is perfectly
+      // legitimate.
+      expect(catalogKey("TYPE_X BOARD")).not.toBe(catalogKey("TYPEXBOARD"));
+      expect(catalogKey("50% wall")).not.toBe(catalogKey("50 anything wall"));
+    });
+
+    it("is the key splitAgainstExisting actually uses", () => {
+      // Asserted through behaviour rather than by reading the source, so it
+      // stays true if somebody re-inlines the key.
+      const result = splitAgainstExisting([row("  TYPE_X BOARD ")], ["type_x board"]);
+      expect(result.duplicatesOfExisting).toHaveLength(1);
+      expect(result.fresh).toHaveLength(0);
+
+      const notADuplicate = splitAgainstExisting([row("TYPExBOARD")], ["TYPE_X BOARD"]);
+      expect(notADuplicate.fresh).toHaveLength(1);
+    });
   });
 });
