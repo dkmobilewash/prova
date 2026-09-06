@@ -67,6 +67,16 @@ const SNAPSHOT = {
   lineItems: [{ description: "Framing", quantity: "10", unit: "SF", unitPrice: "12.50" }],
 };
 
+/**
+ * The LIVE job behind the request — deliberately not the same numbers as
+ * SNAPSHOT above.
+ *
+ * The job is re-priced after signing in almost every real dispute: a change
+ * order lands, a line is re-measured, someone corrects a unit price. If the
+ * live rows and the frozen ones carry the same figures in a test, then a
+ * signed page rendering the WRONG one of the two is invisible — which is
+ * how the fixture used to be (`lineItems: []`) and why nothing noticed.
+ */
 function job(status = "ESTIMATE") {
   return {
     status,
@@ -74,7 +84,16 @@ function job(status = "ESTIMATE") {
     scope: null,
     company: { name: "Ours Drywall" },
     contact: { name: "Pat GC", email: "pat@gc.test" },
-    lineItems: [],
+    lineItems: [
+      {
+        id: "li_live",
+        description: "Framing — RE-PRICED AFTER SIGNING",
+        quantity: "10",
+        unit: "SF",
+        unitPrice: "99.00",
+        isDeleted: false,
+      },
+    ],
   };
 }
 
@@ -86,42 +105,115 @@ beforeEach(() => {
   request = null;
 });
 
+/**
+ * Renders under a named timezone, and PROVES the zone actually took effect.
+ *
+ * Setting `process.env.TZ` mid-process does move `toLocaleDateString`, but
+ * silently does nothing if the platform has already cached a zone — and a
+ * timezone test whose timezone did not change is a test that passes for the
+ * wrong reason. The assertion inside the guard is the whole point: it fails
+ * loudly rather than letting the case below assert against the machine's own
+ * zone while claiming to assert against Kiritimati.
+ */
+async function renderUnderTimezone(zone: string) {
+  const original = process.env.TZ;
+  process.env.TZ = zone;
+  try {
+    expect(
+      Intl.DateTimeFormat().resolvedOptions().timeZone,
+      `this test is worthless unless the process really moved to ${zone}`,
+    ).toBe(zone);
+    return await render();
+  } finally {
+    process.env.TZ = original;
+  }
+}
+
 describe("the date on a signed contract", () => {
-  it("is the UTC calendar day, and says so", async () => {
-    // 2026-09-05 18:30 in California is 2026-09-06 01:30 UTC. Rendered
-    // without a timeZone this was the server's day and the app never said
-    // which day it meant.
+  function signedAt(instant: string) {
     request = {
       status: "SIGNED",
       createdAt: new Date("2026-09-01T00:00:00.000Z"),
       signerName: "Pat GC",
-      signedAt: new Date("2026-09-06T01:30:00.000Z"),
+      signedAt: new Date(instant),
       snapshot: SNAPSHOT,
       job: job(),
     };
+  }
 
-    const html = await render();
+  it("is the UTC calendar day, and says so", async () => {
+    // 2026-09-05 18:30 in California is 2026-09-06 01:30 UTC. Rendered
+    // without a timeZone this was the server's day and the app never said
+    // which day it meant.
+    //
+    // The zone is PINNED rather than inherited. Read on a machine set to
+    // UTC — which is what CI is — an inherited zone makes the local day and
+    // the UTC day identical, and this test would pass with the `timeZone`
+    // option deleted. Honolulu is UTC-10, so the local day here is Sep 5 and
+    // the assertion below can only hold if the render says UTC.
+    signedAt("2026-09-06T01:30:00.000Z");
+
+    const html = await renderUnderTimezone("Pacific/Honolulu");
 
     expect(html).toContain("Sep 6, 2026");
     expect(html, "the zone has to be on screen for the date to be checkable").toContain("(UTC)");
   });
 
   it("does not drift with the machine's own timezone", async () => {
-    const original = process.env.TZ;
-    process.env.TZ = "Pacific/Kiritimati"; // UTC+14
-    try {
-      request = {
-        status: "SIGNED",
-        createdAt: new Date("2026-09-01T00:00:00.000Z"),
-        signerName: "Pat GC",
-        signedAt: new Date("2026-09-06T01:30:00.000Z"),
-        snapshot: SNAPSHOT,
-        job: job(),
-      };
-      expect(await render()).toContain("Sep 6, 2026");
-    } finally {
-      process.env.TZ = original;
-    }
+    // Both sides of UTC, each with an instant whose LOCAL calendar day is
+    // the wrong one, so neither case can be satisfied by the machine's zone
+    // happening to agree with UTC.
+    //
+    // The previous version of this test asserted "Sep 6, 2026" for
+    // 01:30 UTC under Kiritimati (UTC+14), where the local day is ALSO
+    // Sep 6 — so it held whether or not the render passed `timeZone`. It
+    // could not fail. That is the defect issue #150 is about, and it is why
+    // the instants below are chosen per zone rather than shared.
+    signedAt("2026-09-06T01:30:00.000Z"); // UTC day Sep 6, Honolulu day Sep 5
+    expect(await renderUnderTimezone("Pacific/Honolulu")).toContain("Sep 6, 2026");
+
+    signedAt("2026-09-05T23:30:00.000Z"); // UTC day Sep 5, Kiritimati day Sep 6
+    expect(await renderUnderTimezone("Pacific/Kiritimati")).toContain("Sep 5, 2026");
+  });
+});
+
+/**
+ * The signed page renders the SNAPSHOT. Nothing may recompute it.
+ *
+ * `SignatureRequest.snapshot` is a value copy of the company, job and line
+ * items taken at the instant of signing — written in one place, read in one
+ * place. It is the evidence of what was agreed, and the whole reason the
+ * column exists.
+ *
+ * This is the test that was MISSING, and the gap was demonstrated rather
+ * than assumed: swapping `snapshot.lineItems` for `request.job.lineItems` on
+ * the signed branch left every test in this repo green. A diff making that
+ * swap reads as a tidy-up — one identifier, removing an apparent duplicate,
+ * "keeping the contract in step with the job" — and it would silently
+ * replace a legal record with whatever the numbers are today. The line items
+ * are the part of the snapshot a dispute is actually about, so they are what
+ * this pins.
+ */
+describe("what the signed page renders", () => {
+  it("shows the frozen snapshot, never the job's current line items", async () => {
+    request = {
+      status: "SIGNED",
+      createdAt: new Date("2026-09-01T00:00:00.000Z"),
+      signerName: "Pat GC",
+      signedAt: new Date("2026-09-06T01:30:00.000Z"),
+      snapshot: SNAPSHOT,
+      // The job has since been re-priced from 12.50 to 99.00 — see `job()`.
+      job: job(),
+    };
+
+    const html = await render();
+
+    expect(html, "the signed page must render the price that was agreed").toContain("12.50");
+    expect(
+      html,
+      "a price set after signing must never appear on the signed contract",
+    ).not.toContain("99.00");
+    expect(html).not.toContain("RE-PRICED AFTER SIGNING");
   });
 });
 

@@ -346,9 +346,18 @@ describe("revoking the portal link", () => {
     ).toBe("tok_theirs");
   });
 
-  it("is owner-only", async () => {
+  // RETURNED, NOT THROWN. RevokeLinkButton renders `result.error`, and a
+  // thrown Server Action message is redacted to a digest in production — so
+  // a throw here would reach the owner as a reference number behind the
+  // error boundary instead of the sentence explaining why the button did
+  // nothing. The refusal has to survive the trip to be a refusal.
+  it("is owner-only, and says so in words rather than throwing", async () => {
     role = "MEMBER";
-    await expect(revokePortalAccess("con_ours")).rejects.toThrow(/owner/i);
+
+    const result = await revokePortalAccess("con_ours");
+
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.error).toMatch(/owner/i);
     expect(db.contacts[0].portalToken).toBe("tok_ours");
   });
 });
@@ -387,9 +396,14 @@ describe("revoking the signing link", () => {
     expect(db.signatureRequests.map((s) => s.id)).toEqual(["sig_ours", "sig_theirs"]);
   });
 
-  it("is owner-only", async () => {
+  // Returned, not thrown — see the portal-link case above for why.
+  it("is owner-only, and says so in words rather than throwing", async () => {
     role = "MEMBER";
-    await expect(revokeSignatureRequest("sig_ours")).rejects.toThrow(/owner/i);
+
+    const result = await revokeSignatureRequest("sig_ours");
+
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.error).toMatch(/owner/i);
     expect(db.signatureRequests).toHaveLength(2);
   });
 });
