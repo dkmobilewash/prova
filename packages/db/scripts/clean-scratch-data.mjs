@@ -150,20 +150,66 @@ async function main() {
   console.log(`  bidInvitation     ${bids} (on the contacts above)`);
   console.log(`  contactInteraction ${interactions} (on the contacts above)`);
 
+  // The models added for issue #154. This script's whole contract is that
+  // nothing goes without appearing in the list first, so they are counted
+  // here too — but printed only when there is something to print. A demo
+  // database has none of them, and eleven "0" lines would bury the rows a
+  // person is actually reading this list to check.
+  const alsoRemoved = {
+    changeOrderLineItemEdit: prisma.changeOrderLineItemEdit.count({ where: { changeOrder: { jobId: { in: jobIds } } } }),
+    changeOrderCounter: prisma.changeOrderCounter.count({ where: { jobId: { in: jobIds } } }),
+    backcharge: prisma.backcharge.count({ where: { jobId: { in: jobIds } } }),
+    backchargeCounter: prisma.backchargeCounter.count({ where: { jobId: { in: jobIds } } }),
+    closeoutSubmission: prisma.closeoutSubmission.count({ where: { jobId: { in: jobIds } } }),
+    closeoutSubmissionCounter: prisma.closeoutSubmissionCounter.count({ where: { jobId: { in: jobIds } } }),
+    signatureRequest: prisma.signatureRequest.count({ where: { jobId: { in: jobIds } } }),
+    contractDocument: prisma.contractDocument.count({ where: { jobId: { in: jobIds } } }),
+    retainageRelease: prisma.retainageRelease.count({ where: { jobId: { in: jobIds } } }),
+    estimateVersion: prisma.estimateVersion.count({ where: { jobId: { in: jobIds } } }),
+    dispatchSlip: prisma.dispatchSlip.count({ where: { jobId: { in: jobIds } } }),
+    prevailingWageDetermination: prisma.prevailingWageDetermination.count({ where: { jobId: { in: jobIds } } }),
+    contactPerson: prisma.contactPerson.count({ where: { contactId: { in: contactIds } } }),
+  };
+  const alsoCounts = Object.fromEntries(
+    await Promise.all(
+      Object.entries(alsoRemoved).map(async ([k, p]) => [k, await p]),
+    ),
+  );
+  for (const [model, n] of Object.entries(alsoCounts)) {
+    if (n > 0) console.log(`  ${model.padEnd(17)} ${n} (on the jobs/contacts above)`);
+  }
+
   if (!DELETE) {
     console.log("\nclean: nothing removed. Re-run with --delete once the list above looks right.");
     return;
   }
 
   const failed = [];
+  // Per-model counts, printed as one line at the end the way seed-demo's
+  // undo does. A cleanup that says nothing about what it removed cannot be
+  // audited afterwards: "listed 12 → removed 12 → residue NONE" is a check
+  // you can perform, and "clean: done." is not.
+  const counts = {};
   const del = async (label, fn) => {
     try {
       const r = await fn();
+      counts[label] = r.count;
       console.log(`  removed ${label}: ${r.count}`);
     } catch (e) {
       const msg = e.message.split("\n")[0];
-      if (/reading 'deleteMany'/.test(msg)) return;
-      console.error(`  FAILED ${label}: ${(msg || e.message.split("\n").filter((l) => l.trim()).slice(-1)[0] || "no message").slice(0, 120)}`);
+      // Loud, with no exceptions. This used to swallow "reading 'deleteMany'"
+      // and return WITHOUT even recording a count, for models that lived on
+      // unmerged branches at the time. Those branches merged. All that
+      // swallow can hide now is a stale Prisma client or a renamed model,
+      // reported as a clean run — the one outcome this script must never
+      // produce, since the next thing anybody does is trust the list.
+      const detail = (
+        msg ||
+        e.message.split("\n").filter((l) => l.trim()).slice(-1)[0] ||
+        "no message"
+      ).slice(0, 120);
+      counts[label] = `FAILED (${detail})`;
+      console.error(`  FAILED ${label}: ${detail}`);
       failed.push(label);
     }
   };
@@ -198,16 +244,47 @@ async function main() {
     await del("warrantyPeriod", () => prisma.warrantyPeriod.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("toolboxTalk", () => prisma.toolboxTalk.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("changeOrderProposal", () => prisma.changeOrderProposal.deleteMany({ where: { changeOrder: { jobId: { in: jobIds } } } }));
+    // ChangeOrder.id is RESTRICT from here, and so is JobLineItem.id, so
+    // this goes before both. The seed's undo already deleted it; this
+    // script never did.
+    await del("changeOrderLineItemEdit", () => prisma.changeOrderLineItemEdit.deleteMany({ where: { changeOrder: { jobId: { in: jobIds } } } }));
     await del("changeOrder", () => prisma.changeOrder.deleteMany({ where: { jobId: { in: jobIds } } }));
+    await del("changeOrderCounter", () => prisma.changeOrderCounter.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("payment", () => prisma.payment.deleteMany({ where: { invoice: { jobId: { in: jobIds } } } }));
     await del("invoiceLineItem", () => prisma.invoiceLineItem.deleteMany({ where: { invoice: { jobId: { in: jobIds } } } }));
     await del("invoice", () => prisma.invoice.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("complianceDocument", () => prisma.complianceDocument.deleteMany({ where: { jobId: { in: jobIds } } }));
+    // Everything from here to jobLineItem is a RESTRICT child of Job that
+    // this script did not delete. On an empty or lightly-used database
+    // there are no rows and the omission is invisible; on one that has any
+    // of them Postgres refuses `job.deleteMany` and the run ends half-done,
+    // which is the state this script exists to avoid. Derived from the FK
+    // list in packages/db/prisma/schema/migrations, not from memory, and
+    // pinned by apps/web/lib/scratch-cleanup-order.test.ts so the next
+    // model somebody adds fails a test rather than a delete. Issue #154.
+    await del("backcharge", () => prisma.backcharge.deleteMany({ where: { jobId: { in: jobIds } } }));
+    await del("backchargeCounter", () => prisma.backchargeCounter.deleteMany({ where: { jobId: { in: jobIds } } }));
+    await del("closeoutSubmission", () => prisma.closeoutSubmission.deleteMany({ where: { jobId: { in: jobIds } } }));
+    await del("closeoutSubmissionCounter", () => prisma.closeoutSubmissionCounter.deleteMany({ where: { jobId: { in: jobIds } } }));
+    await del("signatureRequest", () => prisma.signatureRequest.deleteMany({ where: { jobId: { in: jobIds } } }));
+    await del("contractDocument", () => prisma.contractDocument.deleteMany({ where: { jobId: { in: jobIds } } }));
+    await del("retainageRelease", () => prisma.retainageRelease.deleteMany({ where: { jobId: { in: jobIds } } }));
+    await del("estimateVersion", () => prisma.estimateVersion.deleteMany({ where: { jobId: { in: jobIds } } }));
+    await del("dispatchSlip", () => prisma.dispatchSlip.deleteMany({ where: { jobId: { in: jobIds } } }));
+    await del("prevailingWageDetermination", () => prisma.prevailingWageDetermination.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("jobAssignment", () => prisma.jobAssignment.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("jobLineItem", () => prisma.jobLineItem.deleteMany({ where: { jobId: { in: jobIds } } }));
   }
   await del("safetyIncident", () => prisma.safetyIncident.deleteMany({ where: { companyId: company.id } }));
-  await del("safetyCaseCounter", () => prisma.safetyCaseCounter.deleteMany({ where: { companyId: company.id } }));
+  // SafetyCaseCounter is NOT deleted, for the same reason seed-demo's undo
+  // no longer deletes it (issue #148). It is a high-water mark rather than
+  // data: resetting it to zero makes the next real case REISSUE a number
+  // that a retired case already carried, and two cases sharing a number on
+  // an OSHA 300 log is an audit finding nobody can explain afterwards.
+  // That matters MORE here than in the seed — this script deletes every
+  // safety incident on the company, tagged or not, so the counter is the
+  // only surviving record of how high the numbering ever went.
+  counts.safetyCaseCounter = "kept — high-water mark, never reset";
   await del("vendorPriceQuote", () => prisma.vendorPriceQuote.deleteMany({ where: { vendorId: { in: vendorIds } } }));
   // Catalog entries BEFORE jobs: JobLineItem.sourceCatalogEntryId points at
   // them, so a job whose lines came from the catalog cannot go first. Found
@@ -227,13 +304,28 @@ async function main() {
   await del("contactInteraction", () =>
     prisma.contactInteraction.deleteMany({ where: { contactId: { in: contactIds } } }),
   );
+  // The third RESTRICT child of Contact, and the one nobody thought of:
+  // ContactPerson is the six people at the GC we actually talk to. Its FK
+  // blocks contact.deleteMany exactly the way bidInvitation's did.
+  // ContactInteraction.contactPersonId is SET NULL and already gone above,
+  // so nothing blocks this in turn.
+  await del("contactPerson", () =>
+    prisma.contactPerson.deleteMany({ where: { contactId: { in: contactIds } } }),
+  );
   await del("contact", () => prisma.contact.deleteMany({ where: { id: { in: contactIds } } }));
+
+  const rows = Object.values(counts)
+    .filter((v) => typeof v === "number")
+    .reduce((a, b) => a + b, 0);
+  console.log("\nclean: removed —", JSON.stringify(counts));
+  console.log(`clean: ${rows} row(s) across ${Object.keys(counts).length} model(s).`);
 
   if (failed.length) {
     console.error(`\nclean: ${failed.length} delete(s) FAILED: ${failed.join(", ")}. Rows remain.`);
+    console.error("clean: re-run the LIST (no --delete) — anything still there is residue.");
     process.exitCode = 1;
   } else {
-    console.log("\nclean: done.");
+    console.log("clean: done. Re-run without --delete to confirm residue is NONE.");
   }
 }
 
