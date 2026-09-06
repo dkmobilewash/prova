@@ -240,8 +240,18 @@ describe("alerts assembled from real rows", () => {
     const { visible } = await loadAlerts(context.company.id, context.id, TODAY);
     const alert = visible.find((a) => a.kind === "CERTIFIED_PAYROLL");
     expect(alert).toBeDefined();
-    // 19 Aug 2026 is a Wednesday; the week starts Monday the 17th.
-    expect(alert?.key).toBe(`CERTIFIED_PAYROLL:${jobId}:2026-08-17`);
+    // 19 Aug 2026 is a Wednesday, and the certified payroll week runs
+    // SUNDAY to Saturday — so it starts on the 16th, not the 17th.
+    //
+    // This assertion used to say the 17th, because the alert grouped by
+    // `components/fieldReportWeeks.weekStart`, which is Monday-based and
+    // says so in its own docblock. The sheet at
+    // /jobs/[id]/certified-payroll has always printed Sunday-to-Saturday.
+    // So the alert named a seven-day span one day off from the document it
+    // was about, overlapping it in six days, with nothing on either page
+    // able to reveal the difference (#104 item 7). The alert imports
+    // lib/certified-payroll-week.ts now, which is the one definition.
+    expect(alert?.key).toBe(`CERTIFIED_PAYROLL:${jobId}:2026-08-16`);
     expect(alert?.severity).toBe("OVERDUE");
   });
 
@@ -260,9 +270,13 @@ describe("alerts assembled from real rows", () => {
     // A report clipping the week is not evidence the week was filed.
     expect(visible.some((a) => a.kind === "CERTIFIED_PAYROLL")).toBe(true);
 
+    // Sunday the 16th through Saturday the 22nd — the week the certified
+    // payroll sheet itself prints. This used to file 08-17 to 08-23, which
+    // covered the MONDAY week the alert used to group by; against the
+    // Sunday week it clips the first day and would not clear anything.
     await prisma.complianceDocument.update({
       where: { id: partial.id },
-      data: { periodStart: utc("2026-08-17"), periodEnd: utc("2026-08-23") },
+      data: { periodStart: utc("2026-08-16"), periodEnd: utc("2026-08-22") },
     });
     ({ visible } = await loadAlerts(context.company.id, context.id, TODAY));
     expect(visible.filter((a) => a.kind === "CERTIFIED_PAYROLL")).toEqual([]);

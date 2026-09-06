@@ -476,6 +476,52 @@ describe("union setup CRUD, from an empty company", () => {
     expect(after.crafts.find((c) => c.id === craft.id)!.schedules).toHaveLength(2);
   });
 
+  it("refuses the ABUTTING pair Postgres is happy to store", async () => {
+    // #104 item 4, and the reason the exclusion constraint is not enough on
+    // its own. It is built on `tsrange("effectiveFrom", COALESCE(...))`,
+    // which is HALF-OPEN: a rate ending 2026-06-30 and a rate starting
+    // 2026-06-30 do not overlap as far as Postgres is concerned, so it
+    // stores both without complaint.
+    //
+    // Every part of the application treats `effectiveTo` as INCLUSIVE —
+    // the "in force" badge does, findEffectiveFringeRateSchedule does — so
+    // both rates then priced 30 June. Eight straight hours came to $336 or
+    // $464 depending on nothing but which row the query returned first, on
+    // a certified payroll sheet somebody signs.
+    //
+    // The previous test proves a rate CAN start the day after one ends, so
+    // this refusal is not simply "no second rate allowed".
+    const [local] = await loadUnionSetup(ctx.company.id);
+    const craft = local.crafts.find((c) => c.name === "Drywall Apprentice")!;
+
+    expect(
+      await createFringeRateSchedule(
+        form2({
+          craftClassificationId: craft.id,
+          baseWage: "30",
+          pensionRate: "5",
+          effectiveFrom: "2026-01-01",
+          effectiveTo: "2026-06-30",
+        }),
+      ),
+    ).toEqual({ ok: true });
+
+    const abutting = await createFringeRateSchedule(
+      form2({
+        craftClassificationId: craft.id,
+        baseWage: "40",
+        pensionRate: "8",
+        effectiveFrom: "2026-06-30",
+      }),
+    );
+    expect(abutting.ok).toBe(false);
+    expect(abutting.ok === false && abutting.error).toContain("already covers part of those dates");
+
+    // And nothing was stored: exactly one schedule on this classification.
+    const [after] = await loadUnionSetup(ctx.company.id);
+    expect(after.crafts.find((c) => c.id === craft.id)!.schedules).toHaveLength(1);
+  });
+
   it("produces a priced remittance and a judged ratio from setup alone", async () => {
     // The whole point. Before this CRUD existed, a real account could not
     // reach either of these figures at all.

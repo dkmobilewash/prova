@@ -191,4 +191,147 @@ describe("reviewJobWeek against real rows", () => {
     expect(review.employees).toEqual([]);
     await prisma.company.delete({ where: { id: other.id } });
   });
+
+  /**
+   * #104 item 5: `findEffectiveRuleSet` existed, was documented ("reviewing
+   * last year's timesheet has to use last year's rules"), carried five unit
+   * tests, and had ZERO application call sites. What actually ran was "the
+   * NEWEST determination's rule set, whatever dates it carries".
+   *
+   * That is the shape CLAUDE.md warns about — written, documented, and
+   * never called — and no unit test can catch it, because the unit tests
+   * were passing the whole time. Only a call through the real query can
+   * say whether anything reaches the function.
+   *
+   * So the fixture is built to make the old behaviour WRONG rather than
+   * merely different: the newest determination on this job points at the
+   * 2025 rules. Under the old code every week, in any year, was reviewed
+   * against them.
+   *
+   *   2025 rules   in force 2025-01-01 to 2025-12-31   daily OT after 10
+   *   2026 rules   in force 2026-01-01, no end date    daily OT after 8
+   *
+   * Ten straight hours on one day is therefore 10 + 0 under the 2025 rules
+   * and 8 + 2 under the 2026 rules. Same hours, same person, two different
+   * classifications on a document that gets signed and filed.
+   */
+  describe("the rules that governed the week, not the newest ones on file", () => {
+    let effJobId = "";
+    const IN_2026 = "2026-08-17"; // Monday
+    const IN_2025 = "2025-08-18"; // Monday, exactly 52 weeks earlier
+    const CHANGEOVER = "2025-12-29"; // Monday; the week runs into 2026
+
+    beforeAll(async () => {
+      const contact = await prisma.contact.findFirstOrThrow({ where: { companyId } });
+      const job = await prisma.job.create({
+        data: { companyId, contactId: contact.id, name: "Old Courthouse" },
+      });
+      effJobId = job.id;
+
+      const jurisdiction = `PWQ-EFF ${Date.now()}`;
+      const rules2025 = await prisma.prevailingWageRuleSet.create({
+        data: {
+          companyId,
+          name: "2025 rules",
+          jurisdiction,
+          authority: "STATE",
+          filingFrequency: "WEEKLY",
+          dailyOvertimeAfterHours: "10",
+          effectiveFrom: utc("2025-01-01"),
+          effectiveTo: utc("2025-12-31"),
+        },
+      });
+      const rules2026 = await prisma.prevailingWageRuleSet.create({
+        data: {
+          companyId,
+          name: "2026 rules",
+          jurisdiction,
+          authority: "STATE",
+          filingFrequency: "WEEKLY",
+          dailyOvertimeAfterHours: "8",
+          effectiveFrom: utc("2026-01-01"),
+        },
+      });
+
+      // `createdAt` is set EXPLICITLY, not left to `now()`. Two rows
+      // created in the same millisecond leave `orderBy: createdAt desc`
+      // free to return either first, and this fixture's whole job is that
+      // the NEWEST determination is unambiguously the one carrying the OLD
+      // rule set — which is what the code being replaced would have chosen
+      // for every week in any year. Without the pin, a green run here would
+      // not distinguish the fix from a coin toss.
+      await prisma.prevailingWageDetermination.create({
+        data: {
+          jobId: effJobId,
+          jurisdiction: "Testland",
+          ruleSetId: rules2026.id,
+          createdAt: utc("2026-01-02"),
+        },
+      });
+      await prisma.prevailingWageDetermination.create({
+        data: {
+          jobId: effJobId,
+          jurisdiction: "Testland",
+          ruleSetId: rules2025.id,
+          createdAt: utc("2026-03-01"), // newest, and deliberately the old rules
+        },
+      });
+
+      await prisma.timeEntry.createMany({
+        data: [
+          { jobId: effJobId, employeeUserId: alice, date: utc(IN_2026), hours: "10", payType: "STRAIGHT" },
+          { jobId: effJobId, employeeUserId: alice, date: utc(IN_2025), hours: "10", payType: "STRAIGHT" },
+          { jobId: effJobId, employeeUserId: alice, date: utc("2025-12-31"), hours: "10", payType: "STRAIGHT" },
+        ],
+      });
+    });
+
+    afterAll(async () => {
+      await prisma.timeEntry.deleteMany({ where: { jobId: effJobId } });
+      await prisma.prevailingWageDetermination.deleteMany({ where: { jobId: effJobId } });
+      await prisma.job.delete({ where: { id: effJobId } });
+    });
+
+    it("reviews a 2026 week against the 2026 rules, not the newest determination's", async () => {
+      const review = await reviewJobWeek(companyId, effJobId, IN_2026);
+      expect(review.ruleSetName).toBe("2026 rules");
+
+      const week = review.employees.find((e) => e.employeeName === "Alice")!;
+      const day = week.review.disagreements.find((d) => d.date === IN_2026)!;
+      expect(day.entered).toMatchObject({ STRAIGHT: 10, OVERTIME: 0 });
+      // 8 + 2. The old code answered 10 + 0 here, off the 2025 rules, and
+      // called it agreement.
+      expect(day.expected).toMatchObject({ STRAIGHT: 8, OVERTIME: 2, DOUBLE_TIME: 0 });
+    });
+
+    it("reviews a 2025 week against the 2025 rules, and finds no disagreement", async () => {
+      const review = await reviewJobWeek(companyId, effJobId, IN_2025);
+      expect(review.ruleSetName).toBe("2025 rules");
+
+      const week = review.employees.find((e) => e.employeeName === "Alice")!;
+      // Ten straight hours was a legal ten-hour day under those rules.
+      expect(week.review.checked).toBe(true);
+      expect(week.review.disagreements).toEqual([]);
+      expect(week.review.totalHours).toBe(10);
+    });
+
+    it("refuses to judge the week the rules changed inside, and says which two", async () => {
+      // Monday 2025-12-29 to Sunday 2026-01-04 straddles the handover.
+      // Applying either set across the whole week would put a confident
+      // wrong classification on a signed sheet, so it is reported instead.
+      const review = await reviewJobWeek(companyId, effJobId, CHANGEOVER);
+      expect(review.ruleSetName).toBeNull();
+
+      const week = review.employees.find((e) => e.employeeName === "Alice")!;
+      expect(week.review.checked).toBe(false);
+      expect(week.review.reason).toContain("The rules changed");
+      expect(week.review.reason).toContain("2025 rules");
+      expect(week.review.reason).toContain("2026 rules");
+      // And it does NOT read as "no rules attached to this job", which is
+      // what a person would be sent to fix on a job that plainly has some.
+      expect(week.review.reason).not.toContain("No prevailing wage rule set");
+      // The hours are still listed. Unchecked is not empty.
+      expect(week.review.totalHours).toBe(10);
+    });
+  });
 });

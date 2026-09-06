@@ -18,16 +18,22 @@
  * every already-filed week by a day, which is a bigger change to a filed
  * document than the overlap fix it would have ridden along with.
  *
- * The consequence is real and is written down here so the next caller
- * does not reuse this by accident: the certified-payroll ALERT
- * (`lib/alerts-query.ts`) and the prevailing-wage week review
- * (`lib/prevailing-wage-query.ts`) both group by MONDAY. So the alert's
- * "week of Mon 8/24 – Sun 8/30" and this page's "Aug 23 – Aug 29" are
- * different seven-day spans with hours in common. Anyone reconciling the
- * two sees a one-day offset. Whether the product should have one workweek
- * everywhere is an open decision — not one this module gets to make
- * silently. If you need the compliance week, import fieldReportWeeks; if
- * you need the week THIS PAGE PRINTS, import this.
+ * The certified-payroll ALERT (`lib/alerts-query.ts`) used to group by
+ * MONDAY, from `components/fieldReportWeeks`, so the alert's "week of Mon
+ * 8/24 – Sun 8/30" and this page's "Aug 23 – Aug 29" were different
+ * seven-day spans with hours in common, and nothing on either page could
+ * reveal it (#104 item 7). The alert imports THIS module now, so the span
+ * it names is the span the sheet prints. Two consequences worth stating:
+ * an alert dismissed under its old Monday key reappears once under the
+ * Sunday one, and there is now exactly one definition of the certified
+ * payroll week rather than two that agreed on six days out of seven.
+ *
+ * The prevailing-wage week review (`lib/prevailing-wage-query.ts`) is
+ * still MONDAY-based, deliberately and unchanged: its `?weekStart=` links
+ * and its database tests all encode Mondays, and re-basing a REVIEW screen
+ * is a different change from making an alert agree with the document it is
+ * about. If you need the compliance week, import fieldReportWeeks; if you
+ * need the week a certified payroll covers, import this.
  */
 export function certifiedPayrollWeekStart(date: Date): Date {
   const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));

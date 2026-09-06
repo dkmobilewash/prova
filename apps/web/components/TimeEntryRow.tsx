@@ -281,9 +281,30 @@ export function TimeEntryRow({
         </div>
 
         {/* Every ordinary action is a CHILD, so arming the delete removes
-            all of them. `destructive` is the only thing rendered while
-            armed. */}
-        <RowActions className="flex flex-wrap items-center gap-2">
+            all of them. The `ConfirmDelete` is the `destructive` PROP and
+            not a child — as a child it would unmount itself the instant it
+            armed, because `RowActions` stops rendering children while
+            armed, and the row would empty out with no confirm to click. */}
+        <RowActions
+          className="flex flex-wrap items-center gap-2"
+          destructive={
+            canDelete ? (
+              <ConfirmDelete
+                label="Remove"
+                confirmLabel="Confirm remove"
+                pending={isPending}
+                pendingLabel="Removing…"
+                prompt={`Remove ${entry.hours}h for ${entry.employeeName} on ${entry.dateLabel}?`}
+                hint="These are payroll hours. To fix a figure, use Correct instead — it keeps the original."
+                onConfirm={() => run(() => deleteTimeEntry(jobId, entry.id))}
+                deleteClassName="text-xs text-red-400 hover:underline"
+                cancelClassName={btn}
+                confirmClassName="rounded-md border border-red-500 px-2 py-1 text-xs text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+                armedClassName="flex flex-wrap items-center gap-2"
+              />
+            ) : undefined
+          }
+        >
           <button
             type="button"
             disabled={isPending}
@@ -304,21 +325,6 @@ export function TimeEntryRow({
               {showHistory ? "Hide history" : "History"}
             </button>
           )}
-          {canDelete ? (
-            <ConfirmDelete
-              label="Remove"
-              confirmLabel="Confirm remove"
-              pending={isPending}
-              pendingLabel="Removing…"
-              prompt={`Remove ${entry.hours}h for ${entry.employeeName} on ${entry.dateLabel}?`}
-              hint="These are payroll hours. To fix a figure, use Correct instead — it keeps the original."
-              onConfirm={() => run(() => deleteTimeEntry(jobId, entry.id))}
-              deleteClassName="text-xs text-red-400 hover:underline"
-              cancelClassName={btn}
-              confirmClassName="rounded-md border border-red-500 px-2 py-1 text-xs text-red-400 hover:bg-red-500/10 disabled:opacity-50"
-              armedClassName="flex flex-wrap items-center gap-2"
-            />
-          ) : undefined}
         </RowActions>
       </div>
 

@@ -431,9 +431,21 @@ async function overlappingSchedule(
 
 const isoDay = (date: Date) => date.toISOString().slice(0, 10);
 
+/**
+ * Deliberately opens with the same sentence `runSetup` gives when the
+ * DATABASE constraint is the one that fired.
+ *
+ * Two refusals now guard this table — this read-then-write check, which
+ * treats `effectiveTo` inclusively the way the rest of the app does, and
+ * the exclusion constraint behind it, which is half-open and catches the
+ * concurrent write this cannot see. They are different mechanisms and a
+ * person hitting either has the same problem and the same fix, so they must
+ * not read as two different errors. This one adds the dates; that is the
+ * only difference a reader should find.
+ */
 function overlapMessage(clash: { effectiveFrom: Date; effectiveTo: Date | null }) {
   const until = clash.effectiveTo ? isoDay(clash.effectiveTo) : "no end date";
-  return `That overlaps the rate already in force from ${isoDay(clash.effectiveFrom)} to ${until}. Two rates covering the same day price the same hours two different ways — end the existing one the day BEFORE this one starts.`;
+  return `A rate schedule for this classification already covers part of those dates — the one in force from ${isoDay(clash.effectiveFrom)} to ${until}. End that one the day BEFORE this one starts; two rates in force at once would make a historical payroll depend on which row was read.`;
 }
 
 export async function createFringeRateSchedule(formData: FormData): Promise<ActionResult> {

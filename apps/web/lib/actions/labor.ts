@@ -214,7 +214,18 @@ export async function updateTimeEntry(
     lineItemId = lineItem.id;
   }
 
-  const craftClassificationId = await craftClassificationIdFromForm(formData, company.id);
+  // `craftClassificationIdFromForm` THROWS when the id is not one of this
+  // company's, and a throw out of this action reaches a real user as a
+  // redacted digest through the whole-page error boundary — on the job page,
+  // which is exactly the blast radius #62 was filed about. This action's
+  // contract is to RETURN its refusals, so the one helper that does not is
+  // translated here rather than left to escape.
+  let craftClassificationId: string | null;
+  try {
+    craftClassificationId = await craftClassificationIdFromForm(formData, company.id);
+  } catch {
+    return actionFail("That craft classification isn't one of yours.");
+  }
   const note = String(formData.get("note") ?? "").trim();
 
   await prisma.$transaction([
