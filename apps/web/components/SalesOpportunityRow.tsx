@@ -166,9 +166,15 @@ export function SalesOpportunityRow({
         </div>
 
         <div className="flex shrink-0 flex-wrap items-center gap-2">
-          <button type="button" disabled={isPending} onClick={() => setMode("edit")} className={btn}>
-            Edit
-          </button>
+          {/* Issue #152 rule 1 -- the guard wraps the group, not one button.
+              See the note in SalesActivityRow for why "Cancel" is LAST rather
+              than first in this cluster: the right edge is pinned, so the last
+              control is the one that keeps the vacated Delete pixel. */}
+          {!isConfirmingDelete && (
+            <button type="button" disabled={isPending} onClick={() => setMode("edit")} className={btn}>
+              Edit
+            </button>
+          )}
           {isConfirmingDelete ? (
             <>
               <button
