@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@prova/db";
+import { effectiveRangesOverlap } from "@/lib/labor-cost";
 import {
   actionFail as fail,
   actionOk as ok,
@@ -393,6 +394,48 @@ export async function setApprenticeRatioRule(formData: FormData): Promise<Action
   });
 }
 
+/**
+ * The schedule already on this classification that would share a day with
+ * `candidate`, or null.
+ *
+ * The database has an exclusion constraint for this
+ * (`FringeRateSchedule_no_overlapping_rates`) and it is NOT enough, because
+ * it is built on `tsrange`, which is half-open: a schedule ending 2026-06-30
+ * and one starting 2026-06-30 do not overlap as far as Postgres is
+ * concerned. Every part of the application treats `effectiveTo` as
+ * inclusive — the "in force" badge does, `findEffectiveFringeRateSchedule`
+ * does — so that pair is accepted by the database and then BOTH price
+ * 06-30. Eight straight hours came to $336 or $464 depending on nothing but
+ * which row the query returned first.
+ *
+ * `findEffectiveFringeRateSchedule` no longer picks by row order, so the
+ * money is at least stable now. This is the other half: stop the pair being
+ * created, so nobody has to reason about which of two rates a signed sheet
+ * used. The constraint stays as the backstop for a concurrent write, which
+ * this read-then-write cannot see.
+ */
+async function overlappingSchedule(
+  craftClassificationId: string,
+  candidate: { effectiveFrom: Date; effectiveTo: Date | null },
+  excludeScheduleId?: string,
+) {
+  const existing = await prisma.fringeRateSchedule.findMany({
+    where: {
+      craftClassificationId,
+      ...(excludeScheduleId ? { id: { not: excludeScheduleId } } : {}),
+    },
+    orderBy: { effectiveFrom: "asc" },
+  });
+  return existing.find((row) => effectiveRangesOverlap(row, candidate)) ?? null;
+}
+
+const isoDay = (date: Date) => date.toISOString().slice(0, 10);
+
+function overlapMessage(clash: { effectiveFrom: Date; effectiveTo: Date | null }) {
+  const until = clash.effectiveTo ? isoDay(clash.effectiveTo) : "no end date";
+  return `That overlaps the rate already in force from ${isoDay(clash.effectiveFrom)} to ${until}. Two rates covering the same day price the same hours two different ways — end the existing one the day BEFORE this one starts.`;
+}
+
 export async function createFringeRateSchedule(formData: FormData): Promise<ActionResult> {
   const { company } = await requireCompanyContext();
   return runSetup(async () => {
@@ -413,6 +456,9 @@ export async function createFringeRateSchedule(formData: FormData): Promise<Acti
     if (effectiveTo && effectiveTo < effectiveFrom) {
       return fail("The end date can't be before the start date.");
     }
+
+    const clash = await overlappingSchedule(craft.id, { effectiveFrom, effectiveTo });
+    if (clash) return fail(overlapMessage(clash));
 
     await prisma.fringeRateSchedule.create({
       data: {
@@ -452,6 +498,16 @@ export async function endFringeRateSchedule(scheduleId: string, formData: FormDa
     if (effectiveTo < schedule.effectiveFrom) {
       return fail("A rate can't end before it started.");
     }
+
+    // Ending a rate can create the overlap just as easily as adding one:
+    // an open-ended rate closed on a day that already belongs to a later
+    // schedule leaves two rates pricing that day. Same inclusive check.
+    const clash = await overlappingSchedule(
+      schedule.craftClassificationId,
+      { effectiveFrom: schedule.effectiveFrom, effectiveTo },
+      schedule.id,
+    );
+    if (clash) return fail(overlapMessage(clash));
 
     await prisma.fringeRateSchedule.update({ where: { id: schedule.id }, data: { effectiveTo } });
     revalidatePath("/union-compliance");

@@ -110,9 +110,19 @@ export function ApprenticeshipPanel({
               <Link href="/field-reports" className="underline hover:text-slate-300">
                 the timesheets
               </Link>{" "}
-              since {row.periodStartedOn} — nothing here is a second copy of those hours, so a
-              corrected entry moves this figure with it.
+              between {row.periodStartedOn} and {row.ojtCountedThrough}
+              {row.craftName !== null && <> on {row.craftName}</>} — nothing here is a second copy of
+              those hours, so a corrected entry moves this figure with it.
             </p>
+            {/* The figure names its own gap. Untagged hours are real work
+                that cannot be attributed to an indenture, and leaving them
+                out silently reads as an apprentice who is behind. */}
+            {row.untaggedHoursThisPeriod > 0 && (
+              <p className="text-xs text-amber-300">
+                {row.untaggedHoursThisPeriod} hrs in that window carry no craft tag, so they are not
+                counted here either way.
+              </p>
+            )}
           </div>
 
           {row.periods.length > 0 && (

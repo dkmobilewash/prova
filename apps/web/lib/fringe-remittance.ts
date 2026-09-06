@@ -100,6 +100,19 @@ function roundComponents(components: FringeComponents): FringeComponents {
   };
 }
 
+/** The total of components that have ALREADY been rounded to the cent.
+ *
+ * It used to be handed the raw un-rounded components while the columns
+ * beside it were rounded independently, and the two disagreed: four funds
+ * printing 24.14 apiece under a Total of 96.57. Each fund is a separate
+ * cheque, so the itemised lines ARE the filing — a total that is not their
+ * sum is a form nobody can reconcile, and there is no way to tell from the
+ * page which of the two figures the fund will accept.
+ *
+ * Every figure on this report is now the exact sum of the figures printed
+ * beneath it: craft rows add to the local's fund columns, those columns add
+ * to the local's total, the local totals add to the report total.
+ */
 function sum(components: FringeComponents) {
   return round2(
     components.pension + components.vacation + components.healthWelfare + components.training,
@@ -212,23 +225,37 @@ export function buildRemittanceReport(
     locals.set(entry.unionLocalId, local);
   }
 
+  // Rounding happens ONCE, at the leaf, and every figure above it is built
+  // from figures that were already rounded. Rounding each level
+  // independently off the raw accumulator is what put 96.57 above four
+  // columns of 24.14.
   const localRows = [...locals.values()]
-    .map((local) => ({
-      ...local,
-      hours: round2(local.hours),
-      uncomputedHours: round2(local.uncomputedHours),
-      components: roundComponents(local.components),
-      total: sum(local.components),
-      crafts: local.crafts
-        .map((craft) => ({
-          ...craft,
-          hours: round2(craft.hours),
-          uncomputedHours: round2(craft.uncomputedHours),
-          components: roundComponents(craft.components),
-          total: sum(craft.components),
-        }))
-        .sort((a, b) => a.craftLabel.localeCompare(b.craftLabel)),
-    }))
+    .map((local) => {
+      const crafts = local.crafts
+        .map((craft) => {
+          const components = roundComponents(craft.components);
+          return {
+            ...craft,
+            hours: round2(craft.hours),
+            uncomputedHours: round2(craft.uncomputedHours),
+            components,
+            total: sum(components),
+          };
+        })
+        .sort((a, b) => a.craftLabel.localeCompare(b.craftLabel));
+
+      const components = zero();
+      for (const craft of crafts) addInto(components, craft.components);
+
+      return {
+        ...local,
+        crafts,
+        hours: round2(crafts.reduce((s, craft) => s + craft.hours, 0)),
+        uncomputedHours: round2(crafts.reduce((s, craft) => s + craft.uncomputedHours, 0)),
+        components: roundComponents(components),
+        total: sum(components),
+      };
+    })
     .sort((a, b) => a.unionLocalLabel.localeCompare(b.unionLocalLabel));
 
   return {

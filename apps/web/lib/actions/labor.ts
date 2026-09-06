@@ -158,18 +158,124 @@ export async function deleteDispatchSlip(jobId: string, dispatchSlipId: string) 
   revalidatePath(`/jobs/${jobId}`);
 }
 
-export async function deleteTimeEntry(jobId: string, timeEntryId: string) {
+/**
+ * Corrects a logged time entry, keeping the row it corrects.
+ *
+ * The identity of the entry — job, employee, DATE — is not editable and is
+ * not read from this form at all. A wrong date is a different day's work,
+ * which is a new entry and a deleted one, not a correction; and locking the
+ * identity fields of an evidence record after creation is the rule
+ * CLAUDE.md already states for safety incidents, RFIs and submittals. Time
+ * entries were simply never brought under it: until now the ONLY correction
+ * path was to delete the row and retype it, so a certified-payroll figure
+ * could be replaced with nothing anywhere showing it had been (#63).
+ *
+ * The BEFORE values are snapshotted into TimeEntryCorrection in the same
+ * transaction as the update, so either both happen or neither does. A
+ * correction recorded without its own before-image would be worse than no
+ * correction record at all.
+ */
+export async function updateTimeEntry(
+  jobId: string,
+  timeEntryId: string,
+  formData: FormData,
+): Promise<ActionResult> {
+  const { company, ...user } = await requireCompanyContext();
+  await assertJobInCompany(jobId, company.id);
+
+  const timeEntry = await prisma.timeEntry.findUnique({
+    where: { id: timeEntryId },
+    include: {
+      craftClassification: { select: { name: true } },
+      lineItem: { select: { description: true } },
+    },
+  });
+  if (!timeEntry || timeEntry.jobId !== jobId) {
+    return actionFail("That time entry isn't on this job.");
+  }
+
+  const reason = String(formData.get("reason") ?? "").trim();
+  if (!reason) {
+    return actionFail("Say what is being corrected and why — these hours are a payroll record.");
+  }
+
+  const hoursRaw = String(formData.get("hours") ?? "").trim();
+  if (!hoursRaw || Number.isNaN(Number(hoursRaw)) || Number(hoursRaw) <= 0) {
+    return actionFail("Hours must be a positive number.");
+  }
+
+  const lineItemIdRaw = String(formData.get("lineItemId") ?? "").trim();
+  let lineItemId: string | null = null;
+  if (lineItemIdRaw) {
+    const lineItem = await prisma.jobLineItem.findUnique({ where: { id: lineItemIdRaw } });
+    if (!lineItem || lineItem.jobId !== jobId) {
+      return actionFail("That cost code isn't on this job.");
+    }
+    lineItemId = lineItem.id;
+  }
+
+  const craftClassificationId = await craftClassificationIdFromForm(formData, company.id);
+  const note = String(formData.get("note") ?? "").trim();
+
+  await prisma.$transaction([
+    prisma.timeEntryCorrection.create({
+      data: {
+        timeEntryId: timeEntry.id,
+        correctedByUserId: user.id,
+        correctedByName: user.name ?? user.email,
+        reason,
+        // The row exactly as it stood. Labels rather than ids: a
+        // classification that is later renamed must not rewrite what this
+        // says was recorded at the time.
+        previousHours: timeEntry.hours,
+        previousPayType: timeEntry.payType,
+        previousCraftLabel: timeEntry.craftClassification?.name ?? null,
+        previousLineItemLabel: timeEntry.lineItem?.description ?? null,
+        previousPerDiemAmount: timeEntry.perDiemAmount,
+        previousTravelPayAmount: timeEntry.travelPayAmount,
+        previousNote: timeEntry.note,
+      },
+    }),
+    prisma.timeEntry.update({
+      where: { id: timeEntry.id },
+      // No jobId, no employeeUserId, no date. Locked by omission rather
+      // than by a check, so there is no form field for a later change to
+      // start honouring.
+      data: {
+        hours: hoursRaw,
+        payType: timeEntryPayTypeFromForm(formData),
+        craftClassificationId,
+        lineItemId,
+        perDiemAmount: nullableDecimalFromForm(formData, "perDiemAmount"),
+        travelPayAmount: nullableDecimalFromForm(formData, "travelPayAmount"),
+        note: note || null,
+      },
+    }),
+  ]);
+
+  revalidatePath(`/jobs/${jobId}`);
+  return actionOk;
+}
+
+/** Removes a time entry, and its corrections with it.
+ *
+ * Returns rather than throws: the row this deletes is a certified-payroll
+ * figure, the button is now two-step, and a refusal has to be readable
+ * beside the row rather than redacted to a digest by the whole-page error
+ * boundary. */
+export async function deleteTimeEntry(jobId: string, timeEntryId: string): Promise<ActionResult> {
   const { company } = await requireCompanyContext();
   await assertJobInCompany(jobId, company.id);
 
   const timeEntry = await prisma.timeEntry.findUnique({ where: { id: timeEntryId } });
   if (!timeEntry || timeEntry.jobId !== jobId) {
-    throw new Error("Time entry not found on this job");
+    return actionFail("That time entry isn't on this job.");
   }
 
   await prisma.timeEntry.delete({ where: { id: timeEntryId } });
 
   revalidatePath(`/jobs/${jobId}`);
+  return actionOk;
 }
 
 const PREVAILING_WAGE_DETERMINATION_MEDIA_TYPES = ["application/pdf", "image/png", "image/jpeg", "image/webp"] as const;

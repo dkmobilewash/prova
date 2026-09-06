@@ -43,6 +43,41 @@ describe("enrollment state", () => {
   });
 });
 
+describe("ojtWindowEndsOn", () => {
+  const today = "2026-09-05";
+
+  it("runs to today while the indenture is open", () => {
+    expect(ojtWindowEndsOn(enrollment(), today)).toBe(today);
+  });
+
+  it("stops the day the indenture COMPLETED", () => {
+    // The defect (#104 item 9): the window ran to today unconditionally,
+    // so an apprentice who finished in March kept accruing on-the-job
+    // hours against a closed indenture for as long as they kept working —
+    // and the standing shown against a finished programme is the one a
+    // sponsor reads.
+    expect(ojtWindowEndsOn(enrollment({ completedOn: "2026-03-14" }), today)).toBe("2026-03-14");
+  });
+
+  it("stops the day the indenture was CANCELLED", () => {
+    expect(ojtWindowEndsOn(enrollment({ cancelledOn: "2026-04-02" }), today)).toBe("2026-04-02");
+  });
+
+  it("takes the EARLIER of two contradictory end dates", () => {
+    // Both set is bad data either way, and the smaller window is the one
+    // that cannot overstate the hours.
+    expect(
+      ojtWindowEndsOn(enrollment({ completedOn: "2026-05-01", cancelledOn: "2026-04-02" }), today),
+    ).toBe("2026-04-02");
+  });
+
+  it("never runs PAST today for an end date in the future", () => {
+    // A completion recorded ahead of time must not open the window past
+    // the present — hours nobody has worked yet cannot count.
+    expect(ojtWindowEndsOn(enrollment({ completedOn: "2027-01-01" }), today)).toBe(today);
+  });
+});
+
 describe("current period", () => {
   it("is 1 before anything has been signed off", () => {
     expect(currentPeriod([])).toBe(1);

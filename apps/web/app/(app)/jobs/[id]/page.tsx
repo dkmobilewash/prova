@@ -26,6 +26,7 @@ import { jobEarnedRevenue, jobOverUnderBilling } from "@/lib/company-financials"
 import { calculateTimeEntryLaborCost, findEffectiveFringeRateSchedule } from "@/lib/labor-cost";
 import { burdenedHourlyRate, estimateBurdenedLaborCost, laborRateDateFor } from "@/lib/estimate-labor-cost";
 import { LaborHoursField } from "@/components/LaborHoursField";
+import { TimeEntryRow } from "@/components/TimeEntryRow";
 import { calculateRetainageSummary } from "@/lib/retainage";
 import { SubmitButton } from "@/components/SubmitButton";
 import {
@@ -42,7 +43,6 @@ import {
   deletePayment,
   deletePrevailingWageDetermination,
   deleteRetainageRelease,
-  deleteTimeEntry,
   logPayment,
   logTimeEntry,
   updateJobRetainageTerms,
@@ -187,6 +187,9 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
           employeeUser: true,
           lineItem: true,
           craftClassification: { include: { unionLocal: true } },
+          // Newest correction first, so the row's history reads the way the
+          // page does. See TimeEntryCorrection in labor.prisma (#63).
+          corrections: { orderBy: { correctedAt: "desc" } },
         },
       },
       dispatchSlips: {
@@ -539,7 +542,6 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
   const createSignatureRequestWithId = createSignatureRequest.bind(null, job.id);
   const createInvoiceWithId = createInvoice.bind(null, job.id);
   const logTimeEntryWithId = logTimeEntry.bind(null, job.id);
-  const deleteTimeEntryWithId = (timeEntryId: string) => deleteTimeEntry.bind(null, job.id, timeEntryId);
   const uploadDispatchSlipWithId = uploadDispatchSlip.bind(null, job.id);
   const deleteDispatchSlipWithId = (dispatchSlipId: string) => deleteDispatchSlip.bind(null, job.id, dispatchSlipId);
   const deletePrevailingWageDeterminationWithId = (determinationId: string) =>
@@ -1042,43 +1044,81 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
 
           {job.timeEntries.length > 0 && (
             <ul className="mb-4 flex flex-col gap-2">
+              {/* Rows are a client component now: they carry a two-step
+                  delete and a correction that KEEPS the original, which
+                  a server-rendered <form action> cannot do. See #63 and
+                  components/TimeEntryRow.tsx. */}
               {job.timeEntries.map((entry) => (
-                <li
+                <TimeEntryRow
                   key={entry.id}
-                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-800 bg-slate-900 p-3 text-sm"
-                >
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                    <span className="text-slate-100">
-                      {entry.date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-                    </span>
-                    <span className="text-slate-300">{entry.employeeUser.name ?? entry.employeeUser.email}</span>
-                    <span className="text-slate-400">{Number(entry.hours)}h</span>
-                    <span className="rounded bg-slate-800 px-1.5 py-0.5 text-xs text-slate-400">
-                      {TIME_ENTRY_PAY_TYPE_OPTIONS.find((p) => p.value === entry.payType)?.label ?? entry.payType}
-                    </span>
-                    {entry.craftClassification && (
-                      <span className="text-xs text-slate-500">{entry.craftClassification.name}</span>
-                    )}
-                    {entry.lineItem && <span className="text-xs text-slate-500">{entry.lineItem.description}</span>}
-                    {timeEntryLaborCosts.get(entry.id) != null && (
-                      <span className="text-xs text-slate-500">
-                        Est. cost {money(timeEntryLaborCosts.get(entry.id)!)}
-                      </span>
-                    )}
-                    {entry.perDiemAmount != null && (
-                      <span className="text-xs text-slate-500">Per diem {money(Number(entry.perDiemAmount))}</span>
-                    )}
-                    {entry.travelPayAmount != null && (
-                      <span className="text-xs text-slate-500">Travel {money(Number(entry.travelPayAmount))}</span>
-                    )}
-                    {entry.note && <span className="text-xs text-slate-500">— {entry.note}</span>}
-                  </div>
-                  <form action={deleteTimeEntryWithId(entry.id)}>
-                    <SubmitButton type="submit" title="Remove" className="text-xs text-red-400 hover:underline">
-                      Remove
-                    </SubmitButton>
-                  </form>
-                </li>
+                  jobId={job.id}
+                  // Deliberately NOT narrowed to the owner. Everyone who
+                  // can log an entry could already delete one, and
+                  // `deleteTimeEntry` has no assertOwner behind it — a
+                  // UI-only gate would be theatre, and moving the real one
+                  // is a permissions change #63 did not ask for. What #63
+                  // asked for is the guard and the correction path, and
+                  // both are here.
+                  canDelete
+                  payTypes={[...TIME_ENTRY_PAY_TYPE_OPTIONS]}
+                  lineItems={job.lineItems.map((item) => ({
+                    id: item.id,
+                    description: item.description,
+                  }))}
+                  crafts={craftOptions}
+                  entry={{
+                    id: entry.id,
+                    // Dates are stored at UTC midnight and rendered in UTC.
+                    dateLabel: entry.date.toLocaleDateString("en-US", {
+                      month: "short",
+                      day: "numeric",
+                      year: "numeric",
+                      timeZone: "UTC",
+                    }),
+                    employeeName: entry.employeeUser.name ?? entry.employeeUser.email,
+                    hours: Number(entry.hours),
+                    payType: entry.payType,
+                    payTypeLabel:
+                      TIME_ENTRY_PAY_TYPE_OPTIONS.find((p) => p.value === entry.payType)?.label ??
+                      entry.payType,
+                    craftClassificationId: entry.craftClassificationId,
+                    craftLabel: entry.craftClassification?.name ?? null,
+                    lineItemId: entry.lineItemId,
+                    lineItemLabel: entry.lineItem?.description ?? null,
+                    estimatedCost: timeEntryLaborCosts.get(entry.id) ?? null,
+                    perDiemAmount: entry.perDiemAmount != null ? Number(entry.perDiemAmount) : null,
+                    travelPayAmount:
+                      entry.travelPayAmount != null ? Number(entry.travelPayAmount) : null,
+                    note: entry.note,
+                    corrections: entry.corrections.map((correction) => ({
+                      id: correction.id,
+                      correctedByName: correction.correctedByName,
+                      correctedAtLabel: correction.correctedAt.toLocaleDateString("en-US", {
+                        month: "short",
+                        day: "numeric",
+                        year: "numeric",
+                        timeZone: "UTC",
+                      }),
+                      reason: correction.reason,
+                      previousHours: Number(correction.previousHours),
+                      previousPayTypeLabel:
+                        TIME_ENTRY_PAY_TYPE_OPTIONS.find(
+                          (p) => p.value === correction.previousPayType,
+                        )?.label ?? correction.previousPayType,
+                      previousCraftLabel: correction.previousCraftLabel,
+                      previousLineItemLabel: correction.previousLineItemLabel,
+                      previousPerDiemAmount:
+                        correction.previousPerDiemAmount != null
+                          ? Number(correction.previousPerDiemAmount)
+                          : null,
+                      previousTravelPayAmount:
+                        correction.previousTravelPayAmount != null
+                          ? Number(correction.previousTravelPayAmount)
+                          : null,
+                      previousNote: correction.previousNote,
+                    })),
+                  }}
+                />
               ))}
             </ul>
           )}

@@ -3,6 +3,7 @@ import {
   findEffectiveRuleSet,
   hasOvertimeRules,
   reviewDays,
+  selectWeekRuleSet,
   type DayEntryInput,
   type PrevailingWageRuleSetInput,
 } from "./prevailing-wage";
@@ -48,6 +49,74 @@ describe("findEffectiveRuleSet", () => {
     // A near-miss standing in for the real thing is how a review starts
     // producing confident wrong answers.
     expect(findEffectiveRuleSet([newer], "2026-01-15")).toBeNull();
+  });
+
+  it("picks the latest-starting match, not the first row in the array", () => {
+    // The exclusion constraint behind this table is built on a half-open
+    // `tsrange`, so a set ending 05-31 and one starting 05-31 are both
+    // storable and both match 05-31 under an inclusive effectiveTo. With
+    // `.find()` the winner was whichever row the query returned first.
+    const abutting = { effectiveFrom: "2026-05-31", effectiveTo: null, id: "abutting" };
+    expect(findEffectiveRuleSet([older, abutting], "2026-05-31")?.id).toBe("abutting");
+    expect(findEffectiveRuleSet([abutting, older], "2026-05-31")?.id).toBe("abutting");
+  });
+});
+
+describe("selectWeekRuleSet", () => {
+  const spring = ruleSet({ id: "spring", name: "Spring rules", effectiveFrom: "2026-01-01", effectiveTo: "2026-05-31" });
+  const summer = ruleSet({ id: "summer", name: "Summer rules", effectiveFrom: "2026-06-01", effectiveTo: null });
+
+  it("uses the set in force across the whole week", () => {
+    // Sunday 2026-03-15 through Saturday 2026-03-21.
+    const chosen = selectWeekRuleSet([spring, summer], "2026-03-15", "2026-03-21");
+    expect(chosen.ruleSet?.id).toBe("spring");
+    expect(chosen.reason).toBeNull();
+  });
+
+  it("reviews a CLOSED week against the rules of that week, not today's", () => {
+    // The defect this whole function exists for: what ran before was "the
+    // newest determination's rule set", so a jurisdiction raising a
+    // threshold in June silently reclassified every week in March.
+    expect(selectWeekRuleSet([summer, spring], "2026-03-15", "2026-03-21").ruleSet?.id).toBe("spring");
+  });
+
+  it("refuses to judge a week the rules changed inside", () => {
+    // Sunday 2026-05-31 to Saturday 2026-06-06 spans the handover. Neither
+    // set governs the week, and applying the Sunday's through to Saturday
+    // would put a confident wrong classification on a signed sheet.
+    const chosen = selectWeekRuleSet([spring, summer], "2026-05-31", "2026-06-06");
+    expect(chosen.ruleSet).toBeNull();
+    expect(chosen.reason).toContain("The rules changed");
+    expect(chosen.reason).toContain("Spring rules");
+    expect(chosen.reason).toContain("Summer rules");
+  });
+
+  it("says the linked rules were not in force, rather than that none exist", () => {
+    const chosen = selectWeekRuleSet([summer], "2026-03-15", "2026-03-21");
+    expect(chosen.ruleSet).toBeNull();
+    expect(chosen.reason).toContain("were not in force");
+    expect(chosen.reason).toContain("Summer rules");
+  });
+
+  it("leaves the no-rules-linked sentence to reviewDays", () => {
+    const chosen = selectWeekRuleSet([], "2026-03-15", "2026-03-21");
+    expect(chosen.ruleSet).toBeNull();
+    expect(chosen.reason).toBeNull();
+  });
+});
+
+describe("reviewDays reason override", () => {
+  it("reports the caller's reason when there is no rule set for the week", () => {
+    const review = reviewDays([day("2026-03-16", 8)], null, "The rules changed mid-week.");
+    expect(review.checked).toBe(false);
+    expect(review.reason).toBe("The rules changed mid-week.");
+  });
+
+  it("falls back to the no-determination sentence when the caller has nothing to add", () => {
+    const review = reviewDays([day("2026-03-16", 8)], null);
+    expect(review.reason).toBe(
+      "No prevailing wage rule set is linked to this job's determination.",
+    );
   });
 });
 

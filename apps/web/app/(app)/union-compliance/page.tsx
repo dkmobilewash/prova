@@ -128,7 +128,19 @@ export default async function UnionCompliancePage({
               <div key={local.unionLocalId} className="rounded-lg border border-slate-800 bg-slate-900 p-4">
                 <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
                   <p className="text-slate-100">{local.unionLocalLabel}</p>
-                  <p className="font-mono text-slate-100">{money(local.total)}</p>
+                  {/* The same guard the craft rows below already carry, and
+                      for the same reason. It was applied at row level only,
+                      so a local whose every hour is unpriced printed
+                      "$0.00" in the header above a table of dashes — the
+                      one figure a reader takes away from the card, saying
+                      "nothing owed" about hours we cannot price at all. */}
+                  {isWhollyUnpriced(local) ? (
+                    <p className="text-sm text-amber-300">
+                      Not priced — no rate in force on these hours
+                    </p>
+                  ) : (
+                    <p className="font-mono text-slate-100">{money(local.total)}</p>
+                  )}
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[34rem] text-sm">
@@ -180,8 +192,20 @@ export default async function UnionCompliancePage({
             ))}
 
             <p className="text-sm text-slate-400">
-              <span className="font-mono text-slate-200">{money(remittance.total)}</span> across{" "}
-              {remittance.totalHours} hours.
+              {/* Same rule one level up: when NOTHING in the month could be
+                  priced there is no total to state, only hours. The
+                  sentence below already says a partly-priced total is short
+                  — but "$0.00 across 40 hours" is not a short total, it is
+                  a figure we do not have. */}
+              {isWhollyUnpriced({
+                hours: remittance.totalHours,
+                uncomputedHours: remittance.uncomputedHours,
+              }) ? (
+                <span className="text-amber-300">Nothing this month could be priced</span>
+              ) : (
+                <span className="font-mono text-slate-200">{money(remittance.total)}</span>
+              )}{" "}
+              across {remittance.totalHours} hours.
               {remittance.uncomputedHours > 0 && (
                 <span className="text-amber-300">
                   {" "}

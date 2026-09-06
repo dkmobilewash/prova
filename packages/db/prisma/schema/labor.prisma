@@ -50,10 +50,68 @@ model TimeEntry {
 
   createdAt DateTime @default(now())
 
+  corrections TimeEntryCorrection[]
+
   @@index([jobId])
   @@index([lineItemId])
   @@index([employeeUserId])
   @@index([craftClassificationId])
+}
+
+/// One correction to a logged TimeEntry, holding the row exactly as it
+/// stood BEFORE the change.
+///
+/// These are certified payroll hours: the record produced when somebody
+/// asks what a person was paid and for what. Until this existed the only
+/// way to fix a wrong figure was to DELETE the row and type a new one, so
+/// nothing showed that a correction had been made, when, or by whom — and
+/// a foreman's honest 10-becomes-8 was indistinguishable from a number
+/// being quietly rewritten. CLAUDE.md's rule that evidence records lock
+/// their identity fields and that sent correspondence can close but never
+/// delete had simply never been applied here.
+///
+/// Same shape as SubmittalRevision: the original stays, and each amendment
+/// is its own row. The identity of the entry — its job, its employee, its
+/// DATE — is locked by `updateTimeEntry` and cannot be corrected at all; a
+/// wrong day is a different day's work, which is a new entry and a deleted
+/// one, not an edit.
+///
+/// Every "previous" column is a SNAPSHOT and deliberately carries no
+/// foreign key. A craft classification that is later renamed, or a line
+/// item that is later removed, must not silently rewrite what this row says
+/// was there at the time — that is the difference between a record and a
+/// view. Labels are stored as text for the same reason.
+model TimeEntryCorrection {
+  id          String    @id @default(cuid())
+  timeEntryId String
+  timeEntry   TimeEntry @relation(fields: [timeEntryId], references: [id], onDelete: Cascade)
+
+  /// Who corrected it, and when the correction was RECORDED. Stamped, not
+  /// entered — unlike TimeEntry.date, this is not a fact about the work,
+  /// it is the audit fact of somebody changing the record, and only the
+  /// system can know it. The name is free text for the same reason
+  /// ApprenticeshipPeriod.signedOffBy is: it must keep saying what it said
+  /// even if the account is later renamed or removed.
+  correctedByUserId String
+  correctedByName   String
+  correctedAt       DateTime @default(now())
+
+  /// Why the figure changed. REQUIRED: a correction with no stated reason
+  /// is a silent replacement wearing a timestamp, which is the thing this
+  /// table exists to stop.
+  reason String
+
+  previousHours   Decimal          @db.Decimal(5, 2)
+  previousPayType TimeEntryPayType
+
+  previousCraftLabel    String?
+  previousLineItemLabel String?
+
+  previousPerDiemAmount   Decimal? @db.Decimal(10, 2)
+  previousTravelPayAmount Decimal? @db.Decimal(10, 2)
+  previousNote            String?
+
+  @@index([timeEntryId])
 }
 
 /// A union hiring hall's dispatch of one worker to one job — the referral

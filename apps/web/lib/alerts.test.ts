@@ -23,6 +23,10 @@ import { classifyRenewal, type RenewalSource } from "./compliance-expiry";
 
 const TODAY = "2026-09-01";
 
+/** Test-local, so a fixture's week end is never taken on trust. */
+const addDays = (iso: string, days: number) =>
+  new Date(Date.parse(`${iso}T00:00:00.000Z`) + days * 86_400_000).toISOString().slice(0, 10);
+
 describe("alertKey", () => {
   it("includes the fact that would change what the alert says", () => {
     // This is the whole mechanism. Keyed on the licence alone, a dismissal
@@ -343,6 +347,87 @@ describe("certifiedPayrollAlerts", () => {
     );
     expect(alert.severity).toBe("DUE_SOON");
     expect(alert.dueOn).toBe("2026-09-06");
+  });
+
+  /**
+   * `filingFrequency` was entered on the rule set, stored, shown on the
+   * rule-set row, and read by NOTHING (#104 item 6). A company that had
+   * recorded MONTHLY still got one alert per week — four a month — each
+   * one dating the deadline from the end of a WEEK while citing that
+   * jurisdiction's own filing window to do it.
+   */
+  describe("the recorded filing frequency decides what period is late", () => {
+    // Four Sunday-start weeks wholly inside July 2026, all uncovered.
+    const july = ["2026-06-28", "2026-07-05", "2026-07-12", "2026-07-19"].map((weekStart) => ({
+      jobId: "job_1",
+      jobName: "Mercy Tower",
+      weekStart,
+      weekEnd: addDays(weekStart, 6),
+      filingDueDays: 10,
+    }));
+
+    it("raises ONE alert a month for a MONTHLY jurisdiction, due from the month end", () => {
+      const alerts = certifiedPayrollAlerts(
+        july.map((w) => ({ ...w, filingFrequency: "MONTHLY" as const })),
+        TODAY,
+      );
+      // 2026-06-28 falls in June; the other three are July. One alert each.
+      expect(alerts).toHaveLength(2);
+      const [july2026] = alerts.filter((a) => a.title.includes("2026-07"));
+      // July closes on the 31st; +10 days is 10 Aug, not "seven days after
+      // some Saturday".
+      expect(july2026.dueOn).toBe("2026-08-10");
+      expect(july2026.key).toBe("CERTIFIED_PAYROLL:job_1:2026-07");
+      expect(july2026.detail).toContain("those 3 weeks");
+    });
+
+    it("still raises one per week when nothing is recorded", () => {
+      // The unchanged default. Four uncovered weeks, four prompts.
+      expect(certifiedPayrollAlerts(july, TODAY)).toHaveLength(4);
+    });
+
+    it("splits a SEMI_MONTHLY month at the 15th", () => {
+      const alerts = certifiedPayrollAlerts(
+        july.map((w) => ({ ...w, filingFrequency: "SEMI_MONTHLY" as const })),
+        TODAY,
+      );
+      // June H2 (06-28), July H1 (07-05, 07-12), July H2 (07-19).
+      expect(alerts).toHaveLength(3);
+      const firstHalf = alerts.find((a) => a.key === "CERTIFIED_PAYROLL:job_1:2026-07-H1");
+      expect(firstHalf?.dueOn).toBe("2026-07-25"); // 07-15 + 10
+      const secondHalf = alerts.find((a) => a.key === "CERTIFIED_PAYROLL:job_1:2026-07-H2");
+      expect(secondHalf?.dueOn).toBe("2026-08-10"); // 07-31 + 10
+    });
+
+    it("does not chase a monthly period that has not closed yet", () => {
+      // TODAY is 2026-09-01. August closed on the 31st, so it is fair game;
+      // a week in September is inside a period still running. The old
+      // shape closed on the WEEK, which is why a monthly jurisdiction
+      // could be told on the 8th that the month was late.
+      const september = {
+        jobId: "job_1",
+        jobName: "Mercy Tower",
+        weekStart: "2026-08-23",
+        weekEnd: "2026-08-29",
+        filingFrequency: "MONTHLY" as const,
+      };
+      expect(
+        certifiedPayrollAlerts([{ ...september, weekStart: "2026-09-06", weekEnd: "2026-09-12" }], TODAY),
+      ).toEqual([]);
+      expect(certifiedPayrollAlerts([september], TODAY)).toHaveLength(1);
+    });
+
+    it("prompts per week for BIWEEKLY and says why", () => {
+      // Nothing in this app records which fortnight is which — there is no
+      // filing anchor on the rule set — and inventing one would date a
+      // deadline from a fortnight the jurisdiction never agreed to.
+      const alerts = certifiedPayrollAlerts(
+        july.map((w) => ({ ...w, filingFrequency: "BIWEEKLY" as const })),
+        TODAY,
+      );
+      expect(alerts).toHaveLength(4);
+      expect(alerts[0].detail).toContain("which weeks pair up");
+    });
   });
 });
 

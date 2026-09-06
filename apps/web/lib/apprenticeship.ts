@@ -68,6 +68,25 @@ export function currentPeriodStartedOn(e: EnrollmentInput, periods: PeriodInput[
   return dates.length === 0 ? e.enrolledOn : dates[dates.length - 1];
 }
 
+/** The last day on-the-job hours can accrue to this indenture: today, or
+ * the day the indenture ENDED if that came first.
+ *
+ * The window used to run to today unconditionally, so an apprentice who
+ * completed or withdrew in March kept accruing OJT against a closed
+ * indenture for as long as they kept working — and the standing shown
+ * against a finished programme is the one a sponsor or a compliance officer
+ * reads. `enrollmentState` already knew the enrolment was over; the hours
+ * query was the one place that did not ask.
+ *
+ * A CONTRADICTORY enrolment (both dates set) closes on the earlier of the
+ * two. It is bad data either way, and the smaller window is the one that
+ * cannot overstate the hours.
+ */
+export function ojtWindowEndsOn(e: EnrollmentInput, today: string): string {
+  const ends = [e.completedOn, e.cancelledOn].filter((d): d is string => d !== null);
+  return ends.reduce((earliest, date) => (date < earliest ? date : earliest), today);
+}
+
 export type RequirementStanding =
   /** Recorded, and at or over what the programme asks. */
   | "MET"

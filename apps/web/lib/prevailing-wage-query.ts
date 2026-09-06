@@ -1,6 +1,13 @@
 import { prisma } from "@prova/db";
-import { reviewDays, type DayEntryInput, type PayType, type PrevailingWageRuleSetInput, type WeekReview } from "@/lib/prevailing-wage";
-import { weekStart } from "@/components/fieldReportWeeks";
+import {
+  reviewDays,
+  selectWeekRuleSet,
+  type DayEntryInput,
+  type PayType,
+  type PrevailingWageRuleSetInput,
+  type WeekReview,
+} from "@/lib/prevailing-wage";
+import { addDays as addDaysIso, weekStart } from "@/components/fieldReportWeeks";
 
 /**
  * Fetching and normalising for the prevailing wage page.
@@ -146,33 +153,48 @@ export async function reviewJobWeek(
     where: { id: jobId, companyId },
     select: {
       name: true,
+      // Every determination, not just the newest. The rule set to review a
+      // week against is the one that was IN FORCE that week, and the newest
+      // determination carries the newest rules — see below.
       prevailingWageDeterminations: {
         orderBy: { createdAt: "desc" },
-        take: 1,
         select: { ruleSet: true },
       },
     },
   });
   if (!job) return { jobName: null, ruleSetName: null, employees: [] };
 
-  const raw = job.prevailingWageDeterminations[0]?.ruleSet ?? null;
-  const ruleSet: PrevailingWageRuleSetInput | null = raw
-    ? {
-        id: raw.id,
-        name: raw.name,
-        jurisdiction: raw.jurisdiction,
-        dailyOvertimeAfterHours: numberOrNull(raw.dailyOvertimeAfterHours),
-        dailyDoubleTimeAfterHours: numberOrNull(raw.dailyDoubleTimeAfterHours),
-        weeklyOvertimeAfterHours: numberOrNull(raw.weeklyOvertimeAfterHours),
-        seventhDayOvertimeAfterHours: numberOrNull(raw.seventhDayOvertimeAfterHours),
-        seventhDayDoubleTimeAfterHours: numberOrNull(raw.seventhDayDoubleTimeAfterHours),
-        filingDueDays: raw.filingDueDays,
-        effectiveFrom: isoDate(raw.effectiveFrom) as string,
-        effectiveTo: isoDate(raw.effectiveTo),
-      }
-    : null;
+  const linked = new Map<string, PrevailingWageRuleSetInput>();
+  for (const determination of job.prevailingWageDeterminations) {
+    const raw = determination.ruleSet;
+    if (!raw || linked.has(raw.id)) continue;
+    linked.set(raw.id, {
+      id: raw.id,
+      name: raw.name,
+      jurisdiction: raw.jurisdiction,
+      dailyOvertimeAfterHours: numberOrNull(raw.dailyOvertimeAfterHours),
+      dailyDoubleTimeAfterHours: numberOrNull(raw.dailyDoubleTimeAfterHours),
+      weeklyOvertimeAfterHours: numberOrNull(raw.weeklyOvertimeAfterHours),
+      seventhDayOvertimeAfterHours: numberOrNull(raw.seventhDayOvertimeAfterHours),
+      seventhDayDoubleTimeAfterHours: numberOrNull(raw.seventhDayDoubleTimeAfterHours),
+      filingDueDays: raw.filingDueDays,
+      effectiveFrom: isoDate(raw.effectiveFrom) as string,
+      effectiveTo: isoDate(raw.effectiveTo),
+    });
+  }
+  const ruleSets = [...linked.values()];
 
-  const weekEnd = new Date(Date.parse(`${weekStartIso}T00:00:00.000Z`) + 6 * 86_400_000);
+  const weekEndIso = addDaysIso(weekStartIso, 6);
+
+  // THE SELECTION, decided in the pure module so it can be tested without
+  // a database. Before this, the rules a closed week was reviewed against
+  // were the NEWEST determination's, whatever dates they carried.
+  const { ruleSet, reason } = selectWeekRuleSet(ruleSets, weekStartIso, weekEndIso);
+  const noRuleSetReason = reason ?? undefined;
+
+  // The query's upper bound is the SAME Saturday the selection above was
+  // asked about, not a second computation that happens to agree with it.
+  const weekEnd = new Date(`${weekEndIso}T00:00:00.000Z`);
   const entries = await prisma.timeEntry.findMany({
     where: {
       jobId,
@@ -206,7 +228,7 @@ export async function reviewJobWeek(
     .map(([employeeUserId, bucket]) => ({
       employeeUserId,
       employeeName: bucket.name,
-      review: reviewDays(bucket.entries, ruleSet),
+      review: reviewDays(bucket.entries, ruleSet, noRuleSetReason),
     }))
     .sort((a, b) => a.employeeName.localeCompare(b.employeeName));
 

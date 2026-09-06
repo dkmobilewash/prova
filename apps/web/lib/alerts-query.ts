@@ -12,6 +12,7 @@ import {
   wipAlerts,
   type Alert,
   type Acknowledgement,
+  type FilingFrequency,
   type PartitionedAlerts,
 } from "@/lib/alerts";
 import { renewalSourcesForCompany } from "@/lib/renewals";
@@ -19,7 +20,10 @@ import { renewalAlerts as rankRenewals } from "@/lib/compliance-expiry";
 import { calculateRetainageSummary } from "@/lib/retainage";
 import { calculateJobWip, calculateLineItemWip } from "@/lib/wip";
 import { jobIsOverBudget } from "@/lib/company-financials";
-import { weekStart } from "@/components/fieldReportWeeks";
+import {
+  certifiedPayrollWeekStart,
+  certifiedPayrollWeekWindow,
+} from "@/lib/certified-payroll-week";
 import { can, type Principal } from "@/lib/permissions";
 import { loadRatioReviews } from "@/lib/union-compliance-query";
 
@@ -39,10 +43,6 @@ import { loadRatioReviews } from "@/lib/union-compliance-query";
 
 function isoDate(date: Date | null | undefined): string | null {
   return date ? date.toISOString().slice(0, 10) : null;
-}
-
-function addDays(iso: string, days: number): string {
-  return new Date(Date.parse(`${iso}T00:00:00.000Z`) + days * 86_400_000).toISOString().slice(0, 10);
 }
 
 export async function loadAlerts(
@@ -100,7 +100,10 @@ export async function loadAlerts(
           // The jurisdiction's own filing window, where it has been
           // recorded. Without it the alert falls back to its generic
           // horizon and says so.
-          select: { id: true, ruleSet: { select: { filingDueDays: true } } },
+          select: {
+            id: true,
+            ruleSet: { select: { filingDueDays: true, filingFrequency: true } },
+          },
         },
         timeEntries: { select: { date: true } },
         complianceDocuments: {
@@ -217,12 +220,22 @@ export async function loadAlerts(
         .filter((d) => d.periodStart && d.periodEnd)
         .map((d) => ({ start: isoDate(d.periodStart) as string, end: isoDate(d.periodEnd) as string }));
 
+      // THE CERTIFIED PAYROLL WEEK, from the module that owns it. This
+      // used to be `weekStart` from components/fieldReportWeeks, which is
+      // MONDAY-based and says so in its own docblock — so this alert
+      // named a seven-day span one day off from the sheet it is about, and
+      // `?weekStart=` links built from it landed on a different week than
+      // the one the alert had just described. Same hours, two windows,
+      // nothing on either page able to show the difference.
       const weeksWorked = new Set(
-        job.timeEntries.map((entry) => weekStart(isoDate(entry.date) as string)),
+        job.timeEntries.map((entry) =>
+          isoDate(certifiedPayrollWeekStart(entry.date)) as string,
+        ),
       );
 
       for (const start of weeksWorked) {
-        const end = addDays(start, 6);
+        const { lte } = certifiedPayrollWeekWindow(new Date(`${start}T00:00:00.000Z`));
+        const end = isoDate(lte) as string;
         // Covered when a filed report's period contains the whole week.
         // A report whose period only clips the week is not evidence the
         // week was filed, and treating it as such would hide a real gap.
@@ -234,6 +247,13 @@ export async function loadAlerts(
             weekStart: start,
             weekEnd: end,
             filingDueDays: job.prevailingWageDeterminations[0]?.ruleSet?.filingDueDays ?? null,
+            // Entered on the rule set since the day it shipped and read by
+            // nothing until now. It decides which PERIOD is late, not just
+            // the wording — see certifiedPayrollAlerts.
+            filingFrequency:
+              (job.prevailingWageDeterminations[0]?.ruleSet?.filingFrequency as
+                | FilingFrequency
+                | undefined) ?? null,
           });
         }
       }

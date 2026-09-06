@@ -201,6 +201,86 @@ describe("periodIsFiled", () => {
   });
 });
 
+describe("the stated total is the sum of the stated fund columns", () => {
+  /**
+   * Each fund is a separate line and a separate cheque, so the itemised
+   * columns ARE the filing. The report used to round the four columns
+   * individually and then round the RAW sum separately, and the two
+   * disagreed by a cent or two — four columns of 24.14 under a total of
+   * 96.57. Nothing on the page told a reader which figure the fund would
+   * accept.
+   *
+   * The fixture is hand-worked: $3.45 an hour into each of the four funds,
+   * 6.99 hours. 3.45 x 6.99 = 24.1155 per fund.
+   *   - each column, rounded:            24.12
+   *   - four printed columns added:      96.48   <- what must be printed
+   *   - the raw sum, rounded once:       96.46   <- what used to be printed
+   */
+  const oddSchedule: FringeRateScheduleInput = {
+    baseWage: 45,
+    pensionRate: 3.45,
+    vacationRate: 3.45,
+    healthWelfareRate: 3.45,
+    trainingRate: 3.45,
+    effectiveFrom: new Date(Date.UTC(2026, 0, 1)),
+    effectiveTo: null,
+  };
+  const oddSchedules = new Map([["craft_j", [oddSchedule]]]);
+
+  it("prints 96.48, not 96.46, above four columns of 24.12", () => {
+    const report = buildRemittanceReport(
+      [entry({ hours: 6.99 })],
+      oddSchedules,
+      "2026-08-01",
+      "2026-08-31",
+    );
+    const local = report.locals[0];
+    const craft = local.crafts[0];
+
+    expect(craft.components).toEqual({
+      pension: 24.12,
+      vacation: 24.12,
+      healthWelfare: 24.12,
+      training: 24.12,
+    });
+    expect(craft.total).toBe(96.48);
+    expect(local.total).toBe(96.48);
+    expect(report.total).toBe(96.48);
+  });
+
+  it("adds up at every level, from craft row to report total", () => {
+    // Two classifications on one local, each with a fraction that rounds
+    // up. The property a remittance form needs is that every figure is the
+    // exact sum of the figures printed beneath it — so a person adding the
+    // page up by hand gets the number the page states.
+    const report = buildRemittanceReport(
+      [
+        entry({ hours: 6.99 }),
+        entry({ craftClassificationId: "craft_a", craftLabel: "Apprentice", hours: 6.99 }),
+      ],
+      new Map([
+        ["craft_j", [oddSchedule]],
+        ["craft_a", [oddSchedule]],
+      ]),
+      "2026-08-01",
+      "2026-08-31",
+    );
+    const local = report.locals[0];
+
+    const addColumn = (fund: keyof typeof local.components) =>
+      local.crafts.reduce((sum, craft) => sum + craft.components[fund], 0);
+
+    expect(local.components.pension).toBe(addColumn("pension"));
+    expect(local.components.vacation).toBe(addColumn("vacation"));
+    expect(local.components.healthWelfare).toBe(addColumn("healthWelfare"));
+    expect(local.components.training).toBe(addColumn("training"));
+
+    expect(local.total).toBe(local.crafts.reduce((sum, craft) => sum + craft.total, 0));
+    expect(local.total).toBe(192.96);
+    expect(report.total).toBe(192.96);
+  });
+});
+
 describe("isWhollyUnpriced", () => {
   it("is true when no hour on the row could be priced", () => {
     // The table renders em-dashes for these instead of five $0.00 cells.

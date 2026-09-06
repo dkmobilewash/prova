@@ -60,16 +60,82 @@ export interface PrevailingWageRuleSetInput {
  * Returns null rather than the nearest match. A near-miss silently
  * standing in for the real thing is how a review starts producing
  * confident wrong answers.
+ *
+ * Picks the LATEST-STARTING match rather than the first one in the array,
+ * for the same reason findEffectiveFringeRateSchedule does: the database's
+ * exclusion constraint is built on a half-open `tsrange`, so a rule set
+ * ending on the 31st and one starting on the 31st are both storable and
+ * both match the 31st under this function's inclusive `effectiveTo`. With
+ * `.find()` the winner was whichever row the query returned first. A rule
+ * that steps on a date steps ON that date.
  */
 export function findEffectiveRuleSet<T extends { effectiveFrom: string; effectiveTo: string | null }>(
   ruleSets: T[],
   dateIso: string,
 ): T | null {
-  return (
-    ruleSets.find(
-      (rs) => rs.effectiveFrom <= dateIso && (rs.effectiveTo === null || rs.effectiveTo >= dateIso),
-    ) ?? null
-  );
+  let best: T | null = null;
+  for (const rs of ruleSets) {
+    if (rs.effectiveFrom > dateIso) continue;
+    if (rs.effectiveTo !== null && rs.effectiveTo < dateIso) continue;
+    if (best === null || rs.effectiveFrom > best.effectiveFrom) best = rs;
+  }
+  return best;
+}
+
+export type WeekRuleSetSelection<T> = {
+  /** The one rule set that governs the whole week, or null. */
+  ruleSet: T | null;
+  /** Why there is none, when there is none. Null when `ruleSet` is set, and
+   * null when nothing is linked at all — `reviewDays` owns that sentence. */
+  reason: string | null;
+};
+
+/**
+ * The rule set that governs a whole week, or why none does.
+ *
+ * `findEffectiveRuleSet` existed, was documented ("reviewing last year's
+ * timesheet has to use last year's rules"), carried five unit tests, and
+ * had ZERO application call sites. What ran instead was "the newest
+ * determination's rule set, whatever dates it carries" — so a jurisdiction
+ * raising its daily overtime threshold this year silently reclassified
+ * every closed week the app had ever reviewed, which is the single thing
+ * effective-dating these rows exists to prevent.
+ *
+ * Asked at BOTH ends of the week on purpose. A week whose rules changed
+ * mid-way is not governed by either set, and applying the Monday's through
+ * to the Sunday would put a confident wrong classification on a sheet
+ * somebody signs. Reported, never guessed — the same rule
+ * `hasOvertimeRules` already follows.
+ */
+export function selectWeekRuleSet<
+  T extends { id: string; name: string; effectiveFrom: string; effectiveTo: string | null },
+>(ruleSets: T[], weekStartIso: string, weekEndIso: string): WeekRuleSetSelection<T> {
+  if (ruleSets.length === 0) return { ruleSet: null, reason: null };
+
+  const atStart = findEffectiveRuleSet(ruleSets, weekStartIso);
+  const atEnd = findEffectiveRuleSet(ruleSets, weekEndIso);
+
+  if (atStart !== null && atEnd !== null && atStart.id === atEnd.id) {
+    return { ruleSet: atStart, reason: null };
+  }
+
+  if (atStart === null && atEnd === null) {
+    return {
+      ruleSet: null,
+      reason: `This job's rules (${ruleSets
+        .map((rs) => rs.name)
+        .join(", ")}) were not in force during ${weekStartIso} to ${weekEndIso}, so there is nothing to check this week against.`,
+    };
+  }
+
+  return {
+    ruleSet: null,
+    reason: `The rules changed during ${weekStartIso} to ${weekEndIso} — ${
+      atStart?.name ?? "nothing"
+    } at the start of the week and ${
+      atEnd?.name ?? "nothing"
+    } at the end. One week cannot be checked against two rule sets, so it is reported rather than measured.`,
+  };
 }
 
 /** Whether this rule set says anything at all about overtime. A rule set
@@ -180,6 +246,12 @@ function addDays(iso: string, days: number) {
 export function reviewDays(
   entries: DayEntryInput[],
   ruleSet: PrevailingWageRuleSetInput | null,
+  /** Why there is no rule set to check against, when the caller knows
+   * something more specific than "none is linked". A job CAN carry a
+   * determination whose rule set simply was not in force during the week
+   * being reviewed, and telling someone "no rules attached to this job"
+   * about a job that plainly has some sends them to fix the wrong thing. */
+  noRuleSetReason = "No prevailing wage rule set is linked to this job's determination.",
 ): WeekReview {
   const byDate = new Map<string, HoursByPayType>();
   for (const entry of entries) {
@@ -204,7 +276,7 @@ export function reviewDays(
     return {
       ...base,
       checked: false,
-      reason: "No prevailing wage rule set is linked to this job's determination.",
+      reason: noRuleSetReason,
       days: dates.map((date, index) => ({
         date,
         consecutiveDay: index + 1,

@@ -3,6 +3,7 @@ import {
   currentPeriod,
   currentPeriodStartedOn,
   enrollmentState,
+  ojtWindowEndsOn,
   periodStandings,
   shortfall,
   standing,
@@ -18,10 +19,15 @@ import {
  *
  * THE ONE THING WORTH READING: on-the-job hours are summed from TimeEntry
  * here, every time, and are stored nowhere. The window is
- * [current period started, today], and both ends are dates -- which is why
- * the hours never needed a column. A stored total would be free to disagree
- * with the timesheets it came from, and on an indenture record that is the
- * disagreement a compliance officer finds.
+ * [current period started, the day the indenture ends or today, whichever
+ * is first], and both ends are dates -- which is why the hours never needed
+ * a column. A stored total would be free to disagree with the timesheets it
+ * came from, and on an indenture record that is the disagreement a
+ * compliance officer finds.
+ *
+ * The window used to end at `today` unconditionally and to ignore the
+ * craft, so a completed indenture kept accruing and a person holding two
+ * enrolments had the same shift counted against both.
  */
 
 export interface ApprenticeStanding {
@@ -38,6 +44,13 @@ export interface ApprenticeStanding {
   periodStartedOn: string;
   /** DERIVED from TimeEntry over the current period's window. */
   ojtHoursThisPeriod: number;
+  /** The last day of that window: today, or the day the indenture ended. */
+  ojtCountedThrough: string;
+  /** Hours inside the window carrying NO craft tag, and therefore excluded
+   *  from `ojtHoursThisPeriod`. Zero when the indenture records no craft of
+   *  its own, since nothing was filtered out. A total that silently drops
+   *  rows has to say which. */
+  untaggedHoursThisPeriod: number;
   requiredOjtHoursPerPeriod: number | null;
   /** Carried for the EDIT form, not for the standing. `enrollmentState`
    *  already folded these into `state`; the form needs the raw dates back
@@ -98,25 +111,61 @@ export async function loadApprenticeships(
     }));
 
     const startedOn = currentPeriodStartedOn(e, periods);
+    // Not `today`. An indenture that COMPLETED or was CANCELLED stops
+    // accruing on-the-job hours on the day it ended — see ojtWindowEndsOn.
+    const endsOn = ojtWindowEndsOn(e, today);
 
-    // The derivation. Inclusive of the day the period started, up to today:
-    // a sign-off and a shift on the same date belong to the period that
-    // opened, not to the one that closed, because the hours were worked
-    // after the signature either way and dropping them would silently
-    // shorten every period by a day's work.
-    const worked = await prisma.timeEntry.aggregate({
-      _sum: { hours: true },
-      where: {
-        employeeUserId: row.apprenticeUserId,
-        job: { companyId },
-        date: {
-          gte: new Date(`${startedOn}T00:00:00.000Z`),
-          lte: new Date(`${today}T00:00:00.000Z`),
-        },
-      },
-    });
+    // The derivation. Inclusive of the day the period started, up to the
+    // end of the window: a sign-off and a shift on the same date belong to
+    // the period that opened, not to the one that closed, because the hours
+    // were worked after the signature either way and dropping them would
+    // silently shorten every period by a day's work.
+    //
+    // Scoped to the indenture's OWN craft classification where it records
+    // one. Without that filter every hour the person worked counted towards
+    // every indenture they hold, so a second enrolment — a carpenter
+    // indenturing into drywall — counted the same shift twice, once against
+    // each. Two programmes each shown as satisfied by one day's work is
+    // exactly the claim a sponsor would find false.
+    const window = {
+      gte: new Date(`${startedOn}T00:00:00.000Z`),
+      lte: new Date(`${endsOn}T00:00:00.000Z`),
+    };
+    const scope = {
+      employeeUserId: row.apprenticeUserId,
+      job: { companyId },
+      date: window,
+    };
 
-    const ojtHours = Number(worked._sum.hours ?? 0);
+    // A window that closed before the current period opened has no days in
+    // it at all. Prisma would happily return null for that; being explicit
+    // keeps the zero honest rather than accidental.
+    const empty = endsOn < startedOn;
+
+    const [worked, untagged] = empty
+      ? [null, null]
+      : await Promise.all([
+          prisma.timeEntry.aggregate({
+            _sum: { hours: true },
+            where: row.craftClassificationId
+              ? { ...scope, craftClassificationId: row.craftClassificationId }
+              : scope,
+          }),
+          // What the craft filter left out, so the figure names its own
+          // gap instead of quietly being short. Hours with NO craft tag
+          // cannot be attributed to an indenture, and saying so is the
+          // difference between "they are 40 short" and "40 of their hours
+          // are untagged".
+          row.craftClassificationId
+            ? prisma.timeEntry.aggregate({
+                _sum: { hours: true },
+                where: { ...scope, craftClassificationId: null },
+              })
+            : Promise.resolve(null),
+        ]);
+
+    const ojtHours = Number(worked?._sum.hours ?? 0);
+    const untaggedHoursThisPeriod = Number(untagged?._sum.hours ?? 0);
 
     standings.push({
       enrollmentId: row.id,
@@ -134,6 +183,8 @@ export async function loadApprenticeships(
       period: currentPeriod(periods),
       periodStartedOn: startedOn,
       ojtHoursThisPeriod: ojtHours,
+      ojtCountedThrough: endsOn,
+      untaggedHoursThisPeriod,
       requiredOjtHoursPerPeriod: e.requiredOjtHoursPerPeriod,
       completedOn: e.completedOn,
       cancelledOn: e.cancelledOn,

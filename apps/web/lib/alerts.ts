@@ -478,12 +478,23 @@ export function closeoutAlerts(sources: CloseoutAlertSource[], todayIso: string)
 
 /* ---------------------------------------------------- certified payroll */
 
+/** How often this jurisdiction's certified payroll is actually filed, as
+ * recorded on the rule set. Mirrors the `PrevailingWageFilingFrequency`
+ * enum rather than importing Prisma into a pure module. */
+export type FilingFrequency = "WEEKLY" | "BIWEEKLY" | "SEMI_MONTHLY" | "MONTHLY";
+
 export type CertifiedPayrollAlertSource = {
   jobId: string;
   jobName: string;
-  /** The Monday of a finished week that has time entries on it. */
+  /** The SUNDAY of a finished week that has time entries on it — the same
+   * seven days the certified payroll sheet itself prints. This used to be
+   * the Monday, from `components/fieldReportWeeks`, whose own docblock says
+   * it is deliberately Monday-based. So the alert said "week of Mon 8/24"
+   * and the sheet it is about said "Aug 23 – Aug 29": two different weeks,
+   * overlapping in six days, and nothing on either page could reveal it.
+   * See lib/certified-payroll-week.ts, which owns this definition. */
   weekStart: string;
-  /** The Sunday. The report is due after the week closes, not during it. */
+  /** The Saturday. The report is due after the week closes, not during it. */
   weekEnd: string;
   /**
    * Days after the period closes that this jurisdiction actually allows,
@@ -494,7 +505,64 @@ export type CertifiedPayrollAlertSource = {
    * not the same claim.
    */
   filingDueDays?: number | null;
+  /**
+   * The recorded filing frequency, which decides WHAT PERIOD is late — not
+   * merely how the alert is worded. It was entered, stored, displayed on
+   * the rule set row, and read by nothing: a company that recorded MONTHLY
+   * still got one alert per WEEK, four a month, each of them dating the
+   * deadline from the end of a week rather than the end of the month, and
+   * each citing that jurisdiction's own `filingDueDays` while doing it.
+   */
+  filingFrequency?: FilingFrequency | null;
 };
+
+/** Last day of the month containing `iso`. */
+function endOfMonth(iso: string): string {
+  const [year, month] = iso.split("-").map(Number);
+  return new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
+}
+
+type FilingPeriod = { key: string; end: string; label: string; perWeek: boolean };
+
+/**
+ * The filing period a week belongs to.
+ *
+ * A week that straddles a period boundary is attributed to the period its
+ * FIRST day falls in — an arbitrary tie-break, but a stable one, and the
+ * neighbouring period raises its own alert off its own weeks anyway.
+ *
+ * BIWEEKLY deliberately falls through to the week. A fortnight has no
+ * boundary until something says which fortnight, and nothing in this app
+ * records one: there is no filing anchor on `PrevailingWageRuleSet`.
+ * Inventing an anchor would date a deadline from a fortnight the
+ * jurisdiction never agreed to, which is the confident-wrong-answer failure
+ * this whole feature is written to avoid. So it prompts per week and the
+ * detail says why.
+ */
+function filingPeriodFor(
+  weekStart: string,
+  /** The source's OWN week end, not a second computation of it. */
+  weekEnd: string,
+  frequency: FilingFrequency | null,
+): FilingPeriod {
+  if (frequency === "MONTHLY") {
+    const month = weekStart.slice(0, 7);
+    return { key: month, end: endOfMonth(weekStart), label: month, perWeek: false };
+  }
+  if (frequency === "SEMI_MONTHLY") {
+    const month = weekStart.slice(0, 7);
+    const firstHalf = Number(weekStart.slice(8, 10)) <= 15;
+    return firstHalf
+      ? { key: `${month}-H1`, end: `${month}-15`, label: `${month}-01 to ${month}-15`, perWeek: false }
+      : {
+          key: `${month}-H2`,
+          end: endOfMonth(weekStart),
+          label: `${month}-16 to ${endOfMonth(weekStart)}`,
+          perWeek: false,
+        };
+  }
+  return { key: weekStart, end: weekEnd, label: `week of ${weekStart}`, perWeek: true };
+}
 
 /**
  * A prevailing-wage job with a finished week of hours and no certified
@@ -508,9 +576,15 @@ export type CertifiedPayrollAlertSource = {
  * it is prevailing-wage, and guessing is exactly what this codebase does
  * not do.
  *
- * The due date is the week's end plus the horizon; the convention this
- * follows is weekly filing shortly after the pay date, which is what
- * Davis-Bacon and its state equivalents require. It is a prompt, not a
+ * One alert per FILING PERIOD, not per week. The period comes from the
+ * rule set's recorded `filingFrequency`, and the deadline runs from the end
+ * of that period — a jurisdiction that files monthly is not late seven days
+ * after a Saturday, it is late `filingDueDays` after the month closes. The
+ * old shape raised four alerts a month at a company that had recorded
+ * MONTHLY, every one of them citing that jurisdiction's own filing window
+ * while measuring it from the wrong end.
+ *
+ * The due date is the period's end plus the horizon. It is a prompt, not a
  * statutory calculation: the exact deadline depends on the contract and
  * the jurisdiction, and there is no wage-determination dataset in this app
  * to read one from.
@@ -520,26 +594,63 @@ export function certifiedPayrollAlerts(
   todayIso: string,
 ): Alert[] {
   const horizon = ALERT_HORIZON_DAYS.CERTIFIED_PAYROLL ?? 7;
-  const alerts: Alert[] = [];
+
+  // Job + filing period. Several uncovered weeks inside one monthly period
+  // are one late filing, not four.
+  const periods = new Map<
+    string,
+    {
+      source: CertifiedPayrollAlertSource;
+      period: FilingPeriod;
+      frequency: FilingFrequency | null;
+      weeks: number;
+    }
+  >();
 
   for (const week of sources) {
-    // A week still running is not late. The report covers a closed week.
-    if (week.weekEnd >= todayIso) continue;
+    const frequency = week.filingFrequency ?? null;
+    const period = filingPeriodFor(week.weekStart, week.weekEnd, frequency);
 
-    const recorded = week.filingDueDays ?? null;
-    const dueOn = addDays(week.weekEnd, recorded ?? horizon);
+    // A period still running is not late — and this is the gate that stops
+    // a monthly jurisdiction being told on the 8th that "August" is
+    // overdue. It used to close on the week, which is why it could not.
+    if (period.end >= todayIso) continue;
+
+    const key = `${week.jobId}::${period.key}`;
+    const existing = periods.get(key);
+    if (existing) {
+      existing.weeks += 1;
+      continue;
+    }
+    periods.set(key, { source: week, period, frequency, weeks: 1 });
+  }
+
+  const alerts: Alert[] = [];
+
+  for (const [, { source, period, frequency, weeks }] of periods) {
+    const recorded = source.filingDueDays ?? null;
+    const dueOn = addDays(period.end, recorded ?? horizon);
     const days = daysUntilIso(dueOn, todayIso);
     const window = recorded === null ? "the usual filing window" : "this jurisdiction's filing window";
 
+    // A fortnightly jurisdiction gets a weekly prompt, and is told so
+    // rather than left to wonder why the app is nagging twice as often as
+    // it files. Nothing here records which fortnight is which.
+    const biweeklyCaveat =
+      frequency === "BIWEEKLY"
+        ? " This jurisdiction files every two weeks; nothing here records which weeks pair up, so this prompts per week."
+        : "";
+    const covered = period.perWeek ? "that week" : `${weeks === 1 ? "that period" : `those ${weeks} weeks`}`;
+
     alerts.push({
-      key: alertKey("CERTIFIED_PAYROLL", week.jobId, week.weekStart),
+      key: alertKey("CERTIFIED_PAYROLL", source.jobId, period.key),
       kind: "CERTIFIED_PAYROLL",
       severity: days < 0 ? "OVERDUE" : "DUE_SOON",
-      title: `Certified payroll for ${week.jobName}, week of ${week.weekStart}`,
+      title: `Certified payroll for ${source.jobName}, ${period.label}`,
       detail:
         days < 0
-          ? `Hours were logged that week and nothing covering it has been filed. ${Math.abs(days)} ${Math.abs(days) === 1 ? "day" : "days"} past ${window}.`
-          : "Hours were logged that week and nothing covering it has been filed yet.",
+          ? `Hours were logged in ${covered} and nothing covering it has been filed. ${Math.abs(days)} ${Math.abs(days) === 1 ? "day" : "days"} past ${window}.${biweeklyCaveat}`
+          : `Hours were logged in ${covered} and nothing covering it has been filed yet.${biweeklyCaveat}`,
       href: "/compliance",
       dueOn,
       daysUntil: days,
