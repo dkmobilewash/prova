@@ -171,3 +171,38 @@ export function calculatePayAppSummary(input: PayAppSummaryInput): PayAppSummary
     balanceToFinishIncludingRetainage,
   };
 }
+
+/**
+ * What makes two pay applications the SAME pay application.
+ *
+ * A pay application has no period field to key on — its identity is the
+ * breakdown itself: which SOV lines, billed how much, with how much stored
+ * against each. So this reduces a submission to one string, and two
+ * submissions that would bill the GC for the same work produce the same
+ * string. `submitPayApplication` compares it against the applications on
+ * the job from the last couple of minutes and refuses a match (#102), which
+ * is what stops a re-click from billing the same period twice at a new
+ * invoice number, with `retainageWithheld` snapshotted a second time.
+ *
+ * Sorted by line item, because form field order is not part of the meaning
+ * and two posts of the same form can disagree about it. Money is fixed to
+ * two decimals, because "1200" and "1200.00" are the same bill and a
+ * fingerprint that says otherwise is a guard that silently never fires.
+ */
+export function payApplicationFingerprint(
+  rows: {
+    lineItemId: string;
+    thisPeriodBilled: number | string;
+    materialsStoredValue: number | string;
+  }[],
+): string {
+  return JSON.stringify(
+    rows
+      .map((row) => [
+        row.lineItemId,
+        Number(row.thisPeriodBilled).toFixed(2),
+        Number(row.materialsStoredValue).toFixed(2),
+      ])
+      .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)),
+  );
+}

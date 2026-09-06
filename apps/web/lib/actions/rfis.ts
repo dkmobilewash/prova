@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { requireCapabilityForAction } from "@/lib/authz";
 import { Prisma, prisma } from "@prova/db";
+import { isRepeatOf } from "@/lib/duplicate-writes";
+import { lockAgainstDuplicates } from "./duplicates";
 import { assertOwner } from "./shared";
 
 /** Every entry point to these records is a page guarded by MANAGE_JOBS,
@@ -88,6 +90,22 @@ export async function createRfi(formData: FormData) {
   const sentOn = optionalDate(formData, "sentOn");
 
   await prisma.$transaction(async (tx) => {
+    // First statement in the transaction, and before the number is issued.
+    // An RFI raised twice sends the GC the same question under two numbers
+    // and burns one the counter can never reissue, so the log ends up with
+    // a gap and a duplicate at once (#102). Silent rather than a refusal:
+    // this action returns void, and a `throw` is redacted to a digest in
+    // production, so the truthful outcome of a second click is the one RFI
+    // that exists and the revalidate below showing it.
+    await lockAgainstDuplicates(tx, "rfi", [jobId, subject, question]);
+
+    const prior = await tx.rfi.findFirst({
+      where: { jobId, subject, question },
+      orderBy: { createdAt: "desc" },
+      select: { createdAt: true },
+    });
+    if (isRepeatOf(prior?.createdAt, new Date())) return;
+
     await tx.rfi.create({
       data: {
         companyId: company.id,

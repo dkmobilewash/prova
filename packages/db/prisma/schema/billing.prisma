@@ -110,6 +110,16 @@ model Invoice {
   /// running total withheld — see lib/retainage.ts.
   retainageWithheld Decimal? @db.Decimal(12, 2)
 
+  /// When Prova recorded this row, as distinct from `issuedAt` — the date
+  /// the bill is dated, which is business data a person can mean to set.
+  /// The two are equal today because nothing sets `issuedAt`, and that is
+  /// precisely why this column exists: the accidental-repeat window in
+  /// lib/actions/billing.ts must ask "did we write this a moment ago",
+  /// which a business date can only answer by coincidence. Backfilled to
+  /// the migration's own timestamp on rows that predate it; the window it
+  /// feeds is two minutes wide, so old rows read as old either way.
+  createdAt DateTime @default(now())
+
   payments Payment[]
 
   /// Per-SOV-line breakdown, present only for invoices submitted as a full
@@ -119,6 +129,28 @@ model Invoice {
 
   @@unique([jobId, number])
   @@index([jobId])
+}
+
+/// Issues invoice numbers per job. Same rule as RfiCounter,
+/// SubmittalCounter and SafetyCaseCounter, and it arrived here late: this
+/// number used to be `max(number) + 1`, which CLAUDE.md forbids by name.
+/// Delete a job's newest invoice under that scheme and the next invoice
+/// reissues its number, so "Invoice 4" names two different bills sent to
+/// the same GC — and the GC holds both. This row only ever increments.
+///
+/// It also fixes a second, quieter failure. Two submissions arriving
+/// together both read the same `max`, both build number N, and one of them
+/// dies on `@@unique([jobId, number])` with an uncaught P2002 — a raw 500
+/// on a $140,000 pay application. With a counter they take distinct
+/// numbers, and the duplicate itself is stopped by the guard in
+/// `submitPayApplication` rather than by a constraint violation nobody
+/// wrote a message for.
+model InvoiceCounter {
+  jobId      String @id
+  job        Job    @relation(fields: [jobId], references: [id])
+  lastNumber Int    @default(0)
+
+  updatedAt DateTime @updatedAt
 }
 
 /// A payment received against an Invoice. No payment processor — this is a
@@ -132,6 +164,17 @@ model Payment {
   method     String?
   receivedAt DateTime @default(now())
   note       String?
+
+  /// When Prova recorded the payment, as distinct from `receivedAt` — the
+  /// date the money actually arrived, which is business data. Same reason
+  /// as Invoice.createdAt: `logPayment` refuses a second identical payment
+  /// only within a couple of minutes of the first, and "a couple of
+  /// minutes" has to be measured against when we wrote the row. #102's
+  /// worst case is this one — $10,000 logged twice against a $20,000
+  /// invoice drives the balance to zero, and `calculateArAgingInvoice`
+  /// returns null for a balance of zero, so the invoice silently leaves
+  /// A/R aging and the forecast with $10,000 still owed.
+  createdAt DateTime @default(now())
 
   @@index([invoiceId])
 }

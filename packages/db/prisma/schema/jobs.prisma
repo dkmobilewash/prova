@@ -62,6 +62,7 @@ model Job {
   assignments                  JobAssignment[]
   signatureRequests            SignatureRequest[]
   invoices                     Invoice[]
+  invoiceCounter               InvoiceCounter?
   complianceDocuments          ComplianceDocument[]
   equipment                    Equipment[]
   equipmentAssignments         EquipmentAssignment[]

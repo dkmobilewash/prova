@@ -4,7 +4,14 @@ import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
 import { money as formatMoney } from "@/lib/money";
 import { Prisma, prisma } from "@prova/db";
-import { actionFail as fail, actionOk as ok, type ActionResult } from "./shared";
+import { isRepeatOf, moneyPart } from "@/lib/duplicate-writes";
+import { lockAgainstDuplicates } from "./duplicates";
+import {
+  actionFail as fail,
+  actionOk as ok,
+  isUniqueConstraintError,
+  type ActionResult,
+} from "./shared";
 
 /** Actions in this module RETURN their failures instead of throwing them.
  * Production redacts a thrown Server Action message to an opaque digest, so
@@ -125,6 +132,30 @@ async function issueBackchargeNumber(tx: Prisma.TransactionClient, jobId: string
   return counter.lastNumber;
 }
 
+/**
+ * Logs a backcharge the GC has issued against us.
+ *
+ * TWO different repeat guards, because a backcharge has two different
+ * kinds of identity (#102):
+ *
+ *   WITH a GC reference — their own notice number — that string IS the
+ *   notice, permanently. Two rows quoting BC-114 on one job are one
+ *   backcharge entered twice, whether the second arrived four seconds or
+ *   four months later, and the page then shows $16,000 of exposure where
+ *   the GC claimed $8,000. `@@unique([jobId, gcReference])` in the schema
+ *   is the database enforcing that, and the P2002 it raises is caught
+ *   below and turned into a sentence. A database constraint is used here
+ *   rather than a code check because it is the only guarantee that also
+ *   binds a path nobody has written yet.
+ *
+ *   WITHOUT one — most of them, since plenty arrive as a line on a
+ *   deduction sheet with no number at all — there is no permanent key, so
+ *   the same accidental-repeat window every other path in #102 uses.
+ *
+ * Both run inside the transaction that issues the number, so a refused
+ * duplicate rolls the counter increment back with it and no backcharge
+ * number is burned.
+ */
 export async function createBackcharge(formData: FormData): Promise<ActionResult> {
   const { company, ...user } = await requireCompanyContext();
   return runAction(async () => {
@@ -147,25 +178,80 @@ export async function createBackcharge(formData: FormData): Promise<ActionResult
       throw new InputError("The deadline to object can't be before the notice was issued");
     }
 
-    await prisma.$transaction(async (tx) => {
-      await tx.backcharge.create({
-        data: {
-          companyId: company.id,
-          jobId,
-          number: await issueBackchargeNumber(tx, jobId),
-          gcReference: text(formData, "gcReference") || null,
-          category: enumFrom(formData, "category", CATEGORIES, "Category"),
-          description: required(formData, "description", "What it's for"),
-          claimedAmount: money(formData, "claimedAmount", "Amount claimed"),
-          issuedOn,
-          receivedOn,
-          respondByDate,
-          loggedByUserId: user.id,
-        },
-      });
-    });
+    const gcReference = text(formData, "gcReference") || null;
+    const category = enumFrom(formData, "category", CATEGORIES, "Category");
+    const description = required(formData, "description", "What it's for");
+    const claimedAmount = money(formData, "claimedAmount", "Amount claimed");
 
-    revalidatePath("/backcharges");
+    try {
+      const duplicate = await prisma.$transaction(async (tx) => {
+        // First statement in the transaction: the check below is a SELECT
+        // under READ COMMITTED and two simultaneous submissions would both
+        // see nothing. See lib/actions/duplicates.ts.
+        await lockAgainstDuplicates(tx, "backcharge", [
+          jobId,
+          gcReference,
+          description,
+          moneyPart(claimedAmount),
+          issuedOn,
+        ]);
+
+        const prior = await tx.backcharge.findFirst({
+          where: gcReference
+            ? { jobId, gcReference }
+            : { jobId, gcReference: null, description, claimedAmount, issuedOn },
+          orderBy: { createdAt: "desc" },
+          select: { number: true, gcReference: true, createdAt: true },
+        });
+        // A GC reference is a permanent key, so no window applies to it.
+        // Without one there is nothing permanent to key on, and only the
+        // accidental repeat is refused.
+        if (prior && (gcReference !== null || isRepeatOf(prior.createdAt, new Date()))) {
+          return prior;
+        }
+
+        await tx.backcharge.create({
+          data: {
+            companyId: company.id,
+            jobId,
+            number: await issueBackchargeNumber(tx, jobId),
+            gcReference,
+            category,
+            description,
+            claimedAmount,
+            issuedOn,
+            receivedOn,
+            respondByDate,
+            loggedByUserId: user.id,
+          },
+        });
+        return null;
+      });
+
+      revalidatePath("/backcharges");
+
+      if (duplicate) {
+        return fail(
+          duplicate.gcReference
+            ? `The GC's reference ${duplicate.gcReference} is already logged on this job as backcharge #${duplicate.number}. Open that one instead — logging it twice would show double the exposure.`
+            : `Backcharge #${duplicate.number} on this job was logged with these same details a moment ago. Nothing was logged twice.`,
+        );
+      }
+    } catch (error) {
+      // The database's own answer to the same question, for two
+      // submissions close enough together that neither saw the other. The
+      // check is on `code`, not `instanceof` — that instanceof is false at
+      // runtime here, which is the whole of issue #25. Nothing was written:
+      // the create and the counter increment share one transaction.
+      if (isUniqueConstraintError(error)) {
+        revalidatePath("/backcharges");
+        return fail(
+          `The GC's reference ${gcReference} is already logged on this job. Open that backcharge instead — logging it twice would show double the exposure.`,
+        );
+      }
+      throw error;
+    }
+
     return ok;
   });
 }
@@ -215,18 +301,36 @@ export async function updateBackcharge(id: string, formData: FormData): Promise<
       throw new InputError("The deadline to object can't be before the notice was issued");
     }
 
-    await prisma.backcharge.update({
-      where: { id: backcharge.id },
-      data: {
-        gcReference,
-        category: enumFrom(formData, "category", CATEGORIES, "Category"),
-        description: required(formData, "description", "What it's for"),
-        claimedAmount,
-        issuedOn,
-        receivedOn,
-        respondByDate,
-      },
-    });
+    const category = enumFrom(formData, "category", CATEGORIES, "Category");
+    const description = required(formData, "description", "What it's for");
+
+    try {
+      await prisma.backcharge.update({
+        where: { id: backcharge.id },
+        data: {
+          gcReference,
+          category,
+          description,
+          claimedAmount,
+          issuedOn,
+          receivedOn,
+          respondByDate,
+        },
+      });
+    } catch (error) {
+      // `@@unique([jobId, gcReference])` binds edits too, not just creates.
+      // Typing a reference another backcharge on this job already holds is
+      // an ordinary mistake and has to come back as a sentence — an
+      // uncaught P2002 here would be a 500 on a form, which is the shape of
+      // the dead guards in #25 and #26. Checked by `code`; the instanceof
+      // is false at runtime in this app.
+      if (isUniqueConstraintError(error)) {
+        return fail(
+          `Another backcharge on this job already has the GC's reference ${gcReference}. Two rows quoting the same notice would double the exposure this job shows.`,
+        );
+      }
+      throw error;
+    }
 
     revalidatePath("/backcharges");
     return ok;

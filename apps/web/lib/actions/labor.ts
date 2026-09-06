@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { putDocument } from "@/lib/blob";
 import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@prova/db";
+import { isRepeatOf, moneyPart } from "@/lib/duplicate-writes";
+import { lockAgainstDuplicates } from "./duplicates";
 import {
   actionFail,
   actionOk,
@@ -29,7 +31,21 @@ function timeEntryPayTypeFromForm(formData: FormData): (typeof TIME_ENTRY_PAY_TY
 /** Logs a day's hours for one employee against a job — optionally tied to
  * a specific line item (cost code/SOV line) and craft classification. See
  * TimeEntry in schema.prisma for why pay types are separate rows rather
- * than one row with a rate multiplier. */
+ * than one row with a rate multiplier.
+ *
+ * Entered twice, this is 16 hours on a day somebody worked 8, and the
+ * damage spreads further than the cost report: it doubles that person on
+ * the WH-347 certified payroll — a federal document signed under penalty
+ * of perjury — and doubles that day inside the apprentice ratio, which can
+ * flip a verdict or hide a violation. So an identical row for the same
+ * person, day, cost code and pay type arriving within a couple of minutes
+ * is treated as the same click (#102).
+ *
+ * A WINDOW rather than a permanent constraint, deliberately. Splitting a
+ * day across two entries on the same cost code is real timekeeping — a
+ * four-hour correction, a second crew half-day — and a unique index on
+ * (job, employee, date, payType) would make it impossible forever. Two
+ * minutes bounds the accident without ruling out the practice. */
 export async function logTimeEntry(jobId: string, formData: FormData) {
   const { company } = await requireCompanyContext();
   await assertJobInCompany(jobId, company.id);
@@ -62,20 +78,50 @@ export async function logTimeEntry(jobId: string, formData: FormData) {
   const note = String(formData.get("note") ?? "").trim();
   const perDiemAmount = nullableDecimalFromForm(formData, "perDiemAmount");
   const travelPayAmount = nullableDecimalFromForm(formData, "travelPayAmount");
+  const payType = timeEntryPayTypeFromForm(formData);
 
-  await prisma.timeEntry.create({
-    data: {
+  await prisma.$transaction(async (tx) => {
+    await lockAgainstDuplicates(tx, "timeEntry", [
       jobId,
-      lineItemId,
       employeeUserId,
-      craftClassificationId,
+      lineItemId,
       date,
-      hours: hoursRaw,
-      payType: timeEntryPayTypeFromForm(formData),
-      perDiemAmount,
-      travelPayAmount,
-      note: note || null,
-    },
+      payType,
+      moneyPart(hoursRaw),
+    ]);
+
+    const prior = await tx.timeEntry.findFirst({
+      where: {
+        jobId,
+        employeeUserId,
+        lineItemId,
+        craftClassificationId,
+        date,
+        hours: hoursRaw,
+        payType,
+        perDiemAmount,
+        travelPayAmount,
+        note: note || null,
+      },
+      orderBy: { createdAt: "desc" },
+      select: { createdAt: true },
+    });
+    if (isRepeatOf(prior?.createdAt, new Date())) return;
+
+    await tx.timeEntry.create({
+      data: {
+        jobId,
+        lineItemId,
+        employeeUserId,
+        craftClassificationId,
+        date,
+        hours: hoursRaw,
+        payType,
+        perDiemAmount,
+        travelPayAmount,
+        note: note || null,
+      },
+    });
   });
 
   revalidatePath(`/jobs/${jobId}`);

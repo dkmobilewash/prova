@@ -5,11 +5,13 @@ import { headers } from "next/headers";
 import { putDocument } from "@/lib/blob";
 import { linkToken } from "@/lib/tokens";
 import { requireCompanyContext } from "@/lib/auth";
-import { prisma } from "@prova/db";
+import { Prisma, prisma } from "@prova/db";
 import { revokeToken, refreshTokens, getCompanyInfo, generateWipNarrative, type QuickBooksCompanyInfo } from "@prova/integrations";
 import { calculateLineItemWip, calculateJobWip } from "@/lib/wip";
 import { MIN_EARNED_COVERAGE } from "@/lib/company-financials";
-import { payAppEntryError } from "@/lib/pay-application";
+import { payAppEntryError, payApplicationFingerprint } from "@/lib/pay-application";
+import { DUPLICATE_WRITE_WINDOW_MS, isRepeatOf, moneyPart } from "@/lib/duplicate-writes";
+import { lockAgainstDuplicates } from "./duplicates";
 import {
   actionFail,
   actionOk,
@@ -148,13 +150,45 @@ export async function enablePortalAccess(contactId: string) {
   revalidatePath(`/contacts/${contactId}`);
 }
 
-async function nextInvoiceNumber(jobId: string) {
-  const last = await prisma.invoice.findFirst({ where: { jobId }, orderBy: { number: "desc" } });
-  return (last?.number ?? 0) + 1;
+/**
+ * Issues the next invoice number for a job.
+ *
+ * Reads nothing from Invoice on purpose. This used to be `max(number) + 1`,
+ * which CLAUDE.md's counter rule forbids by name and for a reason this
+ * feature makes concrete: delete a job's newest invoice and the next one
+ * reissues its number, so "Invoice 4" names two different bills — and the
+ * GC is holding both. `InvoiceCounter` only ever increments, and it is
+ * bumped inside the same transaction as the insert so two submissions
+ * cannot read the same value. Same shape as issueRfiNumber and
+ * issueSubmittalNumber.
+ *
+ * Existing jobs were seeded from their highest invoice number by the
+ * migration that added the table, so the create branch below starting at 1
+ * only ever applies to a job with no invoices at all.
+ */
+async function issueInvoiceNumber(tx: Prisma.TransactionClient, jobId: string) {
+  const counter = await tx.invoiceCounter.upsert({
+    where: { jobId },
+    create: { jobId, lastNumber: 1 },
+    update: { lastNumber: { increment: 1 } },
+    select: { lastNumber: true },
+  });
+  return counter.lastNumber;
 }
 
 /** Bills the client. Only once a job is CONTRACTED or later — you don't
- * invoice an estimate nobody has agreed to yet. */
+ * invoice an estimate nobody has agreed to yet.
+ *
+ * A repeat of the same bill within a couple of minutes is treated as the
+ * same click and does nothing (#102). SILENTLY, and that is a deliberate
+ * choice rather than an oversight: this action is wired to a plain
+ * `<form action>` in a server component, so it has no way to return a
+ * sentence anybody would see, and a `throw` would be redacted to a digest
+ * in production and take the page down through the error boundary. The
+ * truthful outcome of a double-click is the one invoice that already
+ * exists, and the revalidate below is what puts it on screen. Where the
+ * call site CAN render a message — submitPayApplication, createBackcharge
+ * — it gets one instead of silence. */
 export async function createInvoice(jobId: string, formData: FormData) {
   const { company } = await requireCompanyContext();
   const job = await assertJobInCompany(jobId, company.id);
@@ -173,9 +207,29 @@ export async function createInvoice(jobId: string, formData: FormData) {
   const retainageWithheld =
     job.retainagePercent != null ? (Number(amount) * (Number(job.retainagePercent) / 100)).toFixed(2) : null;
 
-  const number = await nextInvoiceNumber(jobId);
-  await prisma.invoice.create({
-    data: { jobId, number, description: description || null, amount, dueAt, retainageWithheld },
+  await prisma.$transaction(async (tx) => {
+    await lockAgainstDuplicates(tx, "invoice", [jobId, description, moneyPart(amount), dueAt]);
+
+    const prior = await tx.invoice.findFirst({
+      where: { jobId, description: description || null, amount, dueAt },
+      orderBy: { createdAt: "desc" },
+      select: { createdAt: true },
+    });
+    // Before the number is issued, not after: refusing later would still
+    // burn a number the counter never reissues, leaving a gap in the log
+    // with nothing to explain it.
+    if (isRepeatOf(prior?.createdAt, new Date())) return;
+
+    await tx.invoice.create({
+      data: {
+        jobId,
+        number: await issueInvoiceNumber(tx, jobId),
+        description: description || null,
+        amount,
+        dueAt,
+        retainageWithheld,
+      },
+    });
   });
 
   revalidatePath(`/jobs/${jobId}`);
@@ -228,12 +282,20 @@ export async function submitPayApplication(jobId: string, formData: FormData): P
   }
 
   // Prior-period context this action never used to fetch. Two narrow reads
-  // before the write, both outside any transaction: the Neon pooled
-  // connection limit is 5, and wrapping reads in one buys nothing here —
-  // Invoice's @@unique([jobId, number]) is what actually stops two
-  // concurrent submissions from both landing (the loser fails on the
-  // constraint), so this is a guard against a person's mistake rather than
-  // a concurrency control, and it does not pretend otherwise.
+  // before the write, both outside any transaction, because the Neon pooled
+  // connection limit is 5 and these validate the numbers a person typed
+  // rather than deciding whether to insert.
+  //
+  // This comment used to claim Invoice's @@unique([jobId, number]) was what
+  // stopped two concurrent submissions from both landing. It never did two
+  // useful things and now does neither. It could only ever fire when both
+  // submissions computed the SAME number, which is a property of the old
+  // `max(number) + 1`, not of the duplicate; and when it did fire it threw
+  // an uncaught P2002 — a raw 500 on a $140,000 pay application, the exact
+  // shape of the dead guards in #25 and #26. Numbers now come from
+  // InvoiceCounter, so two submissions get two numbers, and what actually
+  // stops the second one is the advisory lock and fingerprint check in the
+  // transaction below.
   const sovLines = await prisma.jobLineItem.findMany({
     where: { jobId },
     select: { id: true, description: true, quantity: true, unitPrice: true },
@@ -278,26 +340,73 @@ export async function submitPayApplication(jobId: string, formData: FormData): P
   const retainageWithheld =
     job.retainagePercent != null ? ((amount * Number(job.retainagePercent)) / 100).toFixed(2) : null;
 
-  const number = await nextInvoiceNumber(jobId);
-  await prisma.invoice.create({
-    data: {
-      jobId,
-      number,
-      description: description || null,
-      amount: amount.toFixed(2),
-      dueAt,
-      retainageWithheld,
-      lineItems: {
-        create: rows.map((row) => ({
-          lineItemId: row.lineItemId,
-          thisPeriodBilled: row.thisPeriodBilled.toFixed(2),
-          materialsStoredValue: row.materialsStoredValue.toFixed(2),
-        })),
+  // The submission's own identity, and the whole of the repeat guard below.
+  const fingerprint = payApplicationFingerprint(rows);
+
+  const duplicate = await prisma.$transaction(async (tx) => {
+    // FIRST statement in the transaction. The check that follows is a
+    // SELECT under READ COMMITTED, where two simultaneous submissions both
+    // see nothing and both insert; this serializes them so the second one
+    // looks after the first has landed. See lib/actions/duplicates.ts.
+    await lockAgainstDuplicates(tx, "payApplication", [jobId, fingerprint]);
+
+    const recent = await tx.invoice.findMany({
+      where: { jobId, createdAt: { gte: new Date(Date.now() - DUPLICATE_WRITE_WINDOW_MS) } },
+      select: {
+        number: true,
+        lineItems: { select: { lineItemId: true, thisPeriodBilled: true, materialsStoredValue: true } },
       },
-    },
+    });
+    const alreadySubmitted = recent.find(
+      (invoice) =>
+        invoice.lineItems.length > 0 &&
+        payApplicationFingerprint(
+          invoice.lineItems.map((line) => ({
+            lineItemId: line.lineItemId,
+            thisPeriodBilled: line.thisPeriodBilled.toString(),
+            materialsStoredValue: line.materialsStoredValue.toString(),
+          })),
+        ) === fingerprint,
+    );
+    if (alreadySubmitted) return alreadySubmitted.number;
+
+    await tx.invoice.create({
+      data: {
+        jobId,
+        // Issued only once the repeat guard has passed. Issuing it first
+        // and refusing afterwards would burn a number InvoiceCounter never
+        // reissues, and leave the GC's invoice sequence with an unexplained
+        // gap for a click that produced nothing.
+        number: await issueInvoiceNumber(tx, jobId),
+        description: description || null,
+        amount: amount.toFixed(2),
+        dueAt,
+        retainageWithheld,
+        lineItems: {
+          create: rows.map((row) => ({
+            lineItemId: row.lineItemId,
+            thisPeriodBilled: row.thisPeriodBilled.toFixed(2),
+            materialsStoredValue: row.materialsStoredValue.toFixed(2),
+          })),
+        },
+      },
+    });
+    return null;
   });
 
   revalidatePath(`/jobs/${jobId}`);
+
+  // This call site is a client component that renders the failure, so it
+  // gets a sentence rather than the silence createInvoice has to settle
+  // for — and the sentence names the application that already exists, so
+  // the person can go and look at it.
+  if (duplicate !== null) {
+    return actionFail(
+      `Pay application #${duplicate} on this job was already submitted with these same amounts a moment ago. ` +
+        `Nothing was billed twice. Check the pay applications list — it should be there now.`,
+    );
+  }
+
   return actionOk;
 }
 
@@ -347,7 +456,23 @@ export async function updateInvoiceStatus(jobId: string, invoiceId: string, form
 
 /** Logs a payment received against an invoice. Not a charge — just a
  * record (check, cash, card handled elsewhere). Supports partial payments;
- * an invoice's balance is always amount - SUM(payments.amount). */
+ * an invoice's balance is always amount - SUM(payments.amount).
+ *
+ * The worst duplicate in the app, and the reason #102 was filed. $10,000
+ * logged twice against a $20,000 invoice makes the balance zero, and
+ * `calculateArAgingInvoice` returns null for a balance of zero or less — so
+ * the invoice drops out of A/R aging, out of `totalOutstanding` and out of
+ * the cash forecast while $10,000 is still owed. Nothing anywhere renders a
+ * negative balance, so there is no symptom at all: the money simply stops
+ * being chased.
+ *
+ * An identical payment on the same invoice within a couple of minutes is
+ * therefore read as the same click and does nothing. Silent, for the same
+ * reason createInvoice is silent — a plain `<form action>` in a server
+ * component has nowhere to put a sentence — and safe, because two separate
+ * cheques for the same amount from the same GC arriving within two minutes
+ * of each other is not a thing that happens; if it somehow did, entering
+ * the second one a minute later records it. */
 export async function logPayment(jobId: string, invoiceId: string, formData: FormData) {
   const { company } = await requireCompanyContext();
   await assertJobInCompany(jobId, company.id);
@@ -360,8 +485,19 @@ export async function logPayment(jobId: string, invoiceId: string, formData: For
   const method = String(formData.get("method") ?? "").trim();
   const note = String(formData.get("note") ?? "").trim();
 
-  await prisma.payment.create({
-    data: { invoiceId, amount, method: method || null, note: note || null },
+  await prisma.$transaction(async (tx) => {
+    await lockAgainstDuplicates(tx, "payment", [invoiceId, moneyPart(amount), method, note]);
+
+    const prior = await tx.payment.findFirst({
+      where: { invoiceId, amount, method: method || null, note: note || null },
+      orderBy: { createdAt: "desc" },
+      select: { createdAt: true },
+    });
+    if (isRepeatOf(prior?.createdAt, new Date())) return;
+
+    await tx.payment.create({
+      data: { invoiceId, amount, method: method || null, note: note || null },
+    });
   });
 
   revalidatePath(`/jobs/${jobId}`);
@@ -387,7 +523,14 @@ export async function deletePayment(jobId: string, paymentId: string) {
 
 /** Records retainage actually paid back to the sub -- a lump sum against
  * the job's accumulated withheld balance, not against any one invoice.
- * See RetainageRelease in schema.prisma. */
+ * See RetainageRelease in schema.prisma.
+ *
+ * Logged twice, this says money came back that did not: the outstanding
+ * retainage balance is withheld minus SUM(releases), so a duplicated
+ * $30,000 release reports $30,000 already recovered that is still sitting
+ * with the GC — and retainage is the money a sub chases hardest and
+ * longest. Same accidental-repeat guard, same silence, same reason for it
+ * as logPayment above. */
 export async function createRetainageRelease(jobId: string, formData: FormData) {
   const { company, ...user } = await requireCompanyContext();
   await assertJobInCompany(jobId, company.id);
@@ -397,8 +540,23 @@ export async function createRetainageRelease(jobId: string, formData: FormData) 
   const releasedAt = releasedRaw ? new Date(releasedRaw) : new Date();
   const note = String(formData.get("note") ?? "").trim();
 
-  await prisma.retainageRelease.create({
-    data: { jobId, amount, releasedAt, note: note || null, createdByUserId: user.id },
+  await prisma.$transaction(async (tx) => {
+    await lockAgainstDuplicates(tx, "retainageRelease", [jobId, moneyPart(amount), note]);
+
+    // `releasedAt` is deliberately NOT part of the match. It defaults to
+    // `new Date()` when the field is left blank, so two clicks a second
+    // apart carry two different instants and matching on it would make the
+    // guard miss exactly the case it exists for.
+    const prior = await tx.retainageRelease.findFirst({
+      where: { jobId, amount, note: note || null },
+      orderBy: { createdAt: "desc" },
+      select: { createdAt: true },
+    });
+    if (isRepeatOf(prior?.createdAt, new Date())) return;
+
+    await tx.retainageRelease.create({
+      data: { jobId, amount, releasedAt, note: note || null, createdByUserId: user.id },
+    });
   });
 
   revalidatePath(`/jobs/${jobId}`);

@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
 import { Prisma, prisma } from "@prova/db";
+import { isRepeatOf } from "@/lib/duplicate-writes";
+import { lockAgainstDuplicates } from "./duplicates";
 import { actionFail as fail, actionOk as ok, assertOwner, type ActionResult } from "./shared";
 import { can } from "@/lib/permissions";
 
@@ -122,7 +124,29 @@ export async function createSubmittal(formData: FormData): Promise<ActionResult>
       return fail("Set the sent date first — a due-back date on an unsent submittal means nothing");
     }
 
-    await prisma.$transaction(async (tx) => {
+    const duplicate = await prisma.$transaction(async (tx) => {
+      // First statement in the transaction, and before a number is issued.
+      // Registering the same package twice puts one shop drawing on the
+      // GC's transmittal log under two numbers, and burns a number
+      // SubmittalCounter will never reissue — a gap in the log with nothing
+      // to explain it (#102). A window rather than a permanent constraint:
+      // "Shop drawings" is a title two genuinely different packages on one
+      // job can share months apart.
+      await lockAgainstDuplicates(tx, "submittal", [jobId, title, specSection, description]);
+
+      const prior = await tx.submittal.findFirst({
+        where: {
+          jobId,
+          title,
+          description: description || null,
+          specSection: specSection || null,
+          drawingReference: drawingReference || null,
+        },
+        orderBy: { createdAt: "desc" },
+        select: { number: true, createdAt: true },
+      });
+      if (isRepeatOf(prior?.createdAt, new Date())) return prior;
+
       const submittal = await tx.submittal.create({
         data: {
           companyId: company.id,
@@ -144,9 +168,21 @@ export async function createSubmittal(formData: FormData): Promise<ActionResult>
           data: { submittalId: submittal.id, revisionNumber: 1, sentOn, dueBack },
         });
       }
+      return null;
     });
 
     revalidatePath("/submittals");
+
+    // SubmittalForm renders what this returns, so the repeat gets a
+    // sentence naming the package that already exists rather than the
+    // silence createRfi has to settle for.
+    if (duplicate) {
+      return fail(
+        `Submittal #${duplicate.number} on this job was registered with these same details a moment ago. ` +
+          `Nothing was registered twice — it should be in the list now.`,
+      );
+    }
+
     return ok;
   });
 }

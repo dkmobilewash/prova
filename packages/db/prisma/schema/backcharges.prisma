@@ -74,6 +74,14 @@ model Backcharge {
   /// The GC's own document number for it, which is what they will quote
   /// back at us. Free text and nullable: plenty of backcharges arrive as
   /// a line on a pay-application deduction sheet with no number at all.
+  ///
+  /// It is also the NATURAL KEY of the notice, and `@@unique([jobId,
+  /// gcReference])` below is the database saying so. Two rows quoting the
+  /// GC's own BC-114 on the same job are one backcharge entered twice, and
+  /// the page then reads $16,000 of exposure where the GC claimed $8,000
+  /// (#102). Postgres treats NULLs as distinct, so the many backcharges
+  /// that legitimately arrive with no number at all are unaffected — the
+  /// constraint binds exactly the rows that have a key to be checked by.
   gcReference String?
 
   category    BackchargeCategory @default(OTHER)
@@ -120,6 +128,7 @@ model Backcharge {
   updatedAt DateTime @updatedAt
 
   @@unique([jobId, number])
+  @@unique([jobId, gcReference])
   @@index([companyId])
   @@index([jobId])
 }

@@ -5,6 +5,7 @@ import { requireCapabilityForAction } from "@/lib/authz";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { Prisma, prisma } from "@prova/db";
+import { lockAgainstDuplicates } from "./duplicates";
 import {
   actionFail,
   actionOk,
@@ -143,9 +144,16 @@ type CaseIdentity = {
  * guard that refused after issuing a number would still burn it, and
  * produce that same unexplained gap without any duplicate to blame.
  *
- * WHAT THIS DOES NOT CLOSE: two identical submissions arriving at the same
- * instant can both read nothing here and both insert. Only a unique index
- * in the database can refuse that one, and adding it is a migration.
+ * THE RACE THIS ONCE LEFT OPEN IS CLOSED. Two identical submissions
+ * arriving at the same instant used to both read nothing here and both
+ * insert — this comment said so, and said the only fix was a unique index.
+ * It is now `lockAgainstDuplicates` in the caller instead, and that was the
+ * better of the two: the identity of a case includes its free-text
+ * description, and a btree unique index over unbounded text fails at
+ * runtime past roughly 2,700 bytes — on a long incident write-up, which is
+ * exactly the report nobody wants to lose. The advisory lock serializes the
+ * two submissions so the second one's read happens after the first has
+ * landed, with no index and no ceiling on the text (#102).
  */
 async function alreadyFiled(
   tx: Prisma.TransactionClient,
@@ -181,6 +189,17 @@ export async function createSafetyIncident(formData: FormData) {
   );
 
   await prisma.$transaction(async (tx) => {
+    // The first statement in the transaction, before the read below and
+    // before the counter is touched. Without it the read is a SELECT under
+    // READ COMMITTED and two simultaneous submissions both see nothing and
+    // both file a case — see lib/actions/duplicates.ts.
+    await lockAgainstDuplicates(tx, "safetyIncident", [
+      company.id,
+      occurredAt,
+      employeeName,
+      description,
+    ]);
+
     // Silent on purpose. This runs when somebody's report did not appear
     // to go through and they sent it again, and the truthful outcome of
     // that is the one case that is already filed — the page revalidates
