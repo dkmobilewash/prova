@@ -36,7 +36,7 @@ const BOND_LABELS: Record<string, string> = {
 };
 
 export async function renewalSourcesForCompany(companyId: string): Promise<RenewalSource[]> {
-  const [documents, licenses, policies, bonds] = await Promise.all([
+  const [documents, licenses, policies, bonds, contacts] = await Promise.all([
     // Only COIs expire. A lien waiver or a payroll report has no renewal
     // date and never will, so they are not candidates at all.
     prisma.complianceDocument.findMany({
@@ -60,6 +60,17 @@ export async function renewalSourcesForCompany(companyId: string): Promise<Renew
     prisma.companyBond.findMany({
       where: { companyId },
       select: { id: true, suretyName: true, bondType: true, renewalDate: true },
+    }),
+    // Only contacts that actually track one of these two dates. Most GCs
+    // have neither, and fetching every contact to filter in memory would
+    // grow this query with a company's whole contact list instead of just
+    // its filing history.
+    prisma.contact.findMany({
+      where: {
+        companyId,
+        OR: [{ msaExpirationDate: { not: null } }, { prequalificationExpiresAt: { not: null } }],
+      },
+      select: { id: true, name: true, msaExpirationDate: true, prequalificationExpiresAt: true },
     }),
   ]);
 
@@ -106,5 +117,37 @@ export async function renewalSourcesForCompany(companyId: string): Promise<Renew
       expectsDate: false,
       href: "/settings",
     })),
+    // A contact can carry both an MSA and a prequalification date, so each
+    // gets its own id off the same row rather than one entry trying to
+    // represent two independent facts.
+    ...contacts.flatMap((contact): RenewalSource[] => {
+      const sources: RenewalSource[] = [];
+      if (contact.msaExpirationDate) {
+        sources.push({
+          id: `${contact.id}:msa`,
+          kind: "MSA",
+          title: "Master Service Agreement",
+          detail: contact.name,
+          date: toIsoDate(contact.msaExpirationDate),
+          // Most contacts have no MSA at all, which is the ordinary case,
+          // not a gap — same reasoning as BOND above. This entry only
+          // exists because the query already narrowed to a real date.
+          expectsDate: false,
+          href: `/contacts/${contact.id}`,
+        });
+      }
+      if (contact.prequalificationExpiresAt) {
+        sources.push({
+          id: `${contact.id}:prequal`,
+          kind: "PREQUALIFICATION",
+          title: "Prequalification",
+          detail: contact.name,
+          date: toIsoDate(contact.prequalificationExpiresAt),
+          expectsDate: false,
+          href: `/contacts/${contact.id}`,
+        });
+      }
+      return sources;
+    }),
   ];
 }
