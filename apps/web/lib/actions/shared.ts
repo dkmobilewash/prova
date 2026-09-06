@@ -255,6 +255,60 @@ export function nullableMoneyFromForm(
   return { ok: true, value };
 }
 
+/* ------------------------------------------------------------------ */
+/* Refusing from inside a transaction                                  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The tag that marks an error as a REFUSAL — an expected "no" written for a
+ * person — rather than a bug.
+ *
+ * A refusal normally returns `{ ok: false, error }` and never throws. Inside
+ * a `$transaction` it has to throw, or the writes already made would commit;
+ * `attempt` unwraps it on the way out. That is the whole of this mechanism,
+ * and the change-order lifecycle is what needs it: twelve guards, several of
+ * them mid-transaction, every message an instruction about what to do next.
+ *
+ * Tagged with a property rather than recognised with `instanceof`, for the
+ * reason isUniqueConstraintError below documents at length: class identity
+ * is not reliable across this app's bundling, and a guard that silently
+ * never fires is worse than no guard. Which is exactly why this is here, in
+ * a plain module, and not private to a "use server" file where nothing
+ * could test it.
+ */
+const REFUSAL = "__provaActionRefusal";
+
+/** Throws a refusal. Returns `never`, so a guard narrows after it. */
+export function refuse(message: string): never {
+  throw Object.assign(new Error(message), { [REFUSAL]: true });
+}
+
+/** The message, if this error is a refusal; null if it is anything else. */
+export function refusalMessage(error: unknown): string | null {
+  if (typeof error !== "object" || error === null) return null;
+  const tagged = error as Record<string, unknown>;
+  return tagged[REFUSAL] === true ? String((error as Error).message) : null;
+}
+
+/**
+ * Runs a body that may refuse, turning a refusal into a result.
+ *
+ * Anything NOT tagged is re-thrown untouched: a genuine bug should still be
+ * an error, still be redacted in production, and still reach the error
+ * boundary. The point is not to stop throwing — it is to stop throwing the
+ * sentences that were written for a person to read.
+ */
+export async function attempt(body: () => Promise<void>): Promise<ActionResult> {
+  try {
+    await body();
+    return actionOk;
+  } catch (error) {
+    const message = refusalMessage(error);
+    if (message !== null) return actionFail(message);
+    throw error;
+  }
+}
+
 /** True when a write failed a unique constraint (Prisma P2002).
  *
  * Checks the `code` property rather than `instanceof

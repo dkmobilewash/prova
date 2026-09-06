@@ -7,11 +7,11 @@ import { reopenBlockers } from "@/lib/change-order";
 import { Prisma } from "@prova/db";
 import {
   ActionResult,
-  actionFail,
-  actionOk,
   assertEditableViaChangeOrder,
+  attempt,
   decimalFromForm,
   nullableDecimalFromForm,
+  refuse,
   tradeScopeFromForm,
 } from "./shared";
 
@@ -40,45 +40,14 @@ import {
  * reference number — the sentence saying what to do next replaced by a
  * digest, on the one workflow where getting the next step wrong changes a
  * contract value. They return { ok: false, error } now and the forms render
- * it. See lib/actions/shared.ts.
+ * it.
  *
- * Inside a transaction a refusal still has to THROW, or the writes already
- * made would commit. So it throws a tagged error that the wrapper unwraps
- * back into an ActionResult. Tagged with a property rather than checked with
- * instanceof, for the reason isUniqueConstraintError documents: class
- * identity is not reliable across this app's bundling, and a guard that
- * silently never fires is worse than no guard.
+ * `refuse` and `attempt` live in ./shared and are TESTED there. They were
+ * defined privately in this file and could not be: this is a "use server"
+ * module, so it may only export async functions, and an untested
+ * tag-and-unwrap is exactly the thing that can silently stop firing — which
+ * is the scar its own comment cites as the reason for tagging.
  */
-const REFUSAL = "__provaChangeOrderRefusal";
-
-function refuse(message: string): never {
-  throw Object.assign(new Error(message), { [REFUSAL]: true });
-}
-
-function refusalMessage(error: unknown): string | null {
-  if (typeof error !== "object" || error === null) return null;
-  const tagged = error as Record<string, unknown>;
-  return tagged[REFUSAL] === true ? String((error as Error).message) : null;
-}
-
-/**
- * Runs a body that may refuse, turning a refusal into a result.
- *
- * Anything NOT tagged is re-thrown untouched: a genuine bug should still
- * be an error, still be redacted, and still reach the error boundary. The
- * point of this file's change is not to stop throwing — it is to stop
- * throwing the sentences that were written for a person to read.
- */
-async function attempt(body: () => Promise<void>): Promise<ActionResult> {
-  try {
-    await body();
-    return actionOk;
-  } catch (error) {
-    const message = refusalMessage(error);
-    if (message !== null) return actionFail(message);
-    throw error;
-  }
-}
 
 function text(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();

@@ -249,20 +249,26 @@ describe("splitAgainstExisting", () => {
       expect(catalogKey("  5/8in Type X Board ")).toBe(catalogKey("5/8IN TYPE X BOARD"));
     });
 
-    it("does not treat a description as a pattern", () => {
+    it("keeps % and _ as LITERAL characters, not as wildcards", () => {
       // Why the duplicate check compares these strings in JS instead of
       // asking Postgres with a `mode: "insensitive"` equals, which lowers
       // to ILIKE: there, `%` and `_` are wildcards. "TYPE_X BOARD" would
-      // match "TYPEXBOARD" and refuse a create that is perfectly
+      // match "TYPExBOARD" and refuse a create that is perfectly
       // legitimate.
-      expect(catalogKey("TYPE_X BOARD")).not.toBe(catalogKey("TYPEXBOARD"));
-      expect(catalogKey("50% wall")).not.toBe(catalogKey("50 anything wall"));
+      //
+      // Asserted as an exact key rather than as "these two differ" — the
+      // weaker form passes for almost any function, and a mutation that
+      // stripped both characters survived it.
+      expect(catalogKey("TYPE_X BOARD")).toBe("type_x board");
+      expect(catalogKey("50% Wall ")).toBe("50% wall");
     });
 
     it("is the key splitAgainstExisting actually uses", () => {
       // Asserted through behaviour rather than by reading the source, so it
       // stays true if somebody re-inlines the key.
-      const result = splitAgainstExisting([row("  TYPE_X BOARD ")], ["type_x board"]);
+      // Both sides differ in case AND in surrounding space, so this fails
+      // if either side of the comparison stops going through catalogKey.
+      const result = splitAgainstExisting([row("  TYPE_X BOARD ")], ["Type_X Board"]);
       expect(result.duplicatesOfExisting).toHaveLength(1);
       expect(result.fresh).toHaveLength(0);
 
