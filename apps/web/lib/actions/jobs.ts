@@ -4,41 +4,96 @@ import { revalidatePath } from "next/cache";
 import { takeoffCeiling, takeoffWall } from "@/lib/takeoff";
 import { redirect } from "next/navigation";
 import { requireCompanyContext } from "@/lib/auth";
+import { can } from "@/lib/permissions";
+import { putDocument } from "@/lib/blob";
 import { Prisma, prisma } from "@prova/db";
 import { draftEstimateLineItems } from "@prova/integrations";
+import {
+  CONTRACT_NOT_EXECUTED_REFUSAL,
+  parseExecutedSignedDate,
+} from "@/lib/contract-execution";
+import {
+  isJobStatus,
+  jobStatusTransitionRefusal,
+  type JobStatusValue,
+} from "@/lib/job-status-transitions";
 import { actionFail, actionOk, type ActionResult, assertEditableDirectly, assertJobInCompany, assertLineItemOnJob, COST_CATEGORIES, craftClassificationIdFromForm, decimalFromForm, nullableDecimalFromForm, tradeScopeFromForm } from "./shared";
 
-/** Creates a Job with a new Contact. This is the start of the estimate. */
-export async function createJob(formData: FormData) {
+/**
+ * Starts a job against a GC — an EXISTING one by preference, a new one when
+ * this really is the first job with them.
+ *
+ * This used to call `prisma.contact.create` unconditionally, off two free-
+ * text fields, with no picker anywhere in the app. So three jobs for one GC
+ * meant three Contact rows, and everything that reads a GC across their
+ * jobs quietly read a third of the truth: payment reliability
+ * (lib/gc-reliability.ts), project history, the bid pipeline, the
+ * interaction log. Worst of the lot, Job.retainagePercent is pre-filled
+ * from Contact.defaultRetainagePercent — and a contact minted fresh on
+ * every job arrives with that null, so a GC's standing terms could never
+ * reach the job they were recorded for.
+ *
+ * Existing duplicates are NOT touched here. Merging them is a reviewed data
+ * job with real judgement in it (which row's terms win, what happens to the
+ * jobs on the losing row) and doing it as a side effect of a form post is
+ * how you lose a GC's payment history.
+ *
+ * Returns its failures rather than throwing them: production redacts a
+ * thrown Server Action message to a digest, so "that GC isn't on your
+ * account" would have reached the user as "An error occurred in the Server
+ * Components render." On success this redirects, which never returns.
+ */
+export async function createJob(formData: FormData): Promise<ActionResult> {
   const { company } = await requireCompanyContext();
 
   const jobName = String(formData.get("jobName") ?? "").trim();
   const scope = String(formData.get("scope") ?? "").trim();
+  const contactId = String(formData.get("contactId") ?? "").trim();
   const contactName = String(formData.get("contactName") ?? "").trim();
   const contactEmail = String(formData.get("contactEmail") ?? "").trim();
 
-  if (!jobName || !contactName) {
-    throw new Error("Job name and client name are required");
+  if (!jobName) {
+    return actionFail("Give the job a name.");
   }
 
-  const contact = await prisma.contact.create({
-    data: {
-      companyId: company.id,
-      name: contactName,
-      email: contactEmail || null,
-    },
-  });
+  let resolvedContactId: string;
+  if (contactId) {
+    // Scoped to this company: a contact id is a client-supplied string, and
+    // without the companyId check this form would attach another tenant's
+    // GC — and with it that GC's terms and history — to our job.
+    const existing = await prisma.contact.findFirst({
+      where: { id: contactId, companyId: company.id },
+      select: { id: true },
+    });
+    if (!existing) {
+      return actionFail("That GC isn't on your account. Pick one from the list, or add a new one.");
+    }
+    resolvedContactId = existing.id;
+  } else {
+    if (!contactName) {
+      return actionFail("Pick the GC this job is for, or enter a name to add a new one.");
+    }
+    const created = await prisma.contact.create({
+      data: {
+        companyId: company.id,
+        name: contactName,
+        email: contactEmail || null,
+      },
+    });
+    resolvedContactId = created.id;
+  }
 
   const job = await prisma.job.create({
     data: {
       companyId: company.id,
-      contactId: contact.id,
+      contactId: resolvedContactId,
       name: jobName,
       scope: scope || null,
     },
   });
 
   revalidatePath("/dashboard");
+  revalidatePath("/contacts");
   redirect(`/jobs/${job.id}`);
 }
 
@@ -290,11 +345,28 @@ export async function markJobContracted(jobId: string): Promise<ActionResult> {
     return actionFail("Add at least one line item before contracting this job.");
   }
 
-  const signedRequest = await prisma.signatureRequest.findFirst({
-    where: { jobId, status: "SIGNED" },
-  });
-  if (!signedRequest) {
-    return actionFail("The client needs to sign the contract before this job can be contracted.");
+  // TWO routes to an executed contract, and this is the only place that
+  // decides a job is billable, so both are checked here.
+  //
+  // The e-signature is unchanged and untouched. The second route exists
+  // because a specialty-trade sub does not issue the subcontract — the GC
+  // does, signs it, and sends it back on paper or through the GC's own
+  // system. Requiring the GC to sign inside Prova made every downstream
+  // thing (invoices, pay applications, change orders) unreachable for the
+  // ordinary case, which is not a gate, it is a wall.
+  //
+  // The second route carries EVIDENCE, not a checkbox: a ContractDocument
+  // with the uploaded executed file, the ENTERED date the GC signed, who
+  // asserted it and when — see recordExecutedSubcontract below.
+  const [signedRequest, executedDocument] = await Promise.all([
+    prisma.signatureRequest.findFirst({ where: { jobId, status: "SIGNED" } }),
+    prisma.contractDocument.findFirst({
+      where: { jobId, executedSignedDate: { not: null } },
+      orderBy: { versionNumber: "asc" },
+    }),
+  ]);
+  if (!signedRequest && !executedDocument) {
+    return actionFail(CONTRACT_NOT_EXECUTED_REFUSAL);
   }
 
   await prisma.job.update({
@@ -304,6 +376,170 @@ export async function markJobContracted(jobId: string): Promise<ActionResult> {
 
   revalidatePath(`/jobs/${jobId}`);
   revalidatePath("/dashboard");
+  return actionOk;
+}
+
+/* ------------------------------------------- the executed-subcontract route */
+
+// Mirrors the limits uploadContractDocument enforces in ./billing.ts.
+// Deliberately a second copy rather than a shared export: those constants
+// are in the billing lane, and this whole route is meant to be revertible
+// on its own without touching a line of that file.
+const EXECUTED_SUBCONTRACT_MEDIA_TYPES = [
+  "application/pdf",
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+] as const;
+const EXECUTED_SUBCONTRACT_MAX_BYTES = 15 * 1024 * 1024;
+
+const JOBS_ONLY =
+  "Managing jobs isn't part of your job function. The account owner sets who sees what, on the Team page.";
+
+/**
+ * Records a subcontract the GC issued, signed, and sent back — the second
+ * route to a contracted job, alongside the e-signature.
+ *
+ * This is an EVIDENCE record, and everything about its shape follows from
+ * that:
+ *
+ *  - The file is REQUIRED. A bare "yes we have a contract" checkbox would
+ *    be an assertion with nothing behind it, and the whole point of a gate
+ *    on billing is that somebody can go and look.
+ *  - The signing date is ENTERED, never stamped. It is the GC's date — the
+ *    date on the document — not the afternoon somebody got round to
+ *    uploading it, and it is what lien deadlines and retainage clocks get
+ *    counted from.
+ *  - `createdAt` (stamped) and `uploadedByUserId` are the audit companions:
+ *    when Prova was told, and who said so.
+ *  - Nothing here is ever updated. ContractDocument has no update path at
+ *    all — create, and an owner-only delete — so the identity of this
+ *    record is locked the moment it exists. Correcting a mistyped signing
+ *    date means recording it again, which leaves both versions visible,
+ *    which is the correct behaviour for evidence.
+ *
+ * Not gated on job status: a GC sends executed amendments throughout a
+ * job, not only before award — same reasoning as uploadContractDocument.
+ * It does NOT change job.status either; contracting stays
+ * markJobContracted's single decision, so there is exactly one job-status
+ * write for becoming billable and it is the one carrying the gate.
+ */
+export async function recordExecutedSubcontract(
+  jobId: string,
+  formData: FormData,
+): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  const { company } = context;
+
+  if (!can(context, "MANAGE_JOBS")) {
+    return actionFail(JOBS_ONLY);
+  }
+
+  const job = await prisma.job.findUnique({ where: { id: jobId } });
+  if (!job || job.companyId !== company.id) {
+    return actionFail("Job not found.");
+  }
+
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) {
+    return actionFail("Attach the executed subcontract the GC sent — a PDF or a photo of it.");
+  }
+  if (!(EXECUTED_SUBCONTRACT_MEDIA_TYPES as readonly string[]).includes(file.type)) {
+    return actionFail("Upload a PDF, PNG, JPEG, or WEBP file.");
+  }
+  if (file.size > EXECUTED_SUBCONTRACT_MAX_BYTES) {
+    return actionFail("That file is too large (max 15MB).");
+  }
+
+  const signedDate = parseExecutedSignedDate(
+    String(formData.get("executedSignedDate") ?? ""),
+    new Date(),
+  );
+  if (!signedDate.ok) {
+    return actionFail(signedDate.error);
+  }
+
+  const note = String(formData.get("note") ?? "").trim();
+
+  const [buffer, lastVersion] = await Promise.all([
+    file.arrayBuffer().then(Buffer.from),
+    prisma.contractDocument.findFirst({ where: { jobId }, orderBy: { versionNumber: "desc" } }),
+  ]);
+
+  const blob = await putDocument(`contracts/${jobId}/${file.name}`, buffer, file.type);
+
+  await prisma.contractDocument.create({
+    data: {
+      jobId,
+      versionNumber: (lastVersion?.versionNumber ?? 0) + 1,
+      fileUrl: blob.url,
+      fileName: file.name,
+      note: note || null,
+      executedSignedDate: signedDate.value,
+      uploadedByUserId: context.id,
+    },
+  });
+
+  revalidatePath(`/jobs/${jobId}`);
+  revalidatePath("/dashboard");
+  return actionOk;
+}
+
+/* ----------------------------------------------- the rest of the lifecycle */
+
+/**
+ * Moves a job between CONTRACTED, IN_PROGRESS and COMPLETE.
+ *
+ * Before this, `markJobContracted`'s `data: { status: "CONTRACTED" }` was
+ * the only job-status write in the entire app — one grep hit — so
+ * IN_PROGRESS and COMPLETE were values the schema allowed and nothing
+ * could ever produce. The dashboard's "In progress" group was permanently
+ * empty, the crew list in lib/today-dashboard.ts filtered on a status no
+ * job could hold, and Ask answered "which jobs are in progress" with
+ * nothing every single time, correctly.
+ *
+ * MANUAL. A person says when a job starts and when it is done; nothing
+ * derives it from time entries or dates. JobStatus is a stored column and
+ * CLAUDE.md's rule is that derived state is never stored — deriving one of
+ * four stored values would build exactly the contradiction that rule
+ * exists to prevent.
+ *
+ * The legal moves live in lib/job-status-transitions.ts, which also owns
+ * the sentence explaining a refusal. Gated on MANAGE_JOBS, the same
+ * capability as the rest of job management: a Server Action is its own
+ * endpoint and answers whoever posts to it, so a guarded page in front of
+ * an open action is not a guard.
+ */
+export async function setJobStatus(jobId: string, nextStatus: string): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  const { company } = context;
+
+  if (!can(context, "MANAGE_JOBS")) {
+    return actionFail(JOBS_ONLY);
+  }
+
+  if (!isJobStatus(nextStatus)) {
+    return actionFail("That isn't a job status.");
+  }
+
+  const job = await prisma.job.findUnique({ where: { id: jobId } });
+  if (!job || job.companyId !== company.id) {
+    return actionFail("Job not found.");
+  }
+
+  const refusal = jobStatusTransitionRefusal(job.status as JobStatusValue, nextStatus);
+  if (refusal) {
+    return actionFail(refusal);
+  }
+
+  await prisma.job.update({
+    where: { id: jobId },
+    data: { status: nextStatus },
+  });
+
+  revalidatePath(`/jobs/${jobId}`);
+  revalidatePath("/dashboard");
+  revalidatePath("/schedule");
   return actionOk;
 }
 
