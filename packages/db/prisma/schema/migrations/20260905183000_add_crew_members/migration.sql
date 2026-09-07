@@ -82,11 +82,12 @@ ALTER TABLE "CrewMember" ADD CONSTRAINT "CrewMember_linkedUserId_fkey" FOREIGN K
 ALTER TABLE "TimeEntry" ADD CONSTRAINT "TimeEntry_crewMemberId_fkey" FOREIGN KEY ("crewMemberId") REFERENCES "CrewMember"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- ---------------------------------------------------------------------------
--- Hand-written from here down. All of it applies to CrewMember, which has
--- zero rows, or to a TimeEntry UPDATE, which no code path in this repo
--- performs (`timeEntry.` call sites are create/createMany/delete/deleteMany/
--- find/count/aggregate only — checked, not assumed). Nothing below can
--- change the behaviour of an existing row.
+-- Hand-written from here down. Every statement below applies to CrewMember,
+-- which is a brand new table with zero rows in every database. NOTHING below
+-- this line touches "TimeEntry" — an earlier draft added a BEFORE UPDATE
+-- trigger to it and that was removed before this migration ever ran; see the
+-- block at the end of this file for why, and for where the guarantee it made
+-- lives now. Nothing below can change the behaviour of an existing row.
 -- ---------------------------------------------------------------------------
 
 -- The name that goes on a signed WH-347 is not allowed to be blank. A form
@@ -160,38 +161,38 @@ CREATE TRIGGER "CrewMember_identity_lock"
 BEFORE UPDATE ON "CrewMember"
 FOR EACH ROW EXECUTE FUNCTION prova_crew_member_identity_lock();
 
--- An hour, once attributed to a crew member, does not change hands.
+-- REMOVED BEFORE THIS EVER RAN: the TimeEntry trigger.
 --
--- This is the other half of the same guarantee. Locking the CrewMember's
--- name is worth nothing if the TimeEntry can be repointed at a different
--- CrewMember afterwards: the hours on a filed certified payroll would move
--- from one named person to another, and the filing and the data would
--- disagree with no trace.
+-- An earlier draft of this migration also created
+-- "TimeEntry_crew_member_lock" (function prova_time_entry_crew_member_lock),
+-- a BEFORE UPDATE trigger on "TimeEntry" refusing to repoint a row at a
+-- different CrewMember once one was set. It was removed deliberately, and
+-- this comment stands where it did so that nobody re-derives it.
 --
--- NULL -> a crew member id is allowed, because that is how an entry gets
--- attributed in the first place. Anything after that is refused; a
--- misattributed entry is deleted and re-entered, which is what
--- deleteTimeEntry already does today.
+-- WHY IT WAS REMOVED. "CrewMember" is a brand new table with zero rows, so
+-- its trigger above can only ever affect rows this change created.
+-- "TimeEntry" is not: it is a live payroll table with real production rows
+-- on ep-little-sea. Shipping an unclicked BEFORE UPDATE trigger onto live
+-- payroll is the one category of mistake here that is not an afternoon to
+-- undo, and this whole model ships unwired, so nothing would have exercised
+-- it before real rows met it.
 --
--- Deliberately NOT covering "employeeUserId" in this migration. The same
--- argument applies to it and it should end up locked the same way, but that
--- would be a new restriction on a column with real production rows, in a
--- change whose whole point is to touch no existing behaviour. It is called
--- out in the report as the recommended follow-up.
-CREATE OR REPLACE FUNCTION prova_time_entry_crew_member_lock() RETURNS trigger AS $$
-BEGIN
-  IF OLD."crewMemberId" IS NOT NULL
-  AND NEW."crewMemberId" IS DISTINCT FROM OLD."crewMemberId"
-  THEN
-    RAISE EXCEPTION
-      'TimeEntry.crewMemberId cannot be reassigned once set (id=%). Delete the entry and re-enter it.',
-      OLD."id";
-  END IF;
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TimeEntry_crew_member_lock" ON "TimeEntry";
-CREATE TRIGGER "TimeEntry_crew_member_lock"
-BEFORE UPDATE ON "TimeEntry"
-FOR EACH ROW EXECUTE FUNCTION prova_time_entry_crew_member_lock();
+-- WHAT IT GUARANTEED, WHICH IS NOW WEAKER. "An hour, once attributed to a
+-- crew member, does not change hands": crewMemberId NULL -> an id allowed,
+-- anything after that refused, a misattributed entry deleted and re-entered.
+-- That mattered because locking the CrewMember's name (above) is worth
+-- nothing if the TimeEntry can be repointed at a different CrewMember
+-- afterwards — hours on a filed certified payroll would move from one named
+-- person to another, and the filing and the data would disagree with no
+-- trace. These rows end up on a WH-347 signed under penalty of perjury.
+--
+-- WHERE THE GUARANTEE LIVES NOW: apps/web/lib/timeEntryWriteCensus.test.ts.
+-- It is a SOURCE CENSUS, not an enforcement. It scans app source and fails
+-- if any update/updateMany/upsert on `timeEntry` exists anywhere, which is
+-- true today and is what makes reassignment impossible in practice. It
+-- cannot stop a hand-written UPDATE, a psql session, or a raw
+-- $executeRaw — the database no longer refuses anything. That is a real
+-- reduction in the guarantee and is recorded as such in CHANGELOG.md.
+--
+-- The same argument applied to "employeeUserId" and it is likewise not
+-- locked here.

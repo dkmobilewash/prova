@@ -7,8 +7,11 @@ import { prisma } from "@prova/db";
  * Two jobs, and the second one matters more than the first.
  *
  * 1. The guarantees this model rests on are DATABASE guarantees — CHECK
- *    constraints and BEFORE UPDATE triggers written by hand in
- *    20260905183000_add_crew_members. None of them exist in the Prisma
+ *    constraints, foreign keys, and ONE hand-written BEFORE UPDATE trigger
+ *    on CrewMember, in 20260905183000_add_crew_members. (There was a second
+ *    trigger, on TimeEntry; it was removed before it ever ran — see the
+ *    block above the crew-member-delete tests below.) None of them exist in
+ *    the Prisma
  *    schema, so `pnpm typecheck` cannot see them and the unit suite cannot
  *    reach them. If they are not exercised here they are not exercised
  *    anywhere, and a lock nobody ever tried to break is a lock nobody
@@ -276,29 +279,32 @@ describe("the payroll number is unique per company, and optional", () => {
   });
 });
 
-describe("an hour, once attributed to a crew member, does not change hands", () => {
-  it("refuses to repoint a time entry at a different crew member", async () => {
-    const jose = await makeCrew({ legalFirstName: "Jose", legalLastName: `Reyes ${stamp}` });
-    const marco = await makeCrew({ legalFirstName: "Marco", legalLastName: `Diaz ${stamp}` });
-
-    const entry = await prisma.timeEntry.create({
-      data: {
-        jobId,
-        employeeUserId: officeUserId,
-        crewMemberId: jose.id,
-        craftClassificationId: craftId,
-        date: utc("2026-08-26"),
-        hours: "8",
-      },
-    });
-
-    await expect(
-      prisma.timeEntry.update({ where: { id: entry.id }, data: { crewMemberId: marco.id } }),
-    ).rejects.toThrow(/cannot be reassigned once set/);
-
-    await prisma.timeEntry.delete({ where: { id: entry.id } });
-  });
-
+/**
+ * WHAT USED TO BE HERE, AND WHY IT IS NOT.
+ *
+ * This block used to be called "an hour, once attributed to a crew member,
+ * does not change hands" and its first test asserted that
+ * `prisma.timeEntry.update({ data: { crewMemberId: someoneElse } })` was
+ * REFUSED by a BEFORE UPDATE trigger. A third test asserted the one
+ * transition the trigger allowed, NULL -> an id.
+ *
+ * The trigger was removed from 20260905183000_add_crew_members before it
+ * ever ran, because TimeEntry is a live payroll table on ep-little-sea and
+ * an unclicked trigger on live payroll is not an afternoon to undo. Both
+ * assertions went with it: one asserted a raise that no longer happens, and
+ * the other asserted an update path this app deliberately does not have.
+ *
+ * The guarantee is now WEAKER and is carried by
+ * apps/web/lib/timeEntryWriteCensus.test.ts, which fails if any
+ * update/updateMany/upsert on `timeEntry` appears in the source. That test
+ * runs in the ordinary unit suite, so unlike this file it gates every push —
+ * but it is a source census and the database now refuses nothing.
+ *
+ * What survives below is the FOREIGN KEY, which is a real database
+ * guarantee and always was: onDelete: Restrict means the identity behind a
+ * certified hour cannot be deleted out from under it.
+ */
+describe("a crew member with hours on the record cannot be deleted", () => {
   it("refuses to delete a crew member who has hours on the record", async () => {
     const crew = await makeCrew({ legalFirstName: "Ana", legalLastName: `Ortiz ${stamp}` });
     const entry = await prisma.timeEntry.create({
@@ -317,18 +323,22 @@ describe("an hour, once attributed to a crew member, does not change hands", () 
     await prisma.timeEntry.delete({ where: { id: entry.id } });
   });
 
-  it("lets an entry be attributed for the first time — NULL to a crew member is the allowed direction", async () => {
+  it("attributes an entry at CREATE, which is the only path the app has", async () => {
+    // Attribution happens when the row is written, not afterwards — there is
+    // no update path to TimeEntry anywhere in this codebase and
+    // timeEntryWriteCensus.test.ts is what keeps it that way. This is the
+    // shape a future logTimeEntry would use.
     const crew = await makeCrew({ legalFirstName: "Luis", legalLastName: `Mora ${stamp}` });
     const entry = await prisma.timeEntry.create({
-      data: { jobId, employeeUserId: officeUserId, date: utc("2026-08-28"), hours: "8" },
+      data: {
+        jobId,
+        employeeUserId: officeUserId,
+        crewMemberId: crew.id,
+        date: utc("2026-08-28"),
+        hours: "8",
+      },
     });
-    expect(entry.crewMemberId).toBeNull();
-
-    const attributed = await prisma.timeEntry.update({
-      where: { id: entry.id },
-      data: { crewMemberId: crew.id },
-    });
-    expect(attributed.crewMemberId).toBe(crew.id);
+    expect(entry.crewMemberId).toBe(crew.id);
 
     await prisma.timeEntry.delete({ where: { id: entry.id } });
   });
@@ -342,7 +352,7 @@ describe("every existing time-entry path is unchanged", () => {
    *
    * The figures are the ones certified-payroll-query.dbtest.ts already
    * pins for the same fixture: 40 hours, $3,094.00. If adding a column and
-   * two triggers moved a number on a filing, it moves here.
+   * a trigger moved a number on a filing, it moves here.
    */
   const rows: [string, string, "STRAIGHT" | "OVERTIME"][] = [
     ["2026-08-24", "8", "STRAIGHT"],

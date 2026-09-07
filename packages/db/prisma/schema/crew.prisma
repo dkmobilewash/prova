@@ -60,6 +60,12 @@
 /// lock is a database trigger (see the migration), not a convention in an
 /// action, because a convention is precisely what an unwired model has no
 /// way to enforce.
+///
+/// That argument holds for THIS table and only for this table: it is brand
+/// new and empty, so its trigger can never meet a row it did not create. The
+/// matching trigger on TimeEntry was removed for exactly the opposite reason
+/// — TimeEntry is live payroll. See the note on TimeEntry.crewMemberId in
+/// labor.prisma, and the block at the end of the migration.
 model CrewMember {
   id        String  @id @default(cuid())
   companyId String
@@ -147,6 +153,13 @@ model CrewMember {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  /// The hours attributed to this person. NOTHING in the database stops one
+  /// of these being repointed at a DIFFERENT CrewMember after the fact — the
+  /// trigger that would have is gone (labor.prisma, and the end of
+  /// 20260905183000_add_crew_members). What holds the line instead is that
+  /// no update path to TimeEntry exists in the source at all, which
+  /// apps/web/lib/timeEntryWriteCensus.test.ts fails over. Locking the name
+  /// above buys less than it looks like it buys without that.
   timeEntries TimeEntry[]
 
   @@unique([companyId, employeeNumber])

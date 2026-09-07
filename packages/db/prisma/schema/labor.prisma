@@ -48,10 +48,30 @@ model TimeEntry {
   /// person's lane. The structural half lands first; the read paths and
   /// the NOT NULL come together, in one reviewable change.
   ///
-  /// A CHECK constraint in the migration forbids an entry naming BOTH a
-  /// User and a CrewMember: one hour, one name on the form.
-  /// onDelete: Restrict — the database refuses to orphan the identity
-  /// behind an hour that may already have been certified.
+  /// WHAT THIS COLUMN IS *NOT* PROTECTED BY, stated here because an earlier
+  /// draft of the migration protected it and the promise outlived the code.
+  ///
+  /// There is NO database trigger stopping this column being reassigned.
+  /// 20260905183000_add_crew_members once created a BEFORE UPDATE trigger on
+  /// TimeEntry ("TimeEntry_crew_member_lock") refusing to repoint a row at a
+  /// different CrewMember once one was set. It was removed before the
+  /// migration ever ran, because TimeEntry is a live payroll table and that
+  /// trigger would have shipped onto real rows unclicked. The reason is
+  /// written out in full at the end of the migration file.
+  ///
+  /// The guarantee it made — an hour, once attributed, does not change hands
+  /// — now rests on there being no update path to TimeEntry at all, which
+  /// apps/web/lib/timeEntryWriteCensus.test.ts fails the build over. That is
+  /// a source census, not enforcement: it cannot stop a raw UPDATE. If you
+  /// are adding an update path here, read that test first.
+  ///
+  /// There is also NO CHECK constraint forbidding an entry from naming both
+  /// a User and a CrewMember. The XOR constraint is written out in the
+  /// migration's header as the deliberately-held-back follow-up, because it
+  /// can only land in the same commit that makes employeeUserId nullable.
+  ///
+  /// onDelete: Restrict IS real — the database refuses to orphan the
+  /// identity behind an hour that may already have been certified.
   crewMemberId String?
   crewMember   CrewMember? @relation(fields: [crewMemberId], references: [id], onDelete: Restrict)
 
