@@ -69,6 +69,22 @@ directly — PR #176's census was silently disarmed for a whole file because
 an explanatory comment contained the pattern it looked for. Restored
 byte-identical, green.
 
+**A re-run of that mutation suite then found a sixth defect, in the census
+itself.** The raw-SQL pattern was `/g` and used with `.test()` inside a
+`.filter()` over every file. `.test()` on a /g regex carries `lastIndex`
+forward and only resets it when it FAILS, so the file immediately after a
+matching one was searched from the previous match's offset rather than
+from 0. Reproduced on real files: raw SQL planted at the end of
+`lib/actions/labor.ts` and at the start of its scan-order neighbour
+`lib/actions/materialOrders.ts` reported ONLY `labor.ts`, while the same
+SQL in `materialOrders.ts` alone was reported correctly. It could not
+produce a false GREEN — the first offender always matches — but it
+under-reported, so an author fixing the named file would have been told
+they were done while a second write was still there. The flag is gone and
+the two-offender case now names both. This is exactly the failure the
+census exists to prevent, found in the census, which is the argument for
+mutation-testing a guard rather than reading it.
+
 **What the census CANNOT see, said plainly:** a nested write reaching
 `TimeEntry` through another model, and anything run against Neon by hand.
 The trigger could see those. If `crewMemberId` ever becomes writable

@@ -81,7 +81,24 @@ const TIME_ENTRY_WRITE = /\btimeEntry\s*\.\s*(update|updateMany|upsert)\s*\(/g;
 
 /** Raw SQL naming the table. Cannot prove intent, only that it is worth a
  * human reading the call — which is why the message says so. */
-const RAW_SQL_TIME_ENTRY = /\$(?:execute|query)Raw(?:Unsafe)?[\s\S]{0,200}?"?TimeEntry"?/g;
+/*
+ * NOT /g, and that is a fix rather than a style choice.
+ *
+ * This regex is used with `.test()` inside a `.filter()` over every file. A
+ * /g regex carries `lastIndex` between calls, and `.test()` only resets it
+ * when it FAILS — so after a file matches, the next file is searched from
+ * the previous match's offset instead of from 0, and a match before that
+ * offset is not seen.
+ *
+ * Reproduced on real files before removing the flag: raw SQL planted at the
+ * END of lib/actions/labor.ts and at the START of lib/actions/materialOrders.ts
+ * (its immediate neighbour in scan order) reported ONLY labor.ts, while the
+ * control — the same planted SQL in materialOrders.ts alone — reported it
+ * correctly. The census still went red, so this could not hide an offender
+ * outright; it under-reported one, which is the same shape of "guard that
+ * looks like more protection than it gives" this file exists to avoid.
+ */
+const RAW_SQL_TIME_ENTRY = /\$(?:execute|query)Raw(?:Unsafe)?[\s\S]{0,200}?"?TimeEntry"?/;
 
 /** Comments are stripped before scanning. PR #176's census was silently
  * disarmed for a whole file because an explanatory comment contained the
@@ -168,8 +185,6 @@ describe("the TimeEntry write census", () => {
       .filter((f) => !(f.path in EXCEPTIONS))
       .filter((f) => RAW_SQL_TIME_ENTRY.test(f.source))
       .map((f) => f.path);
-    // Reset lastIndex — the regex is /g and .test() is stateful across calls.
-    RAW_SQL_TIME_ENTRY.lastIndex = 0;
 
     expect(
       offenders,
