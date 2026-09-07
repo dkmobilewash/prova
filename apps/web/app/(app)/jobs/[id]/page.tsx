@@ -10,6 +10,7 @@ import { WipNarrativeButton } from "@/components/WipNarrativeButton";
 import { DraftLineItemsForm } from "@/components/DraftLineItemsForm";
 import { TakeoffForm } from "@/components/TakeoffForm";
 import { DailyFieldReports } from "@/components/DailyFieldReports";
+import { JobMediaSection } from "@/components/JobMediaSection";
 import { PayApplications, StatusForm } from "@/components/PayApplications";
 import { PushPaymentToQuickBooks } from "@/components/PushPaymentToQuickBooks";
 import { PushInvoiceToQuickBooks } from "@/components/PushInvoiceToQuickBooks";
@@ -20,6 +21,8 @@ import { MarkContractedButton } from "@/components/MarkContractedButton";
 import { ChangeOrders, type ChangeOrderView } from "@/components/ChangeOrders";
 import { changeOrderValueDelta, pendingChangeOrderExposure, reopenBlockers } from "@/lib/change-order";
 import { can } from "@/lib/permissions";
+import { countJobMedia, loadJobMedia } from "@/lib/job-media-query";
+import { viewerTimeZone } from "@/lib/viewerToday";
 import { money } from "@/lib/money";
 import { calculateLineItemWip, calculateJobWip } from "@/lib/wip";
 import { jobEarnedRevenue, jobOverUnderBilling } from "@/lib/company-financials";
@@ -559,6 +562,17 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
   const principal = { role: currentUser.role, jobFunction: currentUser.jobFunction };
   const showsJobMoney = can(principal, "VIEW_JOB_COSTS");
   const showsBilling = can(principal, "MANAGE_BILLING");
+  // Site photos are MANAGE_FIELD, the same capability /photos, /punch-lists
+  // and /field-reports are gated on. This page stays open and withholds
+  // section by section, so the section is withheld rather than the page.
+  const showsField = can(principal, "MANAGE_FIELD");
+  const jobMediaLimit = 12;
+  const [jobMedia, jobMediaTotal] = showsField
+    ? await Promise.all([
+        loadJobMedia({ companyId: company.id, jobId: job.id, take: jobMediaLimit }, await viewerTimeZone()),
+        countJobMedia(company.id, job.id),
+      ])
+    : [[], 0];
 
   const headerList = await headers();
   const origin = `${headerList.get("x-forwarded-proto") ?? "https"}://${headerList.get("host")}`;
@@ -1993,6 +2007,15 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             filedByName: report.filedBy?.name ?? null,
           }))}
         />
+
+        {showsField && (
+          <JobMediaSection
+            jobId={job.id}
+            media={jobMedia}
+            total={jobMediaTotal}
+            limit={jobMediaLimit}
+          />
+        )}
 
         {!isEstimateStage && showsBilling && (
           <PayApplications

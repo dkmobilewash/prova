@@ -228,6 +228,12 @@ async function main() {
     await del("equipmentAssignment", () => prisma.equipmentAssignment.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("timeEntry", () => prisma.timeEntry.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("dailyFieldReport", () => prisma.dailyFieldReport.deleteMany({ where: { jobId: { in: jobIds } } }));
+    // JobMedia is RESTRICT on Job, so this has to precede the job delete.
+    // NOTE: this removes the ROWS, not the blobs they point at — the
+    // files stay in the store, orphaned. Deleting them needs a blob call
+    // per row and a token this script does not have; deleteJobMedia in
+    // lib/actions/jobMedia.ts is the path that removes both.
+    await del("jobMedia", () => prisma.jobMedia.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("punchListItem", () => prisma.punchListItem.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("rfi", () => prisma.rfi.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("rfiCounter", () => prisma.rfiCounter.deleteMany({ where: { jobId: { in: jobIds } } }));

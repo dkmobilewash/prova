@@ -43,3 +43,4 @@ export * from "./sales";
 export * from "./notifications";
 export * from "./equipmentAssignments";
 export * from "./certifications";
+export * from "./jobMedia";
