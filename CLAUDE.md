@@ -702,6 +702,46 @@ scrollback gets broken by whoever didn't scroll far enough.
   after, and delete it in the same sitting. The demo project exists
   precisely so this does not have to happen — see the three-Neon-projects
   table above.
+
+  **Cleared 2026-09-07: the CLAUDE-VERIFY lead is gone** — its opportunity
+  and activity deleted first, then the lead, by hand through the app. The
+  pipeline band reads true again. `deleteSalesLead` refuses while any child
+  row exists and names only the non-zero kinds, so a lead like this cannot
+  be removed in one click; children first. `ZZ-TEST Pipeline` was reported
+  separately and is NOT known to be cleared.
+
+  **THE CAUSE IS STILL UNIDENTIFIED, and here is what has been ruled out so
+  nobody spends the afternoon again.** All four checked rather than assumed:
+
+    - **Previews are not it.** They resolve `ep-patient-lake`; only
+      production resolves `ep-little-sea`. Confirmed from build logs on two
+      unrelated branches plus a production control — see the preview
+      paragraph above for the method, which needs no dashboard access.
+      This was the best hypothesis: a preview URL is a different host from
+      `app.cstream.ai`, so it would pass the egress proxies that 403 both
+      agents' containers. It is still wrong;
+    - **Scheduled Routines are not it.** One exists on Diego's account, the
+      hourly status desk. Disabled, and its prompt is STATUS ONLY — no
+      code, no pushes, and no path to the app;
+    - **The shared cloud environment does not carry credentials.** Every
+      session on it shares one `environment_id`, and one of them has no
+      `DATABASE_URL` and no `.env` at all, so the environment injects
+      nothing;
+    - **The Vercel MCP cannot leak the string.** It has no env-var tool;
+      checked twice rather than asserted from a partial search.
+
+  What survives is a CHECKOUT holding the connection string. Two sessions
+  were live on this repo at the time on Diego's account — "CRM Buildout"
+  and "Prova contractor operating system", the Phase C sales lane, which
+  matches the symptom since the rows were leads and opportunities.
+
+  **A cloud session cannot be questioned from another container.**
+  `ListAgents` sees only this machine, and `SendMessage` to either title
+  returns `No agent named '…' is reachable` — tried, not assumed. There is
+  no `list_events` tool here either, so their transcripts are unreadable
+  from a peer. The check has to be run INSIDE each session, by whoever has
+  it open: `grep -rl "ep-little-sea" . --exclude-dir=node_modules
+  --exclude-dir=.git`, reporting the HOST only and never the string.
 - **`./scripts/preflight.sh` used to die on its first line inside a git
   worktree.** It ran `rm -f .git/index.lock`, but in a worktree `.git` is
   a FILE, not a directory — so that is `ENOTDIR`, which `rm -f` does NOT
