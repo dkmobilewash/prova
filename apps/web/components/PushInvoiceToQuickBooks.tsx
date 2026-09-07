@@ -40,12 +40,37 @@ export function PushInvoiceToQuickBooks({
   function push() {
     setMessage(null);
     startTransition(async () => {
-      const result = await pushInvoiceToQuickBooks(invoiceId);
-      setMessage(
-        result.ok
-          ? { tone: "ok", text: "Sent to QuickBooks and verified." }
-          : { tone: "bad", text: result.error },
-      );
+      try {
+        const result = await pushInvoiceToQuickBooks(invoiceId);
+        setMessage(
+          result.ok
+            ? { tone: "ok", text: "Sent to QuickBooks and verified." }
+            : { tone: "bad", text: result.error },
+        );
+      } catch {
+        // A THROWN action renders NOTHING without this, and that is exactly
+        // what happened on 2026-09-03: the POST reached the server and
+        // returned 200, the click produced no success, no error and no
+        // sync-log row, and a person watching would reasonably conclude it
+        // had worked.
+        //
+        // Everything INSIDE the action returns ActionResult — the blockers,
+        // the item resolution, the push itself are all wrapped. But
+        // `accessTokenFor` runs before any of those try blocks, so a throw
+        // there escapes the action and lands in a transition nobody caught.
+        //
+        // The thrown message is deliberately NOT shown: production redacts
+        // it to a digest, which tells a person nothing. This says the one
+        // thing that is known — the attempt did not complete — and points at
+        // the log, where a real refusal would have been recorded.
+        setMessage({
+          tone: "bad",
+          text:
+            "That didn't complete, and QuickBooks may not have been reached at all. " +
+            "Check Settings → Recent sync activity before trying again: if there is no " +
+            "entry for this attempt, nothing was sent.",
+        });
+      }
     });
   }
 

@@ -5,17 +5,31 @@
 export const QUICKBOOKS_OAUTH_STATE_COOKIE = "qbo_oauth_state";
 
 /**
- * The cookie carries the CSRF `state` value AND who initiated the
- * connection (companyId/userId) — not just the state. Intuit's redirect
- * back to our callback is a third-party-initiated navigation that can
- * outlast a short-lived Clerk session token (e.g. if the user spends a
- * minute on Intuit's consent/2FA screen); requiring a *live* Clerk session
- * in the callback route forces a re-login detour at exactly the wrong
- * moment and drops the in-flight OAuth exchange. Putting company/user
- * identity in this single-use, httpOnly, short-lived cookie instead means
- * the callback is self-contained: possession of the cookie (set only by
- * the OWNER-gated initiateQuickBooksConnect action) is itself sufficient
- * authorization, so the callback route needs no separate auth check.
+ * The cookie carries the CSRF `state` value, plus who STARTED the flow.
+ *
+ * THE IDENTITY IN HERE IS NOT AUTHORIZATION. This comment used to say it
+ * was — "possession of the cookie is itself sufficient authorization, so
+ * the callback route needs no separate auth check" — and that sentence was
+ * the whole of #136 §2. The cookie is plaintext JSON in the user's own
+ * browser. `httpOnly` keeps page JavaScript out of it; it does nothing
+ * about the person with devtools open, who can retype `companyId` as
+ * somebody else's and leave `state` alone so every check still passes.
+ * The callback then bound their QuickBooks realm and tokens to the
+ * victim's company.
+ *
+ * The callback now reads companyId/userId from the authenticated session
+ * and compares these to it, refusing on a mismatch. So these two fields
+ * are a CROSS-CHECK — they catch a tampered cookie and they catch someone
+ * switching accounts mid-flow — and `state` is the only field the route
+ * relies on the cookie for.
+ *
+ * Worth keeping the original reasoning, because it was half right: Intuit's
+ * redirect back to us is a third-party-initiated navigation, and making it
+ * a middleware-PROTECTED route would bounce an expired token into a
+ * re-login detour that drops the in-flight exchange. That is why the route
+ * stays out of the protected matcher. It is not a reason it cannot READ a
+ * session — clerkMiddleware runs on the path regardless and decorates the
+ * request with the auth headers either way.
  */
 export interface QuickBooksOAuthCookiePayload {
   state: string;

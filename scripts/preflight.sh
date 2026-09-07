@@ -27,12 +27,26 @@
 
 set -e
 set -o pipefail
-rm -f .git/index.lock
 
 # A failed build piped to `tee` once printed ALL GREEN. Never drop
 # pipefail from this file.
 
 cd "$(dirname "$0")/.."
+
+# Clear a stale index lock. Two things were wrong with the old
+# `rm -f .git/index.lock` on line 1 of this script.
+#
+# It ran BEFORE the cd, so it cleared a lock relative to wherever you
+# happened to be standing — in the repo root by luck, and nowhere useful
+# otherwise.
+#
+# And in a git WORKTREE `.git` is a FILE, not a directory, so the path
+# `.git/index.lock` is ENOTDIR: `rm -f` prints "Not a directory" and exits
+# 1, which `set -e` turns into the whole script dying on its third line
+# before a single check runs. Every agent working in a worktree hit this and
+# fell back to running the four checks by hand. `git rev-parse --git-path`
+# resolves the real location in both layouts.
+rm -f "$(git rev-parse --git-path index.lock)"
 
 QUICK=0
 [ "${1:-}" = "--quick" ] && QUICK=1

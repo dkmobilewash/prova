@@ -2,13 +2,18 @@
 
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
-import { randomBytes } from "node:crypto";
-import { put } from "@vercel/blob";
+import { putDocument } from "@/lib/blob";
+import { linkToken } from "@/lib/tokens";
 import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@prova/db";
 import { revokeToken, refreshTokens, getCompanyInfo, generateWipNarrative, type QuickBooksCompanyInfo } from "@prova/integrations";
 import { calculateLineItemWip, calculateJobWip } from "@/lib/wip";
+import { MIN_EARNED_COVERAGE } from "@/lib/company-financials";
+import { payAppEntryError } from "@/lib/pay-application";
 import {
+  actionFail,
+  actionOk,
+  type ActionResult,
   assertJobInCompany,
   assertLineItemOnJob,
   assertOwner,
@@ -16,6 +21,7 @@ import {
   enumFromForm,
   INVOICE_STATUSES,
   nullableDecimalFromForm,
+  type ActionResultWith,
 } from "./shared";
 
 /**
@@ -23,6 +29,14 @@ import {
  * this is signing the estimate that becomes the contract, not something you
  * re-sign after the fact. Idempotent: if an unsigned request already
  * exists, reuses it instead of spawning a second link.
+ *
+ * The token is generated HERE, by `linkToken()`, and not by the schema. It
+ * used to be `@default(cuid())` — an identifier generator standing as the
+ * sole access control on an unauthenticated page that renders the contract
+ * and will legally sign it. Same generator as the portal link now, which is
+ * what the schema comment always claimed. `token` has no default any more,
+ * so a create that forgets it fails to typecheck rather than quietly issuing
+ * a weak one.
  */
 export async function createSignatureRequest(jobId: string) {
   const { company } = await requireCompanyContext();
@@ -36,7 +50,7 @@ export async function createSignatureRequest(jobId: string) {
     where: { jobId, status: "PENDING" },
   });
   if (!existing) {
-    await prisma.signatureRequest.create({ data: { jobId } });
+    await prisma.signatureRequest.create({ data: { jobId, token: linkToken() } });
   }
 
   revalidatePath(`/jobs/${jobId}`);
@@ -129,8 +143,7 @@ export async function enablePortalAccess(contactId: string) {
     return;
   }
 
-  const token = randomBytes(24).toString("hex");
-  await prisma.contact.update({ where: { id: contactId }, data: { portalToken: token } });
+  await prisma.contact.update({ where: { id: contactId }, data: { portalToken: linkToken() } });
 
   revalidatePath(`/contacts/${contactId}`);
 }
@@ -174,13 +187,24 @@ export async function createInvoice(jobId: string, formData: FormData) {
  * a pay application's total IS the sum of what's billed per SOV line, so
  * there's nothing to reconcile against a separately-typed number. Rows
  * where both fields are blank/zero are dropped; at least one line must
- * have an amount. */
-export async function submitPayApplication(jobId: string, formData: FormData) {
+ * have an amount.
+ *
+ * A NEGATIVE materials-stored entry is legitimate and is the documented way
+ * to move value out of "stored" once the material is installed (see
+ * billing.prisma). That is why the drop filter tests `!== 0` rather than
+ * `> 0`: a row whose only content is the negative release is the whole
+ * point of the entry, and dropping it re-introduces #95's double bill.
+ *
+ * Returns an ActionResult rather than throwing its guard messages —
+ * production REDACTS thrown Server Action messages, so a refusal that
+ * throws shows the user an opaque digest while the $140,000 application
+ * they were trying to submit is simply not created, with no explanation. */
+export async function submitPayApplication(jobId: string, formData: FormData): Promise<ActionResult> {
   const { company } = await requireCompanyContext();
   const job = await assertJobInCompany(jobId, company.id);
 
   if (job.status === "ESTIMATE") {
-    throw new Error("Contract this job before invoicing it");
+    return actionFail("Contract this job before invoicing it");
   }
 
   const lineItemIds = formData.getAll("lineItemId").map(String);
@@ -193,14 +217,57 @@ export async function submitPayApplication(jobId: string, formData: FormData) {
       thisPeriodBilled: Number(thisPeriodValues[i] || "0") || 0,
       materialsStoredValue: Number(materialsStoredValues[i] || "0") || 0,
     }))
-    .filter((row) => row.thisPeriodBilled > 0 || row.materialsStoredValue > 0);
+    .filter((row) => row.thisPeriodBilled !== 0 || row.materialsStoredValue !== 0);
 
   if (rows.length === 0) {
-    throw new Error("Enter an amount for at least one line item");
+    return actionFail("Enter an amount for at least one line item");
   }
 
   for (const row of rows) {
     await assertLineItemOnJob(row.lineItemId, jobId);
+  }
+
+  // Prior-period context this action never used to fetch. Two narrow reads
+  // before the write, both outside any transaction: the Neon pooled
+  // connection limit is 5, and wrapping reads in one buys nothing here —
+  // Invoice's @@unique([jobId, number]) is what actually stops two
+  // concurrent submissions from both landing (the loser fails on the
+  // constraint), so this is a guard against a person's mistake rather than
+  // a concurrency control, and it does not pretend otherwise.
+  const sovLines = await prisma.jobLineItem.findMany({
+    where: { jobId },
+    select: { id: true, description: true, quantity: true, unitPrice: true },
+  });
+  const sovById = new Map(sovLines.map((line) => [line.id, line]));
+
+  // At creation time this invoice is the newest on the job, so every
+  // existing InvoiceLineItem row is "previous" by definition.
+  const priorRows = await prisma.invoiceLineItem.findMany({
+    where: { invoice: { jobId } },
+    select: { lineItemId: true, thisPeriodBilled: true, materialsStoredValue: true },
+  });
+
+  const entryErrors = rows
+    .map((row) => {
+      const line = sovById.get(row.lineItemId);
+      const prior = priorRows.filter((p) => p.lineItemId === row.lineItemId);
+      return payAppEntryError({
+        lineItemId: row.lineItemId,
+        description: line?.description ?? "This line item",
+        // Same expression the job page and the report use for a live line.
+        scheduledValue: line ? Number(line.quantity) * Number(line.unitPrice ?? 0) : 0,
+        previousBilled: prior.reduce((sum, p) => sum + Number(p.thisPeriodBilled), 0),
+        thisPeriodBilled: row.thisPeriodBilled,
+        previousMaterialsStored: prior.reduce((sum, p) => sum + Number(p.materialsStoredValue), 0),
+        materialsStoredValue: row.materialsStoredValue,
+      });
+    })
+    .filter((message): message is string => message != null);
+
+  if (entryErrors.length > 0) {
+    // All or nothing. A partially-accepted pay application is a worse
+    // artifact than a rejected one, and this document leaves the company.
+    return actionFail(entryErrors.join(" "));
   }
 
   const description = String(formData.get("description") ?? "").trim();
@@ -231,6 +298,7 @@ export async function submitPayApplication(jobId: string, formData: FormData) {
   });
 
   revalidatePath(`/jobs/${jobId}`);
+  return actionOk;
 }
 
 /** Sets this job's retainage rate and expected substantial-completion
@@ -423,7 +491,9 @@ export async function testQuickBooksConnection(): Promise<QuickBooksCompanyInfo>
  * persisted — every click regenerates fresh rather than reading a cached
  * value, since there's no schema field to cache it in yet.
  */
-export async function generateJobWipNarrative(jobId: string): Promise<string> {
+export async function generateJobWipNarrative(
+  jobId: string,
+): Promise<ActionResultWith<string>> {
   const { company } = await requireCompanyContext();
   const job = await assertJobInCompany(jobId, company.id);
 
@@ -453,7 +523,22 @@ export async function generateJobWipNarrative(jobId: string): Promise<string> {
     billedToDate,
   );
 
-  return generateWipNarrative({
+  // The model's system prompt tells it every figure it receives is exact and
+  // final, and asks it to judge whether the job is overbilled. On a job
+  // whose lines are only half estimated, earnedRevenue is summed with `?? 0`
+  // against a contract value counted in full — so handing these numbers over
+  // would have Claude write confident prose about an artefact. The job page
+  // already refuses to print the same figure; this refuses to narrate it.
+  if (jobWip.earnedCoverage < MIN_EARNED_COVERAGE) {
+    return {
+      ok: false,
+      error: `Only ${Math.round(
+        jobWip.earnedCoverage * 100,
+      )}% of this job's value has a cost estimate, so the WIP figures aren't complete enough to interpret. Budget the remaining lines first.`,
+    };
+  }
+
+  const narrative = await generateWipNarrative({
     jobName: job.name,
     jobStatus: job.status,
     contractValue: jobWip.contractValue,
@@ -470,6 +555,8 @@ export async function generateJobWipNarrative(jobId: string): Promise<string> {
       actualCostToDate: wip.actualCostToDate,
     })),
   });
+
+  return { ok: true, value: narrative };
 }
 
 // --- Company profile: insurance/bonding and locations ---------------------
@@ -509,7 +596,7 @@ export async function uploadContractDocument(jobId: string, formData: FormData) 
     prisma.contractDocument.findFirst({ where: { jobId }, orderBy: { versionNumber: "desc" } }),
   ]);
 
-  const blob = await put(`contracts/${jobId}/${file.name}`, buffer, { access: "public", contentType: file.type });
+  const blob = await putDocument(`contracts/${jobId}/${file.name}`, buffer, file.type);
 
   await prisma.contractDocument.create({
     data: {

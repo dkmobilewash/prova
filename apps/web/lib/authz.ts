@@ -18,3 +18,32 @@ export async function requireCapability(capability: Capability) {
   const context = await requireCompanyContext();
   return { context, allowed: can(context, capability) };
 }
+
+/**
+ * The same boundary for a Server Action.
+ *
+ * A page guard stops a page rendering. It does nothing whatsoever about
+ * the action behind it: a Server Action is an HTTP endpoint with a stable
+ * id, and it answers whoever posts to it. Guarding the page and leaving
+ * the action open is the "looks enforced, isn't" shape this codebase has
+ * paid for repeatedly — and it is worse than an open page, because a page
+ * only reads and an action writes.
+ *
+ * Drop-in for `requireCompanyContext()`: it returns the same context, so
+ * every destructuring at the call sites is unchanged and the diff is one
+ * token per action. THROWS, deliberately matching `assertOwner` in
+ * lib/actions/shared.ts, so a module written in that style stays in it.
+ * Modules that return `ActionResult` must NOT use this — production
+ * redacts a thrown message and the sentence would never arrive; those
+ * check `can()` and `return fail(...)`, the way
+ * `deleteCloseoutSubmission` already does for the owner check.
+ *
+ * `message` is required rather than defaulted: "Only the account owner
+ * can do that" told nobody anything, and the person reading this one has
+ * done nothing wrong.
+ */
+export async function requireCapabilityForAction(capability: Capability, message: string) {
+  const context = await requireCompanyContext();
+  if (!can(context, capability)) throw new Error(message);
+  return context;
+}

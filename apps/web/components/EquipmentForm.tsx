@@ -2,11 +2,16 @@
 
 import { useRef, useState, useTransition } from "react";
 import { createEquipment } from "@/lib/actions";
-import { EquipmentFields, type JobOption } from "@/components/EquipmentFields";
+import { EquipmentFields } from "@/components/EquipmentFields";
 
 /** Collapsed by default — same reasoning as VendorForm: the list is why
- * you came, adding is occasional. */
-export function EquipmentForm({ jobs }: { jobs: JobOption[] }) {
+ * you came, adding is occasional.
+ *
+ * No `jobs` prop: equipment is not created onto a job. It goes out to one
+ * later, through EquipmentDeploymentControls, which is where the overlap
+ * rule lives. Both this form and EquipmentRow took a `jobs` list that had
+ * stopped reaching `EquipmentFields` and was passed to nothing. */
+export function EquipmentForm() {
   const [isOpen, setIsOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -43,7 +48,7 @@ export function EquipmentForm({ jobs }: { jobs: JobOption[] }) {
     <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
       <h2 className="mb-3 text-sm font-semibold text-slate-300">Add equipment</h2>
       <form ref={formRef} onSubmit={handleSubmit} className="flex flex-col gap-3">
-        <EquipmentFields jobs={jobs} />
+        <EquipmentFields />
 
         {error && <p className="text-sm text-red-400">{error}</p>}
 

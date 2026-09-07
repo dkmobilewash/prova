@@ -2,8 +2,25 @@
 
 import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
+import { can } from "@/lib/permissions";
 import { Prisma, prisma } from "@prova/db";
 import { actionFail as fail, actionOk as ok, type ActionResult } from "./shared";
+
+/** Every entry point to a closeout package is a page guarded by
+ * MANAGE_JOBS, so every write here answers to the same capability.
+ *
+ * A guarded page in front of an open action is not a guard — the action is
+ * its own endpoint and answers whoever posts to it. Before this, an
+ * ACCOUNTING or FIELD member could create, edit and SUBMIT a closeout
+ * package to the GC through a page that refuses to render for them, which
+ * is worse than the page having been open: the two disagreed.
+ *
+ * Returned rather than thrown, matching this module's contract — production
+ * redacts a thrown Server Action message, so the sentence explaining why
+ * the button did nothing would never arrive. */
+const JOBS_ONLY =
+  "Closeout isn't part of your job function. The account owner sets who sees what, on the Team page.";
+
 
 /** Failures are RETURNED, not thrown — production redacts a thrown Server
  * Action message to a digest. `lib/actions/submittals.ts` is the reference.
@@ -99,8 +116,11 @@ async function issueAttemptNumber(tx: Prisma.TransactionClient, jobId: string) {
  * package that went anyway is visible rather than impossible.
  */
 export async function submitCloseoutPackage(formData: FormData): Promise<ActionResult> {
-  const { company, ...user } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  const { company, ...user } = context;
   return runAction(async () => {
+    if (!can(context, "MANAGE_JOBS")) return fail(JOBS_ONLY);
+
     const jobId = required(formData, "jobId", "Job");
     await assertJob(jobId, company.id);
 
@@ -152,8 +172,11 @@ export async function submitCloseoutPackage(formData: FormData): Promise<ActionR
 /** Records what the GC said. ACCEPTED ends it; REJECTED puts the ball back
  * in our court and is what makes another attempt legitimate. */
 export async function recordCloseoutResponse(id: string, formData: FormData): Promise<ActionResult> {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  const { company } = context;
   return runAction(async () => {
+    if (!can(context, "MANAGE_JOBS")) return fail(JOBS_ONLY);
+
     const submission = await assertSubmission(id, company.id);
     if (submission.status !== "SUBMITTED") {
       return fail("This attempt already has a response recorded. Reopen it to change what came back.");
@@ -191,8 +214,11 @@ export async function recordCloseoutResponse(id: string, formData: FormData): Pr
  * submitted date and attempt number are untouched: they are what the GC
  * also holds. */
 export async function reopenCloseoutSubmission(id: string): Promise<ActionResult> {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  const { company } = context;
   return runAction(async () => {
+    if (!can(context, "MANAGE_JOBS")) return fail(JOBS_ONLY);
+
     const submission = await assertSubmission(id, company.id);
     if (submission.status === "SUBMITTED") {
       return fail("This attempt is already open with the GC.");

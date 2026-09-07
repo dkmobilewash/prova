@@ -1,6 +1,6 @@
 import { prisma } from "@prova/db";
 import { calculateJobWip, calculateLineItemWip } from "./wip";
-import { calculateRetainageSummary } from "./retainage";
+import { loadRetainageHeld } from "./retainage-query";
 import { calculateCompanyFinancials, type CompanyFinancials } from "./company-financials";
 
 /**
@@ -12,13 +12,19 @@ import { calculateCompanyFinancials, type CompanyFinancials } from "./company-fi
  * "Active" means contracted or in progress. Estimates are not backlog
  * until someone has signed them, and a completed job is not what the
  * business is carrying.
+ *
+ * That status filter is for BACKLOG AND MARGIN ONLY. Retainage is
+ * deliberately not drawn from it and is not computed here at all — see
+ * lib/retainage-query.ts, which owns that population. Reusing this job
+ * list for retainage is issue #97, and issue #46 before it: retainage
+ * comes back at closeout, when a job is COMPLETE and this filter has
+ * already dropped it.
  */
 export async function loadCompanyFinancials(companyId: string): Promise<CompanyFinancials> {
-  const [jobs, paymentTotal, invoiceTotal] = await Promise.all([
+  const [jobs, paymentTotal, invoiceTotal, retainageHeld] = await Promise.all([
     prisma.job.findMany({
       where: { companyId, status: { in: ["CONTRACTED", "IN_PROGRESS"] } },
       select: {
-        substantialCompletionDate: true,
         lineItems: {
           where: { isDeleted: false },
           select: {
@@ -30,8 +36,10 @@ export async function loadCompanyFinancials(companyId: string): Promise<CompanyF
             costEntries: { select: { amount: true } },
           },
         },
-        invoices: { select: { amount: true, retainageWithheld: true } },
-        retainageReleases: { select: { amount: true } },
+        // amount only, for billedToDate. This file no longer names the
+        // retainage column at all, and lib/retainage-single-source.test.ts
+        // enforces that it stays that way.
+        invoices: { select: { amount: true } },
       },
     }),
     prisma.payment.aggregate({
@@ -42,6 +50,7 @@ export async function loadCompanyFinancials(companyId: string): Promise<CompanyF
       where: { job: { companyId } },
       _sum: { amount: true },
     }),
+    loadRetainageHeld(companyId),
   ]);
 
   const wipByJob = jobs.map((job) => {
@@ -61,21 +70,10 @@ export async function loadCompanyFinancials(companyId: string): Promise<CompanyF
     return calculateJobWip(lineItems, billedToDate);
   });
 
-  const retainageBalances = jobs.map(
-    (job) =>
-      calculateRetainageSummary({
-        invoiceRetainageWithheld: job.invoices.map((invoice) =>
-          invoice.retainageWithheld === null ? null : Number(invoice.retainageWithheld),
-        ),
-        releaseAmounts: job.retainageReleases.map((release) => Number(release.amount)),
-        substantialCompletionDate: job.substantialCompletionDate,
-      }).balance,
-  );
-
   return calculateCompanyFinancials({
     jobs: wipByJob,
     cashCollected: Number(paymentTotal._sum.amount ?? 0),
     totalBilled: Number(invoiceTotal._sum.amount ?? 0),
-    retainageBalances,
+    retainageHeld,
   });
 }

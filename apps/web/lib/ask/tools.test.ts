@@ -16,25 +16,47 @@ describe("the tenant boundary", () => {
     expect(toolsAcceptNoTenantInput()).toBe(true);
   });
 
+  // Guarding the guard. This used to RE-IMPLEMENT the forbidden list and the
+  // loop inline, so it proved that a copy of the check could fail and said
+  // nothing about the real one — emptying `forbidden` in tools.ts left the
+  // suite green (issue #108). It now calls the real predicate, which is why
+  // that predicate takes its tool list as an argument.
+  const withInput = (properties: Record<string, { type: string; description: string }>) => [
+    {
+      name: "crew_assignments" as ToolName,
+      description: "x",
+      input_schema: { type: "object" as const, properties },
+    },
+  ];
+
   it("catches a tenant field if one is ever added", () => {
-    // Guarding the guard: prove the check above can fail.
-    const withTenant = [
-      {
-        name: "crew_assignments" as ToolName,
-        description: "x",
-        input_schema: {
-          type: "object" as const,
-          properties: { companyId: { type: "string", description: "x" } },
-        },
-      },
-    ];
-    const forbidden = ["companyid", "company", "tenant", "userid", "user", "orgid"];
-    const clean = withTenant.every((tool) =>
-      Object.keys(tool.input_schema.properties).every(
-        (key) => !forbidden.includes(key.toLowerCase()),
-      ),
-    );
-    expect(clean).toBe(false);
+    expect(
+      toolsAcceptNoTenantInput(withInput({ companyId: { type: "string", description: "x" } })),
+    ).toBe(false);
+  });
+
+  it("catches EVERY spelling of whose-data-is-this, not just companyId", () => {
+    // The list in tools.ts is the guard. If an entry is ever dropped, the
+    // corresponding case here goes red instead of the breach shipping.
+    for (const field of ["companyId", "company", "tenant", "userId", "user", "orgId"]) {
+      expect(
+        toolsAcceptNoTenantInput(withInput({ [field]: { type: "string", description: "x" } })),
+        field,
+      ).toBe(false);
+    }
+  });
+
+  it("is case-insensitive, so COMPANYID does not slip past", () => {
+    expect(
+      toolsAcceptNoTenantInput(withInput({ COMPANYID: { type: "string", description: "x" } })),
+    ).toBe(false);
+  });
+
+  it("still passes an honest tool, so it is not just returning false", () => {
+    expect(
+      toolsAcceptNoTenantInput(withInput({ jobName: { type: "string", description: "x" } })),
+    ).toBe(true);
+    expect(toolsAcceptNoTenantInput([])).toBe(true);
   });
 });
 

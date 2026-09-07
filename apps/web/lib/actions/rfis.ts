@@ -1,9 +1,15 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireCompanyContext } from "@/lib/auth";
+import { requireCapabilityForAction } from "@/lib/authz";
 import { Prisma, prisma } from "@prova/db";
 import { assertOwner } from "./shared";
+
+/** Every entry point to these records is a page guarded by MANAGE_JOBS,
+ * so every write here answers to the same capability. A guarded page
+ * in front of an open action is not a guard: the action is its own
+ * endpoint and answers whoever posts to it. */
+const JOBS_ONLY = "Job correspondence isn't part of your job function. The account owner sets who sees what, on the Team page.";
 
 function text(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();
@@ -63,7 +69,7 @@ async function issueRfiNumber(tx: Prisma.TransactionClient, jobId: string) {
 }
 
 export async function createRfi(formData: FormData) {
-  const { company, ...user } = await requireCompanyContext();
+  const { company, ...user } = await requireCapabilityForAction("MANAGE_JOBS", JOBS_ONLY);
 
   const jobId = required(formData, "jobId", "Job");
   await assertJob(jobId, company.id);
@@ -103,7 +109,7 @@ export async function createRfi(formData: FormData) {
 }
 
 export async function updateRfi(rfiId: string, formData: FormData) {
-  const { company } = await requireCompanyContext();
+  const { company } = await requireCapabilityForAction("MANAGE_JOBS", JOBS_ONLY);
   const rfi = await assertRfi(rfiId, company.id);
 
   const sentOn = optionalDate(formData, "sentOn");
@@ -149,7 +155,7 @@ export async function updateRfi(rfiId: string, formData: FormData) {
 /** Stamps the sent date. Separate from create because the date it left our
  * hands is the fact the log exists to hold. */
 export async function markRfiSent(rfiId: string) {
-  const { company } = await requireCompanyContext();
+  const { company } = await requireCapabilityForAction("MANAGE_JOBS", JOBS_ONLY);
   const rfi = await assertRfi(rfiId, company.id);
   if (rfi.status !== "DRAFT") throw new Error("This RFI has already been sent");
 
@@ -166,7 +172,7 @@ export async function markRfiSent(rfiId: string) {
 }
 
 export async function answerRfi(rfiId: string, formData: FormData) {
-  const { company } = await requireCompanyContext();
+  const { company } = await requireCapabilityForAction("MANAGE_JOBS", JOBS_ONLY);
   const rfi = await assertRfi(rfiId, company.id);
   if (rfi.status === "DRAFT") throw new Error("Send this RFI before recording an answer");
 
@@ -195,7 +201,7 @@ export async function answerRfi(rfiId: string, formData: FormData) {
 }
 
 export async function setRfiClosed(rfiId: string, closed: boolean) {
-  const { company } = await requireCompanyContext();
+  const { company } = await requireCapabilityForAction("MANAGE_JOBS", JOBS_ONLY);
   const rfi = await assertRfi(rfiId, company.id);
   if (closed && rfi.status === "DRAFT") throw new Error("An unsent RFI can be deleted, not closed");
 
@@ -207,7 +213,7 @@ export async function setRfiClosed(rfiId: string, closed: boolean) {
 }
 
 export async function deleteRfi(rfiId: string) {
-  const context = await requireCompanyContext();
+  const context = await requireCapabilityForAction("MANAGE_JOBS", JOBS_ONLY);
   assertOwner(context, "Only the account owner can delete an RFI draft");
   const rfi = await assertRfi(rfiId, context.company.id);
 

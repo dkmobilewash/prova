@@ -62,6 +62,23 @@ export async function requireCompanyContext() {
     // email — join it as a MEMBER instead of creating a new Company.
     const invite = await prisma.invite.findUnique({ where: { email: normalizedEmail } });
     if (invite) {
+      // The SAME gate the two paths above apply, and for the same reason.
+      // It was missing here, which made this the one adoption path where
+      // naming an address was enough to reach the company behind it: an
+      // invitation to victim@example.com was consumable by whoever signed
+      // up claiming to be them, and the result was a real MEMBER account
+      // inside someone else's company, holding their jobs and their money.
+      //
+      // Clerk may well refuse to mint a session before it has verified an
+      // address — but that is a DASHBOARD setting, not code, and there are
+      // two Clerk instances here whose settings can differ. An access
+      // check that is only true because of a checkbox in someone else's
+      // console is not a check. This one is ours.
+      if (!emailIsVerified) {
+        throw new Error(
+          `An invitation is pending for ${email} and this sign-in has not verified that address.`,
+        );
+      }
       const [, created] = await prisma.$transaction([
         prisma.invite.delete({ where: { id: invite.id } }),
         prisma.user.create({

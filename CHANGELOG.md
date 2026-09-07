@@ -12,6 +12,2118 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### The demo seed left the yard empty and both cleanups could not finish — #147, #148, #154 (Cyrus)
+`cyrus/seed-and-cleanup-fixes`
+
+Three script bugs, all the same shape: a script reporting success while
+doing something other than what it claimed.
+
+**`seed-demo` wrote the DEPRECATED `Equipment.assignedJobId` and created
+zero `EquipmentAssignment` rows.** Every reader moved off that column when
+#45 landed, so a fresh seed showed "8 items, 8 in the yard", a blank
+utilisation on every row, and "Equipment: none on site" on every job —
+including the texture rig the dataset exists to show still sitting on
+Cedar Park after closeout.
+
+Two details are load-bearing and neither is in the issue. `createdAt` is
+now BACKDATED, because `utilisation` clamps its window to the day the
+record was created — a row created at `now()` has a zero-day window and
+reports "too new to say how used it is" rather than a low percentage, so
+the assignment rows alone would have fixed nothing visible on that line.
+And no two stays for one piece may overlap, because that is the
+contradiction `/deployment` reports in red, and seeding one would ship a
+demo that opens on an error.
+
+**`--undo` DELETED the company's `SafetyCaseCounter`.** Deleting a
+high-water mark is worse than the `max(n)+1` this repo already forbids:
+that reissues one number, this reissues all of them, and two cases sharing
+a number on an OSHA 300 log is an audit finding. Both scripts leave it
+alone now. The seed's WRITE side had the same defect and nobody had
+reported it — `update: { lastCaseNumber: 2 }` SET the counter, lowering it
+on any company past 2, and hardcoded numbers 1 and 2 collide with
+`@@unique([companyId, caseYear, caseNumber])` on a company that has filed
+real cases this year. Numbers come out of the counter incremented now,
+mirroring `issueCaseNumber`.
+
+**`clean-scratch-data` deleted `Job` and `Contact` without their RESTRICT
+children.** The issue said five. Deriving it from the foreign keys the
+migrations actually created gives THIRTEEN missing, out of 32 such
+children in total — and running the same derivation against `seed-demo`'s
+undo found seven more that nobody had reported. On a database holding any
+of those rows Postgres refuses the parent delete and the run ends
+half-done, which is the state both scripts exist to prevent.
+
+Prisma's referential default differs by optionality — required to
+`RESTRICT`, optional to `SET NULL` — which is exactly why reading the
+schema by eye undercounts, and why this was missed twice.
+
+**The check is a test now, not a habit.** `scratch-cleanup-order.test.ts`
+derives the blocking set from the migration SQL, then reads the delete
+order out of each script and requires every blocker to go first. Add a
+model with a required `jobId` and it fails on a laptop in a second instead
+of on somebody's database halfway through a cleanup. Verified against the
+weakness that shape usually has: removing a delete entirely turns it red,
+and so does moving one after the parent it blocks — ordering as well as
+absence.
+
+**Stated plainly: nothing was executed against a database.** Model names
+and every field written were checked against the generated Prisma DMMF and
+both files pass `node --check`, but no seed, undo or clean was run
+anywhere. That the new `deleteMany` calls succeed against Postgres, and
+that the per-model count output reads well, are the parts only the
+click-list can settle.
+
+Both scripts also stopped swallowing a missing `deleteMany` as a benign
+skip. That existed while `EquipmentAssignment` lived on an unmerged
+branch; the branch merged, and all it could still hide was a stale Prisma
+client or a renamed model, reported as a clean run.
+### Three things /equipment said that were not true — #149, #151, #150 item 1 (Cyrus)
+`cyrus/equipment-page-truth`
+
+A hydration break, a machine reported on a job it had not left for, and a
+lift that worked ten days in the quarter reported as idle. All three
+shipped with #45, on a page nobody had loaded.
+
+**`EquipmentRow` opened an `<li>` inside the `<li>` the page had already
+opened.** The HTML parser resolves that by closing the outer one, so the
+DOM the browser builds is not the tree React hydrates against — a real
+structural hydration break, live on main, with typecheck, lint and 1,400
+tests green about it the whole time because not one of them had ever
+produced the markup. The check is a test that renders the component with
+`renderToStaticMarkup` and asserts the string contains no `<li>`. It is
+the only markup-level test in this app and it exists because this defect
+is invisible everywhere else. The inline edit branch sits behind a click
+no server render reaches, so a second assertion reads the source for the
+tag. Worth noting against #61, which spent sessions on a hydration
+mismatch that turned out to be a browser extension: this one was ours.
+
+**A stay dated ahead is a PLAN, not a deployment.** `currentAssignment`
+answers a date-free question — which stay has nobody closed — so on Friday
+it named Tuesday's job: the row printed "On Riverside Medical", the piece
+dropped out of "N in the yard", and the line directly beneath it said "due
+out Tuesday", because `stayLength` already knew. One card, two
+contradictory statements. `deploymentToday()` is the date-aware answer and
+distinguishes out / planned / yard. `currentAssignment` is deliberately
+unchanged and still backs the overlap rules and Ask's
+`equipment_location`, because "is a stay open" is the right question for
+both of those.
+
+**`utilisation` inlined a second copy of `daysOutWithin`'s rule and the
+two disagreed about the exact case that docstring makes a point of.** A
+half-open `for (let d = from; d < to)` counts a same-day stay as nothing,
+so a lift dispatched for ten separate one-day jobs rendered "out 0 of the
+last 90 days (0%)" — reported idle while it worked every one of those
+days. It now reads "out 10 of the last 90 days (11%)". `daysOutWithin`
+returns the days rather than a count, because deduping overlapping records
+has to happen against that rule and not a second one. It had been
+exported, documented and tested and called by nothing: the fourth instance
+of that shape in a week, after `factDigest`, `acknowledgedSeverity` and
+the 161 dbtests.
+
+**`newestFirst`'s only test used two SAME-DAY stays**, so the date
+comparison the function exists for could be reversed without turning it
+red. Verified by doing exactly that, twice — once by the author and once
+during consolidation: with the comparison reversed the old test file
+produced ZERO `newestFirst` failures, and the new distinct-date assertions
+fail. Every fix here was checked the same way, defect reintroduced and the
+named test confirmed red before it was removed again.
+
+**Not clicked, and saying so.** Rendering the component proves the `<li>`
+is gone from the markup. It does not prove the page hydrates clean on a
+real screen, and nothing here proves the yard count reads right to a
+person. See also #173: both this page and /deployment still take "today"
+from the server's UTC clock while their own form defaults come from the
+viewer's day, so `deploymentToday()` judges against the wrong date at
+certain hours. Filed rather than folded in.
+### A snooze was validated on one calendar and spent on another — #155 (Cyrus)
+`cyrus/snooze-viewer-day-and-enum-guard`
+
+**If you snooze an alert and it comes straight back with no message, this
+was why.** `snoozeAlert` checked the date against the server's UTC day,
+while `partitionAlerts` has spent snoozes against the VIEWER's day since
+#111. One validation, one consumer, two different answers to which day it
+is.
+
+East of UTC the gap swallowed the input: at 08:00 in Tokyo the UTC day is
+still yesterday, so the check accepted the user's own today, the form
+succeeded, and the list spent the snooze on arrival. West of UTC it ran
+the other way — at 18:00 in Los Angeles a genuine tomorrow was refused as
+"already over". Not two bugs. One producer and one consumer disagreeing
+about the date, which is the same shape as the retainage population rule
+and every other number in here that was plausible and wrong.
+
+**This reverses a call made deliberately.** The old line carried a comment
+saying the UTC day was left there on purpose and that it was a product
+decision. That reasoning only ever looked west of UTC, where refusing is
+defensible. East of UTC the identical line discards input silently, which
+is not a product question.
+
+The fix is to stop having two expressions. `snoozeIsUnspent(snoozedUntil,
+todayIso)` is now the only place that question is answered; the list calls
+it and so does the action, with the same `viewerToday()` it hands to
+`severityForKey` — so the action reads the clock exactly once. They can
+only disagree now if a caller passes two different days, which is a
+visible mistake rather than an invisible one.
+
+The check is both sides of UTC, from instants that actually straddle
+midnight, with the straddle asserted BEFORE anything is asserted about it,
+and one case sweeping four dates across the boundary that requires both
+outcomes to occur so the loop cannot pass by never disagreeing. Plus a
+source guard, because no pure test can see WHICH CLOCK the action reads
+and that was the entire defect.
+
+### The safety enum guard could not fire — #150 item 2 (Cyrus)
+
+`safetyLabels.test.ts` hand-wrote the `IncidentOutcome` enum it existed to
+guard, so adding a member to the schema never touched the test file and it
+stayed green through exactly the change it was named for. It reads the
+enum out of `packages/db/prisma/schema` now — every `.prisma` file, so
+moving the enum between them cannot quietly empty the list — and asserts
+it found the enum before looping over it.
+
+Proven the only way this shape can be: with an unlabelled member added to
+the schema, the old test was 3/3 green and the new one fails twice.
+### Every contractor's record counts were rendering as yours on /union-compliance — #136 (Cyrus)
+`cyrus/union-count-company-scope`
+
+**What you saw: a classification on `/union-compliance` reading "11 records
+tagged" when your company had tagged nothing at all.** Those eleven were
+somebody else's — another contractor signatory to the same local. The
+number is now your company's own, so expect it to FALL, in some cases to
+"nothing tagged yet".
+
+`CraftClassification` hangs off `UnionLocal`, and `UnionLocal` is global on
+purpose: two contractors under the same hall mean the same real local, and
+duplicating it per company would be the wrong fix. What that makes easy to
+get wrong is counting. `loadUnionSetup` asked for a relation `_count` of
+`timeEntries`, `jobLineItems`, `catalogEntries` and `dispatchSlips` with no
+filter on it, and a relation count on a global row counts every company's
+rows. `UnionLocalCard` then rendered that total as this company's "N
+records tagged". Since an agreement is self-asserted and a local number is
+public, the way in was to type one.
+
+All four counts are now filtered to the viewing company. Three of them
+reach a company only through `Job`; `LineItemCatalogEntry` carries
+`companyId` itself.
+
+**The same numbers had a second way out, through the delete refusal, and
+fixing only the display would have left it.** `deleteCraftClassification`
+counted the same four tables globally and quoted the breakdown back in its
+refusal message — "11 records are tagged (3 time entries, 2 line items, 4
+catalog entries, 2 dispatch slips)". One click, same disclosure, different
+channel. That is the shape this repo keeps hitting: a fix that reads
+complete in the diff because nothing calls the half that was missed.
+
+**The guard itself still counts globally, and that is deliberate.** Scoping
+it would let one contractor delete a classification another has hours, line
+items and dispatch slips tagged with — turning a read leak into a
+cross-company destructive action, which is worse. So the guard is unchanged
+and only the message moved: the numbers quoted are always your own, and use
+by anyone else is reported as the fact that it exists, without a count or a
+name. A craft you have nothing tagged with can therefore still refuse to
+delete, and it now says why in those words rather than looking like a bug.
+
+**No migration, and no dependency on the `companyId` schema decision.**
+This is the read half of #136's union exposure. The destructive paths —
+`deleteFringeRateSchedule` and the `apprenticeRatioRule.deleteMany` at
+`unionCompliance.ts` — still need option A's `companyId` and are not
+touched here.
+
+Three database tests carry it, and none of them can pass on the old code:
+two contractors are built under one local, only the second is given work,
+and the first is asserted to read `0`, to be refused a delete whose message
+contains no digit at all, and to be quoted its own `0 catalog entries`
+where eleven of somebody else's records exist. The unfiltered version
+passes every other test in that file.
+### An email address was being filed as a worker's name (Diego)
+`claude/prova-vercel-direct-url-hg1acx`
+
+Cyrus found this while building crew members and handed it over. Verified
+before acting on it, and it is wider than reported: `User.name` is
+nullable, and SEVEN call sites read `employeeUser.name ?? employeeUser.email`.
+
+**On an internal screen that fallback is fine.** It identifies a person.
+The one that is not fine is `jobs/[id]/certified-payroll` — the worker-name
+column of a WH-347 is a statement to a government agency about who did the
+work, and an email address is not that. A wrong name on a filed form is a
+correction to an agency rather than a patch, which is a different order of
+problem from a scruffy screen.
+
+**So the fix is narrow on purpose.** `lib/worker-name.ts` never returns the
+email; it returns "Name not recorded" and says the name is missing. The
+page then does what the rest of this codebase does with something it cannot
+compute — shows the gap rather than filling it, exactly as
+`hasUncomputedHours` already marks hours with no fringe schedule instead of
+silently pricing them at zero.
+
+The warning sits ABOVE the summaries, not in a footnote. A note under the
+last table is the thing nobody reads before printing, and this one decides
+whether the week can be filed at all. It names the accounts by email, so
+the fix is a click away rather than a hunt.
+
+A whitespace-only name counts as missing. Otherwise it prints an empty cell,
+which reads as a formatting bug and gets skimmed past; a sentence gets acted
+on.
+
+**Deliberately NOT changed:** `lib/union-compliance-query.ts` (twice) and
+`lib/prevailing-wage-query.ts` carry the same fallback and the same argument
+applies to fringe remittance and prevailing wage. Cyrus said in
+`#prova-build` that he is in those files right now for #104/#62/#63, and
+editing them would be the merge damage the post-and-wait rule exists to
+prevent. The helper is there for him to adopt in one line per site. The two
+display sites on `jobs/[id]/page.tsx` are left alone because identifying a
+person on screen is what the fallback is good at.
+
+Mutation-verified: putting the email fallback back turns two tests red.
+
+
+### "Retainage held" was two different numbers on one screen — #97, which is #46 again (Cyrus)
+`fix/retainage-single-source`
+
+**The metric bar excluded COMPLETE jobs. It no longer does. Expect the
+figure to RISE for every existing company, by whatever retainage is being
+chased on finished work.** That is the correction, not a regression, but
+anyone who has been reading the bar will see it jump. On the seeded demo
+data it goes from $2,500.00 to $15,920.00.
+
+On `/dashboard` the "Retainage held" stat card and the "Retainage held"
+metric bar pinned along the bottom of the same viewport showed different
+numbers, eighteen inches apart. `loadCompanyFinancials` filtered its job
+list to `CONTRACTED`/`IN_PROGRESS` — correct for backlog and margin,
+because that is what the business is carrying — and retainage was drawn
+off that same list. Retainage comes back at CLOSEOUT, when the job is
+COMPLETE: the exact status that filter drops. `/cash-flow` and `/alerts`
+were already right, so the bar contradicted them too.
+
+**Why it came back matters more than the fix.** #46 was this same bug,
+fixed once. That fix extracted the SUMMING rule into a pure, well-tested
+helper and left the POPULATION rule — which jobs the sum runs over —
+copied into each call site as prose. Eight green unit tests covered
+`withheld − released`, which had never broken. Nothing covered "over which
+rows", which had now broken twice. The copy in `company-financials-query.ts`
+was written the day before the #46 fix and outlived it by three days.
+
+So the ownership is inverted. `lib/retainage-query.ts` owns the query, not
+the arithmetic: `loadRetainageHeld(companyId)` is THE company-wide figure
+and both callers ask it. `totalRetainageHeld` is gone — it existed only to
+host a filter that is now deleted, and keeping a pure helper with one
+caller is what created the split in the first place.
+
+**Two aggregates, not a row scan.** `SUM(Invoice.retainageWithheld) −
+SUM(RetainageRelease.amount)`, matching the `payment.aggregate` idiom two
+lines above it. This runs from the app LAYOUT, so it is a cost on every
+authenticated navigation and it runs twice on `/dashboard` (bar and card,
+and nothing in this codebase dedupes server reads within one render). Two
+indexed sums can afford that; a whole-company `findMany` over jobs with
+invoices and releases attached could not. The forms are arithmetically
+identical only because no per-job balance is clamped at zero — a sum of
+differences is the difference of sums — and the dbtest pins that property
+so anyone adding a floor has to break it.
+
+**`retainageHeldPastCompletion` is now `retainageHeld`.** The old name
+asserted a substantial-completion filter that `c057b03` had already
+removed, on a field the dashboard card renders.
+
+**The over-correction was the real risk and is guarded.** "No filter" is
+the rule for retainage ONLY. Applied to the whole function it would turn
+backlog into "every job we ever had" and inflate the first number on the
+same bar, so a dbtest pins `estimatedRevenue` to live jobs.
+
+**What makes a third reintroduction visible.** The durable guard is
+`expect(bar.retainageHeld).toBe(card.retainageHeld)` in
+`retainage-query.dbtest.ts` — it does not care which side drifts. A static
+guard covers the case a behavioural test cannot reach, a SEVENTH copy of
+the query in a file that does not exist yet: every file naming
+`Invoice.retainageWithheld` is enumerated with a reason, and an unlisted
+one fails the build. An earlier draft of that guard grepped for the string
+`CONTRACTED`; it was replaced because `status: { not: "ESTIMATE" }` and
+`status: { notIn: [...] }` both reintroduce #97 while reading clean. The
+population is asserted as a VALUE instead — `toEqual` on the whole where
+clause, which no spelling escapes.
+
+**Left alone on purpose:** `/cash-flow`, `lib/alerts-query.ts` and
+`lib/closeout-query.ts` still build their own reads. They need job names
+and ids, not a scalar, and they are correct today. They are on the
+enumerated list with that reason written down.
+
+---
+
+---
+
+### Certified payroll queried an EIGHT-day week, so every Sunday was certified on two consecutive filings (#96)
+`claude/certified-payroll-week-96`
+
+**Numbers on an already-printed certified payroll go DOWN after this.
+That is a correction to disclose, not a silent patch.**
+
+`/jobs/[id]/certified-payroll` computed `weekEnd = weekStart + 6` — a
+Sunday-to-Saturday week, which is what the header printed — and then
+queried `date: { gte: weekStart, lte: addDays(weekEnd, 1) }`. Eight days.
+`TimeEntry.date` is stored at UTC midnight, so the following Sunday's rows
+matched the bound exactly and were pulled into the week before. That same
+Sunday is also correctly on its own week's report, so **the identical
+hours and the identical dollars were certified twice**, on two documents
+filed with a government agency under penalty.
+
+The repro in the issue: Mon–Fri 8h straight plus a 6h Sunday makeup shift
+at overtime. The week of 2026-08-23 should print 40 hours and $3,094.00.
+It printed **46 hours and $3,714.10** — +20.04%, with an overtime column
+entry on a week in which no overtime was worked. Nothing on either page
+showed a date, so no printout could reveal where the extra day came from.
+
+Three things changed, and the second is the one that matters:
+
+- The bound is now `lte: weekEnd`, byte-for-byte the shape
+  `lib/prevailing-wage-query.ts` already used. Not `lt: weekEnd + 1` —
+  that would have been a third spelling of one window.
+- **The window is now importable.** It lived inline in an async server
+  component, which is the whole reason it had no test and had to be found
+  by reading. `lib/certified-payroll-week.ts` is pure — no Prisma — and
+  `lib/certified-payroll-week.test.ts` asserts the PROPERTY rather than a
+  magic date: consecutive weeks must partition the calendar. Under the old
+  bound that test names all 52 Sundays of 2026 as certified twice. It also
+  prices the repro end to end, so 40 hours / $3,094.00 is pinned as a
+  number and not as a comment. `lib/certified-payroll-query.ts` holds the
+  fetch, scoped by `companyId` the way `reviewJobWeek` is — an unscoped
+  time-entry query in `lib/` under a name that reads scoped is how the
+  next caller writes a cross-tenant read.
+- The header's Saturday is now the query's OWN upper bound, not a second
+  computation of it. The two disagreed, and that disagreement was the tell.
+  The page also prints **hours by day** now: every other figure on it is a
+  week-level roll-up with no date, which is what made a foreign day
+  invisible on paper.
+
+**Left undecided, deliberately, and it needs an answer.** Certified
+payroll uses a SUNDAY-start week. `lib/alerts-query.ts` and
+`lib/prevailing-wage-query.ts` both group by MONDAY, via
+`components/fieldReportWeeks.weekStart`, which carries its own written
+rationale for rejecting `getUTCDay()`. So the alert's "week of Mon 8/24 –
+Sun 8/30" and this page's "Aug 23 – Aug 29" are different seven-day spans,
+and anyone reconciling the two sees a one-day offset. That is not new —
+it predates this fix — but the old eight-day window accidentally covered
+the alert week's Sunday and this fix removes that cover. No hours are lost
+(the page's own Sun–Sat weeks still partition the calendar, and no caller
+passes a Monday), but the product has two payroll weeks with the same
+name. Changing it would shift every already-filed week by a day, which is
+a bigger change to a filed document than this one, so it is written down
+in `lib/certified-payroll-week.ts` instead of made silently.
+
+**Before this ships, run against `ep-little-sea` to name who is exposed**
+— every Sunday `TimeEntry` is a week whose PRECEDING week was printed
+inflated:
+
+    SELECT j."companyId", t."jobId", t.date, count(*), sum(t.hours)
+    FROM "TimeEntry" t JOIN "Job" j ON j.id = t."jobId"
+    WHERE extract(dow from t.date) = 0
+    GROUP BY 1, 2, 3 ORDER BY 3 DESC;
+
+That over-reports: a job that never had a certified payroll printed is in
+it too. Do not hand its row count over as "weeks filed wrong". And check
+the invariant the inclusive bound rests on — this must be 0, and if it is
+not, `prevailing-wage-query.ts` has the same exposure and the two get
+solved together rather than one of them respelled:
+
+    SELECT count(*) FROM "TimeEntry" WHERE date::time <> '00:00:00';
+
+---
+
+### "Overbilled $80,000" on a job that is not overbilled (#99)
+`cyrus/wip-percent-and-earned-coverage`
+
+The revenue half of the asymmetry `MIN_ESTIMATE_COVERAGE` was invented to
+fix. `calculateJobWip` sums `earnedRevenue` with `?? 0` while contract
+value counts in full, so every line nobody has estimated is treated as
+having earned exactly nothing, and `billedToDate - earnedRevenue` reports
+a liability that does not exist.
+
+Two $100k lines, one budgeted and half spent, $130k invoiced. The panel
+prints Contract value $200,000, % complete 50.0%, Earned revenue $50,000,
+and — in amber — Overbilled $80,000. It contradicts itself on its own
+face: 50% of $200,000 is $100,000. If the second line were also half
+built the job would be UNDERbilled $30,000, so the sign was wrong, not
+just the size. Company-wide it is worse, because cost on an unestimated
+line counts in `costToDate` in full while its revenue does not: post $70k
+against that unbudgeted line and the MetricBar, which renders on every
+authenticated page, reads Gross margin -120.0% for a company that is fine.
+
+Fixed in the shape the cost side already uses — a coverage ratio, an
+exported threshold, and consumers that refuse to state the figure below
+it. `earnedCoverage` and `estimatedCoverage` now come off `calculateJobWip`
+itself, replacing two hand-rolled copies of the cost-side ratio in
+`today-dashboard.ts` and `ask/handlers.ts` and giving the job page the one
+it never had. `MIN_EARNED_COVERAGE` is deliberately a SECOND constant at
+the same 0.8: the two ratios have different predicates — a line estimated
+at zero cost is covered on the cost side and not on the revenue side — and
+one name would invite answering both questions with one ratio, which is
+the hole.
+
+What each surface does now: the job page shows "—" for earned revenue (the
+per-line rows below it already did) and, where the amber sentence was, the
+reason in slate. `/ask` receives null instead of a flattered number, plus
+both coverage ratios. "Explain this WIP" refuses rather than handing the
+model figures its system prompt tells it are exact and final — which meant
+converting `generateJobWipNarrative` from `Promise<string>` to a result
+type, since production redacts thrown Server Action messages.
+
+**The company margin goes quiet, it does NOT change population.** The
+tempting fix — drop under-covered jobs out of both company sums — was
+built and rejected: on the fixture above it reports 40% margin and colours
+it green while $90,000 of real spend vanishes, which is the opposite
+failure direction from the bug. An overstated overbilling makes a sub bill
+cautiously; a flattered margin makes them keep going. So `grossProfit`
+still sums every active job, and `grossMarginRate` returns null when less
+than 80% of the company's contract VALUE carries an earned-revenue figure.
+Value-weighted, so one small unbudgeted job cannot blank the bar for a
+large estimated book. "—" on the bar now carries its reason beside it.
+
+`estimatedRevenue` is untouched: it is contract value, correct today, and
+the backlog figure. Filtering it would be a new bug in the other
+direction, and there is a test pinning that.
+
+Also folded in: the dashboard's "N jobs over budget" count is gated on the
+same coverage its own sentences are, or the card says "3 jobs over budget"
+above three rows each saying we cannot forecast this job yet.
+
+**What this does NOT fix.** `earnedCoverage` answers "are the estimates
+there", not "do the figures agree". A cost-only line (unitPrice null —
+general conditions, overhead) has zero contract value and sits on neither
+side of the ratio, so a job can read fully covered and still show an
+earned revenue that is not percentComplete × contract value. Same family,
+different mechanism, not caught here.
+
+### % complete could read 550%, because the numerator counted lines the denominator did not (#100)
+`cyrus/wip-percent-and-earned-coverage`
+
+`calculateJobWip` summed actual cost over EVERY line and divided it by
+estimated-cost-at-completion summed with `?? 0` — which is zero for every
+line nobody has forecast. Cost on an unforecast line therefore landed in
+the numerator against a denominator it was not part of. Two lines, one
+budgeted at $20k and fully spent, one unbudgeted carrying $90k of cost,
+printed **550.0% complete**.
+
+The worse case is the plausible one. A $480k framing line forecast at
+$320k with $96k spent, plus a $120k change-order line that ran away to
+$210k and was never re-forecast, printed **95.6% complete** on a job that
+is 30% through its forecast cost — and the dashboard's coverage guard did
+not fire either, because value coverage was exactly 0.80. The sentence on
+screen read "Forecast to finish 47% under contract value at 96%
+complete". A surety sets a bonding line off that tile.
+
+Both sides of the ratio now come from the same set of lines: those with a
+cost forecast that is non-null AND greater than zero. The `> 0` half is
+not decoration — a negative cost-to-complete override drives a line's
+forecast to exactly 0, which passes a null check and reproduces the
+identical bug one layer down (measured: 410% before, 410% after a
+null-only filter, 10% with this one). That override reaches the database
+today: the input at `jobs/[id]/page.tsx` is plain text and
+`nullableDecimalFromForm` rejects only NaN. Filed separately.
+
+**Nothing else moved.** `actualCostToDate` is still every dollar booked
+against the job — narrowing it would understate the spend tile and
+overstate company gross margin, which is a worse bug than this one, and
+there is a test asserting $306,000 specifically to catch that.
+`contractValue`, `estimatedCostAtCompletion`, `earnedRevenue` and
+`overUnderBilling` are byte-for-byte unchanged, so `jobIsOverBudget`,
+`jobCostVariance`, `MIN_ESTIMATE_COVERAGE` and the WIP-variance alert all
+keep their current values.
+
+**Percentages will DROP on deploy, some of them sharply, and that is the
+fix working.** 96% to 30% on the case above. Anyone watching that tile
+daily will read it as the app losing progress. Jobs created through the
+takeoff flow are the most affected: `createLineItemsFromTakeoff` writes
+line items with no cost fields at all, so every dollar booked against a
+takeoff line was inflating that job's percentage.
+
+Because 30% over $306k of spend is its own kind of dishonest, the tile now
+says what it is based on — "Based on 31% of cost to date — the rest sits
+on lines with no cost forecast" — rather than presenting a confident
+number over a third of the money. Qualify, not suppress, matching what
+`ask/handlers.ts` already ships beside its figures.
+
+And `apps/web/lib/wip.test.ts` now exists. It did not before: 
+`company-financials.test.ts` hand-builds `WipJobResult` literals and never
+calls `calculateJobWip`, so not one line of the percentage-of-completion
+math was executed by any test. That absence is half of why a 550% figure
+survived. Thirteen tests; three of them fail on the old code with 0.95625,
+5.5 and 4.1.
+
+### Two cross-tenant holes closed: QuickBooks OAuth binding, and the invite path's missing verification gate (Cyrus)
+`cyrus/oauth-binding-and-invite-verification`
+
+Both from the audit in #136, both live on production, and both had the
+same shape — a value the attacker controls being read as if it were a
+value we issued.
+
+**The QuickBooks callback bound the connection to whatever company the
+cookie named.** `qbo_oauth_state` is plaintext JSON. `httpOnly` keeps page
+JavaScript out of it; it does nothing about the person with devtools open.
+Hit `/api/quickbooks/start`, retype one field — `companyId` — as somebody
+else's, and finish Intuit's consent with your own QuickBooks account. The
+`state` still matched, because you never touched `state`, so all four
+checks the route made passed. The upsert then wrote your realm and your
+tokens under their company: their invoice and payment pushes post into
+YOUR books, and their real connection is overwritten and gone. It stays
+that way until somebody notices, and the thing that would normally give it
+away — a broken connection — is exactly what does not happen.
+
+The route now takes companyId and userId from the authenticated session.
+The cookie carries the CSRF `state`, which is all it was ever fit to carry,
+plus the same two ids as a CROSS-CHECK: finish the flow as a different
+account than you started it and the connection is refused rather than
+pointed at whichever of the two answers won.
+
+**Signing the cookie was the other option and was rejected.** An HMAC over
+the payload would also have made a rewritten `companyId` detectable, and it
+needed no session — but it needs a signing secret, and `lib/crypto.ts`
+already argues in this repo's own words why that must be its OWN variable
+rather than a borrowed one: "reusing a key that already signs or encrypts
+something else means rotating it for one reason breaks the other, which is
+how a key stops being rotated at all." That is a new env var, set by hand
+on Vercel, which fails a flow nobody tests often if it is ever missing or
+mistyped. Reading the session needs nothing deployed, and it is strictly
+stronger: a signed cookie is still a bearer token, where the session is the
+actual answer to "who is doing this".
+
+**The comments that said otherwise are gone.** `QuickBooksOAuthCookiePayload`
+claimed possession of the cookie was "itself sufficient authorization, so
+the callback route needs no separate auth check", and `middleware.ts`
+vouched for the same. That sentence WAS the vulnerability — it is the
+reason a reader would not look. Same lesson `middleware.ts` already records
+about the webhook entry: an allowlist entry is only as good as the sentence
+justifying it, and nothing checks that sentence.
+
+**Being outside the protected matcher does not mean there is no session,
+and that confusion is what made the cookie look necessary.** It is still
+outside it, deliberately — `auth.protect()` on a route Intuit redirects
+into can bounce an expired token into a re-login mid-flow and drop the
+in-flight exchange. But `clerkMiddleware` still RUNS on the path, because
+the matcher covers `/(api|trpc)(.*)`, and it calls `decorateRequest`
+unconditionally after the handler, on every request it matches — so the
+auth headers `auth()` reads are there whether or not anything called
+protect. Read out of the installed `@clerk/nextjs` 6.39.6, not assumed.
+
+**The invite path had no email-verification gate.** `requireCompanyContext`
+has three adoption paths. Main adoption checks `emailIsVerified`, race
+recovery checks it, and the invite path checked nothing: look the invite up
+by email, create the user as a MEMBER of the inviting company. So an
+invitation to `victim@example.com` was consumable by whoever signed up
+naming that address, and what they got was a real account inside someone
+else's company. It now applies the same check as its two neighbours.
+
+Whether that was exploitable today depends on Clerk refusing to mint a
+session before verifying an address — which is a DASHBOARD setting, not
+code, and there are two Clerk instances here whose settings can differ.
+An access check that holds only because of a checkbox in someone else's
+console is not a check.
+
+**Both fixes have a test that was watched failing first, in both
+directions.** The attack test alone is worthless here: a callback that
+refuses everybody and a gate that admits nobody each pass it perfectly,
+and both are silent outages — an OAuth flow that stops working is invisible
+for as long as the existing connection keeps refreshing, and a dead invite
+gate looks like the mail provider's fault. So each has a companion test
+that a legitimate owner still connects, and a genuinely invited person with
+a verified address still gets in as a MEMBER.
+
+**`FakeDb.findUnique` was lying, and it nearly made this a fake fix.** It
+indexed the id map with `where.id` unconditionally, so
+`findUnique({ where: { email } })` did `Map.get(undefined)` and returned
+null — silently, and null is an ordinary answer for a unique lookup. The
+first run of the invite test failed, but for the wrong reason: the invite
+was never found, so the code took the create-your-own-company branch and
+the test never entered the path it was written to pin. Fixed to match on
+any unique column, which is also what `upsert` needed — it read
+`Object.values(where)[0]` on the assumption of a composite key, so a plain
+`{ companyId }` became the STRING and matching compared its character
+indices. Worth the paragraph: a test that fails for the wrong reason looks
+exactly like a test that works.
+
+---
+
+### Two live exposures from the audit: public document URLs, and an e-sign token that was a database id (Cyrus)
+`cyrus/blob-suffix-esign-token`
+
+Findings 3 and 4 of issue #136. Both were live on production; neither
+needed a migration.
+
+**Every uploaded document sat at a URL you could derive.** `@vercel/blob`
+defaults `addRandomSuffix` to false — its own typings say so at
+`dist/index.d.ts:459`, and recommend the opposite in the same sentence.
+All four upload sites took that default while passing `access: "public"`,
+so `compliance/<companyId>/COI.pdf` was the whole URL. Certified payroll,
+lien waivers, COIs and W-9s were readable by anyone who guessed a
+filename, permanently, with no login — including somebody removed from
+the team who once held a link. The compliance path also PUBLISHED the
+companyId to every GC and insurer the link was mailed to, and companyId
+reaches a client nowhere else in the app; finding 2 of the same issue
+needs exactly that value.
+
+Uploads now go through `putDocument` in `apps/web/lib/blob.ts`, which
+sets `addRandomSuffix: true` and does not take an options argument. The
+option is not passed at each call site on purpose: the dangerous value is
+the DEFAULT, so the failure mode is a fifth call site that never mentions
+it and looks exactly like its neighbours. Nothing rebuilt a URL from its
+parts — all four sites already stored the `url` that came back — and a
+test now asserts the stored URL is the returned one rather than the
+requested path.
+
+**The same default was also breaking versioning.** `allowOverwrite`
+defaults false too, and `put` THROWS on an existing pathname. So
+`uploadContractDocument`, whose entire job is amendment history and which
+computes `versionNumber + 1`, died at the blob store on the second upload
+of a same-named PDF, before any row was written. Version 2 of
+"subcontract.pdf" was impossible. A random suffix means two uploads never
+collide. The test reproduces the old failure by faking `put` with the
+documented defaults, and it fails with the real
+`This blob already exists` message against the pre-change code.
+
+**The e-signature token was `@default(cuid())`.** cuid is a
+collision-resistant identifier generator; it has never claimed to be
+unguessable, and it was the sole access control on `/esign/[token]` — an
+unauthenticated page that renders another company's contract, every line
+item with quantities and unit prices, and whose action marks that
+contract legally SIGNED with a name the caller supplies. The neighbouring
+`Contact.portalToken` used `randomBytes(24)`, and the schema comment
+claimed the two were "the same access-control pattern". True of their
+role; false of their entropy, which is the half that matters.
+
+Both now come from `linkToken()` in `apps/web/lib/tokens.ts` — one
+function, so the claim in that comment cannot drift again, and the
+comment now names it. The schema default was REMOVED rather than changed:
+`token` has no `@default`, so a create that forgets it fails to compile.
+That was verified by deleting the argument and reading the error
+(`Property 'token' is missing ... but required`), not by assuming.
+
+**No migration, and that was checked rather than assumed.**
+`@default(cuid())` is generated by Prisma Client, not by Postgres — the
+original `20260823180131_add_signature_requests/migration.sql` declares
+`"token" TEXT NOT NULL` with no DEFAULT clause. `prisma migrate diff`
+between the old and new datamodels prints `-- This is an empty
+migration.`
+
+**Rows created before this keep their cuid tokens, deliberately.** A
+signed request is terminal — `signRequest` refuses a second signature, so
+an old token there discloses but cannot act. A PENDING one is still both
+readable and signable, and rotating it would silently kill a link already
+emailed to a client. Rotation is a production-data decision about
+`ep-little-sea`, not a code change, and there is currently no way to
+re-issue a token from the UI: `createSignatureRequest` reuses an existing
+PENDING request rather than replacing it. Worth adding.
+
+---
+
+## The half that needed a second person, tested instead
+
+The gates above shipped with one half clicked and the other half not. "Lets
+the right people in" was verified by the author as OWNER. "KEEPS THE WRONG
+PEOPLE OUT" was not, because it needs a second account with a different job
+function and this company has one member — and that is the half where being
+wrong is a security hole rather than an annoyance. It is now covered by
+tests instead of waiting on a person who does not exist.
+
+**A PAGE GUARD SAYS NOTHING ABOUT THE ACTION BEHIND IT.** A Server Action
+is its own endpoint with a stable id and it answers whoever posts to it.
+Every one of the 34 newly-gated writes, plus `deleteDailyFieldReport`, is
+now EXECUTED as each job function that should be refused, and has to refuse
+with its own message. `prisma` is replaced by a proxy that throws on the
+first property read, so the claim proved is not "it failed" — an action
+given junk arguments fails for a dozen reasons — but "it refused before
+touching any data at all". Every case has a control: the functions that DO
+hold the capability must fail for some *other* reason, because a guard that
+refuses everybody would satisfy the negative test perfectly.
+
+**Nothing is enumerated from a hand-written list**, for the same reason the
+route check was rewritten to walk the filesystem: a test that iterates a map
+cannot catch an omission from that map. This one walks every page, follows
+each page's own import graph through its components to the actions it can
+reach, resolves each action to the module defining it, and requires every
+action reachable only from pages demanding one capability to assert it.
+Adding an action, or wiring an existing one to a guarded page, fails the
+suite by name without anybody adding a line — verified by doing exactly
+that, and by seeing the count check catch a page whose guard was removed
+(30 actions found where 35 were expected).
+
+**It found a hole the gates opened.** Fifteen actions sit behind pages this
+pass newly closed and assert no capability: thirteen behind `/closeout`
+(`closeout.ts`, `closeoutSubmissions.ts`) and two behind
+`/settings/integrations`. Before the gates, page and action agreed — both
+open. Now the page refuses and the endpoint does not, which is the shape
+every comment in this feature calls the worse one. A further fifty-one sit
+behind pages guarded since long before any of this (`/settings`,
+`/compliance`, `/union-compliance`, `/prevailing-wage`, `/catalog`,
+`/vendors/pricing`, `/backcharges`). All sixty-six are listed by name with
+their capability, and the list MAY ONLY SHRINK BY BEING FIXED: an entry
+that acquires a guard fails the suite as loudly as a guard that goes
+missing, so the debt cannot quietly grow and cannot rot into fiction. They
+are listed rather than fixed because every one belongs to another lane, and
+touching another lane's file is announced first.
+
+**Six of the fifteen are narrower than "answers anyone", and saying so
+matters more than the round number.** `closeout.deleteCloseoutItem`,
+`deleteWarrantyPeriod`, `deleteServiceRequest`,
+`closeoutSubmissions.deleteCloseoutSubmission` and both
+`integrations.*SandboxIntegration` already refuse anyone who is not the
+account OWNER — and an OWNER holds every capability by construction
+(`lib/permissions.ts`), so no principal exists who is refused by the page
+and admitted by those endpoints today. They stay on the list because the
+list is about what the code ASSERTS, and an owner check is a different axis
+that would stop covering for them the moment the role model gains a third
+value. The nine with nothing at all —
+`addStandardCloseoutChecklist`, `addCloseoutItem`, `updateCloseoutItem`,
+`setWarrantyPeriod`, `recordServiceRequest`, `updateServiceRequest`,
+`submitCloseoutPackage`, `recordCloseoutResponse`,
+`reopenCloseoutSubmission` — are the live gap, and all nine are writes to a
+closeout package.
+
+**The list grew by one on the final merge, which is the mechanism working
+rather than failing.** `main` gained
+`apprenticeship.updateApprenticeshipEnrollment` (#117/#127) while this
+branch was open: a new write behind `/union-compliance`, ungated like its
+five siblings already recorded here. The suite refused the merge by name
+until a decision was written down. Recorded as debt on the same grounds as
+the rest of that module — gating one of six would leave the page
+half-enforced, and it is not this lane's file.
+
+**A second merge caught a whole new module, and that one is fixed rather
+than listed.** `cyrus/equipment-deployment` (#45) landed
+`lib/actions/equipmentAssignments.ts` — four writes recording where a piece
+of equipment went and when it came back — composed only on `/equipment`,
+which this branch guards with MANAGE_FIELD, and asserting nothing. Equipment
+is this lane, so all four now check `can(context, "MANAGE_FIELD")` and
+return the failure rather than throwing it, matching `materialOrders.ts`.
+`deleteEquipmentAssignment` keeps its owner check on top; the two are
+different axes and neither replaces the other. Between them, these two
+merges are the argument for deriving the surface from the filesystem instead
+of a list: neither module existed when this branch was written, and both
+failed the suite by name the moment they arrived.
+
+`/deployment`, the page that arrived with them, is recorded OPEN with its
+reason. It reads where every person and machine is right now — the same data
+`/schedule` shows from the job's end, already open on the same grounds — and
+it composes nothing: every control that writes an assignment is mounted on
+`/equipment`.
+
+At the route level: every guarded route is now asserted against every job
+function that must be refused, rather than the few somebody thought of; a
+route whose capability nobody lacks fails as decoration; and a page that
+enforces one capability while explaining another fails too.
+
+Every check here was watched failing before being kept — guard removed,
+guard reworded, guard inverted so it looked right and refused everyone,
+page guard reverted, a new ungated action added and wired up. The
+inverted-guard case is the one worth remembering: the source text still
+read `can(context, "MANAGE_FIELD")`, the shape check passed, and only
+executing it caught that it locked out the people it exists to admit.
+
+NOT verified: `pnpm test:db` was not run. This machine has no Postgres, no
+Docker and no way to install either, and its Node is 20.16 — below the
+20.19 where `require(esm)` works, so `vitest.db.config.ts` cannot even load
+here. The suite added is a unit suite by design and needs none of that.
+
+---
+
+## The guard that could not fail
+
+`MANAGE_FIELD` and `MANAGE_JOBS` were declared in `lib/permissions.ts`,
+documented by route name — "safety, punch lists, equipment" and "RFIs,
+submittals, drawings, closeout" — and mapped to **nothing at all**.
+`ROUTE_CAPABILITY` listed neither, `canReach()` returns true for any route
+absent from it, and none of those pages called `requireCapability()`
+either. So an ACCOUNTING member, whom this suite explicitly asserts holds
+no `MANAGE_FIELD`, saw the links and could open, file and edit safety
+cases, RFIs and submittals — evidence records. The Team page counted both
+capabilities while telling an owner they had withheld something they had
+not.
+
+**The defect that matters is the test, not the map.** The check that was
+supposed to catch this iterated `Object.entries(ROUTE_CAPABILITY)` — so a
+route absent from that map contributes no iteration and is structurally
+invisible to it. It could not fail for the thing its own comment claimed
+to prevent ("a door being left unlisted but unguarded"), and this file
+repeated the claim. Same shape as the dead P2002 guards in #25 and #26: a
+check that exists and can never fire.
+
+So the enumeration now starts from the **filesystem** — every `page.tsx`
+under `app/(app)`, which is what Next.js actually serves — and not from
+any hand-written list, since a hand-written list is the artefact that
+drifted. Each route must land in one of three places, all of them a
+recorded decision: `ROUTE_CAPABILITY`, a page-only map for dynamic routes
+the nav never links, or an explicit open list **with the reason written
+down**. Add a page and decide nothing and the suite fails, naming your
+route. Reverting the map fix turns it red with all ten named, which is the
+only reason to believe it.
+
+**Mapping decisions, each from the capability's own definition rather than
+by pattern match.** `/safety`, `/punch-lists`, `/equipment`,
+`/field-reports`, `/material-orders` → `MANAGE_FIELD`. `/rfis`,
+`/submittals`, `/drawings`, `/closeout` → `MANAGE_JOBS`. Deliberately NOT
+`/jobs`, `/jobs/new` or `/jobs/[id]`: ACCOUNTING and PAYROLL_COMPLIANCE
+hold no `MANAGE_JOBS` and both must open a job, so reading that capability
+as "may see a job" would lock accounting out of the pay applications they
+exist to raise. The job record stays open and withholds money section by
+section, as before. Two sub-pages of it did not, and now do:
+`/jobs/[id]/pay-applications/[invoiceId]` (`MANAGE_BILLING` — it *is* the
+money document) and `/jobs/[id]/certified-payroll` (`MANAGE_COMPLIANCE` —
+named in that capability's definition, and it prints wage rates by
+employee). `/settings/integrations` takes its parent `/settings`'
+capability rather than the `MANAGE_BILLING` that "accounting sync" would
+suggest, because a sub-page reachable by somebody who cannot reach the
+page linking to it is incoherent.
+
+**`canReach(FIELD, "/safety")` was asserted true under the heading "lets
+anyone signed in reach an unguarded route", and both halves needed
+different treatment.** The value is right — a foreman needs safety and
+punch lists — and the reason was wrong: `/safety` was not open by
+decision, it was open by omission. The assertion stays and its value is
+unchanged, because FIELD holds `MANAGE_FIELD`; it moved to a test that
+says so. What actually changed is that ESTIMATOR and ACCOUNTING no longer
+reach it.
+
+**The actions, not only the pages.** A page guard stops a page rendering
+and does nothing about a Server Action, which is its own endpoint and
+answers whoever posts to it. Every write behind the newly-guarded pages
+now asserts the same capability the page does — throwing where the module
+throws, returning `fail()` where the module returns `ActionResult`, since
+production redacts a thrown message. Two deletes had no guard of ANY kind,
+not even `assertOwner`: `deleteDailyFieldReport` and
+`deleteMaterialDelivery`. A daily field report is what a delay claim is
+argued from months later.
+
+---
+
+## Two things a browser run found that no test was going to
+
+The full Phase C click-list ran end to end on production for the first
+time. Every assertion passed, including the two the lane rests on: three
+MRR-only saves left time-in-stage at 20 days and the history at one entry,
+and a backwards-dated stage move was refused with the deal coming back
+Trial at $500 — stage AND amount, which is the transaction rolling back
+rather than the history row merely being skipped.
+
+Two findings, both small, both real.
+
+**A bare `0` where every neighbour says "none".** "No close date given"
+was the one line in the pipeline band that answered in digits. The band's
+whole design is to keep a number from being read as a measurement, and a
+`0` sitting under three money figures is exactly that. Now "none".
+
+**Supersession is derived, and now something proves it.** Deleting the
+superseding activity flipped the older email's follow-up back from "since
+superseded" to live amber — observed in the browser, not asserted by
+anything. That only holds because no done-flag is stored anywhere, which
+is precisely the property that would break the day somebody "optimises"
+this by storing one. Two unit tests hold it now: suppressed while the
+later activity exists, restored the moment it is removed.
+
+**On #61, the run changes the diagnosis rather than adding to it.** No
+third reproduction — the create-then-navigate read was clean this time and
+so was lead creation. What the tester measured instead is that every write
+takes 5–7 seconds to surface, consistently. Both of the previous run's
+sightings were reads taken 2–3 seconds after a save, which is inside that
+window. So the shape is latency, not a missing revalidation. Recorded on
+the issue. It is not benign: 5–7 seconds is long enough that somebody
+clicks twice, and no create action here is idempotent — the sequence #19
+disabled 57 buttons for.
+
+**Also established, and not a code problem:** another session was writing
+test rows into the operator company's PRODUCTION data mid-run — an
+activity appeared on a lead between the tester's page load and their
+delete, which is why the delete guard fired on a lead they had just seen
+as empty. The guard was right; the data moved. A `CLAUDE-VERIFY` lead from
+the same source is still on the account and is skewing the live pipeline
+band by one Demo-scheduled deal at $1,200/mo.
+
+---
+
+## A constant that stopped being an array when it crossed the RSC boundary
+
+`/sales/{id}` threw a 500 on any lead with at least one opportunity.
+Thirteen occurrences in production, digest `2853075237`, found by a browser
+tester on the first run after `Company.isProvaOperator` was finally set.
+
+```
+TypeError: OPPORTUNITY_STAGE_OPTIONS.find is not a function
+```
+
+**The constant was exported from a `"use client"` module and imported by a
+server component.** Across the RSC boundary a non-component export from a
+client module arrives as a client-reference proxy, not the value — so the
+array is not an array and `.find` does not exist. It typechecks perfectly,
+because the TYPES are real; only the runtime value is replaced. The call
+sat inside `lead.opportunities.map(...)`, so a lead with no opportunities
+never reached it and the page looked healthy right up until somebody added
+a deal.
+
+Both copies of the stage labels are gone: `OPPORTUNITY_STAGE_OPTIONS` now
+lives in `lib/sales-stage-history.ts`, a plain module, **derived from
+`OPPORTUNITY_STAGE_LABELS`** rather than typed out a second time.
+
+**The fix that lasts is `lib/client-boundary.test.ts`**, which walks every
+file and fails when a server module imports a non-component value from a
+`"use client"` module. Components are exempt — that is the boundary working
+— and type-only imports are exempt because types are erased. It found
+exactly one offender across 369 files: this one. Proven by putting the
+production defect back and watching it name the import.
+
+## A note dated tomorrow silently cleared a real follow-up
+
+Same run, second finding, and a consequence of this lane's own supersession
+rule: one open follow-up per lead, read off its latest activity. A note
+dated TOMORROW is the latest activity, so it superseded a genuine
+outstanding email and emptied the follow-up queue — for a conversation
+that had not happened.
+
+Supersession was never meant to reach forwards. Two changes, because the
+data already written needs different treatment from the data still to come:
+
+- `occurredBy()` filters to activities that have actually happened, and
+  both `openFollowUp` and `lastContactOn` now go through it. That makes the
+  rows already in the database read correctly.
+- `createSalesActivity` and `updateSalesActivity` refuse a future date
+  outright — the log records what happened, and the follow-up field is
+  where something upcoming belongs. That stops new ones.
+
+`/sales/{id}` marks any surviving future-dated row *"dated in the future —
+not counted yet"* rather than claiming it was superseded, and the live
+follow-up badge is now asked of `openFollowUp` rather than re-derived from
+the query's ORDER BY, so the page and the queue cannot disagree.
+
+**Two more reports from the same run are NOT fixed here and are not this
+lane's:** a new lead not appearing on `/sales` until a reload, and an
+edited activity's row showing its old date for seconds after a successful
+save. Both write paths already call `revalidatePath` on the right routes
+AND `router.refresh()` — checked rather than assumed — so neither is a
+missing revalidation, which CLAUDE.md records as eliminated everywhere.
+They are two fresh reproductions of #61, which has never had a reliable
+one, and they are recorded there.
+
+---
+
+## The sales pipeline, with the forecast it does not have
+
+`/sales` listed leads. To learn what was in `TRIAL`, or what the open
+pipeline was worth, you opened every lead in turn — despite `estimatedMrr`
+and `expectedCloseDate` sitting on every opportunity since Phase B.
+
+A band at the top of `/sales` now reads across every opportunity: a card
+per open stage with its count, its priced total and how long the
+longest-sitting deal has been there; won and lost; and the deals sitting
+longest, linked. `lib/sales-pipeline.ts` derives all of it. No schema, no
+new route, no nav entry, no `middleware.ts` line — **zero shared files
+touched**, because `/sales` already exists and this is a read over what
+items 1 and 2 left behind.
+
+**THERE IS DELIBERATELY NO WEIGHTED FORECAST, and that is a walk-back of
+my own plan.** The lane claim and both earlier PRs said this item would
+carry one. The usual weighted forecast multiplies each stage by a
+probability — 10% for New, 50% for Trial — and nobody at Prova has ever
+supplied those numbers. Inventing them produces a confident dollar figure
+derived from nothing, which is the same failure as the `createdAt`
+backfill this lane refused two days running. What replaces it is built
+only from entered facts: **past its close date**, **closing within 30
+days**, and **no close date given** kept as its own number rather than
+folded into either. The page says so in as many words, so the absence
+reads as a decision rather than an oversight.
+
+**Unpriced deals never read as worthless.** Every total sums only the
+deals that have a number and reports the rest as a count beside it, so a
+column saying "$0 across 3 deals" is unreachable — it says
+"$500/mo across 3, 2 unpriced". Folding them in as zero reds three tests.
+
+**No win rate is not a 0% win rate.** `winRate` is null until something
+has actually been decided, and the band says "no win rate yet, nothing
+decided". A pipeline with four live deals and nothing closed has no track
+record, and printing 0% invents a history of losing. Returning 0 there
+reds three tests. Zero is kept as a real answer for the case that earns
+it: everything decided was lost.
+
+**Close-date buckets only ever look at open deals.** A won deal's close
+date is history, not a forecast; counting it would show revenue as still
+to land after it already had. Dropping the open filter reds a test.
+
+**"Sitting longest" has no staleness threshold.** Nobody has decided what
+too long means for Prova's own sales, so the list is ordered by the fact
+and judged by the reader. Deals whose time in stage is unrecorded are
+excluded rather than sorted as if they were fresh — treating that null as
+0 reds two tests.
+
+---
+
+### A cleanup that can only take the jobs you name (Diego)
+`claude/prova-vercel-direct-url-hg1acx`
+
+Test jobs have been sitting in production for days because there was no
+safe way to remove them, and the obvious tool would have been a disaster.
+
+**`clean-scratch-data.mjs` is not that tool, on production.** It deletes
+every job whose name lacks a `[demo]` tag and every safety incident in the
+company, unconditionally. That is correct on `ep-icy-hat` or the demo
+project — where untagged rows ARE the scratch — and on `ep-little-sea` the
+untagged jobs are the real ones. Its host guard catches the wrong
+database, not the wrong database FOR IT. Nobody had run it there; this is
+recorded so nobody does.
+
+**`clean-test-jobs.mjs` takes exact names.** `--delete` additionally needs
+`CLEAN_EXPECT_HOST` to match the host. Names are matched with `in`, never
+`contains` — a substring match on "test" eats a real job called "Westfield
+Retest", which is the fixture the test suite uses for exactly that reason.
+
+**It deletes the two tables nothing else can reach.**
+`QuickBooksEntityLink` and `QuickBooksSyncAttempt` are keyed by
+`(entityType, entityId)` and carry no `jobId`, so removing a job's invoices
+any other way leaves links pointing at ids that are gone. There is no
+`deleteInvoice` or `deleteJob` in the app and there should not be —
+invoices are evidence records — so nothing in the product can tidy this.
+
+**It refuses rather than improvising.** 33 models carry a `jobId` today and
+the count only grows; a hand-written delete list silently stops being
+complete the moment somebody adds the 34th. So the script counts EVERY
+job-scoped model at runtime from the Prisma DMMF, and refuses — naming the
+table — if rows exist anywhere it does not handle. Falling behind produces
+a refusal, not a half-finished delete. Safety incidents, contract
+documents, signature requests and sent messages are permanently on that
+list: evidence closes, it does not delete.
+
+**Not a relation-graph cascade, deliberately.** Walking relations out of
+`Job` reaches 46 models, and reachable is not owned: it gets to `Equipment`
+through `EquipmentAssignment`, plus `CompanyUnionAgreement` and
+`ComplianceDocument`. A cascade would delete the company's equipment
+because a scratch job once had it on site. `Job` and `ChangeOrder` also
+reference each other, so there is no clean order to walk anyway.
+
+**Exercised against a real database, not just unit-tested.** Postgres 16,
+this repo's own migrations, two jobs seeded with identical shapes. The
+delete took `ZZQB-TEST` and left `Westfield Retest` holding its invoice,
+payment and both QuickBooks rows, with the contact and company untouched.
+Both refusals were confirmed to exit 1 changing nothing, and the DMMF guard
+was confirmed by attaching a safety incident and watching it stop.
+
+
+### The evidence for the last entry did not exist (Diego)
+`claude/prova-vercel-direct-url-hg1acx`
+
+The entry below explains a real improvement with a story that was not
+true. Recording that here because a wrong reason in a comment outlives the
+person who wrote it, and this repo already has a rule about documentation
+that drifts.
+
+**What was claimed.** That invoice 1 on ZZQB-TEST had been deleted inside
+QuickBooks on purpose; that the deletion produced `Stale Object Error`
+rather than `Object Not Found`; and that Intuit compares the SyncToken
+before deciding a record is absent, so a delete surfaces as either fault.
+That went into a commit message, this changelog, four source comments, a
+test name and a Slack post.
+
+**What is actually true.** QuickBooks invoice 146 still exists. It was
+never deleted — a $500 payment (QuickBooks 147) is applied to it, and
+QuickBooks will not delete an invoice with a payment applied. So the 21:50
+refusal was an ordinary concurrent-edit refusal about a document sitting
+right there, which is precisely what that branch is for. The claim about
+SyncToken ordering was inference dressed up as a fact about Intuit's
+internals.
+
+**How it was caught, and how it should have been.** The link still read
+`QuickBooks invoice 146 · verified 2026-09-03`. An Invoice link's `qboId`
+is written in exactly one place — the success path of the push, from
+`readBack.Id` — so a link that had really been cleared and then re-pushed
+would carry a NEW id. The same id meant no clearing ever happened, which
+contradicted the report the whole story rested on. That was visible on
+screen the entire time. One question — "does 146 still exist" — would have
+settled it before any of it was written down, and it was asked only after
+the code had shipped.
+
+**What survives.** All of it, on a better argument. Nobody has yet deleted
+a QuickBooks invoice and clicked re-send, so what fault a deletion returns
+is UNKNOWN to this project. A read-back is correct under every answer and
+needs none of them; a string match needs the one fact nobody has. The
+widened predicate stays for the same reason — a stale-token refusal cannot
+be told apart from a deletion by reading it, so it buys a GET, and the GET
+decides. Comments, the test name and the paragraph below now say that
+instead.
+
+
+### Asking QuickBooks whether a document is gone, instead of guessing from its prose (Diego)
+`claude/prova-vercel-direct-url-hg1acx`
+
+The self-healing added one commit ago worked on a string match, and the
+string was the wrong one. This replaces the guess with a question.
+
+**CORRECTED 2026-09-04 — this paragraph was wrong, see the entry above.**
+The QuickBooks invoice behind invoice 1 on ZZQB-TEST was NOT deleted, so
+the `Stale Object Error` at 21:50 UTC says nothing about what a deletion
+returns, and the claim about Intuit checking the SyncToken first was
+inference stated as fact. The change below is still right; the reason
+given for it was not.
+
+**What that cost, in the shipped code.** The stale branch ran first, so
+the far more common wording never reached the recovery at all. The person
+was told to open the invoice in QuickBooks and decide which version was
+right, about a document that was not there to open, and the link was left
+in place so every later click failed identically forever. The exact
+never-heals shape the commit was written to end, still present, one fault
+code along.
+
+**A string no longer decides.** On a failure that could mean the document
+is missing, Prova now reads it back — one GET, read-only — and clears the
+link only on a definite "there is no such record". Widening the match is
+safe now for the reason it was dangerous before: it buys an API call, not
+a deletion.
+
+**"Could not check" is not "confirmed gone", and they are now different
+values.** An expired token, a 503, a throttle, a socket that never
+reached Intuit, a 200 with no id in it — every one of those leaves the
+link alone. Clearing a link is the one recovery in this codebase that can
+put a SECOND invoice in somebody's books, because the next push builds a
+CREATE; a wrong guess the other way only produces a confusing message.
+That asymmetry is the whole design, and `documentPresence` lives in its
+own file rather than inside the `"use server"` module purely so a test can
+reach it. Nine of them do, including the outage cases nobody can
+reproduce by hand.
+
+**The payment push gains more than the invoice one.** It had no stale
+branch at all, so a deleted QuickBooks payment fell straight through to
+the generic refusal and its link was never cleared under any wording.
+
+**The sync log now says what was concluded, not just what Intuit said.**
+A refusal row reading `Stale Object Error` next to an on-screen message
+saying the invoice no longer exists cost an hour of working out whether
+the two came from the same click. They could not have — but nothing in
+the row said so. Rows now carry the answer the read-back gave, and name
+the QuickBooks id they checked.
+
+---
+
+## A sales stage that moves without a trace answers nothing
+
+`SalesOpportunity.stage` was a single mutable field. It said WHERE a deal
+was and nothing about when it got there, so "how long has this sat in
+`DEMO_SCHEDULED`" — the most useful number a pipeline has — was
+unanswerable no matter how many times somebody updated the stage.
+
+`SalesStageChange` records every move. `lib/sales-stage-history.ts` reads
+it: time in the current stage, and one entry per stretch the deal spent in
+a stage. `/sales/[id]` shows both, per opportunity.
+
+**`effectiveOn` is entered, not stamped,** with `recordedAt` alongside it
+for audit. Recording on Wednesday that the demo happened Monday records
+Monday. A plain `changedAt DateTime @default(now())` would have measured
+when somebody got round to updating Prova, which is a different quantity
+wearing the same name.
+
+**A move is recorded only when the stage actually differs.** Writing a row
+on every save would reset a deal's time-in-stage to zero the moment
+somebody corrected its MRR — silently, and to a plausible number. That is
+the assertion the whole feature rests on, so it is a database test, and
+forcing `isMove` to `true` reds it.
+
+**Both writes are one transaction, and the test proves the rollback.** A
+move dated before the previous move is refused, and the opportunity's own
+stage and amount must come back untouched — not merely the history row
+skipped, which would leave the deal in TRIAL with a history saying NEW.
+Replacing the transaction with sequential calls reds that test.
+
+**No backfill.** The tempting migration is one row per existing
+opportunity with `effectiveOn = createdAt`. It would assert that every deal
+has been in its current stage since the day it was created — false for any
+that has moved, and false invisibly, as a plausible number. Deals that
+predate this read "stage not recorded" and their history starts at their
+next move. `createdAt` is not an answer to a question about the current
+stage.
+
+**A revisited stage stays two stretches, never summed.** A deal that goes
+TRIAL → LOST → TRIAL produces three entries, not two. Condensing per stage
+would report "19 days in Trial" and hide entirely that it was written off
+in between.
+
+**Nulls where a number would lie.** No history → null, not zero. A move
+dated in the FUTURE → null, because a deal cannot already have spent time
+in a stage it has not reached and "-4 days in Trial" is worse than saying
+nothing. Zero is kept as a real answer meaning "moved today".
+
+The page also renders a disagreement between the stored stage and where
+the history left the deal. It should be unreachable — the two writes share
+a transaction, and a grep confirms these are the only two writers of
+`stage` in the codebase — which is exactly why it is worth showing if it
+ever appears, same treatment as `enrollmentState`'s CONTRADICTORY.
+
+Two existing database tests went red on this change and were right to:
+`createSalesOpportunity` now requires the stage date, and they called it
+without one. Fixed at the call sites rather than by softening the
+requirement — the form always sends it, defaulted to the user's local
+today.
+
+---
+
+### The digest now runs when nobody is looking (Cyrus)
+`cyrus/notification-schedule`
+
+Sheet 26 held five rows at Partial for one narrow reason — **nothing runs
+unattended.** The digest below sends beautifully and only when a person
+clicks a button on `/alerts`, which is the same reach the alert list
+already had. This is the schedule: a route handler at
+`/api/notifications/digest`, hit nightly at 13:00 UTC by a Vercel cron
+(06:00 Pacific, 09:00 Eastern — before either coast's working day).
+
+Nothing under it changed. `dispatchAlertDigest` already took `todayIso`
+and `baseUrl` as parameters precisely so a scheduled caller could supply
+them, and it already claimed each notice before calling the provider, so
+running it twice is silent. This adds a caller with no person behind it,
+and the loop semantics that a caller with no person behind it needs.
+
+**Two ways to fail closed, and neither is a formality.**
+
+`CRON_SECRET` unset → 503, nothing read, nothing sent. Vercel attaches
+`Authorization: Bearer $CRON_SECRET` to a cron request when that variable
+is set and attaches *nothing* when it is not — which is exactly why the
+missing-secret case has to reject. Unset must mean the schedule does not
+work; it must never mean the schedule works for anybody who knows the URL,
+and that URL is a button that mails every user of every company. Compared
+timing-safely, like the Resend webhook: a plain `===` on a secret leaks how
+much of it was right, one byte at a time, and this endpoint can be hit as
+often as anyone likes.
+
+`NOTIFY_BASE_URL` unset or not an origin → 503, nothing sent. Every link
+in the email body is built from it. **The button's host cannot be reused
+here and the docstring on `originFromRequest` says so in advance:** it
+reads `x-forwarded-host`, which the caller controls, and that is harmless
+only because the button mails the person who clicked it. This run mails
+other people. A host taken from whatever request triggered the cron would
+be the host in the links of everybody's email. There is no default either,
+because there is no safe guess — an email that looks right and whose every
+link goes to the wrong deployment is worse than no email.
+
+**Who, in what order, and what one failure costs.** Every user of every
+company with a real mailbox, one at a time, longest-unnotified first.
+
+- *One at a time* is not performance. Two different people never contend —
+  the ledger's key is `(userId, dispatchKey)` — but the same person
+  dispatched twice concurrently does, and the thing never to do is compute
+  one alert list per COMPANY and mail it to everybody in it: alerts are
+  capability-filtered per user, so that both mails people alerts their role
+  hides and collapses every person's claim into one.
+- *Longest-unnotified first* only shows when a run cannot finish, and then
+  it is the whole difference between "today's tail waits until tomorrow"
+  and "the same people are never reached, ever" — which the milestone
+  ledger would make permanent, since a rung nobody was there to fire still
+  passes. Never-mailed first, then oldest, then id so the order is total
+  and two runs cut the list in the same place.
+- *No one person can end the run.* A throw, a refused address, a provider
+  timeout: that person's outcome, and the loop continues. The one
+  exception is an unconfigured email provider, which `dispatchAlertDigest`
+  checks BEFORE claiming anything — it will be the identical answer for
+  everybody, it spends no milestone, and two hundred copies of it in a
+  report hide the one fact worth reading.
+- *The run stops itself at 45s* rather than being killed at the platform's
+  60. A kill lands wherever it lands, including between claiming a notice
+  and sending it, which is the one state the ledger cannot undo: milestone
+  spent, no email. Stopping between two people cannot produce it.
+
+**The status code answers "did this run do its whole job", not "did it
+respond".** A run that mailed forty people and threw on the forty-first
+returns 500, with the full report in the body. A green invocation nobody
+reads the body of is precisely how this repo has been fooled before. Safe
+to retry, for the same reason it is safe to run twice.
+
+Tested by putting each wrong behaviour back and watching the suite go red:
+no try/catch (a throw aborts the run), `break` instead of `continue` on a
+failure, `unconfigured` treated as ordinary, `Promise.all` over the
+recipients, no time budget, order by id, sorting the caller's array in
+place, `configuredBaseUrl` returning its input, and every dispatch handed
+the first recipient. Nine mutations, nine reds, restored green. A tenth —
+reading a null last-dispatch timestamp as the epoch — stayed GREEN, because
+epoch and never sort identically; the guard that claimed to distinguish
+them was removed rather than kept untested.
+
+No schema change. `NotificationDispatch` already carried everything, and
+there is deliberately no subscription column: `/alerts` already lets
+anybody dismiss or snooze anything, and a second, quieter place to be
+unsubscribed would be free to disagree with it. Addresses ending
+`@unknown.local` are skipped — that is `requireCompanyContext`'s
+placeholder for a Clerk account with no address, and it is a nightly bounce
+against our own sending reputation, not a mailbox.
+
+Needs `CRON_SECRET` and `NOTIFY_BASE_URL` on the Vercel project before
+anything sends. Both are in `.env.example` and the README table.
+
+Caught up to `main`, which had moved 65 commits underneath this branch.
+Two things came out of that. `scripts/preflight.sh` took `main`'s version
+of the worktree fix rather than this branch's: the same one-line change,
+but placed AFTER the `cd`, which the version here was not — so the older
+one was clearing a lock relative to wherever the caller happened to be
+standing. And Sheet 26 gained a seventh row on `main` while this was
+open — contact follow-up reminders — still reading *"still nothing that
+runs unattended"*, which this branch makes untrue. It now says what the
+other five say. That is the whole failure mode this sheet has drifted by
+twice: a row that was right when it was written and nobody re-read after
+the thing it describes changed underneath it.
+
+---
+
+
+---
+
+## Two notification bugs: a standing alert emailed as "Now due", and a digest that could go out with no record of it
+
+### A STANDING alert borrowed the dated ladder (#126)
+
+`crossedRungs` decided which ladder an alert climbed by asking whether
+`dueOn` was null. The severity is the claim being made; `dueOn` is only a
+date attached to it, and three kinds are STANDING **and** dated — a
+closeout package the GC has sat on, retainage past a forecast substantial
+completion, and (arriving with #128) a rejected closeout. Every one of them
+carries a date already BEHIND it, because what makes them standing is that
+the day cannot be met by acting sooner.
+
+So all three went up the dated ladder, `days <= 0` fired the DUE rung, and
+`rungLabel("due")` put **"Now due"** in an email about a condition that has
+no deadline at all. Worse than the wording: they spent `@week` and `@due`
+instead of `@standing`, so the one notice those alerts were ever going to
+send could never be sent — silently, for good, since a spent rung is spent.
+
+The split is now on `severity === "STANDING"`, with one wrinkle that is the
+reason a bare severity check is not enough. A COI fifty-five days out is
+also STANDING — because it is outside its own horizon, not because it is a
+standing condition — and firing its only key there would spend it long
+before there is anything to say. A STANDING alert therefore reaches its rung
+when it has no date, or when the date it has is behind it; a date still
+ahead, or a date with no distance computed, says nothing.
+
+**The guard test for this passed vacuously and had done since it was
+written.** It was named "never borrows the dated ladder" and its fixture was
+a `WIP_VARIANCE` alert with `dueOn: null` — the one STANDING shape that
+cannot reach the dated branch at all, so it would have passed whatever that
+branch did. It now uses a STANDING alert that HAS a past `dueOn`, which is
+the only fixture that exercises the thing it is named after, and it fails
+against the old code with `expected 'due' to be 'standing'`.
+
+### A sent digest could leave no record that it was sent (#116)
+
+`notification-dispatch.ts` opens with "THE ORDER IS THE DESIGN" — claims
+written before the provider is called, so a crash between sending and
+recording is a notice that was sent and recorded. That was true of the
+CLAIMS and false of the MESSAGE. The message row went first, but its
+handover event and its `providerMessageId` were written afterwards, in a
+`$transaction` that ran AFTER `sendEmail` returned.
+
+Everything between those two points was a window where the digest had
+reached a real person and the database said otherwise: no provider id, no
+events at all — which is exactly what a send that never left looks like.
+`/messages` reads such a row as "No word back yet", and `reachedProvider`,
+the guard on deletion, sees nothing to protect and would let the record of a
+delivered email be destroyed. Not a re-send risk: the dispatch claims were
+always safe, and that is the half that was already right.
+
+Fixed the same way `lib/actions/messages.ts` was. The QUEUED handover is
+written BEFORE the send. A provider that took it keeps that event and gains
+the reason (a second QUEUED would report one send as two). A send that
+never got there gives the claim back — deleted and re-recorded as FAILED in
+ONE transaction, because losing the claim without writing the failure is the
+same hole pointing the other way. And the write that follows a successful
+send no longer throws: it returns, because production redacts a thrown
+Server Action message and an opaque error on a digest that DID go out invites
+a second click.
+
+One thing not to overclaim, and it is written into the code: "provably never
+took it" is stronger than `mayHaveSent` can support. `sendEmail` treats every
+fetch rejection as never-reached, and a timeout after the body went out is a
+fetch rejection. The branch means "nothing came back that says it arrived".
+
+The cost of all this is the opposite error — a crash between the handover and
+the send leaves a message reading handed-over-and-unconfirmed that never
+went. That is the right way round: an overstated send goes stale in a day and
+somebody checks it, an understated one is evidence that no longer exists.
+
+Both fixes are pinned by tests watched failing first. The dispatch tests are
+unit tests over a small in-memory Prisma stand-in with two properties a naive
+fake lacks — lazy operations, and a `$transaction` that really rolls back —
+because without those the "second write of a failed transaction" case passes
+against the broken code.
+
+---
+
+
+---
+
+## The internal sales CRM remembers a conversation now
+
+Phase B shipped `SalesLead` and `SalesOpportunity` with full CRUD and two
+pages. Read as a schema that is complete; read as a CRM it had no memory —
+the entire record of a deal was `SalesOpportunity.notes`, one mutable
+free-text field the next edit overwrote. Nothing recorded that a call
+happened, and nothing anywhere said you had promised to ring someone back.
+
+`SalesActivity` is that record: call / email / demo / meeting / note,
+dated (entered, not stamped), with an optional follow-up date and an
+optional link to the deal it was about. `/sales/[id]` grows an Activity
+section; `/sales` grows a follow-up queue and a per-lead last-contact line.
+
+**One follow-up per lead, read off its LATEST activity.** The alternative —
+every `followUpOn` stays open until somebody ticks it off — needs a stored
+done-flag, and would leave a lead owing four separate calls for one
+conversation. The trade is real and is stated on the column itself: logging
+the next activity replaces what the lead owed, so clearing a follow-up is
+the explicit act of logging the next contact with the date left blank. An
+older activity's follow-up renders as "since superseded" rather than
+disappearing, so the history still reads correctly.
+
+**Follow-ups deliberately do NOT go into `/alerts`,** which was the obvious
+reuse and the wrong one. `/alerts` gates on a `lib/permissions.ts`
+capability; this feature gates on `isProvaOperator` AND `role === "OWNER"`,
+and an OWNER holds every capability by definition, so the map cannot
+express owner-only — that is why `assertSalesAccess` exists at all. Routing
+these through the shared engine would show "Follow up with Acme Drywall" to
+every estimator at the operator company.
+
+**Nulls, not zeroes, throughout.** "No contact logged" is a statement about
+the log, not about the relationship — nobody wrote anything down, which is
+all the page can honestly claim. `daysSinceContact` is null when nothing is
+logged and `0` when contact was today, and the unit suite pins the two
+apart specifically because they would otherwise both render as "0". That
+assertion caught a real one: negating `daysUntil()` returns `-0` for a
+contact logged today, which renders as "-0 days ago".
+
+**Two Phase B bugs fixed in passing.** `createSalesOpportunity` and
+`deleteSalesOpportunity` revalidated `/sales/[id]` but not `/sales` — which
+is where the opportunity count is rendered — so adding a lead's first
+opportunity left the list reading zero. And `deleteSalesLead`'s guard
+counted opportunities only; `SalesActivity.leadId` is `RESTRICT`, so a lead
+with a call log and no deals would have thrown a raw Postgres constraint
+error instead of a sentence. The guard now names both and, per the lesson
+from `deleteContact`, never prints a zero for the half that is empty.
+
+**The gate is executed for the first time.** `assertSalesAccess`'s two
+checks have never run against a company where they were false — there is
+one user on the real account, so the browser can only ever exercise the
+passing branch. `sales-activity-actions.dbtest.ts` builds a second tenant
+and a MEMBER of the operator company and asserts both refusals, plus that
+neither company's owner can reach the other's rows by id. Every assertion
+in it was watched fail first: dropping the OWNER check reds two tests, and
+removing the activity count from the delete guard reproduces the raw
+`PrismaClientKnownRequestError` it exists to prevent.
+
+:warning: **Still true and still unclosed: nobody has ever loaded this
+feature.** `Company.isProvaOperator` is false on every row until it is
+flipped by hand, and no record exists of it ever being flipped. Every page
+under `/sales` correctly renders "Not part of your access" while it is
+false, which means a click-list against it passes while proving nothing.
+Flip it on a test company first or the test cannot fail.
+
+---
+
+## /pipeline, clicked — and a page that told people to do the impossible
+
+Every assertion passed, including the two that were the point: the counts
+on /pipeline equal what /bids reports for the same GC (1 + 1 = 2), and
+flipping a bid from LOST to WON moved the figures 67% -> 100% -> 67% with
+the won total tracking it and nothing touched on /pipeline. The derivation
+is proven against the data rather than against my description of it.
+
+THE REAL FINDING IS MY OWN COPY. The page said:
+
+  "worked out from the bid invitations on Bids, which is where a status
+   gets changed"
+
+`/bids` has no editing controls. Its rows are bare links; its only <select>
+elements are the trade and status FILTERS. `updateBidInvitationStatus` is
+called from exactly one place, `/contacts/[id]/page.tsx`. So that sentence
+sent a reader to a page where the action does not exist.
+
+It also propagated: my click-list said "on /bids change Tower C", because I
+wrote the click-list from my own wrong copy rather than from the code. The
+tester found the real control on the contact record, performed the flip
+there, preserved the intent of the step, and said plainly that they had
+deviated and why. Both halves of that are what made it useful.
+
+Corrected to name the contact record, and to say what /bids actually does:
+filters and reads.
+
+Filed rather than fixed, both outside this lane: a bid can only be created
+as INVITED with no amount, so every row starts in the state that makes a
+won-value total a floor (#133); and two contact pages return 503 on RSC
+prefetch while siblings in the same batch return 200 (#134).
+
+Not tested: the non-owner access check. There is still exactly one user on
+the account, so section 7 has now been skipped on every run that included
+it. It is the one assertion about /pipeline nobody has exercised.
+
+## A sent email the app could not prove it sent, and one injury filed twice
+
+Two of the six findings in #111. Both are ordering bugs, and neither was
+visible in anything a caller could see.
+
+**The email.** `sendOutboundEmail` called the provider first and wrote the
+record of the handover afterwards, in a separate transaction. Everything
+between those two points was a window where the mail had gone to a real
+person and the database said otherwise -- no provider id, no events at
+all. `/messages` read "No word back yet" for it, and the owner-only delete
+guard read the same nothing and ALLOWED THE ROW TO BE DELETED. That guard
+exists to stop precisely this; its own comment says removing such a record
+would "destroy the evidence that they received it". It was not wrong. It
+was being handed a row that lied to it.
+
+The handover event is now written BEFORE the provider is called, the way
+`notification-dispatch.ts` already claims its dispatch rows, and it is
+given back only when the provider provably never took the message -- no
+network, or an outright refusal -- because in that case there is no copy
+anywhere and a permanent QUEUED event would make every failed send
+undeletable. The trade runs the other way now, on purpose: a crash between
+the claim and the send leaves a message reading "handed over, unconfirmed"
+that never went. That surfaces as stale after a day and a person checks
+it. An understated send is evidence that no longer exists.
+
+A database failure AFTER a successful send no longer throws, either. The
+email went; a thrown Server Action message is redacted in production, so
+the sender saw a generic failure for something that had succeeded, and the
+obvious next move is to send it again. It now says so in words.
+
+**The injury.** `createSafetyIncident` run twice filed two OSHA case
+numbers for one injury. Nothing refused it: the only relevant constraint
+is `(companyId, caseYear, caseNumber)`, and the counter hands the second
+run a fresh number, so the duplicate is unique by construction. One injury
+became two recordable cases in the count a GC reads at prequalification.
+
+Cleaning it up afterwards is worse than leaving it, which is why this had
+to be prevention. `SafetyCaseCounter` only ever increments, deliberately,
+so deleting the duplicate retires its number for good and leaves the filed
+log with a gap in the sequence and nothing on the document to explain it.
+A report matching an existing case on who, when and what happened is now
+refused inside the transaction and BEFORE the counter is touched -- a
+guard that ran after would still burn the number and produce that same
+unexplained gap. Classification, outcome and day counts are deliberately
+not part of that match: they are what the record says about the injury
+rather than which injury it is, and matching on them would let a
+resubmission that corrected one file a second case.
+
+What this does NOT close: two identical submissions arriving at the same
+instant can both read nothing and both insert. Only a unique index can
+refuse that, and that is a migration -- not written here.
+
+Both fixes are pinned by tests that were watched failing first, against a
+lazy in-memory Prisma fake (`lib/fake-prisma.ts`) whose `$transaction`
+actually rolls back. Without that rollback the second write of a
+transaction whose first write threw still landed, which turned the exact
+situation under test into a passing one.
+
+---
+
+## The alert engine was a day ahead of everyone west of UTC, and went blind the moment a GC bounced a closeout package
+
+Two of the six findings in issue #111.
+
+**"Today" was the server's, not the reader's.** `/alerts` and the top-bar
+bell both computed `new Date().toISOString().slice(0, 10)` and handed it to
+the engine as `todayIso`. At 18:00 in Los Angeles the UTC date is already
+tomorrow, so every evening a follow-up due tomorrow read "Due today", one
+due today flipped to OVERDUE, and the bell counted it. Two to eight hours a
+day, depending on the season, and worse the further west you are.
+
+The tension that kept this unfixed is written down in two comments in the
+code, and one half of it was wrong. Dates here are stored at UTC midnight,
+so UTC "today" looked like the consistent choice. But those stored values
+are **plain calendar days** — the UTC midnight is how a date with no time
+gets into Postgres, not a claim about a moment. "2026-09-04" on a follow-up
+means the fourth of September wherever you are standing, so the day to
+compare it against is the day on the reader's own wall calendar. UTC was
+never the value that compared correctly; `serverToday.ts` said it was, and
+that sentence has been left in place with the correction under it.
+
+The other half of the tension was real and is why `components/localToday.ts`
+could not simply be called: it asks the BROWSER, during render, and
+server-rendered markup built from it breaks hydration. So the zone reaches
+the server as data instead. `components/TimeZoneCookie.tsx` renders nothing
+and writes the browser's IANA zone to a cookie in an effect — no markup, so
+nothing to disagree about — and `lib/viewerToday.ts` reads it back. Cookie
+first, then Vercel's `x-vercel-ip-timezone` for the first render of a new
+browser, then UTC. **The floor is the old behaviour**, not a new way to
+fail: an unknown zone, a blocked cookie or a local dev server all land on
+UTC, which is exactly what the app did before.
+
+The refresh is the part worth checking. The render that mounts the
+component was built without the cookie, so the first visit from a new
+browser shows UTC dates; the component calls `router.refresh()` once to
+correct them. It cannot loop — a ref guards the effect, and it only
+refreshes after reading the cookie back, so a browser refusing cookies gets
+no refresh rather than an endless one.
+
+`/alerts`, the bell, `severityForKey` (which decides what severity a
+dismissal is recorded at, and therefore what it silences forever — see
+#110) and the email digest all moved. The 30- and 60-day renewal horizons
+on `/dashboard`, `/compliance`, `/settings` and `/contacts/[id]` did NOT:
+a day either way there is the noise `serverToday`'s own comment described,
+and moving them is a change worth making deliberately rather than by sweep.
+
+`snoozeAlert`'s "pick a date in the future" refusal also did not move. It
+has the same root cause and it is issue #111 item 4, which is a product
+question rather than a clear bug — the date input has no `min` and no
+default either, so the choice is between refusing later, warning earlier,
+and defaulting the field. Left as it was, with the situation written into
+the code beside it.
+
+**A closeout package the GC REJECTED raised nothing at all.**
+`alerts-query.ts` fed submissions through on `latest?.status ===
+"SUBMITTED"`, against a three-value enum. So the chase alert vanished at the
+exact moment it started mattering: the GC has bounced the package, the ball
+is back in our court, somebody has to assemble a second attempt, and the
+retainage has stopped moving. `/closeout` had it right the whole time —
+`needsAttention` lists a REJECTED job immediately — so the two screens
+disagreed about the same row.
+
+Not the one-line widening it looked like, because the existing wording is
+false about a rejection: "Sent 31 days ago and nothing recorded back" is
+not true of a package they answered. It is a second alert kind,
+`CLOSEOUT_REJECTED`, dated from the day they sent it back rather than the
+day we sent it, with no chase threshold — the 21 days is a courtesy to a GC
+who has not answered yet, and there is nothing to wait for once they have.
+STANDING like its sibling, because no deadline exists to be past: most
+subcontracts say nothing about how fast a bounced package must go back, and
+claiming OVERDUE would be asserting a date that is not in the contract.
+
+A REJECTED row with no response date is bad data rather than a state the app
+can reach (`recordCloseoutResponse` requires the date), so it is raised on
+the submission date and the wording stops claiming to know when. Silence
+would have been the worst of the three answers.
+
+The `alerts-query` database test asserted the old behaviour in its own name
+— "and stops once they answer" — and passed for as long as the bug existed.
+It now asserts the handover: the GC-side chase ends, ours begins.
+
+---
+
+### Where the lift actually is, and the same bug I'd just built a guard for (Cyrus)
+`cyrus/equipment-deployment`
+
+Neither crew nor equipment had a time dimension. `JobAssignment` is a bare
+join; `Equipment.assignedJobId` is one pointer to where a machine is right
+now. So "was that scaffold on Maple in March?" was unanswerable, and
+utilisation was unanswerable for the same reason — nothing recorded when
+anything went out or came back.
+
+`EquipmentAssignment` records the stay: which piece, which job, when it
+left, when it returned. Both dates **entered, not stamped** — recording on
+Friday that a lift went Tuesday has to say Tuesday, or every figure computed
+over the table is wrong by however long the paperwork sat.
+
+**A machine cannot be in two places at once**, and the check is on
+overlapping date RANGES rather than "is there an open one". A backdated
+entry collides with a stay that already closed just as easily, and only
+looking for an open assignment would let the record hold two places at once
+for a week in the past. It runs inside the same transaction as the insert:
+no unique constraint can express this (Postgres would want an exclusion
+constraint; Prisma can't declare one), so the transaction is all that stands
+between us and two dispatchers sending one lift to two jobs.
+
+**Touching at a boundary is deliberately allowed.** Back to the yard in the
+morning, out again after lunch is an ordinary day. A rule that cries wolf on
+the normal case is one people learn to click past.
+
+**Utilisation is honest about its denominator.** Nothing in the schema
+records when a contractor bought a mixer, so the window is clamped to when
+the record was created — "since we started tracking it" rather than a claim
+about the machine's life. It reads null rather than 0% when that window is
+empty, and counts distinct days so two contradictory records can't show a
+lift at 180%.
+
+`/deployment` answers the inverse of `/schedule`: not when jobs run, but
+where everybody is. Crew-first, flagging anyone split across more than one
+job, plus by-job with crew and equipment together, plus gear still recorded
+as out on a job that is not running.
+
+**`Equipment.assignedJobId` is now a stored copy of derived state, so
+nothing reads it.** It is NOT dropped — that is destructive against
+production and Diego's to run. The migration backfills every current
+assignment into an open stay so nothing is lost, with the inferred date
+written into the row's notes, because the old column only ever recorded
+where, never when. The form no longer offers it either: leaving a control
+that writes a column nothing reads would be the same defect as the
+QuickBooks chart-of-accounts mapping that was collected, stored, displayed
+and never read.
+
+**And then I shipped the exact bug I spent the morning building a guard
+for.** `updateEquipmentAssignment` was written, exported, and called from
+nowhere — no edit form. The reachability check caught it on this branch
+within a minute of being copied across, which is the argument for the check
+better than anything I could write. The edit form exists now; `findOverlap`
+already took an `ignoreId` for exactly that case.
+
+34 tests on the pure module, four mutation-checked: an overlap check that
+only looks at open stays fails two, treating touching boundaries as a clash
+fails one, summing stays instead of counting distinct days fails one, and
+ignoring when tracking began fails one.
+
+**Clicking found two more the tests could not.** A stay dated in the future
+— dispatching ahead, which is ordinary — rendered as "out since today",
+reporting a machine as deployed while it sat in the yard. And the heading
+over gear on inactive jobs said "finished job" when the job in front of me
+was an estimate that never started. Both fixed, the first with tests.
+
+Verified by doing it: the return guard refused a date before the stay began,
+a re-send overlapping a CLOSED stay was refused by name and date, a
+non-overlapping one went through, and the backfilled piece read its location
+from history rather than the column.
+
+**Two things above were false when I wrote them, and review caught both.**
+
+"Nothing reads `Equipment.assignedJobId`" was a claim about the whole app
+written from inside one file. Ask's `equipment_location` handler still
+selected the column and reported it as `assignedToJob`/`available`. Since
+nothing writes it any more, that answer was not merely stale — it was frozen
+at the migration and would never have moved again, while `/equipment` and
+`/deployment` showed the truth beside it. Nothing would have flagged the
+disagreement; Ask would simply have named the wrong site to whoever asked
+where the skid steer was. Ask now derives through `currentAssignment()`, the
+same function both pages use, and reports the day it went out as well.
+Three comments and the schema doc asserted the false version; all four now
+say what was actually wrong and point at the grep that settles it, because a
+comment claiming "nothing reads this" is exactly how the next person
+re-introduces the reader.
+
+`/deployment` was registered in `NAV_ITEMS` and put in no `NAV_GROUP`. Both
+the rail and the mobile drawer render `navGroupsFor()` — groups only — so
+the page shipped working, typechecked, and linked from nowhere but the
+address bar. Nothing failed; the absence looked exactly like a link nobody
+wanted. It sits in **Operations, immediately after Schedule**, because the
+grouping is by when in a job's life you reach for the thing rather than
+which table it reads — the "it reads EquipmentAssignment, file it under
+Logistics next to Equipment" argument is the one this rail deliberately does
+not follow, and the page's own first paragraph defines itself against the
+schedule.
+
+Both fixes are mutation-checked. Putting the old handler back fails all four
+`handlers.equipment` tests; the fake prisma in that file honours the
+`select`, so a handler that asks for the frozen column gets the frozen column
+and cannot pass. Removing the nav entry fails all four `navItems` tests.
+That nav test is deliberately scoped to `/deployment`: four other items
+(`/field-reports`, `/messages`, `/pipeline`, `/vendors/pricing`) are orphaned
+the same way and belong to other branches — a blanket assertion would go red
+for work this PR has no business touching. Worth someone picking up.
+
+`EquipmentDeploymentControls` also gained `router.refresh()` on all four
+save paths, joining the 18 components that already do it. Its `history` prop
+decides which button the row offers, so a stale prop does not just show an
+old list — it shows "Send out to a job" for a machine that is already out.
+A second click cannot corrupt anything (the overlap check inside
+`assignEquipment`'s transaction refuses a repeat send), but it tells a
+dispatcher their save failed when it worked, and `BackchargeForm` already
+records that `revalidatePath` alone left structurally identical forms stale
+in this app for reasons nobody has explained.
+
+`scripts/preflight.sh` died on its own third line inside a git worktree:
+`.git` is a FILE there, so `rm -f .git/index.lock` is ENOTDIR, `rm` exits 1
+and `set -e` kills the script before any check runs. It also ran before the
+`cd`, so it was clearing a lock relative to wherever you were standing.
+`git rev-parse --git-path index.lock` resolves both layouts.
+
+---
+
+## The demo dataset caught up with nine models it had never heard of
+
+The seed was written against a schema that has since gained CRM contact
+lifecycle fields, an interaction log, and a bid pipeline built over
+`BidInvitation`. A demo dataset does not fail when that happens -- it goes
+quietly stale, and the new screens read as broken rather than as unseeded.
+Merging `main` in is what surfaced it, so this PR now seeds:
+
+- `Contact.status` / `accountType` / `msaExpirationDate` /
+  `prequalificationExpiresAt` on the two GCs, plus a third contact that is
+  a PROSPECT with no jobs -- PROSPECT is meaningless on a contact that owns
+  work, so it needed its own row. One MSA is deliberately lapsed and one
+  prequal deliberately expiring: both states are DERIVED from a date and
+  cannot be demonstrated by a default.
+- Ten `BidInvitation` rows across three GCs, spread to make `/pipeline`
+  show its edges rather than an average -- one WON bid with no amount
+  recorded (so the value reads as a floor, not a total), one still open
+  past its due date, and one GC with nothing decided at all, whose win rate
+  must read as "not decided" and not as 0%.
+- Six `ContactInteraction` rows, with follow-ups both overdue and upcoming.
+
+And `undo()` covers both new tables. It scopes them by the demo CONTACT
+rather than by the `[demo]` tag, the same way job children are scoped by
+the demo job ids: a bid logged by hand against a demo GC while clicking
+through a preview is untagged, would survive a tag-scoped delete, and would
+then block `contact.deleteMany` on a foreign key -- which is precisely the
+half-removed state this PR exists to fix.
+
+Then the six screens that were still demoing empty. Each row below exists
+because a page DERIVES something that a set of nominal values cannot show:
+
+- **`Equipment`** -- eight items. `/equipment`'s only derived figure is "N
+  in the yard", counted from a null `assignedJobId`, so three are
+  unassigned; a set where everything is on a job pins that number at zero.
+  `type` and `assetTag` are left off some rows because both are nullable on
+  purpose. One item is still assigned to the FINISHED job, which is the
+  thing the screen is actually for noticing. This one was overdue: the
+  seed's own docstring had promised "equipment utilisation" while writing
+  no equipment at all -- and could not have kept that promise by adding
+  rows, because nothing computes utilisation. The docstring now says what
+  the page really derives.
+- **`Backcharge`** -- six across two jobs, numbered from `BackchargeCounter`.
+  One RECEIVED past its `respondByDate` and one still inside it, because
+  the red overdue counter is otherwise permanently zero or permanently
+  alarming. All three terminal states appear, since `concededAmount`
+  returns a different thing for each: the claim for ACCEPTED, zero for
+  WITHDRAWN, and the negotiated figure only for SETTLED -- which is
+  $4,000 against a $14,500 claim, the "we argued them down" the log exists
+  to prove. One row has no GC reference and no deadline at all.
+- **`CloseoutSubmission`** -- two attempts on the finished job, from
+  `CloseoutSubmissionCounter`: sent, bounced, sent again. The second has
+  `respondedOn` null on purpose. That is the state `daysWithGc` counts, and
+  it is the whole difference between "nobody sent the package" and "the GC
+  is sitting on it".
+- **`OutboundMessage`** -- six, with fourteen events. One bounced with the
+  550 reason that makes it fixable, one handed over and never confirmed,
+  one that never reached the provider at all. `createdAt` is set
+  explicitly rather than defaulted, because `stale()` needs a message at
+  least a day old and a row created this second can never be one.
+- **`PrevailingWageRuleSet`** -- three, including two on the SAME
+  jurisdiction with adjacent half-open ranges, which is what effective
+  dating is for and what the gist EXCLUDE constraint permits. A third
+  records a jurisdiction with every threshold null: "nobody has looked
+  this up" is a state the review reports, and a row full of sensible
+  numbers cannot demonstrate it. One `PrevailingWageDetermination` ties
+  the current rules to the job that has time entries.
+
+Counter rows are bumped, never `max(n)+1` -- verified by reading the
+counter back against the highest number actually issued on each job.
+
+`UnionLocal` is deliberately NOT seeded, and that is the schema's own
+instruction rather than a gap: there is no verified source for real local
+numbers, and a wrong one misattributes a company's CBA. `/union-compliance`
+demos empty on purpose. `EstimateVersion` and `DispatchSlip` are still
+unseeded.
+
+**One bug found by running it, not by reading it.** Every message event was
+written at UTC midnight, so a message's three events shared one
+`occurredAt` -- and `messageState` walks them newest-first and returns the
+first decisive one. With the timestamps tied, a DELIVERED message rendered
+as "Handed over, not confirmed", and the delivery rate came out 67% instead
+of 75%. The events now carry distinct ordered times. The schema had already
+said why this matters in its own words: "the sequence itself carries
+meaning". Nothing in the suite would have caught it; the census did.
+
+Undo was verified by counting all 74 models before, after, and after undo:
+**160 rows created, 160 removed, nothing left behind.** Three of the new
+tables are `ON DELETE RESTRICT` against `Job` -- read out of the migrations,
+not assumed -- so they delete above the job delete. `OutboundMessage` is
+the opposite trap and worth naming: its `jobId` is `ON DELETE SET NULL`, so
+leaving it out would not have failed loudly the way the last one did. The
+rows would have been silently ORPHANED, jobId nulled, unfindable by job
+forever after. It is scoped by the tag in the body instead.
+
+Separately, `FEATURE-AUDIT.md`'s arithmetic, which three passes had now
+counted and disagreed about. The cause is one mistake made repeatedly:
+recounting by grepping `^| Built |` over the file also matches the summary
+table's OWN four rows, so the total comes out at rows + 4 and the error
+looks like a careful recount. It said 121 items / 88 built where the sheets
+summed to 117 / 87, while that same table said 86 — three numbers, no two
+agreeing.
+
+The guard now checks all three statements of it — the line, the table, and
+every one of the 26 sheet headers — against the rows, per sheet and by
+name, rather than only the total, which two errors can cancel out of. It
+also asserts the sheets parse as 01..26 contiguously: a header that stops
+matching folds its rows into the sheet above and leaves both looking
+self-consistent, which `length > 20` sails straight past.
+
+**It caught the same bug again during the final merge of this branch**, on
+a number written after the note explaining the trap: `main` had recounted
+to 122 / 90 / 21 / 9 / 2 against 118 / 89 / 20 / 8 / 1 of actual rows —
+plus four, exactly, for the third time. Corrected here, and that is now a
+test failure naming the file rather than something the next person counts
+by hand and gets a fourth answer for.
+
+---
+
+---
+
+### The QuickBooks payment push is verified against Intuit at last (Diego)
+`claude/prova-vercel-direct-url-hg1acx`
+
+Payments have pushed to QuickBooks in code since #55 and had NEVER RUN
+ONCE — not against real books, not against the sandbox. Cyrus put a hold
+on that PR for exactly this reason; it merged anyway, so production has
+been carrying a money-moving path nobody had executed. That is closed now.
+
+**Read in the books rather than from our own success message.** QuickBooks
+invoice 146 went from balance $1,000.00 to $500.00, status Partial, after
+one click. `"Applied to the invoice in QuickBooks and verified."` is Prova
+reporting on itself and was never going to be enough — the invoice ledger
+moving is the evidence.
+
+**The re-send is the half worth keeping.** A deliberate second click
+produced ONE payment, balance unchanged. `isAccidentalRepeat` and the
+Id/SyncToken payload had only ever been reasoned about; a duplicate
+document in somebody's books is the failure this integration exists to
+prevent, and it now has one real trial behind it.
+
+FOUR RUNS, FOUR STOPS, AND THREE OF THE CAUSES WERE OURS
+
+Worth recording because none was findable without clicking, and 832 green
+tests were green through all of them:
+
+  #77  `paymentPushBlockers` was written, exported, tested — and called
+       from nowhere that renders. Both push buttons sat enabled with no
+       explanation on a payment whose invoice QuickBooks had never seen.
+  #83  #77's own lookup asked for the account mapped to "INVOICE_REVENUE".
+       No such value exists; it is "INCOME". `purpose` is a plain String,
+       so nothing could catch it.
+  #85  The QuickBooks item id was cached in a QuickBooksEntityLink and
+       returned without ever checking the item still existed. Deleting it
+       inside QuickBooks bricked invoicing permanently, and restoring it
+       only helped if you reactivated the original rather than creating a
+       new one with the same name.
+  #94  A push that threw rendered NOTHING: neither button had a catch, so
+       the transition ended and the screen did not change.
+
+The fourth is the one to remember. A correction posted on #94 records that
+its own description was wrong about the evidence — the 06:30 push had
+SUCCEEDED and logged it, and I repeated a tester's "no log entry" as fact
+without reading the log. So the real defect was never "a throw shows
+nothing"; it was **the work landing while the person cannot tell**, which
+is what invites the second click.
+
+The sandbox item deletion was the one blocker that was not ours.
+
+**Still not two-way, and still sandbox.** Prova does not pull QuickBooks
+edits back and does not pretend to. `QUICKBOOKS_ENVIRONMENT=sandbox`
+remains the only thing between this path and a real ledger.
+
+## The apprenticeship panel, clicked — and a click-list that could not fail
+
+Everything passed except the one step designed to prove the central claim,
+and that step was wrong. Mine.
+
+STEP 3d ASKED FOR THE IMPOSSIBLE. It told a tester to sign off a period and
+watch on-the-job hours drop from 30 to 8 — but every hour in the fixture
+(Aug 26, Aug 3) already fell AFTER the sign-off date of 1 July, so both
+windows held the same 30 hours. A working window and a broken one would
+have looked identical. The tester noticed, built the case I should have
+specified — 4 hours on 2026-03-10, between the indenture and the sign-off —
+and watched it be correctly excluded. That is a real proof of the
+derivation and it is theirs.
+
+The unit suite now pins that straddling case, so the fixture lives in code
+rather than in someone's judgement.
+
+WHAT DELETING PROVED. The registration was removed and every timesheet
+survived, including the entries created during the run. That was the step
+worth running above all others: the panel promises "No timesheet is
+touched", and if it had been wrong it would have destroyed payroll data.
+
+A REGISTRATION THAT LOOKED LIKE IT FAILED. After a successful register the
+panel still read "No apprenticeship registrations recorded"; the row was
+saved and only a reload showed it. `router.refresh()` is on that path and
+the action calls `revalidatePath`, so the obvious explanation is wrong, and
+this file already carries the symptom with its cause NOT established — the
+material-order entry describes it exactly. So no cause is claimed here.
+
+What IS fixed is the harm: same apprentice, same sponsor, same indenture
+date is now refused as the same indenture entered twice. A page that looks
+like it did nothing gets clicked again, and nothing else would have stopped
+the second click.
+
+Also from that run: "Record a period" no longer sits live beside "Confirm
+remove" (an ordinary control adjacent to a destructive one is how somebody
+confirms a removal they meant to cancel); the panel now says it IGNORES the
+month selector above it, after reading "30 hrs" inches from "No hours
+logged this month" for the same person, both true under different windows
+and neither saying so; and the Craft dropdown explains its empty state
+instead of silently offering one option that means nothing.
+
+Answered without another run: the period-level Remove DOES have a two-step
+confirm. The tester flagged it as untested and was right to.
+
+---
+
+## Four shipped pages nothing in the app linked to
+
+A browser tester opened the sidebar looking for Pipeline, could not find
+it, and stopped without touching anything. They were right, and the cause
+was not what either of us first assumed.
+
+/pipeline was merged, deployed, and confirmed READY. The route worked. The
+page worked. It was in NAV_ITEMS. And NOTHING RENDERED IT, because what
+the sidebar draws is NAV_GROUPS, a second hand-written list, and nobody
+had added it there.
+
+Three other pages were in the same state: /messages, /field-reports and
+/vendors/pricing. Twenty-seven items, twenty-three reachable.
+
+THE ASYMMETRY THAT ALLOWED IT. `item()` throws when a GROUP names an href
+no NAV_ITEM has. The reverse -- an item in no group -- was silent. So the
+failure mode with a loud error was the harmless one, and the failure mode
+that hides a whole feature was the quiet one.
+
+This is mine. I added /pipeline by anchoring on the /bids entry in
+NAV_ITEMS and inserting beside it, never checking that a second list
+governed rendering. Then I wrote a click-list whose step 0 could only
+fail, and told Diego the feature was live. Every check was green: CI,
+production READY, a passing build that even printed `ƒ /pipeline` in its
+route table. One fact in two places -- the bug class this session spent
+all day fixing in other people's code.
+
+THE FIX THAT LASTS IS THE TEST, not the four lines of data. navItems.test.ts
+requires every NAV_ITEM to be in a group or named in APPENDED_SEPARATELY
+with its reason (/sales is there: it is gated on Company.isProvaOperator
+and appended by navGroupsFor). Proven by reintroducing the exact bug --
+removing /pipeline from its group -- and watching it fail with the right
+message, then restoring and watching it pass. A test written from the
+implementation cannot fail; this one was written from the defect.
+
+Also: vitest needed `esbuild: { jsx: "automatic" }` to import navItems.tsx
+at all, since every entry carries an inline SVG. Same runtime Next already
+uses, so nothing diverges from how the app builds.
+
+---
+
+## The apprenticeship programme, as opposed to the apprentice's hours
+
+Sheet 09's last Partial, and the audit had already written the gap: "a
+registered enrolment record, the sponsor, required classroom hours, or
+progression sign-off... none of it can be derived from hours logged."
+
+THE SPLIT THE WHOLE THING RESTS ON. On-the-job hours stay derived: summed
+from `TimeEntry` over the window from the last sign-off to today, stored
+nowhere, so a corrected timesheet moves them. Classroom hours ARE stored,
+because related instruction happens at a training centre and there is no
+`TimeEntry` to sum. Storing what cannot be derived is the other half of
+"derive, don't duplicate", not an exception to it.
+
+A period closes on a SIGNATURE, never on an hour count reaching a line.
+The sponsor decides progression; recording our own arithmetic as though it
+were their decision would be inventing a fact about somebody else's
+programme. `currentPeriod` therefore reads sign-offs and ignores hours
+entirely, and a test pins it.
+
+Nothing defaults the hour requirements. Blank means the programme has not
+told us, and the review says "no requirement recorded" rather than
+measuring against the conventional 2000 — a denominator this app made up
+would turn "we don't know" into a percentage somebody could act on. Null
+and zero stay distinct all the way through: zero classroom hours means
+somebody checked and they attended none, and those two go in different
+columns of a report to a sponsor.
+
+An indenture recorded as both completed AND cancelled is refused, not
+resolved by precedence. Picking one would bury a data-entry error on a
+record somebody may have to defend.
+
+WHAT THE SUITE CAUGHT, which is the argument for that test existing:
+`reachable.test.ts` failed on `updateApprenticeshipPeriod` and
+`deleteApprenticeshipPeriod` — exported, re-exported through the barrel,
+and called from nowhere. The same defect that once shipped
+`sendOutboundEmail` with no form. The fix was not to delete them: a period
+that can be created and never corrected makes a typo in classroom hours
+permanent. They have an edit row now.
+
+Deleting an enrolment cascades its periods and touches no `TimeEntry` —
+the hours belong to the timesheet, not to the registration — and there is
+a db test asserting exactly that.
+
+14 unit tests, 12 db tests. Migration is additive: two CREATE TABLEs, their
+indexes, FKs on the new tables only. No ALTER or DROP on anything existing.
+Announced in Slack before the push, per the working agreement.
+
+---
+
 ### Alerts can now email themselves, once per thing per stage (Cyrus)
 `cyrus/notifications`
 
@@ -856,8 +2968,13 @@ attack.
 **`requireCapability()` on the page is the boundary; the nav filter is
 decoration and says so in its own comment.** Hiding a link hides nothing.
 A test asserts `canReach()` and `can()` agree on every guarded route for
-every principal, so a link can never point at a door that will not open —
-nor, far worse, a door be left unlisted and unguarded.
+every principal, so a link can never point at a door that will not open.
+
+> **The second half of that sentence used to read "nor, far worse, a door
+> be left unlisted and unguarded", and it was false.** That test iterated
+> `ROUTE_CAPABILITY`, so an unlisted door contributed no iteration and was
+> invisible to it. Eight were. See "The guard that could not fail" at the
+> top of this file.
 
 **Auditing my own claim found real holes, and closing the ones I own
 changed the shape of the work.** A FIELD user could still be told, by name

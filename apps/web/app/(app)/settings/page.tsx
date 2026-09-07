@@ -31,6 +31,12 @@ const QB_ERROR_MESSAGES: Record<string, string> = {
   state_mismatch: "That connection attempt couldn't be verified — please try again.",
   missing_params: "QuickBooks didn't return the expected information — please try again.",
   token_exchange_failed: "QuickBooks rejected the connection — please try again.",
+  // The two the callback added when it stopped trusting its own cookie for
+  // identity. Both need their own wording: the fallback below says "please
+  // try again", and retrying is precisely what will not help here.
+  not_owner: "Only an owner can connect QuickBooks. Ask an owner on your team to do it.",
+  identity_mismatch:
+    "That connection attempt finished as a different account than it started as. Sign in as the account you want to connect, then start again.",
 };
 
 const INSURANCE_POLICY_TYPE_OPTIONS = [

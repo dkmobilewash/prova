@@ -64,6 +64,7 @@ model Job {
   invoices                     Invoice[]
   complianceDocuments          ComplianceDocument[]
   equipment                    Equipment[]
+  equipmentAssignments         EquipmentAssignment[]
   estimateVersions             EstimateVersion[]
   contractDocuments            ContractDocument[]
   timeEntries                  TimeEntry[]

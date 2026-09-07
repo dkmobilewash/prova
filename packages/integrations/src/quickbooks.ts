@@ -468,6 +468,51 @@ export async function upsertInvoice(
 }
 
 /**
+ * Every invoice QuickBooks holds under a given DocNumber.
+ *
+ * THE NATURAL KEY, AND THE ONLY THING THAT SURVIVES A LOST RESPONSE.
+ *
+ * `QuickBooksEntityLink` is how a push knows to update rather than create,
+ * and it is written by us AFTER QuickBooks has already created the
+ * document. Between those two moments there are failures no ordering can
+ * remove: the transport retry above can re-POST after a rejection that
+ * arrived once the request bytes were already sent, and a serverless
+ * function can be killed outright. Either way QuickBooks holds an invoice
+ * whose id reached nobody, and the next push would create a second one.
+ *
+ * `docNumberFor` is deterministic from the Prova invoice's id and number
+ * (apps/web/lib/quickbooks-sync.ts), so it is the SAME string on every
+ * attempt at the same invoice and distinct for every other one. That makes
+ * it the one identifier both systems can agree on without either having
+ * told the other anything.
+ *
+ * Returns a LIST, deliberately. QuickBooks companies with the duplicate
+ * document-number check switched off can hold two invoices under one
+ * number — which is precisely the damage the bug this exists for produces —
+ * and picking one of them here would be a silent guess about which entry in
+ * somebody's ledger is the real one. The caller refuses instead.
+ */
+export async function findInvoicesByDocNumber(
+  realmId: string,
+  accessToken: string,
+  docNumber: string,
+): Promise<QuickBooksInvoice[]> {
+  // Single-quoted literals with no parameter binding, same as the customer
+  // and item lookups: an apostrophe has to be doubled or the query is
+  // malformed. DocNumbers here are generated, but escaping on the way in is
+  // cheaper than assuming that stays true.
+  const escaped = docNumber.replace(/'/g, "''");
+  const query = encodeURIComponent(
+    `select Id, SyncToken, DocNumber, TotalAmt from Invoice where DocNumber = '${escaped}'`,
+  );
+  const body = await accountingRequest<{
+    QueryResponse?: { Invoice?: QuickBooksInvoice[] };
+  }>(realmId, accessToken, `/query?query=${query}`);
+
+  return body.QueryResponse?.Invoice ?? [];
+}
+
+/**
  * Reads an invoice back.
  *
  * This is the whole point of the sync design: the response to a write is

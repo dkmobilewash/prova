@@ -49,13 +49,35 @@ const WEB_ROOT = resolve(__dirname, "../..");
 /** Files that may define an action but can never count as its caller. */
 const NOT_A_CALLER = new Set(["index.ts", "shared.ts"]);
 
+/**
+ * True for any TEST file, unit or database.
+ *
+ * Written as one predicate because the obvious spelling of it is wrong in
+ * a way that is invisible: `.dbtest.ts` does NOT match `/\.test\.tsx?$/`,
+ * because the character before `test.ts` is `b`, not a dot. The same
+ * near-miss defeats `name.endsWith(".test.ts")`.
+ *
+ * That let all 15 `.dbtest.ts` files count as CALLERS, so an action whose
+ * only reference was its own database test read as reachable. Exactly one
+ * action was hiding behind it — `updateApprenticeshipEnrollment`, the
+ * only write path for `completedOn`/`cancelledOn`, with no UI at all, so
+ * every apprenticeship on /union-compliance was permanently ACTIVE. See
+ * issues #119 and #120.
+ *
+ * A guard that cannot see an omission is not a guard; this file has been
+ * that twice now, counting the ROUTE_CAPABILITY version in #87.
+ */
+function isTestFile(name: string): boolean {
+  return /\.(?:db)?test\.tsx?$/.test(name);
+}
+
 function sourceFiles(dir: string, acc: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
     if (entry === "node_modules" || entry === ".next" || entry.startsWith(".")) continue;
     const full = join(dir, entry);
     if (statSync(full).isDirectory()) {
       sourceFiles(full, acc);
-    } else if (/\.tsx?$/.test(entry) && !/\.test\.tsx?$/.test(entry)) {
+    } else if (/\.tsx?$/.test(entry) && !isTestFile(entry)) {
       acc.push(full);
     }
   }
@@ -70,7 +92,7 @@ function exportedActions(file: string): string[] {
 }
 
 const actionModules = readdirSync(ACTIONS_DIR)
-  .filter((f) => f.endsWith(".ts") && !f.endsWith(".test.ts") && !NOT_A_CALLER.has(f))
+  .filter((f) => f.endsWith(".ts") && !isTestFile(f) && !NOT_A_CALLER.has(f))
   .map((f) => join(ACTIONS_DIR, f));
 
 const allSources = sourceFiles(join(WEB_ROOT, "app"))

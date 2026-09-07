@@ -38,8 +38,13 @@ export interface WipLineItemResult {
   currentEstimatedCost: number | null;
   actualCostToDate: number;
   /** Actual-to-date + cost-to-complete, i.e. the current total cost
-   * forecast for this line. Null when there's no cost estimate at all
-   * (budgetedUnitCost and currentEstimatedUnitCost both unset). */
+   * forecast for this line. Null when there's no cost forecast at all —
+   * estimatedCostToComplete and currentEstimatedUnitCost both unset.
+   * budgetedUnitCost is NOT consulted (see the derivation below): it is the
+   * frozen historical baseline, kept for display only. This comment used to
+   * name budgetedUnitCost instead of estimatedCostToComplete, which is where
+   * issue #100's "budgeted lines" wording came from — anyone writing a fix
+   * against budgetedUnitCost is fixing a field this math never reads. */
   estimatedCostAtCompletion: number | null;
   costToComplete: number | null;
   /** Null when estimatedCostAtCompletion is null or zero — there's nothing
@@ -85,12 +90,48 @@ export function calculateLineItemWip(input: WipLineItemInput): WipLineItemResult
 
 export interface WipJobResult {
   contractValue: number;
+  /** Every dollar booked against this job, on forecast lines or not. The
+   * job's real spend — deliberately NOT narrowed to the lines that feed
+   * percentComplete below, because this is the figure the "Actual cost to
+   * date" tile shows and the one calculateCompanyFinancials subtracts from
+   * earned revenue. Shrinking it would overstate company gross margin. */
   actualCostToDate: number;
   estimatedCostAtCompletion: number;
   /** Job-level % complete, weighted by cost (not a simple average of the
-   * per-line percentages) — SUM(actual) / SUM(estimated cost at
-   * completion) across only the lines that have a cost estimate. */
+   * per-line percentages) — SUM(actual) / SUM(estimated cost at completion)
+   * across only the lines that carry a usable cost forecast, BOTH SIDES
+   * over that same set of lines. A line with no forecast contributes
+   * neither its cost nor a denominator; summing its cost against a
+   * denominator it is not part of is what reported a job as 550% complete
+   * (issue #100). Null when no line carries a usable forecast. */
   percentComplete: number | null;
+  /** What share of actualCostToDate the percentage above was computed over,
+   * 0..1. The honest companion to percentComplete: a job with $306k of
+   * spend whose percentage is drawn from $96k of it is not 30% complete in
+   * any sense a surety would recognise, it is 30% complete on the third of
+   * the spend anyone has forecast. 1 when there is no spend at all — no
+   * spend means no uncounted spend. */
+  costCoverage: number;
+  /** Share of contract value sitting on lines that actually produced an
+   * earned-revenue figure, 0..1. earnedRevenue below is summed with `?? 0`
+   * while contractValue counts in full, so this is the number that says
+   * whether that sum is a fact or an artefact of lines nobody has estimated
+   * (issue #99). 0 when there is no contract value, matching the
+   * hand-rolled ratios this replaces.
+   *
+   * It answers "are the estimates there", not "do the figures agree". A
+   * cost-only line (unitPrice null — general conditions, overhead) has zero
+   * contract value and sits on neither side of this ratio, so a job can
+   * read fully covered and still show an earned revenue that does not equal
+   * percentComplete × contract value. That is a separate shape of the same
+   * family and this guard does not catch it. */
+  earnedCoverage: number;
+  /** The same question for the cost forecast, and NOT the same predicate:
+   * a line estimated at zero cost has a non-null estimatedCostAtCompletion
+   * and no earned revenue, so it is covered here and not above. Computed
+   * once here because today-dashboard.ts and ask/handlers.ts each carried
+   * their own hand-rolled copy and the job page had none. */
+  estimatedCoverage: number;
   earnedRevenue: number;
   billedToDate: number;
   /** billedToDate - earnedRevenue. Positive = overbilled (liability on the
@@ -107,13 +148,36 @@ export function calculateJobWip(lineItems: WipLineItemResult[], billedToDate: nu
     0,
   );
 
-  const percentComplete = estimatedCostAtCompletion > 0 ? actualCostToDate / estimatedCostAtCompletion : null;
+  // The same predicate calculateLineItemWip already uses to decide whether a
+  // LINE has a % complete. `!== null` alone is not enough: a negative
+  // cost-to-complete override (the form field is plain text and only NaN is
+  // rejected) drives a line's forecast to exactly 0, which passes a null
+  // check, donates its real cost to the numerator and nothing to the
+  // denominator, and reproduces the identical defect one layer down.
+  const forecastLines = lineItems.filter(
+    (item): item is WipLineItemResult & { estimatedCostAtCompletion: number } =>
+      item.estimatedCostAtCompletion !== null && item.estimatedCostAtCompletion > 0,
+  );
+  const forecastCost = forecastLines.reduce((sum, item) => sum + item.estimatedCostAtCompletion, 0);
+  const costOnForecastLines = forecastLines.reduce((sum, item) => sum + item.actualCostToDate, 0);
+
+  const percentComplete = forecastCost > 0 ? costOnForecastLines / forecastCost : null;
+
+  const earnedValue = lineItems
+    .filter((item) => item.earnedRevenue !== null)
+    .reduce((sum, item) => sum + item.contractValue, 0);
+  const estimatedValue = lineItems
+    .filter((item) => item.estimatedCostAtCompletion !== null)
+    .reduce((sum, item) => sum + item.contractValue, 0);
 
   return {
     contractValue,
     actualCostToDate,
     estimatedCostAtCompletion,
     percentComplete,
+    costCoverage: actualCostToDate > 0 ? costOnForecastLines / actualCostToDate : 1,
+    earnedCoverage: contractValue > 0 ? earnedValue / contractValue : 0,
+    estimatedCoverage: contractValue > 0 ? estimatedValue / contractValue : 0,
     earnedRevenue,
     billedToDate,
     overUnderBilling: billedToDate - earnedRevenue,

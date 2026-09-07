@@ -256,3 +256,66 @@ describe("date helpers", () => {
     expect(daysBetween("2026-10-15", "2026-11-14")).toBe(30);
   });
 });
+
+// The truncation finding. /field-reports loads the newest N reports and
+// groups what came back, so the cut lands mid-week — and every filed
+// report older than the cut was named as a day nobody filed. The page
+// exists to argue schedule disputes, so a fabricated hole in your own
+// record is the specific harm.
+describe("a truncated set of reports", () => {
+  const NEXT_MON = "2026-09-07";
+
+  it("does not name a day as unfiled when it was never loaded", () => {
+    // Only Thursday and Friday came back; the query cut off during
+    // Wednesday, so completeness starts Thursday.
+    expect(missingWorkdays([THU, FRI], MON, NEXT_MON, THU)).toEqual([]);
+  });
+
+  it("still names a hole INSIDE the part that was loaded", () => {
+    // Complete from Tuesday: Wednesday is a real, knowable hole; Monday is
+    // not, because Monday was never loaded.
+    expect(missingWorkdays([TUE, THU, FRI], MON, NEXT_MON, TUE)).toEqual([WED]);
+  });
+
+  it("marks the cut-off week partial and refuses to score its coverage", () => {
+    const week = groupIntoWeeks([report({ reportDate: THU }), report({ reportDate: FRI })], NEXT_MON, THU)[0];
+    expect(week.partial).toBe(true);
+    expect(week.missing).toEqual([]);
+    // 2 of 5 finished weekdays would read as 40% "covered" for a week we
+    // only loaded two days of.
+    expect(week.coveragePercent).toBeNull();
+  });
+
+  it("leaves a fully loaded week alone", () => {
+    const week = groupIntoWeeks([report({ reportDate: THU }), report({ reportDate: FRI })], NEXT_MON)[0];
+    expect(week.partial).toBe(false);
+    expect(week.missing).toEqual([MON, TUE, WED]);
+    expect(week.coveragePercent).toBe(40);
+  });
+
+  // A week that starts after the cut is fully known even on a truncated
+  // page — only the week straddling the cut is partial.
+  it("does not mark a later week partial", () => {
+    const weeks = groupIntoWeeks(
+      [report({ reportDate: "2026-09-08" }), report({ reportDate: FRI })],
+      "2026-09-10",
+      FRI,
+    );
+    expect(weeks[0].start).toBe(NEXT_MON);
+    expect(weeks[0].partial).toBe(false);
+    expect(weeks[1].partial).toBe(true);
+  });
+
+  it("says so in the summary handed to a GC", () => {
+    const week = groupIntoWeeks(
+      [report({ reportDate: THU }), report({ reportDate: FRI })],
+      NEXT_MON,
+      THU,
+    )[0];
+    const text = weekSummaryText(week, "Maple St Tower");
+    expect(text).toContain("outside the records loaded here");
+    // Mon–Wed were never loaded, so the summary must not tell a GC that
+    // nothing was filed on them.
+    expect(text).not.toContain("No report filed.");
+  });
+});

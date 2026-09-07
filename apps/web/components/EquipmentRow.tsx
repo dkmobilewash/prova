@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { deleteEquipment, updateEquipment } from "@/lib/actions";
-import { EquipmentFields, type EquipmentFieldValues, type JobOption } from "@/components/EquipmentFields";
+import { EquipmentFields, type EquipmentFieldValues } from "@/components/EquipmentFields";
 
 // One definition for the row's controls so they can't drift back under 44px a
 // button at a time. `inline-flex` + `items-center` is what makes min-h centre
@@ -16,11 +16,21 @@ const rowBtnConfirm =
 
 type EquipmentRowProps = {
   canDelete: boolean;
-  jobs: JobOption[];
-  item: EquipmentFieldValues & { id: string; assignedJobName: string | null };
+  item: EquipmentFieldValues & { id: string };
 };
 
-export function EquipmentRow({ canDelete, jobs, item }: EquipmentRowProps) {
+/** The name, the detail line, and the row's own buttons.
+ *
+ * Renders a DIV, not an LI. The page already wraps each piece in an `<li>`,
+ * and this component used to open a second one inside it. The HTML parser
+ * resolves that by closing the outer `<li>` early, so the DOM the browser
+ * builds is not the tree React expects and hydration breaks — silently, and
+ * with typecheck, lint and the whole test suite green. See issue #149.
+ *
+ * Where the piece is deliberately is NOT printed here. The page prints it
+ * once, alongside the utilisation figure and from the same derived value;
+ * two lines derived from one fact read as two separate facts. */
+export function EquipmentRow({ canDelete, item }: EquipmentRowProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -54,9 +64,9 @@ export function EquipmentRow({ canDelete, jobs, item }: EquipmentRowProps) {
 
   if (isEditing) {
     return (
-      <li className="p-4">
+      <div>
         <form onSubmit={handleSave} className="flex flex-col gap-3">
-          <EquipmentFields jobs={jobs} defaults={item} />
+          <EquipmentFields defaults={item} />
 
           {error && <p className="text-sm text-red-400">{error}</p>}
 
@@ -81,26 +91,26 @@ export function EquipmentRow({ canDelete, jobs, item }: EquipmentRowProps) {
             </button>
           </div>
         </form>
-      </li>
+      </div>
     );
   }
 
   const detail = [item.type, item.assetTag].filter(Boolean).join(" · ");
 
   return (
+    // A DIV, never an LI — see the note on the component above. The page owns
+    // the <li> and its p-4; this element only lays the row out inside it.
+    //
     // Stacks on a phone. Measured at 375px, the single-row layout gave the
     // equipment NAME a 14.6px column once the three confirm-delete buttons
-    // appeared — you could not read what you were about to delete.
-    <li className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start sm:justify-between">
+    // appeared — you could not read what you were about to delete. It stays
+    // right-pinned from sm up, which is where justify-between still applies.
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
       <div className="min-w-0">
         <p className="font-medium text-slate-100">{item.name}</p>
         {detail && <p className="text-sm text-slate-400">{detail}</p>}
-        {/* slate-400 rather than slate-500: measured 3.83:1 on the slate-900
-            card, under the 4.5 text floor. Where a thing is, is the reason
-            this page exists. */}
-        <p className={item.assignedJobName ? "text-xs text-blue-400" : "text-xs text-slate-400"}>
-          {item.assignedJobName ? `On ${item.assignedJobName}` : "In the yard"}
-        </p>
+        {/* slate-400 rather than slate-500: slate-500 measures 3.83:1 on the
+            slate-900 card, under the 4.5 text floor. */}
         {item.notes && <p className="mt-1 text-sm text-slate-400">{item.notes}</p>}
         {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
       </div>
@@ -149,6 +159,6 @@ export function EquipmentRow({ canDelete, jobs, item }: EquipmentRowProps) {
             </button>
           ))}
       </div>
-    </li>
+    </div>
   );
 }

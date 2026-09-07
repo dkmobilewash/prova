@@ -183,6 +183,36 @@ export function renewalAlerts(sources: RenewalSource[], todayIso: string): Renew
     });
 }
 
+export type RenewalCoverage =
+  /** Records exist and at least one of them needs attention. */
+  | "HAS_ALERTS"
+  /** Records exist and every one of them is current. */
+  | "ALL_CURRENT"
+  /** No record that can lapse exists at all. NOT the same as ALL_CURRENT,
+   * and the distinction is the entire point of this type. */
+  | "NOTHING_TRACKED";
+
+/**
+ * Which of three things an empty renewal list actually means.
+ *
+ * `renewalAlerts` drops everything CURRENT, so an empty result is silent
+ * about why. The whole compliance system reads EXISTING rows —
+ * `renewalSourcesForCompany` queries four tables and returns what is
+ * there — so a company that never filed a COI produces exactly the same
+ * empty array as one whose COI is in date. The screen picked one of those
+ * two readings and printed it: "Nothing expiring. Certificates, licences,
+ * policies and bonds are all current." On /compliance that sentence sat
+ * about forty pixels above "No compliance documents yet."
+ *
+ * `trackedCount` is the number of SOURCES — what could lapse — not the
+ * number of alerts. Passing `renewals.length` for it would restore the
+ * bug, which is why the two arguments are different types.
+ */
+export function renewalCoverage(renewals: Renewal[], trackedCount: number): RenewalCoverage {
+  if (renewals.length > 0) return "HAS_ALERTS";
+  return trackedCount === 0 ? "NOTHING_TRACKED" : "ALL_CURRENT";
+}
+
 export function summarizeRenewals(renewals: Renewal[]) {
   return {
     expired: renewals.filter((r) => r.urgency === "EXPIRED").length,

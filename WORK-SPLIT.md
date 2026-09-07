@@ -112,7 +112,9 @@ plus the back-relation fields Prisma requires on `Job`, `Company` and
 A fourth session is running alongside the three above. It owns the
 customer-facing CRM, Phase A of the CRM spec, one item at a time on a new
 branch per item (previously `claude/prova-crm-contact-lifecycle`, then
-`claude/prova-crm-interaction-log`, now `claude/prova-crm-contact-people`):
+`claude/prova-crm-interaction-log`, then `claude/prova-crm-contact-people`,
+then `claude/prova-crm-followup-alerts`, now `claude/prova-sales-crm` for
+Phase B below):
 
 1. **Contact create/delete + prospect status** — Sheet 02. *Shipped 2 Sep.*
    `ContactStatus` (PROSPECT/ACTIVE/INACTIVE), `ContactType` (GC/DEVELOPER/
@@ -143,16 +145,39 @@ branch per item (previously `claude/prova-crm-contact-lifecycle`, then
    Interactions, and interactions can now optionally name who they were
    with. No `isDecisionMaker` flag or role-based filter tabs — left out,
    see ARCHITECTURE.md.
-4. Follow-ups surfaced in the existing `/alerts` engine.
+4. **Follow-ups surfaced in `/alerts`** — Sheet 02 / Sheet 26. *Shipped
+   3 Sep.* No schema at all: `ContactInteraction.followUpOn` already
+   existed (item 2). New `CONTACT_FOLLOW_UP` `AlertKind` in the shared
+   `lib/alerts.ts`/`lib/alerts-query.ts` (Cyrus's territory, touched
+   additively only — a new kind, a new fetch block, nothing existing
+   changed), gated behind `MANAGE_ESTIMATING`, horizon fixed at 7 (the
+   floor `notification-milestones.ts` requires — see Slack and
+   ARCHITECTURE.md for why a lower number silently drops its own earlier
+   warning). Rides PR #59's generic dispatch layer for email delivery with
+   no changes there. Visible to everyone holding the capability, not
+   scoped to the specific assignee, matching every other kind.
 5. ~~A read-only GC pipeline view over `BidInvitation`~~ — already shipped
    by another lane as `/pipeline` (PR #80, merged before this lane reached
    it): `lib/bid-pipeline.ts` + `lib/bid-pipeline-query.ts`, reading
    `BidInvitation` per GC, derived and stored nowhere. Struck rather than
    duplicated.
 
-Then Phase B: an internal, owner-only sales CRM for selling Prova itself
-(Lead/Opportunity models, its own nav section) — not started until Phase A
-ships.
+Then Phase B: an internal, owner-only sales CRM for selling Prova itself.
+*Shipped 3 Sep.* `SalesLead`/`SalesOpportunity` (new file `sales.prisma`) —
+prospective Prova customers and the deals in progress with them, not a
+second `Contact` (every tenant has their own GCs; this belongs only to
+Prova's own operating company). Gated on two independent checks, neither
+expressible as a `lib/permissions.ts` `Capability` (that map is about job
+function *within* a company, and an OWNER always holds every capability in
+it regardless — there's no way to express "owner only" there): a new
+`Company.isProvaOperator` boolean (exactly one row ever true, set by hand)
+and `role === "OWNER"`, both checked directly in `lib/actions/sales.ts`'s
+`assertSalesAccess` and in `/sales`'s pages. `/sales` (list) and
+`/sales/[id]` (lead detail + its opportunities), a new "Internal" nav group
+appended only when both checks pass — `navGroupsFor` in `navItems.tsx`
+gained an optional second argument for this rather than folding it into
+`canReach`'s capability system. `deleteSalesLead` blocks once a lead has
+opportunities on file, same reasoning as `deleteContact`.
 
 It does NOT touch estimating, job costing, billing/AIA, retainage, WIP,
 AI, `jobs/[id]/page.tsx`, safety, materials/vendors, equipment,
@@ -170,6 +195,98 @@ both were split by domain some time ago — the schema into
 domain rather than appending to an existing one, which is also why the
 "only add at the very end of the file" advice below no longer applies the
 way it reads.
+
+## A fifth lane, claimed 4 Sep 2026
+
+The internal sales CRM again — Phase C, on `claude/prova-contractor-os-e3f0iz`
+(the third lane's branch, whose six items are all shipped and merged; the
+fourth lane declared its own scope finished in Slack on 2 Sep). Phase B
+built the nouns; this lane builds the memory and the read.
+
+**What Phase B actually left.** `SalesLead` and `SalesOpportunity` with
+full CRUD, `/sales` (a flat list of leads) and `/sales/[id]` (edit the
+lead, list its opportunities). That is a filing cabinet, not a CRM. Three
+things a person selling Prova cannot do with it today:
+
+- **Remember a conversation.** There is no activity record at all. The
+  entire memory of a deal is `SalesOpportunity.notes`, one mutable
+  free-text field that the next edit overwrites. The customer-facing CRM
+  solved exactly this with `ContactInteraction`; the internal one has
+  nothing equivalent.
+- **Be reminded.** No follow-up date exists anywhere, so nothing ever
+  says "you said you'd call them Tuesday."
+- **See the pipeline.** `/sales` lists leads. To learn what is in `TRIAL`
+  you open every lead in turn. There is no count by stage, no MRR total,
+  no forecast — despite `estimatedMrr` and `expectedCloseDate` being on
+  every opportunity already.
+
+**The three items, in order, one at a time:**
+
+1. **Sales activity log + follow-ups.** *Built 4 Sep, not yet clicked.*
+   `SalesActivity` in `sales.prisma` (`20260904005940_add_sales_activity`,
+   purely additive), modelled on `ContactInteraction`: type, `occurredOn`
+   (entered, not stamped), summary, optional `followUpOn`, optional link to
+   the opportunity it was about. An Activity section on `/sales/[id]`, and
+   a follow-up queue plus a derived last-contact line on `/sales`.
+   Derivation in `lib/sales-activity.ts` — one open follow-up per lead read
+   off its LATEST activity, last-contact excluding notes, both computed at
+   read time and stored nowhere. Three actions in `lib/actions/sales.ts`,
+   plus two Phase B fixes carried in the same pass: the opportunity count
+   on `/sales` went stale because create/delete revalidated only
+   `/sales/[id]`, and `deleteSalesLead`'s guard did not count activities
+   despite `SalesActivity.leadId` being `RESTRICT`.
+2. **Stage history.** *Built 4 Sep, not yet clicked.* `SalesStageChange`
+   (`20260904022832_add_sales_stage_history`, one table, no new enum, no
+   backfill) records every move: `fromStage` (null on the opening record),
+   `toStage`, `effectiveOn` entered and `recordedAt` stamped.
+   `lib/sales-stage-history.ts` derives time-in-stage and one entry per
+   stretch, both shown per opportunity on `/sales/[id]`. Written only by
+   `createSalesOpportunity`/`updateSalesOpportunity`, in one transaction
+   with the row, and only when the stage actually differs — no new exported
+   actions, no edit or delete path for a history row.
+3. **Pipeline by stage.** *Built 4 Sep, not yet clicked.*
+   `lib/sales-pipeline.ts` + a band at the top of `/sales`: a card per open
+   stage (count, priced total, unpriced count, longest sitting), won/lost
+   with a win rate that is null until something is decided, close-date
+   buckets, and the deals sitting longest. Zero schema and zero shared
+   files — no route, no nav entry, no `middleware.ts` line.
+   **No weighted forecast**, which walks back what this entry originally
+   promised: stage probabilities do not exist and inventing them would
+   produce a confident number derived from nothing. The close-date lines
+   are read off entered dates instead, and the page says why.
+
+**Follow-ups deliberately do NOT go into `/alerts`.** The customer-facing
+CRM's `CONTACT_FOLLOW_UP` was the obvious precedent and it is the wrong
+one here. `/alerts` is gated on a `lib/permissions.ts` capability, and the
+sales CRM's whole gate is `isProvaOperator` AND `role === "OWNER"` — a
+capability cannot express owner-only (see `assertSalesAccess`'s comment).
+Routing internal sales follow-ups through the shared alert engine would
+therefore show "Follow up with Acme Drywall" to every estimator and PM at
+the operator company, which is precisely the gate Phase B built. They
+surface on `/sales` instead, behind the same two checks as everything else
+in this feature.
+
+**Shared files touched, and this is the whole list:** two back-relation
+lines on `Company` and `User` in `company.prisma`, and one back-relation
+on `SalesLead`. Nothing else — `/sales` already has its route in
+`middleware.ts` and its nav group in `navItems.tsx` from Phase B, and this
+lane adds no new route in items 1 and 2. Announced in Slack before the
+push, per the agreement.
+
+It does NOT touch estimating, job costing, billing/AIA, retainage, WIP, AI,
+`jobs/[id]/page.tsx`, safety, materials/vendors, equipment, backcharges,
+closeout, alerts, roles/permissions, prevailing wage, union compliance, or
+the customer-facing CRM under `/contacts`.
+
+:warning: **Nobody has ever seen this feature.** `Company.isProvaOperator`
+is `false` on every row until somebody flips it by hand — there is no UI
+for it, by design — and no Slack message records it ever being flipped. So
+Phase B shipped, merged and deployed without a single page load, which is
+the "written, documented, and never called" shape CLAUDE.md warns about.
+Whoever clicks this lane's work must flip that flag on a test company
+first, or every page under `/sales` correctly renders "Not part of your
+access" and the click-list passes while proving nothing.
+
 
 ## The bid pipeline view, 3 Sep 2026
 

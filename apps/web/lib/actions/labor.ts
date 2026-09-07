@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { put } from "@vercel/blob";
+import { putDocument } from "@/lib/blob";
 import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@prova/db";
 import {
@@ -123,10 +123,7 @@ export async function uploadDispatchSlip(jobId: string, formData: FormData) {
       throw new Error("File is too large (max 15MB)");
     }
     const buffer = await file.arrayBuffer().then(Buffer.from);
-    const blob = await put(`dispatch-slips/${jobId}/${file.name}`, buffer, {
-      access: "public",
-      contentType: file.type,
-    });
+    const blob = await putDocument(`dispatch-slips/${jobId}/${file.name}`, buffer, file.type);
     fileUrl = blob.url;
     fileName = file.name;
   }
@@ -208,10 +205,7 @@ export async function uploadPrevailingWageDetermination(
       return actionFail("That file is over the 15MB limit. Link to it instead, or upload a smaller scan.");
     }
     const buffer = await file.arrayBuffer().then(Buffer.from);
-    const blob = await put(`prevailing-wage/${jobId}/${file.name}`, buffer, {
-      access: "public",
-      contentType: file.type,
-    });
+    const blob = await putDocument(`prevailing-wage/${jobId}/${file.name}`, buffer, file.type);
     fileUrl = blob.url;
     fileName = file.name;
   }

@@ -12,6 +12,9 @@ function isoDate(date: Date | null) {
   return date ? date.toISOString().slice(0, 10) : null;
 }
 
+/** How many messages this page loads and counts over. */
+const MESSAGE_LIMIT = 200;
+
 export default async function MessagesPage({
   searchParams,
 }: {
@@ -33,7 +36,9 @@ export default async function MessagesPage({
   const messages = await prisma.outboundMessage.findMany({
     where: { companyId: company.id },
     orderBy: { createdAt: "desc" },
-    take: 200,
+    // One more than we render, so the page can TELL whether it is looking
+    // at everything. See the counters below.
+    take: MESSAGE_LIMIT + 1,
     include: {
       job: { select: { name: true } },
       sentBy: { select: { name: true } },
@@ -41,7 +46,8 @@ export default async function MessagesPage({
     },
   });
 
-  const rows = messages.map((m) => ({
+  const truncated = messages.length > MESSAGE_LIMIT;
+  const rows = (truncated ? messages.slice(0, MESSAGE_LIMIT) : messages).map((m) => ({
     id: m.id,
     channel: m.channel,
     toAddress: m.toAddress,
@@ -62,9 +68,15 @@ export default async function MessagesPage({
     })),
   }));
 
-  // All derived, all counted across every message rather than the visible
-  // ones — a filter that also changes the counters is how a number quietly
-  // becomes meaningless.
+  // All derived, and counted over the whole LOADED set rather than the
+  // filtered view — a filter that also changes the counters is how a number
+  // quietly becomes meaningless.
+  //
+  // The loaded set is not necessarily every message. This comment used to
+  // say "across every message", which the `take` above made untrue the
+  // moment a company sent its 201st: the counters silently became "of the
+  // most recent 200" and nothing on the page said so. The scope is now
+  // rendered next to the numbers when it matters — see `truncated`.
   const problems = rows.filter((r) => needsAttention(r.events)).length;
   const unconfirmed = rows.filter((r) => stale(r, today)).length;
   const rate = deliveryRate(rows);
@@ -105,6 +117,13 @@ export default async function MessagesPage({
       <div className="mb-6">
         <MessageComposer jobs={jobs} canSend={setupProblem === null} />
       </div>
+
+      {truncated && (
+        <p className="mb-2 text-xs text-slate-500">
+          Showing the most recent {MESSAGE_LIMIT} messages. The three figures below are counted
+          over those {MESSAGE_LIMIT}, not over everything ever sent.
+        </p>
+      )}
 
       <div className="mb-4 grid gap-3 sm:grid-cols-3">
         <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">

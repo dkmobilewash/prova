@@ -1,0 +1,116 @@
+/// The apprenticeship PROGRAM, as opposed to the hours an apprentice works.
+///
+/// Sheet 09 carried this as Partial with the gap stated exactly: the ratio
+/// work knows which side of a crew somebody is on, and hours are derivable
+/// from TimeEntry, but nothing recorded the registration itself — the
+/// sponsor, the program number, the classroom hours, the sign-off that
+/// moves somebody up a period. None of that can be derived from hours
+/// logged, which is why it needs its own tables.
+///
+/// THE SPLIT THIS FILE IS BUILT ON:
+///
+///   On-the-job hours are DERIVED from TimeEntry, never stored here. They
+///   already exist, they are already the thing the ratio check reads, and a
+///   second copy would be free to disagree with the timesheets — which on a
+///   compliance record is the disagreement that matters.
+///
+///   Classroom hours ARE stored, because nothing in this app records them.
+///   Related instruction happens at the training centre, not on a job, so
+///   there is no TimeEntry to sum. Storing what cannot be derived is not a
+///   violation of that rule; it is the other half of it.
+
+/// An apprentice's registration in a program. One per indenture: a person
+/// who finishes and re-indentures in another trade gets a second row.
+model ApprenticeshipEnrollment {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  /// Workers are Users here — TimeEntry.employeeUserId is the same person.
+  apprenticeUserId String
+  apprenticeUser   User   @relation("ApprenticeEnrollments", fields: [apprenticeUserId], references: [id])
+
+  /// Who REGISTERED the program — the JATC, the state agency, the local.
+  /// Not us: we employ the apprentice, we do not sponsor them, and a
+  /// compliance officer asks whose program it is.
+  sponsorName String
+
+  /// The registration number the sponsor or state issued. Nullable because
+  /// a company frequently hires someone before the paperwork reaches them,
+  /// and refusing to record the apprentice until then would mean the ratio
+  /// screen and this one disagree about who exists.
+  programNumber String?
+
+  /// The trade they are indentured in. Nullable for the same reason the
+  /// craft is nullable on TimeEntry: a half-configured company must still
+  /// be able to write down what it knows.
+  craftClassificationId String?
+  craftClassification   CraftClassification? @relation(fields: [craftClassificationId], references: [id])
+
+  unionLocalId String?
+  unionLocal   UnionLocal? @relation(fields: [unionLocalId], references: [id])
+
+  /// ENTERED, not stamped — the date on the indenture, which is routinely
+  /// weeks before anyone types it in.
+  enrolledOn DateTime
+
+  /// Exactly one of these, or neither. Both null means still indentured.
+  /// Derived state is never stored, so there is no `status` column: what
+  /// somebody is now is read off these two dates.
+  completedOn DateTime?
+  cancelledOn DateTime?
+
+  /// What the PROGRAM requires per period. Null means nobody has looked it
+  /// up, and everything downstream reports the period as unchecked rather
+  /// than measuring against a number this app invented. Programs genuinely
+  /// differ; the common 2000 OJT hours is a convention, not a rule, and a
+  /// made-up denominator on a compliance screen is worse than a blank one.
+  requiredOjtHoursPerPeriod       Decimal? @db.Decimal(7, 2)
+  requiredClassroomHoursPerPeriod Decimal? @db.Decimal(7, 2)
+
+  note String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  periods ApprenticeshipPeriodRecord[]
+
+  @@index([companyId])
+  @@index([apprenticeUserId])
+}
+
+/// One period of the indenture. A period is closed by a human signing it
+/// off, not by an hour count crossing a line: the sponsor decides, and
+/// recording our own arithmetic as though it were their decision would be
+/// inventing a fact about somebody else's programme.
+model ApprenticeshipPeriodRecord {
+  id           String                   @id @default(cuid())
+  enrollmentId String
+  enrollment   ApprenticeshipEnrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+
+  /// 1-based, matching how indentures are written and how
+  /// CraftClassification.apprenticePeriod is numbered.
+  periodNumber Int
+
+  /// Related instruction completed in this period. Null is "not recorded",
+  /// which is NOT zero — zero means somebody checked and they attended
+  /// nothing, and those two go in different columns of a report.
+  classroomHours Decimal? @db.Decimal(7, 2)
+
+  /// Null while the period is open. Entered, not stamped.
+  signedOffOn DateTime?
+
+  /// Who at the sponsor signed. Free text on purpose: they do not have
+  /// accounts here, and inventing a Person record for a name on a form
+  /// would be modelling paperwork as though it were people.
+  signedOffBy String?
+
+  note String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// A period is recorded once per enrolment.
+  @@unique([enrollmentId, periodNumber])
+  @@index([enrollmentId])
+}

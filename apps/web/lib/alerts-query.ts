@@ -4,6 +4,7 @@ import {
   backchargeAlerts,
   certifiedPayrollAlerts,
   closeoutAlerts,
+  contactFollowUpAlerts,
   partitionAlerts,
   renewalAlert,
   visibleToPrincipal,
@@ -59,7 +60,7 @@ export async function loadAlerts(
   // rather than a window of our own choosing.
   const currentMonth = todayIso.slice(0, 7);
 
-  const [renewalSources, backcharges, jobs, acknowledgements, ratioReviews] = await Promise.all([
+  const [renewalSources, backcharges, jobs, acknowledgements, ratioReviews, followUps] = await Promise.all([
     renewalSourcesForCompany(companyId),
 
     prisma.backcharge.findMany({
@@ -123,10 +124,25 @@ export async function loadAlerts(
 
     prisma.alertAcknowledgement.findMany({
       where: { userId },
-      select: { alertKey: true, snoozedUntil: true },
+      // acknowledgedSeverity is part of the match, not decoration: an
+      // acknowledgement only covers a situation no worse than the one it
+      // was made about. Omit it here and partitionAlerts silently reads
+      // every row as ACK_SEVERITY_WHEN_UNRECORDED. See issue #110.
+      select: { alertKey: true, snoozedUntil: true, acknowledgedSeverity: true },
     }),
 
     loadRatioReviews(companyId, currentMonth),
+
+    prisma.contactInteraction.findMany({
+      where: { companyId, followUpOn: { not: null } },
+      select: {
+        id: true,
+        followUpOn: true,
+        contactId: true,
+        contact: { select: { name: true } },
+        followUpAssignedToUser: { select: { name: true, email: true } },
+      },
+    }),
   ]);
 
   const alerts: Alert[] = [];
@@ -174,12 +190,21 @@ export async function loadAlerts(
       substantialCompletionDate: isoDate(job.substantialCompletionDate),
     });
 
-    if (latest?.status === "SUBMITTED") {
+    // Both unfinished states, not just SUBMITTED. CloseoutSubmissionStatus
+    // has three values and this line read only one of them, so a package
+    // the GC REJECTED raised nothing at all — the chase disappeared at the
+    // moment the ball came back to us and the retainage stopped moving
+    // (issue #111 item 3). ACCEPTED is still dropped here on purpose: it
+    // is not a chase, and retainageAlerts above is what an accepted
+    // package feeds.
+    if (latest && (latest.status === "SUBMITTED" || latest.status === "REJECTED")) {
       closeoutSources.push({
         jobId: job.id,
         jobName: job.name,
         submittedOn: isoDate(latest.submittedOn) as string,
         retainageBalance: balance,
+        status: latest.status,
+        respondedOn: isoDate(latest.respondedOn),
       });
     }
 
@@ -263,12 +288,25 @@ export async function loadAlerts(
     ),
   );
   alerts.push(...wipAlerts(wipSources));
+  alerts.push(
+    ...contactFollowUpAlerts(
+      followUps.map((f) => ({
+        interactionId: f.id,
+        contactId: f.contactId,
+        contactName: f.contact.name,
+        followUpOn: isoDate(f.followUpOn) as string,
+        assignedToName: f.followUpAssignedToUser?.name ?? f.followUpAssignedToUser?.email ?? null,
+      })),
+      todayIso,
+    ),
+  );
 
   const permitted = visibleToPrincipal(alerts, (capability) => can(principal, capability));
 
   const acks: Acknowledgement[] = acknowledgements.map((a) => ({
     alertKey: a.alertKey,
     snoozedUntil: isoDate(a.snoozedUntil),
+    acknowledgedSeverity: a.acknowledgedSeverity,
   }));
 
   return partitionAlerts(permitted, acks, todayIso);

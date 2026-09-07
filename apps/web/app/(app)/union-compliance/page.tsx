@@ -7,6 +7,9 @@ import { UnionLocalCard } from "@/components/UnionLocalCard";
 import { ratioLabel } from "@/lib/apprentice-ratio";
 import { money } from "@/lib/money";
 import { isWhollyUnpriced } from "@/lib/fringe-remittance";
+import { loadApprenticeships, loadTeamForApprenticeship } from "@/lib/apprenticeship-query";
+import { ApprenticeshipForm } from "@/components/ApprenticeshipForm";
+import { ApprenticeshipPanel } from "@/components/ApprenticeshipPanel";
 
 const STATUS_TONE: Record<string, string> = {
   WITHIN: "text-green-300",
@@ -39,10 +42,15 @@ export default async function UnionCompliancePage({
     : new Date().toISOString().slice(0, 7);
   const { start, end } = monthBounds(month);
 
-  const [setup, remittance, ratioReviews] = await Promise.all([
+  const [setup, remittance, ratioReviews, apprenticeships, team] = await Promise.all([
     loadUnionSetup(company.id),
     loadRemittance(company.id, month),
     loadRatioReviews(company.id, month),
+    // Not scoped to the selected month: an indenture runs for years, and
+    // the current period's hours are counted from the last sign-off, not
+    // from whichever month this page happens to be showing.
+    loadApprenticeships(company.id, new Date().toISOString().slice(0, 10)),
+    loadTeamForApprenticeship(company.id),
   ]);
 
   const crafts = setup.flatMap((local) => local.crafts);
@@ -259,6 +267,31 @@ export default async function UnionCompliancePage({
             ))}
           </div>
         )}
+      </section>
+
+      {/* --------------------------------------- apprenticeship --- */}
+      <section className="mb-10">
+        <h2 className="mb-1 text-sm font-semibold text-slate-300">Apprenticeship programmes</h2>
+        <p className="mb-3 text-xs text-slate-500">
+          The registration itself — sponsor, programme number, classroom hours and the sign-offs
+          that close a period. On-the-job hours are read from the timesheets and stored nowhere
+          here; a period is closed by a signature, never by an hour count reaching a line.
+        </p>
+        <p className="mb-3 text-xs text-amber-300/80">
+          {/* Browser testing found this section reading "30 hrs" inches from
+              "No hours logged this month" for the same person. Both were true
+              under different windows, and nothing said so. */}
+          Ignores the month selected above. An indenture runs for years, so these hours are
+          counted from the current period&apos;s start — not from the month the rest of this page
+          is showing.
+        </p>
+        <div className="mb-3">
+          <ApprenticeshipForm
+            team={team}
+            crafts={crafts.map((c) => ({ id: c.id, label: c.name }))}
+          />
+        </div>
+        <ApprenticeshipPanel rows={apprenticeships} canDelete={currentUser.role === "OWNER"} />
       </section>
 
       {/* ----------------------------------------------------- setup --- */}

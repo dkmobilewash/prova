@@ -90,8 +90,14 @@ model Equipment {
 
   /// Where it is right now. Null means "in the yard / unassigned", which
   /// is a normal state, not missing data.
+  /// DEPRECATED — nothing reads this any more. Superseded by
+  /// `EquipmentAssignment`, from which current location is derived. Left in
+  /// place rather than dropped because removing a column is destructive
+  /// against production data; Diego drops it when he chooses.
   assignedJobId String?
   assignedJob   Job?    @relation(fields: [assignedJobId], references: [id])
+
+  assignments EquipmentAssignment[]
 
   notes String?
 
@@ -859,4 +865,62 @@ enum VendorPriceSource {
   PRICE_LIST
   /// Told to someone over the phone or at the counter.
   VERBAL
+}
+
+/// Where a piece of equipment was, and when.
+///
+/// `Equipment.assignedJobId` records where something is RIGHT NOW and
+/// nothing else. That answers "where is the lift" and cannot answer "was
+/// that scaffold on Maple in March", which is the question a backcharge or
+/// a delay claim actually turns on. It also makes utilisation impossible:
+/// you cannot divide days used by days owned when nothing records the days.
+///
+/// Adding this history makes `Equipment.assignedJobId` a stored copy of
+/// derived state — where a thing is now IS the newest assignment with no
+/// return date. Storing a derived fact is the rule this schema breaks for
+/// nobody, so nothing reads that column any more. That sentence was written
+/// before it was true: Ask's `equipment_location` handler kept reading the
+/// column for a while and answered from a value nothing had written since,
+/// so verify it with a grep for `assignedJobId` across `apps/` rather than
+/// trusting the sentence. It is deliberately NOT dropped here: that is a
+/// destructive migration against production, and it is Diego's to run when
+/// he chooses. Announced in Slack 2026-08-30.
+model EquipmentAssignment {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  equipmentId String
+  equipment   Equipment @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
+
+  jobId String
+  job   Job    @relation(fields: [jobId], references: [id])
+
+  /// Entered, not stamped. Logging on Friday that a lift went out on
+  /// Tuesday has to record Tuesday, or every utilisation figure computed
+  /// over this table is wrong by however long the paperwork sat.
+  sentOutOn DateTime
+
+  /// Null means it is still out — a real state, not missing data. The
+  /// current location of every piece of equipment is derived from exactly
+  /// this: the newest assignment with no return date.
+  returnedOn DateTime?
+
+  notes String?
+
+  recordedByUserId String?
+  recordedBy       User?   @relation(fields: [recordedByUserId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// No unique constraint expresses "one place at a time" — the rule is
+  /// about overlapping RANGES, which Postgres would need an exclusion
+  /// constraint for and Prisma cannot declare. It is enforced in
+  /// `assignEquipment`, inside the same transaction as the insert, and the
+  /// check is on range overlap rather than on "is there an open one": a
+  /// backdated assignment collides with a closed one just as easily.
+  @@index([companyId])
+  @@index([equipmentId])
+  @@index([jobId])
 }
