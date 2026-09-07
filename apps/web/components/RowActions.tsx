@@ -142,7 +142,18 @@ export function ConfirmDelete({
    *  vacated Delete box — 100% of it. The same cluster with [Confirm][Cancel]
    *  overlapped by 0px. A DOM-only test environment does no layout, so this
    *  is not something `rowActions.test.ts` can see; what it CAN see, and does
-   *  assert, is the rendered order of the two buttons for each value. */
+   *  assert, is the rendered order of the two buttons for each value.
+   *
+   *  RE-MEASURED at 1100px AND 375px when #89 merged, because #89 made five
+   *  of these rows stack below 640px and stacking inverts what "pinned"
+   *  means. Every value chosen in #176 survived. What did NOT survive is the
+   *  assumption that this prop can always solve the problem: in a STACKED
+   *  cluster that has ordinary actions, hiding them reflows the armed pair to
+   *  the left edge, so neither order lands a cancel on the vacated delete
+   *  pixel (EquipmentRow at 375px: 75% overlap one way, 85% the other). This
+   *  prop is a desktop fix. The phone needs a layout change and does not have
+   *  one yet — the numbers and the reasoning are in the rule-2 block of
+   *  `rowActionsCensus.test.ts`. */
   pinned?: "start" | "end";
   onConfirm?: () => void;
   /** An already-bound server action, for lists a server component renders. */

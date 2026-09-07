@@ -119,6 +119,62 @@ clears a stale error message on about five rows. `PunchListRow`'s
 done/not-done checkbox stays clickable while armed — it is the row's
 content control rather than an action, and it is fully reversible.
 
+**Re-measured when #89 merged, because #89 moved the geometry every one of
+these numbers was taken against.** #89 ("the field screens were built for a
+mouse") landed on `main` first and made five of the rows this PR converted
+`flex flex-col … sm:flex-row`, so below 640px their action cluster is no
+longer right-pinned — it is a full-width left-aligned strip. The rule
+inverts at that breakpoint, so carrying the `pinned` values forward on
+trust was not available. All seven conflicted rows were measured again in
+Chromium against the MERGED class strings, at 1100px and 375px:
+
+| row | default | `pinned="end"` | kept |
+| --- | --- | --- | --- |
+| EquipmentRow | 100% / 75% | 0% / 85% | `end` |
+| FieldReportEntry | 100% / 75% | 0% / 85% | `end` |
+| PunchListRow | 100% / 75% | 0% / 85% | `end` |
+| DailyFieldReports | 100% / 76% | 0% / 79% | `end` |
+| RfiRow | 100% / 39% | 0% / 0% | `end` |
+| SafetyIncidentRow | 100% / 75% | 0% / 85% | default (exception) |
+| ToolboxTalkRow | 100% / 0% | 0% / 100% | default (exception) |
+
+**No `pinned` value had to change.** `end` is still better than or equal to
+the default at both widths everywhere this PR used it, so the merge kept
+every choice. The desktop column is unchanged from the original measurement;
+the 375px column is not, and that is the finding.
+
+**What the re-measure DID find is a mobile defect that `pinned` cannot
+reach, and it is not fixed here.** `RowActions` hides the ordinary actions
+while armed, so in a stacked cluster the confirm pair reflows to the
+cluster's LEFT EDGE — while the Delete it replaced sat to the right of an
+"Edit" that is now gone. On `EquipmentRow` at 375px the vacated Delete box
+is x=104..181 and the armed pair starts at x=41 in either order: 75% overlap
+as [Cancel][Confirm], 85% as [Confirm][Cancel]. Nothing can inherit the
+delete's pixel there because nothing is at the delete's pixel any more. So
+on a phone, on any stacked row with at least one ordinary action — five of
+these seven — a second tap still lands near the confirm. Fixing it needs a
+layout change (reserve the hidden actions' width, or right-align the armed
+pair when stacked), not a different prop value. `end` is kept on the four
+that have it because it makes the desktop case exactly safe at a cost of ten
+points on a mobile number that is bad either way.
+
+`SafetyIncidentRow` is left at the default, as this PR left it, even though
+`end` would now dominate there the same way it does on its four siblings —
+that is a deliberate product call about which viewport wins, and a merge
+resolution is the wrong place to make it quietly. `RuleSetRow` and
+`CatalogEntryRow` were NOT re-measured: #89 did not touch them, so their
+recorded numbers still describe their actual geometry. #89 shipped with no
+changelog entry of its own, and none is invented for it here.
+
+**#89's ergonomics are kept in full.** Every `min-h-11` touch target, the
+`px-3 py-2` padding, the `gap-3` cluster spacing, `flex-wrap`, the
+responsive stacking and `PunchListRow`'s 44px checkbox hit area survive the
+conversion — the row buttons now take their classes from #89's `rowBtn` /
+`rowBtnDanger` / `rowBtnConfirm` constants rather than the inline strings
+this PR wrote against the pre-#89 styling. One #89 behaviour is deliberately
+overridden and not dropped by accident: its rows disarmed on a failed
+delete, and `RowActions` leaves them armed, per the note above.
+
 **New devDependency: `happy-dom`.** Needed to render and click; `jsdom` v30
 breaks on Node 20 with `ERR_REQUIRE_ESM` and `ci.yml` pins Node 20. It
 changes `pnpm-lock.yaml`, so anything merging around this wants a

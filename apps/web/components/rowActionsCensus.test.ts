@@ -129,14 +129,42 @@ describe("the armed-delete census", () => {
    * component, and it cannot see position at all — no test in this repo can,
    * because a DOM-only environment does no layout. It exists because the
    * alternative at this layer is nothing.
+   *
+   * WHAT MERGING #89 CHANGED, AND THE LIMIT IT EXPOSED IN THIS PROP.
+   *
+   * #89 made five of these rows `flex flex-col … sm:flex-row`, so below
+   * 640px the cluster is no longer right-pinned at all: it is a full-width
+   * left-aligned strip. All seven were re-measured in Chromium against the
+   * MERGED classes at 1100px and 375px, and #176's `pinned` choices all
+   * survived — `end` is still better than or equal to the default at BOTH
+   * widths everywhere it is used. Nothing needed flipping.
+   *
+   * But the re-measure found something `pinned` cannot fix. RowActions HIDES
+   * the ordinary actions while armed, so in a STACKED cluster the confirm
+   * pair reflows to the cluster's left edge — and the Delete it replaced sat
+   * to the RIGHT of an "Edit" that is now gone. At 375px on EquipmentRow the
+   * vacated Delete box is x=104..181, and the armed pair starts at x=41
+   * whichever order it is in: the confirm covers 75% of that box as
+   * [Cancel][Confirm] and 85% as [Confirm][Cancel]. No value of this prop
+   * puts a cancel on the delete's pixel, because at that width NOTHING is at
+   * the delete's pixel any more.
+   *
+   * So on a phone, on any stacked row that has at least one ordinary action
+   * — EquipmentRow, FieldReportEntry, PunchListRow, DailyFieldReports,
+   * SafetyIncidentRow — a second tap still lands near the confirm. `end` is
+   * kept on the four that have it because it makes the DESKTOP case exactly
+   * safe (100% -> 0%) at a cost of 10 points on a mobile number that is bad
+   * either way. Fixing the phone needs a layout change (reserving the hidden
+   * actions' width, or right-aligning the armed pair when stacked), not a
+   * different value of this prop. That is not in this merge.
    */
   const PINNED_EXCEPTIONS: Record<string, string> = {
     "components/SafetyIncidentRow.tsx":
-      "cluster is shrink-0 but the ROW is `sm:flex-row`, so it is right-pinned only at >=640px. Measured: default 100%/75% overlap at 1100/375, pinned=end 0%/91%. Better on the desktop this app is used on, worse on a phone. Left at the default until somebody decides which viewport wins.",
+      "cluster is shrink-0 but the ROW is `sm:flex-row`, so it is right-pinned only at >=640px. RE-MEASURED against #89's merged classes: default 100%/75% overlap at 1100/375, pinned=end 0%/85% (was 0%/91% before #89 changed the button padding and gap). Neither value is safe at 375 — see the note above on why `pinned` cannot reach the stacked case. Left at the default, as #176 left it; flipping it to `end` would make the desktop case safe and is a decision for Cyrus and Diego, not for a merge resolution.",
     "components/ToolboxTalkRow.tsx":
-      "same `sm:flex-row` row, and with NO ordinary actions the two orders swap outright: default 100%/0% at 1100/375, pinned=end 0%/100%. There is no value of this prop that is right at both widths.",
+      "same `sm:flex-row` row, and with NO ordinary actions the two orders swap outright: default 100%/0% at 1100/375, pinned=end 0%/100%. RE-MEASURED after #89 and unchanged to the point. There is no value of this prop that is right at both widths, and because this cluster has no ordinary actions it is the one stacked row where the default IS safe at 375.",
     "components/RuleSetRow.tsx":
-      "same `sm:flex-row` row as SafetyIncidentRow. Measured: default 100%/71%, pinned=end 0%/93%.",
+      "same `sm:flex-row` row as SafetyIncidentRow. Measured: default 100%/71%, pinned=end 0%/93%. NOT re-measured for the #89 merge: #89 did not touch this file, so its geometry and classes are unchanged.",
   };
 
   it("passes pinned=\"end\" wherever the action cluster is right-pinned", () => {

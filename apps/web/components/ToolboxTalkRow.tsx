@@ -24,9 +24,9 @@ export function ToolboxTalkRow({ talk, canDelete }: { talk: ToolboxTalkRowData; 
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-slate-100">{talk.topic}</span>
-          <span className="text-xs text-slate-500">{talk.heldOn}</span>
+          <span className="text-xs text-slate-400">{talk.heldOn}</span>
         </div>
-        <p className="mt-1 text-xs text-slate-500">
+        <p className="mt-1 text-xs text-slate-400">
           {talk.jobName ? (
             <span className="text-blue-400">{talk.jobName}</span>
           ) : (
@@ -40,9 +40,13 @@ export function ToolboxTalkRow({ talk, canDelete }: { talk: ToolboxTalkRowData; 
         {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
       </div>
 
+      {/* No ordinary actions at all in this cluster — and no `pinned`:
+          the row is right-pinned only from sm up, and with nothing else in
+          the cluster the two orders swap outright at 640px. Numbers in
+          PINNED_EXCEPTIONS in `rowActionsCensus.test.ts`. */}
       {canDelete && (
         <RowActions
-          className="flex shrink-0 items-center gap-2"
+          className="flex shrink-0 flex-wrap items-center gap-3"
           destructive={
             <ConfirmDelete
               label="Remove"
@@ -59,9 +63,9 @@ export function ToolboxTalkRow({ talk, canDelete }: { talk: ToolboxTalkRowData; 
                   }
                 });
               }}
-              deleteClassName="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:border-red-500 hover:text-red-400 disabled:opacity-50"
-              cancelClassName="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50"
-              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+              deleteClassName="inline-flex min-h-11 items-center justify-center rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:border-red-500 hover:text-red-400 disabled:opacity-50"
+              cancelClassName="inline-flex min-h-11 items-center justify-center rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50"
+              confirmClassName="inline-flex min-h-11 items-center justify-center rounded-md border border-red-500 px-3 py-2 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50"
             />
           }
         />

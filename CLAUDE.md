@@ -33,8 +33,36 @@ Vercel deployment and repo settings). Each drives their own agent.
   (fixed section slots: Retainage → Field Reports → Pay Apps — insert at
   your slot, never at the end). Cyrus: self-contained verticals (safety,
   vendors, equipment, punch lists, RFIs, submittals). Shared, edit
-  surgically: schema files, `middleware.ts`, `Sidebar.tsx`,
+  surgically: schema files, `middleware.ts`, `navItems.tsx`,
   `lib/actions/shared.ts`, the actions barrel.
+
+  Corrected 2026-09-02: this line said `Sidebar.tsx` for weeks and it is
+  the wrong file. `Sidebar.tsx` renders whatever `navGroupsFor()` hands
+  it — that is its whole content — and the nav entries themselves live in
+  `components/navItems.tsx`, which also builds the groups. Add a route to
+  `Sidebar.tsx` and nothing appears, with no error to say why.
+  WORK-SPLIT.md's third-lane note has said `navItems.tsx` since 1 Sep;
+  this file disagreed with it and lost.
+
+  Two things this entry got slightly wrong and are fixed 2026-09-06.
+  It gave `Sidebar.tsx` a line count and `navItems.tsx` an entry count,
+  and both had moved within days — counts of that kind rot faster than
+  the claim they decorate, so they are gone rather than refreshed. And
+  the capability map is NOT in `navItems.tsx`: `ROUTE_CAPABILITY` and
+  `capabilitiesFor()` are in `lib/permissions.ts`, `requireCapability()`
+  is in `lib/authz.ts`. Nav and capability are two files, not one.
+
+  Also verified 2026-09-02, re-verified 2026-09-06: the three "fixed
+  section slots" are real and in that order — Retainage, then
+  `<DailyFieldReports>`, then `<PayApplications>` — but NOTHING IN THE
+  FILE MARKS THEM. There is no comment, no sentinel, no named slot. Field
+  Reports and Pay Apps are still literally the last two elements before
+  the closing tags, so "insert at your slot, never at the end" is advice
+  you can only follow if you already knew the order, which is why it is
+  written here. Read this line before you edit that file; the file will
+  not tell you. (Deliberately no line numbers: the file grew from 1955 to
+  2007 lines in four days and every number this paragraph used to carry
+  was stale.)
 
 ## The working agreement (agreed in Slack 2026-08-29)
 
@@ -72,7 +100,15 @@ scrollback gets broken by whoever didn't scroll far enough.
   and after ANY merge run `git log origin/main..<branch>` — empty output
   is the only proof it landed. "The PR says Merged" is not.
 - Scripts start with `set -e` AND `set -o pipefail` (a failed build
-  piped to `tee` printed ALL GREEN once), and `rm -f .git/index.lock`.
+  piped to `tee` printed ALL GREEN once), and clear a stale index lock
+  with `rm -f "$(git rev-parse --git-path index.lock)"`.
+
+  Corrected 2026-09-06: this line named the bare `rm -f .git/index.lock`
+  for weeks, which is the exact form the repo abandoned — it is ENOTDIR
+  in a worktree and takes the whole script down with `set -e`. The
+  worktree entry further down explains why; this bullet was still
+  handing out the broken version to anyone writing a new script, which is
+  how a fixed bug gets reintroduced from the documentation.
 - Cyrus authenticates through `gh` (token in the macOS keyring; scopes
   `repo`, `workflow`, `read:org`, `gist`), so `.github/workflows/` IS
   editable from the CLI, and `gh pr create` works. The older PAT lacked
@@ -157,11 +193,37 @@ scrollback gets broken by whoever didn't scroll far enough.
 
 ## Hard-won technical rules
 
-- **Sequence numbers** (case, RFI, submittal, invoice numbers) come from
-  a counter row that only increments, bumped inside the same transaction
-  as the insert. Never `max(n)+1`, never `count()+1` — anything derived
-  from surviving rows is reissued when a row is deleted. See
-  `SafetyCaseCounter`, `RfiCounter`, `SubmittalCounter`.
+- **Sequence numbers** come from a counter row that only increments,
+  bumped inside the same transaction as the insert. Never `max(n)+1`,
+  never `count()+1` — anything derived from surviving rows is reissued
+  when a row is deleted. Seven counters exist and all seven do this:
+  `SafetyCaseCounter`, `RfiCounter`, `SubmittalCounter` and
+  `MaterialOrderCounter` (`operations.prisma`), `ChangeOrderCounter`
+  (`jobs.prisma`), `BackchargeCounter` (`backcharges.prisma`),
+  `CloseoutSubmissionCounter` (`closeout.prisma`).
+
+  **INVOICE NUMBERS ARE NOT AMONG THEM, and this file said they were.**
+  Corrected 2026-09-02, re-verified against `main` 2026-09-06 and still
+  true. There is no `InvoiceCounter` anywhere in the repo.
+  `apps/web/lib/actions/billing.ts:151` is:
+
+      async function nextInvoiceNumber(jobId: string) {
+        const last = await prisma.invoice.findFirst({ where: { jobId }, orderBy: { number: "desc" } });
+        return (last?.number ?? 0) + 1;
+      }
+
+  That is `max(n)+1`, the exact thing the rule above forbids, and it is
+  read OUTSIDE any transaction — both call sites (`createInvoice` and the
+  AIA pay-application submit) compute it and then `create` separately, so
+  two concurrent submits on one job can also collide on
+  `@@unique([jobId, number])`. Delete invoice 3 of 3 and the next invoice
+  is 3 again, on a document a GC has already been sent.
+
+  The cost of the wrong sentence is not the bug, it is the search: an
+  agent told "invoice numbers come from a counter" does not go and look.
+  This entry is now the reason to look. NOT FIXED HERE — a docs branch is
+  the wrong place to change money-document numbering, and billing is
+  Diego's lane, so it goes to him as an issue per working agreement 3.
 - **Derived state is never stored** (overdue, recordable, current
   revision) — a stored flag can disagree with what it was derived from.
 - **Evidence records** (safety incidents, RFIs, submittals, invoices):
@@ -269,6 +331,27 @@ scrollback gets broken by whoever didn't scroll far enough.
   `DEMO_DIRECT_URL` repository secrets, which are deliberately not named
   after production's so the two can never be confused.
 
+  All of that verified against the workflow file 2026-09-02 and true.
+
+  This entry used to carry a second paragraph here saying the demo button
+  asserts its target and the PRODUCTION one does not — that `wrongTarget()`
+  in `connection-target.mjs` only fires when `MIGRATE_EXPECT_HOST` is set,
+  that only `migrate-demo.yml` set it, and that "nobody has wired the
+  guard up". **DELETED 2026-09-06: it was true when written and is not
+  true now.** `migrate.yml:97` sets `MIGRATE_EXPECT_HOST:
+  ep-little-sea-a6bdnaw2`, hardcoded rather than secret so a reviewer can
+  read the assertion in the diff, added 2026-09-03. Both databases are
+  now guarded against a secret holding the wrong connection string, and
+  if Neon ever moves production to a new endpoint that job FAILS and
+  applies nothing until a person changes that line.
+
+  Recorded because the deletion is the lesson: this audit shipped a
+  correction and the correction went stale in four days while the branch
+  sat unmerged. A doc note that says "nobody has fixed X" is a claim with
+  an expiry date on it — re-read the code before republishing one, which
+  is the only reason this paragraph is not still telling you production
+  is unguarded.
+
   Established 2026-08-29 from: two production build logs printing
   `ep-little-sea` as the migrate target; the `Migrate` workflow printing
   the same for secrets copied out of Diego's Neon project; that project
@@ -342,15 +425,49 @@ scrollback gets broken by whoever didn't scroll far enough.
   "missing this commit's migrations", read the log for the wait lines
   before assuming the race: without them, you are on a build that predates
   this fix.
+  Re-read line by line 2026-09-02, because a claim that was once false is
+  the one worth re-checking rather than inheriting: the wait IS built now.
+  `check-schema.mjs` lines 107-133 — `WAIT_SECONDS` from
+  `MIGRATE_WAIT_SECONDS` defaulting to 90, `POLL_SECONDS = 5`, a
+  `while (pending && Date.now() < deadline)` loop that re-runs `migrate
+  status` and prints `db: <n>s — still pending` each time, guarded by
+  `pending && isProduction`. Previews skip the loop entirely. The prose
+  above and the code now agree.
 - **Do not promote a preview to production.** Merge to `main` instead, so
   the build actually runs. Previews are public (no deployment protection),
   carry the branch's latest commit at a stable alias, and are what browser
   testing should point at.
-- Previews share PRODUCTION's database — they run on Vercel's env vars,
+- ~~Previews share PRODUCTION's database — they run on Vercel's env vars,
   so a preview reads and writes `ep-little-sea`, the real data. Browser
   testing against a preview creates real rows; use an obvious prefix and
-  delete them afterwards.
-  Until 2026-08-28 every deployment migrated it, so a migration went live
+  delete them afterwards.~~
+
+  **STRUCK 2026-09-02. This was true until 1 Sep and it contradicted the
+  three-project table 100 lines above it in this same file** — the table
+  says previews run on the demo project, this paragraph said they run on
+  production, and both sentences sat on `main` at once. Exactly the
+  two-meanings-of-"the database" failure the table was written to end,
+  reproduced inside the document that ends it.
+
+  Previews run against the DEMO project (`ep-patient-lake`). Preview's
+  `DATABASE_URL`/`DIRECT_URL` were repointed there by `344e152`, 1 Sep,
+  the commit that added the table. Browser testing on a preview no longer
+  creates real rows and no longer needs cleaning up — which is the point
+  of the split, and was being thrown away by anyone who read this far
+  down and stopped.
+
+  Verified from the repo rather than from the table it agrees with: the
+  preview arm of `apps/web/app/(app)/error.tsx` tells a failing preview to
+  run the **Migrate demo database** workflow, which would be nonsense
+  advice if previews read production; and `CHANGELOG.md` records a preview
+  verified against `ep-patient-lake` and a preview-sent message living in
+  the demo database. UNVERIFIED from here: nobody on this branch can read
+  Vercel's environment variables, so the last word is the Vercel dashboard,
+  not this file. If a preview ever shows the real 14 jobs, this paragraph
+  came back and the env vars are what to check.
+
+  The rest of this entry is history and still accurate:
+  until 2026-08-28 every deployment migrated it, so a migration went live
   ON PUSH (`add_submittals` reached production from an unmerged branch).
   #18 gated that to `VERCEL_ENV=production`; #28 took it out of the build
   altogether, because that gate could not see promotion. Migrations now
@@ -367,8 +484,12 @@ scrollback gets broken by whoever didn't scroll far enough.
   WITHOUT those tables, so those pages fail on the preview until it merges
   — to click through such a branch first, apply its migration to the
   target database yourself and redeploy. (`ALLOW_PREVIEW_MIGRATIONS` was
-  the old escape hatch and no longer exists; it left with the build's
-  migrate step.)
+  the old escape hatch. No code reads it any more — it left with the
+  build's migrate step — but corrected 2026-09-02: it is NOT gone, it is
+  still sitting commented-out in `packages/db/.env.example:17`, where the
+  next person setting up a laptop will find it and reasonably assume it
+  does something. Setting it does nothing at all, which is the worst of
+  the three possible behaviours.)
 - **A successful write can show up as an empty list — cause NOT
   established, and now with TWO dead explanations instead of one.**
   Observed: the action returned ok, the row was in the database, the page
