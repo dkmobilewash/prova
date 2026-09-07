@@ -12,6 +12,74 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### A sub can start a job, get it billable, and finish it (Cyrus)
+`cyrus/subcontract-intake-and-job-lifecycle`
+
+Three of the four things that stopped a real specialty-trade subcontractor
+getting past step one. All three were live on `main` and none was on an
+issue or in FEATURE-AUDIT — they were found by asking what a framing sub
+actually does on day one, not by reading tests.
+
+**1. A job could not become billable unless the GC e-signed INSIDE the
+app.** `markJobContracted` refused without a `SIGNED` SignatureRequest,
+and `createInvoice`, `submitPayApplication` and change orders are all
+gated on CONTRACTED. That is backwards for a sub: the GC issues the
+subcontract, the GC signs it, and it arrives already executed on paper or
+through the GC's own portal. **A sub who waits for his GC to sign up for
+his software never bills anybody.** So there are now two routes to
+CONTRACTED — a SIGNED SignatureRequest, or a `ContractDocument` carrying
+the date the GC actually signed. The e-sign flow is byte-for-byte
+untouched, so this is a revert rather than an unpick if it is wrong.
+
+- **Recording the evidence does NOT contract the job.** Two separate acts,
+  so `jobs.ts` still has exactly one write that makes a job billable and
+  it is the one carrying the gate. A mutation that made it self-contract
+  went red.
+- **Which route a job took is DERIVED, never stored** — no `contractRoute`
+  flag. Both evidence records already exist; a flag could disagree with
+  them. The page says which it was: an off-platform row reads "an
+  off-platform signature cstream did not witness. The file is the record."
+- **The signing date is ENTERED, not stamped.** It is the GC's date, not
+  ours. Same rule as every other evidence record here.
+
+**2. Every new job silently created a duplicate GC.** `createJob` called
+`prisma.contact.create` unconditionally off free text, with no picker —
+so three jobs for one GC were three Contact rows, splitting payment
+reliability, the bid pipeline and the interaction log, and making per-GC
+default retainage unreachable because the prefill read a contact minted
+with nulls. There is now a picker with create-new inline, and **a contact
+id from another tenant is refused** rather than trusted.
+
+**3. A job could never leave CONTRACTED.** `data: { status: "CONTRACTED" }`
+was the ONLY job-status write in the app — one grep hit — so IN_PROGRESS
+and COMPLETE were unreachable, the dashboard's "In progress" group was
+permanently empty, and Ask answered that question with nothing every time.
+Transitions are now explicit and **kept manual, not derived**: `JobStatus`
+is a stored column and deriving one of four stored values would be exactly
+the contradiction the derived-state rule exists to prevent.
+
+The allowed moves are deliberately narrow — `CONTRACTED → IN_PROGRESS`,
+`IN_PROGRESS → CONTRACTED or COMPLETE`, `COMPLETE → IN_PROGRESS`. **ESTIMATE
+has no entry at all**: a general-purpose setter that could write CONTRACTED
+would be a second door into billing with no evidence behind it. **Nothing
+ever returns to ESTIMATE**, because ESTIMATE is what unlocks editing
+contracted scope without a change order. The two backward moves exist so a
+misclick is correctable.
+
+**Migration** `20260905120000_add_contract_document_executed_signed_date` —
+one nullable column, announced in `#prova-build` on 2026-09-05 before the
+push. Preflight names it and reports "all additive". The column could not
+be avoided: `ContractDocument` already carries the file, the uploader and a
+stamped `createdAt`, but nothing anywhere held **the date the GC actually
+signed**. Writing a fake `SignatureRequest` would destroy the exact
+distinction this feature exists to make, and a date in a free-text note is
+not a date.
+
++35 tests (1584 → 1619), including a 365-line `jobLifecycle.dbtest.ts`.
+:warning: **Not clicked.** The three capabilities are proven by test and by
+database test, not by a browser.
+
+
 ### Whether the man at the gate has a current card (Cyrus)
 `cyrus/worker-certifications`
 
