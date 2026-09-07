@@ -456,15 +456,34 @@ scrollback gets broken by whoever didn't scroll far enough.
   of the split, and was being thrown away by anyone who read this far
   down and stopped.
 
-  Verified from the repo rather than from the table it agrees with: the
-  preview arm of `apps/web/app/(app)/error.tsx` tells a failing preview to
-  run the **Migrate demo database** workflow, which would be nonsense
-  advice if previews read production; and `CHANGELOG.md` records a preview
-  verified against `ep-patient-lake` and a preview-sent message living in
-  the demo database. UNVERIFIED from here: nobody on this branch can read
-  Vercel's environment variables, so the last word is the Vercel dashboard,
-  not this file. If a preview ever shows the real 14 jobs, this paragraph
-  came back and the env vars are what to check.
+  **CONFIRMED 2026-09-07, and the method is the reusable part.** This
+  paragraph used to end "UNVERIFIED from here: nobody on this branch can
+  read Vercel's environment variables, so the last word is the Vercel
+  dashboard." That is wrong twice over: the dashboard is not needed, and it
+  would be the weaker evidence anyway. It says what is CONFIGURED. A build
+  log says what the build RESOLVED.
+
+  `check-schema.mjs` prints the target on every build, so the answer is one
+  call to Vercel's build logs — no dashboard access, no credentials:
+
+  | Build | `db: app queries` |
+  | --- | --- |
+  | preview, `claude/prova-vercel-direct-url-hg1acx` | `ep-patient-lake-afizorh1-pooler…/neondb` |
+  | preview, `cyrus/permission-gates` | `ep-patient-lake-afizorh1-pooler…/neondb` |
+  | production, `main` | `ep-little-sea-a6bdnaw2-pooler…/neondb` |
+
+  Two unrelated branches and a production control, so it is not one branch
+  with an odd override. Previews are on the demo project. The circumstantial
+  case below held up, and is left because it is how this was reasoned about
+  before anyone thought to read a build log.
+
+  Weaker but still true: the preview arm of `apps/web/app/(app)/error.tsx`
+  tells a failing preview to run the **Migrate demo database** workflow,
+  which would be nonsense advice if previews read production; and
+  `CHANGELOG.md` records a preview verified against `ep-patient-lake`.
+
+  If a preview ever shows the real 14 jobs, this paragraph came back — and
+  the build log, not the dashboard, is what settles it in a minute.
 
   The rest of this entry is history and still accurate:
   until 2026-08-28 every deployment migrated it, so a migration went live
