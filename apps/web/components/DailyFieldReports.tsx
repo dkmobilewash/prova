@@ -8,6 +8,7 @@ import {
 } from "@/lib/actions";
 import { localToday } from "@/components/localToday";
 import type { ActionResult } from "@/lib/actions/shared";
+import { ConfirmDelete, RowActions } from "@/components/RowActions";
 
 // `text-base` is load-bearing, not decoration. These inputs sit inside a
 // `text-sm` label and INHERIT 14px, and iOS Safari zooms the whole page
@@ -114,7 +115,11 @@ export function DailyFieldReports({
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
+  /* NOT the armed-delete state — each row's <RowActions> owns its own arming
+     now. This only says which row's delete produced the `error` below, so a
+     failure prints under the report it belongs to instead of under all of
+     them. */
+  const [deleteErrorId, setDeleteErrorId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
@@ -251,57 +256,51 @@ export function DailyFieldReports({
                       <p className="mt-1 text-xs text-slate-400">filed by {report.filedByName}</p>
                     )}
                   </div>
-                  <div className="flex shrink-0 flex-wrap items-center gap-3">
+                  {/* Each report row arms its own remove — the arming used to
+                      be one id on the whole list, which is fine, but "Edit"
+                      stayed live beside the armed confirm, so a click meant
+                      for Cancel opened the edit form on the report you were
+                      trying to leave alone. Ordinary actions are children of
+                      RowActions and are gone while armed.
+
+                      `pinned="end"` re-measured against #89's stacking:
+                      1100px 100% -> 0%, 375px 76% -> 79%. Kept for the
+                      desktop case; at 375 neither order is safe. Numbers in
+                      `rowActionsCensus.test.ts`. */}
+                  <RowActions
+                    className="flex shrink-0 flex-wrap items-center gap-3"
+                    destructive={
+                      canDelete ? (
+                        <ConfirmDelete
+                          pinned="end"
+                          label="Remove"
+                          confirmLabel="Confirm remove"
+                          pending={isPending}
+                          onConfirm={() => {
+                            setDeleteErrorId(report.id);
+                            run(() => deleteDailyFieldReport(report.id), "Could not delete the report");
+                          }}
+                          deleteClassName={rowBtnDanger}
+                          cancelClassName={rowBtn}
+                          confirmClassName={rowBtnConfirm}
+                        />
+                      ) : null
+                    }
+                  >
                     <button
                       type="button"
                       disabled={isPending}
                       onClick={() => {
                         setEditingId(report.id);
-                        setConfirmingDeleteId(null);
                         setError(null);
                       }}
                       className={rowBtn}
                     >
                       Edit
                     </button>
-                    {canDelete &&
-                      (confirmingDeleteId === report.id ? (
-                        <>
-                          <button
-                            type="button"
-                            disabled={isPending}
-                            onClick={() =>
-                              run(
-                                () => deleteDailyFieldReport(report.id),
-                                "Could not delete the report",
-                              )
-                            }
-                            className={rowBtnConfirm}
-                          >
-                            Confirm remove
-                          </button>
-                          <button
-                            type="button"
-                            disabled={isPending}
-                            onClick={() => setConfirmingDeleteId(null)}
-                            className={rowBtn}
-                          >
-                            Cancel
-                          </button>
-                        </>
-                      ) : (
-                        <button
-                          type="button"
-                          disabled={isPending}
-                          onClick={() => setConfirmingDeleteId(report.id)}
-                          className={rowBtnDanger}
-                        >
-                          Remove
-                        </button>
-                      ))}
-                  </div>
+                  </RowActions>
                 </div>
-                {error && confirmingDeleteId === report.id && (
+                {error && deleteErrorId === report.id && (
                   <p className="mt-1 text-sm text-red-400">{error}</p>
                 )}
               </li>

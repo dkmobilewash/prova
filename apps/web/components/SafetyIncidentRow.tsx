@@ -8,6 +8,7 @@ import {
   type JobOption,
 } from "@/components/SafetyIncidentFields";
 import { classificationLabel, isRecordable, outcomeLabel } from "@/components/safetyLabels";
+import { ConfirmDelete, RowActions } from "@/components/RowActions";
 
 // Defined once so the row's controls can't drift back under 44px a button at
 // a time. `inline-flex` + `items-center` is what makes min-h centre the label
@@ -36,7 +37,6 @@ export function SafetyIncidentRow({
   canDelete: boolean;
 }) {
   const [isEditing, setIsEditing] = useState(false);
-  const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -139,58 +139,53 @@ export function SafetyIncidentRow({
         {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
       </div>
 
-      <div className="flex shrink-0 flex-wrap items-center gap-3">
+      {/* Arming "Remove" empties this cluster. A safety case is evidence,
+          and "Edit" used to sit live beside the armed "Confirm remove" —
+          one click past a cancel opened the edit form on the record you
+          were trying to leave alone. It is a child of RowActions now.
+
+          No `pinned` here on purpose: this row is right-pinned only from
+          sm up, and neither value is right at both widths. Re-measured for
+          the #89 merge — default 100%/75% at 1100/375, `end` 0%/85% — and
+          left at the default exactly as #176 left it. Flipping it to `end`
+          would make the desktop case safe, as it does on the four sibling
+          rows, but that is a decision to take deliberately rather than
+          inside a merge. Numbers in PINNED_EXCEPTIONS in
+          `rowActionsCensus.test.ts`. */}
+      <RowActions
+        className="flex shrink-0 flex-wrap items-center gap-3"
+        destructive={
+          canDelete ? (
+            <ConfirmDelete
+              label="Remove"
+              confirmLabel="Confirm remove"
+              pendingLabel="Removing…"
+              pending={isPending}
+              onConfirm={() =>
+                run(async () => {
+                  // Returns rather than throws: production redacts a
+                  // thrown message, and the reason a recordable case
+                  // cannot be deleted is the whole point of saying it.
+                  const result = await deleteSafetyIncident(incident.id);
+                  if (!result.ok) throw new Error(result.error);
+                }, "Could not remove the case")
+              }
+              deleteClassName={rowBtnDanger}
+              cancelClassName={rowBtn}
+              confirmClassName={rowBtnConfirm}
+            />
+          ) : null
+        }
+      >
         <button
           type="button"
           disabled={isPending}
-          onClick={() => {
-            setIsEditing(true);
-            setIsConfirmingDelete(false);
-          }}
+          onClick={() => setIsEditing(true)}
           className={rowBtn}
         >
           Edit
         </button>
-
-        {canDelete &&
-          (isConfirmingDelete ? (
-            <>
-              <button
-                type="button"
-                disabled={isPending}
-                onClick={() =>
-                  run(async () => {
-                    // Returns rather than throws: production redacts a
-                    // thrown message, and the reason a recordable case
-                    // cannot be deleted is the whole point of saying it.
-                    const result = await deleteSafetyIncident(incident.id);
-                    if (!result.ok) throw new Error(result.error);
-                  }, "Could not remove the case")
-                }
-                className={rowBtnConfirm}
-              >
-                {isPending ? "Removing…" : "Confirm remove"}
-              </button>
-              <button
-                type="button"
-                disabled={isPending}
-                onClick={() => setIsConfirmingDelete(false)}
-                className={rowBtn}
-              >
-                Cancel
-              </button>
-            </>
-          ) : (
-            <button
-              type="button"
-              disabled={isPending}
-              onClick={() => setIsConfirmingDelete(true)}
-              className={rowBtnDanger}
-            >
-              Remove
-            </button>
-          ))}
-      </div>
+      </RowActions>
     </li>
   );
 }

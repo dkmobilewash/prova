@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { answerRfi, deleteRfi, markRfiSent, setRfiClosed, updateRfi } from "@/lib/actions";
 import { RfiFields, fieldInputClass, labelClass, type RfiDefaults } from "@/components/RfiFields";
 import { daysBetween, isOverdue, statusLabel } from "@/components/rfiLabels";
+import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { localToday } from "@/components/localToday";
 
 export type RfiRowData = RfiDefaults & {
@@ -36,7 +37,6 @@ export function RfiRow({
   showJob: boolean;
 }) {
   const [mode, setMode] = useState<"view" | "edit" | "answer">("view");
-  const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -236,7 +236,38 @@ export function RfiRow({
         {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
       </div>
 
-      <div className="flex shrink-0 flex-wrap items-center gap-3">
+      {/* The widest action cluster in the app, and the sharpest instance of
+          issue #152. "Delete draft" only renders for a DRAFT, and DRAFT is
+          exactly the status that also renders "Mark sent" — so the pair
+          actually co-visible on screen was an ARMED DELETE next to an
+          IRREVERSIBLE TRANSITION. One click past a cancel and the RFI is
+          sent to the GC, which nothing in this app can take back. Every
+          ordinary action is a child of RowActions now and none of them
+          renders while the delete is armed.
+
+          `pinned="end"` re-measured against #89's stacking and it is the one
+          row where `end` is clean at BOTH widths: 1100px 100% -> 20% (the
+          residue is "Delete draft" being wider than the "Cancel" that
+          replaces it), 375px 39% -> 0%. Two wide ordinary actions push the
+          vacated Delete far enough right that the armed pair clears it. */}
+      <RowActions
+        className="flex shrink-0 flex-wrap items-center gap-3"
+        destructive={
+          canDelete && rfi.status === "DRAFT" ? (
+            <ConfirmDelete
+              pinned="end"
+              label="Delete draft"
+              confirmLabel="Confirm delete"
+              pendingLabel="Deleting…"
+              pending={isPending}
+              onConfirm={() => run(() => deleteRfi(rfi.id), "Could not delete the draft")}
+              deleteClassName={btn}
+              cancelClassName={btn}
+              confirmClassName="inline-flex min-h-11 items-center justify-center rounded-md border border-red-500 px-3 py-2 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+            />
+          ) : null
+        }
+      >
         {rfi.status === "DRAFT" && (
           <button
             type="button"
@@ -276,50 +307,10 @@ export function RfiRow({
           </button>
         )}
 
-        <button
-          type="button"
-          disabled={isPending}
-          onClick={() => {
-            setMode("edit");
-            setIsConfirmingDelete(false);
-          }}
-          className={btn}
-        >
+        <button type="button" disabled={isPending} onClick={() => setMode("edit")} className={btn}>
           Edit
         </button>
-
-        {canDelete &&
-          rfi.status === "DRAFT" &&
-          (isConfirmingDelete ? (
-            <>
-              <button
-                type="button"
-                disabled={isPending}
-                onClick={() => run(() => deleteRfi(rfi.id), "Could not delete the draft")}
-                className="inline-flex min-h-11 items-center justify-center rounded-md border border-red-500 px-3 py-2 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50"
-              >
-                {isPending ? "Deleting…" : "Confirm delete"}
-              </button>
-              <button
-                type="button"
-                disabled={isPending}
-                onClick={() => setIsConfirmingDelete(false)}
-                className={btn}
-              >
-                Cancel
-              </button>
-            </>
-          ) : (
-            <button
-              type="button"
-              disabled={isPending}
-              onClick={() => setIsConfirmingDelete(true)}
-              className={btn}
-            >
-              Delete draft
-            </button>
-          ))}
-      </div>
+      </RowActions>
     </li>
   );
 }

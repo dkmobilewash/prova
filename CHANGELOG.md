@@ -12,6 +12,184 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### An armed delete now empties its row, structurally — #152 (Cyrus)
+`cyrus/armed-delete-isolates-row`
+
+**The issue named four instances. A sweep found twenty-one hand-rolled
+two-step deletes, twenty of them leaking.** So this does not fix four
+bugs; it removes the place the bug lives.
+
+The two sharpest were not in the issue. `RfiRow` had **"Mark sent"** — an
+irreversible send to the GC — live beside the armed delete, and both are
+gated on `DRAFT`, so they were ALWAYS co-visible. `SubmittalRow` had the
+same shape with "Record as sent". `UnionLocalCard` left a `<select>` that
+writes on change still writable on the record being deleted.
+
+**Why a component and not a convention.** `{!confirming && …}` failed
+twice. Diego fixed one instance by wrapping the one button he could see;
+#119 then added a second button into the position that fix had just
+emptied, git merged the two with NO conflict, and typecheck, lint, test
+and build were green the whole way. A guard someone has to remember leaves
+an unguarded position next to it.
+
+`RowActions` takes ordinary actions as CHILDREN and the delete as a
+`destructive` prop, and renders no children at all while armed. There is
+no sibling position for the next merge to fill — a button added six months
+from now is covered without anyone remembering to cover it.
+
+**"Cancel first" was the wrong statement of rule 2, and this PR shipped it
+before Diego measured it.** The rule is CANCEL INHERITS THE DELETE PIXEL,
+and which end that is belongs to the cluster, not to the component: in a
+left-aligned cluster the first slot is the stable one, in a right-pinned
+one (`shrink-0` inside a `justify-between` row) the LAST control is. On the
+four right-pinned rows this PR converted, "Cancel first" put the
+destructive confirm on exactly the pixel "Delete" had just vacated — 100%
+overlap, which is the precise thing rule 2 exists to prevent, and those
+four rows were CORRECT before the conversion touched them.
+
+`ConfirmDelete` now takes `pinned="start" | "end"`, defaulting to `start`
+so nothing already correct moves, and eighteen call sites pass `end`. Every
+one of them was measured in real Chromium — the actual class strings, at
+1100px and again at 375px — rather than reasoned about. `end` was applied
+only where it is better or equal at BOTH widths; the numbers are the
+overlap of the confirm with the vacated Delete box, as a share of that box:
+
+| cluster | default | `pinned="end"` |
+| --- | --- | --- |
+| right-pinned, no responsive switch (9 rows) | 100% / 100% | 0% / 0% |
+| `sm:flex-row` with 2-4 ordinary actions (4 rows) | 100% / 7-28% | 0% / 0% |
+| `flex-wrap`, `flex-1` sibling (3 rows) | 100% / 100% | 0% / 0% |
+| column, `items-end` (2 rows) | 100% / 100% | 0% / 0-58% |
+
+**Four rows were left at the default on purpose, and here is why.**
+`SafetyIncidentRow`, `ToolboxTalkRow` and `RuleSetRow` sit in an
+`sm:flex-row` row with only one ordinary action, so they are right-pinned
+above 640px and stacked below it, and the two orders swap places at the
+breakpoint — ToolboxTalkRow measures 100%/0% one way and 0%/100% the other.
+There is no value of the prop that is right at both widths, so they keep
+the default and the reason is in `PINNED_EXCEPTIONS` with the numbers.
+`CatalogEntryRow` is the same conflict on a column. The two inline
+`ml-2 underline` deletes inside `DrawingSetRow` and `MaterialOrderRow`
+sub-lists were not measured and were left alone.
+
+**The three sales rows do NOT come out of `KNOWN_EXCEPTIONS`, and this was
+checked by removing them rather than by reading the commit.** #183
+(`38c7063`) fixed rule 1 on `SalesActivityRow` and `SalesOpportunityRow` by
+wrapping the ordinary-action GROUP — the right fix, and it is not what this
+census scans for. All three still hold their own `isConfirmingDelete`
+useState, so deleting their three lines turns the census red naming all
+three. Their reasons are rewritten to say that, and they come out when they
+become `RowActions`.
+
+**The tell that somebody half-noticed:** an `onClick` calling
+`setIsConfirmingDelete(false)`. That disarms AFTER the click lands. It is
+not a fix, and it is exactly what made `EquipmentDeploymentControls` read
+as already-handled to three verifiers on the audit.
+
+**Two tests doing different jobs, because one of them cannot do the
+other's.** `rowActions.test.ts` mounts the component in a DOM and clicks
+it, so an inverted guard goes red — a source scan cannot see that, which
+is the `MODULE_IMPORTS` lesson from #87. It now asserts the rendered ORDER
+of the confirm pair for each value of `pinned`, in both directions, because
+a component that ignored the prop entirely would still pass either
+assertion alone. It deliberately does NOT assert on
+`getBoundingClientRect`: happy-dom does no layout and returns zeros, so
+such a test could not fail — issue #150's subject exactly. Mutation-tested:
+inverting the `pinned` branch turns five tests red, including both new
+named ones; restored and green. `rowActionsCensus.test.ts` looks
+for the MECHANISM, a component holding its own armed `useState`, and fails
+when a new hand-rolled copy appears. It is allowed to be a source scan
+precisely because behaviour is tested once, in the one place behaviour
+now lives. The census earned its keep during the work: it caught
+`IntegrationControls`, a twenty-first instance the opening grep missed
+because `confirming` does not match `isConfirming`.
+
+**Sales CRM left alone, deliberately.** All three rows are the other lane.
+`SalesLeadRow` and `SalesOpportunityRow` were converted on this branch and
+then REVERTED unshipped — the agreement says post and wait rather than ask
+forgiveness inside a thirty-five file diff. The conversions are done and
+one `git checkout` away. #183 has since fixed rule 1 on two of them; the
+census still names all three, for the reason above.
+
+**Three behaviour changes worth knowing.** A failed delete now leaves the
+row armed with the confirm greyed out, and retry is Cancel then Delete;
+several rows used to auto-disarm on failure, and re-arming a destructive
+action after it failed is the behaviour worth having. Arming no longer
+clears a stale error message on about five rows. `PunchListRow`'s
+done/not-done checkbox stays clickable while armed — it is the row's
+content control rather than an action, and it is fully reversible.
+
+**Re-measured when #89 merged, because #89 moved the geometry every one of
+these numbers was taken against.** #89 ("the field screens were built for a
+mouse") landed on `main` first and made five of the rows this PR converted
+`flex flex-col … sm:flex-row`, so below 640px their action cluster is no
+longer right-pinned — it is a full-width left-aligned strip. The rule
+inverts at that breakpoint, so carrying the `pinned` values forward on
+trust was not available. All seven conflicted rows were measured again in
+Chromium against the MERGED class strings, at 1100px and 375px:
+
+| row | default | `pinned="end"` | kept |
+| --- | --- | --- | --- |
+| EquipmentRow | 100% / 75% | 0% / 85% | `end` |
+| FieldReportEntry | 100% / 75% | 0% / 85% | `end` |
+| PunchListRow | 100% / 75% | 0% / 85% | `end` |
+| DailyFieldReports | 100% / 76% | 0% / 79% | `end` |
+| RfiRow | 100% / 39% | 0% / 0% | `end` |
+| SafetyIncidentRow | 100% / 75% | 0% / 85% | default (exception) |
+| ToolboxTalkRow | 100% / 0% | 0% / 100% | default (exception) |
+
+**No `pinned` value had to change.** `end` is still better than or equal to
+the default at both widths everywhere this PR used it, so the merge kept
+every choice. The desktop column is unchanged from the original measurement;
+the 375px column is not, and that is the finding.
+
+**What the re-measure DID find is a mobile defect that `pinned` cannot
+reach, and it is not fixed here.** `RowActions` hides the ordinary actions
+while armed, so in a stacked cluster the confirm pair reflows to the
+cluster's LEFT EDGE — while the Delete it replaced sat to the right of an
+"Edit" that is now gone. On `EquipmentRow` at 375px the vacated Delete box
+is x=104..181 and the armed pair starts at x=41 in either order: 75% overlap
+as [Cancel][Confirm], 85% as [Confirm][Cancel]. Nothing can inherit the
+delete's pixel there because nothing is at the delete's pixel any more. So
+on a phone, on any stacked row with at least one ordinary action — five of
+these seven — a second tap still lands near the confirm. Fixing it needs a
+layout change (reserve the hidden actions' width, or right-align the armed
+pair when stacked), not a different prop value. `end` is kept on the four
+that have it because it makes the desktop case exactly safe at a cost of ten
+points on a mobile number that is bad either way.
+
+`SafetyIncidentRow` is left at the default, as this PR left it, even though
+`end` would now dominate there the same way it does on its four siblings —
+that is a deliberate product call about which viewport wins, and a merge
+resolution is the wrong place to make it quietly. `RuleSetRow` and
+`CatalogEntryRow` were NOT re-measured: #89 did not touch them, so their
+recorded numbers still describe their actual geometry. #89 shipped with no
+changelog entry of its own, and none is invented for it here.
+
+**#89's ergonomics are kept in full.** Every `min-h-11` touch target, the
+`px-3 py-2` padding, the `gap-3` cluster spacing, `flex-wrap`, the
+responsive stacking and `PunchListRow`'s 44px checkbox hit area survive the
+conversion — the row buttons now take their classes from #89's `rowBtn` /
+`rowBtnDanger` / `rowBtnConfirm` constants rather than the inline strings
+this PR wrote against the pre-#89 styling. One #89 behaviour is deliberately
+overridden and not dropped by accident: its rows disarmed on a failed
+delete, and `RowActions` leaves them armed, per the note above.
+
+**New devDependency: `happy-dom`.** Needed to render and click; `jsdom` v30
+breaks on Node 20 with `ERR_REQUIRE_ESM` and `ci.yml` pins Node 20. It
+changes `pnpm-lock.yaml`, so anything merging around this wants a
+`pnpm install` afterwards.
+
+**Still not clicked, and saying exactly what was.** The overlap numbers
+above come from a real Chromium laying out the actual class strings in a
+standalone harness at two viewport widths — not from the app. No page of
+this app was loaded, nothing was signed in, and no row was armed by a
+human. The harness reproduces Diego's right-pinned control (100% overlap
+with the default order, 0% with `end`), which is what makes the rest of its
+numbers worth reading; it does not prove any of these rows behaves
+correctly in the running app.
+
+
 ### The demo seed left the yard empty and both cleanups could not finish — #147, #148, #154 (Cyrus)
 `cyrus/seed-and-cleanup-fixes`
 

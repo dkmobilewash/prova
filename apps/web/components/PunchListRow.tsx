@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { deletePunchListItem, setPunchListItemDone, updatePunchListItem } from "@/lib/actions";
 import type { JobOption } from "@/components/PunchListForm";
+import { ConfirmDelete, RowActions } from "@/components/RowActions";
 
 // `text-base` is load-bearing, not decoration: these inputs sit inside a
 // `text-sm` label and INHERIT 14px, and iOS Safari zooms the page whenever
@@ -37,7 +38,6 @@ type PunchListRowProps = {
 
 export function PunchListRow({ canDelete, jobs, item, showJob }: PunchListRowProps) {
   const [isEditing, setIsEditing] = useState(false);
-  const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -142,50 +142,43 @@ export function PunchListRow({ canDelete, jobs, item, showJob }: PunchListRowPro
         </div>
       </div>
 
-      <div className="flex shrink-0 flex-wrap items-center gap-3">
+      {/* Arming "Remove" empties this cluster: "Edit" used to stay live
+          beside the armed "Confirm remove", so one click past where you
+          meant to stop opened the edit form instead of cancelling. It is a
+          child of RowActions now, and so is whatever gets added here next.
+          The done/not-done checkbox is deliberately NOT in here — it lives
+          in the row body above, not the action cluster.
+
+          `pinned="end"` re-measured against #89's stacking: 1100px 100% ->
+          0%, 375px 75% -> 85%. Kept for the desktop case; at 375 neither
+          order is safe. Numbers in `rowActionsCensus.test.ts`. */}
+      <RowActions
+        className="flex shrink-0 flex-wrap items-center gap-3"
+        destructive={
+          canDelete ? (
+            <ConfirmDelete
+              pinned="end"
+              label="Remove"
+              confirmLabel="Confirm remove"
+              pendingLabel="Removing…"
+              pending={isPending}
+              onConfirm={() => run(() => deletePunchListItem(item.id), "Could not delete item")}
+              deleteClassName={rowBtnDanger}
+              cancelClassName={rowBtn}
+              confirmClassName={rowBtnConfirm}
+            />
+          ) : null
+        }
+      >
         <button
           type="button"
           disabled={isPending}
-          onClick={() => {
-            setIsEditing(true);
-            setIsConfirmingDelete(false);
-          }}
+          onClick={() => setIsEditing(true)}
           className={rowBtn}
         >
           Edit
         </button>
-
-        {canDelete &&
-          (isConfirmingDelete ? (
-            <>
-              <button
-                type="button"
-                disabled={isPending}
-                onClick={() => run(() => deletePunchListItem(item.id), "Could not delete item")}
-                className={rowBtnConfirm}
-              >
-                {isPending ? "Removing…" : "Confirm remove"}
-              </button>
-              <button
-                type="button"
-                disabled={isPending}
-                onClick={() => setIsConfirmingDelete(false)}
-                className={rowBtn}
-              >
-                Cancel
-              </button>
-            </>
-          ) : (
-            <button
-              type="button"
-              disabled={isPending}
-              onClick={() => setIsConfirmingDelete(true)}
-              className={rowBtnDanger}
-            >
-              Remove
-            </button>
-          ))}
-      </div>
+      </RowActions>
     </li>
   );
 }

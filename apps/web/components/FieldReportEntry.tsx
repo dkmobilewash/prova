@@ -8,6 +8,7 @@ import {
   type FieldReport,
 } from "@/components/DailyFieldReports";
 import { type ReportData, dayLabel } from "@/components/fieldReportWeeks";
+import { ConfirmDelete, RowActions } from "@/components/RowActions";
 
 // Defined once so the row's controls can't drift back under 44px a button at
 // a time. `inline-flex` + `items-center` is what makes min-h centre the label
@@ -33,7 +34,6 @@ export function FieldReportEntry({
   canDelete: boolean;
 }) {
   const [isEditing, setIsEditing] = useState(false);
-  const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -128,59 +128,53 @@ export function FieldReportEntry({
           {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
         </div>
 
-        <div className="flex shrink-0 flex-wrap items-center gap-3">
+        {/* Arming "Remove" empties this row: "Edit" is a child of RowActions
+            and is not rendered while the confirm is up, so a stray second
+            click cannot open the edit form for a report you were deleting.
+
+            A FAILED delete deliberately leaves the row ARMED with its error
+            shown — retrying is Cancel, then Remove again. #89's version
+            disarmed on failure; that is the one behaviour of its here that
+            RowActions deliberately overrides. Its CLASSES are all kept.
+
+            `pinned="end"` re-measured against #89's stacking: 1100px 100% ->
+            0%, 375px 75% -> 85%. Kept for the desktop case; at 375 neither
+            order is safe. Numbers in `rowActionsCensus.test.ts`. */}
+        <RowActions
+          className="flex shrink-0 flex-wrap items-center gap-3"
+          destructive={
+            canDelete ? (
+              <ConfirmDelete
+                pinned="end"
+                label="Remove"
+                confirmLabel="Confirm remove"
+                pendingLabel="Removing…"
+                pending={isPending}
+                onConfirm={() => {
+                  setError(null);
+                  startTransition(async () => {
+                    const result = await deleteDailyFieldReport(report.id);
+                    if (!result.ok) {
+                      setError(result.error);
+                    }
+                  });
+                }}
+                deleteClassName={rowBtnDanger}
+                cancelClassName={rowBtn}
+                confirmClassName={rowBtnConfirm}
+              />
+            ) : null
+          }
+        >
           <button
             type="button"
             disabled={isPending}
-            onClick={() => {
-              setIsEditing(true);
-              setIsConfirmingDelete(false);
-            }}
+            onClick={() => setIsEditing(true)}
             className={rowBtn}
           >
             Edit
           </button>
-
-          {canDelete &&
-            (isConfirmingDelete ? (
-              <>
-                <button
-                  type="button"
-                  disabled={isPending}
-                  onClick={() => {
-                    setError(null);
-                    startTransition(async () => {
-                      const result = await deleteDailyFieldReport(report.id);
-                      if (!result.ok) {
-                        setError(result.error);
-                        setIsConfirmingDelete(false);
-                      }
-                    });
-                  }}
-                  className={rowBtnConfirm}
-                >
-                  {isPending ? "Removing…" : "Confirm remove"}
-                </button>
-                <button
-                  type="button"
-                  disabled={isPending}
-                  onClick={() => setIsConfirmingDelete(false)}
-                  className={rowBtn}
-                >
-                  Cancel
-                </button>
-              </>
-            ) : (
-              <button
-                type="button"
-                disabled={isPending}
-                onClick={() => setIsConfirmingDelete(true)}
-                className={rowBtnDanger}
-              >
-                Remove
-              </button>
-            ))}
-        </div>
+        </RowActions>
       </div>
     </li>
   );

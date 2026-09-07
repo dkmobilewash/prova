@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { deleteEquipment, updateEquipment } from "@/lib/actions";
 import { EquipmentFields, type EquipmentFieldValues } from "@/components/EquipmentFields";
+import { ConfirmDelete, RowActions } from "@/components/RowActions";
 
 // One definition for the row's controls so they can't drift back under 44px a
 // button at a time. `inline-flex` + `items-center` is what makes min-h centre
@@ -32,7 +33,6 @@ type EquipmentRowProps = {
  * two lines derived from one fact read as two separate facts. */
 export function EquipmentRow({ canDelete, item }: EquipmentRowProps) {
   const [isEditing, setIsEditing] = useState(false);
-  const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -57,7 +57,6 @@ export function EquipmentRow({ canDelete, item }: EquipmentRowProps) {
         await deleteEquipment(item.id);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Could not delete equipment");
-        setIsConfirmingDelete(false);
       }
     });
   }
@@ -115,50 +114,44 @@ export function EquipmentRow({ canDelete, item }: EquipmentRowProps) {
         {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
       </div>
 
-      <div className="flex shrink-0 flex-wrap items-center gap-3">
+      {/* Arming "Remove" empties this row: "Edit" is a child of RowActions
+          and is not rendered while the confirm is up, so the click meant to
+          cancel cannot open the edit form instead.
+
+          Classes are #89's touch targets (min-h-11, py-2, gap-3). #89 also
+          made this row stack below sm, so `pinned="end"` was re-measured
+          against the MERGED layout rather than carried over: 1100px 100% ->
+          0%, 375px 75% -> 85%. It stays because it makes the desktop case
+          exactly safe; at 375 the cluster is left-aligned and NEITHER order
+          is safe, which is a layout problem this prop cannot reach. See the
+          rule-2 block in `rowActionsCensus.test.ts`. */}
+      <RowActions
+        className="flex shrink-0 flex-wrap items-center gap-3"
+        destructive={
+          canDelete ? (
+            <ConfirmDelete
+              pinned="end"
+              label="Remove"
+              confirmLabel="Confirm remove"
+              pendingLabel="Removing…"
+              pending={isPending}
+              onConfirm={handleDelete}
+              deleteClassName={rowBtnDanger}
+              cancelClassName={rowBtn}
+              confirmClassName={rowBtnConfirm}
+            />
+          ) : null
+        }
+      >
         <button
           type="button"
           disabled={isPending}
-          onClick={() => {
-            setIsEditing(true);
-            setIsConfirmingDelete(false);
-          }}
+          onClick={() => setIsEditing(true)}
           className={rowBtn}
         >
           Edit
         </button>
-
-        {canDelete &&
-          (isConfirmingDelete ? (
-            <>
-              <button
-                type="button"
-                disabled={isPending}
-                onClick={handleDelete}
-                className={rowBtnConfirm}
-              >
-                {isPending ? "Removing…" : "Confirm remove"}
-              </button>
-              <button
-                type="button"
-                disabled={isPending}
-                onClick={() => setIsConfirmingDelete(false)}
-                className={rowBtn}
-              >
-                Cancel
-              </button>
-            </>
-          ) : (
-            <button
-              type="button"
-              disabled={isPending}
-              onClick={() => setIsConfirmingDelete(true)}
-              className={rowBtnDanger}
-            >
-              Remove
-            </button>
-          ))}
-      </div>
+      </RowActions>
     </div>
   );
 }
