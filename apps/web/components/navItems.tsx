@@ -198,21 +198,6 @@ export const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
-    href: "/closeout",
-    label: "Closeout",
-    icon: (
-      <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5">
-        <path
-          d="M5 3.5h10a1.5 1.5 0 0 1 1.5 1.5v11a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 16V5A1.5 1.5 0 0 1 5 3.5Z"
-          stroke="currentColor"
-          strokeWidth="1.4"
-          strokeLinejoin="round"
-        />
-        <path d="m7 10 2 2 4-4.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    ),
-  },
-  {
     href: "/union-compliance",
     label: "Union & fringe",
     icon: (
@@ -265,52 +250,6 @@ export const NAV_ITEMS: NavItem[] = [
       <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5">
         <circle cx="10" cy="10" r="6.5" stroke="currentColor" strokeWidth="1.4" />
         <path d="M7 10h6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-      </svg>
-    ),
-  },
-  {
-    href: "/rfis",
-    label: "RFIs",
-    icon: (
-      <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5">
-        <path
-          d="M4 5.5A1.5 1.5 0 0 1 5.5 4h9A1.5 1.5 0 0 1 16 5.5v6A1.5 1.5 0 0 1 14.5 13H8l-4 3V5.5Z"
-          stroke="currentColor"
-          strokeWidth="1.4"
-          strokeLinejoin="round"
-        />
-        <path d="M8.5 7.4a1.6 1.6 0 1 1 1.9 1.9v.9" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-      </svg>
-    ),
-  },
-  {
-    href: "/submittals",
-    label: "Submittals",
-    icon: (
-      <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5">
-        <path
-          d="M6 3.5h6.5L16 7v9.5A1.5 1.5 0 0 1 14.5 18h-8A1.5 1.5 0 0 1 5 16.5v-11A1.5 1.5 0 0 1 6.5 3.5H6Z"
-          stroke="currentColor"
-          strokeWidth="1.4"
-          strokeLinejoin="round"
-        />
-        <path d="M12.5 3.5V7H16" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
-        <path d="m7.75 12.25 1.5 1.5 3-3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    ),
-  },
-  {
-    href: "/drawings",
-    label: "Drawings",
-    icon: (
-      <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5">
-        <path
-          d="M3 5.5 7.5 4l5 1.5L17 4v10.5L12.5 16l-5-1.5L3 16V5.5Z"
-          stroke="currentColor"
-          strokeWidth="1.4"
-          strokeLinejoin="round"
-        />
-        <path d="M7.5 4v10.5M12.5 5.5V16" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
       </svg>
     ),
   },
@@ -368,6 +307,17 @@ export const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
+    href: "/deployment",
+    label: "Deployment",
+    icon: (
+      <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5">
+        <circle cx="6.5" cy="6" r="2" stroke="currentColor" strokeWidth="1.4" />
+        <circle cx="13.5" cy="6" r="2" stroke="currentColor" strokeWidth="1.4" />
+        <path d="M3 16v-1.5A2.5 2.5 0 0 1 5.5 12h2A2.5 2.5 0 0 1 10 14.5V16M10 16v-1.5A2.5 2.5 0 0 1 12.5 12h2a2.5 2.5 0 0 1 2.5 2.5V16" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      </svg>
+    ),
+  },
+  {
     href: "/settings",
     label: "Settings",
     icon: (
@@ -382,23 +332,60 @@ export const NAV_ITEMS: NavItem[] = [
       </svg>
     ),
   },
+  // Not in NAV_ITEMS's usual home in a NAV_GROUPS group below -- this one
+  // is for Prova's own operating company only (Company.isProvaOperator),
+  // never a tenant, so it is appended separately by navGroupsFor rather
+  // than filtered by the job-function capability system every other item
+  // uses. See SALES_NAV_GROUP.
+  {
+    href: "/sales",
+    label: "Sales CRM",
+    icon: (
+      <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5">
+        <path
+          d="M3.5 15.5V11l4-2.5 3.5 2 5.5-4.5"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        <path d="M12.5 6h3.5v3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+  },
 ];
 
 
 /**
  * The rail's five buckets.
  *
- * Eighteen flat links is a list you scan; five groups is a list you read.
  * The grouping is by when in a job's life you reach for the thing, not by
  * which table it lives in — a foreman looking for punch lists is thinking
  * "we're finishing", not "operations".
  *
- * Every item here has a live route. An earlier plan for this rail assumed
- * eight of these were unbuilt and should render disabled with a "coming
- * soon" tooltip; they all shipped during the day it was written, so
- * disabling them would have removed working features from the nav. If a
- * genuinely unbuilt item is ever added, give it `disabled: true` and the
- * rail already renders it muted and unclickable.
+ * Every item here has a live route, same as when this comment first said
+ * so. It is worth restating because of what changed 3 Sep 2026 below, which
+ * could easily be misread as a repeat of the mistake this comment used to
+ * warn about — it is a different decision, made with the same facts in
+ * hand, not a rediscovery of them.
+ *
+ * **3 Sep 2026 — RFIs, Submittals, Drawings, Closeout removed entirely
+ * (not disabled).** All four were built, tested and live, exactly like
+ * everything else on this rail — that was verified again before this
+ * change, not assumed. They were cut anyway, on product-scope grounds
+ * argued in NAV-IA-AUDIT.md at the repo root: a specialty sub receives
+ * RFIs and submits submittals TO a GC and doesn't run either workflow
+ * itself, and a full drawings/markup module is exactly the crowded
+ * category (Procore/Fieldwire/Bluebeam) this product should not try to
+ * out-build. Nothing about the code changed — `/rfis`, `/submittals`,
+ * `/drawings`, `/closeout` and everything behind them still exist and
+ * still work, reachable by a direct link; they are just no longer
+ * advertised as a workflow this app's own nav thinks a sub should run.
+ * `/safety` and `/material-orders` are `disabled: true` for a related but
+ * distinct reason — not a different company's job, just not validated yet
+ * as a daily need for this persona — see the same audit doc for both.
+ * If a genuinely unbuilt item is ever added, give it `disabled: true` and
+ * the rail already renders it muted and unclickable.
  */
 export type NavGroup = {
   heading: string;
@@ -417,32 +404,65 @@ const item = (href: string): NavItem => {
 export const NAV_GROUPS: NavGroup[] = [
   {
     heading: "Pre-construction",
-    items: [item("/dashboard"), item("/alerts"), item("/bids"), item("/contacts"), item("/catalog")],
+    items: [
+      item("/dashboard"),
+      item("/alerts"),
+      item("/bids"),
+      item("/pipeline"),
+      item("/contacts"),
+      item("/messages"),
+      item("/catalog"),
+    ],
   },
   {
     heading: "Operations",
     items: [
       item("/schedule"),
-      item("/rfis"),
-      item("/submittals"),
-      item("/drawings"),
+      // Next to the schedule on purpose. The schedule answers WHEN jobs
+      // run; deployment answers WHERE everybody and everything is right
+      // now, and the page says so in its own first paragraph. Grouping is
+      // by when in a job's life you reach for the thing, not by which
+      // table it reads — which is the argument for filing it under
+      // Logistics beside Equipment, and the thing this rail deliberately
+      // does not do. A page in NAV_ITEMS but in no group renders nowhere:
+      // both the rail and the mobile drawer draw from navGroupsFor().
+      item("/deployment"),
       item("/punch-lists"),
-      item("/closeout"),
+      item("/field-reports"),
     ],
   },
   {
     heading: "Compliance & safety",
-    items: [item("/compliance"), item("/prevailing-wage"), item("/union-compliance"), item("/safety"), item("/team")],
+    items: [
+      item("/compliance"),
+      item("/prevailing-wage"),
+      item("/union-compliance"),
+      { ...item("/safety"), disabled: true },
+      item("/team"),
+    ],
   },
   {
     heading: "Logistics",
-    items: [item("/material-orders"), item("/vendors"), item("/equipment")],
+    items: [
+      { ...item("/material-orders"), disabled: true },
+      item("/vendors"),
+      item("/vendors/pricing"),
+      item("/equipment"),
+    ],
   },
   {
     heading: "Financials",
     items: [item("/cash-flow"), item("/backcharges"), item("/settings")],
   },
 ];
+
+/** Prova's own sales pipeline for selling Prova itself -- deliberately
+ * outside NAV_GROUPS above, which every tenant's nav is built from. Only
+ * ever appended by navGroupsFor, and only when the caller says so. */
+const SALES_NAV_GROUP: NavGroup = {
+  heading: "Internal",
+  items: [item("/sales")],
+};
 
 /**
  * The rail as one person sees it.
@@ -459,9 +479,12 @@ export const NAV_GROUPS: NavGroup[] = [
  * forgotten in the other is a feature that exists on a phone and not on a
  * laptop.
  */
-export function navGroupsFor(user: Principal): NavGroup[] {
-  return NAV_GROUPS.map((group) => ({
-    ...group,
-    items: group.items.filter((item) => canReach(user, item.href)),
-  })).filter((group) => group.items.length > 0);
+export function navGroupsFor(user: Principal, options: { showsSalesCrm?: boolean } = {}): NavGroup[] {
+  const groups = options.showsSalesCrm ? [...NAV_GROUPS, SALES_NAV_GROUP] : NAV_GROUPS;
+  return groups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => canReach(user, item.href)),
+    }))
+    .filter((group) => group.items.length > 0);
 }

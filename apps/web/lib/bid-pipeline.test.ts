@@ -115,6 +115,38 @@ describe("ranking", () => {
     expect(rankGcs([perfect, overdue])[0]).toBe(overdue);
   });
 
+  it("sorts on overdue ALONE when nothing else separates two GCs", () => {
+    // The fixture above also differs on `outstanding` and on `invited`,
+    // either of which already produces the asserted order -- so the overdue
+    // comparison could be deleted outright and the suite stayed green
+    // (issue #108). These two are identical in every field the sort looks
+    // at except `overdue`: one live invitation each, one past its date and
+    // one with no date at all.
+    const late = { record: summariseGc([bid({ dueDate: "2026-01-01" })], TODAY) };
+    const waiting = { record: summariseGc([bid({ dueDate: null })], TODAY) };
+
+    expect(late.record.outstanding).toBe(waiting.record.outstanding);
+    expect(late.record.invited).toBe(waiting.record.invited);
+    expect(late.record.overdue).toBe(1);
+    expect(waiting.record.overdue).toBe(0);
+
+    // Asserted from BOTH input orders, so a stable sort that simply left
+    // the array alone cannot pass.
+    expect(rankGcs([waiting, late])[0]).toBe(late);
+    expect(rankGcs([late, waiting])[0]).toBe(late);
+  });
+
+  it("falls to outstanding only once overdue is equal", () => {
+    // The second rung, isolated the same way: neither GC is overdue.
+    const two = { record: summariseGc([bid(), bid()], TODAY) };
+    const one = { record: summariseGc([bid()], TODAY) };
+
+    expect(two.record.overdue).toBe(0);
+    expect(one.record.overdue).toBe(0);
+    expect(rankGcs([one, two])[0]).toBe(two);
+    expect(rankGcs([two, one])[0]).toBe(two);
+  });
+
   it("does not mutate the array it was given", () => {
     const rows = [
       { record: summariseGc([bid({ status: "WON" })], TODAY) },

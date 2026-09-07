@@ -65,6 +65,26 @@ export async function createApprenticeshipEnrollment(formData: FormData): Promis
   const craftClassificationId = text(formData, "craftClassificationId") || null;
   const unionLocalId = text(formData, "unionLocalId") || null;
 
+  // Same person, same sponsor, same date on the indenture is the SAME
+  // indenture being entered twice, not a second one.
+  //
+  // This exists because browser testing found the panel still reading "No
+  // apprenticeship registrations recorded" straight after a successful
+  // register -- the row was saved and only a reload showed it. CLAUDE.md
+  // already carries that symptom with its cause NOT established, so this
+  // does not pretend to fix the refresh. It removes the harm the refresh
+  // causes: a page that looks like it did nothing gets clicked again, and
+  // nothing else here would have stopped the second click.
+  const alreadyRecorded = await prisma.apprenticeshipEnrollment.findFirst({
+    where: { companyId: company.id, apprenticeUserId, sponsorName, enrolledOn },
+  });
+  if (alreadyRecorded !== null) {
+    return fail(
+      "That indenture is already recorded — same apprentice, sponsor and date. " +
+        "Reload the page; it is on the list.",
+    );
+  }
+
   await prisma.apprenticeshipEnrollment.create({
     data: {
       companyId: company.id,

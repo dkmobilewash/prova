@@ -180,20 +180,40 @@ describe("alerts assembled from real rows", () => {
     expect(visible.filter((a) => a.kind === "RETAINAGE_RELEASE")).toEqual([]);
   });
 
-  it("chases a closeout package the GC has sat on, and stops once they answer", async () => {
+  it("chases a closeout package the GC has sat on, and hands over to the rejection chase when they bounce it", async () => {
     await prisma.closeoutSubmission.updateMany({
       where: { jobId },
       data: { status: "SUBMITTED", respondedOn: null },
     });
     let { visible } = await loadAlerts(context.company.id, context.id, TODAY);
     expect(visible.some((a) => a.kind === "CLOSEOUT_WITH_GC")).toBe(true);
+    expect(visible.filter((a) => a.kind === "CLOSEOUT_REJECTED")).toEqual([]);
 
     await prisma.closeoutSubmission.updateMany({
       where: { jobId },
       data: { status: "REJECTED", respondedOn: utc("2026-08-29"), gcResponse: "Short a waiver" },
     });
     ({ visible } = await loadAlerts(context.company.id, context.id, TODAY));
+    // Issue #111 item 3. This assertion used to stop here, and the "stops
+    // once they answer" it claimed was the bug: alerts-query fed only
+    // SUBMITTED through, so a REJECTED package raised nothing anywhere.
+    // The GC-side chase is genuinely over — but ours has started.
     expect(visible.filter((a) => a.kind === "CLOSEOUT_WITH_GC")).toEqual([]);
+    const rejected = visible.find((a) => a.kind === "CLOSEOUT_REJECTED");
+    expect(rejected).toBeDefined();
+    expect(rejected?.dueOn).toBe("2026-08-29");
+  });
+
+  it("says nothing about a closeout package the GC accepted", async () => {
+    await prisma.closeoutSubmission.updateMany({
+      where: { jobId },
+      data: { status: "ACCEPTED", respondedOn: utc("2026-08-29") },
+    });
+    const { visible } = await loadAlerts(context.company.id, context.id, TODAY);
+    // Neither chase applies. What an accepted package leaves behind is
+    // retainage, and retainageAlerts is what raises that.
+    expect(visible.filter((a) => a.kind === "CLOSEOUT_WITH_GC")).toEqual([]);
+    expect(visible.filter((a) => a.kind === "CLOSEOUT_REJECTED")).toEqual([]);
   });
 
   it("stays silent about certified payroll on a job with no wage determination", async () => {
@@ -332,6 +352,42 @@ describe("alerts assembled from real rows", () => {
     });
     const { visible: afterClear } = await loadAlerts(context.company.id, context.id, TODAY);
     expect(afterClear.filter((a) => a.kind === "CONTACT_FOLLOW_UP")).toEqual([]);
+  });
+
+  it("raises a contact's MSA and prequalification renewals, and drops each once cleared", async () => {
+    // Issue #177: these two dates were entered and shown on /contacts/[id]
+    // but never reached renewalSourcesForCompany, so no RENEWAL alert for
+    // either kind was reachable through loadAlerts before this test existed.
+    const contact = await prisma.contact.findFirstOrThrow({ where: { companyId: context.company.id } });
+    await prisma.contact.update({
+      where: { id: contact.id },
+      data: {
+        msaExpirationDate: utc("2026-09-20"),
+        prequalificationExpiresAt: utc("2026-09-10"),
+      },
+    });
+
+    const { visible } = await loadAlerts(context.company.id, context.id, TODAY);
+    const renewals = visible.filter((a) => a.kind === "RENEWAL" && a.key.includes(contact.id));
+    expect(renewals).toHaveLength(2);
+
+    const msa = renewals.find((a) => a.key === `RENEWAL:${contact.id}:msa:2026-09-20`);
+    expect(msa).toBeDefined();
+    expect(msa?.href).toBe(`/contacts/${contact.id}`);
+    expect(msa?.title).toBe("Master Service Agreement");
+
+    const prequal = renewals.find((a) => a.key === `RENEWAL:${contact.id}:prequal:2026-09-10`);
+    expect(prequal).toBeDefined();
+    expect(prequal?.href).toBe(`/contacts/${contact.id}`);
+
+    // Cleared the same way a licence or policy is: unset the date and the
+    // alert stops existing, rather than lingering as a resolved item.
+    await prisma.contact.update({
+      where: { id: contact.id },
+      data: { msaExpirationDate: null, prequalificationExpiresAt: null },
+    });
+    const { visible: afterClear } = await loadAlerts(context.company.id, context.id, TODAY);
+    expect(afterClear.filter((a) => a.kind === "RENEWAL" && a.key.includes(contact.id))).toEqual([]);
   });
 
   it("refuses a key that is not one this app builds", async () => {

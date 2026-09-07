@@ -1,9 +1,25 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { requireCapabilityForAction } from "@/lib/authz";
 import { requireCompanyContext } from "@/lib/auth";
+import { can } from "@/lib/permissions";
 import { Prisma, prisma } from "@prova/db";
-import { assertOwner } from "./shared";
+import {
+  actionFail,
+  actionOk,
+  assertOwner,
+  type ActionResult,
+} from "./shared";
+// The one definition of what OSHA counts as recordable, shared with the log
+// and the form so a guard here can never disagree with what the row shows.
+import { isRecordable } from "@/components/safetyLabels";
+
+/** Every entry point to these records is a page guarded by MANAGE_FIELD,
+ * so every write here answers to the same capability. A guarded page
+ * in front of an open action is not a guard: the action is its own
+ * endpoint and answers whoever posts to it. */
+const FIELD_ONLY = "Field records aren't part of your job function. The account owner sets who sees what, on the Team page.";
 
 const OUTCOMES = [
   "DEATH",
@@ -94,8 +110,56 @@ async function issueCaseNumber(
   return counter.lastCaseNumber;
 }
 
+/** What identifies one OSHA case: who was hurt, when, and what happened.
+ *
+ * Deliberately NOT the classification, the outcome or the day counts.
+ * Those are what the record SAYS about the injury rather than which
+ * injury it is, they stay editable afterwards, and including them would
+ * let a resubmission that corrected one of them file a second case for the
+ * same person on the same day — the exact duplicate this is here to stop.
+ */
+type CaseIdentity = {
+  occurredAt: Date;
+  employeeName: string;
+  description: string;
+};
+
+/** Is this injury already on the log?
+ *
+ * Run `createSafetyIncident` twice and nothing in the schema refused the
+ * second one. The only relevant constraint is
+ * `@@unique([companyId, caseYear, caseNumber])`, and `issueCaseNumber`
+ * hands the second run a fresh number, so the duplicate is unique by
+ * construction. One injury became two recordable cases in the count a GC
+ * reads at prequalification.
+ *
+ * Deleting the duplicate afterwards is worse than leaving it, which is why
+ * this has to be prevention rather than cleanup: the counter only ever
+ * increments, on purpose, so a deleted case retires its number for good
+ * and the filed log is left with a gap in the sequence and nothing on the
+ * document to explain it.
+ *
+ * Must run inside the transaction and BEFORE the counter is touched. A
+ * guard that refused after issuing a number would still burn it, and
+ * produce that same unexplained gap without any duplicate to blame.
+ *
+ * WHAT THIS DOES NOT CLOSE: two identical submissions arriving at the same
+ * instant can both read nothing here and both insert. Only a unique index
+ * in the database can refuse that one, and adding it is a migration.
+ */
+async function alreadyFiled(
+  tx: Prisma.TransactionClient,
+  companyId: string,
+  identity: CaseIdentity,
+) {
+  return tx.safetyIncident.findFirst({
+    where: { companyId, ...identity },
+    select: { id: true },
+  });
+}
+
 export async function createSafetyIncident(formData: FormData) {
-  const { company, ...user } = await requireCompanyContext();
+  const { company, ...user } = await requireCapabilityForAction("MANAGE_FIELD", FIELD_ONLY);
 
   const employeeName = String(formData.get("employeeName") ?? "").trim();
   if (!employeeName) throw new Error("Employee name is required");
@@ -117,6 +181,16 @@ export async function createSafetyIncident(formData: FormData) {
   );
 
   await prisma.$transaction(async (tx) => {
+    // Silent on purpose. This runs when somebody's report did not appear
+    // to go through and they sent it again, and the truthful outcome of
+    // that is the one case that is already filed — the page revalidates
+    // below and shows it. An error would report a failure that did not
+    // happen, about a record that exists, and in production the message
+    // would be redacted to a digest anyway.
+    if (await alreadyFiled(tx, company.id, { occurredAt, employeeName, description })) {
+      return;
+    }
+
     await tx.safetyIncident.create({
       data: {
         companyId: company.id,
@@ -140,7 +214,7 @@ export async function createSafetyIncident(formData: FormData) {
 }
 
 export async function updateSafetyIncident(incidentId: string, formData: FormData) {
-  const { company } = await requireCompanyContext();
+  const { company } = await requireCapabilityForAction("MANAGE_FIELD", FIELD_ONLY);
 
   const incident = await prisma.safetyIncident.findUnique({ where: { id: incidentId } });
   if (!incident || incident.companyId !== company.id) throw new Error("Incident not found");
@@ -177,20 +251,60 @@ export async function updateSafetyIncident(incidentId: string, formData: FormDat
   revalidatePath("/safety");
 }
 
-export async function deleteSafetyIncident(incidentId: string) {
+/**
+ * Removes a safety case — and refuses once it is RECORDABLE.
+ *
+ * This was the only evidence delete in the app with no lifecycle guard.
+ * `deleteRfi` refuses anything but a draft, `deleteSubmittal` refuses once
+ * a revision exists, `deleteBackcharge` refuses once it has moved past
+ * RECEIVED; this deleted an OSHA 300 case on an owner check alone. The
+ * schema gives it no accidental protection either — `SafetyIncident` has no
+ * child rows, so there is no foreign key to trip.
+ *
+ * Recordability is the right line, and it is DERIVED from the outcome by
+ * the same `isRecordable` the log and the form use, so this can never
+ * disagree with what the row displays. A first-aid case logged by mistake
+ * is an ordinary correction. A recordable one is a row on a filed log, and
+ * `SafetyCaseCounter` never reissues its number — so deleting one leaves a
+ * gap in the case-number sequence, which is its own audit finding, and
+ * unexplainable afterwards because the row that explained it is gone.
+ *
+ * RETURNS rather than throws, because production redacts a thrown Server
+ * Action message to a digest — and a guard whose reason cannot be read is a
+ * guard that only looks like it is protecting something.
+ */
+export async function deleteSafetyIncident(
+  incidentId: string,
+): Promise<ActionResult> {
+  // The capability check is RETURNED here, not thrown via
+  // requireCapabilityForAction like its siblings above. That helper throws,
+  // and this function's whole contract — see the note above — is that its
+  // reasons survive a production build. A thrown message is redacted to a
+  // digest, so throwing here would produce exactly the unreadable guard the
+  // docstring argues against.
   const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_FIELD")) return actionFail(FIELD_ONLY);
   assertOwner(context, "Only the account owner can remove a safety case");
   const { company } = context;
 
   const incident = await prisma.safetyIncident.findUnique({ where: { id: incidentId } });
-  if (!incident || incident.companyId !== company.id) throw new Error("Incident not found");
+  if (!incident || incident.companyId !== company.id)
+    return actionFail("That safety case no longer exists.");
+
+  if (isRecordable(incident.outcome)) {
+    return actionFail(
+      "A recordable case stays on the log. Correct its details instead — " +
+        "deleting it would leave an unexplained gap in the case numbers.",
+    );
+  }
 
   await prisma.safetyIncident.delete({ where: { id: incidentId } });
   revalidatePath("/safety");
+  return actionOk;
 }
 
 export async function createToolboxTalk(formData: FormData) {
-  const { company, ...user } = await requireCompanyContext();
+  const { company, ...user } = await requireCapabilityForAction("MANAGE_FIELD", FIELD_ONLY);
 
   const topic = String(formData.get("topic") ?? "").trim();
   if (!topic) throw new Error("Topic is required");
@@ -215,7 +329,7 @@ export async function createToolboxTalk(formData: FormData) {
 }
 
 export async function deleteToolboxTalk(talkId: string) {
-  const context = await requireCompanyContext();
+  const context = await requireCapabilityForAction("MANAGE_FIELD", FIELD_ONLY);
   assertOwner(context, "Only the account owner can remove a toolbox talk");
   const { company } = context;
 

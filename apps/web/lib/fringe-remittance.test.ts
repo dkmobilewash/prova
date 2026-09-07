@@ -168,6 +168,34 @@ describe("periodIsFiled", () => {
     ).toBe(false);
   });
 
+  // The two ONE-SIDED overlaps. Both halves of the rule have to hold, and
+  // the fixture above satisfies neither of them — so it says nothing about
+  // whether they are joined by AND or by OR. Flipping `&&` to `||` survived
+  // the whole suite (issue #108), and a half-filed union period reporting as
+  // filed is money the fund is owed and nobody chases.
+  it("does not accept a filing that starts in time but ENDS EARLY", () => {
+    // Covers the start of the month, stops on the 20th. The last eleven
+    // days are unfiled.
+    expect(
+      periodIsFiled([{ periodStart: "2026-07-25", periodEnd: "2026-08-20" }], "2026-08-01", "2026-08-31"),
+    ).toBe(false);
+  });
+
+  it("does not accept a filing that STARTS LATE but runs past the end", () => {
+    // Mirror image: the first nine days are unfiled.
+    expect(
+      periodIsFiled([{ periodStart: "2026-08-10", periodEnd: "2026-09-05" }], "2026-08-01", "2026-08-31"),
+    ).toBe(false);
+  });
+
+  it("accepts a filing that covers MORE than the period on both sides", () => {
+    // The positive case that keeps the two halves from being tightened to
+    // equality instead: a quarterly filing covers a month inside it.
+    expect(
+      periodIsFiled([{ periodStart: "2026-07-01", periodEnd: "2026-09-30" }], "2026-08-01", "2026-08-31"),
+    ).toBe(true);
+  });
+
   it("ignores a filing with no period recorded", () => {
     expect(periodIsFiled([{ periodStart: null, periodEnd: null }], "2026-08-01", "2026-08-31")).toBe(false);
   });

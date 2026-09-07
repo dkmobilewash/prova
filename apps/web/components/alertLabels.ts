@@ -9,6 +9,7 @@ export const ALERT_KIND_LABELS: Record<AlertKind, string> = {
   BACKCHARGE_RESPONSE: "Backcharge",
   RETAINAGE_RELEASE: "Retainage",
   CLOSEOUT_WITH_GC: "Closeout",
+  CLOSEOUT_REJECTED: "Closeout",
   CERTIFIED_PAYROLL: "Certified payroll",
   APPRENTICE_RATIO: "Apprentice ratio",
   WIP_VARIANCE: "Job health",

@@ -94,6 +94,50 @@ describe("parseCatalogImport", () => {
     expect(rows[0].description).toBe("Board");
     expect(problems[0].line).toBe(2);
     expect(problems[0].message).toContain("call for pricing");
+    expect(problems[0].message).toContain("price");
+  });
+
+  // Price was the ONLY unreadable column tested, so the cost and hours arms
+  // of the same guard could be deleted with the suite still green (issue
+  // #108) — and an undefined cost becoming a catalog entry with no budgeted
+  // cost is precisely the under-bidding the test above says it prevents,
+  // one column over.
+  it("refuses a row whose COST it cannot read", () => {
+    const { rows, problems } = parseCatalogImport(
+      ["Description,Price,Cost", "Special order,2.85,ask supplier", "Board,2.85,1.90"].join("\n"),
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].description).toBe("Board");
+    expect(problems).toHaveLength(1);
+    expect(problems[0].line).toBe(2);
+    // Names the bad CELL, not just the row — otherwise the person has to
+    // guess which of four columns to go and look at.
+    expect(problems[0].message).toContain("ask supplier");
+    expect(problems[0].message).toContain("cost");
+  });
+
+  it("refuses a row whose HOURS it cannot read", () => {
+    const { rows, problems } = parseCatalogImport(
+      ["Description,Price,Hours", "Special order,2.85,varies", "Board,2.85,0.012"].join("\n"),
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].description).toBe("Board");
+    expect(problems).toHaveLength(1);
+    expect(problems[0].line).toBe(2);
+    expect(problems[0].message).toContain("varies");
+    expect(problems[0].message).toContain("hours");
+  });
+
+  it("names EVERY bad cell on a row, not just the first", () => {
+    // One trip to the price list beats three.
+    const { rows, problems } = parseCatalogImport(
+      ["Description,Price,Cost,Hours", "Special order,call us,ask supplier,varies"].join("\n"),
+    );
+    expect(rows).toHaveLength(0);
+    expect(problems).toHaveLength(1);
+    expect(problems[0].message).toContain("call us");
+    expect(problems[0].message).toContain("ask supplier");
+    expect(problems[0].message).toContain("varies");
   });
 
   it("treats an empty cell as no value, not as an unreadable one", () => {

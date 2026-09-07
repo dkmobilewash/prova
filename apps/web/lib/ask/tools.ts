@@ -150,7 +150,7 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: "equipment_location",
     description:
-      "Which job each piece of equipment is assigned to, and what is unassigned. Answers 'who has the skid steer'. This is an ASSIGNMENT, not a live location — there is no GPS or telematics, so it says which job it is booked to, not where it physically is.",
+      "Which job each piece of equipment was last sent out to and not brought back from, the day it went out, and what is sitting in the yard. Answers 'who has the skid steer'. This is a DISPATCH RECORD, not a live location — there is no GPS or telematics, so it says where somebody logged it as going, not where it physically is.",
     input_schema: noInput,
   },
   {
@@ -208,10 +208,18 @@ export function matchesJobName(jobName: string, filter: string | undefined): boo
  * tenant identifier from the model. Asserted in a test rather than left as
  * a comment, because this is the one mistake here that would be a breach
  * rather than a bug.
+ *
+ * Takes the tool list as an argument, defaulting to the real one, ONLY so
+ * the test can hand it a tenant-carrying tool and watch this return false.
+ * It used to be uncallable that way, so the test re-implemented the check
+ * inline instead — and emptying the `forbidden` list below left the whole
+ * suite green (issue #108). Every caller in the app uses the default.
  */
-export function toolsAcceptNoTenantInput(): boolean {
+export function toolsAcceptNoTenantInput(
+  tools: readonly Pick<ToolDefinition, "input_schema">[] = TOOLS,
+): boolean {
   const forbidden = ["companyid", "company", "tenant", "userid", "user", "orgid"];
-  return TOOLS.every((tool) =>
+  return tools.every((tool) =>
     Object.keys(tool.input_schema.properties).every(
       (key) => !forbidden.includes(key.toLowerCase()),
     ),

@@ -37,22 +37,32 @@ Vercel deployment and repo settings). Each drives their own agent.
   `lib/actions/shared.ts`, the actions barrel.
 
   Corrected 2026-09-02: this line said `Sidebar.tsx` for weeks and it is
-  the wrong file. `Sidebar.tsx` is 106 lines that render whatever
-  `navGroupsFor()` hands them; the 28 nav entries themselves live in
-  `components/navItems.tsx`, which also holds the `ROUTE_CAPABILITY`-
-  adjacent grouping. Add a route to `Sidebar.tsx` and nothing appears,
-  with no error to say why. WORK-SPLIT.md's third-lane note has said
-  `navItems.tsx` since 1 Sep; this file disagreed with it and lost.
+  the wrong file. `Sidebar.tsx` renders whatever `navGroupsFor()` hands
+  it — that is its whole content — and the nav entries themselves live in
+  `components/navItems.tsx`, which also builds the groups. Add a route to
+  `Sidebar.tsx` and nothing appears, with no error to say why.
+  WORK-SPLIT.md's third-lane note has said `navItems.tsx` since 1 Sep;
+  this file disagreed with it and lost.
 
-  Also verified 2026-09-02: the three "fixed section slots" are real and
-  in that order — Retainage at line 1490, `<DailyFieldReports>` at 1931,
-  `<PayApplications>` at 1946 of a 1955-line file — but NOTHING IN THE
+  Two things this entry got slightly wrong and are fixed 2026-09-06.
+  It gave `Sidebar.tsx` a line count and `navItems.tsx` an entry count,
+  and both had moved within days — counts of that kind rot faster than
+  the claim they decorate, so they are gone rather than refreshed. And
+  the capability map is NOT in `navItems.tsx`: `ROUTE_CAPABILITY` and
+  `capabilitiesFor()` are in `lib/permissions.ts`, `requireCapability()`
+  is in `lib/authz.ts`. Nav and capability are two files, not one.
+
+  Also verified 2026-09-02, re-verified 2026-09-06: the three "fixed
+  section slots" are real and in that order — Retainage, then
+  `<DailyFieldReports>`, then `<PayApplications>` — but NOTHING IN THE
   FILE MARKS THEM. There is no comment, no sentinel, no named slot. Field
-  Reports and Pay Apps are literally the last two elements before the
-  closing tags, so "insert at your slot, never at the end" is advice you
-  can only follow if you already knew the order, which is why it is
+  Reports and Pay Apps are still literally the last two elements before
+  the closing tags, so "insert at your slot, never at the end" is advice
+  you can only follow if you already knew the order, which is why it is
   written here. Read this line before you edit that file; the file will
-  not tell you.
+  not tell you. (Deliberately no line numbers: the file grew from 1955 to
+  2007 lines in four days and every number this paragraph used to carry
+  was stale.)
 
 ## The working agreement (agreed in Slack 2026-08-29)
 
@@ -90,37 +100,15 @@ scrollback gets broken by whoever didn't scroll far enough.
   and after ANY merge run `git log origin/main..<branch>` — empty output
   is the only proof it landed. "The PR says Merged" is not.
 - Scripts start with `set -e` AND `set -o pipefail` (a failed build
-  piped to `tee` printed ALL GREEN once), and `rm -f .git/index.lock`.
-- **`./scripts/preflight.sh` CANNOT RUN IN A GIT WORKTREE, and the way it
-  fails is the problem.** Found 2026-09-02 by an agent running in
-  `.claude/worktrees/`. In a worktree `.git` is a FILE holding one line
-  (`gitdir: …/.git/worktrees/<name>`), not a directory. So line 30's
-  `rm -f .git/index.lock` hits ENOTDIR — and `-f` suppresses "no such
-  file", not "not a directory", so it returns 1, and `set -e` on line 28
-  kills the script instantly:
+  piped to `tee` printed ALL GREEN once), and clear a stale index lock
+  with `rm -f "$(git rev-parse --git-path index.lock)"`.
 
-      $ ./scripts/preflight.sh --quick
-      rm: .git/index.lock: Not a directory
-      $ echo $?
-      1
-
-  That is the ENTIRE output. Not one check ran — not the branch guard, not
-  `prisma generate`, not test, lint, typecheck, build, and not the
-  migration report that is the whole reason the script exists. And it
-  reads like a stray warning from a script that then got on with its job.
-  Same family as the green-checks and promoted-preview scars: the failure
-  is silent in the direction of looking fine.
-
-  FIXED on this branch, 2026-09-02, in the one place it can be fixed:
-
-      rm -f "$(git rev-parse --git-path index.lock)"
-
-  `--git-path` resolves correctly in a normal checkout AND a worktree, so
-  it works everywhere the old line worked and also where it did not. The
-  fix is one line; finding it took reproducing a script that appeared to
-  do nothing. If you see `rm: .git/index.lock: Not a directory` from any
-  script in this repo, that script predates this fix and has run none of
-  its checks — do not read its silence as success.
+  Corrected 2026-09-06: this line named the bare `rm -f .git/index.lock`
+  for weeks, which is the exact form the repo abandoned — it is ENOTDIR
+  in a worktree and takes the whole script down with `set -e`. The
+  worktree entry further down explains why; this bullet was still
+  handing out the broken version to anyone writing a new script, which is
+  how a fixed bug gets reintroduced from the documentation.
 - Cyrus authenticates through `gh` (token in the macOS keyring; scopes
   `repo`, `workflow`, `read:org`, `gist`), so `.github/workflows/` IS
   editable from the CLI, and `gh pr create` works. The older PAT lacked
@@ -193,6 +181,16 @@ scrollback gets broken by whoever didn't scroll far enough.
   but together they distinguish "still working" from "died silently",
   which is the question actually worth answering while you wait.
 
+  **For a GitHub job, ask for its STEPS.** `list_workflow_jobs` (REST:
+  `/actions/runs/{run_id}/jobs`) returns every step with its own
+  `started_at`/`completed_at`, and those are not the cached field. On #82
+  the job read `in_progress` while its steps already showed Test ✓ 6s,
+  Lint ✓ 8s, Typecheck ✓ 20s, Build ✓ 57s — a 114-second run that was
+  polled as running long after it finished. Steps tell you WHICH stage is
+  slow, so "the build is hanging" becomes a claim you can check instead of
+  one you guess. Nothing here needed inventing; it was one call away the
+  whole time this file's author was watching a status field.
+
 ## Hard-won technical rules
 
 - **Sequence numbers** come from a counter row that only increments,
@@ -205,12 +203,12 @@ scrollback gets broken by whoever didn't scroll far enough.
   `CloseoutSubmissionCounter` (`closeout.prisma`).
 
   **INVOICE NUMBERS ARE NOT AMONG THEM, and this file said they were.**
-  Corrected 2026-09-02. There is no `InvoiceCounter` anywhere in the repo.
-  `apps/web/lib/actions/billing.ts:138` is:
+  Corrected 2026-09-02, re-verified against `main` 2026-09-06 and still
+  true. There is no `InvoiceCounter` anywhere in the repo.
+  `apps/web/lib/actions/billing.ts:151` is:
 
       async function nextInvoiceNumber(jobId: string) {
-        const last = await prisma.invoice.findFirst({
-          where: { jobId }, orderBy: { number: "desc" } });
+        const last = await prisma.invoice.findFirst({ where: { jobId }, orderBy: { number: "desc" } });
         return (last?.number ?? 0) + 1;
       }
 
@@ -334,19 +332,25 @@ scrollback gets broken by whoever didn't scroll far enough.
   after production's so the two can never be confused.
 
   All of that verified against the workflow file 2026-09-02 and true.
-  What is NOT true is the inference everyone draws from it: **the demo
-  button asserts its target and the PRODUCTION one does not.** The
-  assertion is `wrongTarget()` in `connection-target.mjs`, fired only when
-  `MIGRATE_EXPECT_HOST` is set — `migrate-demo.yml:138` sets it from the
-  box you typed in, and `migrate.yml` sets nothing but `DATABASE_URL` and
-  `DIRECT_URL`. The comment in `migrate-deploy.mjs:70` says why ("so
-  production's job, which predates it, is unaffected until someone wires
-  it up deliberately"), which is a reason and not a guarantee. So the
-  weaker check guards the real data and the stronger one guards the demo.
-  Two wrong-but-matching production secrets still pass every check on
-  merge, apply a whole schema to whatever they point at, and read back
-  "verified — every migration in this commit is applied." Nobody has
-  wired the guard up; leaving it noted rather than fixed on a docs branch.
+
+  This entry used to carry a second paragraph here saying the demo button
+  asserts its target and the PRODUCTION one does not — that `wrongTarget()`
+  in `connection-target.mjs` only fires when `MIGRATE_EXPECT_HOST` is set,
+  that only `migrate-demo.yml` set it, and that "nobody has wired the
+  guard up". **DELETED 2026-09-06: it was true when written and is not
+  true now.** `migrate.yml:97` sets `MIGRATE_EXPECT_HOST:
+  ep-little-sea-a6bdnaw2`, hardcoded rather than secret so a reviewer can
+  read the assertion in the diff, added 2026-09-03. Both databases are
+  now guarded against a secret holding the wrong connection string, and
+  if Neon ever moves production to a new endpoint that job FAILS and
+  applies nothing until a person changes that line.
+
+  Recorded because the deletion is the lesson: this audit shipped a
+  correction and the correction went stale in four days while the branch
+  sat unmerged. A doc note that says "nobody has fixed X" is a claim with
+  an expiry date on it — re-read the code before republishing one, which
+  is the only reason this paragraph is not still telling you production
+  is unguarded.
 
   Established 2026-08-29 from: two production build logs printing
   `ep-little-sea` as the migrate target; the `Migrate` workflow printing
@@ -487,21 +491,236 @@ scrollback gets broken by whoever didn't scroll far enough.
   does something. Setting it does nothing at all, which is the worst of
   the three possible behaviours.)
 - **A successful write can show up as an empty list — cause NOT
-  established.** Observed once: the action returned ok, the row was in
-  the database, the page said "Nothing on order", and a manual reload
-  showed it. The pool was throwing `Timed out fetching a new connection`
-  at the time and that is what this entry originally blamed. That was
-  wrong: there is an error boundary now, but there was none then, so a
-  throwing query would have 500'd rather than rendered an empty list —
-  and a ColorZilla extension was injecting a hydration mismatch into
-  `<body>` in the same repro. Untested hypothesis: the router refresh
-  never fired and the STALE pre-create render stayed on screen, which
-  fits all three observations. Do not repeat the pool explanation as
-  fact. What IS established is the risk it pointed at: a page that fails
-  after a commit invites a second click, and no create action is
-  idempotent. #19 disabled 57 create buttons while their form is in
-  flight and added an error boundary that says not to resubmit before
-  reloading.
+  established, and now with TWO dead explanations instead of one.**
+  Observed: the action returned ok, the row was in the database, the page
+  said "Nothing on order", and a manual reload showed it. Issue #61.
+
+  **Dead explanation 1 — the connection pool.** The pool was throwing
+  `Timed out fetching a new connection` at the time and this entry
+  originally blamed it. Wrong: there is an error boundary now, but there
+  was none then, so a throwing query would have 500'd rather than
+  rendered an empty list. A ColorZilla extension was also injecting a
+  hydration mismatch into `<body>` in the same repro, so that run had two
+  confounds in it.
+
+  **Dead explanation 2 — "the router refresh never fired".** This entry
+  carried that as the leading untested hypothesis, on the grounds that it
+  fits all three observations. It does fit, and it is still WRONG. Read
+  out of the INSTALLED Next source on 2026-09-03 (`next 15.5.23` — note
+  `package.json` says `^15.1.3`, which is not what is on disk):
+
+    - `server/web/spec-extension/revalidate.js:156` sets
+      `pathWasRevalidated = true` UNCONDITIONALLY, with a
+      `// TODO: only revalidate if the path matches` still in the source.
+      **The path argument you pass is irrelevant to this mechanism.**
+    - so `skipFlight` is false at `server/app-render/action-handler.js:773`
+      and flight data IS appended to the action's POST response;
+    - and an action POST does not send the `RSC` header, so
+      `flightRouterState` is undefined and the render walks from the root
+      — **action flight is always a root render.**
+
+  So a Server Action that calls `revalidatePath` and RETURNS a value
+  re-renders the client with no `router.refresh()` at all. The call is
+  redundant in the happy path. This app carries its own control proving
+  it: `TakeoffForm` has no `router.refresh()`, its action revalidates at
+  `lib/actions/jobs.ts:511`, and it demonstrably works.
+
+  Every client-side branch that could silently leave a stale page was
+  walked and each is unreachable for this app's action shape, including
+  action forwarding — ruled out from `server-reference-manifest.json`,
+  where all 26 action-carrying pages hold the full manifest, so
+  `selectWorkerForForwarding` can never pick a different worker.
+
+  **Two numbers this entry used to imply, both wrong.** The
+  `router.refresh()` tally is 29 of 98 client components, not "18 of 60".
+  And NO write action in this codebase is missing revalidation — all ten
+  naive grep hits are false positives, `fieldReports.ts` routing through
+  its own `revalidateBoth()` helper. "Somebody forgot to revalidate" is
+  eliminated everywhere, so do not go looking for it.
+
+  **Dead explanation 3 — and the differential that killed it. THE CAPTURE
+  THIS ENTRY ASKED FOR HAS NOW BEEN RUN** (2026-09-05, production, signed
+  in, both submits in one tab). `/settings` add-a-licence against
+  `/jobs/[id]` add-a-takeoff-line, instrumented from the page rather than
+  read off DevTools — a `fetch` wrapper for the `Next-Action` POST, a
+  `console.error` wrapper, and Resource Timing for sizes.
+
+  | | A: licence | B: takeoff |
+  | --- | --- | --- |
+  | `x-action-revalidated` | `[[],1,0]` | `[[],1,0]` |
+  | decoded response | 34,342 B | 75,806 B |
+  | action round-trip | 1,544 ms | 1,519 ms |
+  | first byte -> stream end | 1,543 -> 3,749 ms | 1,516 -> 4,411 ms |
+  | console | clean | clean |
+
+  **There is no difference.** Both surviving possibilities die on this:
+  the flight half was NOT dropped (34 KB of page payload arrived on the
+  suspect), and revalidation WAS signalled (byte-identical header). A
+  fourth hypothesis raised for that run — that `<form action={fn}>`
+  behaves differently from `<form onSubmit>`, which is the one structural
+  difference between these two components — is not supported either.
+
+  What the numbers do show is the response STARTING at ~1.5s and finishing
+  streaming at 3.7-4.4s, scaling with payload. That is the server
+  re-rendering the whole page after the action, and the DOM cannot update
+  before it lands. A human tester independently measured 5-7s on unrelated
+  routes the day before. **So the shape is post-action server render cost,
+  not a lost update** — which makes it #118's territory (Neon compute wake,
+  `connection_limit=5`) rather than this issue's.
+
+  Do NOT re-run the capture. It has been run and it answered. What remains
+  genuinely unexplained is only the ORIGINAL observation — a committed row,
+  an empty list, a reload that fixes it — IF it was seen well after the
+  render had finished. Nobody recorded how long they waited, which is why
+  a report of this shape now needs a timestamp before it counts as
+  evidence.
+
+  What IS established, and was from the start: a page that fails after a
+  commit invites a second click, and no create action is idempotent. #19
+  disabled 57 create buttons while their form is in flight and added an
+  error boundary that says not to resubmit before reloading.
+
+- **"Cancel first" is not the rule for an armed delete — "Cancel takes the
+  pixel Delete vacated" is, and which end that is depends on the cluster's
+  alignment.** Issue #152's rule 2 says the confirm button must not occupy
+  the position the delete button just vacated, so a hurried second click
+  costs a click rather than the record. The mitigation everyone reaches for
+  is "render Cancel first". That is correct in exactly one geometry.
+
+  Measured in real Chromium (Playwright, the actual class strings, a real
+  box model — a DOM-only test environment like happy-dom or jsdom does no
+  layout and returns zeros from `getBoundingClientRect`, so no unit test in
+  this repo can see any of this):
+
+  | cluster | unarmed | armed `[Cancel][Confirm]` | overlap |
+  | --- | --- | --- | --- |
+  | right-pinned (`justify-between` parent + `shrink-0`) | `[Edit][Delete]` | Confirm is last | **60.7px, 100%** |
+  | left, one ordinary action | `[Edit][Delete]` | | 44.0px, 72% |
+  | left, two ordinary actions (`ApprenticeshipRowActions`) | `[Record][Edit][Remove]` | | 0px |
+
+  The reference row this rule was written from is the third line — the one
+  case where it happens to work — which is why the wrong version of it read
+  as correct for a week.
+
+  **In a right-pinned cluster the LAST control keeps its position**, so
+  Cancel goes last and the confirm sits clear of it. In a left-aligned
+  cluster the FIRST slot is the stable one, so Cancel goes first. Same rule,
+  opposite order. State it as "Cancel inherits the Delete pixel" and it
+  survives the translation; state it as "Cancel first" and it does not.
+
+  `SalesActivityRow`, `SalesOpportunityRow` and `SalesLeadRow` were checked
+  by measurement rather than by reading: all three already had the ORDER
+  right and only rule 1 (hide every ordinary action, not just the one
+  somebody remembered) was broken on the first two.
+
+- **A watcher whose needle is ALREADY ON THE PAGE cannot fail, and it will
+  report a fast, confident, wrong number.** Born from the #61 capture
+  above, and the same shape as every other vacuous test in this file — it
+  just wears a stopwatch instead of an assertion.
+
+  The timing instrument was `document.body.innerText.includes(needle)`,
+  polled every 100ms from the click, to measure when a newly saved row
+  appears. It fired at 101ms — the first tick — on BOTH runs, for two
+  different reasons:
+
+    - on `/settings`, a row containing the needle string was ALREADY THERE
+      when the run began (left by another agent session writing to the same
+      account — see the concurrent-writes note below);
+    - on `/jobs/[id]`, the takeoff form renders a live "what will be added"
+      preview AS YOU TYPE, so the label was in page text before Save was
+      ever clicked.
+
+  Both would have returned 101ms if the save had failed outright. The
+  browser tester caught it, said so before presenting any figure, ran the
+  prescribed version anyway for the record, and built a second signal that
+  can only change on a real save — an occurrence COUNT (1 -> 2), and the
+  disappearance of "No line items yet".
+
+  **The rule: a timing signal must be something that cannot be true
+  before the event.** A count crossing a threshold, an empty-state string
+  disappearing, an element with a server-generated id appearing. Never a
+  substring that a form preview, a placeholder, or a pre-existing row
+  could already be rendering.
+
+  **And the reason this belongs in this file rather than in the issue:
+  earlier timings of #61 may be artefacts of exactly this.** Anyone who
+  measured the takeoff form as the fast control was measuring its preview.
+  That makes the control look instant and the suspect look worse by
+  comparison than it is.
+
+  Two smaller lessons from the same run, both cheap: `content-length` is
+  null on these responses (brotli-streamed), so sizes must come from
+  Resource Timing's `encodedBodySize`/`decodedBodySize`, not headers. And
+  an instrumentation patch installed via the console dies on a full page
+  reload — take every reading first, do the reload checks last, and move
+  between pages by in-app links only.
+
+- **MORE THAN ONE AGENT SESSION WRITES TO PRODUCTION, AND ONE OF THEM IS
+  NOT ANNOUNCING IT.** Three sightings on `ep-little-sea` in two days,
+  4-5 Sep 2026, all on the operator company's own rows:
+
+    - a `SalesActivity` reading "ZZ-TEST Phase C verification call —
+      logged by Claude on 2026-09-04 to verify SalesActivity persistence",
+      which appeared on a lead BETWEEN a tester's page load and their
+      delete attempt — so the delete guard refused a lead they had just
+      seen as empty. The guard was right; the data moved underneath them;
+    - a `SalesLead` named "CLAUDE-VERIFY Phase C (delete me)" with a
+      $1,200/mo opportunity, which sat in the `/sales` pipeline band
+      inflating the live figures;
+    - a `CompanyLicense` named "ZZTEST Nevada — ZZ-TEST 61A" on
+      `/settings`, which is what made the #61 watcher above false-positive.
+
+  **That third one is the cost worth naming: a stray test row did not just
+  clutter a page, it corrupted an experiment and nearly produced a wrong
+  answer to a question two sessions had already burned days on.** A
+  measurement taken on this account is not taken on a quiet one.
+
+  So: **before timing or counting anything on production, screenshot or
+  record the starting state of the rows you are about to measure**, and
+  say in the report that you did. And if you are the session writing:
+  demo-project or scratch database, never `ep-little-sea`; if a production
+  write is genuinely unavoidable, post it in Slack BEFORE the write, not
+  after, and delete it in the same sitting. The demo project exists
+  precisely so this does not have to happen — see the three-Neon-projects
+  table above.
+- **`./scripts/preflight.sh` used to die on its first line inside a git
+  worktree.** It ran `rm -f .git/index.lock`, but in a worktree `.git` is
+  a FILE, not a directory — so that is `ENOTDIR`, which `rm -f` does NOT
+  suppress, and `set -e` killed the script. The entire output was
+  `rm: .git/index.lock: Not a directory`. Agents work in worktrees, which
+  is why no agent branch was ever preflighted.
+
+  The fix is `rm -f "$(git rev-parse --git-path index.lock)"`, placed
+  BELOW the `cd` to the repo root so the lock cleared is the repo's rather
+  than whatever directory you were standing in. Two branches found this
+  independently on the same day and wrote the same fix, which is its own
+  small signal about how often the worktree path is exercised.
+
+  If you are on a branch that predates that fix and preflight dies with
+  that one line, it is this — run `typecheck`, `lint`, `test` and `build`
+  individually rather than hunting it.
+
+- **A fresh worktree has NO `node_modules`, and that is how unverified
+  work piles up.** `pnpm install --frozen-lockfile` takes seconds and
+  nothing works without it — so an agent that skips it cannot typecheck,
+  test or build, and reports "done" on the strength of having written
+  plausible code. Three WIP branches were found on 2026-09-03 in exactly
+  that state; every one of them failed `typecheck` the moment deps
+  existed. `pnpm build` additionally needs `.env` (Clerk key and
+  `DATABASE_URL`); copy `apps/web/.env` and `packages/db/.env` from the
+  main checkout, and a build failing ONLY on `Missing publishableKey` or
+  `[db] DATABASE_URL is not set` is environmental, not your diff.
+
+- **"Written, documented, and never called" is a recurring shape here,
+  not a one-off.** Three live instances found in a single day: 161
+  `.dbtest.ts` tests no runner referenced; an `acknowledgedSeverity`
+  column that nothing selected and nothing wrote; and a `factDigest`
+  helper whose call site still used the unbounded value it was written to
+  replace. Each one typechecked and tested GREEN throughout, because
+  nothing referenced the dead code. So when reviewing a fix, grep for the
+  new symbol and confirm something CALLS it — the tests passing is not
+  that evidence, and neither is the diff looking complete.
+
 - `FEATURE-AUDIT.md`: the 26-category roadmap and source of truth for
   what's built. It has drifted more than once; don't let it.
 - `CHANGELOG.md`: newest first; says why decisions were made and the

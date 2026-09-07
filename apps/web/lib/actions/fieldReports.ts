@@ -9,6 +9,23 @@ import {
   isUniqueConstraintError,
   type ActionResult,
 } from "./shared";
+import { can } from "@/lib/permissions";
+
+/** Deleting a filed daily report had NO guard of any kind — not owner,
+ * not capability — while every other delete in this folder has at least
+ * assertOwner. A daily report is what a delay claim is argued from
+ * months later, so it is the last thing that should have been the
+ * easiest to remove.
+ *
+ * MANAGE_FIELD, matching /field-reports. Deliberately NOT applied to
+ * create/update in this module yet: those forms also live on
+ * /jobs/[id], which stays open on purpose (accounting and
+ * payroll/compliance both have to reach a job), so gating them would
+ * leave a composer rendering on that page for people it then refuses.
+ * Hiding those sections is a change to jobs/[id]/page.tsx, which is the
+ * other lane. */
+const FIELD_ONLY =
+  "Field records aren't part of your job function. The account owner sets who sees what, on the Team page.";
 
 /** Actions here RETURN their failures instead of throwing them.
  *
@@ -122,8 +139,10 @@ export async function updateDailyFieldReport(
 /** The date is deliberately not editable: it's the identity of the record.
  * Filed against the wrong day, delete it and file the right one. */
 export async function deleteDailyFieldReport(reportId: string): Promise<ActionResult> {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  const { company } = context;
   return runAction(async () => {
+    if (!can(context, "MANAGE_FIELD")) return fail(FIELD_ONLY);
     const report = await prisma.dailyFieldReport.findUnique({ where: { id: reportId } });
     if (!report || report.companyId !== company.id) return fail("Report not found");
 

@@ -2,7 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
+import { loadAlerts } from "@/lib/alerts-query";
+import { snoozeIsUnspent, type AlertSeverity } from "@/lib/alerts";
 import { prisma } from "@prova/db";
+import { viewerToday } from "@/lib/viewerToday";
 import { actionFail as fail, actionOk as ok, type ActionResult } from "./shared";
 
 /**
@@ -51,6 +54,53 @@ function assertKeyShape(key: string) {
   }
 }
 
+/**
+ * How bad this alert is RIGHT NOW, read off the live list.
+ *
+ * Deliberately NOT a parameter, for the same reason assertKeyShape exists
+ * above: the key arrives from the client, the MEANING of it does not.
+ * Severity is what the acknowledgement is measured against for the rest
+ * of its life, and OVERDUE is the strongest claim there is — nothing is
+ * worse than it, so a row recorded at OVERDUE silences that key forever.
+ * A client that could name its own severity could reinstate issue #110 at
+ * will, one alert at a time, which is worse than the bug being fixed.
+ *
+ * Null means the key is not on this person's list at all — already
+ * resolved, or never theirs. There is nothing to record about a situation
+ * that no longer exists, so the caller refuses rather than writing a row
+ * whose severity would be a guess.
+ *
+ * This costs a full alert assembly. countVisibleAlerts already pays that
+ * on every page load for the top-bar bell, and there is no cheaper
+ * correct answer — every figure in an alert is derived and none of them
+ * is stored to be looked up.
+ */
+async function severityForKey(
+  companyId: string,
+  user: { id: string; role: string; jobFunction: string | null },
+  alertKey: string,
+  todayIso?: string,
+): Promise<AlertSeverity | null> {
+  // Same call as lib/actions/notifications.ts makes, and dated the same
+  // way /alerts is. This used to read the server's UTC clock, with a
+  // comment saying the user's own calendar day would be better and was
+  // not available on a server action. It is now: the browser parks its
+  // zone in a cookie and cookies() reads it here (issue #111 item 1). It
+  // matters more here than almost anywhere, because this answer decides
+  // which severity a dismissal is recorded at and that is what the row is
+  // measured against for the rest of its life -- see #110.
+  //
+  // `todayIso` is passed by snoozeAlert, which has already worked out the
+  // viewer's day to validate against and must not be able to end up with
+  // two of them. Absent, this reads it itself.
+  const today = todayIso ?? (await viewerToday());
+  const { visible, silenced } = await loadAlerts(companyId, user.id, today, {
+    role: user.role,
+    jobFunction: user.jobFunction,
+  });
+  return [...visible, ...silenced].find((a) => a.key === alertKey)?.severity ?? null;
+}
+
 /** Quiet until the underlying fact changes.
  *
  * Note what this deliberately does NOT do: it never touches the thing the
@@ -64,12 +114,25 @@ export async function dismissAlert(alertKey: string): Promise<ActionResult> {
   return runAction(async () => {
     assertKeyShape(alertKey);
 
+    const acknowledgedSeverity = await severityForKey(company.id, user, alertKey);
+    if (acknowledgedSeverity === null) {
+      return fail("That alert is not on your list any more — reload the page to see where it went.");
+    }
+
     await prisma.alertAcknowledgement.upsert({
       where: { userId_alertKey: { userId: user.id, alertKey } },
-      create: { companyId: company.id, userId: user.id, alertKey, snoozedUntil: null },
+      create: {
+        companyId: company.id,
+        userId: user.id,
+        alertKey,
+        snoozedUntil: null,
+        acknowledgedSeverity,
+      },
       // Re-dismissing something snoozed clears the date rather than
-      // keeping the older, weaker instruction.
-      update: { snoozedUntil: null, acknowledgedAt: new Date() },
+      // keeping the older, weaker instruction. The severity is re-recorded
+      // for the same reason: if the alert has escalated since, this person
+      // has now seen the worse version and is speaking about that one.
+      update: { snoozedUntil: null, acknowledgedAt: new Date(), acknowledgedSeverity },
     });
 
     revalidatePath("/alerts");
@@ -91,15 +154,40 @@ export async function snoozeAlert(alertKey: string, formData: FormData): Promise
     // A snooze into the past is spent the moment it is written, so the
     // alert would come straight back with no explanation. Refusing says
     // what happened instead of silently doing nothing.
-    const today = new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00.000Z`);
-    if (snoozedUntil <= today) {
+    //
+    // MEASURED AGAINST THE VIEWER'S CALENDAR DAY, using the very predicate
+    // the list itself will apply — `snoozeIsUnspent` in lib/alerts.ts, the
+    // one partitionAlerts calls. This used to read the server's UTC day
+    // while the list read the viewer's, which is issue #155: east of UTC
+    // the UTC check accepted a date the list then treated as already spent,
+    // so the form succeeded and the alert was back on the next render with
+    // nothing said; west of UTC, after 17:00, it refused a "tomorrow" the
+    // person had picked off their own calendar and told them it was
+    // "already over". Not two bugs — one validation and one consumer
+    // disagreeing about which day it is. They now cannot: same function,
+    // same day, computed once here and handed to severityForKey below so
+    // this action reads the clock exactly once.
+    const today = await viewerToday();
+    const snoozedUntilIso = snoozedUntil.toISOString().slice(0, 10);
+    if (!snoozeIsUnspent(snoozedUntilIso, today)) {
       return fail("Pick a date in the future — a snooze until today is already over.");
+    }
+
+    const acknowledgedSeverity = await severityForKey(company.id, user, alertKey, today);
+    if (acknowledgedSeverity === null) {
+      return fail("That alert is not on your list any more — reload the page to see where it went.");
     }
 
     await prisma.alertAcknowledgement.upsert({
       where: { userId_alertKey: { userId: user.id, alertKey } },
-      create: { companyId: company.id, userId: user.id, alertKey, snoozedUntil },
-      update: { snoozedUntil, acknowledgedAt: new Date() },
+      create: {
+        companyId: company.id,
+        userId: user.id,
+        alertKey,
+        snoozedUntil,
+        acknowledgedSeverity,
+      },
+      update: { snoozedUntil, acknowledgedAt: new Date(), acknowledgedSeverity },
     });
 
     revalidatePath("/alerts");

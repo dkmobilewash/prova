@@ -119,25 +119,34 @@ export async function POST(
 
   const occurredAt = new Date();
 
-  // The log row and the connection's summary of it are written together, so
-  // lastSyncedAt can never describe an event the log does not contain.
-  await prisma.$transaction([
-    prisma.integrationSyncLog.create({
-      data: {
-        connectionId: connection.id,
-        direction: "WEBHOOK_RECEIVED",
-        status: "SUCCESS",
-        // A summary, never the payload: it carries customer names and
-        // amounts that do not need a second copy, and sometimes secrets.
-        message: `Webhook received from ${provider}.`,
-        occurredAt,
-      },
-    }),
-    prisma.integrationConnection.update({
-      where: { id: connection.id },
-      data: { lastSyncedAt: occurredAt, lastSyncStatus: "SUCCESS" },
-    }),
-  ]);
+  // ONLY the log row. This handler is unauthenticated, and it used to also
+  // stamp `lastSyncedAt` / `lastSyncStatus: "SUCCESS"` on the connection —
+  // which made an anonymous caller the author of the one field an operator
+  // reads to decide whether an integration is healthy, on a connection they
+  // did not choose and may have disconnected.
+  //
+  // The bound that was supposed to make that safe did not exist. The header
+  // above says an attacker "needs a real externalAccountId, not just the
+  // URL"; `connectSandboxIntegration` sets that id to the literal
+  // "sandbox-000" for every company, so it is a constant in this repo. The
+  // lookup is also a `findFirst` with no company scope, so with more than
+  // one company connected it resolves to an arbitrary tenant.
+  //
+  // A log row is what this route is for and is honest about its own
+  // provenance — `direction: WEBHOOK_RECEIVED` says where it came from.
+  // Connection HEALTH is a claim about a real exchange, and only the
+  // authenticated sync path gets to make it.
+  await prisma.integrationSyncLog.create({
+    data: {
+      connectionId: connection.id,
+      direction: "WEBHOOK_RECEIVED",
+      status: "SUCCESS",
+      // A summary, never the payload: it carries customer names and
+      // amounts that do not need a second copy, and sometimes secrets.
+      message: `Webhook received from ${provider}.`,
+      occurredAt,
+    },
+  });
 
   return NextResponse.json({ received: true });
 }

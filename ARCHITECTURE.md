@@ -44,7 +44,8 @@ not just hidden in the UI) is *how* those rows may be changed:
 
 > **Path corrected 2026-09-02, in three places in this file.** There is no
 > `apps/web/lib/actions.ts` and there has not been for weeks — it was split
-> by domain into `apps/web/lib/actions/*.ts` (37 files) behind a barrel at
+> by domain into `apps/web/lib/actions/*.ts` (one module per domain, 34 of
+> them as of 2026-09-06, and growing) behind a barrel at
 > `lib/actions/index.ts`, and `packages/db/prisma/schema.prisma` was split
 > the same way into `packages/db/prisma/schema/*.prisma`. Both names still
 > appear throughout this document and throughout WORK-SPLIT.md. WORK-SPLIT
@@ -370,12 +371,22 @@ What DOES guard against this is `wrongTarget()` in
 `packages/db/scripts/connection-target.mjs`: you name the endpoint you
 mean, and it is compared against the host the connection string actually
 resolves to before anything is applied. It is opt-in via
-`MIGRATE_EXPECT_HOST`, and only `migrate-demo.yml` sets it. **Production's
-`migrate.yml` does not**, deliberately (`migrate-deploy.mjs:70` — "so
-production's job, which predates it, is unaffected until someone wires it
-up deliberately"). So the demo database is protected from a wrong secret
-and production is not. That is backwards, it is known, and nobody has
-wired it up.
+`MIGRATE_EXPECT_HOST`, and **both** migrate jobs now set it.
+`migrate-demo.yml:138` takes it from the endpoint id you type into the
+Run-workflow box; `migrate.yml:97` hardcodes
+`ep-little-sea-a6bdnaw2` — not a secret, on purpose, because the whole
+value of an assertion about which database a workflow is for is that a
+reviewer can read it in the diff. If Neon moves production to a new
+endpoint, that job fails and applies nothing until a person changes the
+line, which is the correct failure: loud and in front of someone.
+
+Between 2026-09-02 and 2026-09-03 this was NOT the case, and the note
+that recorded it is worth keeping as history: only the demo job set the
+variable, so the weaker check guarded the real data and the stronger one
+guarded the demo. Two wrong-but-matching production secrets would have
+passed every check on merge, applied the whole schema to whatever they
+pointed at, and read back "verified — every migration in this commit is
+applied."
 
 **The cost is real.** A preview of a branch that adds a model runs against
 a database without those tables, so pages using them fail until the branch
@@ -869,6 +880,59 @@ No new "resolved" state either — a follow-up is retired by clearing
 which is also what changes the alert's key and lets a dismissal lapse
 naturally, same mechanism as every other kind here.
 
+### Phase B — `SalesLead`/`SalesOpportunity`, Prova's own sales CRM
+
+Everything above this point is for a tenant to run their own construction
+business. This is different in kind: it's Diego/Cyrus's own tool for
+tracking *other subcontractors* as prospective Prova customers, not a
+tenant-facing feature at all. New file `sales.prisma`, same "new domain,
+new file" reasoning as `crm.prisma`.
+
+**Not a second `Contact`.** `Contact` is a tenant's own GC/developer/vendor,
+and every tenant rightly has their own; a `SalesLead` is a company that
+might become a *tenant*, and belongs only to Prova's own operating company.
+Conflating the two would mean every subcontractor's owner sees a "Sales
+CRM" nav item for tracking leads to sell them Prova, which is nonsensical
+from that customer's side of the product.
+
+**Scoped like everything else, restricted like nothing else.**
+`SalesLead`/`SalesOpportunity` still carry `companyId` and go through
+`requireCompanyContext()` exactly like every other model — no new
+multi-tenancy mechanism. What's new is a `Company.isProvaOperator` boolean
+(one additive field, exactly one row ever `true` in production, set by
+hand — nobody logs "we are the operator," so nothing can derive this) that
+gates the feature to that one company, stacked with `role === "OWNER"`.
+
+**Why this isn't a `lib/permissions.ts` `Capability`.** That map is
+explicitly about what a job function can do *within* a company, and its own
+rule is "an OWNER holds every capability regardless of job function" — there
+is no way to express "owner only, not even an EXECUTIVE-function member" in
+it, and forcing one in would corrupt a map that's otherwise purely about
+roles. `assertSalesAccess` in `lib/actions/sales.ts` checks
+`isProvaOperator` and `role` directly instead, same shape as `assertOwner`
+elsewhere. A non-operator company gets treated as if the route doesn't
+exist (`notFound()`/a plain "nothing here" message) rather than an
+authorization message — the feature isn't being withheld from them, it was
+never theirs to see. A member at the operator company gets the real reason,
+matching `assertOwner`'s own convention elsewhere.
+
+**Nav is the one place this touches shared files.** `canReach`/
+`navGroupsFor` in `navItems.tsx` filter every other nav item by
+job-function capability alone, which doesn't fit this axis. Rather than
+stretch that system, `navGroupsFor` gained one optional second argument
+(`{ showsSalesCrm }`) that appends a separate "Internal" group only when
+true; the flag is computed once in `app/(app)/layout.tsx`
+(`company.isProvaOperator && role === "OWNER"`) and threaded through
+`Sidebar`/`Topbar`/`MobileNav` so the desktop rail and the mobile drawer
+can never disagree about who sees it. Every touch to those files is
+additive — no existing nav item's filtering changed.
+
+`deleteSalesLead` blocks once a lead has opportunities on file, same
+reasoning as `deleteContact`: real pipeline history stays even if none of
+it ever closed. Not audited in FEATURE-AUDIT.md — that file is explicitly
+scoped to the customer-facing feature spec, and this isn't a customer
+feature.
+
 ## What proves this works (Phase 00's CRUD flow)
 
 The minimal CRUD flow in `apps/web` exists specifically to demonstrate the
@@ -908,7 +972,7 @@ are not pushed as QBO Invoices, and no accounting data is pulled back.~~
 **OUT OF DATE — struck 2026-09-02, and this one had gone quietly wrong in
 the expensive direction: it says money does not move and money moves.**
 Invoice push is built. `pushInvoiceToQuickBooks` is
-`lib/actions/quickbooks.ts:364`; the payload builder, the readback
+`lib/actions/quickbooks.ts:428`; the payload builder, the readback
 verification, the blocker list and the duplicate-click window are
 `lib/quickbooks-sync.ts` (`buildInvoicePayload`, `verifyPushedInvoice`,
 `pushBlockers`, `idempotencyKeyFor`, `DUPLICATE_PUSH_WINDOW_MS`); payments
@@ -1563,8 +1627,9 @@ are future-phase work if it turns out to be needed.~~
 **Struck 2026-09-02 — this document contradicted itself by about 300
 lines.** Finer-grained per-feature permissions shipped on 1 Sep and this
 file describes them at length under "Roles: two orthogonal questions, not
-one enum" above: `User.jobFunction`, `capabilitiesFor()`,
-`requireCapability()` in `lib/authz.ts`, the `ROUTE_CAPABILITY` map, and
+one enum" above: `User.jobFunction`; `capabilitiesFor()` and the
+`ROUTE_CAPABILITY` map in `lib/permissions.ts`; `requireCapability()` and
+`requireCapabilityForAction()` in `lib/authz.ts`; and
 the `showsJobMoney`/`showsBilling` narrowing on `/jobs/[id]`,
 `/dashboard` and `/contacts/[id]`. A `MEMBER` does not necessarily have
 full access to costing any more. The correct summary is the one above;
@@ -1612,7 +1677,7 @@ specifically trying to avoid.
   are allowed to assume is missing, and a wrong entry here invites a
   second implementation of something that already moves money. Invoice
   push, payment sync and reconciliation all exist:
-  `pushInvoiceToQuickBooks` (`lib/actions/quickbooks.ts:364`),
+  `pushInvoiceToQuickBooks` (`lib/actions/quickbooks.ts:428`),
   `lib/quickbooks-sync.ts`, `lib/quickbooks-payment-sync.ts`,
   `lib/quickbooks-reconcile.ts`, each with tests. See the corrected
   QuickBooks section above, which also notes that the sync-direction

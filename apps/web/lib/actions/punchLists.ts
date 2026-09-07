@@ -1,9 +1,15 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireCompanyContext } from "@/lib/auth";
+import { requireCapabilityForAction } from "@/lib/authz";
 import { prisma } from "@prova/db";
 import { assertOwner } from "./shared";
+
+/** Every entry point to these records is a page guarded by MANAGE_FIELD,
+ * so every write here answers to the same capability. A guarded page
+ * in front of an open action is not a guard: the action is its own
+ * endpoint and answers whoever posts to it. */
+const FIELD_ONLY = "Field records aren't part of your job function. The account owner sets who sees what, on the Team page.";
 
 async function requireOwnJobForPunchList(jobId: string, companyId: string) {
   const job = await prisma.job.findUnique({ where: { id: jobId } });
@@ -14,7 +20,7 @@ async function requireOwnJobForPunchList(jobId: string, companyId: string) {
 }
 
 export async function createPunchListItem(formData: FormData) {
-  const { company, ...user } = await requireCompanyContext();
+  const { company, ...user } = await requireCapabilityForAction("MANAGE_FIELD", FIELD_ONLY);
 
   const description = String(formData.get("description") ?? "").trim();
   if (!description) {
@@ -35,7 +41,7 @@ export async function createPunchListItem(formData: FormData) {
 }
 
 export async function updatePunchListItem(itemId: string, formData: FormData) {
-  const { company } = await requireCompanyContext();
+  const { company } = await requireCapabilityForAction("MANAGE_FIELD", FIELD_ONLY);
 
   const item = await prisma.punchListItem.findUnique({ where: { id: itemId } });
   if (!item || item.companyId !== company.id) {
@@ -65,7 +71,7 @@ export async function updatePunchListItem(itemId: string, formData: FormData) {
  * asks nothing. completedAt is stamped alongside isDone so "when did this
  * get closed" is answerable later. */
 export async function setPunchListItemDone(itemId: string, isDone: boolean) {
-  const { company } = await requireCompanyContext();
+  const { company } = await requireCapabilityForAction("MANAGE_FIELD", FIELD_ONLY);
 
   const item = await prisma.punchListItem.findUnique({ where: { id: itemId } });
   if (!item || item.companyId !== company.id) {
@@ -81,7 +87,7 @@ export async function setPunchListItemDone(itemId: string, isDone: boolean) {
 }
 
 export async function deletePunchListItem(itemId: string) {
-  const context = await requireCompanyContext();
+  const context = await requireCapabilityForAction("MANAGE_FIELD", FIELD_ONLY);
   assertOwner(context);
   const { company } = context;
 

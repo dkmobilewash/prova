@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@prova/db";
-import { requireCompanyContext } from "@/lib/auth";
+import { requireCapability } from "@/lib/authz";
+import { NoAccess } from "@/components/NoAccess";
 import { DrawingSetForm } from "@/components/DrawingSetForm";
 import { DrawingSetRow } from "@/components/DrawingSetRow";
 import { setState, unreceivedRevisions } from "@/components/drawingLabels";
@@ -16,7 +17,9 @@ export default async function DrawingsPage({
 }: {
   searchParams: Promise<{ job?: string }>;
 }) {
-  const { company, ...currentUser } = await requireCompanyContext();
+  const { context, allowed } = await requireCapability("MANAGE_JOBS");
+  if (!allowed) return <NoAccess capability="MANAGE_JOBS" />;
+  const { company, ...currentUser } = context;
   const { job: jobFilter } = await searchParams;
 
   const today = new Date().toISOString().slice(0, 10);

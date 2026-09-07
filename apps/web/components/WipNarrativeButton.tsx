@@ -14,8 +14,17 @@ export function WipNarrativeButton({ jobId }: { jobId: string }) {
     setError(null);
     startTransition(async () => {
       try {
-        const text = await generateJobWipNarrative(jobId);
-        setNarrative(text);
+        // Returns { ok } rather than throwing, because the interesting
+        // failure here is an expected one — a job too thinly estimated for
+        // its WIP figures to mean anything — and production redacts thrown
+        // Server Action messages, so a throw would reach the user as noise.
+        const result = await generateJobWipNarrative(jobId);
+        if (result.ok) {
+          setNarrative(result.value);
+        } else {
+          setNarrative(null);
+          setError(result.error);
+        }
       } catch (err) {
         setNarrative(null);
         setError(err instanceof Error ? err.message : "Couldn't generate a narrative");

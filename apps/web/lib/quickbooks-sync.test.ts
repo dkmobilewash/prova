@@ -1,15 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
+  DUPLICATE_PUSH_WINDOW_MS,
   amountToCents,
   buildInvoicePayload,
   centsToAmount,
   docNumberFor,
   idempotencyKeyFor,
-  DUPLICATE_PUSH_WINDOW_MS,
   isAccidentalRepeat,
+  isMissingDocumentError,
+  mayMeanDocumentIsGone,
   pushBlockers,
-  verifyPushedInvoice,
   type InvoiceToPush,
+  verifyPushedInvoice,
 } from "./quickbooks-sync";
 
 const invoice = (over: Partial<InvoiceToPush> = {}): InvoiceToPush => ({
@@ -155,6 +157,31 @@ describe("buildInvoicePayload", () => {
     expect(payload.Line[1].Amount).toBe(400);
   });
 
+  it("sends the stored-materials RELEASE as a negative line", () => {
+    // #95 made the negative reachable from the form for the first time, so
+    // a negative Amount can now reach Intuit. This is the period where $40k
+    // of stored board gets installed: the whole $100k line is billed as
+    // completed work and the $40k comes back out of stored, netting $60k.
+    // Every existing materialsStoredCents case in this file is 0 or
+    // positive, so nothing pinned this shape before.
+    const payload = buildInvoicePayload(
+      invoice({
+        totalCents: 60_000,
+        lines: [line({ billedCents: 100_000, materialsStoredCents: -40_000 })],
+      }),
+      ITEM,
+    );
+
+    expect(payload.Line).toHaveLength(2);
+    expect(payload.Line[0].Amount).toBe(1000);
+    expect(payload.Line[1].Description).toContain("materials stored");
+    expect(payload.Line[1].Amount).toBe(-400);
+    // The two lines have to net to what the GC was actually invoiced. A
+    // release dropped or sent unsigned would post $1,000 to the ledger
+    // against a $600 pay application.
+    expect(payload.Line.reduce((sum, l) => sum + l.Amount, 0)).toBe(600);
+  });
+
   it("omits a line that is zero rather than sending a zero line", () => {
     const payload = buildInvoicePayload(
       invoice({ lines: [line({ billedCents: 100_000, materialsStoredCents: 0 })] }),
@@ -167,6 +194,37 @@ describe("buildInvoicePayload", () => {
     const payload = buildInvoicePayload(invoice({ lines: [], totalCents: 500_00 }), ITEM);
     expect(payload.Line).toHaveLength(1);
     expect(payload.Line[0].Amount).toBe(500);
+    // The Description was asserted by NOTHING, so flipping the `||` in the
+    // fallback to `&&` stayed green (issue #108) -- and this is the only
+    // human-readable line the invoice has in the GC's books. With no memo
+    // it must name the job and the invoice number.
+    expect(payload.Line[0].Description).toBe("Riverside Medical — Level 4 — invoice 3");
+  });
+
+  it("uses the MEMO as the lump-sum description when there is one", () => {
+    const payload = buildInvoicePayload(
+      invoice({ lines: [], totalCents: 500_00, memo: "Deposit — Level 4 layout" }),
+      ITEM,
+    );
+    expect(payload.Line[0].Description).toBe("Deposit — Level 4 layout");
+  });
+
+  it("ignores a memo that is only whitespace and names the job instead", () => {
+    const payload = buildInvoicePayload(
+      invoice({ lines: [], totalCents: 500_00, memo: "   " }),
+      ITEM,
+    );
+    expect(payload.Line[0].Description).toBe("Riverside Medical — Level 4 — invoice 3");
+  });
+
+  it("never sends a lump-sum line with an empty description", () => {
+    // A blank line on an invoice in somebody else's ledger is unreadable
+    // and unreconcilable, whichever branch produced it.
+    for (const memo of [null, "", "  ", "Deposit"]) {
+      const payload = buildInvoicePayload(invoice({ lines: [], totalCents: 500_00, memo }), ITEM);
+      expect(payload.Line[0].Description, JSON.stringify(memo)).toBeTruthy();
+      expect(payload.Line[0].Description.trim().length, JSON.stringify(memo)).toBeGreaterThan(0);
+    }
   });
 
   it("does NOT deduct retainage from the invoice total", () => {
@@ -336,5 +394,75 @@ describe("isAccidentalRepeat — a re-send is not a duplicate", () => {
   it("draws the line exactly at the window", () => {
     expect(isAccidentalRepeat(ago(DUPLICATE_PUSH_WINDOW_MS - 1), now)).toBe(true);
     expect(isAccidentalRepeat(ago(DUPLICATE_PUSH_WINDOW_MS), now)).toBe(false);
+  });
+});
+
+describe("recognising a document QuickBooks no longer has", () => {
+  it("matches Intuit's Object Not Found", () => {
+    expect(isMissingDocumentError("Object Not Found : Something went wrong")).toBe(true);
+    expect(isMissingDocumentError("object not found")).toBe(true);
+  });
+
+  it("DOES NOT match the deleted Product/Service refusal", () => {
+    // The false positive this function exists to avoid, and a real message
+    // this project met four times in one day. It is about the line ITEM,
+    // not the invoice — treating it as a missing document would throw away
+    // a link that was perfectly correct, and the next push would create a
+    // SECOND invoice in somebody's books.
+    const real =
+      "Invalid Reference Id : Product/Service assigned to this transaction has been deleted. " +
+      "Before you can modify this transaction, you must restore Prova — Construction services (deleted).";
+    expect(isMissingDocumentError(real)).toBe(false);
+  });
+
+  it("does not match the other refusals this codebase already handles", () => {
+    expect(isMissingDocumentError("Stale Object Error : You and Craig Carlson were working on this")).toBe(false);
+    expect(isMissingDocumentError("Required parameter Line.SalesItemLineDetail is missing")).toBe(false);
+    expect(isMissingDocumentError("Duplicate Name Exists Error")).toBe(false);
+    expect(isMissingDocumentError("")).toBe(false);
+  });
+});
+
+describe("deciding when it is worth ASKING whether a document is gone", () => {
+  // This predicate does not decide anything on its own — it decides whether
+  // to spend one read-only GET, and the GET decides. So the bar for a true
+  // is "plausibly about a missing document", not "certainly".
+  it("matches a stale-token refusal, which cannot be told apart from a deletion", () => {
+    // A REAL string, sandbox 2026-09-03 21:50 UTC, invoice 1 on ZZQB-TEST —
+    // but NOT from a deleted invoice, and this test used to say it was.
+    // QuickBooks 146 still exists; it could not be deleted while a payment
+    // was applied to it. So this is an ordinary concurrent-edit refusal.
+    //
+    // It belongs here anyway, and the reason is the honest one: a message
+    // like this cannot distinguish "somebody edited it" from "it is not
+    // there any more". What a deleted invoice returns is still unknown to
+    // this project. Matching it buys a read-back, and the read-back is what
+    // tells the two apart.
+    expect(
+      mayMeanDocumentIsGone(
+        "Stale Object Error — Stale Object Error : You and Craig Carlson were working on this at the " +
+          "same time. Craig Carlson finished before you did, so your work was not saved.",
+      ),
+    ).toBe(true);
+  });
+
+  it("still matches Object Not Found", () => {
+    expect(mayMeanDocumentIsGone("Object Not Found : Something went wrong")).toBe(true);
+  });
+
+  it("does not match the Product/Service refusal", () => {
+    // Harmless if it did — the probe would find the invoice present — but
+    // this predicate should mean what it says.
+    const real =
+      "Invalid Reference Id : Product/Service assigned to this transaction has been deleted. " +
+      "Before you can modify this transaction, you must restore Prova — Construction services (deleted).";
+    expect(mayMeanDocumentIsGone(real)).toBe(false);
+  });
+
+  it("does not match refusals that are about the payload", () => {
+    expect(mayMeanDocumentIsGone("Required parameter Line.SalesItemLineDetail is missing")).toBe(false);
+    expect(mayMeanDocumentIsGone("Duplicate Name Exists Error")).toBe(false);
+    expect(mayMeanDocumentIsGone("Couldn't reach QuickBooks.")).toBe(false);
+    expect(mayMeanDocumentIsGone("")).toBe(false);
   });
 });

@@ -28,31 +28,25 @@
 set -e
 set -o pipefail
 
-# NOT `rm -f .git/index.lock`, which is what this was until 2026-09-02 and
-# which made this entire script a no-op inside a git worktree.
-#
-# In a worktree, `.git` is a FILE containing `gitdir: …`, not a directory.
-# So `.git/index.lock` is ENOTDIR, and `-f` suppresses "no such file" but
-# NOT "not a directory" — rm returns 1, `set -e` above fires, and the
-# script dies here having run nothing. Total observed output:
-#
-#     $ ./scripts/preflight.sh --quick
-#     rm: .git/index.lock: Not a directory
-#
-# No branch check, no test, no lint, no typecheck, no build, and no
-# migration report — which is the part this script exists for. It reads
-# like a stray warning from a run that carried on, which is the same
-# failure shape as a green PR check that never ran.
-#
-# `git rev-parse --git-path` resolves correctly in both a normal checkout
-# and a worktree, so this form works everywhere the old one did and also
-# where it did not.
-rm -f "$(git rev-parse --git-path index.lock)"
-
 # A failed build piped to `tee` once printed ALL GREEN. Never drop
 # pipefail from this file.
 
 cd "$(dirname "$0")/.."
+
+# Clear a stale index lock. Two things were wrong with the old
+# `rm -f .git/index.lock` on line 1 of this script.
+#
+# It ran BEFORE the cd, so it cleared a lock relative to wherever you
+# happened to be standing — in the repo root by luck, and nowhere useful
+# otherwise.
+#
+# And in a git WORKTREE `.git` is a FILE, not a directory, so the path
+# `.git/index.lock` is ENOTDIR: `rm -f` prints "Not a directory" and exits
+# 1, which `set -e` turns into the whole script dying on its third line
+# before a single check runs. Every agent working in a worktree hit this and
+# fell back to running the four checks by hand. `git rev-parse --git-path`
+# resolves the real location in both layouts.
+rm -f "$(git rev-parse --git-path index.lock)"
 
 QUICK=0
 [ "${1:-}" = "--quick" ] && QUICK=1

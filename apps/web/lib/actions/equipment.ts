@@ -1,25 +1,26 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireCompanyContext } from "@/lib/auth";
+import { requireCapabilityForAction } from "@/lib/authz";
 import { prisma } from "@prova/db";
 import { assertOwner } from "./shared";
 
-/** Empty job selection means "in the yard", a normal state rather than an
- * error — same shape as tradeScopeFromForm. Validates the job belongs to
- * this company so a stray id can't attach equipment to someone else's job. */
-async function assignedJobIdFromForm(formData: FormData, companyId: string) {
-  const raw = String(formData.get("assignedJobId") ?? "").trim();
-  if (!raw) return null;
-  const job = await prisma.job.findUnique({ where: { id: raw } });
-  if (!job || job.companyId !== companyId) {
-    throw new Error("Job not found");
-  }
-  return job.id;
-}
+/** Every entry point to these records is a page guarded by MANAGE_FIELD,
+ * so every write here answers to the same capability. A guarded page
+ * in front of an open action is not a guard: the action is its own
+ * endpoint and answers whoever posts to it. */
+const FIELD_ONLY = "Field records aren't part of your job function. The account owner sets who sees what, on the Team page.";
+
+/* `assignedJobIdFromForm` used to live here. Where a piece of equipment is
+ * now comes from `EquipmentAssignment` — the newest stay with no return
+ * date — so this no longer writes `Equipment.assignedJobId`, and the form
+ * no longer offers it. Leaving the control in place while nothing read the
+ * column would have shipped a field that looks like it works and does
+ * nothing, which is the same defect as the QuickBooks chart-of-accounts
+ * mapping that was collected, stored, displayed and never read. */
 
 export async function createEquipment(formData: FormData) {
-  const { company } = await requireCompanyContext();
+  const { company } = await requireCapabilityForAction("MANAGE_FIELD", FIELD_ONLY);
 
   const name = String(formData.get("name") ?? "").trim();
   if (!name) {
@@ -36,7 +37,6 @@ export async function createEquipment(formData: FormData) {
       name,
       type: type || null,
       assetTag: assetTag || null,
-      assignedJobId: await assignedJobIdFromForm(formData, company.id),
       notes: notes || null,
     },
   });
@@ -45,7 +45,7 @@ export async function createEquipment(formData: FormData) {
 }
 
 export async function updateEquipment(equipmentId: string, formData: FormData) {
-  const { company } = await requireCompanyContext();
+  const { company } = await requireCapabilityForAction("MANAGE_FIELD", FIELD_ONLY);
 
   const item = await prisma.equipment.findUnique({ where: { id: equipmentId } });
   if (!item || item.companyId !== company.id) {
@@ -67,7 +67,6 @@ export async function updateEquipment(equipmentId: string, formData: FormData) {
       name,
       type: type || null,
       assetTag: assetTag || null,
-      assignedJobId: await assignedJobIdFromForm(formData, company.id),
       notes: notes || null,
     },
   });
@@ -76,7 +75,7 @@ export async function updateEquipment(equipmentId: string, formData: FormData) {
 }
 
 export async function deleteEquipment(equipmentId: string) {
-  const context = await requireCompanyContext();
+  const context = await requireCapabilityForAction("MANAGE_FIELD", FIELD_ONLY);
   assertOwner(context);
   const { company } = context;
 

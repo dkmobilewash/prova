@@ -277,6 +277,14 @@ export default async function UnionCompliancePage({
           that close a period. On-the-job hours are read from the timesheets and stored nowhere
           here; a period is closed by a signature, never by an hour count reaching a line.
         </p>
+        <p className="mb-3 text-xs text-amber-300/80">
+          {/* Browser testing found this section reading "30 hrs" inches from
+              "No hours logged this month" for the same person. Both were true
+              under different windows, and nothing said so. */}
+          Ignores the month selected above. An indenture runs for years, so these hours are
+          counted from the current period&apos;s start — not from the month the rest of this page
+          is showing.
+        </p>
         <div className="mb-3">
           <ApprenticeshipForm
             team={team}

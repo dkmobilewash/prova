@@ -4,6 +4,7 @@ import {
   classifyRenewal,
   daysUntil,
   renewalAlerts,
+  renewalCoverage,
   renewalTiming,
   renewalUrgency,
   summarizeRenewals,
@@ -202,5 +203,32 @@ describe("toIsoDate", () => {
     expect(toIsoDate(new Date("2026-08-29T00:00:00.000Z"))).toBe("2026-08-29");
     expect(toIsoDate(null)).toBeNull();
     expect(toIsoDate(undefined)).toBeNull();
+  });
+});
+
+describe("renewalCoverage", () => {
+  const current = source({ date: "2027-01-01" });
+
+  // The finding. `renewalAlerts` drops everything CURRENT, so an empty
+  // result says nothing about why it is empty — and the whole compliance
+  // system reads EXISTING rows, so a company that never filed a COI
+  // produces the same empty array as one whose COI is in date. /compliance
+  // printed "Certificates, licences, policies and bonds are all current."
+  // about forty pixels above "No compliance documents yet."
+  it("does not report all-current when nothing is on file", () => {
+    expect(renewalCoverage([], 0)).toBe("NOTHING_TRACKED");
+    expect(renewalCoverage([], 0)).not.toBe("ALL_CURRENT");
+  });
+
+  it("reports all-current only when something was actually checked", () => {
+    expect(renewalCoverage(renewalAlerts([current], TODAY), 1)).toBe("ALL_CURRENT");
+  });
+
+  it("reports alerts whenever there are any", () => {
+    const expired = renewalAlerts([source({ date: "2026-08-01" })], TODAY);
+    expect(expired.length).toBe(1);
+    expect(renewalCoverage(expired, 1)).toBe("HAS_ALERTS");
+    // Even a tracked count of zero cannot silence a real alert.
+    expect(renewalCoverage(expired, 0)).toBe("HAS_ALERTS");
   });
 });

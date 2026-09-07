@@ -64,3 +64,68 @@ jobs:
           # gets Prisma's query-engine binary into the deployed function, and
           # dropping it breaks production at runtime, not at build time.
           NODE_OPTIONS: --max-old-space-size=8192
+
+  # The 144 database tests that, until now, nothing ran.
+  #
+  # `vitest.db.config.ts` existed with a docstring explaining how to run it
+  # by hand, and no runner referenced it — not this workflow, not
+  # preflight.sh, not any package script. `vitest.config.mts` includes only
+  # `**/*.test.ts`, so every `.dbtest.ts` was invisible to `pnpm test`.
+  # Meanwhile three unit tests cite them as where the behaviour "is
+  # proven": page-money-guards.test.ts points at permissions.dbtest.ts, and
+  # export.test.ts leaves the tenant-scoping VALUE check to
+  # export.dbtest.ts while itself only checking that a key named companyId
+  # exists.
+  #
+  # Separate job, not another step in `ci`: these need Postgres, the unit
+  # suite deliberately does not, and the fast signal should not wait on a
+  # service container starting.
+  dbtest:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: prova
+          POSTGRES_PASSWORD: prova
+          POSTGRES_DB: prova_dbtest
+        ports: ["5432:5432"]
+        # Without this the job races the container and fails on connect.
+        options: >-
+          --health-cmd "pg_isready -U prova"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # A scratch database that exists only for this job. The suite creates
+      # and deletes companies, which is why its own docstring says never to
+      # point it at a real one.
+      DATABASE_URL: "postgresql://prova:prova@localhost:5432/prova_dbtest"
+      DIRECT_URL: "postgresql://prova:prova@localhost:5432/prova_dbtest"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm db:generate
+
+      # `migrate deploy`, not `db push`: this asserts the committed
+      # migrations actually build the schema the tests expect, which is a
+      # second thing worth knowing on every PR.
+      - name: Apply migrations to the scratch database
+        run: pnpm --filter @prova/db exec prisma migrate deploy --schema prisma/schema
+
+      - name: Database tests
+        run: pnpm test:db
