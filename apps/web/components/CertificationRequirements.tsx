@@ -4,6 +4,7 @@ import { useRef, useState, useTransition } from "react";
 import { addCertificationRequirement, removeCertificationRequirement } from "@/lib/actions";
 import type { ActionResult } from "@/lib/actions/shared";
 import { inputClass, labelClass } from "@/components/RfiFields";
+import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import {
   CERTIFICATION_KINDS,
   CERTIFICATION_LABELS,
@@ -13,6 +14,8 @@ import {
 
 const btn =
   "rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:border-slate-500 disabled:opacity-50";
+const confirmBtn =
+  "rounded-md border border-red-500 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 disabled:opacity-50";
 
 /**
  * What the company requires of everyone, and the only control that turns a
@@ -35,7 +38,8 @@ export function CertificationRequirements({
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [kind, setKind] = useState<string>("");
-  const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  /* `isOpen`, `kind` and `error` all belong to the add-form and stay. Only
+     the delete's `confirmingId` left — each row's <RowActions> arms itself. */
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
@@ -174,36 +178,46 @@ export function CertificationRequirements({
                   <p className="text-xs text-slate-500">{requirement.notes}</p>
                 )}
               </div>
-              {canRemove &&
-                (confirmingId === requirement.id ? (
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      disabled={isPending}
-                      onClick={() => run(() => removeCertificationRequirement(requirement.id))}
-                      className="rounded-md border border-red-500 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 disabled:opacity-50"
-                    >
-                      {isPending ? "Removing…" : "Confirm remove"}
-                    </button>
-                    <button
-                      type="button"
-                      disabled={isPending}
-                      onClick={() => setConfirmingId(null)}
-                      className={btn}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    disabled={isPending}
-                    onClick={() => setConfirmingId(requirement.id)}
-                    className={btn}
-                  >
-                    Remove
-                  </button>
-                ))}
+              {/* This row hand-rolled its own `confirmingId` because #88 was
+                  written before #176 landed; the census caught it. There is
+                  nothing beside the Remove today, which is exactly the state
+                  ApprenticeshipRowActions was in before a merge filled the
+                  empty position — so the cluster is a RowActions whether or
+                  not it has children yet, and anything added here lands in
+                  the children and disappears while armed.
+
+                  The `end` pinning below: the row is `justify-between`, so
+                  this cluster hangs off the right edge and the LAST control
+                  keeps its position. Measured in Chromium against the classes
+                  extracted from this file, inside the app's w-16 rail and
+                  max-w-4xl container — overlap of the armed Confirm against
+                  the box "Remove" vacated:
+
+                      1100px   default 100%   with `end` 0%
+                       375px   default   0%   with `end` 0%
+
+                  So `end` is strictly better here, with none of the phone
+                  regression the stacked rows pay: at 375px `flex-wrap` puts
+                  the armed pair on its own line under the title, clear of
+                  the delete's old position either way. */}
+              <RowActions
+                className="flex shrink-0 flex-wrap items-center gap-2"
+                destructive={
+                  canRemove ? (
+                    <ConfirmDelete
+                      pinned="end"
+                      label="Remove"
+                      confirmLabel="Confirm remove"
+                      pendingLabel="Removing…"
+                      pending={isPending}
+                      onConfirm={() => run(() => removeCertificationRequirement(requirement.id))}
+                      deleteClassName={btn}
+                      cancelClassName={btn}
+                      confirmClassName={confirmBtn}
+                    />
+                  ) : null
+                }
+              />
             </li>
           ))}
         </ul>

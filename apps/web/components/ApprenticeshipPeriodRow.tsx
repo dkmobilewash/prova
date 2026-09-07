@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { deleteApprenticeshipPeriod, updateApprenticeshipPeriod } from "@/lib/actions";
+import { ConfirmDelete, RowActions } from "@/components/RowActions";
 
 const field =
   "rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-600 focus:border-blue-500 focus:outline-none";
@@ -31,7 +32,6 @@ export function ApprenticeshipPeriodRow({
   children: React.ReactNode;
 }) {
   const [editing, setEditing] = useState(false);
-  const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
@@ -125,43 +125,32 @@ export function ApprenticeshipPeriodRow({
   return (
     <li className="flex flex-wrap items-center gap-x-3 py-2">
       {children}
-      <span className="flex items-center gap-2">
+      {/* Arming the remove empties this row. "Edit" used to stay live beside
+          the armed confirm — one click past where you meant to stop and you
+          are editing the period you were trying to leave alone. It is a child
+          of RowActions now, so anything added here later is covered too. */}
+      <RowActions
+        as="span"
+        className="flex items-center gap-2"
+        destructive={
+          canDelete ? (
+            <ConfirmDelete
+              label="Remove"
+              confirmLabel="Confirm remove"
+              pendingLabel="Removing…"
+              pending={isPending}
+              onConfirm={() => run(() => deleteApprenticeshipPeriod(periodId))}
+              deleteClassName={linkBtn}
+              cancelClassName={linkBtn}
+              confirmClassName="text-xs text-red-400 underline hover:text-red-300 disabled:opacity-50"
+            />
+          ) : null
+        }
+      >
         <button type="button" disabled={isPending} onClick={() => setEditing(true)} className={linkBtn}>
           Edit
         </button>
-        {canDelete &&
-          (confirming ? (
-            <>
-              <button
-                type="button"
-                disabled={isPending}
-                onClick={() => setConfirming(false)}
-                className={linkBtn}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={isPending}
-                onClick={() =>
-                  run(() => deleteApprenticeshipPeriod(periodId), () => setConfirming(false))
-                }
-                className="text-xs text-red-400 underline hover:text-red-300 disabled:opacity-50"
-              >
-                {isPending ? "Removing…" : "Confirm remove"}
-              </button>
-            </>
-          ) : (
-            <button
-              type="button"
-              disabled={isPending}
-              onClick={() => setConfirming(true)}
-              className={linkBtn}
-            >
-              Remove
-            </button>
-          ))}
-      </span>
+      </RowActions>
       {error && (
         <p role="alert" className="w-full text-sm text-red-400">
           {error}

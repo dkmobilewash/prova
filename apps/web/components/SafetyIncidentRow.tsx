@@ -8,6 +8,17 @@ import {
   type JobOption,
 } from "@/components/SafetyIncidentFields";
 import { classificationLabel, isRecordable, outcomeLabel } from "@/components/safetyLabels";
+import { ConfirmDelete, RowActions } from "@/components/RowActions";
+
+// Defined once so the row's controls can't drift back under 44px a button at
+// a time. `inline-flex` + `items-center` is what makes min-h centre the label
+// instead of pinning it to the top.
+const rowBtn =
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50";
+const rowBtnDanger =
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:border-red-500 hover:text-red-400 disabled:opacity-50";
+const rowBtnConfirm =
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-red-500 px-3 py-2 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50";
 
 export type IncidentRowData = IncidentDefaults & {
   id: string;
@@ -26,7 +37,6 @@ export function SafetyIncidentRow({
   canDelete: boolean;
 }) {
   const [isEditing, setIsEditing] = useState(false);
-  const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -61,11 +71,11 @@ export function SafetyIncidentRow({
 
           {error && <p className="text-sm text-red-400">{error}</p>}
 
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button
               type="submit"
               disabled={isPending}
-              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+              className="inline-flex min-h-11 items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
             >
               {isPending ? "Saving…" : "Save changes"}
             </button>
@@ -76,7 +86,7 @@ export function SafetyIncidentRow({
                 setIsEditing(false);
                 setError(null);
               }}
-              className="rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50"
+              className="inline-flex min-h-11 items-center justify-center rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50"
             >
               Cancel
             </button>
@@ -92,9 +102,9 @@ export function SafetyIncidentRow({
     <li className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start">
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="font-mono text-xs text-slate-500">{incident.caseLabel}</span>
+          <span className="font-mono text-xs text-slate-400">{incident.caseLabel}</span>
           <span className="text-slate-100">{incident.employeeName}</span>
-          {incident.jobTitle && <span className="text-xs text-slate-500">{incident.jobTitle}</span>}
+          {incident.jobTitle && <span className="text-xs text-slate-400">{incident.jobTitle}</span>}
           <span
             className={`rounded px-1.5 py-0.5 text-xs ${
               recordable ? "bg-amber-500/15 text-amber-300" : "bg-slate-800 text-slate-400"
@@ -106,13 +116,17 @@ export function SafetyIncidentRow({
 
         <p className="mt-1 text-sm text-slate-300">{incident.description}</p>
 
-        <p className="mt-1 text-xs text-slate-500">
+        {/* slate-400, not slate-500 — measured 3.83:1 on the slate-900 card,
+            under the 4.5 floor for text, and tailwind.config.ts calls this
+            exact value "optional text only". The DATE of an incident and its
+            classification are the two things an OSHA inspector reads. */}
+        <p className="mt-1 text-xs text-slate-400">
           {incident.occurredAt} · {classificationLabel(incident.classification)} ·{" "}
           {outcomeLabel(incident.outcome)}
           {incident.daysAway != null && ` · ${incident.daysAway} days away`}
           {incident.daysRestricted != null && ` · ${incident.daysRestricted} days restricted`}
         </p>
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-slate-400">
           {incident.jobName ? (
             <span className="text-blue-400">{incident.jobName}</span>
           ) : (
@@ -125,58 +139,53 @@ export function SafetyIncidentRow({
         {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
       </div>
 
-      <div className="flex shrink-0 items-center gap-2">
+      {/* Arming "Remove" empties this cluster. A safety case is evidence,
+          and "Edit" used to sit live beside the armed "Confirm remove" —
+          one click past a cancel opened the edit form on the record you
+          were trying to leave alone. It is a child of RowActions now.
+
+          No `pinned` here on purpose: this row is right-pinned only from
+          sm up, and neither value is right at both widths. Re-measured for
+          the #89 merge — default 100%/75% at 1100/375, `end` 0%/85% — and
+          left at the default exactly as #176 left it. Flipping it to `end`
+          would make the desktop case safe, as it does on the four sibling
+          rows, but that is a decision to take deliberately rather than
+          inside a merge. Numbers in PINNED_EXCEPTIONS in
+          `rowActionsCensus.test.ts`. */}
+      <RowActions
+        className="flex shrink-0 flex-wrap items-center gap-3"
+        destructive={
+          canDelete ? (
+            <ConfirmDelete
+              label="Remove"
+              confirmLabel="Confirm remove"
+              pendingLabel="Removing…"
+              pending={isPending}
+              onConfirm={() =>
+                run(async () => {
+                  // Returns rather than throws: production redacts a
+                  // thrown message, and the reason a recordable case
+                  // cannot be deleted is the whole point of saying it.
+                  const result = await deleteSafetyIncident(incident.id);
+                  if (!result.ok) throw new Error(result.error);
+                }, "Could not remove the case")
+              }
+              deleteClassName={rowBtnDanger}
+              cancelClassName={rowBtn}
+              confirmClassName={rowBtnConfirm}
+            />
+          ) : null
+        }
+      >
         <button
           type="button"
           disabled={isPending}
-          onClick={() => {
-            setIsEditing(true);
-            setIsConfirmingDelete(false);
-          }}
-          className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50"
+          onClick={() => setIsEditing(true)}
+          className={rowBtn}
         >
           Edit
         </button>
-
-        {canDelete &&
-          (isConfirmingDelete ? (
-            <>
-              <button
-                type="button"
-                disabled={isPending}
-                onClick={() =>
-                  run(async () => {
-                    // Returns rather than throws: production redacts a
-                    // thrown message, and the reason a recordable case
-                    // cannot be deleted is the whole point of saying it.
-                    const result = await deleteSafetyIncident(incident.id);
-                    if (!result.ok) throw new Error(result.error);
-                  }, "Could not remove the case")
-                }
-                className="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50"
-              >
-                {isPending ? "Removing…" : "Confirm remove"}
-              </button>
-              <button
-                type="button"
-                disabled={isPending}
-                onClick={() => setIsConfirmingDelete(false)}
-                className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50"
-              >
-                Cancel
-              </button>
-            </>
-          ) : (
-            <button
-              type="button"
-              disabled={isPending}
-              onClick={() => setIsConfirmingDelete(true)}
-              className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:border-red-500 hover:text-red-400 disabled:opacity-50"
-            >
-              Remove
-            </button>
-          ))}
-      </div>
+      </RowActions>
     </li>
   );
 }

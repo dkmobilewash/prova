@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { Button } from "@prova/ui";
 import type { ActionResult } from "@/lib/actions/shared";
+import { ConfirmDelete, RowActions } from "@/components/RowActions";
 
 /**
  * Connect and disconnect for one integration card.
@@ -18,6 +19,12 @@ import type { ActionResult } from "@/lib/actions/shared";
  * app, and never `window.confirm`. It is not a delete, but it does drop a
  * credential and stop a sync, and a single click that quietly stops an
  * accounting feed is the kind of thing nobody notices until month end.
+ *
+ * It goes through `<RowActions>` for the same reason every row does. Nothing
+ * is live beside it today — "Connect" only renders when disconnected — but
+ * it was hand-rolling its own armed state, which is exactly the mechanism
+ * issue #152 catalogued twenty times, and the next button added to this card
+ * would have inherited the bug for free.
  */
 export function IntegrationControls({
   connected,
@@ -32,7 +39,6 @@ export function IntegrationControls({
 }) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [isConfirming, setIsConfirming] = useState(false);
 
   const run = (action: () => Promise<ActionResult>, onDone?: () => void) => {
     setError(null);
@@ -57,35 +63,31 @@ export function IntegrationControls({
         </Button>
       )}
 
-      {connected && !isConfirming && (
-        <Button type="button" variant="secondary" onClick={() => setIsConfirming(true)}>
-          Disconnect
-        </Button>
-      )}
-
-      {connected && isConfirming && (
-        <div className="flex flex-col items-end gap-1">
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <button
-              type="button"
-              disabled={isPending}
-              onClick={() => run(disconnect, () => setIsConfirming(false))}
-              className="rounded-md border border-red-500 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {isPending ? "Disconnecting…" : "Confirm disconnect"}
-            </button>
-            <button
-              type="button"
-              onClick={() => setIsConfirming(false)}
-              className="rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-body hover:text-ink"
-            >
-              Cancel
-            </button>
-          </div>
-          <p className="max-w-[16rem] text-right text-xs text-ink-muted">
-            {providerName} stops syncing. The history below is kept.
-          </p>
-        </div>
+      {connected && (
+        <RowActions
+          className="flex flex-col items-end gap-1"
+          destructive={
+            <ConfirmDelete
+              label="Disconnect"
+              confirmLabel="Confirm disconnect"
+              pendingLabel="Disconnecting…"
+              pending={isPending}
+              onConfirm={() => run(disconnect)}
+              armedClassName="flex flex-wrap items-center justify-end gap-2"
+              hint={
+                <span className="max-w-[16rem] text-right text-ink-muted">
+                  {providerName} stops syncing. The history below is kept.
+                </span>
+              }
+              // Matches @prova/ui's <Button variant="secondary">, which this
+              // used to be. ConfirmDelete renders a plain button so that one
+              // component can serve both the pill rows and the text-link rows.
+              deleteClassName="inline-flex items-center justify-center rounded-md border border-line-card bg-surface px-3 py-1.5 text-xs font-medium text-ink-label hover:bg-tag-slate disabled:cursor-not-allowed disabled:opacity-60"
+              cancelClassName="rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-body hover:text-ink disabled:opacity-60"
+              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-60"
+            />
+          }
+        />
       )}
 
       {error && (

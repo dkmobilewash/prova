@@ -37,7 +37,7 @@ export function EquipmentForm() {
       <button
         type="button"
         onClick={() => setIsOpen(true)}
-        className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
+        className="inline-flex min-h-11 items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
       >
         Add equipment
       </button>
@@ -56,7 +56,7 @@ export function EquipmentForm() {
           <button
             type="submit"
             disabled={isPending}
-            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+            className="inline-flex min-h-11 items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
           >
             {isPending ? "Saving…" : "Add equipment"}
           </button>
@@ -67,7 +67,7 @@ export function EquipmentForm() {
               setIsOpen(false);
               setError(null);
             }}
-            className="rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50"
+            className="inline-flex min-h-11 items-center justify-center rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50"
           >
             Cancel
           </button>

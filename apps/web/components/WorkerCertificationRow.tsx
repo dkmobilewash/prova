@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { deleteWorkerCertification, updateWorkerCertification } from "@/lib/actions";
 import type { ActionResult } from "@/lib/actions/shared";
 import { CertificationFields } from "@/components/CertificationFields";
+import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import {
   STANDING_LABELS,
   standingChipClass,
@@ -18,6 +19,14 @@ const btn =
 const primaryBtn =
   "rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50";
 
+/* The record line's controls are text links inside a sentence, not pills.
+   Named here so the armed pair keeps exactly the look the hand-rolled
+   version had — the conversion is about WHERE the arming state lives, and
+   is not licence to restyle the row. */
+const recordLink = "ml-2 text-slate-500 underline disabled:opacity-50";
+const recordLinkCancel = "ml-2 text-slate-400 underline disabled:opacity-50";
+const recordLinkConfirm = "ml-2 text-red-400 underline disabled:opacity-50";
+
 function workerLabel(worker: WorkerStanding["worker"]) {
   return worker.name?.trim() || worker.email;
 }
@@ -27,13 +36,10 @@ function HoldingBlock({
   holderLabel,
   canDelete,
   editingId,
-  confirmingId,
   isPending,
   error,
   onEdit,
   onCancelEdit,
-  onConfirm,
-  onCancelConfirm,
   onSave,
   onDelete,
 }: {
@@ -41,13 +47,10 @@ function HoldingBlock({
   holderLabel: string;
   canDelete: boolean;
   editingId: string | null;
-  confirmingId: string | null;
   isPending: boolean;
   error: string | null;
   onEdit: (id: string) => void;
   onCancelEdit: () => void;
-  onConfirm: (id: string) => void;
-  onCancelConfirm: () => void;
   onSave: (id: string, formData: FormData) => void;
   onDelete: (id: string) => void;
 }) {
@@ -112,54 +115,72 @@ function HoldingBlock({
               {record.referenceNumber && ` · #${record.referenceNumber}`}
               {supersededBy && " · superseded"}
               {record.notes && <span className="text-slate-500"> — {record.notes}</span>}
-              {record.documentUrl && (
-                <a
-                  href={record.documentUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="ml-2 text-blue-400 underline"
-                >
-                  {record.documentLabel || "open"}
-                </a>
-              )}
-              <button
-                type="button"
-                disabled={isPending}
-                onClick={() => onEdit(record.id)}
-                className="ml-2 text-slate-500 underline disabled:opacity-50"
+              {/* Arming "Remove" empties this record line of everything else.
+                  Both ordinary controls — the document link and "Edit" — are
+                  children of RowActions, so neither survives beside the armed
+                  confirm, and neither does whatever gets added here next. This
+                  row hand-rolled the two-step delete because #88 was written
+                  before #176 landed; the census in `rowActionsCensus.test.ts`
+                  is what caught it.
+
+                  The `end` pinning below is MEASURED, and it is a lesser
+                  evil rather than a fix. Chromium, classes extracted from
+                  this file, the app's w-16 rail and max-w-4xl container;
+                  overlap of the armed Confirm against the box "Remove"
+                  vacated:
+
+                      1100px   default 100%   with `end` 54%
+                       375px   default   0%   with `end` 54%
+
+                  Neither value reaches 0% on desktop, because this cluster
+                  is the shape `pinned` cannot solve: the delete is the LAST
+                  control in a LEFT-flowing inline cluster, so hiding the
+                  document link and Edit reflows the armed pair leftwards and
+                  nothing is left holding the delete's pixel. Same mechanism
+                  as issue #184, which is filed against the stacked rows.
+                  `end` is taken because it is right on the DESKTOP case —
+                  100% -> 54% — which is how the rows merged in #176 and #89
+                  resolved the same trade. The phone regresses 0% -> 54% and
+                  wants the layout change #184 is about, not another value of
+                  this prop. It also happens to keep the order this row
+                  already rendered: [Confirm remove][Cancel]. */}
+              <RowActions
+                as="span"
+                destructive={
+                  canDelete ? (
+                    <ConfirmDelete
+                      pinned="end"
+                      label="Remove"
+                      confirmLabel="Confirm remove"
+                      pendingLabel="Removing…"
+                      pending={isPending}
+                      onConfirm={() => onDelete(record.id)}
+                      deleteClassName={recordLink}
+                      cancelClassName={recordLinkCancel}
+                      confirmClassName={recordLinkConfirm}
+                    />
+                  ) : null
+                }
               >
-                Edit
-              </button>
-              {canDelete &&
-                (confirmingId === record.id ? (
-                  <>
-                    <button
-                      type="button"
-                      disabled={isPending}
-                      onClick={() => onDelete(record.id)}
-                      className="ml-2 text-red-400 underline disabled:opacity-50"
-                    >
-                      {isPending ? "Removing…" : "Confirm remove"}
-                    </button>
-                    <button
-                      type="button"
-                      disabled={isPending}
-                      onClick={onCancelConfirm}
-                      className="ml-2 text-slate-400 underline disabled:opacity-50"
-                    >
-                      Cancel
-                    </button>
-                  </>
-                ) : (
-                  <button
-                    type="button"
-                    disabled={isPending}
-                    onClick={() => onConfirm(record.id)}
-                    className="ml-2 text-slate-500 underline disabled:opacity-50"
+                {record.documentUrl && (
+                  <a
+                    href={record.documentUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="ml-2 text-blue-400 underline"
                   >
-                    Remove
-                  </button>
-                ))}
+                    {record.documentLabel || "open"}
+                  </a>
+                )}
+                <button
+                  type="button"
+                  disabled={isPending}
+                  onClick={() => onEdit(record.id)}
+                  className={recordLink}
+                >
+                  Edit
+                </button>
+              </RowActions>
             </li>
           );
         })}
@@ -180,8 +201,11 @@ export function WorkerCertificationRow({
    * person's paperwork. */
   showEverything: boolean;
 }) {
+  /* `editingId` stays: it drives the inline edit form, which is a different
+     job from arming a delete. The `confirmingId` that used to sit beside it
+     is gone — each record's <RowActions> owns its own arming now, so there is
+     no keyed arming state to keep in sync with anything. */
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -224,17 +248,13 @@ export function WorkerCertificationRow({
               holderLabel={workerLabel(standing.worker)}
               canDelete={canDelete}
               editingId={editingId}
-              confirmingId={confirmingId}
               isPending={isPending}
               error={error}
               onEdit={(id) => {
                 setEditingId(id);
-                setConfirmingId(null);
                 setError(null);
               }}
               onCancelEdit={() => setEditingId(null)}
-              onConfirm={(id) => setConfirmingId(id)}
-              onCancelConfirm={() => setConfirmingId(null)}
               onSave={(id, formData) =>
                 run(
                   () => updateWorkerCertification(id, formData),
