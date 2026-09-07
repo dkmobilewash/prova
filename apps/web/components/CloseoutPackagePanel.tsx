@@ -11,6 +11,7 @@ import {
 import type { ActionResult } from "@/lib/actions/shared";
 import { inputClass, labelClass } from "@/components/RfiFields";
 import { localToday } from "@/components/localToday";
+import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { money } from "@/lib/money";
 import type { CloseoutReadiness } from "@/lib/closeout-readiness";
 import {
@@ -59,7 +60,6 @@ export function CloseoutPackagePanel({
   const [openForm, setOpenForm] = useState<"none" | "submit">("none");
   const [respondingTo, setRespondingTo] = useState<string | null>(null);
   const [outcome, setOutcome] = useState("ACCEPTED");
-  const [confirming, setConfirming] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -222,7 +222,28 @@ export function CloseoutPackagePanel({
                   </div>
                 </form>
               ) : (
-                <div className="mt-2 flex flex-wrap gap-2">
+                /* Arming the delete empties this row. "Record response" and
+                   "Reopen" both used to stay live beside the armed confirm —
+                   issue #152 — so one click past where you meant to stop
+                   reopened a submission you were trying not to touch. They
+                   are children of RowActions now, which covers whatever gets
+                   added to this row next. */
+                <RowActions
+                  className="mt-2 flex flex-wrap gap-2"
+                  destructive={
+                    canDelete ? (
+                      <ConfirmDelete
+                        confirmLabel="Confirm delete"
+                        pendingLabel="Deleting…"
+                        pending={isPending}
+                        onConfirm={() => run(() => deleteCloseoutSubmission(s.id))}
+                        deleteClassName={btn}
+                        cancelClassName={btn}
+                        confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+                      />
+                    ) : null
+                  }
+                >
                   {s.status === "SUBMITTED" && (
                     <button
                       type="button"
@@ -247,42 +268,7 @@ export function CloseoutPackagePanel({
                       Reopen
                     </button>
                   )}
-                  {canDelete &&
-                    (confirming === s.id ? (
-                      <>
-                        <button
-                          type="button"
-                          disabled={isPending}
-                          onClick={() =>
-                            run(() => deleteCloseoutSubmission(s.id), () => setConfirming(null))
-                          }
-                          className="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50"
-                        >
-                          {isPending ? "Deleting…" : "Confirm delete"}
-                        </button>
-                        <button
-                          type="button"
-                          disabled={isPending}
-                          onClick={() => setConfirming(null)}
-                          className={btn}
-                        >
-                          Cancel
-                        </button>
-                      </>
-                    ) : (
-                      <button
-                        type="button"
-                        disabled={isPending}
-                        onClick={() => {
-                          setConfirming(s.id);
-                          setError(null);
-                        }}
-                        className={btn}
-                      >
-                        Delete
-                      </button>
-                    ))}
-                </div>
+                </RowActions>
               )}
             </li>
           ))}

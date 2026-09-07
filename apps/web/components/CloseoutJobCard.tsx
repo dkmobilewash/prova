@@ -31,6 +31,7 @@ import {
   warrantyStateLabel,
 } from "@/components/closeoutLabels";
 import { localToday } from "@/components/localToday";
+import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { closeoutChip } from "@/components/closeoutPackageLabels";
 import type { CloseoutBlocker, CloseoutStage } from "@/lib/closeout-readiness";
 
@@ -87,7 +88,6 @@ export function CloseoutJobCard({
   const [openForm, setOpenForm] = useState<"none" | "item" | "warranty" | "request">("none");
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [editingRequestId, setEditingRequestId] = useState<string | null>(null);
-  const [confirming, setConfirming] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -267,60 +267,53 @@ export function CloseoutJobCard({
                   {!item.isRequired && <span className="text-slate-500"> · optional</span>}
                   {item.completedOn && <span className="text-slate-500"> · {item.completedOn}</span>}
                   {item.note && <span className="text-slate-500"> — {item.note}</span>}
-                  {item.documentUrl && (
-                    <a
-                      href={item.documentUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="ml-2 text-xs text-blue-400 underline"
-                    >
-                      {item.documentName || "open"}
-                    </a>
-                  )}
-                  <button
-                    type="button"
-                    disabled={isPending}
-                    onClick={() => setEditingItemId(item.id)}
-                    className={`${linkBtn} ml-2`}
+                  {/* Arming the remove empties the rest of this row. The
+                      document link and "Mark done…" both used to stay live
+                      beside the armed confirm — issue #152 — so one click
+                      past where you meant to stop opened the item editor
+                      instead of cancelling. They are children of RowActions
+                      now, which covers whatever gets added here next. */}
+                  <RowActions
+                    as="span"
+                    destructive={
+                      canDelete ? (
+                        <ConfirmDelete
+                          label="Remove"
+                          confirmLabel="Confirm remove"
+                          pending={isPending}
+                          onConfirm={() => run(() => deleteCloseoutItem(item.id))}
+                          deleteClassName={`${linkBtn} ml-2`}
+                          cancelClassName={`${linkBtn} ml-2`}
+                          confirmClassName="ml-2 text-xs text-red-400 underline disabled:opacity-50"
+                        />
+                      ) : null
+                    }
                   >
-                    {/* "Mark done" marked nothing done -- it opens the item
-                        editor, where a date has to be typed. The ellipsis is
-                        the honest version. Not changed to complete-on-click
-                        with today's date, because the date a closeout item was
-                        actually signed is frequently NOT today, and this app
-                        does not fill dates in on someone's behalf. */}
-                    {item.completedOn ? "Edit" : "Mark done…"}
-                  </button>
-                  {canDelete &&
-                    (confirming === item.id ? (
-                      <>
-                        <button
-                          type="button"
-                          disabled={isPending}
-                          onClick={() => run(() => deleteCloseoutItem(item.id), () => setConfirming(null))}
-                          className="ml-2 text-xs text-red-400 underline disabled:opacity-50"
-                        >
-                          Confirm remove
-                        </button>
-                        <button
-                          type="button"
-                          disabled={isPending}
-                          onClick={() => setConfirming(null)}
-                          className={`${linkBtn} ml-2`}
-                        >
-                          Cancel
-                        </button>
-                      </>
-                    ) : (
-                      <button
-                        type="button"
-                        disabled={isPending}
-                        onClick={() => setConfirming(item.id)}
-                        className={`${linkBtn} ml-2`}
+                    {item.documentUrl && (
+                      <a
+                        href={item.documentUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="ml-2 text-xs text-blue-400 underline"
                       >
-                        Remove
-                      </button>
-                    ))}
+                        {item.documentName || "open"}
+                      </a>
+                    )}
+                    <button
+                      type="button"
+                      disabled={isPending}
+                      onClick={() => setEditingItemId(item.id)}
+                      className={`${linkBtn} ml-2`}
+                    >
+                      {/* "Mark done" marked nothing done -- it opens the item
+                          editor, where a date has to be typed. The ellipsis is
+                          the honest version. Not changed to complete-on-click
+                          with today's date, because the date a closeout item was
+                          actually signed is frequently NOT today, and this app
+                          does not fill dates in on someone's behalf. */}
+                      {item.completedOn ? "Edit" : "Mark done…"}
+                    </button>
+                  </RowActions>
                 </li>
               ),
             )}
@@ -425,32 +418,29 @@ export function CloseoutJobCard({
             </div>
           </form>
         ) : (
-          <div className="flex flex-wrap gap-2">
+          /* Arming the remove hides "Edit warranty"/"Set the warranty
+             period" — issue #152. It sat live beside the armed confirm, in
+             the position a hurried second click lands on. */
+          <RowActions
+            className="flex flex-wrap gap-2"
+            destructive={
+              job.warranty && canDelete ? (
+                <ConfirmDelete
+                  label="Remove"
+                  confirmLabel="Confirm remove"
+                  pending={isPending}
+                  onConfirm={() => run(() => deleteWarrantyPeriod(job.id))}
+                  deleteClassName={btn}
+                  cancelClassName={btn}
+                  confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+                />
+              ) : null
+            }
+          >
             <button type="button" disabled={isPending} onClick={() => setOpenForm("warranty")} className={btn}>
               {job.warranty ? "Edit warranty" : "Set the warranty period"}
             </button>
-            {job.warranty &&
-              canDelete &&
-              (confirming === "warranty" ? (
-                <>
-                  <button
-                    type="button"
-                    disabled={isPending}
-                    onClick={() => run(() => deleteWarrantyPeriod(job.id), () => setConfirming(null))}
-                    className="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50"
-                  >
-                    Confirm remove
-                  </button>
-                  <button type="button" disabled={isPending} onClick={() => setConfirming(null)} className={btn}>
-                    Cancel
-                  </button>
-                </>
-              ) : (
-                <button type="button" disabled={isPending} onClick={() => setConfirming("warranty")} className={btn}>
-                  Remove
-                </button>
-              ))}
-          </div>
+          </RowActions>
         )}
       </section>
 
@@ -560,44 +550,34 @@ export function CloseoutJobCard({
                   <span className="block text-slate-300">{r.description}</span>
                   {r.reportedBy && <span className="text-xs text-slate-500">reported by {r.reportedBy} · </span>}
                   {r.resolutionNote && <span className="text-xs text-slate-500">{r.resolutionNote} · </span>}
-                  <button
-                    type="button"
-                    disabled={isPending}
-                    onClick={() => setEditingRequestId(r.id)}
-                    className={linkBtn}
+                  {/* Arming the remove hides "Resolve"/"Edit" — issue #152.
+                      It stayed live beside the armed confirm, so a click
+                      meant to cancel a delete opened the callback editor. */}
+                  <RowActions
+                    as="span"
+                    destructive={
+                      canDelete ? (
+                        <ConfirmDelete
+                          label="Remove"
+                          confirmLabel="Confirm remove"
+                          pending={isPending}
+                          onConfirm={() => run(() => deleteServiceRequest(r.id))}
+                          deleteClassName={`${linkBtn} ml-2`}
+                          cancelClassName={`${linkBtn} ml-2`}
+                          confirmClassName="ml-2 text-xs text-red-400 underline disabled:opacity-50"
+                        />
+                      ) : null
+                    }
                   >
-                    {isOpen(r) ? "Resolve" : "Edit"}
-                  </button>
-                  {canDelete &&
-                    (confirming === r.id ? (
-                      <>
-                        <button
-                          type="button"
-                          disabled={isPending}
-                          onClick={() => run(() => deleteServiceRequest(r.id), () => setConfirming(null))}
-                          className="ml-2 text-xs text-red-400 underline disabled:opacity-50"
-                        >
-                          Confirm remove
-                        </button>
-                        <button
-                          type="button"
-                          disabled={isPending}
-                          onClick={() => setConfirming(null)}
-                          className={`${linkBtn} ml-2`}
-                        >
-                          Cancel
-                        </button>
-                      </>
-                    ) : (
-                      <button
-                        type="button"
-                        disabled={isPending}
-                        onClick={() => setConfirming(r.id)}
-                        className={`${linkBtn} ml-2`}
-                      >
-                        Remove
-                      </button>
-                    ))}
+                    <button
+                      type="button"
+                      disabled={isPending}
+                      onClick={() => setEditingRequestId(r.id)}
+                      className={linkBtn}
+                    >
+                      {isOpen(r) ? "Resolve" : "Edit"}
+                    </button>
+                  </RowActions>
                 </li>
               ),
             )}

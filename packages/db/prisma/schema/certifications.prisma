@@ -1,0 +1,152 @@
+// Worker certifications and safety training — the cards a person has to be
+// able to produce at the gate.
+//
+// Part of the multi-file Prisma schema in this folder. Its own file, like
+// crm.prisma and backcharges.prisma, so this lane's migrations don't
+// collide with anyone else's schema edits.
+//
+// WHY THIS IS A MODEL AND NOT A ComplianceDocument ROW
+//
+// ComplianceDocument is company-level paperwork about a PARTY — a COI, a
+// certified payroll submission, a lien waiver. These are about a PERSON,
+// they expire on their own clocks, and the question asked of them is
+// "which of the six men I'm sending to Maple tomorrow can't legally be
+// there", which no party-keyed document model can answer.
+
+enum CertificationKind {
+  OSHA_10
+  OSHA_30
+  SCAFFOLD_COMPETENT_PERSON
+  SCAFFOLD_USER
+  AERIAL_LIFT
+  POWERED_INDUSTRIAL_TRUCK
+  FALL_PROTECTION
+  SILICA_AWARENESS
+  RESPIRATOR_FIT_TEST
+  RESPIRATOR_MEDICAL_EVALUATION
+  HEARING_CONSERVATION
+  FIRST_AID_CPR
+  HOT_WORK
+  CONFINED_SPACE
+  HAZARD_COMMUNICATION
+  SITE_ORIENTATION
+  OTHER
+}
+
+/// One card, one class, one fit test — a single thing a worker holds.
+///
+/// Keyed on User rather than a free-text name, deliberately and unlike
+/// SafetyIncident.employeeName. An incident can involve a visitor or a day
+/// hire who will never have an account; a certification only matters for
+/// somebody you DISPATCH, and everyone you dispatch is already a User here
+/// (JobAssignment, TimeEntry and DispatchSlip all key on one). Free text
+/// would make "who on this job's crew is short" unanswerable, which is the
+/// only question this model exists to answer.
+///
+/// There is deliberately NO unique constraint on (holder, kind). A renewed
+/// card is a NEW row, and the superseded one stays: the record of what was
+/// valid on the day of an incident is exactly what gets read back
+/// afterwards. Which row governs today is derived per read — see
+/// lib/certifications.ts — never stored, same rule as the current drawing
+/// revision and the current submittal revision.
+model WorkerCertification {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  /// Whose card it is. Locked after creation: a card belongs to the person
+  /// named on it, and moving it to someone else would silently rewrite who
+  /// was qualified on a past date.
+  holderUserId String
+  holder       User   @relation("WorkerCertificationHolder", fields: [holderUserId], references: [id])
+
+  /// Also locked after creation, for the same reason.
+  kind CertificationKind
+
+  /// Required when kind is OTHER, ignored otherwise. A GC's own site
+  /// orientation, a manufacturer's system training, a state card this
+  /// enum has never heard of.
+  otherLabel String?
+
+  /// Who issued it — the training provider, the union local, the GC.
+  issuer          String?
+  /// The card or certificate number, as printed on it.
+  referenceNumber String?
+
+  /// Both entered, never stamped: recording a card on Friday that was
+  /// issued in March has to say March. Both optional, and the two nulls
+  /// mean different things — see expiresOn.
+  issuedOn DateTime?
+
+  /// Null means NOBODY RECORDED ONE. It does not mean "never expires", and
+  /// nothing in this app reads it that way: a certification with no expiry
+  /// date is reported as unchecked, never as current. That follows
+  /// PrevailingWageRuleSet's rule exactly — a blank is the absence of an
+  /// answer, and assuming a safe default for it is how a lapsed card gets
+  /// a crew turned away at a gate while the screen says everything is
+  /// fine. Some cards genuinely do not expire (a federal OSHA 10 has no
+  /// federal expiry); most GCs still want one issued within five years, so
+  /// "no date" stays a thing worth showing rather than a thing to hide.
+  expiresOn DateTime?
+
+  notes String?
+
+  /// Where the scan actually lives — Procore, Box, a shared drive. A link
+  /// rather than an upload: a Server Action body is capped around 1MB, so
+  /// an upload here would pass for a test file and fail for a real photo
+  /// of a card. Same call as DrawingRevision.fileUrl.
+  documentUrl   String?
+  documentLabel String?
+
+  recordedByUserId String?
+  recordedBy       User?   @relation("WorkerCertificationRecorder", fields: [recordedByUserId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([holderUserId])
+  @@index([expiresOn])
+}
+
+/// What this company requires everyone to hold.
+///
+/// Without this, the roster can only report on cards somebody already
+/// entered — and the dangerous case is the opposite one: a worker with NO
+/// row for a kind at all looks identical to a worker who doesn't need it.
+/// An absence is invisible until something declares it should be there.
+/// Same reasoning as the field-report week that NAMES the days nothing was
+/// filed for.
+///
+/// Company-wide per kind, deliberately not per craft and not per job. A
+/// per-job requirement ("this GC wants its own orientation") is a real
+/// thing and is NOT this — it needs the GC's requirement list as its own
+/// data, and half of it would be worse than the honest absence.
+///
+/// Requiring the same thing twice would report the same gap twice on every
+/// worker, so the database refuses it. That is also why `otherLabel` here
+/// is NOT NULL with an empty-string default while WorkerCertification's is
+/// nullable: Postgres treats NULLs in a unique index as DISTINCT, so a
+/// nullable column in the key would let two identical "OSHA 10 required"
+/// rows both land and the constraint would look like it was working. Empty
+/// means "not an OTHER", which is a fact about the row, not a derived one.
+model CertificationRequirement {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  kind       CertificationKind
+  /// Required when kind is OTHER, empty otherwise. See the note above for
+  /// why this is empty-string rather than null.
+  otherLabel String            @default("")
+
+  /// Why it is required — the GC that asks for it, the standard it comes
+  /// from. Read by whoever wonders whether it still applies.
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, kind, otherLabel])
+  @@index([companyId])
+}

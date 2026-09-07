@@ -78,6 +78,8 @@ model Company {
   salesActivities         SalesActivity[]
   salesStageChanges       SalesStageChange[]
   equipmentAssignments    EquipmentAssignment[]
+  workerCertifications    WorkerCertification[]
+  requiredCertifications  CertificationRequirement[]
 }
 
 enum UserRole {
@@ -140,6 +142,8 @@ model User {
   loggedSalesActivities                SalesActivity[]      @relation("SalesActivityLogger")
   recordedSalesStageChanges            SalesStageChange[]   @relation("SalesStageChangeRecorder")
   recordedEquipmentAssignments         EquipmentAssignment[]
+  certifications                       WorkerCertification[] @relation("WorkerCertificationHolder")
+  recordedCertifications               WorkerCertification[] @relation("WorkerCertificationRecorder")
 
   @@index([companyId])
   apprenticeshipEnrollments ApprenticeshipEnrollment[] @relation("ApprenticeEnrollments")

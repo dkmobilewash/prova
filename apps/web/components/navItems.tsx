@@ -269,6 +269,22 @@ export const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
+    href: "/certifications",
+    label: "Certifications",
+    icon: (
+      <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5">
+        <circle cx="10" cy="8" r="3.5" stroke="currentColor" strokeWidth="1.4" />
+        <path
+          d="m7.6 11.2-1.1 5 3.5-1.9 3.5 1.9-1.1-5"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    ),
+  },
+  {
     href: "/cash-flow",
     label: "Cash flow",
     icon: (
@@ -438,6 +454,7 @@ export const NAV_GROUPS: NavGroup[] = [
       item("/prevailing-wage"),
       item("/union-compliance"),
       { ...item("/safety"), disabled: true },
+      item("/certifications"),
       item("/team"),
     ],
   },

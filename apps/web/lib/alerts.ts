@@ -827,6 +827,27 @@ export function severityIsWorseThan(severity: AlertSeverity, than: AlertSeverity
  * than met — stays silenced under the same rule, and should: the person
  * already said they had seen the worse version of it.
  */
+/**
+ * Does this snooze still have life in it on `todayIso`?
+ *
+ * Exported, and called by BOTH the reader below and the validation in
+ * lib/actions/alerts.ts, because those two used to be separate expressions
+ * reading separate clocks and they disagreed — issue #155. The read path
+ * moved onto the viewer's calendar day when #111 landed; the validation
+ * stayed on the server's UTC day, so east of UTC a snooze the form accepted
+ * was already spent by the time the list re-rendered (picked a future date,
+ * form said fine, alert straight back with no explanation), and west of UTC
+ * a perfectly good "tomorrow" was refused as "already over".
+ *
+ * One function with one `todayIso` parameter is the fix: the two can now
+ * only differ if a caller hands them different days, which is a visible
+ * mistake rather than an invisible one. `null` means dismissed rather than
+ * snoozed — no date to spend, so it never runs out.
+ */
+export function snoozeIsUnspent(snoozedUntil: string | null, todayIso: string): boolean {
+  return snoozedUntil === null || snoozedUntil > todayIso;
+}
+
 export function partitionAlerts(
   alerts: Alert[],
   acknowledgements: Acknowledgement[],
@@ -838,7 +859,7 @@ export function partitionAlerts(
 
   for (const alert of alerts) {
     const ack = byKey.get(alert.key);
-    const unspent = ack !== undefined && (ack.snoozedUntil === null || ack.snoozedUntil > todayIso);
+    const unspent = ack !== undefined && snoozeIsUnspent(ack.snoozedUntil, todayIso);
     const escalated =
       ack !== undefined &&
       severityIsWorseThan(

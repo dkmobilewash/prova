@@ -12,6 +12,7 @@ import type { FringeScheduleRow } from "@/lib/union-compliance-query";
 import { inputClass, labelClass } from "@/components/RfiFields";
 import { localToday } from "@/components/localToday";
 import { money } from "@/lib/money";
+import { ConfirmDelete, RowActions } from "@/components/RowActions";
 
 const btn =
   "rounded-md border border-slate-700 px-2 py-1 text-xs text-slate-300 hover:border-slate-500 disabled:opacity-50";
@@ -36,7 +37,6 @@ export function FringeScheduleList({
 }) {
   const [isAdding, setIsAdding] = useState(false);
   const [endingId, setEndingId] = useState<string | null>(null);
-  const [confirming, setConfirming] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -125,7 +125,29 @@ export function FringeScheduleList({
                     </button>
                   </form>
                 ) : (
-                  <span className="ml-2 inline-flex gap-2">
+                  /* Arming "delete" empties this rate's actions: "end it" is
+                     a child of RowActions, so it disappears while the confirm
+                     is up rather than sitting next to it waiting for the
+                     click that meant to cancel. Each rate owns its own armed
+                     state, so the keyed `confirming` is gone. */
+                  <RowActions
+                    as="span"
+                    className="ml-2 inline-flex gap-2"
+                    destructive={
+                      canDelete ? (
+                        <ConfirmDelete
+                          label="delete"
+                          confirmLabel="confirm delete"
+                          cancelLabel="cancel"
+                          pending={isPending}
+                          onConfirm={() => run(() => deleteFringeRateSchedule(schedule.id))}
+                          deleteClassName="text-slate-500 underline"
+                          cancelClassName="text-slate-400 underline"
+                          confirmClassName="text-red-400 underline"
+                        />
+                      ) : null
+                    }
+                  >
                     {schedule.effectiveTo === null && (
                       <button
                         type="button"
@@ -139,42 +161,7 @@ export function FringeScheduleList({
                         end it
                       </button>
                     )}
-                    {canDelete &&
-                      (confirming === schedule.id ? (
-                        <>
-                          <button
-                            type="button"
-                            disabled={isPending}
-                            onClick={() =>
-                              run(() => deleteFringeRateSchedule(schedule.id), () => setConfirming(null))
-                            }
-                            className="text-red-400 underline"
-                          >
-                            confirm delete
-                          </button>
-                          <button
-                            type="button"
-                            disabled={isPending}
-                            onClick={() => setConfirming(null)}
-                            className="text-slate-400 underline"
-                          >
-                            cancel
-                          </button>
-                        </>
-                      ) : (
-                        <button
-                          type="button"
-                          disabled={isPending}
-                          onClick={() => {
-                            setConfirming(schedule.id);
-                            setError(null);
-                          }}
-                          className="text-slate-500 underline"
-                        >
-                          delete
-                        </button>
-                      ))}
-                  </span>
+                  </RowActions>
                 )}
               </li>
             );

@@ -354,6 +354,42 @@ describe("alerts assembled from real rows", () => {
     expect(afterClear.filter((a) => a.kind === "CONTACT_FOLLOW_UP")).toEqual([]);
   });
 
+  it("raises a contact's MSA and prequalification renewals, and drops each once cleared", async () => {
+    // Issue #177: these two dates were entered and shown on /contacts/[id]
+    // but never reached renewalSourcesForCompany, so no RENEWAL alert for
+    // either kind was reachable through loadAlerts before this test existed.
+    const contact = await prisma.contact.findFirstOrThrow({ where: { companyId: context.company.id } });
+    await prisma.contact.update({
+      where: { id: contact.id },
+      data: {
+        msaExpirationDate: utc("2026-09-20"),
+        prequalificationExpiresAt: utc("2026-09-10"),
+      },
+    });
+
+    const { visible } = await loadAlerts(context.company.id, context.id, TODAY);
+    const renewals = visible.filter((a) => a.kind === "RENEWAL" && a.key.includes(contact.id));
+    expect(renewals).toHaveLength(2);
+
+    const msa = renewals.find((a) => a.key === `RENEWAL:${contact.id}:msa:2026-09-20`);
+    expect(msa).toBeDefined();
+    expect(msa?.href).toBe(`/contacts/${contact.id}`);
+    expect(msa?.title).toBe("Master Service Agreement");
+
+    const prequal = renewals.find((a) => a.key === `RENEWAL:${contact.id}:prequal:2026-09-10`);
+    expect(prequal).toBeDefined();
+    expect(prequal?.href).toBe(`/contacts/${contact.id}`);
+
+    // Cleared the same way a licence or policy is: unset the date and the
+    // alert stops existing, rather than lingering as a resolved item.
+    await prisma.contact.update({
+      where: { id: contact.id },
+      data: { msaExpirationDate: null, prequalificationExpiresAt: null },
+    });
+    const { visible: afterClear } = await loadAlerts(context.company.id, context.id, TODAY);
+    expect(afterClear.filter((a) => a.kind === "RENEWAL" && a.key.includes(contact.id))).toEqual([]);
+  });
+
   it("refuses a key that is not one this app builds", async () => {
     expect((await dismissAlert("whatever")).ok).toBe(false);
     expect((await dismissAlert("")).ok).toBe(false);
