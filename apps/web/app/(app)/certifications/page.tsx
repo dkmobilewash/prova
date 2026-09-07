@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@prova/db";
-import { requireCompanyContext } from "@/lib/auth";
+import { requireCapability } from "@/lib/authz";
+import { NoAccess } from "@/components/NoAccess";
 import { CertificationForm } from "@/components/CertificationForm";
 import { CertificationRequirements } from "@/components/CertificationRequirements";
 import { WorkerCertificationRow } from "@/components/WorkerCertificationRow";
@@ -27,7 +28,9 @@ export default async function CertificationsPage({
 }: {
   searchParams: Promise<{ show?: string }>;
 }) {
-  const { company, ...currentUser } = await requireCompanyContext();
+  const { context, allowed } = await requireCapability("MANAGE_FIELD");
+  if (!allowed) return <NoAccess capability="MANAGE_FIELD" />;
+  const { company, ...currentUser } = context;
   const { show } = await searchParams;
   const showEverything = show === "all";
 

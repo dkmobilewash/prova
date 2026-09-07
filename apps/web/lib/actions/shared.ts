@@ -159,6 +159,11 @@ export const INTERACTION_TYPES = ["CALL", "EMAIL", "SITE_VISIT", "NOTE"] as cons
 
 export const SALES_LEAD_SOURCES = ["REFERRAL", "OUTBOUND", "INBOUND", "EVENT", "OTHER"] as const;
 
+/** Deliberately not INTERACTION_TYPES: SITE_VISIT means nothing when the
+ * prospect is a software buyer, and DEMO is the meeting that moves a Prova
+ * deal. See the SalesActivity model comment. */
+export const SALES_ACTIVITY_TYPES = ["CALL", "EMAIL", "DEMO", "MEETING", "NOTE"] as const;
+
 export const OPPORTUNITY_STAGES = [
   "NEW",
   "CONTACTED",
@@ -208,6 +213,12 @@ export const actionOk: ActionResult = { ok: true };
 export function actionFail(error: string): ActionResult {
   return { ok: false, error };
 }
+
+/** ActionResult for an action that returns something on success — the same
+ * contract, with a payload. Here for the same reason ActionResult is: two
+ * feature modules exporting the same type name is a TS2308 build break,
+ * because the barrel `export *`s all of them. */
+export type ActionResultWith<T> = { ok: true; value: T } | { ok: false; error: string };
 
 /** True when a write failed a unique constraint (Prisma P2002).
  *

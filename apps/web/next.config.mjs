@@ -6,6 +6,27 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   transpilePackages: ["@prova/ui", "@prova/db"],
+  // Tags every RSC/Server Action response with the build that produced it, so
+  // a browser mid-navigation during a production promotion can tell it's
+  // talking to a version that no longer matches what it loaded, and forces a
+  // full reload instead of silently rendering a mismatched payload. This is
+  // the free half of what Vercel calls Skew Protection — the OTHER half
+  // (keeping the outgoing deployment's functions alive so an old client's
+  // in-flight request still succeeds, instead of failing and then reloading)
+  // is a Pro-plan feature this team isn't on. See NAV-IA-AUDIT.md's sibling
+  // investigation, issue #118: this does not stop a request from 503ing
+  // during the promotion window itself, since a platform-level 503 never
+  // reaches Next's client runtime with a deployment id to compare against.
+  // What it fixes is the OTHER failure class in the same family — an old
+  // client getting a real, successful response from the new deployment that
+  // doesn't match what it's holding.
+  //
+  // VERCEL_GIT_COMMIT_SHA is a Vercel-injected build-time env var, always
+  // present on a Vercel build without needing the "expose to browser" toggle
+  // (next.config.mjs runs in Node at build time, not in the browser). Sliced
+  // to 32 chars because Next.js's deploymentId has that max length. Left
+  // unset outside Vercel (local dev, CI) so nothing here changes those.
+  deploymentId: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 32),
   // Which deployment this build IS, exposed to the browser.
   //
   // The error boundary needs it. A production build redacts every thrown

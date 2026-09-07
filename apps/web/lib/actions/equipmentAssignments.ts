@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@prova/db";
 import { actionFail as fail, actionOk as ok, assertOwner, type ActionResult } from "./shared";
+import { can } from "@/lib/permissions";
 import { findOverlap, type AssignmentData } from "@/components/equipmentDeployment";
 
 /** Where equipment went, and when it came back.
@@ -12,6 +13,18 @@ import { findOverlap, type AssignmentData } from "@/components/equipmentDeployme
  * Action message, and every guard below is a sentence a dispatcher needs to
  * read — "that lift was already on Maple that week" is useless as a digest.
  */
+
+/** The only page that composes these writes is `/equipment`, guarded by
+ * MANAGE_FIELD, so every write here answers to the same capability. A
+ * guarded page in front of an open action is not a guard: a Server Action
+ * is its own endpoint and answers whoever posts to it. `/deployment` reads
+ * these rows and is open, but composes nothing — reading where the lift is
+ * and sending it somewhere are not the same door.
+ *
+ * Returned rather than thrown, matching the rest of this module and for the
+ * same reason: production redacts a thrown message. */
+const FIELD_ONLY =
+  "Field records aren't part of your job function. The account owner sets who sees what, on the Team page.";
 
 class InputError extends Error {}
 
@@ -91,8 +104,10 @@ function overlapMessage(clash: AssignmentData): string {
 
 /** Sends a piece of equipment out to a job. */
 export async function assignEquipment(formData: FormData): Promise<ActionResult> {
-  const { company, ...user } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  const { company, ...user } = context;
   return runAction(async () => {
+    if (!can(context, "MANAGE_FIELD")) return fail(FIELD_ONLY);
     const equipmentId = text(formData, "equipmentId");
     const jobId = text(formData, "jobId");
     if (!equipmentId) throw new InputError("Pick a piece of equipment");
@@ -154,8 +169,10 @@ export async function returnEquipment(
   assignmentId: string,
   formData: FormData,
 ): Promise<ActionResult> {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  const { company } = context;
   return runAction(async () => {
+    if (!can(context, "MANAGE_FIELD")) return fail(FIELD_ONLY);
     const assignment = await prisma.equipmentAssignment.findUnique({
       where: { id: assignmentId },
     });
@@ -185,8 +202,10 @@ export async function updateEquipmentAssignment(
   assignmentId: string,
   formData: FormData,
 ): Promise<ActionResult> {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  const { company } = context;
   return runAction(async () => {
+    if (!can(context, "MANAGE_FIELD")) return fail(FIELD_ONLY);
     const existing = await prisma.equipmentAssignment.findUnique({ where: { id: assignmentId } });
     if (!existing || existing.companyId !== company.id) return fail("Assignment not found");
 
@@ -230,6 +249,7 @@ export async function updateEquipmentAssignment(
 export async function deleteEquipmentAssignment(assignmentId: string): Promise<ActionResult> {
   const context = await requireCompanyContext();
   return runAction(async () => {
+    if (!can(context, "MANAGE_FIELD")) return fail(FIELD_ONLY);
     try {
       assertOwner(context, "Only the account owner can remove an equipment assignment");
     } catch (err) {

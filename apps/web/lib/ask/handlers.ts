@@ -1,6 +1,10 @@
 import { prisma } from "@prova/db";
 import { calculateJobWip, calculateLineItemWip } from "@/lib/wip";
-import { jobCostVariance } from "@/lib/company-financials";
+import {
+  jobCostVariance,
+  jobEarnedRevenue,
+  jobOverUnderBilling,
+} from "@/lib/company-financials";
 import { renewalAlerts, renewalTiming } from "@/lib/compliance-expiry";
 import { renewalSourcesForCompany } from "@/lib/renewals";
 import { serverToday } from "@/lib/serverToday";
@@ -255,10 +259,6 @@ async function jobMargin(companyId: string, input: Input): Promise<ToolResult> {
       const billed = job.invoices.reduce((sum, invoice) => sum + Number(invoice.amount), 0);
       const wip = calculateJobWip(lines, billed);
 
-      const estimatedValue = lines
-        .filter((line) => line.estimatedCostAtCompletion !== null)
-        .reduce((sum, line) => sum + line.contractValue, 0);
-
       return {
         job: job.name,
         gc: job.contact.name,
@@ -266,15 +266,21 @@ async function jobMargin(companyId: string, input: Input): Promise<ToolResult> {
         costToDate: wip.actualCostToDate,
         forecastCostAtCompletion: wip.estimatedCostAtCompletion,
         percentComplete: wip.percentComplete,
-        earnedRevenue: wip.earnedRevenue,
+        // Null rather than a flattered number: earnedRevenue is summed with
+        // `?? 0` while contract value counts in full, so on a half-estimated
+        // job the model would otherwise be handed "overbilled $80,000" as a
+        // fact and asked to judge it.
+        earnedRevenue: jobEarnedRevenue(wip),
         billedToDate: wip.billedToDate,
-        overUnderBilling: wip.overUnderBilling,
+        overUnderBilling: jobOverUnderBilling(wip),
         forecastVarianceAgainstContract: jobCostVariance(wip),
-        // Without this a job budgeted on one line out of seven reads as
+        // Without these a job budgeted on one line out of seven reads as
         // wildly profitable, because unbudgeted lines forecast zero cost
-        // while their contract value still counts.
-        shareOfValueWithACostEstimate:
-          wip.contractValue > 0 ? estimatedValue / wip.contractValue : 0,
+        // while their contract value still counts. Two ratios, because a
+        // line estimated at zero cost is covered on the cost side and not on
+        // the revenue side.
+        shareOfValueWithACostEstimate: wip.estimatedCoverage,
+        shareOfValueWithAnEarnedRevenueFigure: wip.earnedCoverage,
       };
     }),
     citations: [{ label: "Today", href: "/dashboard" }],

@@ -10,6 +10,19 @@ import {
   isUniqueConstraintError,
   type ActionResult,
 } from "./shared";
+import { can } from "@/lib/permissions";
+
+/** Every entry point to these records is a page guarded by MANAGE_JOBS,
+ * so every write here answers to the same capability. A guarded page in
+ * front of an open action is not a guard: a Server Action is its own
+ * endpoint and answers whoever posts to it.
+ *
+ * Returned rather than thrown — production redacts a thrown Server
+ * Action message, so the sentence explaining why the button did nothing
+ * would never arrive. Same reasoning as the owner check in
+ * deleteCloseoutSubmission. */
+const JOBS_ONLY =
+  "Job correspondence isn't part of your job function. The account owner sets who sees what, on the Team page.";
 
 /** Actions in this module RETURN their failures instead of throwing them.
  *
@@ -93,8 +106,10 @@ async function findSet(setId: string, companyId: string) {
 }
 
 export async function createDrawingSet(formData: FormData): Promise<ActionResult> {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  const { company } = context;
   return runAction(async () => {
+    if (!can(context, "MANAGE_JOBS")) return fail(JOBS_ONLY);
     const jobId = required(formData, "jobId", "Job");
     const job = await prisma.job.findUnique({ where: { id: jobId } });
     if (!job || job.companyId !== company.id) return fail("Job not found");
@@ -126,8 +141,10 @@ export async function createDrawingSet(formData: FormData): Promise<ActionResult
 }
 
 export async function updateDrawingSet(setId: string, formData: FormData): Promise<ActionResult> {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  const { company } = context;
   return runAction(async () => {
+    if (!can(context, "MANAGE_JOBS")) return fail(JOBS_ONLY);
     const set = await findSet(setId, company.id);
     if (!set) return fail("Drawing set not found");
 
@@ -153,6 +170,7 @@ export async function updateDrawingSet(setId: string, formData: FormData): Promi
 export async function deleteDrawingSet(setId: string): Promise<ActionResult> {
   const context = await requireCompanyContext();
   return runAction(async () => {
+    if (!can(context, "MANAGE_JOBS")) return fail(JOBS_ONLY);
     try {
       assertOwner(context, "Only the account owner can delete a drawing set");
     } catch (err) {
@@ -180,8 +198,10 @@ export async function deleteDrawingSet(setId: string): Promise<ActionResult> {
  * state worth seeing is exactly the one where a revision has been issued
  * and has NOT reached us. */
 export async function recordDrawingRevision(setId: string, formData: FormData): Promise<ActionResult> {
-  const { company, ...user } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  const { company, ...user } = context;
   return runAction(async () => {
+    if (!can(context, "MANAGE_JOBS")) return fail(JOBS_ONLY);
     const set = await findSet(setId, company.id);
     if (!set) return fail("Drawing set not found");
 
@@ -222,8 +242,10 @@ export async function recordDrawingRevision(setId: string, formData: FormData): 
 
 /** Corrects a recorded issue, and is how "it arrived" gets recorded. */
 export async function updateDrawingRevision(revisionId: string, formData: FormData): Promise<ActionResult> {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  const { company } = context;
   return runAction(async () => {
+    if (!can(context, "MANAGE_JOBS")) return fail(JOBS_ONLY);
     const revision = await prisma.drawingRevision.findUnique({
       where: { id: revisionId },
       include: { set: { select: { companyId: true } } },
@@ -258,6 +280,7 @@ export async function updateDrawingRevision(revisionId: string, formData: FormDa
 export async function deleteDrawingRevision(revisionId: string): Promise<ActionResult> {
   const context = await requireCompanyContext();
   return runAction(async () => {
+    if (!can(context, "MANAGE_JOBS")) return fail(JOBS_ONLY);
     try {
       assertOwner(context, "Only the account owner can delete a drawing revision");
     } catch (err) {

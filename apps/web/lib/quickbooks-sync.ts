@@ -375,3 +375,43 @@ export function isAccidentalRepeat(
 export function isMissingDocumentError(detail: string): boolean {
   return /object not found/i.test(detail);
 }
+
+/**
+ * Could this refusal mean the document we tried to update is GONE?
+ *
+ * Deliberately WIDER than `isMissingDocumentError`, and safe to be wide for
+ * one reason: nothing is decided by it. A true answer buys a single
+ * read-only GET of the document, and the GET is what decides. A false
+ * positive costs one API call; it cannot clear a link, and it cannot
+ * create anything.
+ *
+ * "Stale Object Error" is in here because NOBODY HAS ESTABLISHED WHAT A
+ * DELETED DOCUMENT ACTUALLY RETURNS, and that is the honest reason rather
+ * than a story about Intuit's internals.
+ *
+ * An earlier version of this comment claimed a sandbox run on 2026-09-03
+ * proved a deleted invoice answers `Stale Object Error`, and explained it
+ * with a rule about Intuit checking the SyncToken before existence. Both
+ * were wrong. The invoice in that run (QuickBooks 146) was never deleted —
+ * QuickBooks would not remove it while a payment was applied — so the
+ * stale refusal was an ordinary concurrent-edit refusal about a document
+ * that was sitting right there, and the SyncToken ordering was inference
+ * dressed up as fact. See CHANGELOG for the correction.
+ *
+ * What is left is a genuine unknown, and it is enough on its own: a
+ * stale-token refusal is exactly the case where the message cannot
+ * distinguish "somebody edited it" from "it is not there any more". Intuit
+ * documents fault 610 "Object Not Found" for a missing entity, and this
+ * project has never once observed that fault against a deleted invoice.
+ * Probing on both is cheap insurance against a wording we have not seen —
+ * not a claim that we have seen it.
+ *
+ * The Product/Service refusal ("...has been deleted...") is NOT matched
+ * here, and the test beside this pins that. It would be harmless if it were
+ * — the probe would find the invoice present and leave the link alone —
+ * but a predicate that stays honest about what it means is worth more than
+ * one that relies on the next step to clean up after it.
+ */
+export function mayMeanDocumentIsGone(detail: string): boolean {
+  return isMissingDocumentError(detail) || /stale object|sync ?token/i.test(detail);
+}

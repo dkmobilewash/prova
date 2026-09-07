@@ -27,12 +27,13 @@ export default async function PipelinePage() {
       <h1 className="mb-2 text-xl font-semibold text-slate-100">Bid pipeline</h1>
       <p className="mb-6 text-sm text-slate-400">
         Who invites us to bid, and what comes of it. Everything here is worked out from the bid
-        invitations on {""}
+        invitations listed on {""}
         <Link href="/bids" className="text-blue-400 hover:underline">
           Bids
         </Link>
-        , which is where a status gets changed — nothing on this page is stored separately, so
-        correcting a bid there moves these figures with it.
+        . Nothing here is stored separately, so correcting a bid moves these figures with it —
+        and a status or an amount is changed on the GC&apos;s own contact record, under
+        &ldquo;Bid invitations&rdquo;, not on the Bids list, which only filters and reads.
       </p>
 
       {rows.length === 0 ? (

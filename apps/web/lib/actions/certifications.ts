@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { CERTIFICATION_KINDS, certificationTitle } from "@/lib/certifications";
+import { can } from "@/lib/permissions";
 import {
   actionFail as fail,
   actionOk as ok,
@@ -83,6 +84,21 @@ function otherLabelFor(kind: Kind, formData: FormData): string | null {
   return required(formData, "otherLabel", "A name for this certification");
 }
 
+/** `/certifications` is guarded by MANAGE_FIELD, so every write here
+ * answers to the same capability. A guarded page in front of an open
+ * action is not a guard: a Server Action is its own endpoint with a stable
+ * id and it answers whoever posts to it, page or no page.
+ *
+ * Checked FIRST in every action below — before the owner check on the two
+ * deletes, and before any query. Someone who cannot reach this feature at
+ * all should be told that, not told they are not the owner; and a refusal
+ * that arrives after a read has already read.
+ *
+ * Returned rather than thrown, matching the rest of this module: production
+ * redacts a thrown Server Action message. */
+const FIELD_ONLY =
+  "Certification records aren't part of your job function. The account owner sets who sees what, on the Team page.";
+
 async function runAction(fn: () => Promise<ActionResult>): Promise<ActionResult> {
   try {
     return await fn();
@@ -99,8 +115,10 @@ async function runAction(fn: () => Promise<ActionResult>): Promise<ActionResult>
  * afterwards, and overwriting it destroys exactly that.
  */
 export async function recordWorkerCertification(formData: FormData): Promise<ActionResult> {
-  const { company, ...user } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  const { company, ...user } = context;
   return runAction(async () => {
+    if (!can(context, "MANAGE_FIELD")) return fail(FIELD_ONLY);
     const holderUserId = required(formData, "holderUserId", "Who holds it");
     const holder = await prisma.user.findUnique({ where: { id: holderUserId } });
     if (!holder || holder.companyId !== company.id) return fail("That person isn't on your team");
@@ -148,8 +166,10 @@ export async function updateWorkerCertification(
   certificationId: string,
   formData: FormData,
 ): Promise<ActionResult> {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  const { company } = context;
   return runAction(async () => {
+    if (!can(context, "MANAGE_FIELD")) return fail(FIELD_ONLY);
     const existing = await prisma.workerCertification.findUnique({
       where: { id: certificationId },
     });
@@ -188,6 +208,7 @@ export async function updateWorkerCertification(
 export async function deleteWorkerCertification(certificationId: string): Promise<ActionResult> {
   const context = await requireCompanyContext();
   return runAction(async () => {
+    if (!can(context, "MANAGE_FIELD")) return fail(FIELD_ONLY);
     try {
       assertOwner(context, "Only the account owner can delete a certification record");
     } catch (err) {
@@ -215,8 +236,10 @@ export async function deleteWorkerCertification(certificationId: string): Promis
  * finding.
  */
 export async function addCertificationRequirement(formData: FormData): Promise<ActionResult> {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  const { company } = context;
   return runAction(async () => {
+    if (!can(context, "MANAGE_FIELD")) return fail(FIELD_ONLY);
     const kind = kindFromForm(formData);
     // NOT NULL with an empty-string default on this model, unlike
     // WorkerCertification's nullable one — see certifications.prisma. A
@@ -250,6 +273,7 @@ export async function addCertificationRequirement(formData: FormData): Promise<A
 export async function removeCertificationRequirement(requirementId: string): Promise<ActionResult> {
   const context = await requireCompanyContext();
   return runAction(async () => {
+    if (!can(context, "MANAGE_FIELD")) return fail(FIELD_ONLY);
     try {
       assertOwner(context, "Only the account owner can change what the company requires");
     } catch (err) {

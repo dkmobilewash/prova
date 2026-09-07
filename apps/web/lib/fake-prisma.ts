@@ -44,6 +44,26 @@ function matches(row: Row, where: Record<string, unknown>): boolean {
   });
 }
 
+/**
+ * The columns a `where` actually constrains.
+ *
+ * Prisma spells a COMPOSITE unique key as a single nested object —
+ * `{ companyId_caseYear: { companyId, caseYear } }` — and a single-column
+ * one flat: `{ email: "…" }`. Both reach here, so unwrap the nested form
+ * and pass the flat one straight through. Reading `Object.values(where)[0]`
+ * unconditionally, as `upsert` once did, turns `{ companyId: "co_1" }`
+ * into the STRING "co_1", and matching against a string compares its
+ * character indices — which finds nothing, forever.
+ */
+function criteria(where: Record<string, unknown>): Record<string, unknown> {
+  const values = Object.values(where);
+  const onlyValue = values.length === 1 ? values[0] : null;
+  if (onlyValue && typeof onlyValue === "object" && !(onlyValue instanceof Date)) {
+    return onlyValue as Record<string, unknown>;
+  }
+  return where;
+}
+
 export class FakeDb {
   /** Table name -> rows by id. */
   private tables = new Map<string, Map<string, Row>>();
@@ -113,17 +133,31 @@ export class FakeDb {
           return row;
         }),
 
+      /**
+       * `where` may name a COMPOSITE unique key, not only `id`.
+       *
+       * Same trap `findUnique` and `upsert` already document, and it bites
+       * harder here: this used to index the id map with `where.id`
+       * unconditionally, so `update({ where: { companyId_entityType_entityId:
+       * {…} } })` did `Map.get(undefined)`, missed, and THREW "undefined not
+       * found". A caller with that update inside a try then took its error
+       * branch — so a test could watch a QuickBooks push report "couldn't
+       * read the invoice back" and be looking at this fake, not the action.
+       */
       update: ({
         where,
         data,
       }: {
-        where: { id: string };
+        where: Record<string, unknown>;
         data: Record<string, unknown>;
       }) =>
         op(() => {
           this.note(`${name}.update`);
-          const existing = this.table(name).get(where.id);
-          if (!existing) throw new Error(`${name} ${where.id} not found`);
+          const existing =
+            typeof where.id === "string"
+              ? this.table(name).get(where.id)
+              : this.rows(name).find((row) => matches(row, criteria(where)));
+          if (!existing) throw new Error(`${name} ${JSON.stringify(where)} not found`);
           // Replaced, never mutated, so the transaction snapshot is real.
           const next = { ...existing, ...data } as Row;
           this.table(name).set(next.id, next);
@@ -139,6 +173,27 @@ export class FakeDb {
           return existing;
         }),
 
+      /**
+       * Deletes every row matching a NON-unique `where`, and returns the
+       * count the way Prisma does.
+       *
+       * Here because the QuickBooks recovery path clears a link with
+       * `deleteMany` rather than `delete` — deliberately, so a link that is
+       * already gone is not an exception. A test of that path has to be
+       * able to watch the row disappear, and watching it NOT disappear is
+       * the more important half: clearing a link is the one recovery in
+       * this codebase that makes the next push a CREATE.
+       */
+      deleteMany: ({ where }: { where?: Record<string, unknown> } = {}) =>
+        op(() => {
+          this.note(`${name}.deleteMany`);
+          const doomed = where
+            ? this.rows(name).filter((row) => matches(row, where))
+            : this.rows(name);
+          for (const row of doomed) this.table(name).delete(row.id);
+          return { count: doomed.length };
+        }),
+
       upsert: ({
         where,
         create,
@@ -150,9 +205,7 @@ export class FakeDb {
       }) =>
         op(() => {
           this.note(`${name}.upsert`);
-          // The composite-key form: `{ companyId_caseYear: {...} }`.
-          const criteria = Object.values(where)[0] as Record<string, unknown>;
-          const found = this.rows(name).find((row) => matches(row, criteria));
+          const found = this.rows(name).find((row) => matches(row, criteria(where)));
           if (!found) {
             const row = { id: `${name}_${++this.seq}`, ...create } as Row;
             this.table(name).set(row.id, row);
@@ -176,15 +229,31 @@ export class FakeDb {
           return next;
         }),
 
+      /**
+       * `where` may name ANY unique column, not just `id`.
+       *
+       * This used to index the id map with `where.id` unconditionally, so
+       * `findUnique({ where: { email } })` did `Map.get(undefined)` and
+       * returned null — SILENTLY, and null is a perfectly ordinary answer
+       * for a unique lookup. requireCompanyContext looks a pending invite
+       * up by email, so under the old fake that lookup always missed and
+       * the code under test took the create-your-own-company branch
+       * instead. A test written to pin the invite path would then have
+       * been green about a path it never entered.
+       */
       findUnique: ({
         where,
         include,
       }: {
-        where: { id: string };
+        where: Record<string, unknown>;
         include?: Record<string, boolean>;
       }) =>
         op(() => {
-          const row = this.table(name).get(where.id) ?? null;
+          const row =
+            typeof where.id === "string"
+              ? (this.table(name).get(where.id) ?? null)
+              : (this.rows(name).find((candidate) => matches(candidate, criteria(where))) ??
+                null);
           return row ? this.withIncludes(row, include) : null;
         }),
 

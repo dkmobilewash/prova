@@ -4,6 +4,19 @@ import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
 import { Prisma, prisma } from "@prova/db";
 import { actionFail as fail, actionOk as ok, assertOwner, type ActionResult } from "./shared";
+import { can } from "@/lib/permissions";
+
+/** Every entry point to these records is a page guarded by MANAGE_JOBS,
+ * so every write here answers to the same capability. A guarded page in
+ * front of an open action is not a guard: a Server Action is its own
+ * endpoint and answers whoever posts to it.
+ *
+ * Returned rather than thrown — production redacts a thrown Server
+ * Action message, so the sentence explaining why the button did nothing
+ * would never arrive. Same reasoning as the owner check in
+ * deleteCloseoutSubmission. */
+const JOBS_ONLY =
+  "Job correspondence isn't part of your job function. The account owner sets who sees what, on the Team page.";
 
 /** Actions in this module RETURN their failures instead of throwing them.
  *
@@ -84,8 +97,10 @@ async function issueSubmittalNumber(tx: Prisma.TransactionClient, jobId: string)
 }
 
 export async function createSubmittal(formData: FormData): Promise<ActionResult> {
-  const { company, ...user } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  const { company, ...user } = context;
   return runAction(async () => {
+    if (!can(context, "MANAGE_JOBS")) return fail(JOBS_ONLY);
     const jobId = required(formData, "jobId", "Job");
     const job = await prisma.job.findUnique({ where: { id: jobId } });
     if (!job || job.companyId !== company.id) return fail("Job not found");
@@ -137,8 +152,10 @@ export async function createSubmittal(formData: FormData): Promise<ActionResult>
 }
 
 export async function updateSubmittal(submittalId: string, formData: FormData): Promise<ActionResult> {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  const { company } = context;
   return runAction(async () => {
+    if (!can(context, "MANAGE_JOBS")) return fail(JOBS_ONLY);
     const submittal = await findSubmittal(submittalId, company.id);
     if (!submittal) return fail("Submittal not found");
 
@@ -162,8 +179,10 @@ export async function updateSubmittal(submittalId: string, formData: FormData): 
 
 /** Sends the next revision (revision 1 is the initial submission). */
 export async function sendSubmittalRevision(submittalId: string, formData: FormData): Promise<ActionResult> {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  const { company } = context;
   return runAction(async () => {
+    if (!can(context, "MANAGE_JOBS")) return fail(JOBS_ONLY);
     const submittal = await findSubmittal(submittalId, company.id);
     if (!submittal) return fail("Submittal not found");
 
@@ -216,8 +235,10 @@ export async function sendSubmittalRevision(submittalId: string, formData: FormD
 
 /** Records (or corrects) what came back on the latest revision. */
 export async function recordSubmittalResponse(submittalId: string, formData: FormData): Promise<ActionResult> {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  const { company } = context;
   return runAction(async () => {
+    if (!can(context, "MANAGE_JOBS")) return fail(JOBS_ONLY);
     const submittal = await findSubmittal(submittalId, company.id);
     if (!submittal) return fail("Submittal not found");
 
@@ -256,6 +277,7 @@ export async function recordSubmittalResponse(submittalId: string, formData: For
 export async function deleteSubmittal(submittalId: string): Promise<ActionResult> {
   const context = await requireCompanyContext();
   return runAction(async () => {
+    if (!can(context, "MANAGE_JOBS")) return fail(JOBS_ONLY);
     try {
       assertOwner(context, "Only the account owner can delete a submittal");
     } catch (err) {

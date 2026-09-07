@@ -75,6 +75,8 @@ model Company {
   contactPeople           ContactPerson[]
   salesLeads              SalesLead[]
   salesOpportunities      SalesOpportunity[]
+  salesActivities         SalesActivity[]
+  salesStageChanges       SalesStageChange[]
   equipmentAssignments    EquipmentAssignment[]
   workerCertifications    WorkerCertification[]
   requiredCertifications  CertificationRequirement[]
@@ -135,8 +137,10 @@ model User {
   recordedWarrantyServiceRequests      WarrantyServiceRequest[]
   recordedVendorPriceQuotes            VendorPriceQuote[]
   sentOutboundMessages                 OutboundMessage[]
-  loggedContactInteractions            ContactInteraction[]  @relation("ContactInteractionLogger")
-  assignedContactFollowUps             ContactInteraction[]  @relation("ContactInteractionFollowUp")
+  loggedContactInteractions            ContactInteraction[] @relation("ContactInteractionLogger")
+  assignedContactFollowUps             ContactInteraction[] @relation("ContactInteractionFollowUp")
+  loggedSalesActivities                SalesActivity[]      @relation("SalesActivityLogger")
+  recordedSalesStageChanges            SalesStageChange[]   @relation("SalesStageChangeRecorder")
   recordedEquipmentAssignments         EquipmentAssignment[]
   certifications                       WorkerCertification[] @relation("WorkerCertificationHolder")
   recordedCertifications               WorkerCertification[] @relation("WorkerCertificationRecorder")
@@ -199,6 +203,13 @@ model Contact {
   /// Generated on-demand (client portal "enable" action), null until then.
   /// Same access-control pattern as SignatureRequest.token: an unguessable
   /// link stands in for a client login that doesn't exist yet.
+  ///
+  /// That sentence was true of the ROLE and false of the GENERATOR until
+  /// 2026-09-03: this was randomBytes(24) while SignatureRequest.token was
+  /// @default(cuid()), and a comment claiming they matched is exactly what
+  /// stops anyone checking. Both now come from `linkToken()` in
+  /// apps/web/lib/tokens.ts — one function, so the claim can't drift again.
+  /// Neither has a schema default; the action writing the row supplies it.
   portalToken String? @unique
 
   /// Standing terms this GC typically works under — a starting point to

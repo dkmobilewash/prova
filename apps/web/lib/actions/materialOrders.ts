@@ -4,6 +4,19 @@ import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
 import { Prisma, prisma } from "@prova/db";
 import { actionFail as fail, actionOk as ok, assertOwner, type ActionResult } from "./shared";
+import { can } from "@/lib/permissions";
+
+/** Every entry point to these records is a page guarded by MANAGE_FIELD,
+ * so every write here answers to the same capability. A guarded page in
+ * front of an open action is not a guard: a Server Action is its own
+ * endpoint and answers whoever posts to it.
+ *
+ * Returned rather than thrown — production redacts a thrown Server
+ * Action message, so the sentence explaining why the button did nothing
+ * would never arrive. Same reasoning as the owner check in
+ * deleteCloseoutSubmission. */
+const FIELD_ONLY =
+  "Field records aren't part of your job function. The account owner sets who sees what, on the Team page.";
 
 /** Actions in this module RETURN their failures instead of throwing them.
  *
@@ -97,8 +110,10 @@ async function optionalLineItemId(formData: FormData, jobId: string): Promise<st
 }
 
 export async function createMaterialOrder(formData: FormData): Promise<ActionResult> {
-  const { company, ...user } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  const { company, ...user } = context;
   return runAction(async () => {
+    if (!can(context, "MANAGE_FIELD")) return fail(FIELD_ONLY);
     const jobId = required(formData, "jobId", "Job");
     const job = await prisma.job.findUnique({ where: { id: jobId } });
     if (!job || job.companyId !== company.id) return fail("Job not found");
@@ -141,8 +156,10 @@ export async function createMaterialOrder(formData: FormData): Promise<ActionRes
 }
 
 export async function updateMaterialOrder(orderId: string, formData: FormData): Promise<ActionResult> {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  const { company } = context;
   return runAction(async () => {
+    if (!can(context, "MANAGE_FIELD")) return fail(FIELD_ONLY);
     const order = await findOrder(orderId, company.id);
     if (!order) return fail("Order not found");
 
@@ -181,8 +198,10 @@ export async function updateMaterialOrder(orderId: string, formData: FormData): 
 /** Records one delivery against an order. Partial deliveries are normal,
  * so this appends rather than overwriting. */
 export async function recordMaterialDelivery(orderId: string, formData: FormData): Promise<ActionResult> {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  const { company } = context;
   return runAction(async () => {
+    if (!can(context, "MANAGE_FIELD")) return fail(FIELD_ONLY);
     const order = await findOrder(orderId, company.id);
     if (!order) return fail("Order not found");
 
@@ -222,8 +241,10 @@ export async function recordMaterialDelivery(orderId: string, formData: FormData
 /** Removes a mis-entered delivery. This is also how an order that was
  * wrongly closed out gets reopened. */
 export async function deleteMaterialDelivery(deliveryId: string): Promise<ActionResult> {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  const { company } = context;
   return runAction(async () => {
+    if (!can(context, "MANAGE_FIELD")) return fail(FIELD_ONLY);
     const delivery = await prisma.materialOrderDelivery.findUnique({
       where: { id: deliveryId },
       include: { order: { select: { companyId: true } } },
@@ -240,6 +261,7 @@ export async function deleteMaterialDelivery(deliveryId: string): Promise<Action
 export async function deleteMaterialOrder(orderId: string): Promise<ActionResult> {
   const context = await requireCompanyContext();
   return runAction(async () => {
+    if (!can(context, "MANAGE_FIELD")) return fail(FIELD_ONLY);
     try {
       assertOwner(context, "Only the account owner can delete a material order");
     } catch (err) {
