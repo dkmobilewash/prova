@@ -4,6 +4,16 @@ import { useState, useTransition } from "react";
 import { deleteEquipment, updateEquipment } from "@/lib/actions";
 import { EquipmentFields, type EquipmentFieldValues } from "@/components/EquipmentFields";
 
+// One definition for the row's controls so they can't drift back under 44px a
+// button at a time. `inline-flex` + `items-center` is what makes min-h centre
+// the label rather than pin it to the top.
+const rowBtn =
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50";
+const rowBtnDanger =
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:border-red-500 hover:text-red-400 disabled:opacity-50";
+const rowBtnConfirm =
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-red-500 px-3 py-2 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50";
+
 type EquipmentRowProps = {
   canDelete: boolean;
   item: EquipmentFieldValues & { id: string };
@@ -60,11 +70,11 @@ export function EquipmentRow({ canDelete, item }: EquipmentRowProps) {
 
           {error && <p className="text-sm text-red-400">{error}</p>}
 
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button
               type="submit"
               disabled={isPending}
-              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+              className="inline-flex min-h-11 items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
             >
               {isPending ? "Saving…" : "Save changes"}
             </button>
@@ -75,7 +85,7 @@ export function EquipmentRow({ canDelete, item }: EquipmentRowProps) {
                 setIsEditing(false);
                 setError(null);
               }}
-              className="rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50"
+              className="inline-flex min-h-11 items-center justify-center rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50"
             >
               Cancel
             </button>
@@ -88,15 +98,24 @@ export function EquipmentRow({ canDelete, item }: EquipmentRowProps) {
   const detail = [item.type, item.assetTag].filter(Boolean).join(" · ");
 
   return (
-    <div className="flex items-start justify-between gap-3">
+    // A DIV, never an LI — see the note on the component above. The page owns
+    // the <li> and its p-4; this element only lays the row out inside it.
+    //
+    // Stacks on a phone. Measured at 375px, the single-row layout gave the
+    // equipment NAME a 14.6px column once the three confirm-delete buttons
+    // appeared — you could not read what you were about to delete. It stays
+    // right-pinned from sm up, which is where justify-between still applies.
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
       <div className="min-w-0">
         <p className="font-medium text-slate-100">{item.name}</p>
         {detail && <p className="text-sm text-slate-400">{detail}</p>}
-        {item.notes && <p className="mt-1 text-sm text-slate-500">{item.notes}</p>}
+        {/* slate-400 rather than slate-500: slate-500 measures 3.83:1 on the
+            slate-900 card, under the 4.5 text floor. */}
+        {item.notes && <p className="mt-1 text-sm text-slate-400">{item.notes}</p>}
         {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
       </div>
 
-      <div className="flex shrink-0 items-center gap-2">
+      <div className="flex shrink-0 flex-wrap items-center gap-3">
         <button
           type="button"
           disabled={isPending}
@@ -104,7 +123,7 @@ export function EquipmentRow({ canDelete, item }: EquipmentRowProps) {
             setIsEditing(true);
             setIsConfirmingDelete(false);
           }}
-          className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50"
+          className={rowBtn}
         >
           Edit
         </button>
@@ -116,7 +135,7 @@ export function EquipmentRow({ canDelete, item }: EquipmentRowProps) {
                 type="button"
                 disabled={isPending}
                 onClick={handleDelete}
-                className="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+                className={rowBtnConfirm}
               >
                 {isPending ? "Removing…" : "Confirm remove"}
               </button>
@@ -124,7 +143,7 @@ export function EquipmentRow({ canDelete, item }: EquipmentRowProps) {
                 type="button"
                 disabled={isPending}
                 onClick={() => setIsConfirmingDelete(false)}
-                className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50"
+                className={rowBtn}
               >
                 Cancel
               </button>
@@ -134,7 +153,7 @@ export function EquipmentRow({ canDelete, item }: EquipmentRowProps) {
               type="button"
               disabled={isPending}
               onClick={() => setIsConfirmingDelete(true)}
-              className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:border-red-500 hover:text-red-400 disabled:opacity-50"
+              className={rowBtnDanger}
             >
               Remove
             </button>

@@ -97,8 +97,10 @@ export default async function EquipmentPage() {
       <section>
         <h2 className="mb-3 text-sm font-semibold text-slate-300">
           Inventory
+          {/* slate-400 rather than slate-500: slate-500 measures 3.83:1 on the
+              slate-900 card, under the 4.5 floor. */}
           {items.length > 0 && (
-            <span className="ml-2 font-normal text-slate-500">
+            <span className="ml-2 font-normal text-slate-400">
               {items.length} item{items.length === 1 ? "" : "s"}, {inYard} in the yard
             </span>
           )}
@@ -125,8 +127,12 @@ export default async function EquipmentPage() {
 
                 {/* The ONE place this row says where the piece is. EquipmentRow
                     printed it too, from the same value, so the card read as if
-                    it were stating two separate facts. */}
-                <p className="mt-1 text-xs text-slate-500">
+                    it were stating two separate facts.
+
+                    slate-400, not slate-500: slate-500 measures 3.83:1 on this
+                    card, under the 4.5 floor, and where a thing is is the
+                    reason this page exists. */}
+                <p className="mt-1 text-xs text-slate-400">
                   {where.kind === "out"
                     ? `${stayLength(where.stay, today)} on ${where.stay.jobName}`
                     : where.kind === "planned"
