@@ -12,6 +12,79 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### The form itself, not a report that resembles it (Cyrus)
+`cyrus/wh347-form`
+
+`lib/certified-payroll.ts` says in its own header that it mirrors "the
+substance of a federal WH-347 ... without replicating its exact
+government-form layout, which is a distinct, larger effort." This is that
+effort. The distinction is not cosmetic: the office manager's job is to
+produce a document an awarding body ACCEPTS, and a summary carrying the
+same numbers in a different shape gets retyped by hand — which is the
+work the product exists to remove.
+
+- **Column 4 is hours worked EACH DAY, seven dated columns.** The summary
+  aggregates the week by pay type and throws the day away, so it can
+  never become the form. The data was never missing; `TimeEntry.date`
+  carries it. `lib/wh347.ts` groups by day first.
+- :warning: **Column 7 excludes fringe, and the existing helper would
+  have overstated it.** `calculateTimeEntryLaborCost` returns the
+  BURDENED cost — cash plus fringe paid to plans — because job costing
+  wants what the hour cost the company. Gross Amount Earned under
+  Davis-Bacon means CASH wages. Printing the burdened figure there
+  overstates gross by the whole fringe package on a form signed under
+  penalty of perjury. `cashWagesFor` and `fringeCreditFor` derive the two
+  separately and the module never reuses the burdened one.
+- **The pay-type multiplier table is deliberately a SECOND COPY** of the
+  one in `labor-cost.ts`, not an import. That one is job costing and may
+  legitimately change — it documents SHIFT_DIFFERENTIAL as "treated as
+  straight-time base pay UNTIL that's captured." The moment it is
+  captured, job costing should change and a filed federal form should not
+  silently change with it.
+- **Double time gets its own row.** Folding it into overtime understates
+  the rate and misstates what was paid. The form expects extra rows where
+  extra rates apply.
+- **A day nobody worked prints BLANK, never 0.** A zero in that grid
+  asserts the worker was on the project and worked no hours, which is a
+  different claim from being absent from the payroll.
+- **One line per worker PER CLASSIFICATION.** A worker who ran two crafts
+  occupies two lines, because column 6 follows the classification;
+  collapsing them prints one rate against hours paid at two.
+- **One underivable day nulls the whole line's money columns.** A partial
+  gross reads as a complete one.
+
+**The page refuses to look finished, and that is the feature.** Every
+field cstream cannot source is printed IN PLACE in red as a sentence, and
+a banner at the top names all of them. `fileable` is false whenever
+anything blocks. Today that always includes the Statement of Compliance
+(page 2 is not built), the sequential payroll number, project location
+and contract number (a `Job` records neither), the worker's identifying
+number, and deductions and net wages — cstream does not run payroll and
+holds neither. A WH-347 with an empty box is indistinguishable from one
+claiming zero, to everyone except the person who filled it in.
+
+New route `/jobs/[id]/certified-payroll/wh-347`, registered in
+`PAGE_ONLY_CAPABILITY` under `MANAGE_COMPLIANCE` — the same capability as
+the working view it prints from, which it shows strictly less than. The
+sibling page is untouched: that one is the review screen, this one is the
+filing.
+
+33 tests in `lib/wh347.test.ts`. Eight defects were reintroduced one at a
+time and every one turned a named test red — folding DT into OT, adding
+fringe into gross, printing 0 for a blank day, keeping a partial gross,
+collapsing two crafts onto one line, swallowing an entry from the next
+week, calling a blocked form fileable, and multiplying fringe by the
+overtime premium. Restored byte-identical afterwards, 33/33 green.
+
+:warning: **NOT CLICKED.** The Chrome extension was unreachable and
+signing in is not something an agent should do, so no human has loaded
+this page. The grid's arithmetic is proven by unit test; its markup —
+`rowSpan` alignment across pay-type rows, the print layout — is not. Two
+things WERE verified against the running dev server: the route resolves
+and `requireCapability` bounced an unauthenticated request with the
+`weekStart` preserved.
+
+
 ### Whether the man at the gate has a current card (Cyrus)
 `cyrus/worker-certifications`
 
