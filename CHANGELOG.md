@@ -303,6 +303,41 @@ numbers worth reading; it does not prove any of these rows behaves
 correctly in the running app.
 
 
+### One question about production nobody could answer, now one click — #136 (Diego)
+`claude/prova-contractor-os-e3f0iz`
+
+**Issue #136 finding 1 has been blocked since 3 September on a single
+query, and it has been asked for in Slack three times.** The union tables
+carry no `companyId` and the only access check is a self-asserted
+`CompanyUnionAgreement`, so whether that is a live breach or a latent one
+depends on whether two companies have actually landed on the same local.
+The backfill cannot be written until somebody knows.
+
+It stayed open because the people who can reach `ep-little-sea` are not the
+people who wanted the answer, and getting it meant moving a connection
+string. **That step is now gone.** The credentials are already repository
+secrets, so a `workflow_dispatch` job on the Actions tab reads it with them
+and nobody handles one: *Actions -> Union tenancy audit (read-only) -> Run
+workflow.*
+
+Read-only by construction — three SELECTs, no inputs to inject, the SQL
+fixed in `packages/db/scripts/union-tenancy-audit.mjs` rather than assembled
+in YAML, and the host printed via the same `describe()` every other script
+in that directory uses, so the connection string is never echoed.
+
+It answers a second question #136 never asked, while the counting is free:
+**how many locals have no agreement row at all.** Those have no company to
+backfill from, and a `NOT NULL companyId` would decide that case by
+crashing the migration — the one outcome that tells you nothing.
+
+**Verified against a real Postgres in both directions, which is the whole
+point.** On an empty database it prints "NONE" — and a check that reports
+NONE on an empty database cannot fail, which is the vacuous-test shape this
+repo keeps collecting. So it was then run against a seeded fixture of three
+locals: one shared by two companies, one held by a single company, one
+claimed by nobody. It reported exactly the shared local and not the solo
+one, and counted exactly one orphan.
+
 ### The demo seed left the yard empty and both cleanups could not finish — #147, #148, #154 (Cyrus)
 `cyrus/seed-and-cleanup-fixes`
 
