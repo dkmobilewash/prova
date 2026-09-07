@@ -306,13 +306,17 @@ function LicenceRow({
         /* Arming the delete empties this row. "Edit" used to stay live beside
            the armed confirm — one click past where you meant to stop and you
            are editing the licence you were trying to leave alone — and Cancel
-           now renders before the confirm, so a second click on the pixel the
-           Delete button just vacated costs a click rather than the record.
+           now inherits the pixel the Delete button just vacated, so a second
+           click there costs a click rather than the record. `pinned="end"`
+           because this cluster hangs off the right of a `justify-between`
+           row, which puts that pixel at the END: measured 100% overlap with
+           the default order at both 1100px and 375px, 0% with this one.
            Both rules live in RowActions/ConfirmDelete rather than here. */
         <RowActions
           className="flex flex-wrap items-center gap-2"
           destructive={
             <ConfirmDelete
+              pinned="end"
               pendingLabel="Removing…"
               pending={isPending}
               onConfirm={handleDelete}

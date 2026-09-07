@@ -349,6 +349,7 @@ export function DrawingSetRow({
         destructive={
           canDelete && set.revisions.length === 0 ? (
             <ConfirmDelete
+              pinned="end"
               confirmLabel="Confirm delete"
               pendingLabel="Deleting…"
               pending={isPending}

@@ -120,6 +120,7 @@ export function FieldReportEntry({
           destructive={
             canDelete ? (
               <ConfirmDelete
+                pinned="end"
                 label="Remove"
                 confirmLabel="Confirm remove"
                 pendingLabel="Removing…"

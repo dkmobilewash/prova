@@ -6,7 +6,7 @@ import { EquipmentRow } from "@/components/EquipmentRow";
 import { EquipmentDeploymentControls } from "@/components/EquipmentDeploymentControls";
 import {
   type AssignmentData,
-  currentAssignment,
+  deploymentToday,
   stayLength,
   utilisation,
 } from "@/components/equipmentDeployment";
@@ -69,12 +69,17 @@ export default async function EquipmentPage() {
       // the column, which was false — Ask's equipment_location handler did,
       // and answered from the frozen value. Both now come through
       // currentAssignment(). See components/equipmentDeployment.ts.
-      open: currentAssignment(history),
+      //
+      // deploymentToday, not currentAssignment: a stay dated ahead is a plan
+      // and the machine is still in the yard until it starts.
+      where: deploymentToday(history, today),
       use: utilisation(history, windowStart, today, item.createdAt.toISOString().slice(0, 10)),
     };
   });
 
-  const inYard = items.filter((i) => i.open === null).length;
+  // A piece spoken for next Tuesday is in the yard today, and this count has
+  // to agree with the line each row prints or the page argues with itself.
+  const inYard = items.filter((i) => i.where.kind !== "out").length;
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-8">
@@ -86,7 +91,7 @@ export default async function EquipmentPage() {
       </p>
 
       <div className="mb-8">
-        <EquipmentForm jobs={jobOptions} />
+        <EquipmentForm />
       </div>
 
       <section>
@@ -105,23 +110,28 @@ export default async function EquipmentPage() {
           </p>
         ) : (
           <ul className="divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900">
-            {items.map(({ item, history, open, use }) => (
+            {items.map(({ item, history, where, use }) => (
               <li key={item.id} className="p-4">
                 <EquipmentRow
                   canDelete={currentUser.role === "OWNER"}
-                  jobs={jobOptions}
                   item={{
                     id: item.id,
                     name: item.name,
                     type: item.type,
                     assetTag: item.assetTag,
-                    assignedJobName: open ? open.jobName : null,
                     notes: item.notes,
                   }}
                 />
 
+                {/* The ONE place this row says where the piece is. EquipmentRow
+                    printed it too, from the same value, so the card read as if
+                    it were stating two separate facts. */}
                 <p className="mt-1 text-xs text-slate-500">
-                  {open ? `${stayLength(open, today)} on ${open.jobName}` : "In the yard"}
+                  {where.kind === "out"
+                    ? `${stayLength(where.stay, today)} on ${where.stay.jobName}`
+                    : where.kind === "planned"
+                      ? `In the yard · ${stayLength(where.stay, today)} to ${where.stay.jobName}`
+                      : "In the yard"}
                   {use.percent === null ? (
                     <> · too new to say how used it is</>
                   ) : (

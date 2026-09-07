@@ -30,8 +30,12 @@ import { SubmitButton } from "@/components/SubmitButton";
  *  1. An armed destructive confirm hides EVERY ordinary action in its row,
  *     not just the one somebody remembered.
  *  2. The confirm button never takes the position the delete button just
- *     vacated. Cancel is rendered first, so a hurried second click on the
- *     same pixel costs a click rather than the record.
+ *     vacated. CANCEL INHERITS THE DELETE PIXEL — which end that is depends
+ *     on how the cluster is aligned, so `ConfirmDelete` takes a `pinned`
+ *     prop: `"start"` (default) renders [Cancel][Confirm] for a
+ *     left-aligned cluster, `"end"` renders [Confirm][Cancel] for a
+ *     right-pinned one. "Cancel is always first" was that rule overfitted
+ *     to one row — see the note on `pinned` below for the measurements.
  *
  * `components/rowActions.test.ts` renders this and clicks it, so an
  * inverted guard or a swapped pair goes red rather than green.
@@ -103,6 +107,7 @@ export function ConfirmDelete({
   hint,
   pending = false,
   disabled = false,
+  pinned = "start",
   onConfirm,
   action,
   armedClassName,
@@ -122,6 +127,23 @@ export function ConfirmDelete({
   hint?: ReactNode;
   pending?: boolean;
   disabled?: boolean;
+  /** Which end of the cluster keeps its position when the row empties.
+   *
+   *  `"start"` (default) — a LEFT-ALIGNED cluster. The first slot is the
+   *  stable one, so Cancel renders first: [Cancel][Confirm].
+   *
+   *  `"end"` — a RIGHT-PINNED cluster (`shrink-0` inside a `justify-between`
+   *  parent, or anything else that hangs the group off the right edge). The
+   *  LAST control is the one that keeps its position, so Cancel renders
+   *  last: [Confirm][Cancel].
+   *
+   *  Measured in real Chromium at 1100px, not reasoned about (Diego, #176).
+   *  Right-pinned with [Cancel][Confirm], the confirm covered 60.7px of the
+   *  vacated Delete box — 100% of it. The same cluster with [Confirm][Cancel]
+   *  overlapped by 0px. A DOM-only test environment does no layout, so this
+   *  is not something `rowActions.test.ts` can see; what it CAN see, and does
+   *  assert, is the rendered order of the two buttons for each value. */
+  pinned?: "start" | "end";
   onConfirm?: () => void;
   /** An already-bound server action, for lists a server component renders. */
   action?: () => Promise<void> | void;
@@ -167,38 +189,56 @@ export function ConfirmDelete({
     );
   }
 
-  /* Cancel FIRST. The delete button was the last control in the row and the
-     row is now empty of everything else, so whatever the cursor is sitting
-     over must not be the one that destroys the record. */
+  /* CANCEL INHERITS THE DELETE PIXEL. The row is now empty of everything
+     else, so whatever the cursor is sitting over must not be the one that
+     destroys the record — but WHICH control ends up under the cursor is
+     decided by the cluster's alignment, not by this file. Left-aligned, the
+     first slot is the stable one; right-pinned, the last one is. `pinned`
+     says which, and everything below is that one decision. */
+  const cancelButton = (
+    <button
+      type="button"
+      disabled={pending}
+      onClick={arm.disarm}
+      className={cancelClassName}
+    >
+      {cancelLabel}
+    </button>
+  );
+
+  const confirmButton = action ? (
+    <form action={action}>
+      <SubmitButton type="submit" className={confirmClassName}>
+        {confirmLabel}
+      </SubmitButton>
+    </form>
+  ) : (
+    <button
+      type="button"
+      disabled={pending || fired}
+      onClick={() => {
+        setFired(true);
+        onConfirm?.();
+      }}
+      className={confirmClassName}
+    >
+      {pending ? (pendingLabel ?? confirmLabel) : confirmLabel}
+    </button>
+  );
+
   const controls = (
     <>
       {prompt && <span className="text-xs text-slate-400">{prompt}</span>}
-      <button
-        type="button"
-        disabled={pending}
-        onClick={arm.disarm}
-        className={cancelClassName}
-      >
-        {cancelLabel}
-      </button>
-      {action ? (
-        <form action={action}>
-          <SubmitButton type="submit" className={confirmClassName}>
-            {confirmLabel}
-          </SubmitButton>
-        </form>
+      {pinned === "end" ? (
+        <>
+          {confirmButton}
+          {cancelButton}
+        </>
       ) : (
-        <button
-          type="button"
-          disabled={pending || fired}
-          onClick={() => {
-            setFired(true);
-            onConfirm?.();
-          }}
-          className={confirmClassName}
-        >
-          {pending ? (pendingLabel ?? confirmLabel) : confirmLabel}
-        </button>
+        <>
+          {cancelButton}
+          {confirmButton}
+        </>
       )}
     </>
   );

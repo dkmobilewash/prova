@@ -337,6 +337,7 @@ export function EquipmentDeploymentControls({
                 destructive={
                   canDelete ? (
                     <ConfirmDelete
+                      pinned="end"
                       label="Remove"
                       confirmLabel="Confirm"
                       pending={isPending}

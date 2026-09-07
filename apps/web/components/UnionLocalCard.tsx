@@ -201,6 +201,7 @@ export function UnionLocalCard({
                     destructive={
                       canDelete ? (
                         <ConfirmDelete
+                          pinned="end"
                           label="delete"
                           confirmLabel="confirm delete"
                           cancelLabel="cancel"

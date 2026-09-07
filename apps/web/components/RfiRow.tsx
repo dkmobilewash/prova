@@ -235,6 +235,7 @@ export function RfiRow({
         destructive={
           canDelete && rfi.status === "DRAFT" ? (
             <ConfirmDelete
+              pinned="end"
               label="Delete draft"
               confirmLabel="Confirm delete"
               pendingLabel="Deleting…"

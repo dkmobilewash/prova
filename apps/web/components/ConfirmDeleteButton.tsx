@@ -40,6 +40,7 @@ export function ConfirmDeleteButton({
       className="flex shrink-0 flex-col items-end gap-1"
       destructive={
         <ConfirmDelete
+          pinned="end"
           action={action}
           label={label}
           confirmLabel={confirmLabel}

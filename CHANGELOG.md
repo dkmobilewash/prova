@@ -35,9 +35,51 @@ an unguarded position next to it.
 `RowActions` takes ordinary actions as CHILDREN and the delete as a
 `destructive` prop, and renders no children at all while armed. There is
 no sibling position for the next merge to fill — a button added six months
-from now is covered without anyone remembering to cover it. Cancel renders
-before the confirm, so a hurried second click on the pixel "Delete" just
-vacated costs a click rather than the record.
+from now is covered without anyone remembering to cover it.
+
+**"Cancel first" was the wrong statement of rule 2, and this PR shipped it
+before Diego measured it.** The rule is CANCEL INHERITS THE DELETE PIXEL,
+and which end that is belongs to the cluster, not to the component: in a
+left-aligned cluster the first slot is the stable one, in a right-pinned
+one (`shrink-0` inside a `justify-between` row) the LAST control is. On the
+four right-pinned rows this PR converted, "Cancel first" put the
+destructive confirm on exactly the pixel "Delete" had just vacated — 100%
+overlap, which is the precise thing rule 2 exists to prevent, and those
+four rows were CORRECT before the conversion touched them.
+
+`ConfirmDelete` now takes `pinned="start" | "end"`, defaulting to `start`
+so nothing already correct moves, and eighteen call sites pass `end`. Every
+one of them was measured in real Chromium — the actual class strings, at
+1100px and again at 375px — rather than reasoned about. `end` was applied
+only where it is better or equal at BOTH widths; the numbers are the
+overlap of the confirm with the vacated Delete box, as a share of that box:
+
+| cluster | default | `pinned="end"` |
+| --- | --- | --- |
+| right-pinned, no responsive switch (9 rows) | 100% / 100% | 0% / 0% |
+| `sm:flex-row` with 2-4 ordinary actions (4 rows) | 100% / 7-28% | 0% / 0% |
+| `flex-wrap`, `flex-1` sibling (3 rows) | 100% / 100% | 0% / 0% |
+| column, `items-end` (2 rows) | 100% / 100% | 0% / 0-58% |
+
+**Four rows were left at the default on purpose, and here is why.**
+`SafetyIncidentRow`, `ToolboxTalkRow` and `RuleSetRow` sit in an
+`sm:flex-row` row with only one ordinary action, so they are right-pinned
+above 640px and stacked below it, and the two orders swap places at the
+breakpoint — ToolboxTalkRow measures 100%/0% one way and 0%/100% the other.
+There is no value of the prop that is right at both widths, so they keep
+the default and the reason is in `PINNED_EXCEPTIONS` with the numbers.
+`CatalogEntryRow` is the same conflict on a column. The two inline
+`ml-2 underline` deletes inside `DrawingSetRow` and `MaterialOrderRow`
+sub-lists were not measured and were left alone.
+
+**The three sales rows do NOT come out of `KNOWN_EXCEPTIONS`, and this was
+checked by removing them rather than by reading the commit.** #183
+(`38c7063`) fixed rule 1 on `SalesActivityRow` and `SalesOpportunityRow` by
+wrapping the ordinary-action GROUP — the right fix, and it is not what this
+census scans for. All three still hold their own `isConfirmingDelete`
+useState, so deleting their three lines turns the census red naming all
+three. Their reasons are rewritten to say that, and they come out when they
+become `RowActions`.
 
 **The tell that somebody half-noticed:** an `onClick` calling
 `setIsConfirmingDelete(false)`. That disarms AFTER the click lands. It is
@@ -47,7 +89,14 @@ as already-handled to three verifiers on the audit.
 **Two tests doing different jobs, because one of them cannot do the
 other's.** `rowActions.test.ts` mounts the component in a DOM and clicks
 it, so an inverted guard goes red — a source scan cannot see that, which
-is the `MODULE_IMPORTS` lesson from #87. `rowActionsCensus.test.ts` looks
+is the `MODULE_IMPORTS` lesson from #87. It now asserts the rendered ORDER
+of the confirm pair for each value of `pinned`, in both directions, because
+a component that ignored the prop entirely would still pass either
+assertion alone. It deliberately does NOT assert on
+`getBoundingClientRect`: happy-dom does no layout and returns zeros, so
+such a test could not fail — issue #150's subject exactly. Mutation-tested:
+inverting the `pinned` branch turns five tests red, including both new
+named ones; restored and green. `rowActionsCensus.test.ts` looks
 for the MECHANISM, a component holding its own armed `useState`, and fails
 when a new hand-rolled copy appears. It is allowed to be a source scan
 precisely because behaviour is tested once, in the one place behaviour
@@ -55,12 +104,12 @@ now lives. The census earned its keep during the work: it caught
 `IntegrationControls`, a twenty-first instance the opening grep missed
 because `confirming` does not match `isConfirming`.
 
-**Sales CRM left alone, deliberately.** `SalesActivityRow` is still broken
-and is named in the census exception list so the guard reports it on every
-run. `SalesLeadRow` and `SalesOpportunityRow` were converted and then
-REVERTED unshipped — they are the other lane, and the agreement says post
-and wait rather than ask forgiveness inside a thirty-five file diff. The
-conversions are done and one `git checkout` away.
+**Sales CRM left alone, deliberately.** All three rows are the other lane.
+`SalesLeadRow` and `SalesOpportunityRow` were converted on this branch and
+then REVERTED unshipped — the agreement says post and wait rather than ask
+forgiveness inside a thirty-five file diff. The conversions are done and
+one `git checkout` away. #183 has since fixed rule 1 on two of them; the
+census still names all three, for the reason above.
 
 **Three behaviour changes worth knowing.** A failed delete now leaves the
 row armed with the confirm greyed out, and retry is Cancel then Delete;
@@ -75,7 +124,279 @@ breaks on Node 20 with `ERR_REQUIRE_ESM` and `ci.yml` pins Node 20. It
 changes `pnpm-lock.yaml`, so anything merging around this wants a
 `pnpm install` afterwards.
 
-**Not clicked.** Nothing here was loaded in a browser.
+**Still not clicked, and saying exactly what was.** The overlap numbers
+above come from a real Chromium laying out the actual class strings in a
+standalone harness at two viewport widths — not from the app. No page of
+this app was loaded, nothing was signed in, and no row was armed by a
+human. The harness reproduces Diego's right-pinned control (100% overlap
+with the default order, 0% with `end`), which is what makes the rest of its
+numbers worth reading; it does not prove any of these rows behaves
+correctly in the running app.
+
+
+### The demo seed left the yard empty and both cleanups could not finish — #147, #148, #154 (Cyrus)
+`cyrus/seed-and-cleanup-fixes`
+
+Three script bugs, all the same shape: a script reporting success while
+doing something other than what it claimed.
+
+**`seed-demo` wrote the DEPRECATED `Equipment.assignedJobId` and created
+zero `EquipmentAssignment` rows.** Every reader moved off that column when
+#45 landed, so a fresh seed showed "8 items, 8 in the yard", a blank
+utilisation on every row, and "Equipment: none on site" on every job —
+including the texture rig the dataset exists to show still sitting on
+Cedar Park after closeout.
+
+Two details are load-bearing and neither is in the issue. `createdAt` is
+now BACKDATED, because `utilisation` clamps its window to the day the
+record was created — a row created at `now()` has a zero-day window and
+reports "too new to say how used it is" rather than a low percentage, so
+the assignment rows alone would have fixed nothing visible on that line.
+And no two stays for one piece may overlap, because that is the
+contradiction `/deployment` reports in red, and seeding one would ship a
+demo that opens on an error.
+
+**`--undo` DELETED the company's `SafetyCaseCounter`.** Deleting a
+high-water mark is worse than the `max(n)+1` this repo already forbids:
+that reissues one number, this reissues all of them, and two cases sharing
+a number on an OSHA 300 log is an audit finding. Both scripts leave it
+alone now. The seed's WRITE side had the same defect and nobody had
+reported it — `update: { lastCaseNumber: 2 }` SET the counter, lowering it
+on any company past 2, and hardcoded numbers 1 and 2 collide with
+`@@unique([companyId, caseYear, caseNumber])` on a company that has filed
+real cases this year. Numbers come out of the counter incremented now,
+mirroring `issueCaseNumber`.
+
+**`clean-scratch-data` deleted `Job` and `Contact` without their RESTRICT
+children.** The issue said five. Deriving it from the foreign keys the
+migrations actually created gives THIRTEEN missing, out of 32 such
+children in total — and running the same derivation against `seed-demo`'s
+undo found seven more that nobody had reported. On a database holding any
+of those rows Postgres refuses the parent delete and the run ends
+half-done, which is the state both scripts exist to prevent.
+
+Prisma's referential default differs by optionality — required to
+`RESTRICT`, optional to `SET NULL` — which is exactly why reading the
+schema by eye undercounts, and why this was missed twice.
+
+**The check is a test now, not a habit.** `scratch-cleanup-order.test.ts`
+derives the blocking set from the migration SQL, then reads the delete
+order out of each script and requires every blocker to go first. Add a
+model with a required `jobId` and it fails on a laptop in a second instead
+of on somebody's database halfway through a cleanup. Verified against the
+weakness that shape usually has: removing a delete entirely turns it red,
+and so does moving one after the parent it blocks — ordering as well as
+absence.
+
+**Stated plainly: nothing was executed against a database.** Model names
+and every field written were checked against the generated Prisma DMMF and
+both files pass `node --check`, but no seed, undo or clean was run
+anywhere. That the new `deleteMany` calls succeed against Postgres, and
+that the per-model count output reads well, are the parts only the
+click-list can settle.
+
+Both scripts also stopped swallowing a missing `deleteMany` as a benign
+skip. That existed while `EquipmentAssignment` lived on an unmerged
+branch; the branch merged, and all it could still hide was a stale Prisma
+client or a renamed model, reported as a clean run.
+### Three things /equipment said that were not true — #149, #151, #150 item 1 (Cyrus)
+`cyrus/equipment-page-truth`
+
+A hydration break, a machine reported on a job it had not left for, and a
+lift that worked ten days in the quarter reported as idle. All three
+shipped with #45, on a page nobody had loaded.
+
+**`EquipmentRow` opened an `<li>` inside the `<li>` the page had already
+opened.** The HTML parser resolves that by closing the outer one, so the
+DOM the browser builds is not the tree React hydrates against — a real
+structural hydration break, live on main, with typecheck, lint and 1,400
+tests green about it the whole time because not one of them had ever
+produced the markup. The check is a test that renders the component with
+`renderToStaticMarkup` and asserts the string contains no `<li>`. It is
+the only markup-level test in this app and it exists because this defect
+is invisible everywhere else. The inline edit branch sits behind a click
+no server render reaches, so a second assertion reads the source for the
+tag. Worth noting against #61, which spent sessions on a hydration
+mismatch that turned out to be a browser extension: this one was ours.
+
+**A stay dated ahead is a PLAN, not a deployment.** `currentAssignment`
+answers a date-free question — which stay has nobody closed — so on Friday
+it named Tuesday's job: the row printed "On Riverside Medical", the piece
+dropped out of "N in the yard", and the line directly beneath it said "due
+out Tuesday", because `stayLength` already knew. One card, two
+contradictory statements. `deploymentToday()` is the date-aware answer and
+distinguishes out / planned / yard. `currentAssignment` is deliberately
+unchanged and still backs the overlap rules and Ask's
+`equipment_location`, because "is a stay open" is the right question for
+both of those.
+
+**`utilisation` inlined a second copy of `daysOutWithin`'s rule and the
+two disagreed about the exact case that docstring makes a point of.** A
+half-open `for (let d = from; d < to)` counts a same-day stay as nothing,
+so a lift dispatched for ten separate one-day jobs rendered "out 0 of the
+last 90 days (0%)" — reported idle while it worked every one of those
+days. It now reads "out 10 of the last 90 days (11%)". `daysOutWithin`
+returns the days rather than a count, because deduping overlapping records
+has to happen against that rule and not a second one. It had been
+exported, documented and tested and called by nothing: the fourth instance
+of that shape in a week, after `factDigest`, `acknowledgedSeverity` and
+the 161 dbtests.
+
+**`newestFirst`'s only test used two SAME-DAY stays**, so the date
+comparison the function exists for could be reversed without turning it
+red. Verified by doing exactly that, twice — once by the author and once
+during consolidation: with the comparison reversed the old test file
+produced ZERO `newestFirst` failures, and the new distinct-date assertions
+fail. Every fix here was checked the same way, defect reintroduced and the
+named test confirmed red before it was removed again.
+
+**Not clicked, and saying so.** Rendering the component proves the `<li>`
+is gone from the markup. It does not prove the page hydrates clean on a
+real screen, and nothing here proves the yard count reads right to a
+person. See also #173: both this page and /deployment still take "today"
+from the server's UTC clock while their own form defaults come from the
+viewer's day, so `deploymentToday()` judges against the wrong date at
+certain hours. Filed rather than folded in.
+### A snooze was validated on one calendar and spent on another — #155 (Cyrus)
+`cyrus/snooze-viewer-day-and-enum-guard`
+
+**If you snooze an alert and it comes straight back with no message, this
+was why.** `snoozeAlert` checked the date against the server's UTC day,
+while `partitionAlerts` has spent snoozes against the VIEWER's day since
+#111. One validation, one consumer, two different answers to which day it
+is.
+
+East of UTC the gap swallowed the input: at 08:00 in Tokyo the UTC day is
+still yesterday, so the check accepted the user's own today, the form
+succeeded, and the list spent the snooze on arrival. West of UTC it ran
+the other way — at 18:00 in Los Angeles a genuine tomorrow was refused as
+"already over". Not two bugs. One producer and one consumer disagreeing
+about the date, which is the same shape as the retainage population rule
+and every other number in here that was plausible and wrong.
+
+**This reverses a call made deliberately.** The old line carried a comment
+saying the UTC day was left there on purpose and that it was a product
+decision. That reasoning only ever looked west of UTC, where refusing is
+defensible. East of UTC the identical line discards input silently, which
+is not a product question.
+
+The fix is to stop having two expressions. `snoozeIsUnspent(snoozedUntil,
+todayIso)` is now the only place that question is answered; the list calls
+it and so does the action, with the same `viewerToday()` it hands to
+`severityForKey` — so the action reads the clock exactly once. They can
+only disagree now if a caller passes two different days, which is a
+visible mistake rather than an invisible one.
+
+The check is both sides of UTC, from instants that actually straddle
+midnight, with the straddle asserted BEFORE anything is asserted about it,
+and one case sweeping four dates across the boundary that requires both
+outcomes to occur so the loop cannot pass by never disagreeing. Plus a
+source guard, because no pure test can see WHICH CLOCK the action reads
+and that was the entire defect.
+
+### The safety enum guard could not fire — #150 item 2 (Cyrus)
+
+`safetyLabels.test.ts` hand-wrote the `IncidentOutcome` enum it existed to
+guard, so adding a member to the schema never touched the test file and it
+stayed green through exactly the change it was named for. It reads the
+enum out of `packages/db/prisma/schema` now — every `.prisma` file, so
+moving the enum between them cannot quietly empty the list — and asserts
+it found the enum before looping over it.
+
+Proven the only way this shape can be: with an unlabelled member added to
+the schema, the old test was 3/3 green and the new one fails twice.
+### Every contractor's record counts were rendering as yours on /union-compliance — #136 (Cyrus)
+`cyrus/union-count-company-scope`
+
+**What you saw: a classification on `/union-compliance` reading "11 records
+tagged" when your company had tagged nothing at all.** Those eleven were
+somebody else's — another contractor signatory to the same local. The
+number is now your company's own, so expect it to FALL, in some cases to
+"nothing tagged yet".
+
+`CraftClassification` hangs off `UnionLocal`, and `UnionLocal` is global on
+purpose: two contractors under the same hall mean the same real local, and
+duplicating it per company would be the wrong fix. What that makes easy to
+get wrong is counting. `loadUnionSetup` asked for a relation `_count` of
+`timeEntries`, `jobLineItems`, `catalogEntries` and `dispatchSlips` with no
+filter on it, and a relation count on a global row counts every company's
+rows. `UnionLocalCard` then rendered that total as this company's "N
+records tagged". Since an agreement is self-asserted and a local number is
+public, the way in was to type one.
+
+All four counts are now filtered to the viewing company. Three of them
+reach a company only through `Job`; `LineItemCatalogEntry` carries
+`companyId` itself.
+
+**The same numbers had a second way out, through the delete refusal, and
+fixing only the display would have left it.** `deleteCraftClassification`
+counted the same four tables globally and quoted the breakdown back in its
+refusal message — "11 records are tagged (3 time entries, 2 line items, 4
+catalog entries, 2 dispatch slips)". One click, same disclosure, different
+channel. That is the shape this repo keeps hitting: a fix that reads
+complete in the diff because nothing calls the half that was missed.
+
+**The guard itself still counts globally, and that is deliberate.** Scoping
+it would let one contractor delete a classification another has hours, line
+items and dispatch slips tagged with — turning a read leak into a
+cross-company destructive action, which is worse. So the guard is unchanged
+and only the message moved: the numbers quoted are always your own, and use
+by anyone else is reported as the fact that it exists, without a count or a
+name. A craft you have nothing tagged with can therefore still refuse to
+delete, and it now says why in those words rather than looking like a bug.
+
+**No migration, and no dependency on the `companyId` schema decision.**
+This is the read half of #136's union exposure. The destructive paths —
+`deleteFringeRateSchedule` and the `apprenticeRatioRule.deleteMany` at
+`unionCompliance.ts` — still need option A's `companyId` and are not
+touched here.
+
+Three database tests carry it, and none of them can pass on the old code:
+two contractors are built under one local, only the second is given work,
+and the first is asserted to read `0`, to be refused a delete whose message
+contains no digit at all, and to be quoted its own `0 catalog entries`
+where eleven of somebody else's records exist. The unfiltered version
+passes every other test in that file.
+### An email address was being filed as a worker's name (Diego)
+`claude/prova-vercel-direct-url-hg1acx`
+
+Cyrus found this while building crew members and handed it over. Verified
+before acting on it, and it is wider than reported: `User.name` is
+nullable, and SEVEN call sites read `employeeUser.name ?? employeeUser.email`.
+
+**On an internal screen that fallback is fine.** It identifies a person.
+The one that is not fine is `jobs/[id]/certified-payroll` — the worker-name
+column of a WH-347 is a statement to a government agency about who did the
+work, and an email address is not that. A wrong name on a filed form is a
+correction to an agency rather than a patch, which is a different order of
+problem from a scruffy screen.
+
+**So the fix is narrow on purpose.** `lib/worker-name.ts` never returns the
+email; it returns "Name not recorded" and says the name is missing. The
+page then does what the rest of this codebase does with something it cannot
+compute — shows the gap rather than filling it, exactly as
+`hasUncomputedHours` already marks hours with no fringe schedule instead of
+silently pricing them at zero.
+
+The warning sits ABOVE the summaries, not in a footnote. A note under the
+last table is the thing nobody reads before printing, and this one decides
+whether the week can be filed at all. It names the accounts by email, so
+the fix is a click away rather than a hunt.
+
+A whitespace-only name counts as missing. Otherwise it prints an empty cell,
+which reads as a formatting bug and gets skimmed past; a sentence gets acted
+on.
+
+**Deliberately NOT changed:** `lib/union-compliance-query.ts` (twice) and
+`lib/prevailing-wage-query.ts` carry the same fallback and the same argument
+applies to fringe remittance and prevailing wage. Cyrus said in
+`#prova-build` that he is in those files right now for #104/#62/#63, and
+editing them would be the merge damage the post-and-wait rule exists to
+prevent. The helper is there for him to adopt in one line per site. The two
+display sites on `jobs/[id]/page.tsx` are left alone because identifying a
+person on screen is what the fallback is good at.
+
+Mutation-verified: putting the email fallback back turns two tests red.
 
 
 ### "Retainage held" was two different numbers on one screen — #97, which is #46 again (Cyrus)

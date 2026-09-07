@@ -248,6 +248,7 @@ export function DailyFieldReports({
                     destructive={
                       canDelete ? (
                         <ConfirmDelete
+                          pinned="end"
                           label="Remove"
                           confirmLabel="Confirm remove"
                           pending={isPending}

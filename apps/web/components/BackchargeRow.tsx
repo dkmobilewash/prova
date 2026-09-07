@@ -361,6 +361,7 @@ export function BackchargeRow({
         destructive={
           canDelete && backcharge.status === "RECEIVED" ? (
             <ConfirmDelete
+              pinned="end"
               pendingLabel="Deleting…"
               pending={isPending}
               onConfirm={() => run(() => deleteBackcharge(backcharge.id), "Could not delete it")}

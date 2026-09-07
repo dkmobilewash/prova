@@ -151,6 +151,7 @@ export function VendorPriceQuoteRow({
         destructive={
           canDelete ? (
             <ConfirmDelete
+              pinned="end"
               label="Remove"
               confirmLabel="Confirm remove"
               pendingLabel="Removing…"

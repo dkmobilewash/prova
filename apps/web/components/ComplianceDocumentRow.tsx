@@ -231,7 +231,7 @@ export function ComplianceDocumentRow({ doc, canDelete }: { doc: ComplianceDocum
           className="flex flex-wrap items-center gap-3"
           destructive={
             canDelete ? (
-              <ConfirmDelete action={deleteComplianceDocument.bind(null, doc.id)} />
+              <ConfirmDelete pinned="end" action={deleteComplianceDocument.bind(null, doc.id)} />
             ) : null
           }
         >

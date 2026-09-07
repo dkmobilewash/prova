@@ -297,6 +297,7 @@ export function SubmittalRow({
         destructive={
           canDelete && state === "NOT_SENT" ? (
             <ConfirmDelete
+              pinned="end"
               pending={isPending}
               pendingLabel="Deleting…"
               onConfirm={() => run(() => deleteSubmittal(submittal.id))}

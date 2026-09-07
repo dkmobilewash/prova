@@ -122,6 +122,7 @@ export function PunchListRow({ canDelete, jobs, item, showJob }: PunchListRowPro
         destructive={
           canDelete ? (
             <ConfirmDelete
+              pinned="end"
               label="Remove"
               confirmLabel="Confirm remove"
               pendingLabel="Removing…"

@@ -270,6 +270,7 @@ export function MaterialOrderRow({
         destructive={
           canDelete && order.deliveries.length === 0 ? (
             <ConfirmDelete
+              pinned="end"
               label="Delete"
               confirmLabel="Confirm delete"
               pendingLabel="Deleting…"

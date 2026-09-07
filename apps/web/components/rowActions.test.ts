@@ -8,7 +8,14 @@
  * inverted one — CLAUDE.md says so in as many words. So this mounts the
  * component, clicks Delete, and then asks the DOM what a user could still
  * click. Invert the guard in RowActions.tsx and "hides every ordinary
- * action" fails; swap Cancel and the confirm and "cancel comes first" fails.
+ * action" fails; swap the two branches of `pinned` and both order tests fail.
+ *
+ * What it CANNOT see: position. happy-dom does no layout, so
+ * `getBoundingClientRect` is zeros here and rule 2 — the confirm must not
+ * land on the pixel Delete vacated — is not directly checkable in this file.
+ * The order of the two buttons is checkable, and order is what decides
+ * position once you know the cluster's alignment; the alignments were
+ * measured in a real browser and written onto the `pinned` prop.
  *
  * Written with createElement rather than JSX only because the suite's
  * `include` matches .test.ts and not .test.tsx; nothing about it needs JSX.
@@ -97,13 +104,55 @@ describe("RowActions", () => {
     expect(live).toEqual(["Cancel", "Confirm delete"]);
   });
 
-  it("puts Cancel before the confirm, so the confirm never takes the delete's place", () => {
+  /* Rule 2 is about WHERE the confirm lands, and this environment cannot see
+     where anything lands: happy-dom and jsdom do no layout, so every
+     `getBoundingClientRect` here is zeros. Asserting on one would be a test
+     that cannot fail — issue #150's whole subject. What the DOM CAN answer is
+     the ORDER of the two buttons, which is the one decision `pinned` makes,
+     and the geometry that makes each order right was measured in real
+     Chromium and is recorded on the prop's docstring in RowActions.tsx.
+
+     Both directions are asserted, because a component that ignored `pinned`
+     entirely would still pass either one on its own. */
+  it("renders [Cancel][Confirm] by default — the start-pinned cluster, where the first slot is the stable one", () => {
     render(row());
     click("Delete");
 
     const live = liveControls();
+    expect(live).toEqual(["Cancel", "Confirm delete"]);
     expect(live.indexOf("Cancel")).toBeLessThan(live.indexOf("Confirm delete"));
-    expect(live[0]).toBe("Cancel");
+  });
+
+  it("renders [Confirm][Cancel] when pinned=\"end\" — the right-pinned cluster, where the LAST control is the stable one", () => {
+    render(
+      createElement(
+        RowActions,
+        {
+          className: "flex shrink-0 gap-2",
+          destructive: createElement(ConfirmDelete, { pinned: "end" as const }),
+        },
+        createElement("button", { type: "button", key: "e" }, "Edit"),
+      ),
+    );
+    click("Delete");
+
+    const live = liveControls();
+    expect(live).toEqual(["Confirm delete", "Cancel"]);
+    expect(live.indexOf("Confirm delete")).toBeLessThan(live.indexOf("Cancel"));
+  });
+
+  it("still hides every ordinary action when pinned=\"end\" — the order is the only thing that changes", () => {
+    render(
+      createElement(
+        RowActions,
+        { destructive: createElement(ConfirmDelete, { pinned: "end" as const }) },
+        createElement("button", { type: "button", key: "e" }, "Edit"),
+        createElement("button", { type: "button", key: "m" }, "Mark received"),
+      ),
+    );
+    click("Delete");
+
+    expect(liveControls()).toEqual(["Confirm delete", "Cancel"]);
   });
 
   it("does not delete, and gives the row back, when Cancel is clicked", () => {

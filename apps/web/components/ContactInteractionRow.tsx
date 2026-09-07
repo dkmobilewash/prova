@@ -118,6 +118,7 @@ export function ContactInteractionRow({
           className="flex shrink-0 flex-wrap items-center gap-2"
           destructive={
             <ConfirmDelete
+              pinned="end"
               pendingLabel="Deleting…"
               pending={isPending}
               onConfirm={() => {

@@ -101,6 +101,7 @@ export function VendorRow({ canDelete, vendor }: VendorRowProps) {
         destructive={
           canDelete ? (
             <ConfirmDelete
+              pinned="end"
               label="Remove"
               confirmLabel="Confirm remove"
               pendingLabel="Removing…"

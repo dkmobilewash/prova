@@ -33,12 +33,20 @@ const appDir = fileURLToPath(new URL("..", import.meta.url));
 const KNOWN_EXCEPTIONS: Record<string, string> = {
   "components/RowActions.tsx":
     "the shared component itself — this is where the arming state is supposed to live",
+  /* The three sales rows were asked to come OUT of this list when #183
+     (38c7063) landed, on the grounds that it fixed them. Removing them was
+     tried and the census went RED on all three: #183 fixed issue #152's RULE
+     1 by wrapping the ordinary-action GROUP in `{!isConfirmingDelete && …}`,
+     which is the right fix for that rule and does not touch the thing this
+     file scans for. All three still hold their own `isConfirmingDelete`
+     useState, so they are still hand-rolled and this guard still has a job to
+     do on them. They come out when they become <RowActions>, not before. */
   "components/SalesActivityRow.tsx":
-    "STILL BROKEN: 'Edit' stays live beside the armed 'Confirm delete'. Sales CRM is the other lane, so issue #152 says report it rather than edit it. Delete this line when that lane fixes it.",
+    "Sales CRM, the other lane. #183 fixed rule 1 here (the group is wrapped now, so 'Edit' no longer stays live beside the armed confirm) but the arming state is still its own useState. Delete this line when it becomes a <RowActions>.",
   "components/SalesLeadRow.tsx":
-    "Sales CRM, the other lane. Converted on this branch and then reverted before the PR: the working agreement says post and wait before touching the other person's files, and that message had not been answered. The RowActions conversion is ready and is one `git checkout` away. Delete this line when that lane takes it.",
+    "Sales CRM, the other lane. #183 found it needed no rule-1 fix — nothing was live beside its armed confirm — and left it hand-rolling its own arming state. Delete this line when it becomes a <RowActions>.",
   "components/SalesOpportunityRow.tsx":
-    "Sales CRM, the other lane. Same as SalesLeadRow above — converted, then reverted unshipped rather than cross a lane boundary unanswered.",
+    "Sales CRM, the other lane. Same as SalesActivityRow: #183 wrapped the group, the arming state is still its own. Delete this line when it becomes a <RowActions>.",
 };
 
 function tsxFiles(dir: string, out: string[] = []) {
@@ -102,6 +110,62 @@ describe("the armed-delete census", () => {
       .map((f) => f.path);
 
     expect(offenders).toEqual([]);
+  });
+
+  /**
+   * Rule 2, at the only layer anything in this repo can catch it.
+   *
+   * A `<RowActions>` whose own className says `shrink-0` is a cluster that
+   * hangs off the right of its row, and in a right-pinned cluster the LAST
+   * control is the one that keeps its position — so Cancel has to be last,
+   * which is `pinned="end"`. Measured in real Chromium at 1100px and 375px:
+   * the default order overlapped the vacated Delete box by 100% of its width,
+   * `pinned="end"` by 0%.
+   *
+   * This is a source scan and it is coarse: it asks whether a FILE with a
+   * shrink-0 cluster mentions `pinned="end"` anywhere, not whether the right
+   * ConfirmDelete got it. A file with two clusters can satisfy it with one.
+   * It cannot see a right-pinned cluster whose pinning lives in a parent
+   * component, and it cannot see position at all — no test in this repo can,
+   * because a DOM-only environment does no layout. It exists because the
+   * alternative at this layer is nothing.
+   */
+  const PINNED_EXCEPTIONS: Record<string, string> = {
+    "components/SafetyIncidentRow.tsx":
+      "cluster is shrink-0 but the ROW is `sm:flex-row`, so it is right-pinned only at >=640px. Measured: default 100%/75% overlap at 1100/375, pinned=end 0%/91%. Better on the desktop this app is used on, worse on a phone. Left at the default until somebody decides which viewport wins.",
+    "components/ToolboxTalkRow.tsx":
+      "same `sm:flex-row` row, and with NO ordinary actions the two orders swap outright: default 100%/0% at 1100/375, pinned=end 0%/100%. There is no value of this prop that is right at both widths.",
+    "components/RuleSetRow.tsx":
+      "same `sm:flex-row` row as SafetyIncidentRow. Measured: default 100%/71%, pinned=end 0%/93%.",
+  };
+
+  it("passes pinned=\"end\" wherever the action cluster is right-pinned", () => {
+    const offenders = files
+      .filter((f) => !(f.path in PINNED_EXCEPTIONS))
+      .filter((f) => /<RowActions[\s\S]{0,400}?shrink-0/.test(f.source))
+      .filter((f) => !/pinned=["']end["']/.test(f.source))
+      .map((f) => f.path);
+
+    expect(
+      offenders,
+      offenders.length === 0
+        ? ""
+        : [
+            "",
+            "A right-pinned action cluster (shrink-0) is rendering its confirm",
+            "in the position the Delete button just vacated. In a right-pinned",
+            "cluster the LAST control keeps its place, so Cancel has to be last:",
+            'pass pinned="end" to the <ConfirmDelete>.',
+            "",
+            "Measured in Chromium, not reasoned: 100% overlap with the default",
+            "order, 0% with pinned=\"end\".",
+            "",
+            "If the row is genuinely not right-pinned — a responsive row that",
+            "stacks on a phone, say — add it to PINNED_EXCEPTIONS with the",
+            "numbers.",
+            "",
+          ].join("\n"),
+    ).toEqual([]);
   });
 
   it("still has no window.confirm anywhere — this app deletes in two inline steps", () => {
