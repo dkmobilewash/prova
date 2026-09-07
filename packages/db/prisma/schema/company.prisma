@@ -79,6 +79,8 @@ model Company {
   salesStageChanges       SalesStageChange[]
   equipmentAssignments    EquipmentAssignment[]
   crewMembers             CrewMember[]
+  workerCertifications    WorkerCertification[]
+  requiredCertifications  CertificationRequirement[]
 }
 
 enum UserRole {
@@ -141,6 +143,8 @@ model User {
   loggedSalesActivities                SalesActivity[]      @relation("SalesActivityLogger")
   recordedSalesStageChanges            SalesStageChange[]   @relation("SalesStageChangeRecorder")
   recordedEquipmentAssignments         EquipmentAssignment[]
+  certifications                       WorkerCertification[] @relation("WorkerCertificationHolder")
+  recordedCertifications               WorkerCertification[] @relation("WorkerCertificationRecorder")
 
   /// The crew record for this same human, if they worked on the crew
   /// BEFORE they had a login. Back-relation only — see crew.prisma. It

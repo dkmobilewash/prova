@@ -643,6 +643,7 @@ describe("every write behind a guarded page answers to the same capability", () 
  */
 const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   safety: () => import("./actions/safety"),
+  certifications: () => import("./actions/certifications"),
   punchLists: () => import("./actions/punchLists"),
   equipment: () => import("./actions/equipment"),
   equipmentAssignments: () => import("./actions/equipmentAssignments"),

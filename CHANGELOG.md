@@ -12,6 +12,644 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### Whether the man at the gate has a current card (Cyrus)
+`cyrus/worker-certifications`
+
+Sheet 17 had three rows and all three looked backwards. The incident log
+records what already went wrong; the toolbox talks record what was said
+about it; the daily field report records what happened. Nothing anywhere
+answered the question that gets asked FIRST, at six in the morning, by a
+guard with a clipboard: can this man be on this site today.
+
+The cost of not knowing is not the one man. It is the crew standing next
+to him while the office phones round looking for a folder, and it is a GC
+who now watches you.
+
+- **`/certifications`** — every card, class and fit test, per person, with
+  what the company requires of everyone. OSHA 10/30, scaffold competent
+  person, aerial lift, forklift, fall protection, silica, respirator fit
+  test and medical evaluation, first aid, hot work, confined space,
+  hazcom, site orientation, and OTHER with its own name.
+- **Keyed on `User`, not a free-text name.** Deliberately unlike
+  `SafetyIncident.employeeName`, which is free text because an injured
+  party can be a visitor. A certification only matters for somebody you
+  DISPATCH, and everyone you dispatch is already a User — which is what
+  lets the page join to `JobAssignment` and answer "is Maple Street's crew
+  clear on Monday" rather than only "who is short".
+- **A renewal is a NEW row and the old card stays.** There is no unique
+  constraint on (holder, kind) and that is on purpose: which card was
+  valid on the day of an incident is exactly what gets read back
+  afterwards. Which row governs TODAY is derived per read, never stored —
+  same rule as the current drawing revision.
+- **A blank expiry is reported as "no expiry recorded", never as
+  current.** This is the entry worth arguing with, so: some cards
+  genuinely do not expire, and a blank cannot tell you which case it is.
+  Reading it as valid is how a lapsed card sits on a green screen, so it
+  reads as unchecked instead — the same call `PrevailingWageRuleSet`
+  already makes about a blank overtime threshold. It ranks BELOW expiring
+  and ABOVE expired: an expired card sitting next to one nobody dated is
+  "go and look at the card", not "he is lapsed".
+- **`CertificationRequirement` is the point of the whole thing.** Without
+  it the page can only report on rows somebody already entered, and the
+  dangerous case is the opposite one — a worker with no record at all
+  looks identical to one who does not need it. An absence is invisible
+  until something says it should have been filled, same reasoning as the
+  field-report week that names the days nothing was filed for.
+- **Per-kind warning horizons**, not one global 30 days, for the reason
+  `RENEWAL_HORIZON_DAYS` already gives: a fit test is a half-day
+  appointment and an OSHA 30 is thirty hours of classroom you have to get
+  a seat on. The day counting itself comes from `lib/compliance-expiry.ts`
+  rather than a second copy, so the two can never disagree about whether a
+  card expiring today has expired. It has not.
+- Holder and kind are locked after creation. Moving a card to another
+  person would silently rewrite who was qualified on a past date, which is
+  the one thing this log exists to establish.
+- The scan is a LINK, not an upload — a Server Action body caps around
+  1MB and a phone photo of a card exceeds it. Same call as drawing sets,
+  and the same `https://`-only guard, since the string goes into an href.
+
+`lib/certifications.test.ts` covers the derivation with 35 tests. Every
+one of them was checked by putting the wrong behaviour back and watching
+it go red — including the two that matter most, "a blank expiry is never
+current" and "a requirement nobody has met becomes a named finding".
+
+Migration `20260903143000_add_worker_certifications` is purely additive:
+two new tables, one new enum, no column touched on anything that already
+exists beyond the back-relations Prisma requires on `Company` and `User`.
+
+Not done, and named rather than left to be discovered: this raises no
+alert. `lib/alerts.ts` was being edited in another branch while this was
+written, and a lapsed card belongs in that list next to a lapsed COI —
+that is the next commit, not this one. Requirements are company-wide, not
+per craft and not per job; a GC's own orientation requirement is real and
+needs the GC's requirement list as its own data. And nobody who is not a
+`User` can hold a card, which is the honest limit of keying on the person
+you dispatch.
+
+Two things settled while catching this branch up to `main`, which had moved
+58 commits underneath it. `FEATURE-AUDIT.md` sheet 17 now carries the row
+this branch owed it and had handed back when another lane owned the file —
+3 built becomes 4, and `lib/plumbing.test.ts` checks the arithmetic in all
+three places rather than anyone recounting by hand. And `/certifications`
+sits in the nav next to a `/safety` that `main` turned `disabled` on 3 Sep
+on product-scope grounds. That was left enabled deliberately: the page is
+built, clicked and live, and NAV-IA-AUDIT.md's argument for muting Safety
+is "not proven as a daily priority yet", which is exactly the opposite of
+the question this page answers at six in the morning. If that reading is
+wrong it is a one-word edit, and it should be argued rather than inherited
+from a merge.
+
+A second catch-up, on the merge that took this branch the remaining 105
+commits to `main`'s head. `main` had meanwhile shipped job functions, and
+with them two suites that enumerate rather than iterate a list: every route
+the app serves must carry an access decision, and every Server Action
+reachable only from a guarded page must assert the same capability itself.
+`/certifications` was written before either existed, so it arrived as an
+undecided door with five open endpoints behind it — which is precisely the
+omission those suites were built to catch, and they caught it.
+
+The decision is **MANAGE_FIELD**, and it was arguable. `MANAGE_COMPLIANCE`
+names "compliance documents" in its own doc comment and an OSHA card is
+one — but `FIELD` holds no `MANAGE_COMPLIANCE`, and the person this page
+exists for is the one standing at the gate at six in the morning. Reading
+it as compliance would have locked out the only job function that needs it.
+`PAYROLL_COMPLIANCE` holds both capabilities, so nobody who could reach it
+under the other reading loses it under this one.
+
+All five writes now check `can(context, "MANAGE_FIELD")` as their FIRST
+statement — ahead of the owner check on the two deletes, so somebody
+outside the feature is told that rather than told they are not the owner,
+and ahead of every query, because a refusal that arrives after a read has
+already read.
+
+---
+
+
+### An armed delete now empties its row, structurally — #152 (Cyrus)
+`cyrus/armed-delete-isolates-row`
+
+**The issue named four instances. A sweep found twenty-one hand-rolled
+two-step deletes, twenty of them leaking.** So this does not fix four
+bugs; it removes the place the bug lives.
+
+The two sharpest were not in the issue. `RfiRow` had **"Mark sent"** — an
+irreversible send to the GC — live beside the armed delete, and both are
+gated on `DRAFT`, so they were ALWAYS co-visible. `SubmittalRow` had the
+same shape with "Record as sent". `UnionLocalCard` left a `<select>` that
+writes on change still writable on the record being deleted.
+
+**Why a component and not a convention.** `{!confirming && …}` failed
+twice. Diego fixed one instance by wrapping the one button he could see;
+#119 then added a second button into the position that fix had just
+emptied, git merged the two with NO conflict, and typecheck, lint, test
+and build were green the whole way. A guard someone has to remember leaves
+an unguarded position next to it.
+
+`RowActions` takes ordinary actions as CHILDREN and the delete as a
+`destructive` prop, and renders no children at all while armed. There is
+no sibling position for the next merge to fill — a button added six months
+from now is covered without anyone remembering to cover it.
+
+**"Cancel first" was the wrong statement of rule 2, and this PR shipped it
+before Diego measured it.** The rule is CANCEL INHERITS THE DELETE PIXEL,
+and which end that is belongs to the cluster, not to the component: in a
+left-aligned cluster the first slot is the stable one, in a right-pinned
+one (`shrink-0` inside a `justify-between` row) the LAST control is. On the
+four right-pinned rows this PR converted, "Cancel first" put the
+destructive confirm on exactly the pixel "Delete" had just vacated — 100%
+overlap, which is the precise thing rule 2 exists to prevent, and those
+four rows were CORRECT before the conversion touched them.
+
+`ConfirmDelete` now takes `pinned="start" | "end"`, defaulting to `start`
+so nothing already correct moves, and eighteen call sites pass `end`. Every
+one of them was measured in real Chromium — the actual class strings, at
+1100px and again at 375px — rather than reasoned about. `end` was applied
+only where it is better or equal at BOTH widths; the numbers are the
+overlap of the confirm with the vacated Delete box, as a share of that box:
+
+| cluster | default | `pinned="end"` |
+| --- | --- | --- |
+| right-pinned, no responsive switch (9 rows) | 100% / 100% | 0% / 0% |
+| `sm:flex-row` with 2-4 ordinary actions (4 rows) | 100% / 7-28% | 0% / 0% |
+| `flex-wrap`, `flex-1` sibling (3 rows) | 100% / 100% | 0% / 0% |
+| column, `items-end` (2 rows) | 100% / 100% | 0% / 0-58% |
+
+**Four rows were left at the default on purpose, and here is why.**
+`SafetyIncidentRow`, `ToolboxTalkRow` and `RuleSetRow` sit in an
+`sm:flex-row` row with only one ordinary action, so they are right-pinned
+above 640px and stacked below it, and the two orders swap places at the
+breakpoint — ToolboxTalkRow measures 100%/0% one way and 0%/100% the other.
+There is no value of the prop that is right at both widths, so they keep
+the default and the reason is in `PINNED_EXCEPTIONS` with the numbers.
+`CatalogEntryRow` is the same conflict on a column. The two inline
+`ml-2 underline` deletes inside `DrawingSetRow` and `MaterialOrderRow`
+sub-lists were not measured and were left alone.
+
+**The three sales rows do NOT come out of `KNOWN_EXCEPTIONS`, and this was
+checked by removing them rather than by reading the commit.** #183
+(`38c7063`) fixed rule 1 on `SalesActivityRow` and `SalesOpportunityRow` by
+wrapping the ordinary-action GROUP — the right fix, and it is not what this
+census scans for. All three still hold their own `isConfirmingDelete`
+useState, so deleting their three lines turns the census red naming all
+three. Their reasons are rewritten to say that, and they come out when they
+become `RowActions`.
+
+**The tell that somebody half-noticed:** an `onClick` calling
+`setIsConfirmingDelete(false)`. That disarms AFTER the click lands. It is
+not a fix, and it is exactly what made `EquipmentDeploymentControls` read
+as already-handled to three verifiers on the audit.
+
+**Two tests doing different jobs, because one of them cannot do the
+other's.** `rowActions.test.ts` mounts the component in a DOM and clicks
+it, so an inverted guard goes red — a source scan cannot see that, which
+is the `MODULE_IMPORTS` lesson from #87. It now asserts the rendered ORDER
+of the confirm pair for each value of `pinned`, in both directions, because
+a component that ignored the prop entirely would still pass either
+assertion alone. It deliberately does NOT assert on
+`getBoundingClientRect`: happy-dom does no layout and returns zeros, so
+such a test could not fail — issue #150's subject exactly. Mutation-tested:
+inverting the `pinned` branch turns five tests red, including both new
+named ones; restored and green. `rowActionsCensus.test.ts` looks
+for the MECHANISM, a component holding its own armed `useState`, and fails
+when a new hand-rolled copy appears. It is allowed to be a source scan
+precisely because behaviour is tested once, in the one place behaviour
+now lives. The census earned its keep during the work: it caught
+`IntegrationControls`, a twenty-first instance the opening grep missed
+because `confirming` does not match `isConfirming`.
+
+**Sales CRM left alone, deliberately.** All three rows are the other lane.
+`SalesLeadRow` and `SalesOpportunityRow` were converted on this branch and
+then REVERTED unshipped — the agreement says post and wait rather than ask
+forgiveness inside a thirty-five file diff. The conversions are done and
+one `git checkout` away. #183 has since fixed rule 1 on two of them; the
+census still names all three, for the reason above.
+
+**Three behaviour changes worth knowing.** A failed delete now leaves the
+row armed with the confirm greyed out, and retry is Cancel then Delete;
+several rows used to auto-disarm on failure, and re-arming a destructive
+action after it failed is the behaviour worth having. Arming no longer
+clears a stale error message on about five rows. `PunchListRow`'s
+done/not-done checkbox stays clickable while armed — it is the row's
+content control rather than an action, and it is fully reversible.
+
+**Re-measured when #89 merged, because #89 moved the geometry every one of
+these numbers was taken against.** #89 ("the field screens were built for a
+mouse") landed on `main` first and made five of the rows this PR converted
+`flex flex-col … sm:flex-row`, so below 640px their action cluster is no
+longer right-pinned — it is a full-width left-aligned strip. The rule
+inverts at that breakpoint, so carrying the `pinned` values forward on
+trust was not available. All seven conflicted rows were measured again in
+Chromium against the MERGED class strings, at 1100px and 375px:
+
+| row | default | `pinned="end"` | kept |
+| --- | --- | --- | --- |
+| EquipmentRow | 100% / 75% | 0% / 85% | `end` |
+| FieldReportEntry | 100% / 75% | 0% / 85% | `end` |
+| PunchListRow | 100% / 75% | 0% / 85% | `end` |
+| DailyFieldReports | 100% / 76% | 0% / 79% | `end` |
+| RfiRow | 100% / 39% | 0% / 0% | `end` |
+| SafetyIncidentRow | 100% / 75% | 0% / 85% | default (exception) |
+| ToolboxTalkRow | 100% / 0% | 0% / 100% | default (exception) |
+
+**No `pinned` value had to change.** `end` is still better than or equal to
+the default at both widths everywhere this PR used it, so the merge kept
+every choice. The desktop column is unchanged from the original measurement;
+the 375px column is not, and that is the finding.
+
+**What the re-measure DID find is a mobile defect that `pinned` cannot
+reach, and it is not fixed here.** `RowActions` hides the ordinary actions
+while armed, so in a stacked cluster the confirm pair reflows to the
+cluster's LEFT EDGE — while the Delete it replaced sat to the right of an
+"Edit" that is now gone. On `EquipmentRow` at 375px the vacated Delete box
+is x=104..181 and the armed pair starts at x=41 in either order: 75% overlap
+as [Cancel][Confirm], 85% as [Confirm][Cancel]. Nothing can inherit the
+delete's pixel there because nothing is at the delete's pixel any more. So
+on a phone, on any stacked row with at least one ordinary action — five of
+these seven — a second tap still lands near the confirm. Fixing it needs a
+layout change (reserve the hidden actions' width, or right-align the armed
+pair when stacked), not a different prop value. `end` is kept on the four
+that have it because it makes the desktop case exactly safe at a cost of ten
+points on a mobile number that is bad either way.
+
+`SafetyIncidentRow` is left at the default, as this PR left it, even though
+`end` would now dominate there the same way it does on its four siblings —
+that is a deliberate product call about which viewport wins, and a merge
+resolution is the wrong place to make it quietly. `RuleSetRow` and
+`CatalogEntryRow` were NOT re-measured: #89 did not touch them, so their
+recorded numbers still describe their actual geometry. #89 shipped with no
+changelog entry of its own, and none is invented for it here.
+
+**#89's ergonomics are kept in full.** Every `min-h-11` touch target, the
+`px-3 py-2` padding, the `gap-3` cluster spacing, `flex-wrap`, the
+responsive stacking and `PunchListRow`'s 44px checkbox hit area survive the
+conversion — the row buttons now take their classes from #89's `rowBtn` /
+`rowBtnDanger` / `rowBtnConfirm` constants rather than the inline strings
+this PR wrote against the pre-#89 styling. One #89 behaviour is deliberately
+overridden and not dropped by accident: its rows disarmed on a failed
+delete, and `RowActions` leaves them armed, per the note above.
+
+**New devDependency: `happy-dom`.** Needed to render and click; `jsdom` v30
+breaks on Node 20 with `ERR_REQUIRE_ESM` and `ci.yml` pins Node 20. It
+changes `pnpm-lock.yaml`, so anything merging around this wants a
+`pnpm install` afterwards.
+
+**Still not clicked, and saying exactly what was.** The overlap numbers
+above come from a real Chromium laying out the actual class strings in a
+standalone harness at two viewport widths — not from the app. No page of
+this app was loaded, nothing was signed in, and no row was armed by a
+human. The harness reproduces Diego's right-pinned control (100% overlap
+with the default order, 0% with `end`), which is what makes the rest of its
+numbers worth reading; it does not prove any of these rows behaves
+correctly in the running app.
+
+
+### The union audit reported good news it had not earned — #136 (Diego)
+`claude/prova-contractor-os-e3f0iz`
+
+**The audit shipped yesterday was itself a check that could not fail, and it
+ran against production and told somebody to build a migration.** On a database
+holding one company and one agreement it printed *"NONE -> the companyId
+backfill is single-valued. Build it."* — but the `HAVING count(DISTINCT
+"companyId") > 1` that conclusion rests on is *arithmetically incapable* of
+returning a row unless two companies hold edges. It also computed the scale
+that would have exposed that **after** printing the verdict.
+
+That is this repo's oldest failure mode, committed by the script written to
+answer a question about it.
+
+**Scale is now read FIRST, and every verdict states the condition under which
+it could have come out the other way.** Where the data does not meet that
+condition the verdict is `NOT ESTABLISHED`, never silence and never good news.
+The rule generalises past thresholds: *name what would have had to be true for
+this check to fail, and say whether it was.*
+
+**A second finding, and the one no amount of rewording would have caught:
+`CompanyUnionAgreement` is not the only edge from a company to a union local.**
+`ApprenticeshipEnrollment` carries a required `companyId` and a nullable
+`unionLocalId` that its writer takes straight out of `FormData`
+(`lib/actions/apprenticeship.ts`), plus a `craftClassificationId` that can point
+at another company's craft. So a company can attach itself to another's local
+with no agreement row at all — and the old query would have printed `NONE`
+while it was happening. Query 1 now aggregates over both edges.
+
+Three smaller corrections in the same pass. `ApprenticeRatioRule` was named in
+the script's own header as one of the four exposed tables and was counted
+nowhere — the "written, documented, never called" shape, in a file about
+rigour. `orphans[0]?.x ?? 0` defaulted a failed query to the *reassuring*
+value, so a query that did not answer read as "every local has an owner"; it
+now throws. And the output never mentioned that `UnionLocal` carries
+`@@unique([parentInternational, localNumber])`, so the backfill it tells you to
+write cannot give two contractors their own "Carpenters / 300" without changing
+that constraint in the same migration.
+
+**Verified against a real Postgres in four states, not two.** Empty → `NOT
+ESTABLISHED`. **Production's exact shape (1 company, 1 local, 1 agreement) →
+`NOT ESTABLISHED`**, which is the run that produced the false all-clear.
+A local shared through agreements → detected. A local shared where the second
+company is attached *only* by an apprenticeship enrollment → detected, with the
+local named and its wage data reported. The fixtures and their scratch database
+were torn down; nothing touched any Neon project.
+
+### One question about production nobody could answer, now one click — #136 (Diego)
+`claude/prova-contractor-os-e3f0iz`
+
+**Issue #136 finding 1 has been blocked since 3 September on a single
+query, and it has been asked for in Slack three times.** The union tables
+carry no `companyId` and the only access check is a self-asserted
+`CompanyUnionAgreement`, so whether that is a live breach or a latent one
+depends on whether two companies have actually landed on the same local.
+The backfill cannot be written until somebody knows.
+
+It stayed open because the people who can reach `ep-little-sea` are not the
+people who wanted the answer, and getting it meant moving a connection
+string. **That step is now gone.** The credentials are already repository
+secrets, so a `workflow_dispatch` job on the Actions tab reads it with them
+and nobody handles one: *Actions -> Union tenancy audit (read-only) -> Run
+workflow.*
+
+Read-only by construction — three SELECTs, no inputs to inject, the SQL
+fixed in `packages/db/scripts/union-tenancy-audit.mjs` rather than assembled
+in YAML, and the host printed via the same `describe()` every other script
+in that directory uses, so the connection string is never echoed.
+
+It answers a second question #136 never asked, while the counting is free:
+**how many locals have no agreement row at all.** Those have no company to
+backfill from, and a `NOT NULL companyId` would decide that case by
+crashing the migration — the one outcome that tells you nothing.
+
+**Verified against a real Postgres in both directions, which is the whole
+point.** On an empty database it prints "NONE" — and a check that reports
+NONE on an empty database cannot fail, which is the vacuous-test shape this
+repo keeps collecting. So it was then run against a seeded fixture of three
+locals: one shared by two companies, one held by a single company, one
+claimed by nobody. It reported exactly the shared local and not the solo
+one, and counted exactly one orphan.
+
+### The demo seed left the yard empty and both cleanups could not finish — #147, #148, #154 (Cyrus)
+`cyrus/seed-and-cleanup-fixes`
+
+Three script bugs, all the same shape: a script reporting success while
+doing something other than what it claimed.
+
+**`seed-demo` wrote the DEPRECATED `Equipment.assignedJobId` and created
+zero `EquipmentAssignment` rows.** Every reader moved off that column when
+#45 landed, so a fresh seed showed "8 items, 8 in the yard", a blank
+utilisation on every row, and "Equipment: none on site" on every job —
+including the texture rig the dataset exists to show still sitting on
+Cedar Park after closeout.
+
+Two details are load-bearing and neither is in the issue. `createdAt` is
+now BACKDATED, because `utilisation` clamps its window to the day the
+record was created — a row created at `now()` has a zero-day window and
+reports "too new to say how used it is" rather than a low percentage, so
+the assignment rows alone would have fixed nothing visible on that line.
+And no two stays for one piece may overlap, because that is the
+contradiction `/deployment` reports in red, and seeding one would ship a
+demo that opens on an error.
+
+**`--undo` DELETED the company's `SafetyCaseCounter`.** Deleting a
+high-water mark is worse than the `max(n)+1` this repo already forbids:
+that reissues one number, this reissues all of them, and two cases sharing
+a number on an OSHA 300 log is an audit finding. Both scripts leave it
+alone now. The seed's WRITE side had the same defect and nobody had
+reported it — `update: { lastCaseNumber: 2 }` SET the counter, lowering it
+on any company past 2, and hardcoded numbers 1 and 2 collide with
+`@@unique([companyId, caseYear, caseNumber])` on a company that has filed
+real cases this year. Numbers come out of the counter incremented now,
+mirroring `issueCaseNumber`.
+
+**`clean-scratch-data` deleted `Job` and `Contact` without their RESTRICT
+children.** The issue said five. Deriving it from the foreign keys the
+migrations actually created gives THIRTEEN missing, out of 32 such
+children in total — and running the same derivation against `seed-demo`'s
+undo found seven more that nobody had reported. On a database holding any
+of those rows Postgres refuses the parent delete and the run ends
+half-done, which is the state both scripts exist to prevent.
+
+Prisma's referential default differs by optionality — required to
+`RESTRICT`, optional to `SET NULL` — which is exactly why reading the
+schema by eye undercounts, and why this was missed twice.
+
+**The check is a test now, not a habit.** `scratch-cleanup-order.test.ts`
+derives the blocking set from the migration SQL, then reads the delete
+order out of each script and requires every blocker to go first. Add a
+model with a required `jobId` and it fails on a laptop in a second instead
+of on somebody's database halfway through a cleanup. Verified against the
+weakness that shape usually has: removing a delete entirely turns it red,
+and so does moving one after the parent it blocks — ordering as well as
+absence.
+
+**Stated plainly: nothing was executed against a database.** Model names
+and every field written were checked against the generated Prisma DMMF and
+both files pass `node --check`, but no seed, undo or clean was run
+anywhere. That the new `deleteMany` calls succeed against Postgres, and
+that the per-model count output reads well, are the parts only the
+click-list can settle.
+
+Both scripts also stopped swallowing a missing `deleteMany` as a benign
+skip. That existed while `EquipmentAssignment` lived on an unmerged
+branch; the branch merged, and all it could still hide was a stale Prisma
+client or a renamed model, reported as a clean run.
+### Three things /equipment said that were not true — #149, #151, #150 item 1 (Cyrus)
+`cyrus/equipment-page-truth`
+
+A hydration break, a machine reported on a job it had not left for, and a
+lift that worked ten days in the quarter reported as idle. All three
+shipped with #45, on a page nobody had loaded.
+
+**`EquipmentRow` opened an `<li>` inside the `<li>` the page had already
+opened.** The HTML parser resolves that by closing the outer one, so the
+DOM the browser builds is not the tree React hydrates against — a real
+structural hydration break, live on main, with typecheck, lint and 1,400
+tests green about it the whole time because not one of them had ever
+produced the markup. The check is a test that renders the component with
+`renderToStaticMarkup` and asserts the string contains no `<li>`. It is
+the only markup-level test in this app and it exists because this defect
+is invisible everywhere else. The inline edit branch sits behind a click
+no server render reaches, so a second assertion reads the source for the
+tag. Worth noting against #61, which spent sessions on a hydration
+mismatch that turned out to be a browser extension: this one was ours.
+
+**A stay dated ahead is a PLAN, not a deployment.** `currentAssignment`
+answers a date-free question — which stay has nobody closed — so on Friday
+it named Tuesday's job: the row printed "On Riverside Medical", the piece
+dropped out of "N in the yard", and the line directly beneath it said "due
+out Tuesday", because `stayLength` already knew. One card, two
+contradictory statements. `deploymentToday()` is the date-aware answer and
+distinguishes out / planned / yard. `currentAssignment` is deliberately
+unchanged and still backs the overlap rules and Ask's
+`equipment_location`, because "is a stay open" is the right question for
+both of those.
+
+**`utilisation` inlined a second copy of `daysOutWithin`'s rule and the
+two disagreed about the exact case that docstring makes a point of.** A
+half-open `for (let d = from; d < to)` counts a same-day stay as nothing,
+so a lift dispatched for ten separate one-day jobs rendered "out 0 of the
+last 90 days (0%)" — reported idle while it worked every one of those
+days. It now reads "out 10 of the last 90 days (11%)". `daysOutWithin`
+returns the days rather than a count, because deduping overlapping records
+has to happen against that rule and not a second one. It had been
+exported, documented and tested and called by nothing: the fourth instance
+of that shape in a week, after `factDigest`, `acknowledgedSeverity` and
+the 161 dbtests.
+
+**`newestFirst`'s only test used two SAME-DAY stays**, so the date
+comparison the function exists for could be reversed without turning it
+red. Verified by doing exactly that, twice — once by the author and once
+during consolidation: with the comparison reversed the old test file
+produced ZERO `newestFirst` failures, and the new distinct-date assertions
+fail. Every fix here was checked the same way, defect reintroduced and the
+named test confirmed red before it was removed again.
+
+**Not clicked, and saying so.** Rendering the component proves the `<li>`
+is gone from the markup. It does not prove the page hydrates clean on a
+real screen, and nothing here proves the yard count reads right to a
+person. See also #173: both this page and /deployment still take "today"
+from the server's UTC clock while their own form defaults come from the
+viewer's day, so `deploymentToday()` judges against the wrong date at
+certain hours. Filed rather than folded in.
+### A snooze was validated on one calendar and spent on another — #155 (Cyrus)
+`cyrus/snooze-viewer-day-and-enum-guard`
+
+**If you snooze an alert and it comes straight back with no message, this
+was why.** `snoozeAlert` checked the date against the server's UTC day,
+while `partitionAlerts` has spent snoozes against the VIEWER's day since
+#111. One validation, one consumer, two different answers to which day it
+is.
+
+East of UTC the gap swallowed the input: at 08:00 in Tokyo the UTC day is
+still yesterday, so the check accepted the user's own today, the form
+succeeded, and the list spent the snooze on arrival. West of UTC it ran
+the other way — at 18:00 in Los Angeles a genuine tomorrow was refused as
+"already over". Not two bugs. One producer and one consumer disagreeing
+about the date, which is the same shape as the retainage population rule
+and every other number in here that was plausible and wrong.
+
+**This reverses a call made deliberately.** The old line carried a comment
+saying the UTC day was left there on purpose and that it was a product
+decision. That reasoning only ever looked west of UTC, where refusing is
+defensible. East of UTC the identical line discards input silently, which
+is not a product question.
+
+The fix is to stop having two expressions. `snoozeIsUnspent(snoozedUntil,
+todayIso)` is now the only place that question is answered; the list calls
+it and so does the action, with the same `viewerToday()` it hands to
+`severityForKey` — so the action reads the clock exactly once. They can
+only disagree now if a caller passes two different days, which is a
+visible mistake rather than an invisible one.
+
+The check is both sides of UTC, from instants that actually straddle
+midnight, with the straddle asserted BEFORE anything is asserted about it,
+and one case sweeping four dates across the boundary that requires both
+outcomes to occur so the loop cannot pass by never disagreeing. Plus a
+source guard, because no pure test can see WHICH CLOCK the action reads
+and that was the entire defect.
+
+### The safety enum guard could not fire — #150 item 2 (Cyrus)
+
+`safetyLabels.test.ts` hand-wrote the `IncidentOutcome` enum it existed to
+guard, so adding a member to the schema never touched the test file and it
+stayed green through exactly the change it was named for. It reads the
+enum out of `packages/db/prisma/schema` now — every `.prisma` file, so
+moving the enum between them cannot quietly empty the list — and asserts
+it found the enum before looping over it.
+
+Proven the only way this shape can be: with an unlabelled member added to
+the schema, the old test was 3/3 green and the new one fails twice.
+### Every contractor's record counts were rendering as yours on /union-compliance — #136 (Cyrus)
+`cyrus/union-count-company-scope`
+
+**What you saw: a classification on `/union-compliance` reading "11 records
+tagged" when your company had tagged nothing at all.** Those eleven were
+somebody else's — another contractor signatory to the same local. The
+number is now your company's own, so expect it to FALL, in some cases to
+"nothing tagged yet".
+
+`CraftClassification` hangs off `UnionLocal`, and `UnionLocal` is global on
+purpose: two contractors under the same hall mean the same real local, and
+duplicating it per company would be the wrong fix. What that makes easy to
+get wrong is counting. `loadUnionSetup` asked for a relation `_count` of
+`timeEntries`, `jobLineItems`, `catalogEntries` and `dispatchSlips` with no
+filter on it, and a relation count on a global row counts every company's
+rows. `UnionLocalCard` then rendered that total as this company's "N
+records tagged". Since an agreement is self-asserted and a local number is
+public, the way in was to type one.
+
+All four counts are now filtered to the viewing company. Three of them
+reach a company only through `Job`; `LineItemCatalogEntry` carries
+`companyId` itself.
+
+**The same numbers had a second way out, through the delete refusal, and
+fixing only the display would have left it.** `deleteCraftClassification`
+counted the same four tables globally and quoted the breakdown back in its
+refusal message — "11 records are tagged (3 time entries, 2 line items, 4
+catalog entries, 2 dispatch slips)". One click, same disclosure, different
+channel. That is the shape this repo keeps hitting: a fix that reads
+complete in the diff because nothing calls the half that was missed.
+
+**The guard itself still counts globally, and that is deliberate.** Scoping
+it would let one contractor delete a classification another has hours, line
+items and dispatch slips tagged with — turning a read leak into a
+cross-company destructive action, which is worse. So the guard is unchanged
+and only the message moved: the numbers quoted are always your own, and use
+by anyone else is reported as the fact that it exists, without a count or a
+name. A craft you have nothing tagged with can therefore still refuse to
+delete, and it now says why in those words rather than looking like a bug.
+
+**No migration, and no dependency on the `companyId` schema decision.**
+This is the read half of #136's union exposure. The destructive paths —
+`deleteFringeRateSchedule` and the `apprenticeRatioRule.deleteMany` at
+`unionCompliance.ts` — still need option A's `companyId` and are not
+touched here.
+
+Three database tests carry it, and none of them can pass on the old code:
+two contractors are built under one local, only the second is given work,
+and the first is asserted to read `0`, to be refused a delete whose message
+contains no digit at all, and to be quoted its own `0 catalog entries`
+where eleven of somebody else's records exist. The unfiltered version
+passes every other test in that file.
+### An email address was being filed as a worker's name (Diego)
+`claude/prova-vercel-direct-url-hg1acx`
+
+Cyrus found this while building crew members and handed it over. Verified
+before acting on it, and it is wider than reported: `User.name` is
+nullable, and SEVEN call sites read `employeeUser.name ?? employeeUser.email`.
+
+**On an internal screen that fallback is fine.** It identifies a person.
+The one that is not fine is `jobs/[id]/certified-payroll` — the worker-name
+column of a WH-347 is a statement to a government agency about who did the
+work, and an email address is not that. A wrong name on a filed form is a
+correction to an agency rather than a patch, which is a different order of
+problem from a scruffy screen.
+
+**So the fix is narrow on purpose.** `lib/worker-name.ts` never returns the
+email; it returns "Name not recorded" and says the name is missing. The
+page then does what the rest of this codebase does with something it cannot
+compute — shows the gap rather than filling it, exactly as
+`hasUncomputedHours` already marks hours with no fringe schedule instead of
+silently pricing them at zero.
+
+The warning sits ABOVE the summaries, not in a footnote. A note under the
+last table is the thing nobody reads before printing, and this one decides
+whether the week can be filed at all. It names the accounts by email, so
+the fix is a click away rather than a hunt.
+
+A whitespace-only name counts as missing. Otherwise it prints an empty cell,
+which reads as a formatting bug and gets skimmed past; a sentence gets acted
+on.
+
+**Deliberately NOT changed:** `lib/union-compliance-query.ts` (twice) and
+`lib/prevailing-wage-query.ts` carry the same fallback and the same argument
+applies to fringe remittance and prevailing wage. Cyrus said in
+`#prova-build` that he is in those files right now for #104/#62/#63, and
+editing them would be the merge damage the post-and-wait rule exists to
+prevent. The helper is there for him to adopt in one line per site. The two
+display sites on `jobs/[id]/page.tsx` are left alone because identifying a
+person on screen is what the fallback is good at.
+
+Mutation-verified: putting the email fallback back turns two tests red.
+
+
 ### "Retainage held" was two different numbers on one screen — #97, which is #46 again (Cyrus)
 `fix/retainage-single-source`
 

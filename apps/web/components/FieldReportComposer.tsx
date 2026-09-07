@@ -106,7 +106,11 @@ export function FieldReportComposer({
             defaultValue={localToday()}
             className={inputClass}
           />
-          <span className="text-xs text-slate-500">
+          {/* slate-400, not slate-500 — measured 3.83:1 on the slate-900 card,
+              under the 4.5 floor. This sentence is the difference between a
+              report filed against the right day and the wrong one; it cannot
+              be the first thing sunlight takes away. */}
+          <span className="text-xs text-slate-400">
             The day the work happened, not the day you typed it in.
           </span>
         </label>

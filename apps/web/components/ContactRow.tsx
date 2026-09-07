@@ -5,6 +5,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { deleteContact } from "@/lib/actions";
 import { CONTACT_STATUS_OPTIONS, CONTACT_TYPE_OPTIONS } from "@/components/ContactFields";
+import { ConfirmDelete, RowActions } from "@/components/RowActions";
 
 const STATUS_STYLE: Record<string, string> = {
   PROSPECT: "bg-slate-800 text-slate-300",
@@ -31,7 +32,6 @@ export function ContactRow({
   };
   canDelete: boolean;
 }) {
-  const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -68,44 +68,34 @@ export function ContactRow({
       </div>
 
       {canDelete && (
-        <div className="flex items-center gap-2">
-          {isConfirmingDelete ? (
-            <>
-              <span className="text-xs text-slate-400">Delete {contact.name}?</span>
-              <button
-                type="button"
-                disabled={isPending}
-                onClick={() => {
-                  setError(null);
-                  startTransition(async () => {
-                    try {
-                      const result = await deleteContact(contact.id);
-                      if (!result.ok) {
-                        setError(result.error);
-                        setIsConfirmingDelete(false);
-                        return;
-                      }
-                      router.refresh();
-                    } catch {
-                      setError("Could not delete the contact");
-                      setIsConfirmingDelete(false);
+        <RowActions
+          className="flex items-center gap-2"
+          destructive={
+            <ConfirmDelete
+              prompt={`Delete ${contact.name}?`}
+              pendingLabel="Deleting…"
+              pending={isPending}
+              onConfirm={() => {
+                setError(null);
+                startTransition(async () => {
+                  try {
+                    const result = await deleteContact(contact.id);
+                    if (!result.ok) {
+                      setError(result.error);
+                      return;
                     }
-                  });
-                }}
-                className="rounded-md border border-red-500 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 disabled:opacity-50"
-              >
-                {isPending ? "Deleting…" : "Confirm delete"}
-              </button>
-              <button type="button" disabled={isPending} onClick={() => setIsConfirmingDelete(false)} className={btn}>
-                Cancel
-              </button>
-            </>
-          ) : (
-            <button type="button" onClick={() => setIsConfirmingDelete(true)} className={btn}>
-              Delete
-            </button>
-          )}
-        </div>
+                    router.refresh();
+                  } catch {
+                    setError("Could not delete the contact");
+                  }
+                });
+              }}
+              deleteClassName={btn}
+              cancelClassName={btn}
+              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+            />
+          }
+        />
       )}
 
       {error && <p className="text-xs text-red-400">{error}</p>}

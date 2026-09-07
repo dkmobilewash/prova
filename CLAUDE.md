@@ -33,8 +33,36 @@ Vercel deployment and repo settings). Each drives their own agent.
   (fixed section slots: Retainage → Field Reports → Pay Apps — insert at
   your slot, never at the end). Cyrus: self-contained verticals (safety,
   vendors, equipment, punch lists, RFIs, submittals). Shared, edit
-  surgically: schema files, `middleware.ts`, `Sidebar.tsx`,
+  surgically: schema files, `middleware.ts`, `navItems.tsx`,
   `lib/actions/shared.ts`, the actions barrel.
+
+  Corrected 2026-09-02: this line said `Sidebar.tsx` for weeks and it is
+  the wrong file. `Sidebar.tsx` renders whatever `navGroupsFor()` hands
+  it — that is its whole content — and the nav entries themselves live in
+  `components/navItems.tsx`, which also builds the groups. Add a route to
+  `Sidebar.tsx` and nothing appears, with no error to say why.
+  WORK-SPLIT.md's third-lane note has said `navItems.tsx` since 1 Sep;
+  this file disagreed with it and lost.
+
+  Two things this entry got slightly wrong and are fixed 2026-09-06.
+  It gave `Sidebar.tsx` a line count and `navItems.tsx` an entry count,
+  and both had moved within days — counts of that kind rot faster than
+  the claim they decorate, so they are gone rather than refreshed. And
+  the capability map is NOT in `navItems.tsx`: `ROUTE_CAPABILITY` and
+  `capabilitiesFor()` are in `lib/permissions.ts`, `requireCapability()`
+  is in `lib/authz.ts`. Nav and capability are two files, not one.
+
+  Also verified 2026-09-02, re-verified 2026-09-06: the three "fixed
+  section slots" are real and in that order — Retainage, then
+  `<DailyFieldReports>`, then `<PayApplications>` — but NOTHING IN THE
+  FILE MARKS THEM. There is no comment, no sentinel, no named slot. Field
+  Reports and Pay Apps are still literally the last two elements before
+  the closing tags, so "insert at your slot, never at the end" is advice
+  you can only follow if you already knew the order, which is why it is
+  written here. Read this line before you edit that file; the file will
+  not tell you. (Deliberately no line numbers: the file grew from 1955 to
+  2007 lines in four days and every number this paragraph used to carry
+  was stale.)
 
 ## The working agreement (agreed in Slack 2026-08-29)
 
@@ -72,7 +100,15 @@ scrollback gets broken by whoever didn't scroll far enough.
   and after ANY merge run `git log origin/main..<branch>` — empty output
   is the only proof it landed. "The PR says Merged" is not.
 - Scripts start with `set -e` AND `set -o pipefail` (a failed build
-  piped to `tee` printed ALL GREEN once), and `rm -f .git/index.lock`.
+  piped to `tee` printed ALL GREEN once), and clear a stale index lock
+  with `rm -f "$(git rev-parse --git-path index.lock)"`.
+
+  Corrected 2026-09-06: this line named the bare `rm -f .git/index.lock`
+  for weeks, which is the exact form the repo abandoned — it is ENOTDIR
+  in a worktree and takes the whole script down with `set -e`. The
+  worktree entry further down explains why; this bullet was still
+  handing out the broken version to anyone writing a new script, which is
+  how a fixed bug gets reintroduced from the documentation.
 - Cyrus authenticates through `gh` (token in the macOS keyring; scopes
   `repo`, `workflow`, `read:org`, `gist`), so `.github/workflows/` IS
   editable from the CLI, and `gh pr create` works. The older PAT lacked
@@ -157,11 +193,37 @@ scrollback gets broken by whoever didn't scroll far enough.
 
 ## Hard-won technical rules
 
-- **Sequence numbers** (case, RFI, submittal, invoice numbers) come from
-  a counter row that only increments, bumped inside the same transaction
-  as the insert. Never `max(n)+1`, never `count()+1` — anything derived
-  from surviving rows is reissued when a row is deleted. See
-  `SafetyCaseCounter`, `RfiCounter`, `SubmittalCounter`.
+- **Sequence numbers** come from a counter row that only increments,
+  bumped inside the same transaction as the insert. Never `max(n)+1`,
+  never `count()+1` — anything derived from surviving rows is reissued
+  when a row is deleted. Seven counters exist and all seven do this:
+  `SafetyCaseCounter`, `RfiCounter`, `SubmittalCounter` and
+  `MaterialOrderCounter` (`operations.prisma`), `ChangeOrderCounter`
+  (`jobs.prisma`), `BackchargeCounter` (`backcharges.prisma`),
+  `CloseoutSubmissionCounter` (`closeout.prisma`).
+
+  **INVOICE NUMBERS ARE NOT AMONG THEM, and this file said they were.**
+  Corrected 2026-09-02, re-verified against `main` 2026-09-06 and still
+  true. There is no `InvoiceCounter` anywhere in the repo.
+  `apps/web/lib/actions/billing.ts:151` is:
+
+      async function nextInvoiceNumber(jobId: string) {
+        const last = await prisma.invoice.findFirst({ where: { jobId }, orderBy: { number: "desc" } });
+        return (last?.number ?? 0) + 1;
+      }
+
+  That is `max(n)+1`, the exact thing the rule above forbids, and it is
+  read OUTSIDE any transaction — both call sites (`createInvoice` and the
+  AIA pay-application submit) compute it and then `create` separately, so
+  two concurrent submits on one job can also collide on
+  `@@unique([jobId, number])`. Delete invoice 3 of 3 and the next invoice
+  is 3 again, on a document a GC has already been sent.
+
+  The cost of the wrong sentence is not the bug, it is the search: an
+  agent told "invoice numbers come from a counter" does not go and look.
+  This entry is now the reason to look. NOT FIXED HERE — a docs branch is
+  the wrong place to change money-document numbering, and billing is
+  Diego's lane, so it goes to him as an issue per working agreement 3.
 - **Derived state is never stored** (overdue, recordable, current
   revision) — a stored flag can disagree with what it was derived from.
 - **Evidence records** (safety incidents, RFIs, submittals, invoices):
@@ -269,6 +331,27 @@ scrollback gets broken by whoever didn't scroll far enough.
   `DEMO_DIRECT_URL` repository secrets, which are deliberately not named
   after production's so the two can never be confused.
 
+  All of that verified against the workflow file 2026-09-02 and true.
+
+  This entry used to carry a second paragraph here saying the demo button
+  asserts its target and the PRODUCTION one does not — that `wrongTarget()`
+  in `connection-target.mjs` only fires when `MIGRATE_EXPECT_HOST` is set,
+  that only `migrate-demo.yml` set it, and that "nobody has wired the
+  guard up". **DELETED 2026-09-06: it was true when written and is not
+  true now.** `migrate.yml:97` sets `MIGRATE_EXPECT_HOST:
+  ep-little-sea-a6bdnaw2`, hardcoded rather than secret so a reviewer can
+  read the assertion in the diff, added 2026-09-03. Both databases are
+  now guarded against a secret holding the wrong connection string, and
+  if Neon ever moves production to a new endpoint that job FAILS and
+  applies nothing until a person changes that line.
+
+  Recorded because the deletion is the lesson: this audit shipped a
+  correction and the correction went stale in four days while the branch
+  sat unmerged. A doc note that says "nobody has fixed X" is a claim with
+  an expiry date on it — re-read the code before republishing one, which
+  is the only reason this paragraph is not still telling you production
+  is unguarded.
+
   Established 2026-08-29 from: two production build logs printing
   `ep-little-sea` as the migrate target; the `Migrate` workflow printing
   the same for secrets copied out of Diego's Neon project; that project
@@ -342,15 +425,68 @@ scrollback gets broken by whoever didn't scroll far enough.
   "missing this commit's migrations", read the log for the wait lines
   before assuming the race: without them, you are on a build that predates
   this fix.
+  Re-read line by line 2026-09-02, because a claim that was once false is
+  the one worth re-checking rather than inheriting: the wait IS built now.
+  `check-schema.mjs` lines 107-133 — `WAIT_SECONDS` from
+  `MIGRATE_WAIT_SECONDS` defaulting to 90, `POLL_SECONDS = 5`, a
+  `while (pending && Date.now() < deadline)` loop that re-runs `migrate
+  status` and prints `db: <n>s — still pending` each time, guarded by
+  `pending && isProduction`. Previews skip the loop entirely. The prose
+  above and the code now agree.
 - **Do not promote a preview to production.** Merge to `main` instead, so
   the build actually runs. Previews are public (no deployment protection),
   carry the branch's latest commit at a stable alias, and are what browser
   testing should point at.
-- Previews share PRODUCTION's database — they run on Vercel's env vars,
+- ~~Previews share PRODUCTION's database — they run on Vercel's env vars,
   so a preview reads and writes `ep-little-sea`, the real data. Browser
   testing against a preview creates real rows; use an obvious prefix and
-  delete them afterwards.
-  Until 2026-08-28 every deployment migrated it, so a migration went live
+  delete them afterwards.~~
+
+  **STRUCK 2026-09-02. This was true until 1 Sep and it contradicted the
+  three-project table 100 lines above it in this same file** — the table
+  says previews run on the demo project, this paragraph said they run on
+  production, and both sentences sat on `main` at once. Exactly the
+  two-meanings-of-"the database" failure the table was written to end,
+  reproduced inside the document that ends it.
+
+  Previews run against the DEMO project (`ep-patient-lake`). Preview's
+  `DATABASE_URL`/`DIRECT_URL` were repointed there by `344e152`, 1 Sep,
+  the commit that added the table. Browser testing on a preview no longer
+  creates real rows and no longer needs cleaning up — which is the point
+  of the split, and was being thrown away by anyone who read this far
+  down and stopped.
+
+  **CONFIRMED 2026-09-07, and the method is the reusable part.** This
+  paragraph used to end "UNVERIFIED from here: nobody on this branch can
+  read Vercel's environment variables, so the last word is the Vercel
+  dashboard." That is wrong twice over: the dashboard is not needed, and it
+  would be the weaker evidence anyway. It says what is CONFIGURED. A build
+  log says what the build RESOLVED.
+
+  `check-schema.mjs` prints the target on every build, so the answer is one
+  call to Vercel's build logs — no dashboard access, no credentials:
+
+  | Build | `db: app queries` |
+  | --- | --- |
+  | preview, `claude/prova-vercel-direct-url-hg1acx` | `ep-patient-lake-afizorh1-pooler…/neondb` |
+  | preview, `cyrus/permission-gates` | `ep-patient-lake-afizorh1-pooler…/neondb` |
+  | production, `main` | `ep-little-sea-a6bdnaw2-pooler…/neondb` |
+
+  Two unrelated branches and a production control, so it is not one branch
+  with an odd override. Previews are on the demo project. The circumstantial
+  case below held up, and is left because it is how this was reasoned about
+  before anyone thought to read a build log.
+
+  Weaker but still true: the preview arm of `apps/web/app/(app)/error.tsx`
+  tells a failing preview to run the **Migrate demo database** workflow,
+  which would be nonsense advice if previews read production; and
+  `CHANGELOG.md` records a preview verified against `ep-patient-lake`.
+
+  If a preview ever shows the real 14 jobs, this paragraph came back — and
+  the build log, not the dashboard, is what settles it in a minute.
+
+  The rest of this entry is history and still accurate:
+  until 2026-08-28 every deployment migrated it, so a migration went live
   ON PUSH (`add_submittals` reached production from an unmerged branch).
   #18 gated that to `VERCEL_ENV=production`; #28 took it out of the build
   altogether, because that gate could not see promotion. Migrations now
@@ -367,8 +503,12 @@ scrollback gets broken by whoever didn't scroll far enough.
   WITHOUT those tables, so those pages fail on the preview until it merges
   — to click through such a branch first, apply its migration to the
   target database yourself and redeploy. (`ALLOW_PREVIEW_MIGRATIONS` was
-  the old escape hatch and no longer exists; it left with the build's
-  migrate step.)
+  the old escape hatch. No code reads it any more — it left with the
+  build's migrate step — but corrected 2026-09-02: it is NOT gone, it is
+  still sitting commented-out in `packages/db/.env.example:17`, where the
+  next person setting up a laptop will find it and reasonably assume it
+  does something. Setting it does nothing at all, which is the worst of
+  the three possible behaviours.)
 - **A successful write can show up as an empty list — cause NOT
   established, and now with TWO dead explanations instead of one.**
   Observed: the action returned ok, the row was in the database, the page
@@ -417,27 +557,191 @@ scrollback gets broken by whoever didn't scroll far enough.
   its own `revalidateBoth()` helper. "Somebody forgot to revalidate" is
   eliminated everywhere, so do not go looking for it.
 
-  **What is left.** The code cannot settle this, and that is itself the
-  finding — do not spend another session reading source for it. Exactly
-  two possibilities survive, neither visible from the repo: the
-  post-action re-render read data that did not yet include the row, or
-  something between Vercel's edge and the function drops the flight half
-  of the response. Settling it needs ONE signed-in click-through with the
-  network tab open, all extensions disabled: on the `POST` carrying
-  `Next-Action`, read the `x-action-revalidated` response header and
-  whether the body carries flight (tens of KB with page copy) or only the
-  action result (a few hundred bytes), check the console for
-  `SERVER ACTION APPLY FAILED`, then REPEAT IT IDENTICALLY on the working
-  `TakeoffForm` in the same tab. The differential is the whole value; a
-  single failing capture with nothing to compare against is how this has
-  already burned several sessions. Top suspect is
-  `components/CompanyLicenses.tsx:368` on `/settings` — reported failing,
-  still has no refresh, list server-rendered on the same route.
+  **Dead explanation 3 — and the differential that killed it. THE CAPTURE
+  THIS ENTRY ASKED FOR HAS NOW BEEN RUN** (2026-09-05, production, signed
+  in, both submits in one tab). `/settings` add-a-licence against
+  `/jobs/[id]` add-a-takeoff-line, instrumented from the page rather than
+  read off DevTools — a `fetch` wrapper for the `Next-Action` POST, a
+  `console.error` wrapper, and Resource Timing for sizes.
+
+  | | A: licence | B: takeoff |
+  | --- | --- | --- |
+  | `x-action-revalidated` | `[[],1,0]` | `[[],1,0]` |
+  | decoded response | 34,342 B | 75,806 B |
+  | action round-trip | 1,544 ms | 1,519 ms |
+  | first byte -> stream end | 1,543 -> 3,749 ms | 1,516 -> 4,411 ms |
+  | console | clean | clean |
+
+  **There is no difference.** Both surviving possibilities die on this:
+  the flight half was NOT dropped (34 KB of page payload arrived on the
+  suspect), and revalidation WAS signalled (byte-identical header). A
+  fourth hypothesis raised for that run — that `<form action={fn}>`
+  behaves differently from `<form onSubmit>`, which is the one structural
+  difference between these two components — is not supported either.
+
+  What the numbers do show is the response STARTING at ~1.5s and finishing
+  streaming at 3.7-4.4s, scaling with payload. That is the server
+  re-rendering the whole page after the action, and the DOM cannot update
+  before it lands. A human tester independently measured 5-7s on unrelated
+  routes the day before. **So the shape is post-action server render cost,
+  not a lost update** — which makes it #118's territory (Neon compute wake,
+  `connection_limit=5`) rather than this issue's.
+
+  Do NOT re-run the capture. It has been run and it answered. What remains
+  genuinely unexplained is only the ORIGINAL observation — a committed row,
+  an empty list, a reload that fixes it — IF it was seen well after the
+  render had finished. Nobody recorded how long they waited, which is why
+  a report of this shape now needs a timestamp before it counts as
+  evidence.
 
   What IS established, and was from the start: a page that fails after a
   commit invites a second click, and no create action is idempotent. #19
   disabled 57 create buttons while their form is in flight and added an
   error boundary that says not to resubmit before reloading.
+
+- **"Cancel first" is not the rule for an armed delete — "Cancel takes the
+  pixel Delete vacated" is, and which end that is depends on the cluster's
+  alignment.** Issue #152's rule 2 says the confirm button must not occupy
+  the position the delete button just vacated, so a hurried second click
+  costs a click rather than the record. The mitigation everyone reaches for
+  is "render Cancel first". That is correct in exactly one geometry.
+
+  Measured in real Chromium (Playwright, the actual class strings, a real
+  box model — a DOM-only test environment like happy-dom or jsdom does no
+  layout and returns zeros from `getBoundingClientRect`, so no unit test in
+  this repo can see any of this):
+
+  | cluster | unarmed | armed `[Cancel][Confirm]` | overlap |
+  | --- | --- | --- | --- |
+  | right-pinned (`justify-between` parent + `shrink-0`) | `[Edit][Delete]` | Confirm is last | **60.7px, 100%** |
+  | left, one ordinary action | `[Edit][Delete]` | | 44.0px, 72% |
+  | left, two ordinary actions (`ApprenticeshipRowActions`) | `[Record][Edit][Remove]` | | 0px |
+
+  The reference row this rule was written from is the third line — the one
+  case where it happens to work — which is why the wrong version of it read
+  as correct for a week.
+
+  **In a right-pinned cluster the LAST control keeps its position**, so
+  Cancel goes last and the confirm sits clear of it. In a left-aligned
+  cluster the FIRST slot is the stable one, so Cancel goes first. Same rule,
+  opposite order. State it as "Cancel inherits the Delete pixel" and it
+  survives the translation; state it as "Cancel first" and it does not.
+
+  `SalesActivityRow`, `SalesOpportunityRow` and `SalesLeadRow` were checked
+  by measurement rather than by reading: all three already had the ORDER
+  right and only rule 1 (hide every ordinary action, not just the one
+  somebody remembered) was broken on the first two.
+
+- **A watcher whose needle is ALREADY ON THE PAGE cannot fail, and it will
+  report a fast, confident, wrong number.** Born from the #61 capture
+  above, and the same shape as every other vacuous test in this file — it
+  just wears a stopwatch instead of an assertion.
+
+  The timing instrument was `document.body.innerText.includes(needle)`,
+  polled every 100ms from the click, to measure when a newly saved row
+  appears. It fired at 101ms — the first tick — on BOTH runs, for two
+  different reasons:
+
+    - on `/settings`, a row containing the needle string was ALREADY THERE
+      when the run began (left by another agent session writing to the same
+      account — see the concurrent-writes note below);
+    - on `/jobs/[id]`, the takeoff form renders a live "what will be added"
+      preview AS YOU TYPE, so the label was in page text before Save was
+      ever clicked.
+
+  Both would have returned 101ms if the save had failed outright. The
+  browser tester caught it, said so before presenting any figure, ran the
+  prescribed version anyway for the record, and built a second signal that
+  can only change on a real save — an occurrence COUNT (1 -> 2), and the
+  disappearance of "No line items yet".
+
+  **The rule: a timing signal must be something that cannot be true
+  before the event.** A count crossing a threshold, an empty-state string
+  disappearing, an element with a server-generated id appearing. Never a
+  substring that a form preview, a placeholder, or a pre-existing row
+  could already be rendering.
+
+  **And the reason this belongs in this file rather than in the issue:
+  earlier timings of #61 may be artefacts of exactly this.** Anyone who
+  measured the takeoff form as the fast control was measuring its preview.
+  That makes the control look instant and the suspect look worse by
+  comparison than it is.
+
+  Two smaller lessons from the same run, both cheap: `content-length` is
+  null on these responses (brotli-streamed), so sizes must come from
+  Resource Timing's `encodedBodySize`/`decodedBodySize`, not headers. And
+  an instrumentation patch installed via the console dies on a full page
+  reload — take every reading first, do the reload checks last, and move
+  between pages by in-app links only.
+
+- **MORE THAN ONE AGENT SESSION WRITES TO PRODUCTION, AND ONE OF THEM IS
+  NOT ANNOUNCING IT.** Three sightings on `ep-little-sea` in two days,
+  4-5 Sep 2026, all on the operator company's own rows:
+
+    - a `SalesActivity` reading "ZZ-TEST Phase C verification call —
+      logged by Claude on 2026-09-04 to verify SalesActivity persistence",
+      which appeared on a lead BETWEEN a tester's page load and their
+      delete attempt — so the delete guard refused a lead they had just
+      seen as empty. The guard was right; the data moved underneath them;
+    - a `SalesLead` named "CLAUDE-VERIFY Phase C (delete me)" with a
+      $1,200/mo opportunity, which sat in the `/sales` pipeline band
+      inflating the live figures;
+    - a `CompanyLicense` named "ZZTEST Nevada — ZZ-TEST 61A" on
+      `/settings`, which is what made the #61 watcher above false-positive.
+
+  **That third one is the cost worth naming: a stray test row did not just
+  clutter a page, it corrupted an experiment and nearly produced a wrong
+  answer to a question two sessions had already burned days on.** A
+  measurement taken on this account is not taken on a quiet one.
+
+  So: **before timing or counting anything on production, screenshot or
+  record the starting state of the rows you are about to measure**, and
+  say in the report that you did. And if you are the session writing:
+  demo-project or scratch database, never `ep-little-sea`; if a production
+  write is genuinely unavoidable, post it in Slack BEFORE the write, not
+  after, and delete it in the same sitting. The demo project exists
+  precisely so this does not have to happen — see the three-Neon-projects
+  table above.
+
+  **Cleared 2026-09-07: the CLAUDE-VERIFY lead is gone** — its opportunity
+  and activity deleted first, then the lead, by hand through the app. The
+  pipeline band reads true again. `deleteSalesLead` refuses while any child
+  row exists and names only the non-zero kinds, so a lead like this cannot
+  be removed in one click; children first. `ZZ-TEST Pipeline` was reported
+  separately and is NOT known to be cleared.
+
+  **THE CAUSE IS STILL UNIDENTIFIED, and here is what has been ruled out so
+  nobody spends the afternoon again.** All four checked rather than assumed:
+
+    - **Previews are not it.** They resolve `ep-patient-lake`; only
+      production resolves `ep-little-sea`. Confirmed from build logs on two
+      unrelated branches plus a production control — see the preview
+      paragraph above for the method, which needs no dashboard access.
+      This was the best hypothesis: a preview URL is a different host from
+      `app.cstream.ai`, so it would pass the egress proxies that 403 both
+      agents' containers. It is still wrong;
+    - **Scheduled Routines are not it.** One exists on Diego's account, the
+      hourly status desk. Disabled, and its prompt is STATUS ONLY — no
+      code, no pushes, and no path to the app;
+    - **The shared cloud environment does not carry credentials.** Every
+      session on it shares one `environment_id`, and one of them has no
+      `DATABASE_URL` and no `.env` at all, so the environment injects
+      nothing;
+    - **The Vercel MCP cannot leak the string.** It has no env-var tool;
+      checked twice rather than asserted from a partial search.
+
+  What survives is a CHECKOUT holding the connection string. Two sessions
+  were live on this repo at the time on Diego's account — "CRM Buildout"
+  and "Prova contractor operating system", the Phase C sales lane, which
+  matches the symptom since the rows were leads and opportunities.
+
+  **A cloud session cannot be questioned from another container.**
+  `ListAgents` sees only this machine, and `SendMessage` to either title
+  returns `No agent named '…' is reachable` — tried, not assumed. There is
+  no `list_events` tool here either, so their transcripts are unreadable
+  from a peer. The check has to be run INSIDE each session, by whoever has
+  it open: `grep -rl "ep-little-sea" . --exclude-dir=node_modules
+  --exclude-dir=.git`, reporting the HOST only and never the string.
 - **`./scripts/preflight.sh` used to die on its first line inside a git
   worktree.** It ran `rm -f .git/index.lock`, but in a worktree `.git` is
   a FILE, not a directory — so that is `ENOTDIR`, which `rm -f` does NOT

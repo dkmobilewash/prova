@@ -191,6 +191,15 @@ export const ROUTE_CAPABILITY: Record<string, Capability> = {
   // ACCOUNTING do not, which is the access this feature was shipped to
   // describe and — until now — did not enforce anywhere.
   "/safety": "MANAGE_FIELD",
+  // Arguable and called deliberately, because MANAGE_COMPLIANCE's own doc
+  // comment says "compliance documents" and an OSHA card is one. It is
+  // MANAGE_FIELD anyway: the question this page answers is asked at the
+  // gate at six in the morning by the person running the crew, and FIELD
+  // holds no MANAGE_COMPLIANCE. Mapping it to compliance would leave the
+  // one job function that needs it standing outside. PAYROLL_COMPLIANCE
+  // holds both, so nobody who could reach it under the other reading
+  // loses it under this one.
+  "/certifications": "MANAGE_FIELD",
   "/punch-lists": "MANAGE_FIELD",
   "/equipment": "MANAGE_FIELD",
   "/field-reports": "MANAGE_FIELD",

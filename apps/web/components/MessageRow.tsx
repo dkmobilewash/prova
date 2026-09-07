@@ -14,6 +14,7 @@ import {
   stateLabel,
   relatedLabel,
 } from "@/components/messageLabels";
+import { ConfirmDelete, RowActions } from "@/components/RowActions";
 
 export type MessageRowData = MessageData & {
   jobName: string | null;
@@ -35,7 +36,6 @@ export function MessageRow({
   canDelete: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const [confirming, setConfirming] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -102,45 +102,37 @@ export function MessageRow({
         sent {message.sentAt}
         {message.relatedType && ` · about ${relatedLabel(message.relatedType)}`}
         {message.sentByName && ` · by ${message.sentByName}`}
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          className={`${linkBtn} ml-2`}
-          disabled={isPending}
+        {/* A span, not a div: this cluster sits inside the <p> above and a
+            block child there is invalid HTML. Arming "Remove" hides the
+            "Show what was sent" toggle with it — it is a child of
+            RowActions — so nothing in this row stays clickable beside the
+            armed confirm. */}
+        <RowActions
+          as="span"
+          destructive={
+            canDelete && !message.wentOut ? (
+              <ConfirmDelete
+                label="Remove"
+                confirmLabel="Confirm remove"
+                pendingLabel="Removing…"
+                pending={isPending}
+                onConfirm={() => run(() => deleteOutboundMessage(message.id))}
+                deleteClassName={`${linkBtn} ml-2`}
+                cancelClassName={`${linkBtn} ml-2`}
+                confirmClassName="ml-2 text-xs text-red-400 underline disabled:opacity-50"
+              />
+            ) : null
+          }
         >
-          {open ? "Hide" : "Show what was sent"}
-        </button>
-        {canDelete &&
-          !message.wentOut &&
-          (confirming ? (
-            <>
-              <button
-                type="button"
-                disabled={isPending}
-                onClick={() => run(() => deleteOutboundMessage(message.id))}
-                className="ml-2 text-xs text-red-400 underline disabled:opacity-50"
-              >
-                {isPending ? "Removing…" : "Confirm remove"}
-              </button>
-              <button
-                type="button"
-                disabled={isPending}
-                onClick={() => setConfirming(false)}
-                className={`${linkBtn} ml-2`}
-              >
-                Cancel
-              </button>
-            </>
-          ) : (
-            <button
-              type="button"
-              disabled={isPending}
-              onClick={() => setConfirming(true)}
-              className={`${linkBtn} ml-2`}
-            >
-              Remove
-            </button>
-          ))}
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            className={`${linkBtn} ml-2`}
+            disabled={isPending}
+          >
+            {open ? "Hide" : "Show what was sent"}
+          </button>
+        </RowActions>
       </p>
 
       {open && (
