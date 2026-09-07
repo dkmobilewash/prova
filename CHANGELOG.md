@@ -303,6 +303,53 @@ numbers worth reading; it does not prove any of these rows behaves
 correctly in the running app.
 
 
+### The union audit reported good news it had not earned — #136 (Diego)
+`claude/prova-contractor-os-e3f0iz`
+
+**The audit shipped yesterday was itself a check that could not fail, and it
+ran against production and told somebody to build a migration.** On a database
+holding one company and one agreement it printed *"NONE -> the companyId
+backfill is single-valued. Build it."* — but the `HAVING count(DISTINCT
+"companyId") > 1` that conclusion rests on is *arithmetically incapable* of
+returning a row unless two companies hold edges. It also computed the scale
+that would have exposed that **after** printing the verdict.
+
+That is this repo's oldest failure mode, committed by the script written to
+answer a question about it.
+
+**Scale is now read FIRST, and every verdict states the condition under which
+it could have come out the other way.** Where the data does not meet that
+condition the verdict is `NOT ESTABLISHED`, never silence and never good news.
+The rule generalises past thresholds: *name what would have had to be true for
+this check to fail, and say whether it was.*
+
+**A second finding, and the one no amount of rewording would have caught:
+`CompanyUnionAgreement` is not the only edge from a company to a union local.**
+`ApprenticeshipEnrollment` carries a required `companyId` and a nullable
+`unionLocalId` that its writer takes straight out of `FormData`
+(`lib/actions/apprenticeship.ts`), plus a `craftClassificationId` that can point
+at another company's craft. So a company can attach itself to another's local
+with no agreement row at all — and the old query would have printed `NONE`
+while it was happening. Query 1 now aggregates over both edges.
+
+Three smaller corrections in the same pass. `ApprenticeRatioRule` was named in
+the script's own header as one of the four exposed tables and was counted
+nowhere — the "written, documented, never called" shape, in a file about
+rigour. `orphans[0]?.x ?? 0` defaulted a failed query to the *reassuring*
+value, so a query that did not answer read as "every local has an owner"; it
+now throws. And the output never mentioned that `UnionLocal` carries
+`@@unique([parentInternational, localNumber])`, so the backfill it tells you to
+write cannot give two contractors their own "Carpenters / 300" without changing
+that constraint in the same migration.
+
+**Verified against a real Postgres in four states, not two.** Empty → `NOT
+ESTABLISHED`. **Production's exact shape (1 company, 1 local, 1 agreement) →
+`NOT ESTABLISHED`**, which is the run that produced the false all-clear.
+A local shared through agreements → detected. A local shared where the second
+company is attached *only* by an apprenticeship enrollment → detected, with the
+local named and its wage data reported. The fixtures and their scratch database
+were torn down; nothing touched any Neon project.
+
 ### One question about production nobody could answer, now one click — #136 (Diego)
 `claude/prova-contractor-os-e3f0iz`
 
