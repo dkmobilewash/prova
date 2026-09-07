@@ -77,7 +77,49 @@ function sourceFiles(dir: string, out: string[] = []): string[] {
  * name, so it does not care whether the client is called `prisma`, `db` or
  * `tx`.
  */
-const TIME_ENTRY_WRITE = /\btimeEntry\s*\.\s*(update|updateMany|upsert)\s*\(/g;
+const TIME_ENTRY_WRITE =
+  /\btimeEntry\s*\.\s*(updateManyAndReturn|updateMany|update|upsert)\s*\(/g;
+
+/**
+ * The nested-relation door, which the accessor pattern above cannot see.
+ *
+ * `prisma.crewMember.update({ data: { timeEntries: { connect: ... } } })`
+ * REASSIGNS TimeEntry.crewMemberId and contains no `timeEntry.` accessor at
+ * all. It is not a contrived evasion — "assign these hours to this crew
+ * member", written from a crew-member edit page, is the most natural first
+ * implementation once this model gets wired, and it is the one an adversarial
+ * review actually constructed.
+ *
+ * Worse, the CrewMember identity trigger that this migration KEPT does not
+ * stop it: that trigger fires on the parent UPDATE and passes, because no
+ * identity column changed.
+ *
+ * Five models carry a `timeEntries` back-relation (crew, company, labor and
+ * two in jobs), so there are five such doors.
+ *
+ * Only WRITE verbs are listed. A read — `include: { timeEntries: { where } }`,
+ * `select: { timeEntries: true }` — uses none of them, so this does not fire
+ * on the many legitimate reads.
+ */
+/**
+ * This file scans itself, and its own failure messages necessarily contain
+ * examples of every shape it hunts for. Comment-stripping does not help:
+ * the examples live in STRING LITERALS, which are code.
+ *
+ * So it is excluded from its own scan, structurally, by path — NOT via
+ * EXCEPTIONS. An EXCEPTIONS entry disarms a file for a REASON somebody
+ * argued; this is a self-reference, and putting it in the same list would
+ * teach the next reader that adding files there is normal. That is the
+ * exact spiral PR #176's census fell into.
+ *
+ * The cost is real and small: a genuine TimeEntry write added to THIS file
+ * would not be caught. It is a test file for a census; nothing writes from
+ * here.
+ */
+const SELF = "apps/web/lib/timeEntryWriteCensus.test.ts";
+
+const NESTED_TIME_ENTRY_WRITE =
+  /\btimeEntries\s*:\s*\{[\s\S]{0,300}?\b(connect|connectOrCreate|disconnect|set|update|updateMany|upsert|create|createMany|delete|deleteMany)\s*:/;
 
 /** Raw SQL naming the table. Cannot prove intent, only that it is worth a
  * human reading the call — which is why the message says so. */
@@ -175,6 +217,42 @@ describe("the TimeEntry write census", () => {
             "",
             "If it genuinely cannot touch crewMemberId, add the file to EXCEPTIONS in",
             "this file with the reason and what stops it.",
+            "",
+          ].join("\n"),
+    ).toEqual([]);
+  });
+
+  it("has no nested relation write reaching TimeEntry through another model", () => {
+    const offenders = files
+      .filter((f) => f.path !== SELF)
+      .filter((f) => !(f.path in EXCEPTIONS))
+      .filter((f) => NESTED_TIME_ENTRY_WRITE.test(f.source))
+      .map((f) => f.path);
+
+    expect(
+      offenders,
+      offenders.length === 0
+        ? ""
+        : [
+            "",
+            "A nested relation write can reach TimeEntry without ever naming the",
+            "`timeEntry.` accessor:",
+            "",
+            "  prisma.crewMember.update({",
+            "    where: { id: newCrewId },",
+            "    data: { timeEntries: { connect: { id: entryId } } },",
+            "  })",
+            "",
+            "That reassigns TimeEntry.crewMemberId. The CrewMember identity trigger",
+            "does NOT stop it — that trigger fires on the parent UPDATE and passes,",
+            "because no identity column changed.",
+            "",
+            "Same rule as the census above: crewMemberId is one-way, and if you are",
+            "adding a write path the lock belongs back in the database.",
+            "",
+            "If this is a READ (include/select) that happens to match, that is a bug",
+            "in this pattern rather than in your code — say so in EXCEPTIONS and fix",
+            "the pattern.",
             "",
           ].join("\n"),
     ).toEqual([]);
