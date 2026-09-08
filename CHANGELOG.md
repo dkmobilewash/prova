@@ -12,6 +12,60 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### The GC sees the photos we chose, and no others (Diego)
+`claude/prova-company-cam-feature-6170v6`
+
+Site photos shipped in #195 and were entirely internal. This lets a GC see
+the ones you pick, through the portal link they already have — no account,
+same unguessable token that already shows them their contract and invoices.
+
+**Sharing is opt-in, one photo at a time, and off by default**, which is
+the decision the rest of this follows from. A job's gallery is not a set a
+sub publishes: the same one holds the shot of another trade's damage kept
+for a backcharge, the unsafe condition documented defensively, and the
+crew's own mistake before it was put right. `/portal` already withholds job
+costing for the same reason.
+
+Stored as `sharedWithClientAt`, a timestamp rather than a boolean, for the
+cost of nothing — showing a photo to a GC is a disclosure, and "shared"
+answers less than "shared on the 4th" in an argument about what they were
+told and when.
+
+**What the portal cannot show is enforced by the projection not having the
+fields**, not by remembering not to render them. No tags — the vocabulary
+is our framing, and "backcharge" is not for the party it is about. No
+photographer name, no file size, no clock warning, no edit or delete.
+Widening `PortalJobPhoto` is three deliberate edits rather than one
+forgetful one. The read also sits below the ownership `notFound()` instead
+of beside it in a `Promise.all`, so a non-owner's photos are never fetched
+before ownership is established.
+
+**A guard that was nearly written and would have protected nobody.**
+Sharing looked like it wanted `MANAGE_JOBS` — "correspondence with the GC"
+— with a comment about stopping the crew publishing something rash.
+`BY_FUNCTION` says `FIELD` holds `MANAGE_JOBS` as well as `MANAGE_FIELD`,
+so that gate would have excluded only accounting and payroll and protected
+nobody it was described as protecting. It is `MANAGE_FIELD` like every
+other photo action. Recorded because the previous PR shipped two comments
+claiming safety they did not have, and the fix is checking before writing
+the sentence, not writing a more careful sentence.
+
+**The migration was applied rather than only diffed, and that is new here.**
+There is a Postgres 16 in the agent container; a local cluster ran the
+whole history. All 71 migrations apply from scratch, `migrate status` names
+them, and `migrate diff --from-schema-datasource --to-schema-datamodel`
+returns an empty migration — zero drift between schema and database. #195's
+two migrations only ever got `--from-empty`. It also makes the `.dbtest.ts`
+suite runnable in these containers for the first time, which is how the
+portal read and the cross-tenant refusal are proved: real queries, not
+prose.
+
+`lib/actions/reachable.test.ts` caught the schema and action being finished
+before any UI existed — "'setJobMediaClientSharing' is called from
+somewhere". That is the mechanised form of a bug class that has shipped
+three times, and one clicking cannot catch, because a feature with no entry
+point renders as a working empty state.
+
 ### Another signatory's wage rates, five lines below the fix for them — #205 (Diego)
 `claude/prova-contractor-os-e3f0iz`
 
