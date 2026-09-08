@@ -263,9 +263,9 @@ export function DailyFieldReports({
                       trying to leave alone. Ordinary actions are children of
                       RowActions and are gone while armed.
 
-                      `pinned="end"` re-measured against #89's stacking:
-                      1100px 100% -> 0%, 375px 76% -> 79%. Kept for the
-                      desktop case; at 375 neither order is safe. Numbers in
+                      `pinned="end"` measured against #89's stacking: 1100px
+                      100% -> 0%. The phone was 79% either way until #184's
+                      armed column, which is 0% at 639 and 375. Numbers in
                       `rowActionsCensus.test.ts`. */}
                   <RowActions
                     className="flex shrink-0 flex-wrap items-center gap-3"
