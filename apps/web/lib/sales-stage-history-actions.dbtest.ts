@@ -24,7 +24,8 @@ const context = {
 };
 
 vi.mock("@/lib/auth", () => ({ requireCompanyContext: async () => context }));
-vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
+const revalidatePath = vi.fn();
+vi.mock("next/cache", () => ({ revalidatePath: (path: string) => revalidatePath(path) }));
 
 const {
   createSalesLead,
@@ -84,6 +85,7 @@ describe("stage history written by the opportunity actions", () => {
     context.company = { id: companyId, isProvaOperator: true };
     context.id = userId;
     context.role = "OWNER";
+    revalidatePath.mockClear();
   });
 
   async function newOpportunity(stage: string, reachedOn: string) {
@@ -207,6 +209,41 @@ describe("stage history written by the opportunity actions", () => {
 
     expect(await deleteSalesOpportunity(opportunity.id)).toEqual({ ok: true });
     expect(await changesFor(opportunity.id)).toHaveLength(0);
+  });
+
+  it("revalidates /sales as well as the lead's own page on a stage move -- #153 finding 2", async () => {
+    // updateSalesOpportunity was the only stage-changing action that did not
+    // revalidate /sales, which left that page's pipeline band (columns,
+    // "sitting longest") showing the deal's OLD stage after a move made
+    // from the detail page, until something else forced a refresh.
+    const opportunity = await newOpportunity("NEW", "2026-08-01");
+    revalidatePath.mockClear();
+
+    expect(
+      await updateSalesOpportunity(
+        opportunity.id,
+        form({ stage: "TRIAL", stageEffectiveOn: "2026-08-10" }),
+      ),
+    ).toEqual({ ok: true });
+
+    expect(revalidatePath).toHaveBeenCalledWith(`/sales/${leadId}`);
+    expect(revalidatePath).toHaveBeenCalledWith("/sales");
+  });
+
+  it("revalidates /sales on an MRR-only edit too, not only on a stage move", async () => {
+    // /sales's pipeline band totals estimatedMrr and buckets by
+    // expectedCloseDate across every open opportunity -- both editable here
+    // without moving the stage -- so this must not be conditional on
+    // isMove the way the SalesStageChange write correctly is.
+    const opportunity = await newOpportunity("TRIAL", "2026-08-01");
+    revalidatePath.mockClear();
+
+    expect(
+      await updateSalesOpportunity(opportunity.id, form({ stage: "TRIAL", estimatedMrr: "500" })),
+    ).toEqual({ ok: true });
+
+    expect(revalidatePath).toHaveBeenCalledWith(`/sales/${leadId}`);
+    expect(revalidatePath).toHaveBeenCalledWith("/sales");
   });
 
   it("is closed to a member of the operator company, like every other write here", async () => {

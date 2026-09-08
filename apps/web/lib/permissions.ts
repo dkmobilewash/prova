@@ -203,6 +203,7 @@ export const ROUTE_CAPABILITY: Record<string, Capability> = {
   "/punch-lists": "MANAGE_FIELD",
   "/equipment": "MANAGE_FIELD",
   "/field-reports": "MANAGE_FIELD",
+  "/photos": "MANAGE_FIELD",
   "/material-orders": "MANAGE_FIELD",
 
   // MANAGE_JOBS, likewise from its doc comment: "the correspondence

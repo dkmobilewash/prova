@@ -49,9 +49,14 @@ function StageCard({ column }: { column: StageColumn }) {
 export function SalesPipelineBand({
   pipeline,
   sittingLongest,
+  sittingLongestTrackedCount,
 }: {
   pipeline: SalesPipeline;
   sittingLongest: (PipelineOpportunity & { daysInStage: number })[];
+  /** How many open deals `sittingLongest` was even drawn from -- see the
+   * heading below. Distinct from `sittingLongest.length`, which is capped
+   * at the display limit and would understate the sample. */
+  sittingLongestTrackedCount: number;
 }) {
   const total =
     pipeline.open.count + pipeline.won.count + pipeline.lost.count;
@@ -151,7 +156,25 @@ export function SalesPipelineBand({
 
       {sittingLongest.length > 0 && (
         <div className="mt-4 border-t border-slate-800 pt-3">
-          <p className="mb-1 text-xs font-medium text-slate-400">Sitting longest</p>
+          <p className="mb-1 text-xs font-medium text-slate-400">
+            {/* #153 finding 3: longestOpen (rightly) excludes any open deal
+                with no recorded stage history rather than sorting it as
+                fresh, but that leaves this superlative computed over
+                whatever fraction of the open pipeline HAS history -- which,
+                this soon after the model shipped, can be small and
+                arbitrary. Same treatment winRate and the unpriced total
+                already get elsewhere on this page: say what it was
+                computed over, or (once every open deal is tracked) say
+                nothing extra at all. */}
+            Sitting longest
+            {sittingLongestTrackedCount < pipeline.open.count && (
+              <span className="font-normal text-slate-600">
+                {" "}
+                — of {sittingLongestTrackedCount} with tracked history, out of{" "}
+                {pipeline.open.count} open
+              </span>
+            )}
+          </p>
           <ul className="space-y-1">
             {sittingLongest.map((opportunity) => (
               <li key={opportunity.id} className="flex justify-between gap-3 text-xs">

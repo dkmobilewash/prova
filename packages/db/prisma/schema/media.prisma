@@ -1,0 +1,114 @@
+/// Site capture — the photos (and later video) a crew takes on a job.
+///
+/// ONE TABLE, HUNG OFF `Job`. The same call `ComplianceDocument` makes for
+/// its four document types, for the same reason: a photo of a cracked
+/// header, a photo proving a punch item was fixed and a photo attached to
+/// a safety incident are the same shape of record — a file, a job, a
+/// person, a time — differing only in what they are later attached to.
+/// Four near-identical tables would each need their own upload path, their
+/// own gallery and their own delete guard.
+///
+/// `jobId` IS REQUIRED, and that is the design. Every other thing this
+/// feature will eventually attach to — a punch item, a safety incident, a
+/// daily report — already belongs to exactly one job, so the job is the
+/// spine and never has to be inferred. It also means the GC question this
+/// feature exists to answer ("show me everything from the west wall in
+/// August") is one indexed query, not a union across attachment types.
+///
+/// DELIBERATELY NO ATTACHMENT COLUMNS YET. The obvious next move is a
+/// nullable `punchListItemId`, `safetyIncidentId`, `dailyFieldReportId`
+/// and so on. Each one arrives with the code that writes and reads it, not
+/// before: this repo has a standing scar from columns that were added,
+/// documented and never selected by anything (`acknowledgedSeverity`), and
+/// a nullable FK nothing populates looks identical to one whose feature is
+/// broken.
+///
+/// NOT AN EVIDENCE RECORD IN THE `Submittal`/`Rfi` SENSE — no counter, no
+/// sequence number, no send-then-lock lifecycle. A photo is not
+/// correspondence and nobody transmits "photo 14" to a GC. What it does
+/// borrow from that family is the locked identity: see `capturedAt` below.
+model JobMedia {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+  jobId     String
+  job       Job     @relation(fields: [jobId], references: [id])
+
+  /// Where the file actually lives, and the URL that is rendered. Vercel
+  /// Blob, `access: "public"` with a random suffix — unguessable rather
+  /// than private, matching every other upload in this app. See
+  /// apps/web/lib/blob.ts for why that distinction is written down
+  /// everywhere it applies.
+  ///
+  /// IT IS ALSO WHAT THE FILE IS DELETED BY, and the reason there is no
+  /// `blobPathname` column beside it. There was one, whose own comment
+  /// said it existed so deletion was possible — and `deleteJobMedia`
+  /// deleted by `blobUrl`, so nothing ever read it. `del` takes "Blob url
+  /// (or pathname)" (@vercel/blob@2.8.0 dist/index.d.ts:75), so the URL
+  /// was always sufficient, and a second column holding what this one's
+  /// own path already spells is a second source of truth for the same
+  /// string.
+  ///
+  /// The path in this URL is not decoration either: it is
+  /// `job-media/<jobId>/<file>`, and `recordJobMedia` refuses to write a
+  /// row whose URL sits anywhere else. That prefix is what makes this
+  /// column safe to hand to `del()` — see apps/web/lib/job-media.ts.
+  blobUrl String
+
+  /// What the browser said it uploaded, and how big it was.
+  ///
+  /// `contentType` is stored and NOT currently branched on: only photos can
+  /// be uploaded, so the gallery renders an image unconditionally. There
+  /// was a `jobMediaKind()` helper here that mapped it to PHOTO/VIDEO/OTHER
+  /// and no production code ever called it — written, documented, and never
+  /// called, which is the shape CLAUDE.md names. It is gone; the column
+  /// stays, because it is the ONE value a video branch would be derived
+  /// from on the day video ships, and a stored `kind` beside it would be a
+  /// second source of truth that could disagree with it.
+  contentType String
+  byteSize    Int
+
+  /// What the person typed about the photo. Optional — a photo with no
+  /// caption is still worth having, and demanding one gets you "photo".
+  caption String?
+
+  /// When the picture was taken, per the DEVICE. Entered rather than
+  /// stamped, the same rule the field reports and submittals follow: a
+  /// crew uploading Friday's photos on Monday must not have them recorded
+  /// as Monday's.
+  ///
+  /// A full timestamp, NOT the UTC-midnight date this schema uses
+  /// elsewhere, and the deviation is deliberate — on a jobsite the hour
+  /// matters ("before the pour", "after the inspector left") and rounding
+  /// it to a calendar day throws away the ordering within a day, which is
+  /// most of what a walkthrough is.
+  capturedAt DateTime
+
+  /// When the server received it. Kept ALONGSIDE `capturedAt` rather than
+  /// instead of it because a device clock is set by its owner and is
+  /// routinely wrong — a phone fresh off a charger in a trailer with no
+  /// signal can be days out. When the two disagree materially the UI can
+  /// say so; with only one of them stored, it could not.
+  createdAt DateTime @default(now())
+
+  capturedByUserId String?
+  capturedBy       User?   @relation(fields: [capturedByUserId], references: [id])
+
+  /// The labels somebody put on this photo. See media-tags.prisma for why
+  /// a join to a vocabulary table rather than a string column here.
+  tags JobMediaTagAssignment[]
+
+  /// The two galleries, and one index each. Both order by `capturedAt`
+  /// descending, so the sort column belongs in the index rather than in a
+  /// sort the database does afterwards.
+  ///
+  /// `[companyId]` alone used to be the other one, and it could not serve
+  /// `/photos` — the company-wide read filters on `companyId` and orders
+  /// by `capturedAt`, so every row for the company was read and sorted.
+  /// `[companyId, capturedAt]` answers that AND everything the bare
+  /// `[companyId]` answered, being its leftmost prefix, so keeping both
+  /// would only be a second index to write on every insert.
+  @@index([companyId, capturedAt])
+  /// The job page's own query: one job, newest first.
+  @@index([jobId, capturedAt])
+}

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   countOverdue,
+  dealLabelFor,
   followUpQueue,
   followUpStanding,
   lastContactOn,
@@ -245,6 +246,35 @@ describe("summarizeLeadActivity", () => {
     );
     expect(summary.activityCount).toBe(2);
     expect(summary.lastContactOn).toBe("2026-01-01");
+  });
+});
+
+describe("dealLabelFor", () => {
+  // #153 finding 1: opportunityId was collected on the activity form and
+  // stored, but no screen ever turned it back into something a person
+  // could read -- this is that lookup, pulled out so it is tested rather
+  // than trusted by eye inside the row component.
+  const options = [
+    { id: "opp-1", label: "Trial · $600/mo" },
+    { id: "opp-2", label: "New" },
+  ];
+
+  it("is null when the activity was not about a specific deal", () => {
+    expect(dealLabelFor(null, options)).toBeNull();
+  });
+
+  it("returns the matching option's label", () => {
+    expect(dealLabelFor("opp-2", options)).toBe("New");
+  });
+
+  it("is null, not a thrown error, for an id with no matching option", () => {
+    // Should not happen -- readOpportunityField refuses a mismatched id at
+    // write time -- but a row must not crash over a stale reference.
+    expect(dealLabelFor("does-not-exist", options)).toBeNull();
+  });
+
+  it("is null on an empty options list", () => {
+    expect(dealLabelFor("opp-1", [])).toBeNull();
   });
 });
 
