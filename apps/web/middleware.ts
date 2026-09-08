@@ -27,6 +27,7 @@ const isProtectedRoute = createRouteMatcher([
   "/prevailing-wage(.*)",
   "/union-compliance(.*)",
   "/field-reports(.*)",
+  "/photos(.*)",
   "/sales(.*)",
   "/certifications(.*)",
   // Ask streams over a route handler rather than a Server Action.
@@ -40,6 +41,24 @@ const isProtectedRoute = createRouteMatcher([
   // so it belongs in the list a reader checks even though the handler
   // itself is OWNER-gated.
   "/api/export(.*)",
+  // Mints the one-shot token a browser uses to upload a site photo
+  // straight to the blob store. It is the ONLY thing standing between an
+  // anonymous caller and write access to the company's storage, so it is
+  // protected here as well as authenticating itself
+  // (requireCompanyContext + a MANAGE_FIELD check + a job-ownership check
+  // inside onBeforeGenerateToken). Belt and braces on purpose: this route
+  // hands out a credential.
+  //
+  // CONSEQUENCE WORTH KNOWING BEFORE YOU EXTEND IT: `handleUpload` serves
+  // two event types on one URL — the browser's token request, and a
+  // server-to-server "upload completed" callback from Vercel Blob. That
+  // second one carries no Clerk session and is therefore rejected by this
+  // entry. Harmless today, because the route deliberately does not
+  // implement `onUploadCompleted` (see its header for why a webhook is the
+  // wrong place to write the row). If somebody adds one, it will never
+  // fire, and nothing will say so — remove this line and rely on the
+  // route's own checks at that point.
+  "/api/job-media/upload(.*)",
   "/deployment(.*)",
 ]);
 

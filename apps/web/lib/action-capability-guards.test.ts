@@ -648,6 +648,13 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   equipment: () => import("./actions/equipment"),
   equipmentAssignments: () => import("./actions/equipmentAssignments"),
   fieldReports: () => import("./actions/fieldReports"),
+  // Site photos. Only the two TAG-VOCABULARY actions land in MUST_ASSERT:
+  // renaming and deleting a tag are reachable only from /photos, which
+  // demands MANAGE_FIELD. The photo actions themselves — record, update,
+  // delete, add/remove a tag on a photo — are also reachable from
+  // /jobs/[id], which demands no capability, so their doors disagree and
+  // the derivation leaves them alone. They assert MANAGE_FIELD anyway.
+  jobMedia: () => import("./actions/jobMedia"),
   materialOrders: () => import("./actions/materialOrders"),
   rfis: () => import("./actions/rfis"),
   submittals: () => import("./actions/submittals"),
