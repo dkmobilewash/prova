@@ -76,6 +76,49 @@ body.
 
 ---
 
+### Another signatory's wage rates, five lines below the fix for them — #205 (Diego)
+`claude/prova-contractor-os-e3f0iz`
+
+Cyrus's #203 scoped `loadRemittance`'s fringe query to `companyId` at `:108`.
+Two hundred lines down, `loadUnionSetup` reached three more relations under
+`unionLocal` with no `where` at all: `apprenticeRatioRules`,
+`craftClassifications`, and `fringeRateSchedules` nested inside them. The fix
+and the gap sat **five lines apart in the same file**, which is most of why
+neither of us saw it — the block reads as already handled.
+
+Unfiltered, `schedules[]` maps another signatory's `baseWage`, `pensionRate`,
+`vacationRate`, `healthWelfareRate` and `trainingRate` into `UnionLocalCard`,
+and `ratio` resolves to the newest rule on the local **by anybody**, so a
+company can be shown a ratio rule it never set. Three `where: { companyId }`
+lines. No migration; the column landed in #200.
+
+**How reachable it is, stated accurately rather than alarmingly.** No action in
+this app can produce the shape it needs. `createUnionLocalAndAgreement` both
+looks up and creates with `companyId: company.id`, so a company's agreement
+always points at its own local — checked, not assumed. What is NOT enforced is
+that the edge stays that way: there is no composite foreign key tying
+`CompanyUnionAgreement.companyId` to `UnionLocal.companyId`, and #200's
+backfill assigned each shared local to its EARLIEST agreement, leaving any
+later company's agreement pointing at somebody else's row. So this is a real
+hazard on any database carrying pre-#200 residue — Cyrus's `ZZ FIXTURE` was
+built as exactly that shape — and defence for an invariant nothing enforces,
+rather than a leak rendering on production today. Production holds one company.
+
+**Proved by mutation, not by reading.** The new dbtest seeds the cross-tenant
+edge directly, because no action can make it. With the three clauses reverted
+it fails on `expected [ { …(8) } ] to have a length of +0 but got 1` — B
+reading A's craft through B's agreement. With them restored, 26/26 in that
+file and 245/245 across the DB suite. It asserts B still REACHES the local
+before asserting what is missing, so it cannot pass by finding nothing.
+
+**Two stale comments went with it**, both stating the schema is something it
+stopped being in #200 and both load-bearing. `// CraftClassification is
+global` sat directly beneath the unfiltered line as its justification — that
+sentence is how #205 survived #203. The function header's *"the local table is
+global"* was equally false; driving from the agreement is still right, but for
+a different reason than the one written down.
+
+
 ### On a phone the armed confirm sat on the delete pixel (Cyrus)
 `cyrus/armed-delete-mobile-layout`
 
