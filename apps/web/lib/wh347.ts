@@ -105,11 +105,19 @@ export const WH347_BLOCKING_FIELD_REASON: Record<Wh347BlockingField, string> = {
   deductions:
     "Columns 8 are FICA, withholding and other deductions. cstream does not hold them — they come off the payroll register.",
   netWages: "Column 9 is gross less deductions, so it follows whatever is missing from column 8.",
+  // These three sentences are PRINTED, in red, where the field would have
+  // gone. Each one has to survive being read by somebody who then goes
+  // looking for the screen it points at, so each says what is actually
+  // true today rather than what was true when the field was added. The
+  // first said "cstream does not issue one yet" for as long as that was
+  // so; a counter issues one now, and leaving the old sentence up would
+  // send a user hunting for a feature that is one button below them.
   payrollNumber:
-    "Every WH-347 carries a sequential payroll number for the project. cstream does not issue one yet.",
+    "Every WH-347 carries a sequential payroll number for the project. One is issued the moment this week's statement of compliance is signed, and nobody has signed it.",
   projectLocation:
-    "The header wants the project's location. A job records a name but no address.",
-  contractNumber: "The header wants the project or contract number. A job does not record one.",
+    "The header wants the project's location. This job records none — and nothing in cstream writes that field yet, so it cannot be filled in from a screen today.",
+  contractNumber:
+    "The header wants the project or contract number, which the awarding body issues. This job records none, and nothing in cstream writes that field yet either.",
   statementOfCompliance:
     "Page 2 is signed under penalty of perjury and names how fringes were paid — 4(a) to approved plans, 4(b) in cash, 4(c) exceptions. Nobody has signed one for this week.",
 };
@@ -225,8 +233,17 @@ export interface Wh347CompanyInput {
 
 export interface Wh347JobInput {
   name: string;
-  /** Neither is on the Job model yet; both are accepted so the caller
-   * that gains them does not change this module's shape. */
+  /** `Job.projectLocation` and `Job.contractNumber`, both nullable and
+   * both staying that way — every job predates them and a contract number
+   * is issued by the awarding body, so inventing one would be inventing
+   * evidence. Optional here rather than required because a caller that
+   * has neither should not have to say so twice.
+   *
+   * NOTHING IN THE APP WRITES EITHER COLUMN TODAY. The schema holds them
+   * and this module reports each as blocking by name when absent, which is
+   * correct; what is missing is the screen that sets them. Until that
+   * exists these two blockers cannot be cleared by any user action, and
+   * the reason strings above say so rather than implying a screen. */
   location?: string | null;
   contractNumber?: string | null;
 }

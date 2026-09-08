@@ -26,9 +26,12 @@
 // from, which is the repo's standing rule, and a filing whose stored gross
 // disagrees with its own time entries is the worst version of that.
 //
-// Ships schema-only: no action writes these tables and no page reads them
-// yet. Announced in #prova-build before the push, per the working
-// agreement, because it touches the shared schema.
+// Announced in #prova-build before the push, per the working agreement,
+// because it touches the shared schema. This shipped schema-only and the
+// sentence here said so; both tables are now written by
+// `apps/web/lib/actions/certifiedPayroll.ts` and read by
+// `apps/web/app/(app)/jobs/[id]/certified-payroll/wh-347/page.tsx`, so
+// that sentence is gone rather than left to be inherited as true.
 
 /// How fringe benefits were paid, as page 2 of the WH-347 puts the
 /// question. The three members are the form's own 4(a) / 4(b) split, not
@@ -63,8 +66,12 @@ enum CertifiedPayrollFringeMethod {
 /// repo is the counter-example and the reason this comment is emphatic: it
 /// uses max+1 and reissues numbers on delete.
 ///
-/// Bumped inside the SAME transaction as the filing insert. The action
-/// that does so is not built yet.
+/// Bumped inside the SAME transaction as the filing insert, by
+/// `issueCertifiedPayrollNumber` in `apps/web/lib/actions/certifiedPayroll.ts`.
+/// It takes the transaction client rather than `prisma` on purpose: a
+/// filing whose insert fails — a duplicate week, i.e. a double click —
+/// must not consume a number on its way out, because a hole in the
+/// sequence reads to an agency exactly like a missing week.
 model CertifiedPayrollFilingCounter {
   jobId      String @id
   job        Job    @relation(fields: [jobId], references: [id])
@@ -90,9 +97,12 @@ model CertifiedPayrollFilingCounter {
 /// trigger — #194 removed a trigger from `TimeEntry` for exactly that
 /// reason: a trigger on a live table is invisible from the code, fires on
 /// every write including migrations and backfills, and cannot produce the
-/// `{ ok: false, error }` a form can render. The action that enforces it is
-/// not built yet, so until it lands nothing prevents an identity edit but
-/// the absence of any write path at all.
+/// `{ ok: false, error }` a form can render. So the lock IS the absence of
+/// any write path: `certifiedPayroll.ts` exports one action, it only
+/// `create`s, and `certifiedPayroll.test.ts` scans that file and fails the
+/// build if an `update`, `upsert` or `delete` against this table ever
+/// appears. Anyone adding one is being asked to build the amendment flow
+/// instead.
 model CertifiedPayrollFiling {
   id    String @id @default(cuid())
   jobId String

@@ -30,22 +30,20 @@ import {
 import { loadCertifiedPayrollWeekEntries } from "@/lib/certified-payroll-query";
 import { payrollWorkerName } from "@/lib/worker-name";
 import { StatementOfComplianceForm } from "@/components/StatementOfComplianceForm";
+import {
+  WH347_FALSIFICATION_WARNING,
+  WH347_FRINGE_CLAUSES,
+  WH347_STATEMENT_PARAGRAPH_2,
+  WH347_STATEMENT_PARAGRAPH_3,
+  wh347FringeClauseApplies,
+  wh347StatementParagraph1,
+} from "@/lib/wh347-statement";
 import type { FringeRateScheduleInput } from "@/lib/labor-cost";
 import {
   buildWh347,
   WH347_BLOCKING_FIELD_REASON,
   type Wh347TimeEntryInput,
 } from "@/lib/wh347";
-
-/** The three answers page 2 offers, as the form itself words them. */
-const FRINGE_METHOD_STATEMENT: Record<string, string> = {
-  APPROVED_PLANS:
-    "(a) WHERE FRINGE BENEFITS ARE PAID TO APPROVED PLANS, FUNDS, OR PROGRAMS — in addition to the basic hourly wage rates paid to each laborer or mechanic listed above, payments of fringe benefits as listed in the contract have been or will be made to appropriate programs for the benefit of such employees.",
-  PAID_IN_CASH:
-    "(b) WHERE FRINGE BENEFITS ARE PAID IN CASH — each laborer or mechanic listed above has been paid, as indicated on the payroll, an amount not less than the sum of the applicable basic hourly wage rate plus the amount of the required fringe benefits as listed in the contract.",
-  BOTH:
-    "(a) AND (b) — fringe benefits for the workers listed above were paid partly to approved plans, funds or programs and partly in cash, as indicated on the payroll.",
-};
 
 function isoDate(date: Date): string {
   return date.toISOString().slice(0, 10);
@@ -443,51 +441,144 @@ export default async function Wh347Page({
 
         {/* Page 2. Printed on the sheet, where somebody about to file
             looks for it, rather than only described in the banner at the
-            top of a scrolled page. */}
-        <div className="mt-6 border-t-2 border-black pt-3">
-          <p className="text-[11px] font-bold uppercase">Statement of Compliance</p>
+            top of a scrolled page.
+
+            Every word of it comes from lib/wh347-statement.ts, which the
+            signing form reads from too — see that module's header for why
+            two copies of a perjury-bearing statement is the failure this
+            avoids. Nothing here is a paraphrase. */}
+        {/* `print:` scoped, matching /union-compliance/remittance — page 2
+            really is a separate sheet when this goes to paper, and on
+            screen it should stay one scroll. */}
+        <div className="mt-6 border-t-2 border-black pt-3 print:break-before-page">
+          <div className="text-center">
+            <p className="text-[11px] font-bold uppercase tracking-wide">
+              Statement of Compliance
+            </p>
+            <p className="text-[9px]">Form WH-347, page 2</p>
+          </div>
           {filing ? (
-            <div className="mt-1 text-[10px] leading-snug">
+            <div className="mt-2 text-[10px] leading-snug">
               <p>
-                I, <span className="font-semibold">{signerName}</span>, do hereby state that I pay
-                or supervise the payment of the persons employed by{" "}
-                <span className="font-semibold">{form.header.contractorName}</span> on the{" "}
-                <span className="font-semibold">{form.header.projectName}</span> project; that
-                during the payroll period commencing on {formatDate(form.days[0])} and ending on{" "}
-                {formatDate(form.header.weekEnding)} all persons employed on said project have been
-                paid the full weekly wages earned.
+                Date <span className="font-semibold">{formatDate(filing.signedDate)}</span>. I,{" "}
+                <span className="font-semibold">{signerName}</span>, do hereby state:
               </p>
-              <p className="mt-2">{FRINGE_METHOD_STATEMENT[filing.fringeMethod]}</p>
-              <p className="mt-2">
-                <span className="font-semibold">(c) EXCEPTIONS: </span>
-                {filing.exceptions ?? "None."}
-              </p>
+
+              {/* (1) through (3) are printed in full, unchosen and
+                  unabridged. They are assertions the SIGNER makes — about
+                  rebates, permissible deductions, wage determinations and
+                  apprentice registration — and cstream verifies none of
+                  them. Printing only the fringe question would let
+                  somebody sign three claims they were never shown. */}
+              <ol className="mt-2 flex list-none flex-col gap-2">
+                <li>
+                  <span className="font-semibold">(1) </span>
+                  {wh347StatementParagraph1({
+                    contractorName: form.header.contractorName,
+                    projectName: form.header.projectName,
+                    periodStartLabel: formatDate(form.days[0]),
+                    periodEndLabel: formatDate(form.header.weekEnding),
+                  })}
+                </li>
+                <li>
+                  <span className="font-semibold">(2) </span>
+                  {WH347_STATEMENT_PARAGRAPH_2}
+                </li>
+                <li>
+                  <span className="font-semibold">(3) </span>
+                  {WH347_STATEMENT_PARAGRAPH_3}
+                </li>
+                <li>
+                  <span className="font-semibold">(4) That:</span>
+                  {/* BOTH lettered clauses print, and the ones this filing
+                      asserts are marked — which is how the paper form is
+                      completed. Printing only the chosen clause would
+                      produce a page an agency reviewer cannot line up
+                      against their own copy, and would erase the fact
+                      that a choice was made at all. */}
+                  <div className="mt-1 flex flex-col gap-1.5">
+                    {WH347_FRINGE_CLAUSES.map((clause) => {
+                      const asserted = wh347FringeClauseApplies(filing.fringeMethod, clause.key);
+                      return (
+                        <div
+                          key={clause.key}
+                          className={
+                            asserted
+                              ? "border-l-2 border-black pl-2"
+                              : "pl-2 text-slate-500 line-through decoration-1"
+                          }
+                        >
+                          <span className="font-semibold">
+                            [{asserted ? "X" : " "}] {clause.letter} {clause.heading}
+                          </span>{" "}
+                          — {clause.body}
+                        </div>
+                      );
+                    })}
+                    <div className="pl-2">
+                      <span className="font-semibold">(c) EXCEPTIONS</span> —{" "}
+                      {filing.exceptions ?? "None."}
+                    </div>
+                  </div>
+                </li>
+              </ol>
+
               {filing.isFinal && (
                 <p className="mt-2 font-semibold">
                   This is the final payroll for this contract.
                 </p>
               )}
-              <div className="mt-3 flex flex-wrap gap-x-8 gap-y-1 border-t border-black pt-2">
-                <span>
-                  <span className="font-semibold">Signed: </span>
-                  {signerName}
-                </span>
-                <span>
-                  <span className="font-semibold">Date: </span>
-                  {formatDate(filing.signedDate)}
-                </span>
-                <span>
-                  <span className="font-semibold">Payroll No.: </span>
-                  {filing.payrollNumber}
-                </span>
+
+              {/* The paper form's signature block, and two honest
+                  admissions inside it.
+
+                  The box is labelled NAME AND TITLE and cstream holds no
+                  job title — so it prints the name and TELLS the signer to
+                  write the title in, rather than labelling a name as
+                  though it satisfied both halves. And what this record
+                  holds is an assertion by a signed-in user, not a wet
+                  signature; saying so is the difference between a
+                  facsimile and a forgery. Neither is rendered in red,
+                  because neither is a field cstream failed to source —
+                  they are instructions for the person holding the pen. */}
+              <div className="mt-3 grid grid-cols-3 gap-x-6 border-t border-black pt-2">
+                <div>
+                  <div className="font-semibold">{signerName}</div>
+                  <div className="text-[9px] uppercase tracking-wide">Name and title</div>
+                  <div className="text-[9px] italic">
+                    No job title is recorded in cstream — write it in.
+                  </div>
+                </div>
+                <div>
+                  <div className="font-semibold">{signerName}</div>
+                  <div className="text-[9px] uppercase tracking-wide">Signature</div>
+                  <div className="text-[9px] italic">
+                    Recorded in cstream by this user. Sign the printed copy.
+                  </div>
+                </div>
+                <div>
+                  <div className="font-semibold">{formatDate(filing.signedDate)}</div>
+                  <div className="text-[9px] uppercase tracking-wide">Date signed</div>
+                  <div className="text-[9px] italic">Payroll No. {filing.payrollNumber}</div>
+                </div>
               </div>
+
+              <p className="mt-3 text-[9px] font-bold uppercase leading-tight">
+                {WH347_FALSIFICATION_WARNING}
+              </p>
             </div>
           ) : (
-            <p className="mt-1 text-[10px] text-red-600">
-              Nobody has signed a statement of compliance for this week. It is signed under penalty
-              of perjury and states how fringe benefits were paid — 4(a) to approved plans, 4(b) in
-              cash, 4(c) exceptions. Until it is signed, this form cannot be filed no matter how
-              complete the grid above looks.
+            /* An unsigned week gets NO page 2 — not a greyed-out one, not
+               one with the signature line left blank. A rendered
+               statement that merely lacks a name is a document somebody
+               prints, signs by hand and files, and it would carry a
+               payroll number cstream never issued. So the sheet says the
+               page is absent and why. */
+            <p className="mt-2 text-[10px] text-red-600">
+              There is no page 2 for this week, because nobody has signed one. It is signed under
+              penalty of perjury and states how fringe benefits were paid — 4(a) to approved plans,
+              4(b) in cash, 4(c) exceptions. Until it is signed, this form cannot be filed no
+              matter how complete the grid above looks, and no payroll number has been issued.
             </p>
           )}
         </div>
@@ -507,8 +598,11 @@ export default async function Wh347Page({
           <StatementOfComplianceForm
             jobId={job.id}
             weekStart={isoDate(weekStart)}
+            weekStartLabel={formatDate(form.days[0])}
             weekEndingLabel={formatDate(form.header.weekEnding)}
             signerName={currentUserName}
+            contractorName={form.header.contractorName}
+            projectName={form.header.projectName}
           />
         )}
       </div>

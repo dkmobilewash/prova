@@ -12,6 +12,105 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### A WH-347 that can be signed, and the four boxes still empty (Cyrus)
+`cyrus/wh347-statement-of-compliance-2`
+
+#188 built page 1 of the federal WH-347 — the real grid, hours in the
+right dated boxes, DT on its own row, column 7 as CASH wages rather than
+the burdened cost. And `fileable` was `false` on every week and always
+would be, because two of the eleven fields it reports as blocking are not
+derivable from hours no matter how good the grid gets:
+
+> A WH-347 carries a **sequential payroll number** for the project, and a
+> **page 2** — the Statement of Compliance — signed under penalty of
+> perjury. Neither is a calculation. One is issued; one is asserted by a
+> person.
+
+Both exist now. `CertifiedPayrollFiling` records one signed statement per
+job-week and `recordStatementOfCompliance` is the only write path to it.
+
+**The payroll number comes from a counter, and that is the whole point.**
+`CertifiedPayrollFilingCounter` only increments, and it is bumped inside
+the SAME transaction as the insert. An awarding body reads a contractor's
+payroll sequence looking for GAPS — that is how they check every week of a
+contract was filed. A number derived from `max(n)+1` is freed again when a
+row is deleted, so a second WH-347 arrives under a number the agency
+already holds; and a counter bumped OUTSIDE the transaction burns a number
+on every rejected attempt, which is a hole in the sequence, which reads to
+the agency exactly like a missing week. The most likely rejected attempt is
+somebody double-clicking. (`Invoice.number` in `billing.ts` is `max(n)+1`
+read outside any transaction, live today — Diego's lane, going to him as an
+issue rather than fixed here.)
+
+**The signature date is ENTERED, never stamped.** A statement signed Friday
+and typed in on Monday records Friday. `new Date()` there would have cstream
+assert it watched the signing happen — a false statement about the date of a
+sworn document, produced by the app rather than by the signer. `createdAt` is
+the stamped audit companion, so a backdated filing stays visible.
+
+**Identity is locked by the absence of a write path.** No update action, no
+delete action, not even the tempting narrow one for "just the exceptions".
+4(c) names the workers 4(a)/4(b) does not cover and `isFinal` asserts no
+further payroll is coming on this contract; both are substantive claims made
+under oath, and quietly rewriting either asserts the new text is what was
+sworn to. A source scan fails the build if `update`, `upsert` or `delete`
+ever appears against that table. **The cost, stated plainly: a filing signed
+with the wrong fringe method is permanent and its week cannot be refiled.**
+That is a real hole, and the fix is the amendment flow — a supersedes
+pointer, both filings preserved — which is additive to this shape.
+
+**Page 2 is printed in full, and it is printed ONCE.** Paragraphs (1), (2)
+and (3) — rebates, permissible deductions under the Copeland Act, wage
+determinations, apprentice registration — are assertions the SIGNER makes
+and cstream verifies none of them. They are on the sheet, and they are also
+in the signing form above the button, because a form that asked only "how
+were fringes paid?" and then filed all of that under somebody's name would
+be obtaining a signature on text the signer never saw. Both 4(a) and 4(b)
+print, with the answered one marked, the way the paper form is completed —
+rendering only the chosen clause produces a page an agency reviewer cannot
+line up against their own copy. The criminal-prosecution warning is there
+verbatim, citations included.
+
+All of that text lives in one module, `lib/wh347-statement.ts`, and a test
+scans both surfaces and fails if either grows its own copy. Two copies of a
+perjury-bearing statement drift, and then the app shows a person one
+statement and files another under their name.
+
+**An unsigned week gets NO page 2** — not a greyed-out one, not one with the
+signature line left blank. A rendered statement merely lacking a name is a
+document somebody prints, signs by hand and files, carrying a payroll number
+cstream never issued.
+
+**WHAT STILL DOES NOT MAKE A WH-347 FILEABLE.** Nine of eleven blockers
+remain reachable, and this is the honest list rather than the flattering one:
+
+- **columns 8 and 9 (deductions, net wages) and the identifying number in
+  column 1 are not sourced at all.** cstream does not run payroll. FICA and
+  withholding come off the payroll register, and nothing in the schema holds
+  the last four digits of a worker's identifying number. Every worker line
+  reports all three by name;
+- **`Job.projectLocation` and `Job.contractNumber` exist in the schema, are
+  read by the form, and NOTHING IN THE APP WRITES THEM.** So those two
+  header boxes cannot be filled in from any screen today. That is named in
+  the red sentence the form prints, rather than implied away — the previous
+  wording said "a job does not record one", which was true when it was
+  written and would have sent a reader hunting for a column that is now
+  there. The screen that sets them is the next piece of work;
+- **the paper form's signature box asks for NAME AND TITLE.** cstream holds
+  no job title, so the sheet prints the name and does not invent a title.
+
+Practically: a week with hours can be signed, gets a payroll number, and
+still reports the columns above. **A "no work performed" week — a real
+filing an agency expects for every week of a contract — reaches
+`fileable: true` once its job carries a location and contract number**,
+which is exactly why the missing write path for those two is the next thing.
+
+`wh347.test.ts` gains a `fileable: true` control. Without one, every
+"blocks on X" case in that file is satisfied by a function that returns
+`false` unconditionally — which is what the module did until today.
+
+---
+
 ### A GC who skimmed the sub scored better for it (Cyrus)
 `cyrus/gc-reliability-counts-short-payments`
 

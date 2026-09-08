@@ -9,13 +9,31 @@
 // things ABOVE the button rather than discovering them for the user
 // afterwards. Collapsed behind a button, per the list-page conventions,
 // because most visits to this page are to read the grid.
+//
+// AND IT SHOWS THE WHOLE STATEMENT, not just the question. Paragraphs (1),
+// (2) and (3) are claims about rebates, permissible deductions, wage
+// determinations and apprentice registration; the criminal-prosecution
+// warning is part of the document. A form that asked only "how were
+// fringes paid?" and then filed all of that under someone's name would be
+// obtaining a signature on text the signer never saw. Every word comes
+// from lib/wh347-statement.ts, the same module the printed sheet reads, so
+// what is shown here and what is filed cannot drift apart.
 
 import { useRef, useState, useTransition } from "react";
 import { recordStatementOfCompliance } from "@/lib/actions";
 import { localToday } from "@/components/localToday";
 import { CERTIFIED_PAYROLL_FRINGE_METHODS } from "@/lib/actions/shared";
+import {
+  WH347_FALSIFICATION_WARNING,
+  WH347_FRINGE_CLAUSES,
+  WH347_STATEMENT_PARAGRAPH_2,
+  WH347_STATEMENT_PARAGRAPH_3,
+  wh347FringeClauseApplies,
+  wh347StatementParagraph1,
+  type Wh347FringeMethod,
+} from "@/lib/wh347-statement";
 
-const FRINGE_METHOD_LABEL: Record<(typeof CERTIFIED_PAYROLL_FRINGE_METHODS)[number], string> = {
+const FRINGE_METHOD_LABEL: Record<Wh347FringeMethod, string> = {
   APPROVED_PLANS: "4(a) — paid into approved plans (pension, health & welfare, vacation, training)",
   PAID_IN_CASH: "4(b) — paid in cash, directly to the worker",
   BOTH: "Both — some fringes to approved plans, some in cash",
@@ -29,7 +47,10 @@ export function StatementOfComplianceForm({
   jobId,
   weekStart,
   weekEndingLabel,
+  weekStartLabel,
   signerName,
+  contractorName,
+  projectName,
 }: {
   jobId: string;
   /** The week's SUNDAY, in `YYYY-MM-DD`. The action derives the Saturday
@@ -38,14 +59,24 @@ export function StatementOfComplianceForm({
   weekStart: string;
   /** Only for the sentence the user reads. */
   weekEndingLabel: string;
+  weekStartLabel: string;
   /** Whoever is signed in. The action ignores anything posted for this and
    * uses the session — shown here so the person knows whose name goes on
    * the statement before they submit it. */
   signerName: string;
+  /** Both go into paragraph (1) verbatim, so the preview reads as the
+   * filed page will rather than as a template. */
+  contractorName: string;
+  projectName: string;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  // Held in state ONLY so the preview below can mark the right clauses as
+  // the user picks. The value that is filed is the posted radio, read from
+  // the FormData by the action, so a divergence between this and the form
+  // cannot file the wrong answer.
+  const [method, setMethod] = useState<Wh347FringeMethod | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
 
   if (!isOpen) {
@@ -73,6 +104,7 @@ export function StatementOfComplianceForm({
           const result = await recordStatementOfCompliance(formData);
           if (result.ok) {
             formRef.current?.reset();
+            setMethod(null);
             setIsOpen(false);
           } else {
             setError(result.error);
@@ -103,10 +135,16 @@ export function StatementOfComplianceForm({
         <legend className="text-sm font-medium text-slate-300">
           How were fringe benefits paid this week?
         </legend>
-        {CERTIFIED_PAYROLL_FRINGE_METHODS.map((method) => (
-          <label key={method} className="flex items-start gap-2 text-sm text-slate-300">
-            <input type="radio" name="fringeMethod" value={method} className="mt-1" />
-            <span>{FRINGE_METHOD_LABEL[method]}</span>
+        {CERTIFIED_PAYROLL_FRINGE_METHODS.map((option) => (
+          <label key={option} className="flex items-start gap-2 text-sm text-slate-300">
+            <input
+              type="radio"
+              name="fringeMethod"
+              value={option}
+              className="mt-1"
+              onChange={() => setMethod(option)}
+            />
+            <span>{FRINGE_METHOD_LABEL[option]}</span>
           </label>
         ))}
         <span className="text-xs text-slate-500">
@@ -151,6 +189,59 @@ export function StatementOfComplianceForm({
           </span>
         </span>
       </label>
+
+      {/* What you are actually signing. Not a summary of it. */}
+      <div className="rounded-md border border-slate-700 bg-slate-950 p-3">
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+          What you are signing
+        </p>
+        <div className="mt-2 flex flex-col gap-2 text-[11px] leading-snug text-slate-300">
+          <p>
+            I, <span className="font-semibold text-slate-100">{signerName}</span>, do hereby state:
+          </p>
+          <p>
+            <span className="font-semibold">(1) </span>
+            {wh347StatementParagraph1({
+              contractorName,
+              projectName,
+              periodStartLabel: weekStartLabel,
+              periodEndLabel: weekEndingLabel,
+            })}
+          </p>
+          <p>
+            <span className="font-semibold">(2) </span>
+            {WH347_STATEMENT_PARAGRAPH_2}
+          </p>
+          <p>
+            <span className="font-semibold">(3) </span>
+            {WH347_STATEMENT_PARAGRAPH_3}
+          </p>
+          <p className="font-semibold">(4) That:</p>
+          {WH347_FRINGE_CLAUSES.map((clause) => {
+            const asserted = method != null && wh347FringeClauseApplies(method, clause.key);
+            return (
+              <p
+                key={clause.key}
+                className={asserted ? "border-l-2 border-slate-400 pl-2" : "pl-2 text-slate-600"}
+              >
+                <span className="font-semibold">
+                  [{asserted ? "X" : " "}] {clause.letter} {clause.heading}
+                </span>{" "}
+                — {clause.body}
+              </p>
+            );
+          })}
+          {method == null && (
+            <p className="text-amber-300/90">
+              Neither clause is marked until you answer the fringe question above. That answer is
+              the one part of this statement you are choosing.
+            </p>
+          )}
+          <p className="mt-1 font-bold uppercase leading-tight text-amber-300">
+            {WH347_FALSIFICATION_WARNING}
+          </p>
+        </div>
+      </div>
 
       {error && (
         <p className="rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-300">

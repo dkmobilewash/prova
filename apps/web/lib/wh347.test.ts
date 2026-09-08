@@ -362,8 +362,35 @@ describe("fileable", () => {
     expect(build([entry()], { payrollNumber: 4 }).header.payrollNumber).toBe(4);
   });
 
-  it("blocks on project location and contract number, which a Job does not record", () => {
+  it("blocks on project location and contract number when the job carries neither", () => {
     const form = build([entry()]);
+    expect(form.blocking).toContain("projectLocation");
+    expect(form.blocking).toContain("contractNumber");
+  });
+
+  it("clears each of those the moment the job carries it, one at a time", () => {
+    // Separately from the all-clear control above, and deliberately one at
+    // a time. That control passes both fields at once, so it cannot tell a
+    // module that reads `location` for BOTH checks from one that reads
+    // each. The header assertions are the other half: a blocker cleared
+    // without the value reaching the header prints an empty box on a
+    // filed form, which is the failure this whole module exists to refuse.
+    const located = build([entry()], { job: { ...JOB, location: "1200 Maple St, Sacramento CA" } });
+    expect(located.blocking).not.toContain("projectLocation");
+    expect(located.blocking).toContain("contractNumber");
+    expect(located.header.projectLocation).toBe("1200 Maple St, Sacramento CA");
+
+    const numbered = build([entry()], { job: { ...JOB, contractNumber: "SAC-2026-0041" } });
+    expect(numbered.blocking).not.toContain("contractNumber");
+    expect(numbered.blocking).toContain("projectLocation");
+    expect(numbered.header.contractNumber).toBe("SAC-2026-0041");
+  });
+
+  it("treats an empty string as absent, because a blank box is not a location", () => {
+    // The defect: a `!= null` check. Postgres holds "" perfectly happily,
+    // and a header printing nothing while the form calls itself fileable
+    // is the exact document this module refuses to produce.
+    const form = build([entry()], { job: { ...JOB, location: "", contractNumber: "" } });
     expect(form.blocking).toContain("projectLocation");
     expect(form.blocking).toContain("contractNumber");
   });
