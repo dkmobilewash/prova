@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
-import type { AskStreamEvent } from "@/lib/ask/answer";
-import type { Citation, ToolName } from "@/lib/ask/tools";
-import { readingLabel } from "@/lib/ask/toolLabels";
+import type { AskRequest, AskStreamEvent, ClarifyView, ProposalView } from "@/lib/ask/answer";
+import type { Citation } from "@/lib/ask/tools";
+import { cancelAskProposal, confirmAskProposal } from "@/lib/actions";
+import { AskProposalCard, type ProposalOutcome } from "@/components/AskProposalCard";
 
 /** The ask box on the dashboard.
  *
@@ -12,6 +13,12 @@ import { readingLabel } from "@/lib/ask/toolLabels";
  * about this week's money is answered from today's rows, and a scrollback
  * of stale answers is a place for a number to be read long after it stopped
  * being true. Ask, read, ask again.
+ *
+ * It can now DO things as well as answer, and that did not make it a chat.
+ * A command ends the stream with a card or a row of chips; the card is one
+ * tap to confirm or cancel, the chips re-run the same question with the
+ * pick, and either way the task dies on "Ask something else". Nothing
+ * here remembers a previous question.
  */
 
 /** Shown until someone types. Each one is a question this app can actually
@@ -58,6 +65,14 @@ export function AskPanel() {
   const inputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
+  // A command's card, a resolver's chips, and what a confirmed card became.
+  // Only one of the first two exists at a time; both die on the next ask.
+  const [proposal, setProposal] = useState<ProposalView | null>(null);
+  const [clarify, setClarify] = useState<ClarifyView | null>(null);
+  const [outcome, setOutcome] = useState<ProposalOutcome | null>(null);
+  const [tapError, setTapError] = useState<string | null>(null);
+  const [isConfirming, startConfirm] = useTransition();
+
   // Asking something else, or leaving, must stop the request in flight —
   // otherwise a slow answer to an abandoned question arrives later and
   // overwrites the one being read.
@@ -66,7 +81,9 @@ export function AskPanel() {
   function apply(event: AskStreamEvent) {
     switch (event.type) {
       case "tools":
-        setStatus(readingLabel(event.names as ToolName[]));
+        // The sentence is built on the server, which knows the registry;
+        // this component must not import it, since it imports the database.
+        setStatus(event.label);
         break;
       case "answering":
         // Tools are done; what streams from here is the answer itself, and
@@ -102,6 +119,20 @@ export function AskPanel() {
         }
         provisionalRef.current = false;
         break;
+      case "proposal":
+        // Terminal. Whatever the model was saying is not the answer; the
+        // card is.
+        setProposal(event.proposal);
+        setStatus(null);
+        progressRef.current = "";
+        setProgress("");
+        break;
+      case "clarify":
+        setClarify(event.clarify);
+        setStatus(null);
+        progressRef.current = "";
+        setProgress("");
+        break;
       case "error":
         setAnswer("");
         progressRef.current = "";
@@ -112,10 +143,21 @@ export function AskPanel() {
     }
   }
 
-  async function ask(text: string) {
-    const trimmed = text.trim();
-    if (!trimmed) return;
+  /** Clears everything a previous question produced. A pending card is
+   * withdrawn on the server too, so it cannot be confirmed later from a
+   * stale tab. */
+  function clearResult() {
+    if (proposal && !outcome) void cancelAskProposal(proposal.proposalId);
+    setAnswer("");
+    setCitations([]);
+    setError(null);
+    setProposal(null);
+    setClarify(null);
+    setOutcome(null);
+    setTapError(null);
+  }
 
+  async function send(request: AskRequest, shown: string) {
     // A question already in flight is abandoned rather than blocking this
     // one. Previously the input stayed enabled while the button was
     // disabled, so pressing Return mid-answer did nothing at all — no new
@@ -125,10 +167,8 @@ export function AskPanel() {
     const controller = new AbortController();
     abortRef.current = controller;
 
-    setAsked(trimmed);
-    setAnswer("");
-    setCitations([]);
-    setError(null);
+    clearResult();
+    setAsked(shown);
     // Deliberately not "Reading your records…". At this point nothing has
     // been read and nothing may be: a question this app cannot answer
     // spends its whole wait behind that sentence, which is then a false
@@ -144,7 +184,7 @@ export function AskPanel() {
       const response = await fetch("/api/ask", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: trimmed }),
+        body: JSON.stringify(request),
         signal: controller.signal,
       });
       if (!response.ok || !response.body) {
@@ -188,14 +228,56 @@ export function AskPanel() {
     }
   }
 
-  const hasResult = answer !== "" || error !== null;
+  function ask(text: string) {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    void send({ question: trimmed }, trimmed);
+  }
+
+  /** A chip: the same question, with the person's pick, and no model pass. */
+  function choose(current: ClarifyView, value: string) {
+    void send(
+      {
+        question: asked,
+        continuation: {
+          command: current.command,
+          partialInput: current.partialInput,
+          answers: { [current.field]: value },
+        },
+      },
+      asked,
+    );
+  }
+
+  function confirm(current: ProposalView) {
+    setTapError(null);
+    startConfirm(async () => {
+      const result = await confirmAskProposal(current.proposalId);
+      if (result.ok) {
+        setOutcome(result.value);
+      } else {
+        setTapError(result.error);
+      }
+    });
+  }
+
+  function cancel(current: ProposalView) {
+    startConfirm(async () => {
+      await cancelAskProposal(current.proposalId);
+      setProposal(null);
+      setTapError(null);
+    });
+  }
+
+  const hasResult =
+    answer !== "" || error !== null || proposal !== null || clarify !== null || outcome !== null;
 
   return (
     <section className="rounded-lg border border-line-card bg-surface p-4">
       <form
         onSubmit={(event) => {
           event.preventDefault();
-          void ask(question);
+          ask(question);
         }}
         className="flex gap-2"
       >
@@ -203,7 +285,7 @@ export function AskPanel() {
           ref={inputRef}
           value={question}
           onChange={(event) => setQuestion(event.target.value)}
-          placeholder="Ask about your jobs, money, drawings, crews…"
+          placeholder="Ask about your jobs, money, drawings, crews — or start an estimate…"
           aria-label="Ask about your jobs"
           maxLength={1000}
           className="min-w-0 flex-1 rounded-md border border-line-card bg-surface px-3 py-2 text-sm text-ink placeholder:text-ink-muted focus:border-brand focus:outline-none"
@@ -231,7 +313,7 @@ export function AskPanel() {
                 onClick={() => {
                   setQuestion(example);
                   inputRef.current?.focus();
-                  void ask(example);
+                  ask(example);
                 }}
                 className="rounded-full border border-line-card px-3 py-1 text-xs text-ink-body hover:border-brand hover:text-brand"
               >
@@ -284,6 +366,41 @@ export function AskPanel() {
             </p>
           )}
 
+          {/* A name matched several rows. The chips carry the detail that
+              tells them apart, and a tap re-runs the same question with
+              the pick — no retyping, no model pass. */}
+          {clarify && (
+            <div className="mt-2" data-ask="clarify">
+              <p className="text-sm text-ink">{clarify.question}</p>
+              <ul className="mt-2 flex flex-wrap gap-2">
+                {clarify.options.map((option) => (
+                  <li key={option.value}>
+                    <button
+                      type="button"
+                      disabled={isAsking}
+                      onClick={() => choose(clarify, option.value)}
+                      className="inline-flex min-h-11 flex-col items-start rounded-md border border-line-card px-3 py-1.5 text-left hover:border-brand disabled:opacity-50"
+                    >
+                      <span className="text-sm text-ink">{option.label}</span>
+                      {option.detail && <span className="text-xs text-ink-body">{option.detail}</span>}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {proposal && (
+            <AskProposalCard
+              proposal={proposal}
+              pending={isConfirming}
+              error={tapError}
+              outcome={outcome}
+              onConfirm={() => confirm(proposal)}
+              onCancel={() => cancel(proposal)}
+            />
+          )}
+
           {/* Citations arrive with the last event, not the first, so they
               appear once the answer is complete. An answer with no tool
               behind it carries none — links under a refusal would imply a
@@ -308,9 +425,7 @@ export function AskPanel() {
               type="button"
               onClick={() => {
                 abortRef.current?.abort();
-                setAnswer("");
-                setCitations([]);
-                setError(null);
+                clearResult();
                 setAsked("");
                 setQuestion("");
                 inputRef.current?.focus();

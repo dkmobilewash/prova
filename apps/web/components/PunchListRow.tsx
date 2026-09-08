@@ -149,9 +149,9 @@ export function PunchListRow({ canDelete, jobs, item, showJob }: PunchListRowPro
           The done/not-done checkbox is deliberately NOT in here — it lives
           in the row body above, not the action cluster.
 
-          `pinned="end"` re-measured against #89's stacking: 1100px 100% ->
-          0%, 375px 75% -> 85%. Kept for the desktop case; at 375 neither
-          order is safe. Numbers in `rowActionsCensus.test.ts`. */}
+          `pinned="end"` measured against #89's stacking: 1100px 100% -> 0%.
+          The phone was 86% either way until #184's armed column, which is 0%
+          at 639 and 375. Numbers in `rowActionsCensus.test.ts`. */}
       <RowActions
         className="flex shrink-0 flex-wrap items-center gap-3"
         destructive={

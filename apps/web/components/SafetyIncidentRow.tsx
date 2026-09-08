@@ -144,19 +144,20 @@ export function SafetyIncidentRow({
           one click past a cancel opened the edit form on the record you
           were trying to leave alone. It is a child of RowActions now.
 
-          No `pinned` here on purpose: this row is right-pinned only from
-          sm up, and neither value is right at both widths. Re-measured for
-          the #89 merge — default 100%/75% at 1100/375, `end` 0%/85% — and
-          left at the default exactly as #176 left it. Flipping it to `end`
-          would make the desktop case safe, as it does on the four sibling
-          rows, but that is a decision to take deliberately rather than
-          inside a merge. Numbers in PINNED_EXCEPTIONS in
-          `rowActionsCensus.test.ts`. */}
+          `pinned="end"` is NEW here (#184) and it is a desktop bug fix, not
+          a tidy-up. This row sat in PINNED_EXCEPTIONS at the default because
+          neither value was right at both widths, which left 100% overlap at
+          1100px — the exact defect #176 shipped to fix, on the one row it
+          could not settle. #184's armed column makes the phone safe whatever
+          `pinned` says, so the prop only has to be right about the desktop
+          and there is one answer: `end`, measured 100% -> 0% at 1100px, and
+          0% at 639 and 375. Numbers in `rowActionsCensus.test.ts`. */}
       <RowActions
         className="flex shrink-0 flex-wrap items-center gap-3"
         destructive={
           canDelete ? (
             <ConfirmDelete
+              pinned="end"
               label="Remove"
               confirmLabel="Confirm remove"
               pendingLabel="Removing…"

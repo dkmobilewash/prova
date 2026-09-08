@@ -74,6 +74,7 @@ model Company {
   closeoutItems           CloseoutItem[]
   warrantyPeriods         WarrantyPeriod[]
   warrantyServiceRequests WarrantyServiceRequest[]
+  askProposals            AskProposal[]
   vendorPriceQuotes       VendorPriceQuote[]
   outboundMessages        OutboundMessage[]
   contactInteractions     ContactInteraction[]
@@ -163,6 +164,7 @@ model User {
 
   @@index([companyId])
   apprenticeshipEnrollments ApprenticeshipEnrollment[] @relation("ApprenticeEnrollments")
+  askProposals              AskProposal[]
 }
 
 /// A pending invitation for someone to join a Company. Deleted once
