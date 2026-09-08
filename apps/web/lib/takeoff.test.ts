@@ -114,6 +114,34 @@ describe("studs", () => {
   it("returns nothing for a wall with no length", () => {
     expect(studsRequired(0)).toBe(0);
   });
+
+  it("does not invent a bay out of floating-point dust at 19.2 in o.c.", () => {
+    // 19.2" o.c. is a real spacing (five bays per 8 ft sheet), entered in
+    // inches and divided by 12 same as the form does — and that division is
+    // exactly what produces the dust: 19.2 / 12 is 1.5999999999999999, so
+    // 24 / that comes out 15.000000000000002 instead of 15. ceil rounded
+    // that hair over fifteen up to sixteen bays, billing 17 studs where 16
+    // close the wall. Verified at 24/40/48 ft, as the issue reported.
+    const spacingFt = 19.2 / 12;
+    expect(spacingFt).not.toBe(1.6); // the dust is real, not hypothetical
+
+    expect(studsRequired(24, { spacingFt })).toBe(16);
+    expect(studsRequired(40, { spacingFt })).toBe(26);
+    expect(studsRequired(48, { spacingFt })).toBe(31);
+  });
+
+  it("still rounds a genuine part-bay up at 19.2 in o.c.", () => {
+    // The guard against over-correcting: 25 ft is a real 15.625 bays, and
+    // the stud closing that remainder is one that actually has to be bought.
+    expect(studsRequired(25, { spacingFt: 19.2 / 12 })).toBe(17);
+  });
+
+  it("16 and 24 in o.c. are unaffected by the rounding fix", () => {
+    // The issue named these two as clean — confirmed here so the fix cannot
+    // be "generalized" into rounding actual remainders away.
+    expect(studsRequired(24, { spacingFt: 16 / 12 })).toBe(19);
+    expect(studsRequired(24, { spacingFt: 24 / 12 })).toBe(13);
+  });
 });
 
 describe("track", () => {
