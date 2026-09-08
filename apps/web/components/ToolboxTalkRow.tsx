@@ -40,15 +40,19 @@ export function ToolboxTalkRow({ talk, canDelete }: { talk: ToolboxTalkRowData; 
         {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
       </div>
 
-      {/* No ordinary actions at all in this cluster — and no `pinned`:
-          the row is right-pinned only from sm up, and with nothing else in
-          the cluster the two orders swap outright at 640px. Numbers in
-          PINNED_EXCEPTIONS in `rowActionsCensus.test.ts`. */}
+      {/* No ordinary actions at all in this cluster, which used to mean the
+          two orders swapped outright at 640px — safe at 375 and 100% overlap
+          at 1100 — so this row sat in PINNED_EXCEPTIONS with no `pinned` at
+          all. #184's armed column decouples the two: below sm Cancel is on
+          top whatever the order, so `pinned="end"` now buys the desktop
+          (100% -> 0% at 1100px) for nothing. Numbers in
+          `rowActionsCensus.test.ts`. */}
       {canDelete && (
         <RowActions
           className="flex shrink-0 flex-wrap items-center gap-3"
           destructive={
             <ConfirmDelete
+              pinned="end"
               label="Remove"
               confirmLabel="Confirm remove"
               pendingLabel="Removing…"

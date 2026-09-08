@@ -12,6 +12,97 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### On a phone the armed confirm sat on the delete pixel (Cyrus)
+`cyrus/armed-delete-mobile-layout`
+
+Issue #184. Rule 2 of #152 says the confirm of an armed delete must not
+occupy the position the delete button just vacated, so a hurried second tap
+costs a click rather than the record. #176 fixed that on the desktop with
+`pinned="start" | "end"`. On a phone no value of `pinned` could fix it, and
+this is the layout change that does.
+
+**Why the prop could not reach it.** #89 made the field rows stack below
+640px. Stacked, the cluster is not right-pinned; it is a full-width
+left-aligned strip. `RowActions` hides the ordinary actions while armed, so
+the pair reflows to the strip's LEFT edge — while the Delete it replaced sat
+to the RIGHT of an "Edit" that is now gone. Nothing can inherit the delete's
+pixel because nothing is AT the delete's pixel. Measured in real Chromium at
+375px, confirm overlap with the vacated Delete box: 86% as [Confirm][Cancel],
+75% as [Cancel][Confirm]. Both are "the confirm is under your thumb".
+
+**Two other fixes were measured first and neither survived.** Reserving the
+hidden actions' width does not fail, it INVERTS: it restores the delete's
+slot, and that slot is the LAST control at 1100px and the FIRST at 375px, so
+Cancel would have to render last and first at once. Right-aligning the
+stacked cluster does work for five rows, but it pays for the two seconds a
+delete is armed by permanently moving the UNARMED row's buttons ~153px on
+five phone screens, and it still leaves RfiRow worse than it is today.
+
+**What shipped.** Below `sm`, `ConfirmDelete` renders its two buttons as a
+full-width COLUMN WITH CANCEL ON TOP — `max-sm:flex-col` for the
+[Cancel][Confirm] order, `max-sm:flex-col-reverse` for [Confirm][Cancel] — so
+Cancel lands in the band the delete vacated whatever `pinned` says. It is
+inside the shared component, not in six callers, so no row can get it wrong
+and the next row gets it for free. At >=640px the wrapper is `contents`: not
+a box at all, the buttons are flex items of the caller's cluster exactly as
+before, and the 1100px rects are byte-identical to `main`'s, compared field
+by field on every row.
+
+Confirm overlap as a share of the area of the vacated Delete box, real
+Chromium, class strings read out of the `.tsx` files rather than retyped:
+
+| row | main 1100/639/375 | now 1100/639/375 |
+| --- | --- | --- |
+| `EquipmentRow` | 0% / 86% / 86% | 0% / 0% / 0% |
+| `FieldReportEntry` | 0% / 86% / 86% | 0% / 0% / 0% |
+| `PunchListRow` | 0% / 86% / 86% | 0% / 0% / 0% |
+| `DailyFieldReports` | 0% / 79% / 79% | 0% / 0% / 0% |
+| `SafetyIncidentRow` | 100% / 75% / 75% | 0% / 0% / 0% |
+| `RfiRow` | 20% / 0% / 0% | 20% / 0% / 0% |
+| `ToolboxTalkRow` | 100% / 0% / 0% | 0% / 0% / 0% |
+| `RuleSetRow` | 100% / 72% / 72% | 0% / 0% / 0% |
+
+Below 640px Cancel covers 100% of the vacated box on all eight, with 12px of
+clear air before the confirm starts.
+
+**Three rows were flipped to `pinned="end"`, and that is a desktop bug fix
+rather than the consistency tidy-up #184 files it as.** `SafetyIncidentRow`,
+`ToolboxTalkRow` and `RuleSetRow` were in `PINNED_EXCEPTIONS` because no
+value of the prop was right at both widths — which left all three at **100%
+overlap at 1100px**, the exact defect #176 shipped to fix. The armed column
+settles the phone, so the prop now has one correct answer per cluster and the
+conflict that created those exceptions is gone. `PINNED_EXCEPTIONS` is empty.
+
+**RfiRow's 20% at 1100px is pre-existing and is not touched.** #184 and #176
+both say the desktop is at 0% on every row; on that row it is 20%, and the
+cause is structural: in a right-pinned cluster the confirm clears the vacated
+box only when Cancel plus the gap (70 + 12 = 82px) is at least as wide as the
+delete button, and "Delete draft" is 103px. Any delete label longer than
+about "Remove" leaves the same residue. The column removes it below `sm`;
+nothing here removes it at 1100. Keep delete labels short.
+
+**What it costs, said plainly.** At 639px and below, an armed row grows 56px
+and pushes everything under it down, and the two buttons go full width — at
+639px that is a 557px-wide button, defensible on a phone and chunky at the
+top of the stacked range. Nothing changes in the unarmed state at any width,
+and nothing changes at all at >=640px. Someone should look at it before it
+ships.
+
+**Tests assert only what a DOM environment can observe** (issue #150: happy-
+dom does no layout, so `getBoundingClientRect` is zeros and a position
+assertion there cannot fail). `rowActions.test.ts` computes the top-to-bottom
+order from the two things a DOM can read — the buttons' order and the
+wrapper's flex-direction class — and requires Cancel on top for BOTH values
+of `pinned`; swap the two class constants and it goes red. The overlap
+percentages come from a real-Chromium harness that arms one row at a time so
+both states are measured at the same place in the same layout.
+
+**Not verified in the running app.** Every number above is from the harness.
+`/equipment` at 375px still owes one click-through, which is the same caveat
+#184 ends on.
+
+CLAUDE.md's armed-delete entry was desktop-only and is now wrong by omission
+rather than by statement; the phone half has been added to it there.
 ### The Ask box can start an estimate — a command proposes, a person confirms, one tap executes (Diego)
 `claude/prova-ai-task-completion-96pjes`
 

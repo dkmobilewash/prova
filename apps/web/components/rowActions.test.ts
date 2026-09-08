@@ -155,6 +155,112 @@ describe("RowActions", () => {
     expect(liveControls()).toEqual(["Confirm delete", "Cancel"]);
   });
 
+  /* ---- the phone half of rule 2 (#184) ----------------------------------
+     Below 640px the armed pair is its own full-width column with CANCEL ON
+     TOP, because in a stacked cluster there is no "end" for Cancel to
+     inherit — the ordinary actions are gone and nothing is at the delete's
+     pixel any more. Measured in real Chromium: 86% confirm overlap on main
+     at 375px, 0% with this, and Cancel covering 100% of the vacated box.
+
+     None of THAT is checkable here and no test in this repo can check it —
+     happy-dom does no layout (issue #150). What this environment can see is
+     structural, and it is enough to catch the mutation that matters: the
+     column direction and the DOM order have to disagree in exactly the right
+     way, or the CONFIRM ends up on top. So these tests compute the VISUAL
+     order from the two things a DOM can read — the order of the buttons and
+     the flex-direction class of their wrapper — and require Cancel first for
+     both values of `pinned`. Swap the two class constants and they go red. */
+
+  /** The wrapper the two armed buttons share, and nothing else. */
+  function armedPair() {
+    const cancel = Array.from(container.querySelectorAll("button")).find(
+      (b) => (b.textContent ?? "").trim() === "Cancel",
+    );
+    if (!cancel) throw new Error("not armed — no Cancel button");
+    return cancel.parentElement as HTMLElement;
+  }
+
+  /** Top-to-bottom order below `sm`, which is DOM order through the
+   *  wrapper's flex-direction. `-reverse` is the whole point of the prop. */
+  function orderBelowSm() {
+    const pair = armedPair();
+    const labels = Array.from(pair.querySelectorAll("button")).map((b) =>
+      (b.textContent ?? "").trim(),
+    );
+    return pair.className.includes("max-sm:flex-col-reverse") ? [...labels].reverse() : labels;
+  }
+
+  it("puts Cancel on top of the armed column below sm — the default order", () => {
+    render(row());
+    click("Delete");
+
+    expect(orderBelowSm()).toEqual(["Cancel", "Confirm delete"]);
+  });
+
+  it("puts Cancel on top of the armed column below sm — pinned=\"end\" too, which is the reversed one", () => {
+    render(
+      createElement(
+        RowActions,
+        {
+          className: "flex shrink-0 gap-2",
+          destructive: createElement(ConfirmDelete, { pinned: "end" as const }),
+        },
+        createElement("button", { type: "button", key: "e" }, "Edit"),
+      ),
+    );
+    click("Delete");
+
+    // DOM order is [Confirm][Cancel] — that is what makes the DESKTOP right.
+    expect(liveControls()).toEqual(["Confirm delete", "Cancel"]);
+    // Reversed by the column, so the phone gets Cancel on top from the same
+    // markup. Both halves of rule 2 out of one order.
+    expect(orderBelowSm()).toEqual(["Cancel", "Confirm delete"]);
+  });
+
+  it("holds the two buttons in ONE wrapper that is `contents` at desktop widths", () => {
+    render(row());
+    click("Delete");
+
+    const pair = armedPair();
+    expect(Array.from(pair.querySelectorAll("button")).map((b) => b.textContent)).toEqual([
+      "Cancel",
+      "Confirm delete",
+    ]);
+    // `contents` is why the 1100px rects are byte-identical to before this
+    // fix: at >=640px the wrapper is not a box and the buttons are flex items
+    // of the caller's own cluster, exactly as they were.
+    expect(pair.className.split(/\s+/)).toContain("contents");
+    expect(pair.className).toMatch(/max-sm:flex\b/);
+    expect(pair.className).toMatch(/max-sm:w-full/);
+  });
+
+  it("leaves the prompt OUTSIDE the column, so reversing it cannot put the question under the buttons", () => {
+    render(
+      createElement(RowActions, {
+        destructive: createElement(ConfirmDelete, {
+          pinned: "end" as const,
+          prompt: "Delete Acme Drywall?",
+        }),
+      }),
+    );
+    click("Delete");
+
+    const pair = armedPair();
+    expect(pair.textContent).not.toContain("Delete Acme Drywall?");
+    expect(container.textContent).toContain("Delete Acme Drywall?");
+  });
+
+  it("adds nothing at all to the row while it is unarmed", () => {
+    render(row());
+    const del = Array.from(container.querySelectorAll("button")).find(
+      (b) => (b.textContent ?? "").trim() === "Delete",
+    )!;
+    // The delete is a direct child of the cluster, not wrapped in anything —
+    // the armed column exists only while armed, so the resting row is
+    // untouched at every width.
+    expect(del.parentElement?.className).toBe("flex gap-2");
+  });
+
   it("does not delete, and gives the row back, when Cancel is clicked", () => {
     const onConfirm = vi.fn();
     render(row(onConfirm));
