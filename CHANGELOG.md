@@ -12,6 +12,70 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### The Ask box logs the day, moves the lift and receives the truck — phase 2a, over the field lane's own actions (Diego)
+`claude/prova-ai-task-completion-96pjes`
+
+Four more commands, all on Cyrus's actions and none of his files: "log
+today's daily report on Riverside: hung board on level 2, crew of 6"
+(`createDailyFieldReport`), "send the scissor lift to Maple"
+(`assignEquipment`), "the lift is back" (`returnEquipment`), and "the
+board showed up on Maple" (`recordMaterialDelivery`). Each shows a card,
+one tap executes, and the sentence on refusal is the action's own: the
+overlap check inside `assignEquipment`'s transaction, the one-report-per-
+day constraint, "closed out by the delivery on…".
+
+**How a command calls a form-shaped action.** `lib/ask/commands/adapter.ts`
+builds the FormData the form would have posted — checkboxes are the
+string "on", an absent optional is absent, dates are `yyyy-mm-dd` — and
+calls the action in-process. The action's own `requireCompanyContext()`,
+`can()` and transaction run unchanged. Nothing here re-implements a rule.
+A throw inside the action is a bug, not a refusal, and becomes "did not
+complete, check the page before trying again" rather than a claim about
+what was or was not saved. `lib/actions/ask.dbtest.ts` now executes that
+call against a real Postgres: one report lands with the asking user as
+filer, and the second card for the same day gets the constraint's
+sentence back through the tap.
+
+**Who may be DIRECT, enforced rather than remembered.** The coverage test
+now accepts a DIRECT command only when its core is a `lib/estimating`
+export or an action whose signature promises `ActionResult`. Production
+redacts a thrown message, so a command over a throwing action would put a
+digest on a card; RFIs and punch items stay excluded for exactly that
+reason, with the HANDOFF plan named in their exclusion.
+
+**Today is the person's day.** Every date on these cards is `ctx.today`,
+resolved on the server from the timezone cookie by `viewerToday()`. The
+model never supplies a date: "yesterday's report" is a page job and the
+command description says so.
+
+**Resolvers for things that are not jobs.** `resolveEquipment` matches
+name, type or asset tag, an exact tag wins outright, and a chip row shows
+each candidate's tag and where it is booked ("SL-2 · out on Maple Street
+since 2026-08-20"). `resolveOpenMaterialOrder` lists a job's orders with
+no closing delivery, narrowed by what the person called the material or
+the vendor. Neither ever picks between two matches.
+
+**A card survives a backgrounded phone.** The pending card's id is kept in
+`sessionStorage`; on mount the panel asks `loadAskProposal` for it, which
+returns only a card that is still that person's, unsettled, unclaimed and
+unexpired. Anything else and the id is forgotten. sessionStorage rather
+than localStorage on purpose: a card dies with the tab, because a card is
+not a standing instruction.
+
+**Per-action exclusions replace three module wildcards.** Every other
+export of `fieldReports.ts`, `equipmentAssignments.ts` and
+`materialOrders.ts` is now excluded by name with its reason, in
+`commands/field.ts` and `commands/equipment.ts`. The plan had Cyrus
+writing those files; Diego asked for phase 2 to start, so they were
+written here and are his to rewrite. Announced in #prova-build before the
+push; no schema change.
+
+typecheck, lint, the unit suite and a full build pass; the database test
+runs in CI only. **Nobody has clicked it.** The click list is in the PR
+body.
+
+---
+
 ### The Ask box can start an estimate — a command proposes, a person confirms, one tap executes (Diego)
 `claude/prova-ai-task-completion-96pjes`
 
