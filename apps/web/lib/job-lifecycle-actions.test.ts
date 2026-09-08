@@ -90,6 +90,9 @@ const prisma = {
   jobLineItem: {
     count: async ({ where }: { where: Row }) => db.lineItems.filter((i) => matches(i, where)).length,
   },
+  // createJob's body now runs inside one transaction (lib/estimating/
+  // create-job.ts); the fake hands the callback the same tables.
+  $transaction: async (run: (tx: unknown) => Promise<unknown>) => run(prisma),
 };
 
 const context = { id: USER_ID, role: "OWNER", jobFunction: null as string | null, company: { id: COMPANY_ID } };

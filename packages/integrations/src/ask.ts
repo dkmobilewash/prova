@@ -18,15 +18,24 @@ export type AskToolDefinition = {
   description: string;
   input_schema: {
     type: "object";
-    properties: Record<string, { type: string; description: string }>;
+    properties: Record<string, { type: string; description: string; enum?: string[] }>;
     required?: string[];
   };
 };
 
 /** What a tool run gives back to the model. `isError` marks a failed
  * lookup, which the model is told about rather than left to infer from
- * silence. */
-export type AskToolOutcome = { content: string; isError?: boolean };
+ * silence.
+ *
+ * `halt` is the other way a tool can answer: not a result for the model
+ * but something for the PERSON. The conversation ends the moment one
+ * appears — no tool_result is pushed, no further pass runs — and the halt
+ * is yielded to the caller as its own event. That is what lets a command
+ * propose a write and hand the decision to a human without the model ever
+ * being in a position to "confirm" it itself. `H` is whatever the app
+ * carries; this package does not know its shape, the same way it does not
+ * know a tenant. */
+export type AskToolOutcome<H = never> = { content: string; isError?: boolean; halt?: H };
 
 export type AskFailureReason = "refusal" | "no_text" | "exhausted" | "api";
 
@@ -36,9 +45,13 @@ export type AskFailureReason = "refusal" | "no_text" | "exhausted" | "api";
  * static "Reading your records…" for that long reads as a hang. These say
  * what is actually happening.
  */
-export type AskEvent =
+export type AskEvent<H = never> =
   /** A round of tool calls has started. `names` is what is being read. */
   | { type: "tools"; names: string[] }
+  /** A tool answered the PERSON rather than the model. Terminal: nothing
+   * follows it, and no `done` is sent — the answer is whatever the caller
+   * renders from `halt`. */
+  | { type: "halt"; halt: H }
   /** Discard any text shown so far: it was preamble before a tool call,
    * not the answer. Without this a "let me check…" line would sit above
    * the real answer forever. */
@@ -50,34 +63,62 @@ export type AskEvent =
   | { type: "done"; toolsCalled: string[] }
   | { type: "error"; reason: AskFailureReason };
 
-export type AskConversationOptions = {
+/** What the executor is told about the call it is running, beyond the
+ * input. `toolUseIdsInContext` lists every earlier tool_use whose result
+ * the model was reading when it made this call — recorded so a proposal
+ * that came from text inside a tool result can be traced to the row that
+ * carried it. */
+export type AskToolCallMeta = { toolUseId: string; toolUseIdsInContext: string[] };
+
+export type AskConversationOptions<H = never> = {
   system: string;
+  /** A second system block appended AFTER the cached one, for text that
+   * varies per person (what their access withholds, for instance). Sits
+   * outside the cache breakpoint so it does not invalidate the prefix. */
+  context?: string;
   question: string;
   tools: AskToolDefinition[];
   /** Runs one tool. Supplied by the caller already bound to a company. */
-  execute: (name: string, input: unknown) => Promise<AskToolOutcome>;
+  execute: (name: string, input: unknown, meta: AskToolCallMeta) => Promise<AskToolOutcome<H>>;
   /** API calls, not tool calls: a turn asking for four tools at once costs
    * one. Guards against a confused loop, not against breadth. */
   maxPasses?: number;
   model?: string;
+  /** A stand-in for the SDK client. Tests pass one; production never does.
+   * Exists because this package's SDK is not resolvable from the app's
+   * test runner, so it cannot be mocked from there by module path. */
+  client?: Pick<Anthropic, "messages">;
 };
 
-const DEFAULT_MODEL = "claude-opus-5";
+/** Exported so the app can record which model proposed a write. */
+export const ASK_DEFAULT_MODEL = "claude-opus-5";
+const DEFAULT_MODEL = ASK_DEFAULT_MODEL;
 const DEFAULT_MAX_PASSES = 6;
 
 export function anthropicIsConfigured(): boolean {
   return Boolean(process.env.ANTHROPIC_API_KEY?.trim());
 }
 
-export async function* streamToolConversation(
-  options: AskConversationOptions,
-): AsyncGenerator<AskEvent> {
-  const client = new Anthropic();
+export async function* streamToolConversation<H = never>(
+  options: AskConversationOptions<H>,
+): AsyncGenerator<AskEvent<H>> {
+  const client = options.client ?? new Anthropic();
   const messages: Anthropic.MessageParam[] = [
     { role: "user", content: options.question },
   ];
   const toolsCalled: string[] = [];
+  // Every tool_use whose result has been pushed into `messages` so far —
+  // what the model can see when it makes its next call.
+  const toolUseIdsInContext: string[] = [];
   const maxPasses = options.maxPasses ?? DEFAULT_MAX_PASSES;
+
+  // A breakpoint on the first system block covers everything before it in
+  // the prefix, which is the tool list. The optional second block varies
+  // per person and sits after the breakpoint, so it costs nothing cached.
+  const system: Anthropic.TextBlockParam[] = [
+    { type: "text", text: options.system, cache_control: { type: "ephemeral" } },
+  ];
+  if (options.context) system.push({ type: "text", text: options.context });
 
   try {
     for (let pass = 0; pass < maxPasses; pass += 1) {
@@ -102,15 +143,7 @@ export async function* streamToolConversation(
         // total on a question that reads eight areas. Most of that is the
         // database, but the prompt is re-processed on every one of those
         // passes and does not need to be.
-        // A breakpoint on the system block covers everything before it in
-        // the prefix, which is the tool list.
-        system: [
-          {
-            type: "text",
-            text: options.system,
-            cache_control: { type: "ephemeral" },
-          },
-        ],
+        system,
         tools: options.tools,
         messages,
       });
@@ -154,23 +187,40 @@ export async function* streamToolConversation(
             try {
               // Tool inputs are parsed JSON from the SDK, never matched as
               // strings — escaping in tool input differs across models.
-              const outcome = await options.execute(call.name, call.input ?? {});
+              const outcome = await options.execute(call.name, call.input ?? {}, {
+                toolUseId: call.id,
+                toolUseIdsInContext: [...toolUseIdsInContext],
+              });
               return { call, outcome };
             } catch {
               // One failing tool must not lose the whole answer.
-              return {
-                call,
-                outcome: {
-                  content: `The ${call.name} lookup failed. Do not guess at what it would have said.`,
-                  isError: true,
-                },
+              const outcome: AskToolOutcome<H> = {
+                content: `The ${call.name} lookup failed. Do not guess at what it would have said.`,
+                isError: true,
               };
+              return { call, outcome };
             }
           }),
         );
 
+        // A halt ends the conversation HERE — before any result is pushed,
+        // so the model never sees a tool_result it could act on, and never
+        // gets another pass in which to re-propose or to narrate something
+        // as done that a person has not yet confirmed. The reads that ran
+        // in the same batch are simply discarded; the person has a card to
+        // answer and can ask again. When two halts land in one batch the
+        // first wins — the executor is expected to have refused the second
+        // already, and one card per question is the rule either way.
+        const halted = outcomes.find((entry) => entry.outcome.halt !== undefined);
+        if (halted) {
+          yield { type: "reset" };
+          yield { type: "halt", halt: halted.outcome.halt as H };
+          return;
+        }
+
         // Every result goes back in ONE user message. Splitting them across
         // messages teaches the model to stop asking for tools in parallel.
+        toolUseIdsInContext.push(...calls.map((call) => call.id));
         messages.push({
           role: "user",
           content: outcomes.map(({ call, outcome }) => {

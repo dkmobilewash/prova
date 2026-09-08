@@ -1,0 +1,94 @@
+/// What the Ask box proposed to do, and what became of it.
+///
+/// One row per COMMAND the assistant resolved on somebody's behalf. The row
+/// is written BEFORE anything else is: the model never writes a business
+/// row itself, it writes this, the stream ends, and the person sees a card.
+/// Their tap runs a Server Action that CLAIMS the row (`claimedAt`, set by
+/// an updateMany guarded on null — the NotificationDispatch pattern) and
+/// only then executes the deterministic code. So the row is three things at
+/// once: the replay guard against a double tap, the audit trail this schema
+/// never had for who asked for what, and the trace back to the tool results
+/// the model was reading when it proposed (`toolUseIdsInContext`) — which is
+/// what makes an injected instruction in a job name or an RFI subject
+/// findable after the fact.
+///
+/// Append-only. Rows are stamped (`claimedAt`, `outcome`, `targetId`) and
+/// never edited otherwise, and never deleted — the same contract as
+/// OutboundMessageEvent. A refusal is a row too, with `outcome REFUSED` and
+/// no preview: a refusal nobody can see is indistinguishable from a feature
+/// nobody used.
+///
+/// `createdByUserId` is nullable ON DELETE SET NULL rather than required, the
+/// convention every other actor column here follows (`Backcharge.loggedByUserId`,
+/// `RetainageRelease.createdByUserId`): removing a team member must not
+/// delete the record of what they asked for, and `removeTeamMember` hard-
+/// deletes the User row.
+enum AskProposalOutcome {
+  OK
+  REFUSED
+  FAILED
+  CANCELLED
+}
+
+model AskProposal {
+  /// `linkToken()` from apps/web/lib/tokens.ts — 192 bits. A hand-off URL
+  /// will carry this id (phase 2), so it is sized like the other tokens that
+  /// are their own access control, not like a cuid.
+  id        String  @id
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  /// The asker. The only person who may confirm or cancel it.
+  createdByUserId String?
+  createdByUser   User?   @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  /// CommandName as a string, so the registry can rename a command without
+  /// a migration and an old row still says what it was.
+  command String
+  /// "DIRECT" (a tap executes it) or "HANDOFF" (a tap opens the existing
+  /// form prefilled). Recorded, not derived: which mode a command ran in is
+  /// a fact about that day's registry, not today's.
+  mode    String
+
+  /// The person's own words, at most 1000 characters. Never model text.
+  question String
+  /// What the model supplied, after unknown keys were dropped.
+  input    Json
+  /// The ids and strings `execute` will use — the server-held payload. The
+  /// confirm action reads THIS, never anything the browser sends back, so a
+  /// forged contact id from another tenant has no path in.
+  resolved Json
+  /// The lines the card showed, so the audit row says what the person saw.
+  preview  Json
+
+  /// The model id in use when this was proposed, so a bad batch can be found.
+  model               String
+  /// The model's tool_use id for this command, or "continuation" when the
+  /// person answered a chip and no model pass ran.
+  toolUseId           String
+  /// Every tool_use id whose result was in the model's context when it
+  /// proposed this. The injection trace.
+  toolUseIdsInContext String[]
+
+  /// createdAt + 30 minutes. A card left open on a phone overnight is not a
+  /// standing instruction.
+  expiresAt DateTime
+  /// HANDOFF only, phase 2: when the form page loaded this row.
+  openedAt  DateTime?
+  /// DIRECT: when confirm was tapped. The lock — set once by an updateMany
+  /// where claimedAt IS NULL, so two taps produce one write and one
+  /// "already done".
+  claimedAt DateTime?
+
+  outcome     AskProposalOutcome?
+  /// The returned sentence on REFUSED or FAILED, verbatim.
+  outcomeNote String?
+  /// What was created or changed, e.g. "Job" + its id.
+  targetType  String?
+  targetId    String?
+
+  createdAt DateTime @default(now())
+
+  @@index([companyId, createdAt])
+  @@index([createdByUserId])
+}
