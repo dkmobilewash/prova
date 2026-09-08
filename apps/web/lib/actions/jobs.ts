@@ -7,7 +7,8 @@ import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { putDocument } from "@/lib/blob";
 import { Prisma, prisma } from "@prova/db";
-import { draftEstimateLineItems } from "@prova/integrations";
+import { createEstimateJob } from "@/lib/estimating/create-job";
+import { draftLinesFromScope } from "@/lib/estimating/draft-lines";
 import {
   CONTRACT_NOT_EXECUTED_REFUSAL,
   parseExecutedSignedDate,
@@ -55,46 +56,26 @@ export async function createJob(formData: FormData): Promise<ActionResult> {
   if (!jobName) {
     return actionFail("Give the job a name.");
   }
-
-  let resolvedContactId: string;
-  if (contactId) {
-    // Scoped to this company: a contact id is a client-supplied string, and
-    // without the companyId check this form would attach another tenant's
-    // GC — and with it that GC's terms and history — to our job.
-    const existing = await prisma.contact.findFirst({
-      where: { id: contactId, companyId: company.id },
-      select: { id: true },
-    });
-    if (!existing) {
-      return actionFail("That GC isn't on your account. Pick one from the list, or add a new one.");
-    }
-    resolvedContactId = existing.id;
-  } else {
-    if (!contactName) {
-      return actionFail("Pick the GC this job is for, or enter a name to add a new one.");
-    }
-    const created = await prisma.contact.create({
-      data: {
-        companyId: company.id,
-        name: contactName,
-        email: contactEmail || null,
-      },
-    });
-    resolvedContactId = created.id;
+  if (!contactId && !contactName) {
+    return actionFail("Pick the GC this job is for, or enter a name to add a new one.");
   }
 
-  const job = await prisma.job.create({
-    data: {
-      companyId: company.id,
-      contactId: resolvedContactId,
-      name: jobName,
-      scope: scope || null,
-    },
+  // The body lives in lib/estimating/create-job.ts, shared with the Ask
+  // command `create_estimate_job`. This action is the form's parse → core →
+  // revalidate → redirect, and behaves exactly as it did: an existing
+  // contact is asserted in-company, a new name is a new contact.
+  const created = await createEstimateJob(company.id, {
+    jobName,
+    scope,
+    contact: contactId ? { id: contactId } : { name: contactName, email: contactEmail },
   });
+  if (!created.ok) {
+    return actionFail(created.error);
+  }
 
   revalidatePath("/dashboard");
   revalidatePath("/contacts");
-  redirect(`/jobs/${job.id}`);
+  redirect(`/jobs/${created.value.jobId}`);
 }
 
 /**
@@ -153,84 +134,16 @@ export async function addLineItem(jobId: string, formData: FormData) {
  * changes job.status itself. */
 export async function draftLineItemsFromScope(jobId: string, formData: FormData) {
   const { company } = await requireCompanyContext();
-  const job = await assertJobInCompany(jobId, company.id);
-  assertEditableDirectly(job);
-
   const scopeText = String(formData.get("scopeText") ?? "").trim();
-  if (!scopeText) {
-    throw new Error("Paste or type a scope of work to draft from");
+
+  // The body lives in lib/estimating/draft-lines.ts, shared with the Ask
+  // command `draft_estimate_lines`. This form's component catches a throw
+  // and shows err.message, so the core's sentences are thrown here exactly
+  // as the inline guards used to throw them.
+  const drafted = await draftLinesFromScope(company.id, { jobId, scopeText });
+  if (!drafted.ok) {
+    throw new Error(drafted.error);
   }
-
-  // Ground the draft in what this company actually charges, rather than what
-  // the market roughly charges. Both halves already existed and neither was
-  // ever read at draft time: the catalog is its own priced work, and won
-  // bids are the prices that have actually cleared with a GC.
-  const [catalogEntries, wonBids] = await Promise.all([
-    prisma.lineItemCatalogEntry.findMany({
-      where: { companyId: company.id },
-      orderBy: { description: "asc" },
-      select: { id: true, description: true, unit: true, defaultUnitPrice: true, tradeScope: true },
-    }),
-    prisma.bidInvitation.findMany({
-      where: { companyId: company.id, status: "WON", bidAmount: { not: null } },
-      orderBy: { createdAt: "desc" },
-      take: 40,
-      select: { projectName: true, tradeScope: true, bidAmount: true },
-    }),
-  ]);
-
-  const draftLineItems = await draftEstimateLineItems(scopeText, {
-    catalogEntries: catalogEntries.map((entry) => ({
-      id: entry.id,
-      description: entry.description,
-      unit: entry.unit,
-      defaultUnitPrice: entry.defaultUnitPrice != null ? Number(entry.defaultUnitPrice) : null,
-      tradeScope: entry.tradeScope,
-    })),
-    wonBids: wonBids.map((bid) => ({
-      projectName: bid.projectName,
-      tradeScope: bid.tradeScope,
-      bidAmount: Number(bid.bidAmount),
-    })),
-  });
-
-  // A line that matched a catalog entry is created the same way "add from
-  // catalog" creates one — carrying sourceCatalogEntryId, and the entry's own
-  // cost and craft defaults, not just the price Claude echoed back. Anything
-  // else is created from the drafted values alone.
-  const matchedEntries = await prisma.lineItemCatalogEntry.findMany({
-    where: {
-      id: { in: draftLineItems.map((item) => item.catalogEntryId).filter((id): id is string => !!id) },
-    },
-  });
-  const fullEntryById = new Map(matchedEntries.map((entry) => [entry.id, entry]));
-
-  await prisma.jobLineItem.createMany({
-    data: draftLineItems.map((item) => {
-      const entry = item.catalogEntryId ? fullEntryById.get(item.catalogEntryId) : undefined;
-      return {
-        jobId,
-        description: entry?.description ?? item.description,
-        quantity: item.quantity.toString(),
-        unit: entry?.unit ?? item.unit,
-        unitPrice:
-          entry?.defaultUnitPrice != null
-            ? entry.defaultUnitPrice.toString()
-            : item.unitPrice != null
-              ? item.unitPrice.toString()
-              : null,
-        budgetedUnitCost: entry?.defaultBudgetedUnitCost ?? null,
-        currentEstimatedUnitCost: entry?.defaultBudgetedUnitCost ?? null,
-        laborHours: entry?.defaultLaborHours ?? null,
-        craftClassificationId: entry?.craftClassificationId ?? null,
-        tradeScope: entry?.tradeScope ?? item.tradeScope,
-        sourceCatalogEntryId: entry?.id ?? null,
-        priceBasis: item.priceBasis,
-        aiDrafted: true,
-      };
-    }),
-  });
-
 
   revalidatePath(`/jobs/${jobId}`);
 }

@@ -19,7 +19,7 @@ import { fileURLToPath } from "node:url";
  *   export DATABASE_URL='postgresql://you@localhost:5433/prova_test?host=/tmp/pgsock'
  *   export DIRECT_URL="$DATABASE_URL"
  *   pnpm --filter @prova/db exec prisma migrate deploy
- *   pnpm --filter @prova/web exec vitest run --config vitest.db.config.ts
+ *   pnpm --filter @prova/web exec vitest run --config vitest.db.config.mts
  */
 export default defineConfig({
   test: {
