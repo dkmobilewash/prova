@@ -138,7 +138,18 @@ export function studsRequired(
   // which is nine. floor gives eight. I shipped floor first, while the
   // docstring above already described the bug it caused — enumerating the
   // positions is what caught it, not reading the code.
-  return Math.ceil(lengthFt / spacing) + 1;
+  //
+  // Rounded to 9 decimal places before the ceil, because binary floating
+  // point can put an EXACT multiple a hair over the integer, and ceil turns
+  // that hair into a whole extra bay. 19.2" o.c. (five bays per 8 ft sheet,
+  // a real spacing) is the case that bites: 19.2 / 12 is
+  // 1.5999999999999999, and 24 / that is 15.000000000000002 — one hair over
+  // fifteen bays, so ceil rounded to sixteen and this billed seventeen studs
+  // where sixteen close the wall. Nine decimal places is far finer than any
+  // wall anyone measures and far coarser than the dust, so a genuine partial
+  // bay (e.g. 25 ft at 19.2" o.c., a real 15.625 bays) still rounds up.
+  const bays = Math.ceil(Number((lengthFt / spacing).toFixed(9)));
+  return bays + 1;
 }
 
 /**

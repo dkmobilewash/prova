@@ -3,8 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@prova/db";
-import { parseCatalogImport, splitAgainstExisting } from "@/lib/catalog-import";
+import { catalogKey, parseCatalogImport, splitAgainstExisting } from "@/lib/catalog-import";
 import { ActionResult, actionFail, actionOk, BID_INVITATION_STATUSES, assertEditableDirectly, assertJobInCompany, assertOwner, craftClassificationIdFromForm, enumFromForm, nullableDecimalFromForm, tradeScopeFromForm } from "./shared";
+import { catalogActuals, repriceDecision, type JobStatusForActuals } from "@/lib/catalog-actuals";
 import { addCatalogLine } from "@/lib/estimating/catalog-line";
 
 /** Logs a GC inviting this company to bid — tracked independent of Job,
@@ -77,6 +78,33 @@ export async function deleteBidInvitation(bidInvitationId: string) {
   revalidatePath("/bids");
 }
 
+/**
+ * The catalog entry this company already has under that description, if any.
+ * #105 finding 7.
+ *
+ * Compared in JS against catalogKey rather than matched in the query:
+ * Prisma's `mode: "insensitive"` lowers to Postgres ILIKE, where `%` and `_`
+ * in the description are WILDCARDS — so a description containing an
+ * underscore (this trade writes plenty, e.g. "5/8_ Type X") would match rows
+ * it isn't, and wrongly refuse a legitimate create. A catalog is bounded by
+ * what people type into it, so loading every description for the company and
+ * comparing in JS costs nothing that matters.
+ *
+ * Why a duplicate is worse here than merely untidy: every entry accumulates
+ * its own actuals from the lines priced off it, and CATALOG_MIN_SAMPLE is 2
+ * — so two copies of "5/8in Type X board" split the evidence and can each
+ * sit at one costed line forever, suppressing a variance flag the merged
+ * sample would correctly raise.
+ */
+async function duplicateCatalogEntry(companyId: string, description: string) {
+  const key = catalogKey(description);
+  const entries = await prisma.lineItemCatalogEntry.findMany({
+    where: { companyId },
+    select: { id: true, description: true },
+  });
+  return entries.find((entry) => catalogKey(entry.description) === key) ?? null;
+}
+
 /** Adds a reusable line-item template, scoped to the company. Not tied to
  * any job — see LineItemCatalogEntry in schema.prisma. */
 export async function createLineItemCatalogEntry(formData: FormData) {
@@ -92,6 +120,13 @@ export async function createLineItemCatalogEntry(formData: FormData) {
 
   if (!description) {
     throw new Error("Description is required");
+  }
+
+  const duplicate = await duplicateCatalogEntry(company.id, description);
+  if (duplicate) {
+    throw new Error(
+      `"${duplicate.description}" is already in the catalog. Edit that entry instead — a second copy splits its actuals history between the two and can hide a bad price on both.`,
+    );
   }
 
   await prisma.lineItemCatalogEntry.create({
@@ -138,6 +173,16 @@ export async function saveLineItemAsCatalogEntry(lineItemId: string) {
   });
   if (!lineItem || lineItem.job.companyId !== company.id) {
     throw new Error("Line item not found");
+  }
+
+  // The click this guard exists for: the same line saved from two different
+  // jobs, or the same job's line saved twice, each landing a copy at
+  // whatever that job happened to price it at. See duplicateCatalogEntry.
+  const duplicate = await duplicateCatalogEntry(company.id, lineItem.description);
+  if (duplicate) {
+    throw new Error(
+      `"${duplicate.description}" is already in the catalog, so this wasn't saved again. A second copy at a different price would split the actuals between the two and hide a bad price on both — update the existing entry on /catalog instead if this line prices it better.`,
+    );
   }
 
   await prisma.lineItemCatalogEntry.create({
@@ -225,37 +270,65 @@ export async function saveEstimateVersion(jobId: string, formData: FormData) {
  * Sale price is a separate, opt-in decision. Cost is a fact the jobs
  * measured; price is a margin call that belongs to the estimator, so
  * "our cost went up 20%" does not silently become "we now charge 20% more".
+ *
+ * #105 finding 3: the number written here is RE-DERIVED from the job line
+ * items, never taken from the request. It used to arrive in a hidden input
+ * and be written after being checked only for parsing as a number — on the
+ * one control in the app that edits a price every future bid and every AI
+ * draft reads, so a stale tab, an edited field, or a replayed POST could set
+ * a catalog default to anything. `importCatalogEntries` below already
+ * refuses exactly that pattern for a pasted price list; this is the same
+ * discipline applied here. The only thing still taken from the request is
+ * the margin checkbox — see repriceDecision in lib/catalog-actuals.ts, which
+ * also re-checks the flag and the sample size that made this button appear,
+ * since the page that rendered it may be minutes old.
  */
 export async function updateCatalogDefaultsFromActuals(entryId: string, formData: FormData) {
   const { company, ...user } = await requireCompanyContext();
   assertOwner(user, "Only the account owner can re-price the catalog");
 
-  const entry = await prisma.lineItemCatalogEntry.findUnique({ where: { id: entryId } });
+  const entry = await prisma.lineItemCatalogEntry.findUnique({
+    where: { id: entryId },
+    include: {
+      jobLineItems: {
+        where: { isDeleted: false },
+        select: {
+          quantity: true,
+          costEntries: { select: { amount: true } },
+          job: { select: { status: true } },
+        },
+      },
+    },
+  });
   if (!entry || entry.companyId !== company.id) {
     throw new Error("Catalog entry not found");
   }
 
-  const actualUnitCost = nullableDecimalFromForm(formData, "actualUnitCost");
-  if (actualUnitCost === null) {
-    throw new Error("No actual cost to update from");
+  const actuals = catalogActuals(
+    entry.jobLineItems.map((line) => ({
+      quantity: Number(line.quantity),
+      actualCost: line.costEntries.reduce((sum, cost) => sum + Number(cost.amount), 0),
+      hasCosts: line.costEntries.length > 0,
+      jobStatus: line.job.status as JobStatusForActuals,
+    })),
+    entry.defaultBudgetedUnitCost != null ? Number(entry.defaultBudgetedUnitCost) : null,
+  );
+
+  const decision = repriceDecision(
+    actuals,
+    entry.defaultUnitPrice != null ? Number(entry.defaultUnitPrice) : null,
+    String(formData.get("alsoUpdatePrice") ?? "") === "on",
+  );
+  if (!decision.ok) {
+    throw new Error(decision.error);
   }
 
   // Only ever the entry's own defaults — no JobLineItem is in scope here.
   const data: { defaultBudgetedUnitCost: string; defaultUnitPrice?: string } = {
-    defaultBudgetedUnitCost: actualUnitCost,
+    defaultBudgetedUnitCost: decision.defaultBudgetedUnitCost,
   };
-
-  // Opt-in: hold the existing margin over the new cost, so the price moves
-  // by the same proportion rather than collapsing to cost.
-  if (String(formData.get("alsoUpdatePrice") ?? "") === "on") {
-    const oldCost = entry.defaultBudgetedUnitCost != null ? Number(entry.defaultBudgetedUnitCost) : null;
-    const oldPrice = entry.defaultUnitPrice != null ? Number(entry.defaultUnitPrice) : null;
-    if (oldCost && oldCost > 0 && oldPrice != null) {
-      data.defaultUnitPrice = ((oldPrice / oldCost) * Number(actualUnitCost)).toFixed(2);
-    }
-    // With no prior cost or price there is no margin to preserve, and
-    // inventing one would be a pricing decision this action has no business
-    // making — the cost still updates, the price is left alone.
+  if (decision.defaultUnitPrice !== undefined) {
+    data.defaultUnitPrice = decision.defaultUnitPrice;
   }
 
   await prisma.lineItemCatalogEntry.update({ where: { id: entryId }, data });

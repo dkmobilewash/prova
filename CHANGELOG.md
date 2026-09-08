@@ -149,6 +149,226 @@ body, and it is the only test that counts.
 
 ---
 
+### Eight defects in estimating, the catalog and change orders — #105 (Diego)
+`diego/estimating-catalog-co-defects-105`
+
+An audit sweep filed eight findings against estimating, the catalog and
+change orders, three of them tagged MONEY-WRONG. All eight are fixed here.
+
+**1. Reopening an approved change order could silently revert a LATER
+approved one.** `reopenBlockers` checked billing on the lines an EDIT
+touched, but never asked whether a *later* approved change order had since
+written to the same rows — only the ADD case (deleting the line it created)
+was guarded. Reopening CO #2 restores CO #2's old snapshot over whatever CO
+#4 changed afterward; CO #4 goes on rendering its own delta, and the
+contract value contradicts both documents at once. New `laterApprovedConflict`
+in `lib/change-order.ts` looks at every OTHER approved proposal that touched
+the same line item and its `appliedAt`, and refuses the reopen when one
+landed after this change order did — including when either side's
+`appliedAt` is null (a row approved before that column existed), because a
+false allow is worse than a false block here. Covered by
+`lib/change-order.test.ts`, new for this PR — this module had NO test file
+at all before, which is exactly how a later-CO conflict and a
+never-read `isDeleted` field (finding 5, below) both survived unnoticed.
+
+**2. Catalog "update default from actuals" re-priced off half-finished
+jobs.** `catalogActuals` divided cost booked to date by the line's FULL
+quantity with no job-status filter — a line 40% built at a true $2.00/SF has
+only 40% of its cost booked, so it reported $0.80/SF: 60% under, flagged
+amber "worth re-pricing", and one click from becoming the default that
+prices every future bid and grounds the AI drafts. The bias is
+one-directional (every unfinished job reads low, never high), so repeatedly
+re-pricing walked the catalog toward zero. `CatalogSourcedLine` now carries
+`jobStatus`, and only a `COMPLETE` job's cost counts toward `actualUnitCost`
+— see `FINISHED_JOB_STATUSES` in `lib/catalog-actuals.ts`. The excluded
+count is reported (`linesExcludedUnfinished`), never silently dropped, so
+"nothing has used this entry" and "three jobs have used it and none has
+finished" read as the different situations they are, on both `/catalog` and
+inside the re-price refusal message.
+
+**3. The catalog re-price wrote a number the browser sent.**
+`updateCatalogDefaultsFromActuals` took `actualUnitCost` from a hidden input
+and checked only that it parsed as a number — never re-deriving it, never
+re-checking the flag or the sample-size condition that made re-pricing
+eligible. `importCatalogEntries` in the same file already refused exactly
+this pattern for a pasted price list. New pure function `repriceDecision` in
+`lib/catalog-actuals.ts` makes the whole decision from the actuals alone —
+there is no argument in its signature a browser-supplied figure could enter
+through — and re-checks eligibility against a fresh read of the line items,
+since the page that rendered the button may be minutes old. The action now
+reloads the entry's line items, recomputes `catalogActuals` (which is also
+where finding 2's job-status filter applies), and writes only what
+`repriceDecision` returns. The hidden input is gone from `/catalog`.
+`lib/catalog-actuals.test.ts` gained a `repriceDecision` suite asserting
+exact cent values, including that a margin held over a re-priced cost is a
+proportion (1.6×) and not the old price minus the old cost.
+
+**4. `studsRequired` over-counted by one stud at 19.2" o.c.** `24 / 1.6` is
+`15.000000000000002` in binary floating point, so `Math.ceil` rounded one
+hair over fifteen bays up to sixteen, billing 17 studs where 16 close the
+wall (verified at 24/40/48 ft in the issue; 16" and 24" o.c. divide exactly
+and were unaffected). `lib/takeoff.ts` now rounds to 9 decimal places before
+the `ceil` — finer than any wall anyone measures, coarser than the dust — so
+a genuine partial bay (25 ft at 19.2" o.c., a real 15.625 bays) still rounds
+up correctly. `lib/takeoff.test.ts` asserts the exact stud counts at all
+four lengths, plus that 16"/24" o.c. are unchanged by the fix.
+
+**5. Pending change-order exposure counted money against scope that was
+already gone.** `LineItemForChangeOrder` declared `isDeleted` and nothing in
+`proposalValueDelta` ever read it — an unapplied REMOVE (or EDIT) proposal
+targeting a line an earlier approved change order had already soft-deleted
+still priced against the line's stale in-memory value, so the pending
+"what we've asked the GC for" headline could report money for scope that
+`approveChangeOrder` would refuse outright to book. New `proposalIsBookable`
+in `lib/change-order.ts` returns false for exactly that case (an unapplied
+EDIT/REMOVE whose target is missing or already deleted); `proposalValueDelta`
+now returns $0 for an unbookable proposal instead of pricing it, and
+`countUnbookable`/`pendingChangeOrderUnbookable` report how many were
+dropped so the exposure figure reads as a floor rather than a silently
+shrunk total — surfaced on `/jobs/[id]` next to the pending-exposure line.
+`proposeLineItemChange` and `proposeScopeRemoval` also now refuse a NEW
+proposal against already-deleted scope at creation time, so the situation is
+prevented going forward and not just priced correctly after the fact.
+
+**6. One click hard-deleted a bid invitation.** No confirm step sat beside
+"Update" on `/contacts/[id]`, removing evidence a bid was won — which
+`/pipeline` win rates and the AI draft-grounding both read. Wrapped in the
+same `RowActions`/`ConfirmDelete` two-step the catalog entry row already
+uses (`components/RowActions.tsx`), with a hint calling out a WON bid by
+name. Uses `RowActions` directly rather than the simpler
+`ConfirmDeleteButton` wrapper, because "Update" is a live ordinary action in
+the same row — arming the delete has to hide it too, per the rule
+`RowActions` exists to enforce (issue #152).
+
+**7. "Save as catalog item" had no duplicate check.** Two catalog entries
+under the same description, at different prices, each accumulate their own
+separate actuals history — and with `CATALOG_MIN_SAMPLE = 2`, a split sample
+can keep both under the minimum forever, suppressing a variance flag the
+merged sample would correctly raise. `importCatalogEntries` already refused
+a duplicate on import; `createLineItemCatalogEntry` and
+`saveLineItemAsCatalogEntry` did not. New `catalogKey` export in
+`lib/catalog-import.ts` (the same trim-and-lowercase rule
+`splitAgainstExisting` already used, now shared rather than duplicated) and
+a `duplicateCatalogEntry` lookup in `lib/actions/estimating.ts`, wired into
+both create paths.
+
+**8. All twelve change-order actions threw instead of returning.**
+Production redacts a thrown Server Action message to an opaque digest
+(verified 2026-08-27) — so every PM-facing next-step sentence in
+`lib/actions/changeOrders.ts` ("CO #3 has already been sent — void it and
+raise a new one instead of editing it", "A change order can't be answered
+before it was sent") reached a real user as a reference number, on the one
+workflow where the next step changes a contract value. Reshaped on
+`lib/actions/submittals.ts`'s own pattern — this repo's cited reference —
+rather than inventing a new mechanism: a private `InputError` marks an
+expected refusal, a `runAction` wrapper at each action's boundary turns it
+into `{ ok: false, error }`, and anything else that throws is a genuine bug
+and is rethrown untouched, still redacted, still hitting the error boundary.
+All twelve exported actions now return `Promise<ActionResult>`.
+`components/ChangeOrders.tsx` — the only caller — is rewritten from raw
+`<form action={serverAction}>` (which discards a returned value; the twelve
+throws were the only reason it ever worked) to `onSubmit` handlers that call
+each action directly inside `useTransition` and render `result.error`, the
+same shape as `SubmittalRow`/`SubmittalForm`. `shared.ts` is untouched — no
+new exports there — so this stays inside Diego's lane without touching the
+shared actions surface.
+
+**Verification.** `pnpm typecheck`, `pnpm lint`, `pnpm test` (full unit
+suite, including the new `change-order.test.ts` and the extended
+`catalog-actuals.test.ts`/`takeoff.test.ts`), `pnpm test:db`, and `pnpm build`
+all pass; `./scripts/preflight.sh` run before pushing. No schema change and
+no migration — all eight are logic fixes. A numbered click-list for the
+user-visible findings (6, and the UI text changes from 1/2/3/5/8) is in the
+PR description.
+
+---
+
+### The two fringe-schedule guardrails #200 left open (Cyrus)
+`cyrus/fringe-schedule-guardrails`
+
+Both follow-ons Diego's #136 close named and left to this lane, done the
+day it merged rather than inherited as intentions.
+
+**`deleteFringeRateSchedule` now has a usage check — #199.** There is no
+foreign key from `TimeEntry` to a rate schedule: certified payroll and
+fringe remittance look the effective rate up LIVE by date, so "is this
+schedule used" is window membership, not a join. The action now counts
+the company's own hours for that craft inside the schedule's effective
+window and refuses to delete while any exist, naming the count and
+routing to `endFringeRateSchedule` (which records the end date and leaves
+history alone). A schedule whose window priced no hours — the genuine
+data-entry mistake — still deletes. The over-count case (an overlapping
+schedule might be the one actually picked for some dates) is accepted
+deliberately: refusing a harmless delete costs a click, allowing a
+harmful one changes filed numbers.
+
+**`union-compliance-query.ts`'s schedule read is company-scoped
+directly.** `fringeRateSchedule.findMany` filtered only on craft ids —
+transitively scoped because those ids come from this company's own
+entries, which holds exactly as long as every craft tag is right forever.
+These are wage, pension, H&W and training rates; #200's `companyId`
+column makes the direct filter one line, so it is on the query itself
+now, not on the join being trusted.
+
+The specific checks: `unionCompliance.guard.test.ts` (runnable locally,
+unlike the dbtest suite — #171) asserts the refusal, the deletion, the
+QUERY SHAPES (an unscoped count refuses company A's delete because
+company B worked those dates; `lte: null` in a Prisma where silently
+filters, so the open-ended window spreads the bound conditionally), and
+the remittance query's `companyId`. Four mutations run, each reddening
+its named test, both files restored byte-identical and sha-verified:
+drop the usage check, unscope the count, reintroduce `lte: null`,
+unscope the remittance query. A real-Postgres case rides in
+`unionCompliance.dbtest.ts` for CI.
+### The union audit outlived its question by six commits — #136 (Diego)
+`claude/prova-contractor-os-e3f0iz`
+
+**#200 closed issue #136 finding 1 while this script was still telling people
+to fix it.** Migration `20260907191702_union_tenancy_companyid` put `companyId`
+on the four union tables, backfilled them, made them NOT NULL, and changed a
+local's identity to `[companyId, parentInternational, localNumber]`. The script
+went on stating the OLD constraint as fact and instructing the reader to change
+it — false about the schema — and framing itself around a shared namespace that
+no longer exists. It was caught only because its branch was six commits behind
+and the base drift forced a re-read.
+
+That is CLAUDE.md's own rule landing on the file that quotes it: *a doc note
+saying nobody has fixed X is a claim with an expiry date on it.* Nobody re-read
+the code, because nobody thought to ask whether the question was still open.
+
+**Rewritten from "should we fix this" to "is it still fixed",** which is the
+version that does not expire.
+
+**What it checks, and why that is not the obvious thing.** Almost everything
+#200 established is now enforced by Postgres — NOT NULL plus a foreign key on
+every one of those tables — so asserting any of it would be a check that cannot
+fail. What is enforced by NOTHING is that a row's `companyId` AGREES with the
+`companyId` of the parent it points at. The migration denormalised the column
+onto children and added no CHECK, no trigger and no composite foreign key
+(verified: zero of them in the migration). So a write path that sets one and
+forgets the other files a row under company A hanging off company B's local,
+silently, with every constraint satisfied — #136 returning through the
+denormalisation that fixed it, and the hazard behind this repo's own
+"derived state is never stored" rule. Six such pairs exist; all six are checked.
+
+The job now FAILS on a violation instead of reporting one, so it is a
+regression check rather than something nobody reads.
+
+**Verified against a real Postgres in four states, and the third is the point.**
+Empty → `NOT ESTABLISHED`. One company with real rows → `NOT ESTABLISHED`,
+because with a single tenant every row carries the same `companyId` and the
+comparison is incapable of failing; calling that "clean" is the exact defect
+this file has now been rewritten twice to stop committing. Two companies, clean
+→ `HOLDS`, and it says a disagreement was reachable. Three rows deliberately
+filed under one company while hanging off another's local → all three named,
+by table, exit code 1.
+
+Worth recording that the fixture caught a second thing: `prisma migrate deploy`
+applies migrations but does NOT regenerate the client, so the first seed failed
+silently against a stale client and only the row counts revealed it. The
+script's own queries are raw SQL and were unaffected — which is precisely why
+the counts, not the absence of an error, are what to read.
+
 ### Union tables gain companyId — the destructive half of #136 finding 1 (Diego)
 `diego/fix-cross-tenant-security-136`
 

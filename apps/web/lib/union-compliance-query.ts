@@ -108,8 +108,17 @@ export async function loadRemittance(companyId: string, month: string): Promise<
   });
 
   const craftIds = [...new Set(entries.map((e) => e.craftClassificationId).filter(Boolean))] as string[];
+  // `companyId` directly, not only through the craft join. The craft ids
+  // above come from this company's own time entries, so this was
+  // TRANSITIVELY scoped — safe exactly as long as every craft tag on a
+  // time entry stays company-correct forever. certified-payroll-query.ts's
+  // header says why that is not good enough: an unscoped query under a
+  // scoped-sounding name is how the next caller writes a cross-tenant
+  // read. These are wage, pension, H&W and training rates — the numbers on
+  // the cheque — and the column exists as of #200, so the direct filter is
+  // one line.
   const schedules = await prisma.fringeRateSchedule.findMany({
-    where: { craftClassificationId: { in: craftIds } },
+    where: { craftClassificationId: { in: craftIds }, companyId },
     orderBy: { effectiveFrom: "desc" },
   });
 
