@@ -146,6 +146,10 @@ model User {
   certifications                       WorkerCertification[] @relation("WorkerCertificationHolder")
   recordedCertifications               WorkerCertification[] @relation("WorkerCertificationRecorder")
 
+  /// Who signed a WH-347 statement of compliance, under penalty of
+  /// perjury. Back-relation only — see certified-payroll.prisma.
+  signedCertifiedPayrollFilings        CertifiedPayrollFiling[]
+
   /// The crew record for this same human, if they worked on the crew
   /// BEFORE they had a login. Back-relation only — see crew.prisma. It
   /// does not make this User's historical time entries change hands, and

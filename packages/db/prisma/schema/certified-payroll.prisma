@@ -1,0 +1,171 @@
+// Certified payroll FILINGS — the act of filing a WH-347, as distinct from
+// the numbers on it.
+//
+// Part of the multi-file Prisma schema in this folder.
+//
+// apps/web/lib/wh347.ts already builds page 1 of the federal form from
+// TimeEntry rows and gets the grid right. It nonetheless reports
+// `fileable: false` on every week, and two of the eleven reasons it lists
+// are structural rather than missing data — nothing here can be derived
+// from hours, so no amount of work on that module closes them:
+//
+//   1. Every WH-347 carries a SEQUENTIAL PAYROLL NUMBER for the project.
+//      It is not a property of a week's hours; it is issued, once, when a
+//      week is filed. Hence a counter.
+//   2. PAGE 2, the Statement of Compliance, is signed under penalty of
+//      perjury and states how fringe benefits were paid. It is an
+//      ASSERTION BY A PERSON, not a computation. Nothing in the time data
+//      knows whether the pension contribution went to an approved plan or
+//      was paid in cash, because that is a fact about the company's
+//      benefit arrangements, not about the hours.
+//
+// So this file holds what a person asserts and the app cannot compute.
+// Everything derivable — hours, gross, fringe credit — stays derived from
+// TimeEntry on every render and is deliberately NOT snapshotted here. A
+// stored copy of a computed column can disagree with what it was computed
+// from, which is the repo's standing rule, and a filing whose stored gross
+// disagrees with its own time entries is the worst version of that.
+//
+// Ships schema-only: no action writes these tables and no page reads them
+// yet. Announced in #prova-build before the push, per the working
+// agreement, because it touches the shared schema.
+
+/// How fringe benefits were paid, as page 2 of the WH-347 puts the
+/// question. The three members are the form's own 4(a) / 4(b) split, not
+/// a modelling choice — an agency reading the filing expects exactly
+/// these, so the enum is the form's vocabulary rather than a tidier one.
+///
+/// APPROVED_PLANS is 4(a): paid into approved programs (pension, health
+/// and welfare, vacation, training) for each hour worked. PAID_IN_CASH is
+/// 4(b): paid directly to the worker in their cheque. BOTH exists because
+/// a real union contractor is usually both at once — pension and H&W to
+/// the trust fund, vacation in cash — and forcing that week into one box
+/// would make the signer misstate it. There is deliberately no NONE and
+/// no UNKNOWN: a signer who cannot say how fringes were paid has no
+/// business signing, and a nullable enum here would let the app record a
+/// perjury-bearing statement with the substantive claim left blank.
+enum CertifiedPayrollFringeMethod {
+  APPROVED_PLANS
+  PAID_IN_CASH
+  BOTH
+}
+
+/// Issues certified payroll numbers per job. Same reasoning as RfiCounter
+/// and the five other counters in this schema: a number computed from the
+/// filings that still exist (a count, or max+1) is freed again when one is
+/// deleted, and the next filing reissues it. This row only increments.
+///
+/// The stakes are higher here than on an RFI. A payroll number is how an
+/// awarding body checks that a contractor filed EVERY week — they read the
+/// sequence and look for gaps. Two different weeks filed under number 7,
+/// or a 7 that follows an 8, reads to the agency as a missing or falsified
+/// payroll rather than as an application bug. `Invoice.number` in this
+/// repo is the counter-example and the reason this comment is emphatic: it
+/// uses max+1 and reissues numbers on delete.
+///
+/// Bumped inside the SAME transaction as the filing insert. The action
+/// that does so is not built yet.
+model CertifiedPayrollFilingCounter {
+  jobId      String @id
+  job        Job    @relation(fields: [jobId], references: [id])
+  lastNumber Int    @default(0)
+
+  updatedAt DateTime @updatedAt
+}
+
+/// One filed WH-347 for one job for one week — page 2 of the form, plus
+/// the payroll number page 1 needs in its header.
+///
+/// This is an EVIDENCE RECORD in the sense the rest of the schema uses the
+/// word (safety incidents, RFIs, submittals, contract documents): it says
+/// that on a date, a named person asserted something to a government
+/// agency under penalty of perjury. That framing decides every field
+/// below, and it is why the model stores so little.
+///
+/// IDENTITY IS LOCKED AFTER CREATION: `jobId`, `weekEnding` and
+/// `payrollNumber` are what the agency holds a copy of. Editing any of
+/// them turns a filing into a different filing while keeping its
+/// signature, which is the one thing this record exists to make
+/// impossible. The lock is enforced IN THE ACTION, not by a database
+/// trigger — #194 removed a trigger from `TimeEntry` for exactly that
+/// reason: a trigger on a live table is invisible from the code, fires on
+/// every write including migrations and backfills, and cannot produce the
+/// `{ ok: false, error }` a form can render. The action that enforces it is
+/// not built yet, so until it lands nothing prevents an identity edit but
+/// the absence of any write path at all.
+model CertifiedPayrollFiling {
+  id    String @id @default(cuid())
+  jobId String
+  job   Job    @relation(fields: [jobId], references: [id])
+
+  /// The Saturday the payroll week ends, at UTC midnight, matching what
+  /// `certifiedPayrollWeekWindow` computes and what `TimeEntry.date`
+  /// stores. THE WEEK IS THE IDENTITY of a filing — see `@@unique` below.
+  weekEnding DateTime
+
+  /// Sequential per job, issued by CertifiedPayrollFilingCounter and never
+  /// reissued. Goes in the "Payroll No." box of page 1's header, which
+  /// `Wh347Header.payrollNumber` currently reports as blocking.
+  payrollNumber Int
+
+  /// The form's "final" checkbox — this is the last payroll for the
+  /// contract. Not derived from job status: a job can sit at COMPLETE for
+  /// months with a further payroll still owed, and the agency reads this
+  /// box as a statement that no more are coming. Only the signer knows.
+  isFinal Boolean @default(false)
+
+  /// Page 2's substantive claim. See CertifiedPayrollFringeMethod.
+  fringeMethod CertifiedPayrollFringeMethod
+
+  /// Page 2's 4(c). Free text, because the form's own box is free text:
+  /// the signer names the workers or classifications the 4(a)/4(b) answer
+  /// above does NOT cover, and the shape of an exception is not something
+  /// this app gets to constrain. Null means the signer claimed none, which
+  /// is itself part of the sworn statement — it is not "not yet filled in",
+  /// because a row only exists once somebody signed.
+  exceptions String?
+
+  /// Who signed. Required: an unsigned statement of compliance is not a
+  /// statement of compliance, and a filing with a null signer would be a
+  /// record of a perjury-bearing document with nobody attached to it.
+  signedByUserId String
+  signedBy       User   @relation(fields: [signedByUserId], references: [id])
+
+  /// The date the person SIGNED, ENTERED by whoever recorded it — not the
+  /// moment anybody clicked. Same call as
+  /// `ContractDocument.executedSignedDate`, and for the same reason: the
+  /// paper was signed on a date, and stamping `now()` would assert that
+  /// the app watched it happen. A form signed Friday and entered Monday is
+  /// ordinary; recording Monday would misdate a sworn document. Stored at
+  /// UTC midnight like every other entered date here.
+  signedDate DateTime
+
+  /// The stamped audit companion to `signedDate`: when cstream was TOLD,
+  /// as against when the signing happened. The two are separately useful
+  /// precisely when they disagree — a signedDate that predates its own
+  /// createdAt by a month is a backdated filing, and that is only visible
+  /// because both are kept. Never shown as "the date of the filing".
+  createdAt DateTime @default(now())
+
+  /// ONE FILING PER WEEK PER JOB, and this constraint is the design, not a
+  /// hygiene index.
+  ///
+  /// A filing has already been SENT TO AN AGENCY by the time anyone wants
+  /// to change it. Letting a correction overwrite the row would destroy
+  /// the record of what was actually sworn to and sent, leaving the app
+  /// asserting that the corrected version is what the agency received —
+  /// which is exactly backwards for a document whose whole value is being
+  /// evidence of what was said. So a correction to a filed week is an
+  /// AMENDMENT: a new record that supersedes this one and preserves it,
+  /// the same way a change order amends a contract instead of editing it.
+  ///
+  /// THE AMENDMENT FLOW IS NOT BUILT. Nothing here carries a supersedes
+  /// pointer or a revision number yet, so today this constraint simply
+  /// means a week filed once cannot be filed again — the second attempt
+  /// fails on the unique index and the action must say so rather than
+  /// crash. Whoever builds amendments adds the pointer; the constraint
+  /// above is written so that work is additive rather than a correction to
+  /// a wrong shape.
+  @@unique([jobId, weekEnding])
+  @@index([jobId])
+}

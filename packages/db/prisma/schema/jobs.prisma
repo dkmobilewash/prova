@@ -53,6 +53,27 @@ model Job {
   /// separate, not-yet-built phase.
   substantialCompletionDate DateTime?
 
+  /// WHERE the work is, and WHICH contract it is under — the two header
+  /// boxes of a federal WH-347 ("Project and Location", "Project or
+  /// Contract No.") that a Job could not answer. `Job.name` is what the
+  /// office calls the job; neither of these is derivable from it, and
+  /// `operatingLocationId` above is OUR yard, not the site.
+  ///
+  /// Both nullable, and both stay nullable. Every job in the database
+  /// predates them, there is no backfill source, and a contract number is
+  /// issued by the awarding body — inventing one to make a form look
+  /// complete would be inventing evidence on a document signed under
+  /// penalty of perjury. apps/web/lib/wh347.ts already reports each of
+  /// them as BLOCKING by name when absent, which is the correct behaviour
+  /// and does not change: filling these in is how a user clears the
+  /// blocker, not how the app stops mentioning it.
+  ///
+  /// Free text on purpose. `projectLocation` is what goes in the box —
+  /// usually a street address, sometimes "Sta. 41+00 to 62+00, SR-160".
+  /// Structuring it into address fields would refuse the second kind.
+  projectLocation String?
+  contractNumber  String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -90,6 +111,11 @@ model Job {
   closeoutSubmissions          CloseoutSubmission[]
   closeoutSubmissionCounter    CloseoutSubmissionCounter?
   outboundMessages             OutboundMessage[]
+
+  /// See certified-payroll.prisma. Filings are per job per week; the
+  /// counter issues their sequential payroll numbers.
+  certifiedPayrollFilings       CertifiedPayrollFiling[]
+  certifiedPayrollFilingCounter CertifiedPayrollFilingCounter?
 
   @@index([companyId])
   @@index([contactId])
