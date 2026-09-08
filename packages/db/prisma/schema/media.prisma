@@ -39,18 +39,32 @@ model JobMedia {
   /// than private, matching every other upload in this app. See
   /// apps/web/lib/blob.ts for why that distinction is written down
   /// everywhere it applies.
+  ///
+  /// IT IS ALSO WHAT THE FILE IS DELETED BY, and the reason there is no
+  /// `blobPathname` column beside it. There was one, whose own comment
+  /// said it existed so deletion was possible — and `deleteJobMedia`
+  /// deleted by `blobUrl`, so nothing ever read it. `del` takes "Blob url
+  /// (or pathname)" (@vercel/blob@2.8.0 dist/index.d.ts:75), so the URL
+  /// was always sufficient, and a second column holding what this one's
+  /// own path already spells is a second source of truth for the same
+  /// string.
+  ///
+  /// The path in this URL is not decoration either: it is
+  /// `job-media/<jobId>/<file>`, and `recordJobMedia` refuses to write a
+  /// row whose URL sits anywhere else. That prefix is what makes this
+  /// column safe to hand to `del()` — see apps/web/lib/job-media.ts.
   blobUrl String
 
-  /// The store's own path for this blob, which is NOT derivable from the
-  /// URL's visible parts once a random suffix is applied. Kept because
-  /// deleting the row has to delete the file too — without this, a deleted
-  /// photo stays readable forever at a link somebody may already hold.
-  blobPathname String
-
-  /// What the browser said it uploaded, and how big it was. `contentType`
-  /// is what decides whether this renders as an image or a video: the kind
-  /// is DERIVED from it at read time rather than stored beside it, so the
-  /// two can never disagree. Same rule as every other computed value here.
+  /// What the browser said it uploaded, and how big it was.
+  ///
+  /// `contentType` is stored and NOT currently branched on: only photos can
+  /// be uploaded, so the gallery renders an image unconditionally. There
+  /// was a `jobMediaKind()` helper here that mapped it to PHOTO/VIDEO/OTHER
+  /// and no production code ever called it — written, documented, and never
+  /// called, which is the shape CLAUDE.md names. It is gone; the column
+  /// stays, because it is the ONE value a video branch would be derived
+  /// from on the day video ships, and a stored `kind` beside it would be a
+  /// second source of truth that could disagree with it.
   contentType String
   byteSize    Int
 
@@ -80,7 +94,17 @@ model JobMedia {
   capturedByUserId String?
   capturedBy       User?   @relation(fields: [capturedByUserId], references: [id])
 
-  @@index([companyId])
-  /// The gallery's own query: one job, newest first.
+  /// The two galleries, and one index each. Both order by `capturedAt`
+  /// descending, so the sort column belongs in the index rather than in a
+  /// sort the database does afterwards.
+  ///
+  /// `[companyId]` alone used to be the other one, and it could not serve
+  /// `/photos` — the company-wide read filters on `companyId` and orders
+  /// by `capturedAt`, so every row for the company was read and sorted.
+  /// `[companyId, capturedAt]` answers that AND everything the bare
+  /// `[companyId]` answered, being its leftmost prefix, so keeping both
+  /// would only be a second index to write on every insert.
+  @@index([companyId, capturedAt])
+  /// The job page's own query: one job, newest first.
   @@index([jobId, capturedAt])
 }

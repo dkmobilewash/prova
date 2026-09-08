@@ -8,8 +8,12 @@ import {
   formatCapturedAtInputValue,
   isAllowedJobMediaType,
   isBlobStorageUrl,
+  isJobMediaBlobUrl,
+  isJobMediaPathname,
   jobMediaClockWarning,
-  jobMediaKind,
+  jobMediaFileName,
+  jobMediaUploadErrorMessage,
+  jobMediaUploadPathname,
 } from "./job-media";
 
 group("what may be uploaded", () => {
@@ -99,22 +103,167 @@ group("proving a URL came from the blob store", () => {
   });
 });
 
-group("what kind of thing a row is", () => {
-  it("reads the kind off the content type rather than a stored column", () => {
-    expect(jobMediaKind("image/jpeg")).toBe("PHOTO");
-    expect(jobMediaKind("image/heic")).toBe("PHOTO");
-    expect(jobMediaKind("video/mp4")).toBe("VIDEO");
+// The cross-tenant hole these close: one blob store serves every tenant,
+// so "this URL is from the blob store" says nothing about WHOSE file it
+// is. A signed-in user of company A could record company B's photo as a
+// row of their own and then delete it, and `del()` would destroy B's file
+// while every row-level companyId check passed. The pathname is what
+// carries the tenancy now, and these are the adversarial cases.
+group("binding a blob to the job that may have it", () => {
+  const JOB = "cmjobalpha000001";
+  const OTHER = "cmjobbravo000002";
+  const host = "https://abc123xyz.public.blob.vercel-storage.com";
+  const mine = `job-media/${JOB}/site-photo-Xk92zz.jpg`;
+
+  it("builds the pathname the three enforcement points share", () => {
+    expect(jobMediaUploadPathname(JOB, "IMG_0042.HEIC")).toBe(`job-media/${JOB}/IMG_0042.HEIC`);
   });
 
-  // Video cannot be uploaded yet. This asserts the read side is already
-  // right for the day it can be, with no backfill for rows written before.
-  it("already answers correctly for a video that has not shipped yet", () => {
-    expect(jobMediaKind("video/quicktime")).toBe("VIDEO");
+  // A `/` in the id would build a prefix that scopes nothing at all, so it
+  // refuses to build one rather than producing a path that looks scoped.
+  it("refuses an id this app could not have issued, on both sides", () => {
+    expect(jobMediaUploadPathname("../other", "x.jpg")).toBeNull();
+    expect(jobMediaUploadPathname("job/../other", "x.jpg")).toBeNull();
+    expect(jobMediaUploadPathname("", "x.jpg")).toBeNull();
+    expect(isJobMediaPathname("job-media/../other/x.jpg", "../other")).toBe(false);
+    expect(isJobMediaBlobUrl(`${host}/${mine}`, "")).toBe(false);
   });
 
-  it("does not guess at something it does not recognise", () => {
-    expect(jobMediaKind("application/pdf")).toBe("OTHER");
-    expect(jobMediaKind("")).toBe("OTHER");
+  it("accepts this job's own upload, suffix and all", () => {
+    expect(isJobMediaPathname(mine, JOB)).toBe(true);
+    expect(isJobMediaBlobUrl(`${host}/${mine}`, JOB)).toBe(true);
+  });
+
+  // THE BUG ITSELF: another company's photo, presented to recordJobMedia
+  // by a caller who does own the job named beside it.
+  it("refuses another job's blob", () => {
+    expect(isJobMediaPathname(`job-media/${OTHER}/theirs.jpg`, JOB)).toBe(false);
+    expect(isJobMediaBlobUrl(`${host}/job-media/${OTHER}/theirs.jpg`, JOB)).toBe(false);
+  });
+
+  it("refuses a blob at the store root, which is where every upload used to land", () => {
+    expect(isJobMediaPathname("site-photo-Xk92zz.jpg", JOB)).toBe(false);
+    expect(isJobMediaBlobUrl(`${host}/site-photo-Xk92zz.jpg`, JOB)).toBe(false);
+  });
+
+  it("refuses the other four uploaders' folders", () => {
+    expect(isJobMediaBlobUrl(`${host}/compliance/cmp_alpha/COI-r4nd0m1.pdf`, JOB)).toBe(false);
+    expect(isJobMediaBlobUrl(`${host}/contracts/${JOB}/subcontract-r4.pdf`, JOB)).toBe(false);
+  });
+
+  // The trailing "/" in the prefix is the whole of this. Without it, job
+  // "cmjobalpha000001" matches a folder belonging to a job whose id merely
+  // starts with those characters.
+  it("refuses a job id that is only a PREFIX of another job id", () => {
+    const longer = `${JOB}9`;
+    expect(isJobMediaPathname(`job-media/${longer}/theirs.jpg`, JOB)).toBe(false);
+    expect(isJobMediaBlobUrl(`${host}/job-media/${longer}/theirs.jpg`, JOB)).toBe(false);
+  });
+
+  it("refuses a folder whose NAME merely starts with the right characters", () => {
+    expect(isJobMediaPathname(`job-media-public/${JOB}/x.jpg`, JOB)).toBe(false);
+    expect(isJobMediaBlobUrl(`${host}/job-media-public/${JOB}/x.jpg`, JOB)).toBe(false);
+  });
+
+  it("refuses traversal back out of this job's folder", () => {
+    expect(isJobMediaPathname(`job-media/${JOB}/../${OTHER}/theirs.jpg`, JOB)).toBe(false);
+    expect(isJobMediaPathname(`job-media/${JOB}/..`, JOB)).toBe(false);
+    // `new URL` normalises the literal form away, so this one is refused
+    // by the prefix no longer matching rather than by the ".." rule —
+    // either way it must not pass.
+    expect(isJobMediaBlobUrl(`${host}/job-media/${JOB}/../${OTHER}/theirs.jpg`, JOB)).toBe(false);
+  });
+
+  it("refuses percent-encoded traversal, which `new URL` does NOT normalise", () => {
+    expect(isJobMediaBlobUrl(`${host}/job-media/${JOB}/%2e%2e%2f${OTHER}/theirs.jpg`, JOB)).toBe(
+      false,
+    );
+    expect(isJobMediaBlobUrl(`${host}/job-media/${JOB}/sub%2Fdeeper.jpg`, JOB)).toBe(false);
+  });
+
+  it("refuses a deeper folder under this job, because the remainder is one segment", () => {
+    expect(isJobMediaPathname(`job-media/${JOB}/nested/photo.jpg`, JOB)).toBe(false);
+  });
+
+  it("refuses the folder itself, with nothing in it", () => {
+    expect(isJobMediaPathname(`job-media/${JOB}/`, JOB)).toBe(false);
+    expect(isJobMediaBlobUrl(`${host}/job-media/${JOB}/`, JOB)).toBe(false);
+  });
+
+  // One leading slash is stripped, not all of them: "//job-media/…" is a
+  // different store key and must not be collapsed into the good one.
+  it("refuses a doubled leading slash", () => {
+    expect(isJobMediaBlobUrl(`${host}//job-media/${JOB}/x.jpg`, JOB)).toBe(false);
+  });
+
+  // Everything the host check already refused stays refused when the
+  // prefix is right — the two checks are ANDed, not alternatives.
+  it("still refuses a non-store host carrying a perfectly good prefix", () => {
+    expect(isJobMediaBlobUrl(`https://evil.test/${mine}`, JOB)).toBe(false);
+    expect(isJobMediaBlobUrl(`https://x.public.blob.vercel-storage.com@evil.test/${mine}`, JOB)).toBe(
+      false,
+    );
+    expect(isJobMediaBlobUrl(`http://abc.public.blob.vercel-storage.com/${mine}`, JOB)).toBe(false);
+    expect(isJobMediaBlobUrl("not a url", JOB)).toBe(false);
+  });
+
+  it("refuses everything when the job id is not one this app issued", () => {
+    expect(isJobMediaPathname(mine, "../other")).toBe(false);
+    expect(isJobMediaBlobUrl(`${host}/${mine}`, "")).toBe(false);
+  });
+});
+
+group("the filename a person's phone chose", () => {
+  it("keeps an ordinary photo name intact", () => {
+    expect(jobMediaFileName("IMG_0042.HEIC")).toBe("IMG_0042.HEIC");
+    expect(jobMediaFileName("west-wall.2.jpg")).toBe("west-wall.2.jpg");
+  });
+
+  // Nothing in the name may change the SHAPE of the path it is appended
+  // to — that is the whole job of this function.
+  it("cannot introduce a separator or a traversal", () => {
+    expect(jobMediaFileName("../../etc/passwd")).not.toContain("/");
+    expect(jobMediaFileName("../../etc/passwd")).not.toContain("..");
+    expect(jobMediaFileName("a/b/c.jpg")).toBe("c.jpg");
+    expect(jobMediaFileName("C:\\Users\\me\\photo.jpg")).toBe("photo.jpg");
+    expect(jobMediaFileName("IMG..0042.jpg")).toBe("IMG.0042.jpg");
+  });
+
+  it("survives a name made entirely of things it strips", () => {
+    expect(jobMediaFileName("...")).toBe("photo");
+    expect(jobMediaFileName("")).toBe("photo");
+    expect(jobMediaFileName("///")).toBe("photo");
+  });
+
+  it("still produces a pathname this job accepts, whatever the name was", () => {
+    const jobId = "cmjobalpha000001";
+    for (const name of ["../../escape.jpg", "site photo (1).JPG", "…….png", "a".repeat(400) + ".jpg"]) {
+      const pathname = jobMediaUploadPathname(jobId, name);
+      expect(pathname).not.toBeNull();
+      expect(isJobMediaPathname(pathname as string, jobId)).toBe(true);
+    }
+  });
+});
+
+group("what the person is told when storage refuses", () => {
+  // @vercel/blob/client throws away the body of any non-2xx response from
+  // the token route (dist/client.js:398-400), so the route's own sentence
+  // never arrives. Saying so beats inventing a reason.
+  it("does not repeat the SDK's own phrasing for a refusal it did not explain", () => {
+    const message = jobMediaUploadErrorMessage(new Error("Failed to  retrieve the client token"));
+    expect(message).not.toMatch(/retrieve the client token/i);
+    expect(message).toMatch(/does not pass on the reason/i);
+  });
+
+  it("passes through a real error that does say something", () => {
+    expect(jobMediaUploadErrorMessage(new Error("Network request failed"))).toBe(
+      "Network request failed",
+    );
+  });
+
+  it("says something rather than nothing for a thrown non-Error", () => {
+    expect(jobMediaUploadErrorMessage("boom")).toBe("Upload failed");
+    expect(jobMediaUploadErrorMessage(new Error(""))).toBe("Upload failed");
   });
 });
 

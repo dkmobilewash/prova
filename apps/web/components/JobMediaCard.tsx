@@ -13,11 +13,18 @@ import { ConfirmDelete, RowActions } from "@/components/RowActions";
  * resolved server-side (lib/viewerToday.ts). Formatting it here would mean
  * reading the browser's zone during render, and the markup would then
  * disagree with the server's — the hydration break components/localToday.ts
- * exists to warn about. */
+ * exists to warn about.
+ *
+ * NO `contentType`. It was shipped to every card and read by nothing —
+ * this renders an `<Image>` unconditionally, because photos are the only
+ * thing that can be uploaded. It goes back in on the day the card actually
+ * branches on it (video), and not before: a field nothing reads is
+ * indistinguishable from one whose reader is broken, which is the
+ * `acknowledgedSeverity` shape CLAUDE.md names. The COLUMN stays — it is
+ * what that branch will be derived from. */
 export type JobMediaCardData = {
   id: string;
   blobUrl: string;
-  contentType: string;
   caption: string | null;
   capturedAtLabel: string;
   /** The same instant as a datetime-local input value, in the viewer's

@@ -24,8 +24,11 @@ export type JobMediaScope = {
   companyId: string;
   jobId?: string;
   withJobName?: boolean;
-  /** Caps the gallery. The job page shows a dozen and links to the rest;
-   * `/photos` is the full read and passes nothing. */
+  /** Caps the gallery. BOTH callers pass one: the job page shows a dozen
+   * and links to `/photos`, and `/photos` itself caps too. It used to be
+   * the "full read" and passed nothing, which meant one query returning
+   * every photo the company had ever taken — unbounded, and on an index
+   * (`[jobId, capturedAt]`) that could not serve it. */
   take?: number;
 };
 
@@ -49,7 +52,6 @@ export async function loadJobMedia(
   return rows.map((row) => ({
     id: row.id,
     blobUrl: row.blobUrl,
-    contentType: row.contentType,
     caption: row.caption,
     capturedAtLabel: formatCapturedAt(row.capturedAt, timeZone),
     capturedAtInputValue: formatCapturedAtInputValue(row.capturedAt, timeZone),
@@ -60,9 +62,13 @@ export async function loadJobMedia(
   }));
 }
 
-/** How many this job has in total, for the "showing 12 of 47" line. A
+/** How many there are in total, for the "showing 12 of 47" line. A
  * separate count rather than `rows.length`, because the list is capped and
- * its length would then be the cap rather than the truth. */
-export function countJobMedia(companyId: string, jobId: string): Promise<number> {
-  return prisma.jobMedia.count({ where: { companyId, jobId } });
+ * its length would then be the cap rather than the truth.
+ *
+ * `jobId` is optional so `/photos` can count what its own filter is
+ * showing — the whole company when no job is chosen — rather than growing
+ * a second count function that would drift from this one. */
+export function countJobMedia(companyId: string, jobId?: string): Promise<number> {
+  return prisma.jobMedia.count({ where: { companyId, ...(jobId ? { jobId } : {}) } });
 }

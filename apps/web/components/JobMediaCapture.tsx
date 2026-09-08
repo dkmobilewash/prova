@@ -3,7 +3,14 @@
 import { useRef, useState } from "react";
 import { upload } from "@vercel/blob/client";
 import { recordJobMedia } from "@/lib/actions";
-import { JOB_MEDIA_CONTENT_TYPES, JOB_MEDIA_MAX_BYTES, formatByteSize } from "@/lib/job-media";
+import {
+  JOB_MEDIA_CONTENT_TYPES,
+  JOB_MEDIA_MAX_BYTES,
+  formatByteSize,
+  isAllowedJobMediaType,
+  jobMediaUploadErrorMessage,
+  jobMediaUploadPathname,
+} from "@/lib/job-media";
 
 /**
  * Picking photos and getting them onto a job.
@@ -33,6 +40,25 @@ import { JOB_MEDIA_CONTENT_TYPES, JOB_MEDIA_MAX_BYTES, formatByteSize } from "@/
  * Safari zooms the whole page when a focused input renders under 16px —
  * which on a form like this leaves you zoomed in and scrolled sideways
  * after every tap.
+ *
+ * THE PATHNAME IS SCOPED TO THE JOB, and that is a security boundary
+ * rather than tidy filing. It used to upload to the bare `file.name`, so
+ * the token minted for it named no job at all and nothing downstream could
+ * tell one company's photo from another's. lib/job-media.ts holds the
+ * rule, the route enforces it before minting, and `recordJobMedia`
+ * enforces it again on the URL that comes back.
+ *
+ * THE TYPE IS CHECKED BEFORE ANYTHING IS STORED, for a different reason.
+ * The store decides a blob's content type from the pathname's extension
+ * unless it is told one (@vercel/blob@2.8.0 dist/index.d.ts:461), while
+ * `recordJobMedia` validates `file.type`, which is what the BROWSER said.
+ * When those two disagreed — an extension the store maps differently, or a
+ * HEIC a browser reports as `""` — the upload SUCCEEDED and the record
+ * call then failed, leaving a file in the store with no row pointing at
+ * it and nothing that would ever find it again. So the browser's own value
+ * is checked here first and then passed to `upload()` as an explicit
+ * `contentType`, which makes it the single value both sides see. A file
+ * that cannot be recorded is now never stored.
  */
 
 type Outcome = { name: string; ok: boolean; message?: string };
@@ -68,9 +94,37 @@ export function JobMediaCapture({ jobId }: { jobId: string }) {
         continue;
       }
 
+      // Refused BEFORE the bytes move rather than after they land. This is
+      // the same allowlist the token and the action use; what makes the
+      // check matter here is that the value being checked — the browser's
+      // `file.type` — is the exact value both of those will see, because
+      // it is handed to `upload()` below and sent to `recordJobMedia`
+      // afterwards. An empty `file.type` (a HEIC on a browser that will
+      // not name it) is refused for the same reason: it is a file this app
+      // cannot record, and storing it would orphan it.
+      const contentType = file.type;
+      if (!isAllowedJobMediaType(contentType)) {
+        results.push({
+          name: file.name,
+          ok: false,
+          message: `Not a photo this app can file (${contentType || "the browser did not say what it is"}) — JPEG, PNG, WEBP or HEIC`,
+        });
+        continue;
+      }
+
+      // Null only if the job id is not one this app issued, which would be
+      // a bug rather than a bad file — refused rather than uploaded to
+      // somewhere unscoped.
+      const pathname = jobMediaUploadPathname(jobId, file.name);
+      if (!pathname) {
+        results.push({ name: file.name, ok: false, message: "That job cannot take photos" });
+        continue;
+      }
+
       try {
-        const blob = await upload(file.name, file, {
+        const blob = await upload(pathname, file, {
           access: "public",
+          contentType,
           handleUploadUrl: "/api/job-media/upload",
           clientPayload: JSON.stringify({ jobId }),
           onUploadProgress: ({ percentage }) =>
@@ -79,8 +133,7 @@ export function JobMediaCapture({ jobId }: { jobId: string }) {
 
         const formData = new FormData();
         formData.set("blobUrl", blob.url);
-        formData.set("blobPathname", blob.pathname);
-        formData.set("contentType", file.type);
+        formData.set("contentType", contentType);
         formData.set("byteSize", String(file.size));
         // The file's own timestamp is when the picture was taken; `now` is
         // only a fallback for a browser that reports 0. Sent as an instant
@@ -97,11 +150,13 @@ export function JobMediaCapture({ jobId }: { jobId: string }) {
             : { name: file.name, ok: false, message: result.error },
         );
       } catch (err) {
-        results.push({
-          name: file.name,
-          ok: false,
-          message: err instanceof Error ? err.message : "Upload failed",
-        });
+        // Not `err.message` directly: for anything the token route refuses,
+        // that message is the SDK's own "Failed to  retrieve the client
+        // token" and never the sentence the route wrote — it discards the
+        // response body (dist/client.js:398-400). See
+        // `jobMediaUploadErrorMessage`, which says so rather than dressing
+        // it up.
+        results.push({ name: file.name, ok: false, message: jobMediaUploadErrorMessage(err) });
       }
     }
 

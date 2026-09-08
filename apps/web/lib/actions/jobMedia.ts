@@ -5,7 +5,12 @@ import { del } from "@vercel/blob";
 import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
-import { isAllowedJobMediaType, isBlobStorageUrl, JOB_MEDIA_MAX_BYTES } from "@/lib/job-media";
+import {
+  isAllowedJobMediaType,
+  isBlobStorageUrl,
+  isJobMediaBlobUrl,
+  JOB_MEDIA_MAX_BYTES,
+} from "@/lib/job-media";
 import { actionFail as fail, actionOk as ok, type ActionResult } from "./shared";
 
 /**
@@ -39,11 +44,11 @@ function text(formData: FormData, key: string) {
 /**
  * Records a file the browser has already finished uploading.
  *
- * Everything in `blobUrl`/`blobPathname`/`contentType`/`byteSize` comes
- * back from the blob store via the client, so all of it is re-checked
- * here. The upload token already constrained type and size when it was
- * minted, but this action is a separate endpoint and is not entitled to
- * assume the caller went through that route at all.
+ * Everything in `blobUrl`/`contentType`/`byteSize` comes back from the
+ * blob store via the client, so all of it is re-checked here. The upload
+ * token already constrained type and size when it was minted, but this
+ * action is a separate endpoint and is not entitled to assume the caller
+ * went through that route at all.
  */
 export async function recordJobMedia(jobId: string, formData: FormData): Promise<ActionResult> {
   const context = await requireCompanyContext();
@@ -56,9 +61,8 @@ export async function recordJobMedia(jobId: string, formData: FormData): Promise
   if (!job || job.companyId !== context.companyId) return fail("Job not found");
 
   const blobUrl = text(formData, "blobUrl");
-  const blobPathname = text(formData, "blobPathname");
   const contentType = text(formData, "contentType");
-  if (!blobUrl || !blobPathname) return fail("The upload did not complete — try again");
+  if (!blobUrl) return fail("The upload did not complete — try again");
 
   // The store is ours, so its hostname is a fact we can require. Without
   // this, the action records whatever URL a caller posts — and this is a
@@ -74,6 +78,24 @@ export async function recordJobMedia(jobId: string, formData: FormData): Promise
   if (!isBlobStorageUrl(blobUrl)) {
     return fail("That file did not come from this app's storage");
   }
+
+  // AND THAT IT IS THIS JOB'S FILE, which the host check above cannot say.
+  // One store serves every tenant, so a URL from it is not evidence of
+  // whose it is. Without this, a signed-in user of company A could post
+  // company B's photo URL here, get a row they legitimately own — their
+  // companyId, their job — and then delete it, at which point
+  // `deleteJobMedia` hands that URL to `del()` and B's file is gone. Every
+  // row-level companyId check in this file passes throughout, because the
+  // row really is theirs; the thing that was never theirs is the FILE.
+  //
+  // `job` was proved to belong to `context.companyId` above, so a blob
+  // sitting under this job's own prefix cannot be another company's. See
+  // lib/job-media.ts for the pathname rule itself and the two other places
+  // that enforce it.
+  if (!isJobMediaBlobUrl(blobUrl, job.id)) {
+    return fail("That file was not uploaded to this job");
+  }
+
   if (!isAllowedJobMediaType(contentType)) {
     return fail("Upload a JPEG, PNG, WEBP or HEIC image");
   }
@@ -96,7 +118,6 @@ export async function recordJobMedia(jobId: string, formData: FormData): Promise
       companyId: context.companyId,
       jobId: job.id,
       blobUrl,
-      blobPathname,
       contentType,
       byteSize,
       caption: caption || null,
@@ -179,10 +200,22 @@ export async function updateJobMediaDetails(
  * readable forever by anyone who already holds the link — including
  * someone removed from the team. If the store's delete fails the row stays
  * and the person can try again; the other order gives them no way to,
- * because the pathname needed to find the file would already be gone.
+ * because the URL needed to find the file would already be gone.
  *
- * `del` is idempotent on a pathname that no longer exists, so a retry
- * after a partial failure still completes.
+ * `del` is idempotent on a blob that no longer exists, so a retry after a
+ * partial failure still completes.
+ *
+ * DELETED BY URL, and there is no second column holding the pathname to
+ * delete by instead. `del` takes "Blob url (or pathname)"
+ * (@vercel/blob@2.8.0 dist/index.d.ts:75, :78), so either would work — but
+ * a stored `blobPathname` was a second copy of what the URL's own path
+ * already says, written on every row and read by nothing. It is gone.
+ *
+ * WHAT MAKES THIS SAFE is that `recordJobMedia` refused any URL whose path
+ * was not under this company's job (`isJobMediaBlobUrl`), so the only URLs
+ * that can reach this line name files this company uploaded. That check
+ * did not exist when this comment was first written, and this delete is
+ * exactly where its absence was paid for.
  */
 export async function deleteJobMedia(mediaId: string): Promise<ActionResult> {
   const context = await requireCompanyContext();

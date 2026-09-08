@@ -4,7 +4,6 @@ CREATE TABLE "JobMedia" (
     "companyId" TEXT NOT NULL,
     "jobId" TEXT NOT NULL,
     "blobUrl" TEXT NOT NULL,
-    "blobPathname" TEXT NOT NULL,
     "contentType" TEXT NOT NULL,
     "byteSize" INTEGER NOT NULL,
     "caption" TEXT,
@@ -16,7 +15,7 @@ CREATE TABLE "JobMedia" (
 );
 
 -- CreateIndex
-CREATE INDEX "JobMedia_companyId_idx" ON "JobMedia"("companyId");
+CREATE INDEX "JobMedia_companyId_capturedAt_idx" ON "JobMedia"("companyId", "capturedAt");
 
 -- CreateIndex
 CREATE INDEX "JobMedia_jobId_capturedAt_idx" ON "JobMedia"("jobId", "capturedAt");

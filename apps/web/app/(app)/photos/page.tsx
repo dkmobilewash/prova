@@ -2,7 +2,7 @@ import Link from "next/link";
 import { prisma } from "@prova/db";
 import { requireCapability } from "@/lib/authz";
 import { viewerTimeZone } from "@/lib/viewerToday";
-import { loadJobMedia } from "@/lib/job-media-query";
+import { countJobMedia, loadJobMedia } from "@/lib/job-media-query";
 import { NoAccess } from "@/components/NoAccess";
 import { JobMediaCapture } from "@/components/JobMediaCapture";
 import { JobMediaCard } from "@/components/JobMediaCard";
@@ -16,7 +16,22 @@ import { JobMediaCard } from "@/components/JobMediaCard";
  * MANAGE_FIELD, matching `/punch-lists`, `/field-reports`, `/safety` and
  * `/equipment` — the capability the crew on site holds, which is the whole
  * point of a feature used from a phone in a stairwell.
+ *
+ * CAPPED, and it was not. This read every photo the company had ever taken
+ * — no `take`, one row per image, every one of them projected and rendered
+ * as a card. A year of site capture on a few jobs is thousands of images
+ * and a page that a phone on LTE never finishes. The cap is generous
+ * rather than tight (a filter chip per job is the way to a specific job,
+ * and 60 is five screens of a three-across grid), and the count beneath it
+ * is honest about what is being withheld — the same shape and the same
+ * wording as the job page's own section, which already did this.
  */
+
+/** Five screens of the three-across grid. Larger than the job page's dozen
+ * because this is the gallery you come to when you want to scroll, and the
+ * job page's section is a summary with a link to here. */
+const PHOTO_LIMIT = 60;
+
 export default async function PhotosPage({
   searchParams,
 }: {
@@ -35,10 +50,21 @@ export default async function PhotosPage({
   const activeJob = jobFilter && jobs.some((j) => j.id === jobFilter) ? jobFilter : null;
 
   const timeZone = await viewerTimeZone();
-  const media = await loadJobMedia(
-    { companyId: company.id, ...(activeJob ? { jobId: activeJob } : {}), withJobName: true },
-    timeZone,
-  );
+  const [media, total] = await Promise.all([
+    loadJobMedia(
+      {
+        companyId: company.id,
+        ...(activeJob ? { jobId: activeJob } : {}),
+        withJobName: true,
+        take: PHOTO_LIMIT,
+      },
+      timeZone,
+    ),
+    // Counted rather than measured off `media.length`, which is the cap
+    // once there are more than the cap — the number the line withholds is
+    // exactly the number it could not get from the list.
+    countJobMedia(company.id, activeJob ?? undefined),
+  ]);
 
   const filterHref = (jobId: string | null) => (jobId ? `/photos?job=${jobId}` : "/photos");
 
@@ -107,11 +133,21 @@ export default async function PhotosPage({
               </p>
             </div>
           ) : (
-            <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {media.map((item) => (
-                <JobMediaCard key={item.id} media={item} />
-              ))}
-            </ul>
+            <>
+              <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {media.map((item) => (
+                  <JobMediaCard key={item.id} media={item} />
+                ))}
+              </ul>
+              {total > PHOTO_LIMIT && (
+                <p className="mt-3 text-sm text-slate-400">
+                  Showing the {PHOTO_LIMIT} most recent of {total}.{" "}
+                  {activeJob
+                    ? "Older photos on this job are not on this page yet."
+                    : "Pick a job above to narrow this down."}
+                </p>
+              )}
+            </>
           )}
         </>
       )}

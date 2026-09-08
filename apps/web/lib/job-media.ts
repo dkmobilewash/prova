@@ -69,11 +69,16 @@ const BLOB_HOST_SUFFIX = ".public.blob.vercel-storage.com";
  *
  * WHAT THIS DOES NOT DO, stated because the gap is real rather than
  * hypothetical: it proves the URL belongs to SOME Vercel blob store, not
- * to OURS. Pinning to our own store id means deriving it from
- * `BLOB_READ_WRITE_TOKEN` and is a tighter check worth making later. The
- * residual hole today needs a caller who already holds a session AND
- * MANAGE_FIELD in the company — i.e. someone who could simply upload the
- * image legitimately — so it is a provenance weakness, not an access one.
+ * to OURS, and says nothing at all about WHOSE photo it is. Our store is
+ * shared by every tenant, so a host check alone let a signed-in user of
+ * company A record company B's photo as their own row — and
+ * `deleteJobMedia` then handed that URL to `del()` and destroyed B's file.
+ * That is what `isJobMediaBlobUrl` below closes, and it is why nothing
+ * should call this one on its own to decide anything but "is this a store
+ * URL at all".
+ *
+ * Pinning to our own store id means deriving it from
+ * `BLOB_READ_WRITE_TOKEN` and is still a tighter check worth making later.
  */
 export function isBlobStorageUrl(candidate: string): boolean {
   let url: URL;
@@ -86,19 +91,178 @@ export function isBlobStorageUrl(candidate: string): boolean {
 }
 
 /**
- * Whether a stored row is a still or a moving picture, DERIVED from its
- * content type rather than stored beside it.
+ * WHERE A SITE PHOTO IS ALLOWED TO LIVE IN THE STORE, and the check that
+ * proves a stored URL is one of this job's.
  *
- * A `kind` column would be a second source of truth for something the
- * content type already answers, and this schema's standing rule is that a
- * stored flag eventually disagrees with what it was derived from. Video
- * cannot be uploaded yet; this reads correctly on the day it can, with no
- * backfill for the rows written before then.
+ * THE BUG THIS EXISTS FOR. The blob store is ONE store shared by every
+ * tenant, and `recordJobMedia` is a Server Action — an endpoint any
+ * signed-in caller can post to directly. It used to take the URL on trust
+ * once `isBlobStorageUrl` said the host was a blob host, so a user of
+ * company A could post company B's photo URL, get a row they legitimately
+ * own (their own companyId, their own job), and then delete it: the row
+ * check passes, and `deleteJobMedia` hands `blobUrl` to `del()`, which
+ * destroys B's file. Irreversible, cross-tenant, and invisible to every
+ * row-level companyId check in this codebase, because the row really was
+ * theirs.
+ *
+ * THE FIX IS THE PATHNAME, in three places that must agree:
+ *
+ *   1. the browser uploads to `job-media/<jobId>/<file>` rather than to a
+ *      bare filename (`JobMediaCapture`);
+ *   2. the token route refuses to mint a token for any other prefix, AFTER
+ *      it has checked the job belongs to the caller's company. The signed
+ *      client token carries that pathname
+ *      (@vercel/blob@2.8.0 dist/client.js:274-278 passes it into
+ *      `generateClientTokenFromReadWriteToken`, which base64s it into the
+ *      payload it signs at :481-487) and the store rejects a PUT that does
+ *      not match it — that is the `client_token_pathname_mismatch` case at
+ *      dist/chunk-YYMLUMXS.js:656;
+ *   3. `recordJobMedia` requires the STORED URL's own path to sit under the
+ *      same prefix. Since the job has already been proved to belong to the
+ *      caller's company, a URL under `job-media/<that job>/` cannot be
+ *      another company's file.
+ *
+ * NO companyId IN THE PATH, deliberately. lib/blob.ts records what that
+ * cost the compliance documents: their path published the companyId, and
+ * those links are routinely emailed to GCs and insurers, so the id reached
+ * outsiders when it reaches a client nowhere else in the app. The jobId is
+ * enough — job -> company is verified server-side before either check runs.
+ *
+ * WHAT IS NOT PROVEN FROM SOURCE, said plainly because the feature depends
+ * on it: `addRandomSuffix: true` is applied by the STORE, not by the SDK,
+ * so no file under node_modules can show where the suffix lands. The
+ * evidence that it lands on the FILENAME and leaves the folders alone is
+ * the SDK's own description of a pathname as what "will influence the URL
+ * of your blob like https://$storeId.public.blob.vercel-storage.com/
+ * $pathname" (dist/index.d.ts:455) plus this repo's existing fake for the
+ * same API (lib/blob-uploads.test.ts:42-44), which models it that way and
+ * is what `compliance/<companyId>/COI-r4nd0m1.pdf` is asserted against.
+ * If that is ever wrong the prefix check FAILS CLOSED — the upload is
+ * refused at `recordJobMedia` and no row is written — rather than
+ * admitting a file it should not.
  */
-export function jobMediaKind(contentType: string): "PHOTO" | "VIDEO" | "OTHER" {
-  if (contentType.startsWith("image/")) return "PHOTO";
-  if (contentType.startsWith("video/")) return "VIDEO";
-  return "OTHER";
+const JOB_MEDIA_ROOT = "job-media";
+
+/** The ids this schema issues are cuids. Checked rather than assumed
+ * because an id carrying a `/` would build a prefix that scopes nothing,
+ * and this function's whole job is to be the thing that scopes. */
+const SAFE_ID = /^[A-Za-z0-9_-]{1,64}$/;
+
+/** The folder this job's photos live in, or null if the id is not one this
+ * app issued. Null rather than a throw: every caller is a guard that must
+ * refuse, and a thrown Server Action message is redacted in production.
+ *
+ * Not exported. The two functions below are the whole of its observable
+ * behaviour, and an export nothing outside this file calls is the shape
+ * this same commit had to delete twice. */
+function jobMediaPathPrefix(jobId: string): string | null {
+  return SAFE_ID.test(jobId) ? `${JOB_MEDIA_ROOT}/${jobId}/` : null;
+}
+
+/** At most this much of the person's own filename survives. The store caps
+ * a whole pathname at 950 characters (dist/chunk-YYMLUMXS.js:541); this is
+ * far below it and keeps the name readable in the store's own dashboard. */
+const MAX_FILE_NAME_LENGTH = 120;
+
+/**
+ * The person's filename, reduced to something that cannot change the shape
+ * of the path it is appended to.
+ *
+ * A file input never hands over a directory, but `recordJobMedia` is not
+ * the only thing that can call the upload route, and the remainder rule in
+ * `isJobMediaPathname` is strict — so the name is made to satisfy it here
+ * rather than discovered to violate it after 8MB has been transferred.
+ * Runs of dots collapse (no `..` can survive), separators and anything
+ * outside a conservative set become `-`, and a name that reduces to nothing
+ * becomes "photo" rather than an empty segment.
+ */
+export function jobMediaFileName(fileName: string): string {
+  const base = fileName.split(/[\\/]/).pop() ?? "";
+  const cleaned = base
+    .replace(/\.{2,}/g, ".")
+    .replace(/[^A-Za-z0-9._-]+/g, "-")
+    .replace(/^[.-]+/, "")
+    .slice(0, MAX_FILE_NAME_LENGTH);
+  return cleaned || "photo";
+}
+
+/** Where the browser is told to put this file. Null when the job id is not
+ * one this app could have issued, which is a refusal, not a fallback. */
+export function jobMediaUploadPathname(jobId: string, fileName: string): string | null {
+  const prefix = jobMediaPathPrefix(jobId);
+  return prefix ? `${prefix}${jobMediaFileName(fileName)}` : null;
+}
+
+/**
+ * Does this store pathname belong to this job — and only to this job?
+ *
+ * The trailing `/` in the prefix is load-bearing: without it job `abc`
+ * would match a blob under `job-media/abc123/`, which is a different
+ * company's job that merely starts with the same characters.
+ *
+ * The remainder must be ONE segment. No `/` (so nothing can climb back out
+ * into another job's folder), no `..`, and no percent-encoded `/` or `.`
+ * either — `new URL()` normalises a literal `../` but leaves `%2e%2e`
+ * alone, and what the store does with an encoded separator is not
+ * something this repo can verify, so it is refused rather than reasoned
+ * about.
+ */
+export function isJobMediaPathname(pathname: string, jobId: string): boolean {
+  const prefix = jobMediaPathPrefix(jobId);
+  if (!prefix || !pathname.startsWith(prefix)) return false;
+
+  const rest = pathname.slice(prefix.length);
+  if (!rest || rest.includes("/") || rest.includes("..")) return false;
+  const lowered = rest.toLowerCase();
+  return !lowered.includes("%2f") && !lowered.includes("%2e");
+}
+
+/**
+ * Is this stored URL a file that was uploaded to THIS job?
+ *
+ * The one check `recordJobMedia` needs, and the only thing standing
+ * between a signed-in caller and another company's file: the URL recorded
+ * here is the URL `deleteJobMedia` later hands to `del()`.
+ *
+ * Exactly one leading slash is stripped, not all of them. A path of
+ * `//job-media/<jobId>/x.jpg` is a different store key than
+ * `/job-media/<jobId>/x.jpg`, and collapsing the two would let a caller
+ * name a blob this prefix does not actually cover.
+ */
+export function isJobMediaBlobUrl(candidate: string, jobId: string): boolean {
+  if (!isBlobStorageUrl(candidate)) return false;
+  let url: URL;
+  try {
+    url = new URL(candidate);
+  } catch {
+    return false;
+  }
+  return isJobMediaPathname(url.pathname.replace(/^\//, ""), jobId);
+}
+
+/**
+ * What to tell someone whose upload was refused before the bytes moved.
+ *
+ * `@vercel/blob/client` NEVER READS THE BODY OF A NON-2XX RESPONSE from
+ * the token route: `if (!res.ok) { throw new BlobError("Failed to  retrieve
+ * the client token"); }` — dist/client.js:398-400, double space and all,
+ * with the body untouched. So every carefully worded sentence
+ * `/api/job-media/upload` returns is discarded in the browser and replaced
+ * by that string. There is no option to change it and no field it survives
+ * in.
+ *
+ * Rather than show a person a library's internal phrasing for a refusal it
+ * did not explain, this says what the route can actually have refused for
+ * — and says the reason was not passed on, because a message that pretends
+ * to know more than it does is how someone ends up retrying a thing that
+ * will never work.
+ */
+export function jobMediaUploadErrorMessage(err: unknown): string {
+  const raw = err instanceof Error ? err.message : "";
+  if (/retrieve the client token/i.test(raw)) {
+    return "Storage would not authorise this upload, and does not pass on the reason. Reload the page — a signed-out session, or access to this job that has changed, is what this usually is.";
+  }
+  return raw || "Upload failed";
 }
 
 /** Human file size for a caption line. Deliberately coarse — nobody on a
