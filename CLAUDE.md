@@ -814,6 +814,28 @@ scrollback gets broken by whoever didn't scroll far enough.
   new symbol and confirm something CALLS it — the tests passing is not
   that evidence, and neither is the diff looking complete.
 
+- **A verifier that cannot distinguish "refuted" from "never ran" reports
+  clean and means nothing.** Diego, 2026-09-07, on #195: a multi-agent
+  review of the diff came back "0 confirmed, 10 refuted". Every one of the
+  verify agents had died on a session limit before writing a verdict, and
+  the post-processing counted "no verdict" as "refuted". Three of the seven
+  review dimensions had never run at all. Cyrus hit the same shape the same
+  day, from the other direction — a workflow scoring branches "contested"
+  with `refutedBy: 0/0`, because a dead agent and a refutation look
+  identical to a counter.
+
+  Same family as the `gh pr checks` scar (green about a commit nobody
+  asked about), the vacuous watcher above (fired on a needle already on the
+  page), and the census that a comment quoting its own pattern disarmed
+  (#185): the check was not lying, it was answering a question nobody
+  asked. The rule for anything that aggregates verdicts — a review
+  workflow, a mutation run, a click-list tally: **absence of a failure is
+  not a pass.** Count the verdicts that were actually RETURNED and require
+  that number to equal the number requested before reading any of them;
+  a missing verdict is its own failure state and must be reported as one,
+  never folded into "refuted", "passed" or "clean". If a tool reports
+  totals, ask it for the per-item verdicts and count them yourself.
+
 - `FEATURE-AUDIT.md`: the 26-category roadmap and source of truth for
   what's built. It has drifted more than once; don't let it.
 - `CHANGELOG.md`: newest first; says why decisions were made and the

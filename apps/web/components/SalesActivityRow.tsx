@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { deleteSalesActivity, updateSalesActivity } from "@/lib/actions";
+import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import {
   SALES_ACTIVITY_TYPE_OPTIONS,
   SalesActivityFields,
@@ -52,7 +53,6 @@ export function SalesActivityRow({
   isLatest: boolean;
 }) {
   const [mode, setMode] = useState<"view" | "edit">("view");
-  const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -139,62 +139,49 @@ export function SalesActivityRow({
           {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
         </div>
 
-        <div className="flex shrink-0 flex-wrap items-center gap-2">
-          {/* Issue #152 rule 1: an armed confirm hides EVERY ordinary action in
-              its row, and the guard wraps the GROUP rather than one button, so
-              the next action added here is covered by it automatically.
+        {/* Issue #152, both rules, in the shared component rather than by
+            hand. #183 wrapped the ordinary-action group in a guard, which
+            fixed rule 1 on this row and left the arming state hand-rolled —
+            the mechanism the census scans for, and the one a later merge
+            fills back in. Now "Edit" is a child of RowActions and is not
+            rendered at all while a delete is armed.
 
-              Rule 2 (the confirm must not take the pixel "Delete" vacated) is
-              already satisfied here by ORDER, and it is worth writing down why,
-              because the reasoning is geometry-dependent and the wrong version
-              of it looks identical. This cluster is the last child of a
-              `justify-between` parent and is `shrink-0`, so its RIGHT edge is
-              pinned and the LAST control is the one that keeps its position.
-              "Cancel" is last, so Cancel inherits the Delete pixel and the
-              confirm sits clear of it. Measured in Chromium: 0px overlap.
-              Putting Cancel FIRST here -- correct for a left-aligned cluster --
-              would pin "Confirm delete" to that pixel instead, at 100% overlap. */}
-          {!isConfirmingDelete && (
-            <button type="button" disabled={isPending} onClick={() => setMode("edit")} className={btn}>
-              Edit
-            </button>
-          )}
-          {isConfirmingDelete ? (
-            <>
-              <button
-                type="button"
-                disabled={isPending}
-                onClick={() => {
-                  setError(null);
-                  startTransition(async () => {
-                    try {
-                      const result = await deleteSalesActivity(activity.id);
-                      if (!result.ok) {
-                        setError(result.error);
-                        setIsConfirmingDelete(false);
-                        return;
-                      }
-                      router.refresh();
-                    } catch {
-                      setError("Could not delete it");
-                      setIsConfirmingDelete(false);
+            This cluster is the last child of a `justify-between` parent and
+            is `shrink-0`, so its RIGHT edge is pinned and the LAST control is
+            the one that keeps its position: `pinned` is set to `end` so
+            Cancel renders last and inherits the Delete pixel. Measured in
+            Chromium at 1100px on this exact geometry: 0px overlap. */}
+        <RowActions
+          className="flex shrink-0 flex-wrap items-center gap-2"
+          destructive={
+            <ConfirmDelete
+              pinned="end"
+              pendingLabel="Deleting…"
+              pending={isPending}
+              onConfirm={() => {
+                setError(null);
+                startTransition(async () => {
+                  try {
+                    const result = await deleteSalesActivity(activity.id);
+                    if (!result.ok) {
+                      setError(result.error);
+                      return;
                     }
-                  });
-                }}
-                className="rounded-md border border-red-500 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 disabled:opacity-50"
-              >
-                {isPending ? "Deleting…" : "Confirm delete"}
-              </button>
-              <button type="button" disabled={isPending} onClick={() => setIsConfirmingDelete(false)} className={btn}>
-                Cancel
-              </button>
-            </>
-          ) : (
-            <button type="button" disabled={isPending} onClick={() => setIsConfirmingDelete(true)} className={btn}>
-              Delete
-            </button>
-          )}
-        </div>
+                    router.refresh();
+                  } catch {
+                    setError("Could not delete it");
+                  }
+                });
+              }}
+              deleteClassName={btn}
+              cancelClassName={btn}
+            />
+          }
+        >
+          <button type="button" disabled={isPending} onClick={() => setMode("edit")} className={btn}>
+            Edit
+          </button>
+        </RowActions>
       </div>
     </li>
   );

@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { deleteSalesOpportunity, updateSalesOpportunity } from "@/lib/actions";
+import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { SalesOpportunityFields } from "@/components/SalesOpportunityFields";
 import { localToday } from "@/components/localToday";
 import { money } from "@/lib/money";
@@ -53,7 +54,6 @@ export function SalesOpportunityRow({
   history: SalesOpportunityHistory;
 }) {
   const [mode, setMode] = useState<"view" | "edit">("view");
-  const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
   const [showsHistory, setShowsHistory] = useState(false);
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
@@ -165,52 +165,40 @@ export function SalesOpportunityRow({
           )}
         </div>
 
-        <div className="flex shrink-0 flex-wrap items-center gap-2">
-          {/* Issue #152 rule 1 -- the guard wraps the group, not one button.
-              See the note in SalesActivityRow for why "Cancel" is LAST rather
-              than first in this cluster: the right edge is pinned, so the last
-              control is the one that keeps the vacated Delete pixel. */}
-          {!isConfirmingDelete && (
-            <button type="button" disabled={isPending} onClick={() => setMode("edit")} className={btn}>
-              Edit
-            </button>
-          )}
-          {isConfirmingDelete ? (
-            <>
-              <button
-                type="button"
-                disabled={isPending}
-                onClick={() => {
-                  setError(null);
-                  startTransition(async () => {
-                    try {
-                      const result = await deleteSalesOpportunity(opportunity.id);
-                      if (!result.ok) {
-                        setError(result.error);
-                        setIsConfirmingDelete(false);
-                        return;
-                      }
-                      router.refresh();
-                    } catch {
-                      setError("Could not delete it");
-                      setIsConfirmingDelete(false);
+        {/* Issue #152 in the shared component rather than by hand — see the
+            note in SalesActivityRow. Same geometry: right-pinned cluster, so
+            `pinned` is `end` and Cancel keeps the vacated Delete pixel. */}
+        <RowActions
+          className="flex shrink-0 flex-wrap items-center gap-2"
+          destructive={
+            <ConfirmDelete
+              pinned="end"
+              pendingLabel="Deleting…"
+              pending={isPending}
+              onConfirm={() => {
+                setError(null);
+                startTransition(async () => {
+                  try {
+                    const result = await deleteSalesOpportunity(opportunity.id);
+                    if (!result.ok) {
+                      setError(result.error);
+                      return;
                     }
-                  });
-                }}
-                className="rounded-md border border-red-500 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 disabled:opacity-50"
-              >
-                {isPending ? "Deleting…" : "Confirm delete"}
-              </button>
-              <button type="button" disabled={isPending} onClick={() => setIsConfirmingDelete(false)} className={btn}>
-                Cancel
-              </button>
-            </>
-          ) : (
-            <button type="button" disabled={isPending} onClick={() => setIsConfirmingDelete(true)} className={btn}>
-              Delete
-            </button>
-          )}
-        </div>
+                    router.refresh();
+                  } catch {
+                    setError("Could not delete it");
+                  }
+                });
+              }}
+              deleteClassName={btn}
+              cancelClassName={btn}
+            />
+          }
+        >
+          <button type="button" disabled={isPending} onClick={() => setMode("edit")} className={btn}>
+            Edit
+          </button>
+        </RowActions>
       </div>
     </li>
   );

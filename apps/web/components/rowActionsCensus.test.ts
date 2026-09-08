@@ -33,20 +33,14 @@ const appDir = fileURLToPath(new URL("..", import.meta.url));
 const KNOWN_EXCEPTIONS: Record<string, string> = {
   "components/RowActions.tsx":
     "the shared component itself — this is where the arming state is supposed to live",
-  /* The three sales rows were asked to come OUT of this list when #183
-     (38c7063) landed, on the grounds that it fixed them. Removing them was
-     tried and the census went RED on all three: #183 fixed issue #152's RULE
-     1 by wrapping the ordinary-action GROUP in `{!isConfirmingDelete && …}`,
-     which is the right fix for that rule and does not touch the thing this
-     file scans for. All three still hold their own `isConfirmingDelete`
-     useState, so they are still hand-rolled and this guard still has a job to
-     do on them. They come out when they become <RowActions>, not before. */
-  "components/SalesActivityRow.tsx":
-    "Sales CRM, the other lane. #183 fixed rule 1 here (the group is wrapped now, so 'Edit' no longer stays live beside the armed confirm) but the arming state is still its own useState. Delete this line when it becomes a <RowActions>.",
-  "components/SalesLeadRow.tsx":
-    "Sales CRM, the other lane. #183 found it needed no rule-1 fix — nothing was live beside its armed confirm — and left it hand-rolling its own arming state. Delete this line when it becomes a <RowActions>.",
-  "components/SalesOpportunityRow.tsx":
-    "Sales CRM, the other lane. Same as SalesActivityRow: #183 wrapped the group, the arming state is still its own. Delete this line when it becomes a <RowActions>.",
+  /* The three sales rows (SalesActivityRow, SalesLeadRow,
+     SalesOpportunityRow) sat here from #176 until they became <RowActions>.
+     Removing them was tried once before that, when #183 landed, and the
+     census went RED on all three: #183 fixed issue #152's rule 1 by wrapping
+     the ordinary-action GROUP in a guard, which does not touch the thing
+     this file scans for. The lesson stands — a row comes out of this list
+     when its arming state moves into RowActions, not when its guard is
+     right — and now there is no exception here but the component itself. */
 };
 
 function tsxFiles(dir: string, out: string[] = []) {
