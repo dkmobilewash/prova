@@ -72,6 +72,40 @@ scrollback gets broken by whoever didn't scroll far enough.
 1. **No PR smaller than a finished, clicked-through capability.** Several
    capabilities in one PR is fine and usually better. No docs-only PRs —
    documentation rides along with the work it describes.
+
+   **EXCEPTION, granted by Diego 2026-09-07: an AUDIT may ship alone, and
+   must still be flagged as docs-only in the PR.** Three of them landed in
+   one session (#186, #191 and the correction before them), each argued
+   separately, which is the shape of a rule being eroded one reasonable
+   case at a time rather than changed on purpose. So it is changed on
+   purpose.
+
+   The reason the rule does not fit an audit: rule 1 exists so
+   documentation cannot drift from the code it describes. An audit is the
+   opposite motion — it is documentation being dragged BACK to the code
+   after it has already drifted, and there is no accompanying change for
+   it to ride along with. Making it wait for one is how a known-false
+   sentence stays on `main`, which this file has paid for repeatedly (the
+   one-Neon-project sentence cost two people a day; "invoice numbers come
+   from a counter" stopped anyone looking at `max(n)+1` on a GC-facing
+   document).
+
+   **What qualifies**, deliberately narrow, because an exception without a
+   boundary is a repeal:
+
+     - correcting a documented claim that is false, unverified, or now
+       stale — and saying which, with the evidence;
+     - recording what an investigation established or ELIMINATED, so the
+       next person does not re-run the same checks.
+
+   **What does not qualify**, and still rides along with code: writing up
+   a feature you just built; renaming or restyling prose; reorganising a
+   document nobody has found wrong. If the only thing that changed is how
+   the words read, it is not an audit.
+
+   Flagging stays REQUIRED, and is the point of the exception rather than
+   a formality — a docs-only PR that does not say it is one has skipped
+   the only check on whether it qualifies.
 2. **Never open a PR based on another PR's branch.** Stacking commits on a
    branch that already has an open PR is fine; that is a different thing.
    Stacked PRs stranded commits twice, because GitHub only retargets a
