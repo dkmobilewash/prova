@@ -113,7 +113,7 @@ export default async function CatalogPage() {
       },
     }),
     prisma.craftClassification.findMany({
-      where: { unionLocal: { companyAgreements: { some: { companyId: company.id } } } },
+      where: { companyId: company.id },
       include: { unionLocal: true },
       orderBy: { name: "asc" },
     }),

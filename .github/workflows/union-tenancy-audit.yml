@@ -1,0 +1,73 @@
+# Checks one invariant on PRODUCTION and writes nothing.
+#
+# Issue #136 finding 1 is CLOSED. Migration 20260907191702_union_tenancy_companyid
+# (#200) put `companyId` on UnionLocal, CraftClassification, FringeRateSchedule
+# and ApprenticeRatioRule, backfilled them, made them NOT NULL, and made a
+# local's identity ([companyId, parentInternational, localNumber]) per-company.
+#
+# This workflow used to answer whether that fix should be written. It now checks
+# whether it still holds, because the fix introduced something the database
+# cannot enforce: `companyId` is DENORMALISED onto children, and no CHECK,
+# trigger or composite foreign key ties a child's copy to its parent's. A write
+# path that sets one and forgets the other files a row under company A hanging
+# off company B's local, with every constraint satisfied. That is #136 returning
+# through the denormalisation that fixed it.
+#
+# The job FAILS when it finds one, so this is a regression check rather than a
+# report — and it says NOT ESTABLISHED, never "clean", when the database holds
+# fewer than two companies, because a single tenant makes the comparison
+# incapable of failing.
+#
+# READ-ONLY BY CONSTRUCTION. Two SELECTs, no workflow inputs so there is nothing
+# to inject, the SQL fixed in the script rather than assembled here, and the
+# host printed via describe() so the connection string is never echoed.
+name: Union tenancy audit (read-only)
+
+on:
+  workflow_dispatch:
+
+# One at a time. Two concurrent runs would check the same invariant twice
+# and hold two connections against a `connection_limit=5` pool for nothing.
+concurrency:
+  group: union-tenancy-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    name: Does every companyId still agree with its parent's?
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Fail early if the secret is missing
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          set -e
+          set -o pipefail
+          if [ -z "$DATABASE_URL" ]; then
+            echo "No DATABASE_URL repository secret. Nothing was read."
+            echo "Settings -> Secrets and variables -> Actions."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm --filter @prova/db exec prisma generate
+
+      - name: Read
+        working-directory: packages/db
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: node scripts/union-tenancy-audit.mjs

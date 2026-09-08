@@ -72,6 +72,40 @@ scrollback gets broken by whoever didn't scroll far enough.
 1. **No PR smaller than a finished, clicked-through capability.** Several
    capabilities in one PR is fine and usually better. No docs-only PRs —
    documentation rides along with the work it describes.
+
+   **EXCEPTION, granted by Diego 2026-09-07: an AUDIT may ship alone, and
+   must still be flagged as docs-only in the PR.** Three of them landed in
+   one session (#186, #191 and the correction before them), each argued
+   separately, which is the shape of a rule being eroded one reasonable
+   case at a time rather than changed on purpose. So it is changed on
+   purpose.
+
+   The reason the rule does not fit an audit: rule 1 exists so
+   documentation cannot drift from the code it describes. An audit is the
+   opposite motion — it is documentation being dragged BACK to the code
+   after it has already drifted, and there is no accompanying change for
+   it to ride along with. Making it wait for one is how a known-false
+   sentence stays on `main`, which this file has paid for repeatedly (the
+   one-Neon-project sentence cost two people a day; "invoice numbers come
+   from a counter" stopped anyone looking at `max(n)+1` on a GC-facing
+   document).
+
+   **What qualifies**, deliberately narrow, because an exception without a
+   boundary is a repeal:
+
+     - correcting a documented claim that is false, unverified, or now
+       stale — and saying which, with the evidence;
+     - recording what an investigation established or ELIMINATED, so the
+       next person does not re-run the same checks.
+
+   **What does not qualify**, and still rides along with code: writing up
+   a feature you just built; renaming or restyling prose; reorganising a
+   document nobody has found wrong. If the only thing that changed is how
+   the words read, it is not an audit.
+
+   Flagging stays REQUIRED, and is the point of the exception rather than
+   a formality — a docs-only PR that does not say it is one has skipped
+   the only check on whether it qualifies.
 2. **Never open a PR based on another PR's branch.** Stacking commits on a
    branch that already has an open PR is fine; that is a different thing.
    Stacked PRs stranded commits twice, because GitHub only retargets a
@@ -456,15 +490,34 @@ scrollback gets broken by whoever didn't scroll far enough.
   of the split, and was being thrown away by anyone who read this far
   down and stopped.
 
-  Verified from the repo rather than from the table it agrees with: the
-  preview arm of `apps/web/app/(app)/error.tsx` tells a failing preview to
-  run the **Migrate demo database** workflow, which would be nonsense
-  advice if previews read production; and `CHANGELOG.md` records a preview
-  verified against `ep-patient-lake` and a preview-sent message living in
-  the demo database. UNVERIFIED from here: nobody on this branch can read
-  Vercel's environment variables, so the last word is the Vercel dashboard,
-  not this file. If a preview ever shows the real 14 jobs, this paragraph
-  came back and the env vars are what to check.
+  **CONFIRMED 2026-09-07, and the method is the reusable part.** This
+  paragraph used to end "UNVERIFIED from here: nobody on this branch can
+  read Vercel's environment variables, so the last word is the Vercel
+  dashboard." That is wrong twice over: the dashboard is not needed, and it
+  would be the weaker evidence anyway. It says what is CONFIGURED. A build
+  log says what the build RESOLVED.
+
+  `check-schema.mjs` prints the target on every build, so the answer is one
+  call to Vercel's build logs — no dashboard access, no credentials:
+
+  | Build | `db: app queries` |
+  | --- | --- |
+  | preview, `claude/prova-vercel-direct-url-hg1acx` | `ep-patient-lake-afizorh1-pooler…/neondb` |
+  | preview, `cyrus/permission-gates` | `ep-patient-lake-afizorh1-pooler…/neondb` |
+  | production, `main` | `ep-little-sea-a6bdnaw2-pooler…/neondb` |
+
+  Two unrelated branches and a production control, so it is not one branch
+  with an odd override. Previews are on the demo project. The circumstantial
+  case below held up, and is left because it is how this was reasoned about
+  before anyone thought to read a build log.
+
+  Weaker but still true: the preview arm of `apps/web/app/(app)/error.tsx`
+  tells a failing preview to run the **Migrate demo database** workflow,
+  which would be nonsense advice if previews read production; and
+  `CHANGELOG.md` records a preview verified against `ep-patient-lake`.
+
+  If a preview ever shows the real 14 jobs, this paragraph came back — and
+  the build log, not the dashboard, is what settles it in a minute.
 
   The rest of this entry is history and still accurate:
   until 2026-08-28 every deployment migrated it, so a migration went live
@@ -683,6 +736,46 @@ scrollback gets broken by whoever didn't scroll far enough.
   after, and delete it in the same sitting. The demo project exists
   precisely so this does not have to happen — see the three-Neon-projects
   table above.
+
+  **Cleared 2026-09-07: the CLAUDE-VERIFY lead is gone** — its opportunity
+  and activity deleted first, then the lead, by hand through the app. The
+  pipeline band reads true again. `deleteSalesLead` refuses while any child
+  row exists and names only the non-zero kinds, so a lead like this cannot
+  be removed in one click; children first. `ZZ-TEST Pipeline` was reported
+  separately and is NOT known to be cleared.
+
+  **THE CAUSE IS STILL UNIDENTIFIED, and here is what has been ruled out so
+  nobody spends the afternoon again.** All four checked rather than assumed:
+
+    - **Previews are not it.** They resolve `ep-patient-lake`; only
+      production resolves `ep-little-sea`. Confirmed from build logs on two
+      unrelated branches plus a production control — see the preview
+      paragraph above for the method, which needs no dashboard access.
+      This was the best hypothesis: a preview URL is a different host from
+      `app.cstream.ai`, so it would pass the egress proxies that 403 both
+      agents' containers. It is still wrong;
+    - **Scheduled Routines are not it.** One exists on Diego's account, the
+      hourly status desk. Disabled, and its prompt is STATUS ONLY — no
+      code, no pushes, and no path to the app;
+    - **The shared cloud environment does not carry credentials.** Every
+      session on it shares one `environment_id`, and one of them has no
+      `DATABASE_URL` and no `.env` at all, so the environment injects
+      nothing;
+    - **The Vercel MCP cannot leak the string.** It has no env-var tool;
+      checked twice rather than asserted from a partial search.
+
+  What survives is a CHECKOUT holding the connection string. Two sessions
+  were live on this repo at the time on Diego's account — "CRM Buildout"
+  and "Prova contractor operating system", the Phase C sales lane, which
+  matches the symptom since the rows were leads and opportunities.
+
+  **A cloud session cannot be questioned from another container.**
+  `ListAgents` sees only this machine, and `SendMessage` to either title
+  returns `No agent named '…' is reachable` — tried, not assumed. There is
+  no `list_events` tool here either, so their transcripts are unreadable
+  from a peer. The check has to be run INSIDE each session, by whoever has
+  it open: `grep -rl "ep-little-sea" . --exclude-dir=node_modules
+  --exclude-dir=.git`, reporting the HOST only and never the string.
 - **`./scripts/preflight.sh` used to die on its first line inside a git
   worktree.** It ran `rm -f .git/index.lock`, but in a worktree `.git` is
   a FILE, not a directory — so that is `ENOTDIR`, which `rm -f` does NOT

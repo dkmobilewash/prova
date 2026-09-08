@@ -14,6 +14,7 @@ import {
   type RemittanceReport,
 } from "@/lib/fringe-remittance";
 import type { FringeRateScheduleInput } from "@/lib/labor-cost";
+import { payrollWorkerName } from "@/lib/worker-name";
 
 /**
  * Fetching and normalising for the union compliance page.
@@ -47,13 +48,14 @@ export type CraftRow = {
 /**
  * Craft classifications for the locals this company actually works under.
  *
- * CraftClassification carries no companyId — it is a global reference
- * table — so this join IS the access check, the same one
- * craftClassificationIdFromForm in lib/actions/shared.ts already uses.
+ * CraftClassification carries its own companyId as of the #136 finding 1
+ * fix — it used to be a global reference table with no company scoping at
+ * all, gated only by a self-asserted CompanyUnionAgreement, which is why
+ * this used to be a join instead of a direct filter.
  */
 export async function loadCrafts(companyId: string): Promise<CraftRow[]> {
   const crafts = await prisma.craftClassification.findMany({
-    where: { unionLocal: { companyAgreements: { some: { companyId } } } },
+    where: { companyId },
     include: { unionLocal: true },
     orderBy: [{ unionLocalId: "asc" }, { name: "asc" }],
   });
@@ -96,16 +98,27 @@ export async function loadRemittance(companyId: string, month: string): Promise<
     select: {
       date: true,
       hours: true,
+      payType: true,
       craftClassificationId: true,
       craftClassification: { select: { name: true, unionLocalId: true, unionLocal: true } },
+      employeeUserId: true,
       employeeUser: { select: { name: true, email: true } },
       job: { select: { name: true } },
     },
   });
 
   const craftIds = [...new Set(entries.map((e) => e.craftClassificationId).filter(Boolean))] as string[];
+  // `companyId` directly, not only through the craft join. The craft ids
+  // above come from this company's own time entries, so this was
+  // TRANSITIVELY scoped — safe exactly as long as every craft tag on a
+  // time entry stays company-correct forever. certified-payroll-query.ts's
+  // header says why that is not good enough: an unscoped query under a
+  // scoped-sounding name is how the next caller writes a cross-tenant
+  // read. These are wage, pension, H&W and training rates — the numbers on
+  // the cheque — and the column exists as of #200, so the direct filter is
+  // one line.
   const schedules = await prisma.fringeRateSchedule.findMany({
-    where: { craftClassificationId: { in: craftIds } },
+    where: { craftClassificationId: { in: craftIds }, companyId },
     orderBy: { effectiveFrom: "desc" },
   });
 
@@ -125,16 +138,32 @@ export async function loadRemittance(companyId: string, month: string): Promise<
   }
 
   const report = buildRemittanceReport(
-    entries.map((e) => ({
-      date: e.date,
-      hours: Number(e.hours),
-      craftClassificationId: e.craftClassificationId,
-      craftLabel: e.craftClassification?.name ?? null,
-      unionLocalId: e.craftClassification?.unionLocalId ?? null,
-      unionLocalLabel: e.craftClassification ? localLabel(e.craftClassification.unionLocal) : null,
-      employeeName: e.employeeUser.name ?? e.employeeUser.email,
-      jobName: e.job.name,
-    })),
+    entries.map((e) => {
+      // Resolved ONCE and used for both name fields, so the two can never
+      // disagree about who this is. Neither is `name ?? email`: both reach
+      // the fringe remittance, a document sent to a trust fund crediting
+      // hours to a NAMED member's account, and lib/worker-name.ts shows
+      // the gap rather than filling it with an address.
+      //
+      // They stay two fields because they are two audiences.
+      // `employeeFilingName` carries `nameMissing` through to the member
+      // line on the printed sheet; `employeeName` is the flat string
+      // feeding `uncomputedNames`, the chase-list on /union-compliance.
+      const filingName = payrollWorkerName(e.employeeUser);
+      return {
+        date: e.date,
+        hours: Number(e.hours),
+        craftClassificationId: e.craftClassificationId,
+        craftLabel: e.craftClassification?.name ?? null,
+        unionLocalId: e.craftClassification?.unionLocalId ?? null,
+        unionLocalLabel: e.craftClassification ? localLabel(e.craftClassification.unionLocal) : null,
+        payType: e.payType,
+        employeeUserId: e.employeeUserId,
+        employeeFilingName: filingName,
+        employeeName: filingName.label,
+        jobName: e.job.name,
+      };
+    }),
     byCraft,
     start,
     end,
@@ -204,7 +233,7 @@ export async function loadRatioReviews(companyId: string, month: string): Promis
   // setApprenticeRatioRule now replaces rather than adds, so in practice
   // there is one; this makes the read safe regardless.
   const rules = await prisma.apprenticeRatioRule.findMany({
-    where: { unionLocal: { companyAgreements: { some: { companyId } } } },
+    where: { companyId },
     orderBy: { createdAt: "asc" },
   });
   const ruleByLocal = new Map<string, RatioRuleInput>(
@@ -228,7 +257,8 @@ export async function loadRatioReviews(companyId: string, month: string): Promis
       date: iso(e.date) as string,
       hours: Number(e.hours),
       tier: (e.craftClassification?.tier as CraftTier | null) ?? null,
-      employeeName: e.employeeUser.name ?? e.employeeUser.email,
+      // The apprentice ratio names people to an inspector. Same rule.
+      employeeName: payrollWorkerName(e.employeeUser).label,
     };
 
     if (e.craftClassification) {
