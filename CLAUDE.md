@@ -632,6 +632,34 @@ scrollback gets broken by whoever didn't scroll far enough.
   right and only rule 1 (hide every ordinary action, not just the one
   somebody remembered) was broken on the first two.
 
+  **ON A PHONE THE RULE HAS NO X AXIS TO WORK ON, AND THAT IS THE HALF THIS
+  ENTRY WAS MISSING.** Added 2026-09-08 from issue #184. The table above is
+  all desktop. Below 640px the field rows STACK (`flex flex-col …
+  sm:flex-row`, #89), the cluster stops being right-pinned, and `RowActions`
+  hides the ordinary actions — so the armed pair reflows to the LEFT EDGE
+  while the Delete it replaced sat to the right of an "Edit" that is now
+  gone. Neither end is stable, because nothing is at the delete's pixel any
+  more: `EquipmentRow` at 375px measured 86% confirm overlap as
+  [Confirm][Cancel] and 75% as [Cancel][Confirm]. No value of `pinned` could
+  reach it, and two plausible fixes were measured and rejected — reserving
+  the hidden actions' width INVERTS (the restored slot is last at 1100px and
+  first at 375px, so one prop would need two contradictory values), and
+  right-aligning the stacked cluster works only by permanently moving the
+  UNARMED row's buttons on five phone screens.
+
+  So the rule keeps its shape and changes its axis: below `sm` the armed pair
+  is a full-width COLUMN with **Cancel on top**, which is "Cancel inherits the
+  delete pixel" read vertically. `ConfirmDelete` adds it itself
+  (`max-sm:flex-col` / `max-sm:flex-col-reverse`, `contents` at >=640 so the
+  desktop rects are byte-identical), so no caller can get it wrong. Measured
+  0% overlap and 100% Cancel cover on eight rows at 639 and 375. `pinned` is
+  now purely a desktop decision, which is why `PINNED_EXCEPTIONS` is empty —
+  the three rows that were in it had no value that was right at both widths,
+  and that conflict no longer exists.
+
+  It costs 56px of row height while armed and makes both buttons full width,
+  at phone widths only.
+
 - **A watcher whose needle is ALREADY ON THE PAGE cannot fail, and it will
   report a fast, confident, wrong number.** Born from the #61 capture
   above, and the same shape as every other vacuous test in this file — it

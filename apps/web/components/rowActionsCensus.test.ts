@@ -49,6 +49,25 @@ const KNOWN_EXCEPTIONS: Record<string, string> = {
     "Sales CRM, the other lane. Same as SalesActivityRow: #183 wrapped the group, the arming state is still its own. Delete this line when it becomes a <RowActions>.",
 };
 
+/**
+ * THE SCAN READS CODE, NOT PROSE — and it did not, until a mutation said so.
+ *
+ * Every row in this app explains its own `pinned` choice in a comment above
+ * the cluster, and those comments contain the literal `pinned="end"`. So the
+ * pinned check below was passing on the strength of the PARAGRAPH SAYING WHY
+ * THE PROP IS THERE. Verified rather than suspected (#184): delete
+ * `pinned="end"` from SafetyIncidentRow.tsx and the un-stripped version stays
+ * green — a source scan answering about its own documentation.
+ *
+ * Same shape as everything else in this file's history: a check that cannot
+ * fail reads exactly like a check that passes.
+ */
+function withoutComments(source: string) {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+}
+
 function tsxFiles(dir: string, out: string[] = []) {
   for (const name of readdirSync(dir)) {
     if (name === "node_modules" || name === ".next" || name.startsWith(".")) continue;
@@ -63,10 +82,10 @@ function tsxFiles(dir: string, out: string[] = []) {
 const ARMING_STATE = /const\s*\[\s*([A-Za-z0-9_]*(?:onfirm|rmed)[A-Za-z0-9_]*)\s*,[^\]]*\]\s*=\s*useState/g;
 
 describe("the armed-delete census", () => {
-  const files = tsxFiles(appDir).map((full) => ({
-    path: relative(appDir, full),
-    source: readFileSync(full, "utf8"),
-  }));
+  const files = tsxFiles(appDir).map((full) => {
+    const source = readFileSync(full, "utf8");
+    return { path: relative(appDir, full), source, code: withoutComments(source) };
+  });
 
   it("finds the app, so an empty sweep cannot pass by accident", () => {
     expect(files.length).toBeGreaterThan(50);
@@ -76,7 +95,7 @@ describe("the armed-delete census", () => {
   it("leaves the arming state to RowActions and nowhere else", () => {
     const offenders = files
       .filter((f) => !(f.path in KNOWN_EXCEPTIONS))
-      .map((f) => ({ path: f.path, hits: [...f.source.matchAll(ARMING_STATE)].map((m) => m[1]) }))
+      .map((f) => ({ path: f.path, hits: [...f.code.matchAll(ARMING_STATE)].map((m) => m[1]) }))
       .filter((f) => f.hits.length > 0)
       .map((f) => `${f.path} (${f.hits.join(", ")})`);
 
@@ -106,7 +125,7 @@ describe("the armed-delete census", () => {
   it("never uses ConfirmDelete without the RowActions that hides the rest of the row", () => {
     const offenders = files
       .filter((f) => f.path !== "components/RowActions.tsx")
-      .filter((f) => /\bConfirmDelete\b/.test(f.source) && !/\bRowActions\b/.test(f.source))
+      .filter((f) => /\bConfirmDelete\b/.test(f.code) && !/\bRowActions\b/.test(f.code))
       .map((f) => f.path);
 
     expect(offenders).toEqual([]);
@@ -118,9 +137,9 @@ describe("the armed-delete census", () => {
    * A `<RowActions>` whose own className says `shrink-0` is a cluster that
    * hangs off the right of its row, and in a right-pinned cluster the LAST
    * control is the one that keeps its position — so Cancel has to be last,
-   * which is `pinned="end"`. Measured in real Chromium at 1100px and 375px:
-   * the default order overlapped the vacated Delete box by 100% of its width,
-   * `pinned="end"` by 0%.
+   * which is `pinned="end"`. Measured in real Chromium at 1100px: the default
+   * order overlapped the vacated Delete box by 100% of its area, `pinned="end"`
+   * by 0%.
    *
    * This is a source scan and it is coarse: it asks whether a FILE with a
    * shrink-0 cluster mentions `pinned="end"` anywhere, not whether the right
@@ -130,48 +149,56 @@ describe("the armed-delete census", () => {
    * because a DOM-only environment does no layout. It exists because the
    * alternative at this layer is nothing.
    *
-   * WHAT MERGING #89 CHANGED, AND THE LIMIT IT EXPOSED IN THIS PROP.
+   * WHY THIS MAP IS EMPTY NOW, WHICH IS THE POINT OF #184.
    *
-   * #89 made five of these rows `flex flex-col … sm:flex-row`, so below
-   * 640px the cluster is no longer right-pinned at all: it is a full-width
-   * left-aligned strip. All seven were re-measured in Chromium against the
-   * MERGED classes at 1100px and 375px, and #176's `pinned` choices all
-   * survived — `end` is still better than or equal to the default at BOTH
-   * widths everywhere it is used. Nothing needed flipping.
+   * It used to hold three rows, and every entry said the same thing in
+   * different words: the row is `flex flex-col … sm:flex-row`, so below 640px
+   * the cluster is not right-pinned at all but a full-width left-aligned
+   * strip, and no value of `pinned` is right at both widths. #89 created that
+   * shape; #176's `pinned` could not reach it. Whichever value you picked, one
+   * width was wrong — SafetyIncidentRow measured 100%/75% at 1100/375 as the
+   * default and 0%/86% as `end`.
    *
-   * But the re-measure found something `pinned` cannot fix. RowActions HIDES
-   * the ordinary actions while armed, so in a STACKED cluster the confirm
-   * pair reflows to the cluster's left edge — and the Delete it replaced sat
-   * to the RIGHT of an "Edit" that is now gone. At 375px on EquipmentRow the
-   * vacated Delete box is x=104..181, and the armed pair starts at x=41
-   * whichever order it is in: the confirm covers 75% of that box as
-   * [Cancel][Confirm] and 85% as [Confirm][Cancel]. No value of this prop
-   * puts a cancel on the delete's pixel, because at that width NOTHING is at
-   * the delete's pixel any more.
+   * #184 fixed the phone in the shared component instead: below `sm` the armed
+   * pair is its own full-width column with CANCEL ON TOP, so the confirm is a
+   * whole button-height away from the vacated box at every stacked width and
+   * `pinned` only has to be right about the DESKTOP. That is a question with
+   * one answer per cluster, so the exceptions dissolved rather than being
+   * argued away. Re-measured in real Chromium against the merged classes —
+   * confirm overlap as a share of the area of the box the delete vacated:
    *
-   * So on a phone, on any stacked row that has at least one ordinary action
-   * — EquipmentRow, FieldReportEntry, PunchListRow, DailyFieldReports,
-   * SafetyIncidentRow — a second tap still lands near the confirm. `end` is
-   * kept on the four that have it because it makes the DESKTOP case exactly
-   * safe (100% -> 0%) at a cost of 10 points on a mobile number that is bad
-   * either way. Fixing the phone needs a layout change (reserving the hidden
-   * actions' width, or right-aligning the armed pair when stacked), not a
-   * different value of this prop. That is not in this merge.
+   *                        main (1100/639/375)   this (1100/639/375)
+   *   EquipmentRow              0% / 86% / 86%      0% / 0% / 0%
+   *   FieldReportEntry          0% / 86% / 86%      0% / 0% / 0%
+   *   PunchListRow              0% / 86% / 86%      0% / 0% / 0%
+   *   DailyFieldReports         0% / 79% / 79%      0% / 0% / 0%
+   *   SafetyIncidentRow       100% / 75% / 75%      0% / 0% / 0%   (flipped to end)
+   *   RfiRow                   20% /  0% /  0%     20% / 0% / 0%
+   *   ToolboxTalkRow          100% /  0% /  0%      0% / 0% / 0%   (flipped to end)
+   *   RuleSetRow              100% / 72% / 72%      0% / 0% / 0%   (flipped to end)
+   *
+   * Cancel covers 100% of the vacated box on all eight below 640px, with 12px
+   * of clear air under it before the confirm starts. RfiRow's 20% at 1100px is
+   * pre-existing and structural, not a regression here: in a right-pinned
+   * cluster the confirm clears the vacated box only when Cancel plus the gap
+   * (70 + 12 = 82px) is at least as wide as the delete button, and "Delete
+   * draft" is 103px. Any row whose delete label is longer than about "Remove"
+   * carries the same residue on the desktop, and the column removes it below
+   * `sm` but cannot at 1100.
+   *
+   * The map stays, empty, because the next stacked row is not the thing that
+   * would need an entry — a row whose cluster's pinning lives in a PARENT
+   * component still might. An entry has to carry measured numbers at both
+   * widths, from a real browser. It is not a place to put a row you have not
+   * measured.
    */
-  const PINNED_EXCEPTIONS: Record<string, string> = {
-    "components/SafetyIncidentRow.tsx":
-      "cluster is shrink-0 but the ROW is `sm:flex-row`, so it is right-pinned only at >=640px. RE-MEASURED against #89's merged classes: default 100%/75% overlap at 1100/375, pinned=end 0%/85% (was 0%/91% before #89 changed the button padding and gap). Neither value is safe at 375 — see the note above on why `pinned` cannot reach the stacked case. Left at the default, as #176 left it; flipping it to `end` would make the desktop case safe and is a decision for Cyrus and Diego, not for a merge resolution.",
-    "components/ToolboxTalkRow.tsx":
-      "same `sm:flex-row` row, and with NO ordinary actions the two orders swap outright: default 100%/0% at 1100/375, pinned=end 0%/100%. RE-MEASURED after #89 and unchanged to the point. There is no value of this prop that is right at both widths, and because this cluster has no ordinary actions it is the one stacked row where the default IS safe at 375.",
-    "components/RuleSetRow.tsx":
-      "same `sm:flex-row` row as SafetyIncidentRow. Measured: default 100%/71%, pinned=end 0%/93%. NOT re-measured for the #89 merge: #89 did not touch this file, so its geometry and classes are unchanged.",
-  };
+  const PINNED_EXCEPTIONS: Record<string, string> = {};
 
   it("passes pinned=\"end\" wherever the action cluster is right-pinned", () => {
     const offenders = files
       .filter((f) => !(f.path in PINNED_EXCEPTIONS))
-      .filter((f) => /<RowActions[\s\S]{0,400}?shrink-0/.test(f.source))
-      .filter((f) => !/pinned=["']end["']/.test(f.source))
+      .filter((f) => /<RowActions[\s\S]{0,400}?shrink-0/.test(f.code))
+      .filter((f) => !/pinned=["']end["']/.test(f.code))
       .map((f) => f.path);
 
     expect(

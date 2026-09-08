@@ -245,11 +245,15 @@ export function RfiRow({
           ordinary action is a child of RowActions now and none of them
           renders while the delete is armed.
 
-          `pinned="end"` re-measured against #89's stacking and it is the one
-          row where `end` is clean at BOTH widths: 1100px 100% -> 20% (the
-          residue is "Delete draft" being wider than the "Cancel" that
-          replaces it), 375px 39% -> 0%. Two wide ordinary actions push the
-          vacated Delete far enough right that the armed pair clears it. */}
+          `pinned="end"` measured against #89's stacking, and this was the one
+          row already clean at BOTH widths: 1100px 100% -> 20% (the residue is
+          "Delete draft", 103px, being wider than the 70px "Cancel" plus the
+          12px gap that replaces it), 375px 39% -> 0% because two wide
+          ordinary actions push the vacated Delete far enough right that the
+          armed pair clears it. #184's armed column keeps 375 at 0% — by
+          landing Cancel on the whole vacated box rather than by missing it —
+          and leaves the 1100px 20% exactly where it was. That residue is
+          structural to a long delete label, not a regression here. */}
       <RowActions
         className="flex shrink-0 flex-wrap items-center gap-3"
         destructive={
