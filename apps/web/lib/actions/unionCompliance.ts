@@ -492,14 +492,23 @@ export async function endFringeRateSchedule(scheduleId: string, formData: FormDa
  * scoped directly to `companyId`, a company can only ever delete its own
  * schedule; the cross-tenant reach is gone.
  *
- * NOT ALSO GIVEN A USAGE CHECK here, unlike deleteCraftClassification —
- * FringeRateSchedule has no stored foreign key from TimeEntry (the
- * effective rate is looked up live by date range, never persisted onto a
- * row), so there is no cheap, honest count of "how much of your own
- * certified payroll depends on this" to quote back. `endFringeRateSchedule`
- * above is the intended way to retire a schedule without disturbing
- * history; this stays a plain, OWNER-gated delete for correcting a genuine
- * data-entry mistake. Filed as a follow-up rather than guessed at here.
+ * THE USAGE CHECK HERE COUNTS DATES IN A WINDOW, NOT FOREIGN KEYS — #199.
+ * FringeRateSchedule has no stored FK from TimeEntry: the effective rate
+ * is looked up live by date range (findEffectiveFringeRateSchedule) and
+ * never persisted onto a row. So "is this schedule used" cannot be a join;
+ * it is "do any of this company's hours, in this craft, fall inside this
+ * schedule's effective window". Those are exactly the hours whose
+ * certified payroll and fringe remittance figures RECOMPUTE through this
+ * row — delete it and a reprint of those weeks silently changes rate, or
+ * starts calling priced hours unpriceable, with nothing anywhere saying
+ * why. An over-count is possible (an overlapping schedule may be the one
+ * actually picked for some dates) and accepted: the refusal routes to
+ * `endFringeRateSchedule`, which is safe REGARDLESS of which schedule
+ * would have won, so refusing a deletion that might have been harmless
+ * costs a click; allowing one that wasn't costs a filed number.
+ *
+ * Delete stays available while the window has priced no hours — the
+ * genuine data-entry-mistake case this action exists for.
  */
 export async function deleteFringeRateSchedule(scheduleId: string): Promise<ActionResult> {
   const context = await requireCompanyContext();
@@ -511,6 +520,23 @@ export async function deleteFringeRateSchedule(scheduleId: string): Promise<Acti
       where: { id: scheduleId, companyId: context.company.id },
     });
     if (!schedule) return fail("Rate schedule not found");
+
+    const pricedEntries = await prisma.timeEntry.count({
+      where: {
+        craftClassificationId: schedule.craftClassificationId,
+        job: { companyId: context.company.id },
+        date: {
+          gte: schedule.effectiveFrom,
+          // An open-ended schedule prices everything from effectiveFrom on.
+          ...(schedule.effectiveTo != null ? { lte: schedule.effectiveTo } : {}),
+        },
+      },
+    });
+    if (pricedEntries > 0) {
+      return fail(
+        `${plural(pricedEntries, "time entry", "time entries")} for this craft ${pricedEntries === 1 ? "falls" : "fall"} inside this schedule's effective dates — certified payroll and fringe remittance compute their rates from it live, so deleting it would silently change what those weeks say. End the schedule instead: that records the date it stopped being in force and leaves history untouched.`,
+      );
+    }
 
     await prisma.fringeRateSchedule.delete({ where: { id: schedule.id } });
     revalidatePath("/union-compliance");

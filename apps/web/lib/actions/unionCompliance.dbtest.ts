@@ -21,6 +21,7 @@ const {
   createFringeRateSchedule,
   createUnionLocalAndAgreement,
   deleteCraftClassification,
+  deleteFringeRateSchedule,
   endFringeRateSchedule,
   endUnionAgreement,
   setApprenticeRatioRule,
@@ -593,6 +594,69 @@ describe("union setup CRUD, from an empty company", () => {
     expect(
       await prisma.fringeRateSchedule.count({ where: { craftClassificationId: unused.id } }),
     ).toBe(0);
+  });
+
+  it("refuses to delete a schedule whose window priced hours, and deletes one whose window priced none — #199", async () => {
+    // Real Postgres counterpart of unionCompliance.guard.test.ts. The
+    // usage signal is WINDOW MEMBERSHIP, not a foreign key — there is no
+    // FK from TimeEntry to FringeRateSchedule; the effective rate is
+    // looked up live by date, so deleting a schedule that priced hours
+    // silently changes what a recomputation of those weeks returns.
+    const [local] = await loadUnionSetup(ctx.company.id);
+    expect(
+      await createCraftClassification(
+        form2({ unionLocalId: local.unionLocalId, name: "Guarded Craft", tier: "JOURNEYMAN" }),
+      ),
+    ).toEqual({ ok: true });
+    const [withGuarded] = await loadUnionSetup(ctx.company.id);
+    const guarded = withGuarded.crafts.find((c) => c.name === "Guarded Craft")!;
+
+    // Open-ended schedule from August on; one entry inside the window.
+    expect(
+      await createFringeRateSchedule(
+        form2({ craftClassificationId: guarded.id, baseWage: "50", effectiveFrom: "2026-08-01" }),
+      ),
+    ).toEqual({ ok: true });
+    const priced = await prisma.fringeRateSchedule.findFirst({
+      where: { craftClassificationId: guarded.id },
+    });
+    await prisma.timeEntry.create({
+      data: {
+        jobId: setupJobId,
+        employeeUserId: ctx.id,
+        craftClassificationId: guarded.id,
+        date: new Date("2026-08-20T00:00:00.000Z"),
+        hours: "8",
+      },
+    });
+
+    const refused = await deleteFringeRateSchedule(priced!.id);
+    expect(refused.ok).toBe(false);
+    if (!refused.ok) expect(refused.error).toContain("End the schedule instead");
+    expect(
+      await prisma.fringeRateSchedule.findUnique({ where: { id: priced!.id } }),
+    ).not.toBeNull();
+
+    // A schedule whose window closed BEFORE any hours — ends July, the
+    // entry above is on 20 Aug — is the data-entry-mistake case and still
+    // deletes.
+    expect(
+      await createFringeRateSchedule(
+        form2({
+          craftClassificationId: guarded.id,
+          baseWage: "1",
+          effectiveFrom: "2026-07-01",
+          effectiveTo: "2026-07-31",
+        }),
+      ),
+    ).toEqual({ ok: true });
+    const mistake = await prisma.fringeRateSchedule.findFirst({
+      where: { craftClassificationId: guarded.id, baseWage: "1" },
+    });
+    expect(await deleteFringeRateSchedule(mistake!.id)).toEqual({ ok: true });
+    expect(
+      await prisma.fringeRateSchedule.findUnique({ where: { id: mistake!.id } }),
+    ).toBeNull();
   });
 
   it("refuses a non-owner deleting, and a local owned by a different company", async () => {
