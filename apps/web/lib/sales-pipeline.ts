@@ -186,6 +186,22 @@ export function longestOpen(
     .slice(0, limit);
 }
 
+/**
+ * How many open deals were even eligible for `longestOpen`'s comparison --
+ * i.e. how many have a recorded stage history at all.
+ *
+ * `longestOpen` excludes an open deal with no recorded history rather than
+ * sorting it as fresh (see its own comment), which is correct and is
+ * exactly why its result must never be labelled as a superlative over the
+ * WHOLE open pipeline: with history only starting the day this model
+ * shipped, that comparison can be a small, arbitrary subset of it. #153
+ * finding 3 -- same family as winRate and the unpriced total refusing to
+ * speak for deals they weren't computed from.
+ */
+export function trackedOpenCount(opportunities: readonly PipelineOpportunity[]): number {
+  return opportunities.filter((o) => isOpen(o.stage) && o.daysInStage !== null).length;
+}
+
 /** "67%", or null when there is no rate to show. Formatted once, here. */
 export function winRateLabel(winRate: number | null): string | null {
   if (winRate === null) return null;
