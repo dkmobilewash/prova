@@ -12,6 +12,66 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### A GC who skimmed the sub scored better for it (Cyrus)
+`cyrus/gc-reliability-counts-short-payments`
+
+Issue #189, and it is `lib/gc-reliability.ts` — Diego's file. Taken on
+Cyrus's instruction rather than waiting for a ruling, and the decision it
+required is recorded below so it can be overruled cheaply.
+
+`fullyPaid` was `paidAmount >= amount`, and `averageDaysToPay` and
+`onTimeRate` were computed over only those. So an invoice short by ANY
+amount was **not counted as late — it was not counted at all.**
+
+A sub paid through Textura, GC Pay or Procore Pay receives the invoice
+amount less a platform fee, charged to the SUB, on a platform the GC
+chose. Record the cheque that actually arrived and `paidAmount` is
+permanently short, so that invoice silently left the sample:
+
+> **A general contractor whose chosen platform skims the subcontractor
+> scored BETTER here than one who paid by cheque.**
+
+Exactly backwards, and worst for the GCs a sub most needs warning about.
+The number still rendered on `/contacts/[id]` and the dashboard; it just
+described a smaller and more flattering set of invoices than any reader
+would assume.
+
+**Two changes, answering two different questions.**
+
+*A fee is not a shortfall.* `Payment.feeAmount` exists as of #192, so an
+invoice settles when cash plus what was skimmed in transit covers it. The
+GC paid; a third party took a cut on the way. `feesDeducted` is a required
+number rather than a nullable — an unknown fee and no fee are the same
+arithmetic, and a `null` in a sum is how this goes wrong quietly.
+
+*A genuine shortfall is REPORTED rather than dropped.* Anything with
+payments that still does not settle is counted in `shortPaidCount`, and
+`settledCount` says how many invoices the average actually covers. Same
+rule as `hasUncomputedHours` and "Name not recorded": name what you cannot
+compute. A timing average over an unstated subset is that failure in a
+different column.
+
+**Deliberately NOT a tolerance.** "Within a dollar" is a number somebody
+picks, and it would swallow a real short payment of that size — a disputed
+backcharge deducted at source is exactly what a sub needs to see, not
+round away. `isSettled` asks a question with a real answer instead: was
+the balance taken by a fee, or is it still owed? A mutation adding a
+$1,000 tolerance goes red.
+
+:warning: **Both callers had to change or this was only a type edit**, and
+one of them would have failed silently. `today-dashboard.ts` selected
+`{ amount, receivedAt }` only, so `payment.feeAmount` would have been
+`undefined`, `Number(undefined ?? 0)` would have been 0, and every fee in
+the product would have read as zero with nothing failing. Added to both
+selects; `contacts/[id]/page.tsx` already used `include: { payments: true }`.
+
+**There was no test file for this module at all**, which is part of why the
+defect survived. There is now: 11 tests, six defects reintroduced one at a
+time and every one red — the original bug, dropping short payments
+silently, counting the fee as money received, reporting the wrong sample
+size, counting a never-paid invoice as short-paid, and the tolerance.
+
+
 ### A trust fund can be told whose hours these are, on a sheet you can send (Cyrus)
 `cyrus/fringe-remittance-filing-per-employee`
 

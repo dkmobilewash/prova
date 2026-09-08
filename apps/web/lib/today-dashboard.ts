@@ -80,7 +80,7 @@ export async function loadTodayDashboard(companyId: string, now: Date) {
             contact: { select: { id: true, name: true, paymentTermsDays: true } },
           },
         },
-        payments: { select: { amount: true, receivedAt: true } },
+        payments: { select: { amount: true, receivedAt: true, feeAmount: true } },
       },
       orderBy: { issuedAt: "desc" },
     }),
@@ -129,7 +129,7 @@ export async function loadTodayDashboard(companyId: string, now: Date) {
                 amount: true,
                 issuedAt: true,
                 dueAt: true,
-                payments: { select: { amount: true, receivedAt: true } },
+                payments: { select: { amount: true, receivedAt: true, feeAmount: true } },
               },
             },
           },
@@ -278,6 +278,9 @@ export async function loadTodayDashboard(companyId: string, now: Date) {
             issuedAt: invoice.issuedAt,
             dueAt: invoice.dueAt,
             paidAmount: payments.reduce((sum, payment) => sum + Number(payment.amount), 0),
+            // What a payment platform took in transit. A fee is not a
+            // shortfall — see lib/gc-reliability.ts and issue #189.
+            feesDeducted: payments.reduce((sum, payment) => sum + Number(payment.feeAmount ?? 0), 0),
             lastPaymentAt,
           };
         }),

@@ -121,6 +121,9 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
           issuedAt: invoice.issuedAt,
           dueAt: invoice.dueAt,
           paidAmount,
+          // What a payment platform took in transit. A fee is not a
+          // shortfall — see lib/gc-reliability.ts and issue #189.
+          feesDeducted: invoice.payments.reduce((sum, p) => sum + Number(p.feeAmount ?? 0), 0),
           lastPaymentAt,
         };
       }),
