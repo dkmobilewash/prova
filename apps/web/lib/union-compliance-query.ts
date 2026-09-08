@@ -97,8 +97,10 @@ export async function loadRemittance(companyId: string, month: string): Promise<
     select: {
       date: true,
       hours: true,
+      payType: true,
       craftClassificationId: true,
       craftClassification: { select: { name: true, unionLocalId: true, unionLocal: true } },
+      employeeUserId: true,
       employeeUser: { select: { name: true, email: true } },
       job: { select: { name: true } },
     },
@@ -126,19 +128,32 @@ export async function loadRemittance(companyId: string, month: string): Promise<
   }
 
   const report = buildRemittanceReport(
-    entries.map((e) => ({
-      date: e.date,
-      hours: Number(e.hours),
-      craftClassificationId: e.craftClassificationId,
-      craftLabel: e.craftClassification?.name ?? null,
-      unionLocalId: e.craftClassification?.unionLocalId ?? null,
-      unionLocalLabel: e.craftClassification ? localLabel(e.craftClassification.unionLocal) : null,
-      // NOT `name ?? email`. This reaches the fringe remittance, a document
-      // sent to a trust fund crediting hours to a NAMED member's account.
-      // See lib/worker-name.ts — it shows the gap rather than filling it.
-      employeeName: payrollWorkerName(e.employeeUser).label,
-      jobName: e.job.name,
-    })),
+    entries.map((e) => {
+      // Resolved ONCE and used for both name fields, so the two can never
+      // disagree about who this is. Neither is `name ?? email`: both reach
+      // the fringe remittance, a document sent to a trust fund crediting
+      // hours to a NAMED member's account, and lib/worker-name.ts shows
+      // the gap rather than filling it with an address.
+      //
+      // They stay two fields because they are two audiences.
+      // `employeeFilingName` carries `nameMissing` through to the member
+      // line on the printed sheet; `employeeName` is the flat string
+      // feeding `uncomputedNames`, the chase-list on /union-compliance.
+      const filingName = payrollWorkerName(e.employeeUser);
+      return {
+        date: e.date,
+        hours: Number(e.hours),
+        craftClassificationId: e.craftClassificationId,
+        craftLabel: e.craftClassification?.name ?? null,
+        unionLocalId: e.craftClassification?.unionLocalId ?? null,
+        unionLocalLabel: e.craftClassification ? localLabel(e.craftClassification.unionLocal) : null,
+        payType: e.payType,
+        employeeUserId: e.employeeUserId,
+        employeeFilingName: filingName,
+        employeeName: filingName.label,
+        jobName: e.job.name,
+      };
+    }),
     byCraft,
     start,
     end,

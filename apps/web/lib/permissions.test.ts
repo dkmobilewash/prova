@@ -181,8 +181,8 @@ describe("canReach", () => {
  * all of them a recorded decision:
  *
  *   ROUTE_CAPABILITY        guarded, and reachable from the nav
- *   PAGE_ONLY_CAPABILITY    guarded, but a dynamic route the nav never
- *                           links by a static href
+ *   PAGE_ONLY_CAPABILITY    guarded, but a route the nav never links by a
+ *                           static href
  *   OPEN_ROUTES             deliberately open, with the reason written
  *                           down here
  *
@@ -215,12 +215,18 @@ const sourceFor = (route: string) =>
   readFileSync(join(APP_DIR, route === "/" ? "" : route.slice(1), "page.tsx"), "utf8");
 
 /**
- * Guarded, but not reachable by a static href, so ROUTE_CAPABILITY —
- * which exists to filter the nav — would be the wrong home: a key with
- * `[id]` in it can never match a real URL, and putting one there would
- * quietly teach `canReach` to answer "open" for a guarded page. These are
+ * Guarded, but not reachable from the nav, so ROUTE_CAPABILITY — which
+ * exists to filter the nav — would be the wrong home: a key with `[id]`
+ * in it can never match a real URL, and putting one there would quietly
+ * teach `canReach` to answer "open" for a guarded page. These are
  * enforced by the page's own `requireCapability`, which is the boundary
  * either way, and asserted below exactly as the mapped routes are.
+ *
+ * Most are dynamic, and one is not: a printable document hangs off a page
+ * as a static child that no nav entry links. The test that matters treats
+ * them identically — it reads the page's own source for the guard — so
+ * the distinction that decides this table is "does the nav link it",
+ * never "does it have brackets in it".
  */
 const PAGE_ONLY_CAPABILITY: Record<string, Capability> = {
   // A pay application IS the money document — schedule of values, stored
@@ -236,6 +242,18 @@ const PAGE_ONLY_CAPABILITY: Record<string, Capability> = {
   // the same reason — a different one here would be an inconsistency,
   // not a tightening.
   "/jobs/[id]/certified-payroll/wh-347": "MANAGE_COMPLIANCE",
+  // The fringe remittance as the document that goes to each hall, printed
+  // from the same month as /union-compliance and showing strictly less
+  // than it does. Same capability for the same reason as the pair above —
+  // a different one here would be an inconsistency, not a tightening.
+  //
+  // Static rather than dynamic, so it is the first entry in this table
+  // that is not bracketed. It belongs here all the same: the nav links no
+  // href to it (a document is printed from the page it belongs to, the
+  // way wh-347 is), and ROUTE_CAPABILITY exists to FILTER the nav, so a
+  // key nothing in the nav can match would be a decision recorded in the
+  // wrong place.
+  "/union-compliance/remittance": "MANAGE_COMPLIANCE",
 };
 
 /**

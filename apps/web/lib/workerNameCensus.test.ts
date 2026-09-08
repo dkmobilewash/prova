@@ -46,6 +46,7 @@ const FILING_MODULES = [
   "apprenticeship-query.ts",
   "certified-payroll-query.ts",
   "fringe-remittance.ts",
+  "fringe-remittance-filing.ts",
   "wh347.ts",
 ];
 

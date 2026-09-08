@@ -12,6 +12,77 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### A trust fund can be told whose hours these are, on a sheet you can send (Cyrus)
+`cyrus/fringe-remittance-filing-per-employee`
+
+Every month a union shop owes each hall it is signatory to a fringe
+remittance: a report and a cheque, one per local, covering pension,
+vacation, health & welfare and training on the hours its members worked.
+cstream computed the money correctly and still could not produce that
+report.
+
+**Why a per-craft rollup could not be filed.** `buildRemittanceReport`
+took `employeeName` IN and threw it away. The output stopped at local →
+classification, and identity survived in exactly one place —
+`uncomputedNames`, the people behind hours that could NOT be priced. A
+name was kept for every hour that failed to price and discarded for every
+hour that did. **A trust fund credits hours to an INDIVIDUAL member's
+account**, because that is how pension vesting and health & welfare
+eligibility work: a member needs N hours in a period to stay covered. So
+"Local 300, Journeyman Drywall, 480 hours, $10,368" tells the fund how
+much money is coming and gives it nobody to credit. The office manager
+re-derives per-person hours by hand — the exact re-entry this product
+exists to remove.
+
+Craft rows now carry the members behind them, and there is a printable
+document at **`/union-compliance/remittance`** that renders one sheet per
+local for a chosen month.
+
+- **One person, two classifications is TWO lines.** The member dimension
+  hangs off the craft row rather than the local, so the split is
+  structural — there is nowhere to put a blended per-hour rate that
+  appears in no agreement.
+- **Members are keyed on user id, never on the printed name.** Two
+  accounts with no name recorded are two members with two accounts to
+  credit; merging them by label would credit one person with the other's
+  hours.
+- **Rounded at the member line, then summed.** Each member's cents are
+  allocated out of the classification's already-rounded figure by largest
+  remainder, so no cent is invented or lost and every figure above the
+  member line is the exact sum of the lines beneath it. The page calls
+  `remittanceReconciliationErrors()` BEFORE rendering any money and prints
+  no sheet at all if it returns anything — a fund's clerk checks whether
+  the lines total the cheque before looking at anything else.
+- **`payType` is now on the input and is deliberately not read.** Fringe
+  is a flat per-hour rate; an overtime hour multiplies the base wage only.
+  Before this it was unrepresentable, which made the test asserting the
+  rule vacuous — it compared two identical calls and passed under any
+  implementation, including one multiplying fringe by 1.5.
+
+**ONE DOCUMENT PER LOCAL, and nothing is totalled across halls.** Each
+hall gets its own report and its own cheque, so a combined sheet cannot be
+sent to either of them. Every sheet starts on a fresh printed page and
+carries its own employer header, its own four fund amounts and its own
+signature block; `?local=<id>` prints exactly one.
+
+**It refuses to look finished**, the same way the WH-347 does. A blank on
+a remittance is indistinguishable from a zero, and a zero is a statement
+to a fund that nothing is owed — for that fund, or for that person. So
+every field cstream cannot source is printed in place in red as a
+sentence, and each sheet carries a banner naming all of them ON THE SHEET
+rather than only in the app chrome, because the chrome does not print.
+Named rather than left blank: each fund's own employer/account number,
+each fund's mailing address, and every member's ID number (none of which
+cstream holds a field for); the employer address and EIN when the company
+record is empty; a member with no name recorded; hours with no rate
+schedule in force on the day, which print as "Unpriced" rather than
+$0.00 and leave the total short.
+
+`/union-compliance` is unchanged — it answers "what do I owe", which is a
+different question from "what do I send", and it renders exactly as it did
+before.
+
+
 ### A crew that can be named on payroll without 25 Clerk accounts (Cyrus)
 `cyrus/crew-members`
 
