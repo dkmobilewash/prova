@@ -101,6 +101,44 @@ no browser-automation tooling available to this session to run the kind
 of instrumented capture that actually settled #61, so the PR says this
 plainly rather than claiming closure on a guess.
 
+### The two fringe-schedule guardrails #200 left open (Cyrus)
+`cyrus/fringe-schedule-guardrails`
+
+Both follow-ons Diego's #136 close named and left to this lane, done the
+day it merged rather than inherited as intentions.
+
+**`deleteFringeRateSchedule` now has a usage check — #199.** There is no
+foreign key from `TimeEntry` to a rate schedule: certified payroll and
+fringe remittance look the effective rate up LIVE by date, so "is this
+schedule used" is window membership, not a join. The action now counts
+the company's own hours for that craft inside the schedule's effective
+window and refuses to delete while any exist, naming the count and
+routing to `endFringeRateSchedule` (which records the end date and leaves
+history alone). A schedule whose window priced no hours — the genuine
+data-entry mistake — still deletes. The over-count case (an overlapping
+schedule might be the one actually picked for some dates) is accepted
+deliberately: refusing a harmless delete costs a click, allowing a
+harmful one changes filed numbers.
+
+**`union-compliance-query.ts`'s schedule read is company-scoped
+directly.** `fringeRateSchedule.findMany` filtered only on craft ids —
+transitively scoped because those ids come from this company's own
+entries, which holds exactly as long as every craft tag is right forever.
+These are wage, pension, H&W and training rates; #200's `companyId`
+column makes the direct filter one line, so it is on the query itself
+now, not on the join being trusted.
+
+The specific checks: `unionCompliance.guard.test.ts` (runnable locally,
+unlike the dbtest suite — #171) asserts the refusal, the deletion, the
+QUERY SHAPES (an unscoped count refuses company A's delete because
+company B worked those dates; `lte: null` in a Prisma where silently
+filters, so the open-ended window spreads the bound conditionally), and
+the remittance query's `companyId`. Four mutations run, each reddening
+its named test, both files restored byte-identical and sha-verified:
+drop the usage check, unscope the count, reintroduce `lte: null`,
+unscope the remittance query. A real-Postgres case rides in
+`unionCompliance.dbtest.ts` for CI.
+
 ### The union audit outlived its question by six commits — #136 (Diego)
 `claude/prova-contractor-os-e3f0iz`
 
