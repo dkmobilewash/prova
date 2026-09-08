@@ -197,6 +197,31 @@ for every contractor who ever used it.
 
 ---
 
+### `deleteContact`'s refusal message named zero counts as a reason — #76 (Diego)
+`diego/delete-contact-zero-count-message`
+
+Small wording defect, filed against #72: refusing to delete a contact with
+history on file listed every count unconditionally — "Acme GC has 0
+job(s), 3 bid invitation(s), 0 logged interaction(s), and 0 people on
+file". A contact blocked by three bid invitations alone was told about
+three kinds of history it doesn't have.
+
+Fixed by filtering to the non-zero counts before joining them, and
+pluralising properly (`plural(count, one, many)`) instead of the blanket
+`(s)` suffix — same message now reads "Acme GC has 3 bid invitations on
+file". `plural` moved from `unionCompliance.ts` (the only existing caller)
+into `lib/actions/shared.ts` rather than growing a second copy, since this
+is now two call sites; `unionCompliance.ts` imports it from there and
+nothing else about that file changed.
+
+Proved by mutation: reverted the fix, confirmed the new dbtest
+(`company.dbtest.ts`) failed with the exact old string, restored it, green
+again. `deleteContact`'s tenant scoping, owner gate, and refusal logic
+itself are all untouched — this only changes what the message says, not
+when it refuses.
+
+---
+
 ### Three display gaps in the sales CRM — #153, #163, #164 (Diego)
 `diego/sales-crm-display-gaps`
 
