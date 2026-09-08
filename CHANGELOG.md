@@ -100,6 +100,139 @@ No fix is shipped here because none was found to be wrong; this repo has
 no browser-automation tooling available to this session to run the kind
 of instrumented capture that actually settled #61, so the PR says this
 plainly rather than claiming closure on a guess.
+### Eight defects in estimating, the catalog and change orders — #105 (Diego)
+`diego/estimating-catalog-co-defects-105`
+
+An audit sweep filed eight findings against estimating, the catalog and
+change orders, three of them tagged MONEY-WRONG. All eight are fixed here.
+
+**1. Reopening an approved change order could silently revert a LATER
+approved one.** `reopenBlockers` checked billing on the lines an EDIT
+touched, but never asked whether a *later* approved change order had since
+written to the same rows — only the ADD case (deleting the line it created)
+was guarded. Reopening CO #2 restores CO #2's old snapshot over whatever CO
+#4 changed afterward; CO #4 goes on rendering its own delta, and the
+contract value contradicts both documents at once. New `laterApprovedConflict`
+in `lib/change-order.ts` looks at every OTHER approved proposal that touched
+the same line item and its `appliedAt`, and refuses the reopen when one
+landed after this change order did — including when either side's
+`appliedAt` is null (a row approved before that column existed), because a
+false allow is worse than a false block here. Covered by
+`lib/change-order.test.ts`, new for this PR — this module had NO test file
+at all before, which is exactly how a later-CO conflict and a
+never-read `isDeleted` field (finding 5, below) both survived unnoticed.
+
+**2. Catalog "update default from actuals" re-priced off half-finished
+jobs.** `catalogActuals` divided cost booked to date by the line's FULL
+quantity with no job-status filter — a line 40% built at a true $2.00/SF has
+only 40% of its cost booked, so it reported $0.80/SF: 60% under, flagged
+amber "worth re-pricing", and one click from becoming the default that
+prices every future bid and grounds the AI drafts. The bias is
+one-directional (every unfinished job reads low, never high), so repeatedly
+re-pricing walked the catalog toward zero. `CatalogSourcedLine` now carries
+`jobStatus`, and only a `COMPLETE` job's cost counts toward `actualUnitCost`
+— see `FINISHED_JOB_STATUSES` in `lib/catalog-actuals.ts`. The excluded
+count is reported (`linesExcludedUnfinished`), never silently dropped, so
+"nothing has used this entry" and "three jobs have used it and none has
+finished" read as the different situations they are, on both `/catalog` and
+inside the re-price refusal message.
+
+**3. The catalog re-price wrote a number the browser sent.**
+`updateCatalogDefaultsFromActuals` took `actualUnitCost` from a hidden input
+and checked only that it parsed as a number — never re-deriving it, never
+re-checking the flag or the sample-size condition that made re-pricing
+eligible. `importCatalogEntries` in the same file already refused exactly
+this pattern for a pasted price list. New pure function `repriceDecision` in
+`lib/catalog-actuals.ts` makes the whole decision from the actuals alone —
+there is no argument in its signature a browser-supplied figure could enter
+through — and re-checks eligibility against a fresh read of the line items,
+since the page that rendered the button may be minutes old. The action now
+reloads the entry's line items, recomputes `catalogActuals` (which is also
+where finding 2's job-status filter applies), and writes only what
+`repriceDecision` returns. The hidden input is gone from `/catalog`.
+`lib/catalog-actuals.test.ts` gained a `repriceDecision` suite asserting
+exact cent values, including that a margin held over a re-priced cost is a
+proportion (1.6×) and not the old price minus the old cost.
+
+**4. `studsRequired` over-counted by one stud at 19.2" o.c.** `24 / 1.6` is
+`15.000000000000002` in binary floating point, so `Math.ceil` rounded one
+hair over fifteen bays up to sixteen, billing 17 studs where 16 close the
+wall (verified at 24/40/48 ft in the issue; 16" and 24" o.c. divide exactly
+and were unaffected). `lib/takeoff.ts` now rounds to 9 decimal places before
+the `ceil` — finer than any wall anyone measures, coarser than the dust — so
+a genuine partial bay (25 ft at 19.2" o.c., a real 15.625 bays) still rounds
+up correctly. `lib/takeoff.test.ts` asserts the exact stud counts at all
+four lengths, plus that 16"/24" o.c. are unchanged by the fix.
+
+**5. Pending change-order exposure counted money against scope that was
+already gone.** `LineItemForChangeOrder` declared `isDeleted` and nothing in
+`proposalValueDelta` ever read it — an unapplied REMOVE (or EDIT) proposal
+targeting a line an earlier approved change order had already soft-deleted
+still priced against the line's stale in-memory value, so the pending
+"what we've asked the GC for" headline could report money for scope that
+`approveChangeOrder` would refuse outright to book. New `proposalIsBookable`
+in `lib/change-order.ts` returns false for exactly that case (an unapplied
+EDIT/REMOVE whose target is missing or already deleted); `proposalValueDelta`
+now returns $0 for an unbookable proposal instead of pricing it, and
+`countUnbookable`/`pendingChangeOrderUnbookable` report how many were
+dropped so the exposure figure reads as a floor rather than a silently
+shrunk total — surfaced on `/jobs/[id]` next to the pending-exposure line.
+`proposeLineItemChange` and `proposeScopeRemoval` also now refuse a NEW
+proposal against already-deleted scope at creation time, so the situation is
+prevented going forward and not just priced correctly after the fact.
+
+**6. One click hard-deleted a bid invitation.** No confirm step sat beside
+"Update" on `/contacts/[id]`, removing evidence a bid was won — which
+`/pipeline` win rates and the AI draft-grounding both read. Wrapped in the
+same `RowActions`/`ConfirmDelete` two-step the catalog entry row already
+uses (`components/RowActions.tsx`), with a hint calling out a WON bid by
+name. Uses `RowActions` directly rather than the simpler
+`ConfirmDeleteButton` wrapper, because "Update" is a live ordinary action in
+the same row — arming the delete has to hide it too, per the rule
+`RowActions` exists to enforce (issue #152).
+
+**7. "Save as catalog item" had no duplicate check.** Two catalog entries
+under the same description, at different prices, each accumulate their own
+separate actuals history — and with `CATALOG_MIN_SAMPLE = 2`, a split sample
+can keep both under the minimum forever, suppressing a variance flag the
+merged sample would correctly raise. `importCatalogEntries` already refused
+a duplicate on import; `createLineItemCatalogEntry` and
+`saveLineItemAsCatalogEntry` did not. New `catalogKey` export in
+`lib/catalog-import.ts` (the same trim-and-lowercase rule
+`splitAgainstExisting` already used, now shared rather than duplicated) and
+a `duplicateCatalogEntry` lookup in `lib/actions/estimating.ts`, wired into
+both create paths.
+
+**8. All twelve change-order actions threw instead of returning.**
+Production redacts a thrown Server Action message to an opaque digest
+(verified 2026-08-27) — so every PM-facing next-step sentence in
+`lib/actions/changeOrders.ts` ("CO #3 has already been sent — void it and
+raise a new one instead of editing it", "A change order can't be answered
+before it was sent") reached a real user as a reference number, on the one
+workflow where the next step changes a contract value. Reshaped on
+`lib/actions/submittals.ts`'s own pattern — this repo's cited reference —
+rather than inventing a new mechanism: a private `InputError` marks an
+expected refusal, a `runAction` wrapper at each action's boundary turns it
+into `{ ok: false, error }`, and anything else that throws is a genuine bug
+and is rethrown untouched, still redacted, still hitting the error boundary.
+All twelve exported actions now return `Promise<ActionResult>`.
+`components/ChangeOrders.tsx` — the only caller — is rewritten from raw
+`<form action={serverAction}>` (which discards a returned value; the twelve
+throws were the only reason it ever worked) to `onSubmit` handlers that call
+each action directly inside `useTransition` and render `result.error`, the
+same shape as `SubmittalRow`/`SubmittalForm`. `shared.ts` is untouched — no
+new exports there — so this stays inside Diego's lane without touching the
+shared actions surface.
+
+**Verification.** `pnpm typecheck`, `pnpm lint`, `pnpm test` (full unit
+suite, including the new `change-order.test.ts` and the extended
+`catalog-actuals.test.ts`/`takeoff.test.ts`), `pnpm test:db`, and `pnpm build`
+all pass; `./scripts/preflight.sh` run before pushing. No schema change and
+no migration — all eight are logic fixes. A numbered click-list for the
+user-visible findings (6, and the UI text changes from 1/2/3/5/8) is in the
+PR description.
+
+---
 
 ### The two fringe-schedule guardrails #200 left open (Cyrus)
 `cyrus/fringe-schedule-guardrails`
