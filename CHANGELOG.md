@@ -12,6 +12,54 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### An email address was printing where a worker's name belongs (Cyrus)
+`cyrus/no-email-as-worker-name`
+
+`lib/worker-name.ts` exists because `employeeUser.name ?? employeeUser.email`
+puts an EMAIL where a person's name goes. On an internal screen that merely
+identifies somebody; on a filing it is a false statement about who did the
+work, and a wrong name on a filed form is a correction to an agency rather
+than a patch.
+
+**#181 fixed seven call sites and deliberately left four**, in writing,
+because another agent was live in those files. Those four then sat on
+`main`. The worst of them — `union-compliance-query.ts:135` — feeds
+`RemittanceReport.uncomputedNames`, **which renders on `/union-compliance`**.
+So an email address was printing on a compliance screen while the helper
+that exists to prevent exactly that sat one import away.
+
+All four now go through `payrollWorkerName()`:
+`union-compliance-query.ts` (twice — the fringe remittance and the
+apprentice ratio), `prevailing-wage-query.ts`, `apprenticeship-query.ts`.
+`certifications.ts`, `today-dashboard.ts` and `alerts-query.ts` are
+deliberately untouched: a sort comparator and crew chips are not filings.
+
+**The real fix is the census, not the four edits.** This defect has now
+recurred four times, which means the rule was never enforced — it was
+remembered. `lib/workerNameCensus.test.ts` scans the modules that feed
+documents leaving the building and fails the build on the pattern.
+Mutation-verified four ways: the original `?? email` shape restored at each
+of the three files went red, and so did a DIFFERENT route to an email
+(`String(user.email)`) that the `??` check alone would have missed.
+
+:warning: **Two things went wrong writing this and both are recorded rather
+than quietly fixed**, because both are instances of failure modes already in
+CLAUDE.md.
+
+*One.* The script that added the missing imports skipped any file already
+mentioning `worker-name` — and my own new COMMENT said "see
+lib/worker-name.ts", so two imports were never added and typecheck failed.
+That is the third instance of a comment satisfying a check meant for code,
+after #176's census and #150. The census here strips comments before
+scanning for exactly this reason.
+
+*Two.* The census's positive check used `\bUser\b`, which **matches
+nothing** — the word boundary fails inside `employeeUser`. It passed
+vacuously and was only caught because a mutation that should have reddened
+it did not. A test reshaped until it goes green is the vacuous shape this
+file is about; the regex is now `[Uu]ser\b` and the mutation reddens it.
+
+
 ### A sub can start a job, get it billable, and finish it (Cyrus)
 `cyrus/subcontract-intake-and-job-lifecycle`
 

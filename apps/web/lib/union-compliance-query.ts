@@ -14,6 +14,7 @@ import {
   type RemittanceReport,
 } from "@/lib/fringe-remittance";
 import type { FringeRateScheduleInput } from "@/lib/labor-cost";
+import { payrollWorkerName } from "@/lib/worker-name";
 
 /**
  * Fetching and normalising for the union compliance page.
@@ -132,7 +133,10 @@ export async function loadRemittance(companyId: string, month: string): Promise<
       craftLabel: e.craftClassification?.name ?? null,
       unionLocalId: e.craftClassification?.unionLocalId ?? null,
       unionLocalLabel: e.craftClassification ? localLabel(e.craftClassification.unionLocal) : null,
-      employeeName: e.employeeUser.name ?? e.employeeUser.email,
+      // NOT `name ?? email`. This reaches the fringe remittance, a document
+      // sent to a trust fund crediting hours to a NAMED member's account.
+      // See lib/worker-name.ts — it shows the gap rather than filling it.
+      employeeName: payrollWorkerName(e.employeeUser).label,
       jobName: e.job.name,
     })),
     byCraft,
@@ -228,7 +232,8 @@ export async function loadRatioReviews(companyId: string, month: string): Promis
       date: iso(e.date) as string,
       hours: Number(e.hours),
       tier: (e.craftClassification?.tier as CraftTier | null) ?? null,
-      employeeName: e.employeeUser.name ?? e.employeeUser.email,
+      // The apprentice ratio names people to an inspector. Same rule.
+      employeeName: payrollWorkerName(e.employeeUser).label,
     };
 
     if (e.craftClassification) {
