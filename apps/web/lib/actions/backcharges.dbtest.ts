@@ -45,6 +45,7 @@ const {
 } = await import("./backcharges");
 
 let jobId = "";
+let secondJobId = "";
 let otherCompanyJobId = "";
 
 function form(values: Record<string, string>) {
@@ -96,6 +97,15 @@ describe("backcharges against a real database", () => {
     context.id = user.id;
     jobId = job.id;
 
+    // A second job under the SAME company, to prove the gcReference
+    // uniqueness check is scoped per job, not per company: two different
+    // GCs on two different jobs can coincidentally reuse the same
+    // reference number, and that is not a duplicate of anything.
+    const secondJob = await prisma.job.create({
+      data: { companyId: company.id, contactId: contact.id, name: "Second Backcharge Test Job" },
+    });
+    secondJobId = secondJob.id;
+
     // A second company's job, to prove the company scope is enforced by the
     // action rather than only by which links the UI renders.
     const other = await prisma.company.create({ data: { name: "Someone Else Ltd" } });
@@ -111,7 +121,7 @@ describe("backcharges against a real database", () => {
   afterAll(async () => {
     const otherJob = await prisma.job.findUnique({ where: { id: otherCompanyJobId } });
     await prisma.backcharge.deleteMany({ where: { companyId: context.company.id } });
-    await prisma.backchargeCounter.deleteMany({ where: { jobId } });
+    await prisma.backchargeCounter.deleteMany({ where: { jobId: { in: [jobId, secondJobId] } } });
     await prisma.job.deleteMany({ where: { companyId: context.company.id } });
     await prisma.contact.deleteMany({ where: { companyId: context.company.id } });
     await prisma.user.deleteMany({ where: { companyId: context.company.id } });
@@ -294,6 +304,63 @@ describe("backcharges against a real database", () => {
     // The row already carries 900. A second copy of it could drift from the
     // first — concededAmount() derives it from the status instead.
     expect(accepted.resolvedAmount).toBeNull();
+  });
+
+  it("refuses a second backcharge on the same job with the same GC reference", async () => {
+    expect(
+      await createBackcharge(newBackcharge({ description: "GC deduction one", gcReference: "PA-0042" })),
+    ).toEqual({ ok: true });
+    const first = await latest();
+    expect(first.gcReference).toBe("PA-0042");
+
+    const duplicate = await createBackcharge(
+      newBackcharge({ description: "Same deduction, logged again", gcReference: "PA-0042" }),
+    );
+    expect(duplicate.ok).toBe(false);
+    if (!duplicate.ok) {
+      expect(duplicate.error).toContain(`Backcharge #${first.number}`);
+      expect(duplicate.error).toContain("PA-0042");
+    }
+    // No second row, and the rejected attempt did not burn a number.
+    expect(await prisma.backcharge.count({ where: { jobId, gcReference: "PA-0042" } })).toBe(1);
+  });
+
+  it("allows any number of backcharges on the same job with no GC reference at all", async () => {
+    expect(await createBackcharge(newBackcharge({ description: "No GC letter yet, one" }))).toEqual({
+      ok: true,
+    });
+    expect(await createBackcharge(newBackcharge({ description: "No GC letter yet, two" }))).toEqual({
+      ok: true,
+    });
+    expect(
+      await prisma.backcharge.count({
+        where: { jobId, gcReference: null, description: { startsWith: "No GC letter yet" } },
+      }),
+    ).toBe(2);
+  });
+
+  it("allows the same GC reference on a different job", async () => {
+    expect(
+      await createBackcharge(
+        newBackcharge({ jobId: secondJobId, description: "Their reference, our other job", gcReference: "PA-0042" }),
+      ),
+    ).toEqual({ ok: true });
+    expect(await prisma.backcharge.count({ where: { jobId: secondJobId, gcReference: "PA-0042" } })).toBe(1);
+  });
+
+  it("refuses editing a backcharge onto a GC reference another row on the job already has", async () => {
+    const target = await createBackcharge(
+      newBackcharge({ description: "Will collide on edit", gcReference: "PA-0099" }),
+    );
+    expect(target).toEqual({ ok: true });
+    const row = await latest();
+
+    const collide = await updateBackcharge(
+      row.id,
+      newBackcharge({ description: "Will collide on edit", gcReference: "PA-0042" }),
+    );
+    expect(collide.ok).toBe(false);
+    expect((await prisma.backcharge.findUniqueOrThrow({ where: { id: row.id } })).gcReference).toBe("PA-0099");
   });
 
   it("refuses everything for a backcharge in another company", async () => {

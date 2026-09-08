@@ -29,8 +29,13 @@ function timeEntryPayTypeFromForm(formData: FormData): (typeof TIME_ENTRY_PAY_TY
 /** Logs a day's hours for one employee against a job — optionally tied to
  * a specific line item (cost code/SOV line) and craft classification. See
  * TimeEntry in schema.prisma for why pay types are separate rows rather
- * than one row with a rate multiplier. */
-export async function logTimeEntry(jobId: string, formData: FormData) {
+ * than one row with a rate multiplier.
+ *
+ * Returns an ActionResult only for the duplicate guard below — everything
+ * else here still throws, matching this function's existing style; those
+ * are malformed-input cases a working form never sends, not refusals a
+ * normal user needs explained to them. */
+export async function logTimeEntry(jobId: string, formData: FormData): Promise<ActionResult> {
   const { company } = await requireCompanyContext();
   await assertJobInCompany(jobId, company.id);
 
@@ -62,6 +67,35 @@ export async function logTimeEntry(jobId: string, formData: FormData) {
   const note = String(formData.get("note") ?? "").trim();
   const perDiemAmount = nullableDecimalFromForm(formData, "perDiemAmount");
   const travelPayAmount = nullableDecimalFromForm(formData, "travelPayAmount");
+  const payType = timeEntryPayTypeFromForm(formData);
+
+  // A double-click or a retried submit resubmits the exact same entry, and
+  // #102's example is exactly this: 16 hours logged on a day someone
+  // worked 8, which doubles the WH-347 hour, doubles that day in the
+  // apprentice ratio (can flip a compliance verdict or hide a violation)
+  // and doubles burdened cost. Multiple real entries for one employee on
+  // one day are ordinary here (different craft codes, different cost
+  // codes) — TimeEntry has no update path at all (see the schema comment),
+  // so this only has to catch a CREATE repeating an identical row, and only
+  // blocks one landing in the last 10 seconds, not a second, different
+  // entry made later that happens to share every field.
+  const recentDuplicate = await prisma.timeEntry.findFirst({
+    where: {
+      jobId,
+      employeeUserId,
+      lineItemId,
+      craftClassificationId,
+      date,
+      hours: hoursRaw,
+      payType,
+      createdAt: { gte: new Date(Date.now() - 10_000) },
+    },
+  });
+  if (recentDuplicate) {
+    return actionFail(
+      "That looks like the same time entry submitted moments ago — check the list below before logging it again.",
+    );
+  }
 
   await prisma.timeEntry.create({
     data: {
@@ -71,7 +105,7 @@ export async function logTimeEntry(jobId: string, formData: FormData) {
       craftClassificationId,
       date,
       hours: hoursRaw,
-      payType: timeEntryPayTypeFromForm(formData),
+      payType,
       perDiemAmount,
       travelPayAmount,
       note: note || null,
@@ -79,6 +113,7 @@ export async function logTimeEntry(jobId: string, formData: FormData) {
   });
 
   revalidatePath(`/jobs/${jobId}`);
+  return actionOk;
 }
 
 const DISPATCH_SLIP_MEDIA_TYPES = ["application/pdf", "image/png", "image/jpeg", "image/webp"] as const;

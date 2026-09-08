@@ -547,8 +547,14 @@ export async function setJobStatus(jobId: string, nextStatus: string): Promise<A
  * Logs an actual expense against a line item. Not gated by job status —
  * real spending happens throughout the job, including after it's
  * contracted and in progress, unlike scope/pricing changes.
+ *
+ * Returns an ActionResult only for the duplicate guard below — everything
+ * else here still throws, consistent with the rest of this function's
+ * existing style; a thrown message is redacted in production, which is
+ * fine for "description is required" but not for a refusal explaining
+ * itself.
  */
-export async function addCostEntry(jobId: string, lineItemId: string, formData: FormData) {
+export async function addCostEntry(jobId: string, lineItemId: string, formData: FormData): Promise<ActionResult> {
   const { company } = await requireCompanyContext();
   await assertJobInCompany(jobId, company.id);
   await assertLineItemOnJob(lineItemId, jobId);
@@ -565,11 +571,36 @@ export async function addCostEntry(jobId: string, lineItemId: string, formData: 
     throw new Error("Description is required");
   }
 
+  // A double-click or a retried submit resubmits the exact same entry, and
+  // a second CostEntry here moves percent complete and the over/under
+  // billing figure quoted to a bonding company (#102). Two genuinely
+  // distinct entries can share every visible field — two real $500
+  // material buys logged the same day under the same category — so this
+  // only blocks an exact repeat (same line item, description, amount,
+  // category and trade) landing within the last 10 seconds, not a second,
+  // deliberate entry made moments later.
+  const recentDuplicate = await prisma.costEntry.findFirst({
+    where: {
+      lineItemId,
+      description,
+      amount,
+      category,
+      tradeScope,
+      createdAt: { gte: new Date(Date.now() - 10_000) },
+    },
+  });
+  if (recentDuplicate) {
+    return actionFail(
+      "That looks like the same cost entry submitted moments ago — check the list below before logging it again.",
+    );
+  }
+
   await prisma.costEntry.create({
     data: { lineItemId, description, amount, category, tradeScope },
   });
 
   revalidatePath(`/jobs/${jobId}`);
+  return actionOk;
 }
 
 /** Removes a mistaken cost entry. */
