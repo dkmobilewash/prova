@@ -11,7 +11,20 @@ import {
   isJobMediaBlobUrl,
   JOB_MEDIA_MAX_BYTES,
 } from "@/lib/job-media";
-import { actionFail as fail, actionOk as ok, type ActionResult } from "./shared";
+import {
+  displayTagName,
+  normalizeTagName,
+  parseTagInput,
+  tagCapProblemMessage,
+  tagNameProblem,
+  tagNameProblemMessage,
+} from "@/lib/job-media-tags";
+import {
+  actionFail as fail,
+  actionOk as ok,
+  isUniqueConstraintError,
+  type ActionResult,
+} from "./shared";
 
 /**
  * Site capture: recording, captioning and removing the photos a crew takes
@@ -237,5 +250,319 @@ export async function deleteJobMedia(mediaId: string): Promise<ActionResult> {
 
   revalidatePath("/photos");
   revalidatePath(`/jobs/${media.jobId}`);
+  return ok;
+}
+
+/* ------------------------------------------------------------------ *
+ * Tags
+ *
+ * IN THIS FILE RATHER THAN A SIBLING `jobMediaTags.ts`, and the reason is
+ * a build error rather than taste. `FIELD_ONLY` and `text()` are what a
+ * sibling module would need, and a `"use server"` file may only export
+ * async functions — "Only async functions are allowed to be exported in a
+ * \"use server\" file", the exact sentence in
+ * @next/swc-linux-x64-gnu@15.5.23 (crates/next-custom-transforms/src/
+ * transforms/server_actions.rs). So exporting the constant to share it
+ * breaks `pnpm build` while typechecking perfectly, and the alternative —
+ * a second copy of the refusal sentence — is the drift LOCATION_TYPES
+ * already paid for once.
+ *
+ * The vocabulary rules themselves are not here: they are pure, they are in
+ * lib/job-media-tags.ts, and lib/job-media-tags.test.ts holds them still.
+ * ------------------------------------------------------------------ */
+
+/**
+ * Puts one or more tags on a photo, creating any this company has not used
+ * before.
+ *
+ * ONE TRANSACTION PER SUBMIT. "Find the tag or create it, then link it" is
+ * two decisions taken against a table two people can be writing to at
+ * once, and the window between them is exactly where a duplicate gets in.
+ *
+ * THE RACE, AND WHY THERE IS NO CATCH-AND-RETRY. Two people tagging "west
+ * wall" on two photos in the same second both find nothing and both
+ * insert. The reflex is to catch P2002 and re-read — but a failed
+ * statement inside a Postgres transaction aborts the WHOLE transaction
+ * ("current transaction is aborted, commands ignored until end of
+ * transaction block"), so the re-read cannot happen where the catch is.
+ * Retrying the whole transaction would work and is more moving parts than
+ * this needs.
+ *
+ * So the conflict is handed to the database instead: `skipDuplicates`
+ * compiles to ` ON CONFLICT DO NOTHING` — the literal the Postgres visitor
+ * in the installed query engine emits, beside its `DoNothing` /
+ * `on_conflict` AST nodes (@prisma/client@6.19.3,
+ * .prisma/client/libquery_engine-debian-openssl-3.0.x.so.node) — and that
+ * BLOCKS on the other transaction's uncommitted row rather than failing,
+ * then skips it once that transaction commits.
+ * The re-read that follows runs in READ COMMITTED, so it takes a fresh
+ * snapshot and sees the row the other person just committed. Both people
+ * end up with the same tag and neither gets a 500.
+ *
+ * The same mechanism covers the second collision, which is easier to hit
+ * and easier to miss: two people putting the SAME tag on the SAME photo,
+ * where the identity is the pair (`@@id([mediaId, tagId])`).
+ */
+export async function addJobMediaTags(mediaId: string, formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_FIELD")) return fail(FIELD_ONLY);
+
+  // Parsed and judged before the database is touched at all: everything
+  // here is decidable from the text, and a refusal that costs a query is
+  // a query spent on nothing.
+  const names = parseTagInput(text(formData, "tags"));
+  if (names.length === 0) return fail(tagNameProblemMessage("empty"));
+  for (const name of names) {
+    const problem = tagNameProblem(name);
+    if (problem) return fail(tagNameProblemMessage(problem));
+  }
+
+  const media = await prisma.jobMedia.findUnique({
+    where: { id: mediaId },
+    select: { id: true, companyId: true, jobId: true },
+  });
+  // The row is re-proved to be this company's even though every screen
+  // that renders the button already checked. A Server Action is its own
+  // endpoint with a stable id; the page in front of it is not a guard.
+  if (!media || media.companyId !== context.companyId) return fail("Photo not found");
+
+  const companyId = context.companyId;
+  const taggedByUserId = context.id;
+  const wanted = names.map((name) => ({ name, normalizedName: normalizeTagName(name) }));
+  const normalizedNames = wanted.map((entry) => entry.normalizedName);
+
+  try {
+    const capProblem = await prisma.$transaction(async (tx) => {
+      const known = await tx.jobMediaTag.findMany({
+        where: { companyId, normalizedName: { in: normalizedNames } },
+        select: { id: true, normalizedName: true },
+      });
+      const assigned = await tx.jobMediaTagAssignment.findMany({
+        where: { mediaId: media.id },
+        select: { tagId: true },
+      });
+
+      // The cap is judged on what this submit would actually ADD. A tag
+      // already on the photo is a no-op that the person cannot see is a
+      // no-op — refusing a full photo for re-submitting a tag it already
+      // wears would be a refusal with no action attached to it.
+      const idByNormalized = new Map(known.map((tag) => [tag.normalizedName, tag.id]));
+      const alreadyOnPhoto = new Set(assigned.map((assignment) => assignment.tagId));
+      const adding = wanted.filter((entry) => {
+        const id = idByNormalized.get(entry.normalizedName);
+        return id === undefined || !alreadyOnPhoto.has(id);
+      }).length;
+
+      // Checked BEFORE anything is written, so a refusal leaves no
+      // half-made vocabulary behind: a tag row created here and then not
+      // attached would be a word in the company's list that no photo
+      // wears and nobody typed on purpose.
+      const problem = tagCapProblemMessage(assigned.length, adding);
+      if (problem) return problem;
+
+      // Sorted, and that is not cosmetic. A multi-row INSERT takes its row
+      // locks in the order of its VALUES list, so two people submitting
+      // "west wall, 3F" and "3F, west wall" in the same instant can each
+      // hold the row the other is waiting for — a deadlock, which Postgres
+      // resolves by killing one of them with an error this action does not
+      // recognise and would hand back as a 500. Every writer inserting in
+      // the same order removes that possibility rather than handling it.
+      // Sorting here changes nothing a person sees: the display name is
+      // carried per entry, and the chips are ordered by the read.
+      const missing = wanted
+        .filter((entry) => !idByNormalized.has(entry.normalizedName))
+        .sort((a, b) => (a.normalizedName < b.normalizedName ? -1 : 1));
+      let tagIds = known.map((tag) => tag.id);
+      if (missing.length > 0) {
+        await tx.jobMediaTag.createMany({
+          data: missing.map((entry) => ({
+            companyId,
+            // Stored as typed, compared as folded. Both come from the one
+            // module that computes them, never from a second spelling of
+            // the same rule here.
+            name: entry.name,
+            normalizedName: entry.normalizedName,
+          })),
+          skipDuplicates: true,
+        });
+        // Re-read rather than trusting what was just written: on Postgres
+        // `createMany` returns a COUNT, not rows, so the ids of anything
+        // created here have to be fetched — and this read is also what
+        // picks up a tag another person committed a moment ago, whose
+        // insert the line above quietly skipped.
+        const all = await tx.jobMediaTag.findMany({
+          where: { companyId, normalizedName: { in: normalizedNames } },
+          select: { id: true },
+        });
+        tagIds = all.map((tag) => tag.id);
+      }
+
+      // Sorted for the same reason as the insert above — this one is on
+      // the join, where two people tagging the SAME photo with the same
+      // two tags is the realistic collision.
+      await tx.jobMediaTagAssignment.createMany({
+        data: [...tagIds]
+          .sort()
+          .map((tagId) => ({ mediaId: media.id, tagId, taggedByUserId })),
+        skipDuplicates: true,
+      });
+      return null;
+    });
+
+    if (capProblem) return fail(capProblem);
+  } catch (error) {
+    // Belt, not braces. `ON CONFLICT DO NOTHING` on both inserts should
+    // make a unique violation unreachable here — but this is the one
+    // action in this feature a crew runs from a phone, and the cost of
+    // being wrong about that is a redacted 500 rather than a sentence.
+    if (isUniqueConstraintError(error)) {
+      return fail("Someone else was tagging this at the same moment — try that again");
+    }
+    throw error;
+  }
+
+  revalidatePath("/photos");
+  revalidatePath(`/jobs/${media.jobId}`);
+  return ok;
+}
+
+/**
+ * Takes one tag off one photo.
+ *
+ * THE ASSIGNMENT ONLY. The tag itself survives, and that distinction is
+ * the entire reason there is a vocabulary table: "west wall" is on 200
+ * photos, and taking it off this one must not take it off the other 199 or
+ * empty it out of the autocomplete. Deleting the tag is a separate,
+ * deliberate act — `deleteJobMediaTag` — and it says how many photos it
+ * will come off before it does it.
+ *
+ * `deleteMany` rather than `delete`, so a second click on a chip that has
+ * already gone is a no-op instead of a thrown "record not found". The
+ * caller asked for the tag to be off the photo; if it is already off, that
+ * is the outcome they wanted.
+ */
+export async function removeJobMediaTag(mediaId: string, tagId: string): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_FIELD")) return fail(FIELD_ONLY);
+
+  const media = await prisma.jobMedia.findUnique({
+    where: { id: mediaId },
+    select: { id: true, companyId: true, jobId: true },
+  });
+  if (!media || media.companyId !== context.companyId) return fail("Photo not found");
+
+  // Scoped by the photo, which has just been proved to be this company's.
+  // An assignment is only reachable through a photo, so a `tagId` from
+  // another company matches nothing here rather than deleting anything.
+  await prisma.jobMediaTagAssignment.deleteMany({ where: { mediaId: media.id, tagId } });
+
+  revalidatePath("/photos");
+  revalidatePath(`/jobs/${media.jobId}`);
+  return ok;
+}
+
+/**
+ * Fixes a tag's name everywhere at once.
+ *
+ * This is most of why the vocabulary table exists. "wset wall" on forty
+ * photos is one row to correct here and forty photos to re-tag if tags
+ * were a string column — which is to say, in practice, never corrected.
+ *
+ * A COLLISION IS A RETURNED FAILURE, NOT A MERGE. Renaming "west wal" to
+ * "west wall" when "west wall" already exists could plausibly merge the
+ * two, and deliberately does not: a merge moves every assignment off one
+ * tag and deletes it, which is destructive, irreversible, and nothing the
+ * person asked for — they asked to fix a spelling. They are told the name
+ * is taken and can take the other tag off these photos themselves.
+ */
+export async function renameJobMediaTag(tagId: string, formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_FIELD")) return fail(FIELD_ONLY);
+
+  const raw = text(formData, "name");
+  const problem = tagNameProblem(raw);
+  if (problem) return fail(tagNameProblemMessage(problem));
+
+  const name = displayTagName(raw);
+  const normalizedName = normalizeTagName(raw);
+
+  const tag = await prisma.jobMediaTag.findUnique({
+    where: { id: tagId },
+    select: { id: true, companyId: true, normalizedName: true },
+  });
+  if (!tag || tag.companyId !== context.companyId) return fail("Tag not found");
+
+  // A pure re-casing — "west wall" to "West Wall" — normalises to what is
+  // already stored, so it is not a collision with itself. Checking only
+  // when the folded name actually CHANGES is what makes fixing capitals
+  // possible at all.
+  if (normalizedName !== tag.normalizedName) {
+    const clash = await prisma.jobMediaTag.findFirst({
+      where: { companyId: context.companyId, normalizedName },
+      select: { name: true },
+    });
+    if (clash) {
+      return fail(
+        `You already have a tag called "${clash.name}", and two tags cannot share a name. ` +
+          `Take this one off the photos it is on instead, or pick a different name.`,
+      );
+    }
+  }
+
+  try {
+    await prisma.jobMediaTag.update({ where: { id: tag.id }, data: { name, normalizedName } });
+  } catch (error) {
+    // The check above and this write are two statements, and somebody else
+    // can create that name in between. `instanceof
+    // Prisma.PrismaClientKnownRequestError` is FALSE at runtime in this app
+    // — the guard would silently never fire and the person would get a 500
+    // instead of this sentence — so the `code` is what is read. See
+    // isUniqueConstraintError in lib/actions/shared.ts.
+    if (isUniqueConstraintError(error)) {
+      return fail(`Someone else just created a tag called "${name}". Reload and try again.`);
+    }
+    throw error;
+  }
+
+  revalidatePath("/photos");
+  // Every job page shows these chips, and a rename changes all of them.
+  // The `"page"` argument is required for a dynamic route: without it Next
+  // warns "a dynamic page path was passed to revalidatePath, but the type
+  // parameter is missing. This has no effect by default" and does nothing
+  // (next@15.5.23 dist/server/web/spec-extension/revalidate.js:67-71).
+  revalidatePath("/jobs/[id]", "page");
+  return ok;
+}
+
+/**
+ * Removes a tag from the company's vocabulary, and with it every
+ * assignment.
+ *
+ * The assignments go by CASCADE rather than by a delete here — the FK is
+ * `onDelete: Cascade` on both sides of the join (media-tags.prisma), so
+ * one statement removes the word and every place it was used. There is no
+ * "orphaned assignment" state to clean up afterwards, which is the whole
+ * reason that relation is Cascade while most of this schema is RESTRICT: a
+ * row saying two records are connected is not itself a record worth
+ * refusing a delete over.
+ *
+ * WHICH MAKES THIS THE ONE DESTRUCTIVE ACTION IN THIS FEATURE. Deleting a
+ * tag with 200 photos on it silently changes 200 photos. The count is on
+ * the button in the UI for that reason; the two-step is not decoration.
+ */
+export async function deleteJobMediaTag(tagId: string): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_FIELD")) return fail(FIELD_ONLY);
+
+  const tag = await prisma.jobMediaTag.findUnique({
+    where: { id: tagId },
+    select: { id: true, companyId: true },
+  });
+  if (!tag || tag.companyId !== context.companyId) return fail("Tag not found");
+
+  await prisma.jobMediaTag.delete({ where: { id: tag.id } });
+
+  revalidatePath("/photos");
+  revalidatePath("/jobs/[id]", "page");
   return ok;
 }

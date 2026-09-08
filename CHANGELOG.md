@@ -12,6 +12,54 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### A photo nobody can find is a photo nobody took (Diego)
+`claude/prova-company-cam-feature-6170v6`
+
+Site capture shipped the camera and the gallery. What it did not ship was
+the answer to the question the whole thing exists for, asked eleven months
+later by a GC: show me the west wall before the pour. Sixty photos a week
+into a job and the gallery is a wall of thumbnails you scroll past.
+
+Tags are the index. Per company, in the company's own words — "west wall",
+"3F", "before pour", "RFI-14" — because a fixed list of tags would be wrong
+for every contractor who ever used it.
+
+- **The vocabulary is a table, not a string column.** One row per tag per
+  company, joined to photos. That buys the three things a repeated string
+  cannot do: rename it (fix a typo on forty photos at once, from
+  **Manage tags** on `/photos`), list it (the autocomplete), and count it
+  (the number on each filter chip). Every one of those is most of what
+  tagging is for.
+- **"West Wall", "west wall" and "West  wall" are ONE tag.** Compared on a
+  folded form — NFKC, lower-cased, whitespace collapsed — and shown as the
+  person typed it. Without that fold, one wall's photos split three ways
+  and a search returning a third of them looks exactly like one returning
+  all of them. Punctuation and accents deliberately do NOT fold: "RFI-14"
+  and "RFI 14" are two references on a real job, and merging them is the
+  same failure pointed the other way.
+- **The two filters compose.** `/photos?job=…&tag=…` is job AND tag, and
+  every chip on the page keeps whatever the other one is set to. A chip
+  that silently dropped the other filter would show more photos than were
+  asked for while looking completely healthy — so the URL is built by one
+  pure function with tests on it rather than by a template string per chip.
+- **The photo count per tag is computed on every read.** No counter column.
+  A stored count goes wrong the first time a photo is deleted, and it is
+  the number the delete confirmation leans on ("it comes off 12 photos").
+- **Removing a tag from a photo does not delete the tag.** Obvious, and it
+  is the one thing a join table exists to make true: "west wall" is on 200
+  photos and taking it off this one must not empty it out of the other 199
+  or out of the autocomplete.
+- **Two people tagging "west wall" at the same moment do not get a 500.**
+  Find-or-create is two decisions with a race between them, in one
+  transaction, with the conflict handed to Postgres (`ON CONFLICT DO
+  NOTHING`) rather than caught — a failed statement aborts the whole
+  transaction, so the obvious catch-and-re-read cannot run where the catch
+  is.
+- **One `include`, not a query per card.** A 60-photo gallery costs two
+  queries for its tags, not sixty-one.
+
+---
+
 ### Whether the man at the gate has a current card (Cyrus)
 `cyrus/worker-certifications`
 

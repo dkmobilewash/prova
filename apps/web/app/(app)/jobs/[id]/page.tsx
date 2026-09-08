@@ -21,7 +21,7 @@ import { MarkContractedButton } from "@/components/MarkContractedButton";
 import { ChangeOrders, type ChangeOrderView } from "@/components/ChangeOrders";
 import { changeOrderValueDelta, pendingChangeOrderExposure, reopenBlockers } from "@/lib/change-order";
 import { can } from "@/lib/permissions";
-import { countJobMedia, loadJobMedia } from "@/lib/job-media-query";
+import { countJobMedia, loadJobMedia, loadJobMediaTags } from "@/lib/job-media-query";
 import { viewerTimeZone } from "@/lib/viewerToday";
 import { money } from "@/lib/money";
 import { calculateLineItemWip, calculateJobWip } from "@/lib/wip";
@@ -567,12 +567,16 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
   // section by section, so the section is withheld rather than the page.
   const showsField = can(principal, "MANAGE_FIELD");
   const jobMediaLimit = 12;
-  const [jobMedia, jobMediaTotal] = showsField
+  // The company's whole tag vocabulary, for the cards' autocomplete — the
+  // point of the vocabulary table is that people reuse a word instead of
+  // inventing a fourth spelling of it, which only works if they can see it.
+  const [jobMedia, jobMediaTotal, jobMediaTags] = showsField
     ? await Promise.all([
         loadJobMedia({ companyId: company.id, jobId: job.id, take: jobMediaLimit }, await viewerTimeZone()),
-        countJobMedia(company.id, job.id),
+        countJobMedia({ companyId: company.id, jobId: job.id }),
+        loadJobMediaTags(company.id),
       ])
-    : [[], 0];
+    : [[], 0, []];
 
   const headerList = await headers();
   const origin = `${headerList.get("x-forwarded-proto") ?? "https"}://${headerList.get("host")}`;
@@ -2013,6 +2017,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             jobId={job.id}
             media={jobMedia}
             total={jobMediaTotal}
+            tagNames={jobMediaTags.map((tag) => tag.name)}
             limit={jobMediaLimit}
           />
         )}

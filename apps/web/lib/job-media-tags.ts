@@ -110,3 +110,70 @@ export function parseTagInput(raw: string): string[] {
   }
   return out;
 }
+
+/**
+ * Why a photo cannot take these tags, or null if it can.
+ *
+ * Separate from `tagNameProblem` because it is a different KIND of refusal:
+ * that one is about a name, this one is about a photo, and the person needs
+ * to be told which. Pure and here rather than inline in the action so the
+ * arithmetic is testable — an off-by-one in a cap is invisible until
+ * somebody hits it, and the person who hits it is on a roof.
+ *
+ * `existing` is the count already on the photo and `adding` the count of
+ * genuinely new ones (a tag already on the photo costs nothing to submit
+ * again, so the action does not count it here).
+ */
+export function tagCapProblemMessage(existing: number, adding: number): string | null {
+  if (existing + adding <= JOB_MEDIA_TAGS_PER_PHOTO_MAX) return null;
+  const more = adding === 1 ? "one more" : `${adding} more`;
+  return (
+    `A photo carries at most ${JOB_MEDIA_TAGS_PER_PHOTO_MAX} tags. ` +
+    `This one has ${existing}, and ${more} would make ${existing + adding}.`
+  );
+}
+
+/**
+ * The gallery's two filters, composed into one URL.
+ *
+ * `/photos` filters by job AND by tag, and the two have to survive each
+ * other: clicking a tag while a job is chosen must narrow, not replace.
+ * That is the entire content of this function, and it is a function rather
+ * than a template string at each chip because the failure mode of getting
+ * it wrong — one filter silently dropped when the other is clicked — looks
+ * exactly like a page that is working, just with more photos on it than
+ * you expected. A pure function is a thing a test can hold still.
+ *
+ * `null` for either half means "not filtered by that", which is what the
+ * "All jobs" and "All tags" chips pass.
+ */
+export function photosFilterHref(filter: { job?: string | null; tag?: string | null }): string {
+  const params = new URLSearchParams();
+  if (filter.job) params.set("job", filter.job);
+  if (filter.tag) params.set("tag", filter.tag);
+  const query = params.toString();
+  return query ? `/photos?${query}` : "/photos";
+}
+
+/**
+ * The id of the one `<datalist>` of this company's tag names, shared by
+ * every card on a page.
+ *
+ * ONE ELEMENT PER PAGE, NOT ONE PER CARD. `/photos` renders up to 60 cards
+ * and a company can easily have 50 tags; a datalist inside each card would
+ * ship that list 60 times in the RSC payload to render the same options
+ * every time. `<input list="…">` is resolved by id against the whole
+ * document, which is what the attribute is for.
+ *
+ * The coupling that buys: a page rendering `<JobMediaTagCard>` must also
+ * render `<JobMediaTagDatalist>`, and if it forgets, the input silently has
+ * no suggestions rather than erroring. That is a real cost and it is
+ * accepted knowingly — the failure is a missing convenience, not a wrong
+ * answer, and both galleries render the section component that carries it.
+ *
+ * Lives in this pure module rather than beside the component because that
+ * component is `"use client"`: a server page importing a plain VALUE out of
+ * a client module gets a client-reference proxy instead of the string
+ * (lib/client-boundary.test.ts, and the production 500 it was written for).
+ */
+export const JOB_MEDIA_TAG_DATALIST_ID = "job-media-tag-names";

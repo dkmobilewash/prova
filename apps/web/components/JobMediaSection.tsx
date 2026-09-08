@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { JobMediaCapture } from "@/components/JobMediaCapture";
 import { JobMediaCard, type JobMediaCardData } from "@/components/JobMediaCard";
+import { JobMediaTagDatalist } from "@/components/JobMediaTagDatalist";
 
 /**
  * The site-photo section on a job page.
@@ -19,11 +20,17 @@ export function JobMediaSection({
   jobId,
   media,
   total,
+  tagNames,
   limit = 12,
 }: {
   jobId: string;
   media: JobMediaCardData[];
   total: number;
+  /** Every tag name this company already uses, for the cards' autocomplete.
+   *  Threaded down from the page because the datalist is rendered ONCE for
+   *  the whole section rather than once per card — see JobMediaTagDatalist
+   *  for why, and for what breaks quietly if a gallery forgets it. */
+  tagNames: string[];
   limit?: number;
 }) {
   return (
@@ -32,6 +39,8 @@ export function JobMediaSection({
       <p className="mb-4 text-sm text-slate-400">
         What this job actually looked like, on the day.
       </p>
+
+      <JobMediaTagDatalist names={tagNames} />
 
       <div className="mb-4 rounded-lg border border-slate-800 bg-slate-900 p-4">
         <JobMediaCapture jobId={jobId} />
