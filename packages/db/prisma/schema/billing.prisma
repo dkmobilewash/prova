@@ -80,6 +80,26 @@ model ContractDocument {
   fileName String
   note     String?
 
+  /// Set ONLY on a document recorded as an already-executed subcontract —
+  /// the GC issued it, signed it, and sent it back, on paper or through
+  /// the GC's own system. Null on an ordinary upload, which is why this is
+  /// nullable rather than backfilled: every document that existed before
+  /// this field was an ordinary upload and guessing a date for one would
+  /// invent evidence.
+  ///
+  /// The date the GC SIGNED, ENTERED by whoever recorded it — not the
+  /// moment anybody clicked. Stored at UTC midnight like every other
+  /// entered date here. `createdAt` is the stamped audit companion (when
+  /// Prova was told) and `uploadedByUserId` is who asserted it; the three
+  /// together are the evidence record, and none of them is ever updated —
+  /// ContractDocument has no update path at all, only create and an
+  /// owner-only delete.
+  ///
+  /// Which route a job took to CONTRACTED is DERIVED from this and from
+  /// SignatureRequest, never stored as a third flag — see
+  /// apps/web/lib/contract-execution.ts.
+  executedSignedDate DateTime?
+
   uploadedByUserId String?
   uploadedByUser   User?    @relation(fields: [uploadedByUserId], references: [id])
   createdAt        DateTime @default(now())
@@ -128,10 +148,43 @@ model Payment {
   id         String   @id @default(cuid())
   invoiceId  String
   invoice    Invoice  @relation(fields: [invoiceId], references: [id])
+  /// What was APPLIED to the invoice. Its meaning is deliberately
+  /// unchanged by the fee columns below: `lib/actions/billing.ts` derives
+  /// the balance as `invoice.amount - SUM(payments.amount)`, and
+  /// `lib/actions/quickbooks.ts` sends this as QuickBooks `TotalAmt`.
+  /// Redefining it to mean "cash in the bank" would silently move both.
   amount     Decimal  @db.Decimal(12, 2)
   method     String?
   receivedAt DateTime @default(now())
   note       String?
+
+  /// What a payment platform deducted in transit, and who took it.
+  ///
+  /// A sub paid through Textura, GC Pay or Procore Pay gets a remittance
+  /// for the invoice amount less a fee — Textura is 0.22% of contract
+  /// value, capped at $5,000, charged to the SUBCONTRACTOR on a platform
+  /// the GENERAL CONTRACTOR chose. Before these columns there was nowhere
+  /// to put that number, so both options were wrong: record the cheque
+  /// that arrived and the invoice sits short forever, or record the full
+  /// amount and the fee vanishes from the system.
+  ///
+  /// Cash actually received is DERIVED as `amount - feeAmount`, never
+  /// stored — same rule as every other derived figure here. Both numbers
+  /// are printed on the same remittance advice, so this is one more box
+  /// on a form somebody is already filling in.
+  ///
+  /// Why now, unwired, before anything reads it: this cannot be
+  /// backfilled. Once the cheque is recorded the fee lives only on a
+  /// remittance advice in a drawer, so every week without the column is a
+  /// week that can never answer the question.
+  ///
+  /// `feeSource` is free text rather than an enum because the set is
+  /// genuinely open — a GC picks a platform and the sub finds out. Read
+  /// paths should normalise rather than assume ("Textura", "textura" and
+  /// "Oracle Textura" are one payer). Announced in #prova-build before
+  /// the push; see also issue #189, which is a separate live defect.
+  feeAmount Decimal? @db.Decimal(12, 2)
+  feeSource String?
 
   @@index([invoiceId])
 }

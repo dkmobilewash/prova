@@ -1,6 +1,7 @@
 import { prisma } from "@prova/db";
 import { reviewDays, type DayEntryInput, type PayType, type PrevailingWageRuleSetInput, type WeekReview } from "@/lib/prevailing-wage";
 import { weekStart } from "@/components/fieldReportWeeks";
+import { payrollWorkerName } from "@/lib/worker-name";
 
 /**
  * Fetching and normalising for the prevailing wage page.
@@ -191,7 +192,9 @@ export async function reviewJobWeek(
   const byEmployee = new Map<string, { name: string; entries: DayEntryInput[] }>();
   for (const entry of entries) {
     const bucket = byEmployee.get(entry.employeeUserId) ?? {
-      name: entry.employeeUser.name ?? entry.employeeUser.email,
+      // Prevailing-wage review feeds a certified payroll filing, so the
+      // email fallback is not available here. See lib/worker-name.ts.
+      name: payrollWorkerName(entry.employeeUser).label,
       entries: [],
     };
     bucket.entries.push({

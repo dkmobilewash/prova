@@ -96,6 +96,247 @@ than no test. The third was rewritten to assert what is actually true: an
 entry is attributed at CREATE, which is the only path the app has.
 
 
+### The money a GC's platform takes off you had nowhere to go (Cyrus)
+`cyrus/payment-fee-fields`
+
+`Payment` held `amount`, `method`, `receivedAt`, `note` — and no field for
+what was deducted in transit. A sub paid through Textura, GC Pay or
+Procore Pay gets a remittance for the invoice amount less a fee (Textura
+is 0.22% of contract value, capped at $5,000, charged to the SUB on a
+platform the GC chose). Whichever number the office manager typed,
+cstream was wrong:
+
+- Types the cheque that actually arrived → `billing.ts` derives the
+  balance as `invoice.amount - SUM(payments.amount)`, so the invoice sits
+  short **forever** and reads as a partial payment.
+- Types the full amount → the balance is right and the fee is **gone from
+  the system entirely**.
+
+:warning: **And it silently flattered the GC.** `lib/gc-reliability.ts`
+filters `fullyPaid = paidAmount >= amount`, then computes
+`averageDaysToPay` and `onTimeRate` over only those. Under the first
+option that invoice is never fully paid, so it is **excluded from the
+statistics rather than counted as late** — meaning a GC whose chosen
+platform skims the sub produced BETTER-looking reliability numbers than
+one who paid by cheque. That defect is live independent of this change
+(any short payment does it, including a rounding cent) and is filed as
+issue #189 rather than fixed here, because `gc-reliability.ts` is Diego's
+file.
+
+**Two additive nullable columns**, `feeAmount Decimal(12,2)` and
+`feeSource String`. No DROP, nothing made NOT NULL, no default, no
+backfill. Announced in `#prova-build` before the push.
+
+**`amount` keeps its exact meaning, deliberately.** The tempting change —
+making it mean "cash in the bank" — moves two things silently:
+`lib/actions/billing.ts` derives the invoice balance from it, and
+`lib/actions/quickbooks.ts` sends it as QuickBooks `TotalAmt` against a
+live sandbox connection. So `amount` stays what was APPLIED, `feeAmount`
+is what was skimmed, and **cash received is DERIVED as
+`amount - feeAmount`, never stored** — the same derived-state rule as
+everywhere else. Both numbers are printed on the same remittance advice.
+
+**Why now, before anything reads it.** This cannot be backfilled. Once
+the cheque is recorded the fee exists only on a remittance advice in a
+drawer, so every week without the column is a week that can never answer
+the question. Ships deliberately unwired: no action writes it, no UI, no
+read path changed, nothing renders — same shape as `CrewMember`.
+
+`feeSource` is free text rather than an enum because the set is genuinely
+open: a GC picks a platform and the sub finds out. Read paths should
+normalise ("Textura", "textura" and "Oracle Textura" are one payer)
+rather than assume. Flagged to Diego as the first thing to overrule.
+
+
+### An email address was printing where a worker's name belongs (Cyrus)
+`cyrus/no-email-as-worker-name`
+
+`lib/worker-name.ts` exists because `employeeUser.name ?? employeeUser.email`
+puts an EMAIL where a person's name goes. On an internal screen that merely
+identifies somebody; on a filing it is a false statement about who did the
+work, and a wrong name on a filed form is a correction to an agency rather
+than a patch.
+
+**#181 fixed seven call sites and deliberately left four**, in writing,
+because another agent was live in those files. Those four then sat on
+`main`. The worst of them — `union-compliance-query.ts:135` — feeds
+`RemittanceReport.uncomputedNames`, **which renders on `/union-compliance`**.
+So an email address was printing on a compliance screen while the helper
+that exists to prevent exactly that sat one import away.
+
+All four now go through `payrollWorkerName()`:
+`union-compliance-query.ts` (twice — the fringe remittance and the
+apprentice ratio), `prevailing-wage-query.ts`, `apprenticeship-query.ts`.
+`certifications.ts`, `today-dashboard.ts` and `alerts-query.ts` are
+deliberately untouched: a sort comparator and crew chips are not filings.
+
+**The real fix is the census, not the four edits.** This defect has now
+recurred four times, which means the rule was never enforced — it was
+remembered. `lib/workerNameCensus.test.ts` scans the modules that feed
+documents leaving the building and fails the build on the pattern.
+Mutation-verified four ways: the original `?? email` shape restored at each
+of the three files went red, and so did a DIFFERENT route to an email
+(`String(user.email)`) that the `??` check alone would have missed.
+
+:warning: **Two things went wrong writing this and both are recorded rather
+than quietly fixed**, because both are instances of failure modes already in
+CLAUDE.md.
+
+*One.* The script that added the missing imports skipped any file already
+mentioning `worker-name` — and my own new COMMENT said "see
+lib/worker-name.ts", so two imports were never added and typecheck failed.
+That is the third instance of a comment satisfying a check meant for code,
+after #176's census and #150. The census here strips comments before
+scanning for exactly this reason.
+
+*Two.* The census's positive check used `\bUser\b`, which **matches
+nothing** — the word boundary fails inside `employeeUser`. It passed
+vacuously and was only caught because a mutation that should have reddened
+it did not. A test reshaped until it goes green is the vacuous shape this
+file is about; the regex is now `[Uu]ser\b` and the mutation reddens it.
+
+
+### A sub can start a job, get it billable, and finish it (Cyrus)
+`cyrus/subcontract-intake-and-job-lifecycle`
+
+Three of the four things that stopped a real specialty-trade subcontractor
+getting past step one. All three were live on `main` and none was on an
+issue or in FEATURE-AUDIT — they were found by asking what a framing sub
+actually does on day one, not by reading tests.
+
+**1. A job could not become billable unless the GC e-signed INSIDE the
+app.** `markJobContracted` refused without a `SIGNED` SignatureRequest,
+and `createInvoice`, `submitPayApplication` and change orders are all
+gated on CONTRACTED. That is backwards for a sub: the GC issues the
+subcontract, the GC signs it, and it arrives already executed on paper or
+through the GC's own portal. **A sub who waits for his GC to sign up for
+his software never bills anybody.** So there are now two routes to
+CONTRACTED — a SIGNED SignatureRequest, or a `ContractDocument` carrying
+the date the GC actually signed. The e-sign flow is byte-for-byte
+untouched, so this is a revert rather than an unpick if it is wrong.
+
+- **Recording the evidence does NOT contract the job.** Two separate acts,
+  so `jobs.ts` still has exactly one write that makes a job billable and
+  it is the one carrying the gate. A mutation that made it self-contract
+  went red.
+- **Which route a job took is DERIVED, never stored** — no `contractRoute`
+  flag. Both evidence records already exist; a flag could disagree with
+  them. The page says which it was: an off-platform row reads "an
+  off-platform signature cstream did not witness. The file is the record."
+- **The signing date is ENTERED, not stamped.** It is the GC's date, not
+  ours. Same rule as every other evidence record here.
+
+**2. Every new job silently created a duplicate GC.** `createJob` called
+`prisma.contact.create` unconditionally off free text, with no picker —
+so three jobs for one GC were three Contact rows, splitting payment
+reliability, the bid pipeline and the interaction log, and making per-GC
+default retainage unreachable because the prefill read a contact minted
+with nulls. There is now a picker with create-new inline, and **a contact
+id from another tenant is refused** rather than trusted.
+
+**3. A job could never leave CONTRACTED.** `data: { status: "CONTRACTED" }`
+was the ONLY job-status write in the app — one grep hit — so IN_PROGRESS
+and COMPLETE were unreachable, the dashboard's "In progress" group was
+permanently empty, and Ask answered that question with nothing every time.
+Transitions are now explicit and **kept manual, not derived**: `JobStatus`
+is a stored column and deriving one of four stored values would be exactly
+the contradiction the derived-state rule exists to prevent.
+
+The allowed moves are deliberately narrow — `CONTRACTED → IN_PROGRESS`,
+`IN_PROGRESS → CONTRACTED or COMPLETE`, `COMPLETE → IN_PROGRESS`. **ESTIMATE
+has no entry at all**: a general-purpose setter that could write CONTRACTED
+would be a second door into billing with no evidence behind it. **Nothing
+ever returns to ESTIMATE**, because ESTIMATE is what unlocks editing
+contracted scope without a change order. The two backward moves exist so a
+misclick is correctable.
+
+**Migration** `20260905120000_add_contract_document_executed_signed_date` —
+one nullable column, announced in `#prova-build` on 2026-09-05 before the
+push. Preflight names it and reports "all additive". The column could not
+be avoided: `ContractDocument` already carries the file, the uploader and a
+stamped `createdAt`, but nothing anywhere held **the date the GC actually
+signed**. Writing a fake `SignatureRequest` would destroy the exact
+distinction this feature exists to make, and a date in a free-text note is
+not a date.
+
++35 tests (1584 → 1619), including a 365-line `jobLifecycle.dbtest.ts`.
+:warning: **Not clicked.** The three capabilities are proven by test and by
+database test, not by a browser.
+
+
+### The form itself, not a report that resembles it (Cyrus)
+`cyrus/wh347-form`
+
+`lib/certified-payroll.ts` says in its own header that it mirrors "the
+substance of a federal WH-347 ... without replicating its exact
+government-form layout, which is a distinct, larger effort." This is that
+effort. The distinction is not cosmetic: the office manager's job is to
+produce a document an awarding body ACCEPTS, and a summary carrying the
+same numbers in a different shape gets retyped by hand — which is the
+work the product exists to remove.
+
+- **Column 4 is hours worked EACH DAY, seven dated columns.** The summary
+  aggregates the week by pay type and throws the day away, so it can
+  never become the form. The data was never missing; `TimeEntry.date`
+  carries it. `lib/wh347.ts` groups by day first.
+- :warning: **Column 7 excludes fringe, and the existing helper would
+  have overstated it.** `calculateTimeEntryLaborCost` returns the
+  BURDENED cost — cash plus fringe paid to plans — because job costing
+  wants what the hour cost the company. Gross Amount Earned under
+  Davis-Bacon means CASH wages. Printing the burdened figure there
+  overstates gross by the whole fringe package on a form signed under
+  penalty of perjury. `cashWagesFor` and `fringeCreditFor` derive the two
+  separately and the module never reuses the burdened one.
+- **The pay-type multiplier table is deliberately a SECOND COPY** of the
+  one in `labor-cost.ts`, not an import. That one is job costing and may
+  legitimately change — it documents SHIFT_DIFFERENTIAL as "treated as
+  straight-time base pay UNTIL that's captured." The moment it is
+  captured, job costing should change and a filed federal form should not
+  silently change with it.
+- **Double time gets its own row.** Folding it into overtime understates
+  the rate and misstates what was paid. The form expects extra rows where
+  extra rates apply.
+- **A day nobody worked prints BLANK, never 0.** A zero in that grid
+  asserts the worker was on the project and worked no hours, which is a
+  different claim from being absent from the payroll.
+- **One line per worker PER CLASSIFICATION.** A worker who ran two crafts
+  occupies two lines, because column 6 follows the classification;
+  collapsing them prints one rate against hours paid at two.
+- **One underivable day nulls the whole line's money columns.** A partial
+  gross reads as a complete one.
+
+**The page refuses to look finished, and that is the feature.** Every
+field cstream cannot source is printed IN PLACE in red as a sentence, and
+a banner at the top names all of them. `fileable` is false whenever
+anything blocks. Today that always includes the Statement of Compliance
+(page 2 is not built), the sequential payroll number, project location
+and contract number (a `Job` records neither), the worker's identifying
+number, and deductions and net wages — cstream does not run payroll and
+holds neither. A WH-347 with an empty box is indistinguishable from one
+claiming zero, to everyone except the person who filled it in.
+
+New route `/jobs/[id]/certified-payroll/wh-347`, registered in
+`PAGE_ONLY_CAPABILITY` under `MANAGE_COMPLIANCE` — the same capability as
+the working view it prints from, which it shows strictly less than. The
+sibling page is untouched: that one is the review screen, this one is the
+filing.
+
+33 tests in `lib/wh347.test.ts`. Eight defects were reintroduced one at a
+time and every one turned a named test red — folding DT into OT, adding
+fringe into gross, printing 0 for a blank day, keeping a partial gross,
+collapsing two crafts onto one line, swallowing an entry from the next
+week, calling a blocked form fileable, and multiplying fringe by the
+overtime premium. Restored byte-identical afterwards, 33/33 green.
+
+:warning: **NOT CLICKED.** The Chrome extension was unreachable and
+signing in is not something an agent should do, so no human has loaded
+this page. The grid's arithmetic is proven by unit test; its markup —
+`rowSpan` alignment across pay-type rows, the print layout — is not. Two
+things WERE verified against the running dev server: the route resolves
+and `requireCapability` bounced an unauthenticated request with the
+`weekStart` preserved.
+
+
 ### Whether the man at the gate has a current card (Cyrus)
 `cyrus/worker-certifications`
 
