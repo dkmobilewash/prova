@@ -231,6 +231,11 @@ const PAGE_ONLY_CAPABILITY: Record<string, Capability> = {
   // "certified payroll" is named in MANAGE_COMPLIANCE's own doc comment,
   // and the page prints wage rates per employee per day.
   "/jobs/[id]/certified-payroll": "MANAGE_COMPLIANCE",
+  // The federal form itself, printed from the same week as the page
+  // above and showing strictly less than it does. Same capability for
+  // the same reason — a different one here would be an inconsistency,
+  // not a tightening.
+  "/jobs/[id]/certified-payroll/wh-347": "MANAGE_COMPLIANCE",
 };
 
 /**
