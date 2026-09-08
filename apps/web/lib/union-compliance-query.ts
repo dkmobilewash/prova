@@ -128,23 +128,32 @@ export async function loadRemittance(companyId: string, month: string): Promise<
   }
 
   const report = buildRemittanceReport(
-    entries.map((e) => ({
-      date: e.date,
-      hours: Number(e.hours),
-      craftClassificationId: e.craftClassificationId,
-      craftLabel: e.craftClassification?.name ?? null,
-      unionLocalId: e.craftClassification?.unionLocalId ?? null,
-      unionLocalLabel: e.craftClassification ? localLabel(e.craftClassification.unionLocal) : null,
-      payType: e.payType,
-      employeeUserId: e.employeeUserId,
-      // The name that reaches a FILING goes through payrollWorkerName, so
-      // an account with no name recorded prints a placeholder the office
-      // has to chase rather than an email address a trust fund would be
-      // told is somebody's name.
-      employeeFilingName: payrollWorkerName(e.employeeUser),
-      employeeName: e.employeeUser.name ?? e.employeeUser.email,
-      jobName: e.job.name,
-    })),
+    entries.map((e) => {
+      // Resolved ONCE and used for both name fields, so the two can never
+      // disagree about who this is. Neither is `name ?? email`: both reach
+      // the fringe remittance, a document sent to a trust fund crediting
+      // hours to a NAMED member's account, and lib/worker-name.ts shows
+      // the gap rather than filling it with an address.
+      //
+      // They stay two fields because they are two audiences.
+      // `employeeFilingName` carries `nameMissing` through to the member
+      // line on the printed sheet; `employeeName` is the flat string
+      // feeding `uncomputedNames`, the chase-list on /union-compliance.
+      const filingName = payrollWorkerName(e.employeeUser);
+      return {
+        date: e.date,
+        hours: Number(e.hours),
+        craftClassificationId: e.craftClassificationId,
+        craftLabel: e.craftClassification?.name ?? null,
+        unionLocalId: e.craftClassification?.unionLocalId ?? null,
+        unionLocalLabel: e.craftClassification ? localLabel(e.craftClassification.unionLocal) : null,
+        payType: e.payType,
+        employeeUserId: e.employeeUserId,
+        employeeFilingName: filingName,
+        employeeName: filingName.label,
+        jobName: e.job.name,
+      };
+    }),
     byCraft,
     start,
     end,
@@ -238,7 +247,8 @@ export async function loadRatioReviews(companyId: string, month: string): Promis
       date: iso(e.date) as string,
       hours: Number(e.hours),
       tier: (e.craftClassification?.tier as CraftTier | null) ?? null,
-      employeeName: e.employeeUser.name ?? e.employeeUser.email,
+      // The apprentice ratio names people to an inspector. Same rule.
+      employeeName: payrollWorkerName(e.employeeUser).label,
     };
 
     if (e.craftClassification) {

@@ -12,6 +12,7 @@ import {
   type PeriodStanding,
   type RequirementStanding,
 } from "./apprenticeship";
+import { payrollWorkerName } from "@/lib/worker-name";
 
 /**
  * Assembles apprenticeship standing from real rows.
@@ -120,7 +121,8 @@ export async function loadApprenticeships(
 
     standings.push({
       enrollmentId: row.id,
-      apprenticeName: row.apprenticeUser.name ?? row.apprenticeUser.email,
+      // An apprentice is named to the hall and to an inspector.
+      apprenticeName: payrollWorkerName(row.apprenticeUser).label,
       apprenticeUserId: row.apprenticeUserId,
       sponsorName: row.sponsorName,
       programNumber: row.programNumber,

@@ -82,7 +82,105 @@ $0.00 and leave the total short.
 different question from "what do I send", and it renders exactly as it did
 before.
 
----
+### The money a GC's platform takes off you had nowhere to go (Cyrus)
+`cyrus/payment-fee-fields`
+
+`Payment` held `amount`, `method`, `receivedAt`, `note` — and no field for
+what was deducted in transit. A sub paid through Textura, GC Pay or
+Procore Pay gets a remittance for the invoice amount less a fee (Textura
+is 0.22% of contract value, capped at $5,000, charged to the SUB on a
+platform the GC chose). Whichever number the office manager typed,
+cstream was wrong:
+
+- Types the cheque that actually arrived → `billing.ts` derives the
+  balance as `invoice.amount - SUM(payments.amount)`, so the invoice sits
+  short **forever** and reads as a partial payment.
+- Types the full amount → the balance is right and the fee is **gone from
+  the system entirely**.
+
+:warning: **And it silently flattered the GC.** `lib/gc-reliability.ts`
+filters `fullyPaid = paidAmount >= amount`, then computes
+`averageDaysToPay` and `onTimeRate` over only those. Under the first
+option that invoice is never fully paid, so it is **excluded from the
+statistics rather than counted as late** — meaning a GC whose chosen
+platform skims the sub produced BETTER-looking reliability numbers than
+one who paid by cheque. That defect is live independent of this change
+(any short payment does it, including a rounding cent) and is filed as
+issue #189 rather than fixed here, because `gc-reliability.ts` is Diego's
+file.
+
+**Two additive nullable columns**, `feeAmount Decimal(12,2)` and
+`feeSource String`. No DROP, nothing made NOT NULL, no default, no
+backfill. Announced in `#prova-build` before the push.
+
+**`amount` keeps its exact meaning, deliberately.** The tempting change —
+making it mean "cash in the bank" — moves two things silently:
+`lib/actions/billing.ts` derives the invoice balance from it, and
+`lib/actions/quickbooks.ts` sends it as QuickBooks `TotalAmt` against a
+live sandbox connection. So `amount` stays what was APPLIED, `feeAmount`
+is what was skimmed, and **cash received is DERIVED as
+`amount - feeAmount`, never stored** — the same derived-state rule as
+everywhere else. Both numbers are printed on the same remittance advice.
+
+**Why now, before anything reads it.** This cannot be backfilled. Once
+the cheque is recorded the fee exists only on a remittance advice in a
+drawer, so every week without the column is a week that can never answer
+the question. Ships deliberately unwired: no action writes it, no UI, no
+read path changed, nothing renders — same shape as `CrewMember`.
+
+`feeSource` is free text rather than an enum because the set is genuinely
+open: a GC picks a platform and the sub finds out. Read paths should
+normalise ("Textura", "textura" and "Oracle Textura" are one payer)
+rather than assume. Flagged to Diego as the first thing to overrule.
+
+
+### An email address was printing where a worker's name belongs (Cyrus)
+`cyrus/no-email-as-worker-name`
+
+`lib/worker-name.ts` exists because `employeeUser.name ?? employeeUser.email`
+puts an EMAIL where a person's name goes. On an internal screen that merely
+identifies somebody; on a filing it is a false statement about who did the
+work, and a wrong name on a filed form is a correction to an agency rather
+than a patch.
+
+**#181 fixed seven call sites and deliberately left four**, in writing,
+because another agent was live in those files. Those four then sat on
+`main`. The worst of them — `union-compliance-query.ts:135` — feeds
+`RemittanceReport.uncomputedNames`, **which renders on `/union-compliance`**.
+So an email address was printing on a compliance screen while the helper
+that exists to prevent exactly that sat one import away.
+
+All four now go through `payrollWorkerName()`:
+`union-compliance-query.ts` (twice — the fringe remittance and the
+apprentice ratio), `prevailing-wage-query.ts`, `apprenticeship-query.ts`.
+`certifications.ts`, `today-dashboard.ts` and `alerts-query.ts` are
+deliberately untouched: a sort comparator and crew chips are not filings.
+
+**The real fix is the census, not the four edits.** This defect has now
+recurred four times, which means the rule was never enforced — it was
+remembered. `lib/workerNameCensus.test.ts` scans the modules that feed
+documents leaving the building and fails the build on the pattern.
+Mutation-verified four ways: the original `?? email` shape restored at each
+of the three files went red, and so did a DIFFERENT route to an email
+(`String(user.email)`) that the `??` check alone would have missed.
+
+:warning: **Two things went wrong writing this and both are recorded rather
+than quietly fixed**, because both are instances of failure modes already in
+CLAUDE.md.
+
+*One.* The script that added the missing imports skipped any file already
+mentioning `worker-name` — and my own new COMMENT said "see
+lib/worker-name.ts", so two imports were never added and typecheck failed.
+That is the third instance of a comment satisfying a check meant for code,
+after #176's census and #150. The census here strips comments before
+scanning for exactly this reason.
+
+*Two.* The census's positive check used `\bUser\b`, which **matches
+nothing** — the word boundary fails inside `employeeUser`. It passed
+vacuously and was only caught because a mutation that should have reddened
+it did not. A test reshaped until it goes green is the vacuous shape this
+file is about; the regex is now `[Uu]ser\b` and the mutation reddens it.
+
 
 ### A sub can start a job, get it billable, and finish it (Cyrus)
 `cyrus/subcontract-intake-and-job-lifecycle`
