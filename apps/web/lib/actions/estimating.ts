@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@prova/db";
 import { parseCatalogImport, splitAgainstExisting } from "@/lib/catalog-import";
-import { ActionResult, actionFail, actionOk, BID_INVITATION_STATUSES, assertEditableDirectly, assertJobInCompany, assertOwner, craftClassificationIdFromForm, decimalFromForm, enumFromForm, nullableDecimalFromForm, tradeScopeFromForm } from "./shared";
+import { ActionResult, actionFail, actionOk, BID_INVITATION_STATUSES, assertEditableDirectly, assertJobInCompany, assertOwner, craftClassificationIdFromForm, enumFromForm, nullableDecimalFromForm, tradeScopeFromForm } from "./shared";
+import { addCatalogLine } from "@/lib/estimating/catalog-line";
 
 /** Logs a GC inviting this company to bid — tracked independent of Job,
  * since most invitations are declined or lost and never become one. */
@@ -160,36 +161,15 @@ export async function saveLineItemAsCatalogEntry(lineItemId: string) {
  * for that call, not a second live copy of estimate data. */
 export async function addLineItemFromCatalog(jobId: string, formData: FormData) {
   const { company } = await requireCompanyContext();
-  const job = await assertJobInCompany(jobId, company.id);
-  assertEditableDirectly(job);
-
   const catalogEntryId = String(formData.get("catalogEntryId") ?? "").trim();
-  const entry = await prisma.lineItemCatalogEntry.findUnique({ where: { id: catalogEntryId } });
-  if (!entry || entry.companyId !== company.id) {
-    throw new Error("Catalog entry not found");
+  const quantity = String(formData.get("quantity") ?? "").trim();
+
+  // The body lives in lib/estimating/catalog-line.ts, shared with the Ask
+  // command `add_catalog_line`; the sentences thrown here are the core's.
+  const added = await addCatalogLine(company.id, { jobId, catalogEntryId, quantity });
+  if (!added.ok) {
+    throw new Error(added.error);
   }
-
-  const quantity = decimalFromForm(formData, "quantity");
-
-  await prisma.jobLineItem.create({
-    data: {
-      jobId,
-      description: entry.description,
-      unit: entry.unit,
-      quantity,
-      unitPrice: entry.defaultUnitPrice,
-      budgetedUnitCost: entry.defaultBudgetedUnitCost,
-      currentEstimatedUnitCost: entry.defaultBudgetedUnitCost,
-      tradeScope: entry.tradeScope,
-      laborHours: entry.defaultLaborHours,
-      craftClassificationId: entry.craftClassificationId,
-      // Records which template this came from, so /catalog can later report
-      // how work priced from it actually costed. A reference, not a live
-      // link: changing the entry's defaults never touches this row.
-      sourceCatalogEntryId: entry.id,
-      priceBasis: "COMPANY_CATALOG",
-    },
-  });
 
   revalidatePath(`/jobs/${jobId}`);
 }

@@ -26,9 +26,22 @@
  *    the figures came from. A number nobody can click through to is a
  *    number nobody should act on — this project spent a day proving that.
  *
- * Read-only. No tool writes, and none of them should: "send the reminder
- * for me" is a different feature with a different risk profile.
+ * No tool writes a business row. A COMMAND (lib/ask/commands.ts) is the
+ * shape a write takes: it resolves what the person named, writes at most
+ * an AskProposal row, and ends the stream — only the person's tap on the
+ * card executes anything. This file used to say "read-only, and none of
+ * them should" write; that sentence was retired deliberately, and the
+ * CHANGELOG entry for the command registry says why.
+ *
+ * 4. EVERY TOOL DECLARES WHO MAY CALL IT. `capability` names the same
+ *    capability the page it cites is guarded by, and `toolsFor()` filters
+ *    the list per person BEFORE the model sees it, with `runTool`
+ *    re-checking at execution. Before this, the executor knew only the
+ *    company: a FIELD-function member the dashboard withholds margin from
+ *    could ask the box beside those tiles and be answered.
  */
+
+import { can, type Capability, type Principal } from "@/lib/permissions";
 
 /** A place in the app a figure came from. Rendered as a link under the
  * answer. */
@@ -78,9 +91,14 @@ export type ToolDefinition = {
    * a tool description that oversells is how a model ends up answering a
    * question with the wrong data. */
   description: string;
+  /** The capability the page this tool cites is guarded by. `null` means
+   * the page is open to every signed-in member (the schedule is), and is a
+   * decision written down rather than a default: tools.test.ts pins each
+   * one against ROUTE_CAPABILITY. */
+  capability: Capability | null;
   input_schema: {
     type: "object";
-    properties: Record<string, { type: string; description: string }>;
+    properties: Record<string, { type: string; description: string; enum?: string[] }>;
     required?: string[];
   };
 };
@@ -101,60 +119,80 @@ const jobFilter = {
 export const TOOLS: ToolDefinition[] = [
   {
     name: "crew_assignments",
+    // /schedule is open to every member; so is this
+    capability: null,
     description:
       "Jobs currently in progress, who is ASSIGNED to each, the job's scheduled start and end, and the GC contact. An assignment is a roster, not an attendance record: there is no per-day crew schedule and nothing records who actually showed up, so never state or imply that someone is on site today — say who is assigned. Does NOT know travel time, addresses, or what tools to bring; none of those are recorded.",
     input_schema: noInput,
   },
   {
     name: "open_punch_list",
+    // /punch-lists
+    capability: "MANAGE_FIELD",
     description:
       "Punch list items not yet done, by job, with who raised them and when. Answers 'what is left before we get paid'.",
     input_schema: jobFilter,
   },
   {
     name: "compliance_status",
+    // /compliance
+    capability: "MANAGE_COMPLIANCE",
     description:
       "Certificates of insurance, contractor licences, insurance policies and bonds that are expired, expiring soon, or missing a date — ranked worst first. Answers 'is that certificate still active'. Covers the company's OWN records; it does not track a subcontractor's certificates unless one has been filed here.",
     input_schema: noInput,
   },
   {
     name: "drawing_currency",
+    // /drawings
+    capability: "MANAGE_JOBS",
     description:
       "Per drawing set: which revision is current, whether a newer revision has been issued but not received, and how old each is. Answers 'am I building off the latest sheet'. Current means most recently ISSUED by the architect, not most recently received.",
     input_schema: jobFilter,
   },
   {
     name: "job_margin",
+    // the job page's costing section
+    capability: "VIEW_JOB_COSTS",
     description:
       "Contract value, cost to date, forecast cost at completion, percent complete, earned revenue and over/under billing for active jobs, plus how much of each job's value actually carries a cost estimate. Answers 'are we making money on this'. Does NOT know vendor price changes — there is no vendor price history.",
     input_schema: jobFilter,
   },
   {
     name: "bid_status",
+    // /bids
+    capability: "MANAGE_ESTIMATING",
     description:
       "Bid invitations by status — invited, submitted, won, lost, declined — with the GC, trade and due date. Answers 'which bids are outstanding and who has not come back to us'.",
     input_schema: noInput,
   },
   {
     name: "open_rfis",
+    // /rfis
+    capability: "MANAGE_JOBS",
     description:
       "RFIs that are sent and unanswered, with their job and GC, how many days they have been outstanding, the contractual response date, and whether that date has passed. Answers 'what am I waiting on'. It reports how long an RFI has been open; it cannot predict when an answer will arrive.",
     input_schema: jobFilter,
   },
   {
     name: "material_deliveries",
+    // /material-orders
+    capability: "MANAGE_FIELD",
     description:
       "Material orders with their delivery state — delivered, partly delivered, nothing yet — and how many days late against the promised date. Answers 'did the material actually turn up'.",
     input_schema: jobFilter,
   },
   {
     name: "equipment_location",
+    // /equipment
+    capability: "MANAGE_FIELD",
     description:
       "Which job each piece of equipment was last sent out to and not brought back from, the day it went out, and what is sitting in the yard. Answers 'who has the skid steer'. This is a DISPATCH RECORD, not a live location — there is no GPS or telematics, so it says where somebody logged it as going, not where it physically is.",
     input_schema: noInput,
   },
   {
     name: "receivables",
+    // the dashboard's receivables tile
+    capability: "MANAGE_BILLING",
     description:
       "Unpaid invoices with amounts outstanding and days overdue, using the same due-date rule as the AR aging page. Answers 'who owes us and how late are they'. Does NOT know the bank balance or upcoming payroll — neither is recorded, so it cannot answer whether there is cash to cover a specific bill.",
     input_schema: noInput,
@@ -218,10 +256,33 @@ export function matchesJobName(jobName: string, filter: string | undefined): boo
 export function toolsAcceptNoTenantInput(
   tools: readonly Pick<ToolDefinition, "input_schema">[] = TOOLS,
 ): boolean {
-  const forbidden = ["companyid", "company", "tenant", "userid", "user", "orgid"];
+  const forbidden = [
+    "companyid",
+    "company",
+    "tenant",
+    "userid",
+    "user",
+    "orgid",
+    // Added with the command registry: an actor is as much "whose data" as
+    // a tenant is, and a proposal id is a handle on a row the executor
+    // must find for itself.
+    "role",
+    "jobfunction",
+    "actorid",
+    "ownerid",
+    "proposalid",
+  ];
   return tools.every((tool) =>
     Object.keys(tool.input_schema.properties).every(
       (key) => !forbidden.includes(key.toLowerCase()),
     ),
   );
+}
+
+/** The read tools this person may be offered. The filter is what the model
+ * sees; `runTool` checks again when a call arrives, because the tool list
+ * is advisory and the check is the boundary — the same "nav is cosmetic,
+ * page guard is the boundary" rule lib/permissions.ts states for routes. */
+export function toolsFor(principal: Principal): ToolDefinition[] {
+  return TOOLS.filter((tool) => tool.capability === null || can(principal, tool.capability));
 }
