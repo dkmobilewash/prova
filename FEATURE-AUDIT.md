@@ -23,7 +23,7 @@ in flight. Left as-is here rather than guessed at from the outside; the next
 update to touch those sheets should come from whoever actually verified them
 against a fresh clone.
 
-**122 items audited — 96 built / 19 partial / 6 missing / 1 descoped**
+**124 items audited — 98 built / 19 partial / 6 missing / 1 descoped**
 
 (Recounted from the rows on merging `main` into this branch, which is the
 only thing that settles it — the fourth time this exact conflict shape has
@@ -45,7 +45,7 @@ header cannot.)
 
 | Status | Count |
 | --- | --- |
-| Built | 96 |
+| Built | 98 |
 | Partial | 19 |
 | Missing | 6 |
 | Descoped | 1 |
@@ -340,13 +340,15 @@ nav-reachable.*
 | Built | Final lien waiver and closeout document checklist | `CloseoutItem`, `/closeout` — per-job checklist with a standard set one click away, required vs optional, completion dates entered not stamped, document links. Closeout completeness derived from required items only, never stored; a job with no checklist is deliberately NOT complete. `/closeout` removed from nav 3 Sep 2026 — see `NAV-IA-AUDIT.md` |
 | Built | Warranty period tracking and post-completion service requests | `WarrantyPeriod` + `WarrantyServiceRequest`, `/closeout` — start entered separately from `Job.substantialCompletionDate` (the warranty and retainage clocks aren't always the same date), length in months as the contract states it, expiry derived with end-of-month clamping so 31 Aug + 6 months is 28 Feb not 3 Mar. Whether a callback was in warranty is derived from its REPORTED date, so a slow fix can't move the cost. `JobStatus` deliberately untouched — a stored lifecycle stage can disagree with the dates under it. `/closeout` removed from nav 3 Sep 2026 — see `NAV-IA-AUDIT.md` |
 
-## 23. AI Features — 3 built · 1 partial · 1 missing · 1 descoped
+## 23. AI Features — 5 built · 1 partial · 1 missing · 1 descoped
 
 | Status | Feature | Note |
 | --- | --- | --- |
 | Built | WIP over/under-billing variance detection (read-only, per line item/job) | `generateWipNarrative` |
 | Partial | Compliance document extraction into structured records with expiration alerts | extraction shipped (`extractComplianceDocument`) — the alerting half doesn't exist yet (see Sheet 26) |
 | Built | Draft estimate line items from text, grounded by trade-scope catalogs | `draftEstimateLineItems` now receives this company's `LineItemCatalogEntry` rows and its won `BidInvitation` amounts as reference data, and prefers matching an existing catalog price over inventing one. A matched line is created through the same path as "add from catalog", carrying `sourceCatalogEntryId` and the entry's cost/craft defaults — not just an echoed number |
+| Built | Ask: answers about the company's own data from the dashboard box | Tool-calling over ten read tools (`lib/ask/tools.ts`), every figure computed by the same library the page uses, cited back to the page it came from; the model never does arithmetic. Every tool now declares the capability its page is guarded by and the list is filtered per person before the model sees it — until 2026-09-08 the executor knew only the company, so a FIELD-function member the dashboard withholds margin from could ask the box beside those tiles and be answered |
+| Built | Ask: does things — a command proposes, a person confirms, one tap executes | `lib/ask/commands.ts`. A command resolves the names the person used into ids, computes a preview in code, writes one `AskProposal` row and ends the stream; the card's tap runs `confirmAskProposal`, which claims the row (`updateMany where claimedAt IS NULL`) before writing, so a double tap is one job and one "already done". One command per question, enforced in the loop, never in the prompt. Shipped with three: create an estimate-stage job (resolve-or-create the GC, draft line items from the scope), draft line items, add a catalog line. Every exported Server Action is registered or excluded with a reason (`commands.coverage.test.ts`). Deletes, contract transitions, money and outward sends are never commands |
 | Built | Confidence signal on AI-suggested prices | `JobLineItem.priceBasis` distinguishes a matched catalog price from one informed by past bids from a bare general-knowledge guess, each with its own badge. A returned `catalogEntryId` is verified against the entries actually sent before it becomes a foreign key, and a `COMPANY_CATALOG` claim with no verified entry behind it degrades to `GENERAL_KNOWLEDGE` rather than overstating confidence |
 | Missing | Plan/drawing takeoff via computer vision | explicitly deferred as a later, larger effort — different modality, different accuracy bar |
 | Descoped | Client-facing chatbot | GCs are the customer here, not homeowners — deliberately out of scope for this ICP |
@@ -360,7 +362,7 @@ nav-reachable.*
 | Missing | Payroll processor integration (for running actual pay) | not started |
 | Missing | DocuSign, Procore, myCOI | 0 built. Each has a registry entry so the page can render it, and each renders DISABLED with a "Coming soon" label. A card on a settings page is not an integration |
 | Partial | E-signature provider | homegrown token-based e-sign (`SignatureRequest`) covers contract signing only — not a general provider for every doc type |
-| Built | Anthropic API (for the AI features above) | three shipped features now call Claude |
+| Built | Anthropic API (for the AI features above) | five shipped features now call Claude: the three one-shot calls (WIP narrative, document extraction, line-item drafting) and the two halves of Ask |
 | Built | Outbound email from the contractor's own domain, with a delivery log | `OutboundMessage` + `OutboundMessageEvent`, `/messages` — provider-agnostic send, signed delivery webhook that fails closed, events deduplicated by provider id, status derived from the newest event and never stored. Sends as the contractor, not as us: mail from a vendor domain is the deliverability complaint the research report found at every competitor. SMS is in the channel enum and not wired |
 
 ## 25. Roles & Permissions — 1 built · 1 partial · 0 missing

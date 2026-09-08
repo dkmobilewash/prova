@@ -113,7 +113,7 @@ type Row = {
 
 async function ask(): Promise<Row[]> {
   const { runTool } = await import("./handlers");
-  const result = await runTool("company-1", "equipment_location", {});
+  const result = await runTool({ companyId: "company-1", principal: { role: "OWNER", jobFunction: null } }, "equipment_location", {});
   return result.data as Row[];
 }
 
