@@ -1391,6 +1391,17 @@ async function undo(companyId) {
     await del("closeoutSubmissionCounter", () =>
       prisma.closeoutSubmissionCounter.deleteMany({ where: { jobId: { in: jobIds } } }),
     );
+    await del("certifiedPayrollFiling", () =>
+      prisma.certifiedPayrollFiling.deleteMany({ where: { jobId: { in: jobIds } } }),
+    );
+    // Deleted with the job, like every other per-JOB counter here. The
+    // high-water-mark rule that spares SafetyCaseCounter is company-wide
+    // and does not reach this one: the payroll sequence it owns belongs to
+    // a job that is going away, so it ceases to exist rather than
+    // restarting at a number an agency already holds.
+    await del("certifiedPayrollFilingCounter", () =>
+      prisma.certifiedPayrollFilingCounter.deleteMany({ where: { jobId: { in: jobIds } } }),
+    );
     await del("prevailingWageDetermination", () =>
       prisma.prevailingWageDetermination.deleteMany({ where: { jobId: { in: jobIds } } }),
     );

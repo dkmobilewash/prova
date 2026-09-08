@@ -266,6 +266,8 @@ async function main() {
     await del("backchargeCounter", () => prisma.backchargeCounter.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("closeoutSubmission", () => prisma.closeoutSubmission.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("closeoutSubmissionCounter", () => prisma.closeoutSubmissionCounter.deleteMany({ where: { jobId: { in: jobIds } } }));
+    await del("certifiedPayrollFiling", () => prisma.certifiedPayrollFiling.deleteMany({ where: { jobId: { in: jobIds } } }));
+    await del("certifiedPayrollFilingCounter", () => prisma.certifiedPayrollFilingCounter.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("signatureRequest", () => prisma.signatureRequest.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("contractDocument", () => prisma.contractDocument.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("retainageRelease", () => prisma.retainageRelease.deleteMany({ where: { jobId: { in: jobIds } } }));

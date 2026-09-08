@@ -23,14 +23,29 @@ import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { PrintButton } from "@/components/PrintButton";
 import { money } from "@/lib/money";
-import { certifiedPayrollWeekStart } from "@/lib/certified-payroll-week";
+import {
+  certifiedPayrollWeekStart,
+  certifiedPayrollWeekWindow,
+} from "@/lib/certified-payroll-week";
 import { loadCertifiedPayrollWeekEntries } from "@/lib/certified-payroll-query";
+import { payrollWorkerName } from "@/lib/worker-name";
+import { StatementOfComplianceForm } from "@/components/StatementOfComplianceForm";
 import type { FringeRateScheduleInput } from "@/lib/labor-cost";
 import {
   buildWh347,
   WH347_BLOCKING_FIELD_REASON,
   type Wh347TimeEntryInput,
 } from "@/lib/wh347";
+
+/** The three answers page 2 offers, as the form itself words them. */
+const FRINGE_METHOD_STATEMENT: Record<string, string> = {
+  APPROVED_PLANS:
+    "(a) WHERE FRINGE BENEFITS ARE PAID TO APPROVED PLANS, FUNDS, OR PROGRAMS — in addition to the basic hourly wage rates paid to each laborer or mechanic listed above, payments of fringe benefits as listed in the contract have been or will be made to appropriate programs for the benefit of such employees.",
+  PAID_IN_CASH:
+    "(b) WHERE FRINGE BENEFITS ARE PAID IN CASH — each laborer or mechanic listed above has been paid, as indicated on the payroll, an amount not less than the sum of the applicable basic hourly wage rate plus the amount of the required fringe benefits as listed in the contract.",
+  BOTH:
+    "(a) AND (b) — fringe benefits for the workers listed above were paid partly to approved plans, funds or programs and partly in cash, as indicated on the payroll.",
+};
 
 function isoDate(date: Date): string {
   return date.toISOString().slice(0, 10);
@@ -90,11 +105,20 @@ export default async function Wh347Page({
     Number.isNaN(requested.getTime()) ? new Date() : requested,
   );
 
-  const [entries, craftClassifications] = await Promise.all([
+  // The week's identity, derived from the same function that lays out the
+  // grid's seven columns — so the filing this reads back is necessarily
+  // the one covering the hours printed below, not a week off by a day.
+  const weekEnding = certifiedPayrollWeekWindow(weekStart).lte;
+
+  const [entries, craftClassifications, filing] = await Promise.all([
     loadCertifiedPayrollWeekEntries(company.id, job.id, weekStart),
     prisma.craftClassification.findMany({
       where: { unionLocal: { companyAgreements: { some: { companyId: company.id } } } },
       include: { fringeRateSchedules: true },
+    }),
+    prisma.certifiedPayrollFiling.findUnique({
+      where: { jobId_weekEnding: { jobId: job.id, weekEnding } },
+      include: { signedBy: { select: { name: true, email: true } } },
     }),
   ]);
 
@@ -137,13 +161,25 @@ export default async function Wh347Page({
       hqState: company.hqState,
       hqZip: company.hqZip,
     },
-    job: { name: job.name },
+    job: {
+      name: job.name,
+      location: job.projectLocation,
+      contractNumber: job.contractNumber,
+    },
     weekStart,
     entries: wh347Entries,
     fringeSchedulesByCraft,
+    // Both come from the week's own filing. Absent until somebody signs,
+    // and each is reported as blocking by name until then.
+    payrollNumber: filing?.payrollNumber ?? null,
+    statementOfComplianceSignedOn: filing?.signedDate ?? null,
   });
 
   const headings = form.days.map(dayHeading);
+  // Never an email where a name belongs — lib/worker-name.ts owns that
+  // rule, and this is a name printed on a filed federal form.
+  const signerName = filing ? payrollWorkerName(filing.signedBy).label : null;
+  const currentUserName = payrollWorkerName({ name: context.name, email: context.email }).label;
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-8 print:px-0 print:py-0">
@@ -169,23 +205,35 @@ export default async function Wh347Page({
             first thing on the page and names every column that is not
             ready, because the alternative is an office manager signing a
             form with an empty box in it. */}
-        <div className="mt-5 rounded-lg border border-red-500/40 bg-red-500/10 p-4">
-          <p className="text-sm font-semibold text-red-300">
-            This is not ready to file. {form.blocking.length}{" "}
-            {form.blocking.length === 1 ? "thing is" : "things are"} missing.
-          </p>
-          <p className="mt-1 text-xs text-red-200/80">
-            The grid below is real — your hours are in the right boxes for the right days. What
-            follows is every field the form requires that cstream cannot fill in yet.
-          </p>
-          <ul className="mt-3 flex flex-col gap-1.5">
-            {form.blocking.map((field) => (
-              <li key={field} className="text-xs leading-snug text-red-200">
-                {WH347_BLOCKING_FIELD_REASON[field]}
-              </li>
-            ))}
-          </ul>
-        </div>
+        {form.fileable ? (
+          <div className="mt-5 rounded-lg border border-emerald-500/40 bg-emerald-500/10 p-4">
+            <p className="text-sm font-semibold text-emerald-300">
+              Every field this form requires is filled in.
+            </p>
+            <p className="mt-1 text-xs text-emerald-200/80">
+              Read it back before you send it. cstream checks that nothing is BLANK; it cannot
+              check that what is written is true, and you signed page 2 under penalty of perjury.
+            </p>
+          </div>
+        ) : (
+          <div className="mt-5 rounded-lg border border-red-500/40 bg-red-500/10 p-4">
+            <p className="text-sm font-semibold text-red-300">
+              This is not ready to file. {form.blocking.length}{" "}
+              {form.blocking.length === 1 ? "thing is" : "things are"} missing.
+            </p>
+            <p className="mt-1 text-xs text-red-200/80">
+              The grid below is real — your hours are in the right boxes for the right days. What
+              follows is every field the form requires that cstream cannot fill in yet.
+            </p>
+            <ul className="mt-3 flex flex-col gap-1.5">
+              {form.blocking.map((field) => (
+                <li key={field} className="text-xs leading-snug text-red-200">
+                  {WH347_BLOCKING_FIELD_REASON[field]}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
 
       {/* The form sheet. White, black text, printed borders — this is the
@@ -393,17 +441,76 @@ export default async function Wh347Page({
           {hoursCell(form.totalHours)}
         </p>
 
-        {/* Page 2 does not exist. Saying so on the sheet, where somebody
-            about to file will look for it, rather than only in the banner
-            at the top of a scrolled page. */}
+        {/* Page 2. Printed on the sheet, where somebody about to file
+            looks for it, rather than only described in the banner at the
+            top of a scrolled page. */}
         <div className="mt-6 border-t-2 border-black pt-3">
           <p className="text-[11px] font-bold uppercase">Statement of Compliance</p>
-          <p className="mt-1 text-[10px] text-red-600">
-            Page 2 is not built yet. It is signed under penalty of perjury and states how fringe
-            benefits were paid — 4(a) to approved plans, 4(b) in cash, 4(c) exceptions. Until it
-            exists, this form cannot be filed no matter how complete the grid above looks.
-          </p>
+          {filing ? (
+            <div className="mt-1 text-[10px] leading-snug">
+              <p>
+                I, <span className="font-semibold">{signerName}</span>, do hereby state that I pay
+                or supervise the payment of the persons employed by{" "}
+                <span className="font-semibold">{form.header.contractorName}</span> on the{" "}
+                <span className="font-semibold">{form.header.projectName}</span> project; that
+                during the payroll period commencing on {formatDate(form.days[0])} and ending on{" "}
+                {formatDate(form.header.weekEnding)} all persons employed on said project have been
+                paid the full weekly wages earned.
+              </p>
+              <p className="mt-2">{FRINGE_METHOD_STATEMENT[filing.fringeMethod]}</p>
+              <p className="mt-2">
+                <span className="font-semibold">(c) EXCEPTIONS: </span>
+                {filing.exceptions ?? "None."}
+              </p>
+              {filing.isFinal && (
+                <p className="mt-2 font-semibold">
+                  This is the final payroll for this contract.
+                </p>
+              )}
+              <div className="mt-3 flex flex-wrap gap-x-8 gap-y-1 border-t border-black pt-2">
+                <span>
+                  <span className="font-semibold">Signed: </span>
+                  {signerName}
+                </span>
+                <span>
+                  <span className="font-semibold">Date: </span>
+                  {formatDate(filing.signedDate)}
+                </span>
+                <span>
+                  <span className="font-semibold">Payroll No.: </span>
+                  {filing.payrollNumber}
+                </span>
+              </div>
+            </div>
+          ) : (
+            <p className="mt-1 text-[10px] text-red-600">
+              Nobody has signed a statement of compliance for this week. It is signed under penalty
+              of perjury and states how fringe benefits were paid — 4(a) to approved plans, 4(b) in
+              cash, 4(c) exceptions. Until it is signed, this form cannot be filed no matter how
+              complete the grid above looks.
+            </p>
+          )}
         </div>
+      </div>
+
+      {/* The signing control lives OFF the sheet: the sheet is a facsimile
+          of a government document and a button is not on the government's
+          version of it. Hidden from print for the same reason. */}
+      <div className="mt-6 print:hidden">
+        {filing ? (
+          <p className="text-sm text-slate-400">
+            Signed by {signerName} on {formatDate(filing.signedDate)}, filed as payroll number{" "}
+            {filing.payrollNumber}. A filed payroll cannot be edited or deleted — correcting one
+            takes an amendment, which is not built yet.
+          </p>
+        ) : (
+          <StatementOfComplianceForm
+            jobId={job.id}
+            weekStart={isoDate(weekStart)}
+            weekEndingLabel={formatDate(form.header.weekEnding)}
+            signerName={currentUserName}
+          />
+        )}
       </div>
     </div>
   );

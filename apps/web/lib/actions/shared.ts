@@ -141,6 +141,28 @@ export const COMPLIANCE_DOCUMENT_TYPES = [
   "UNION_AGREEMENT",
 ] as const;
 
+/**
+ * How fringe benefits were paid, as page 2 of the WH-347 asks it.
+ *
+ * The form's own 4(a)/4(b) vocabulary, not a tidier modelling choice: an
+ * agency reading the filing expects exactly these. APPROVED_PLANS is 4(a),
+ * PAID_IN_CASH is 4(b), and BOTH exists because a real union contractor is
+ * usually both at once — pension and H&W to the trust fund, vacation in
+ * cash — and forcing that week into one box would make the signer misstate
+ * it. Deliberately no NONE and no UNKNOWN: a signer who cannot say how
+ * fringes were paid has no business signing.
+ *
+ * Here rather than in `certifiedPayroll.ts` because a `"use server"` module
+ * may only export async functions, and the form component renders these as
+ * its choices. Mirrors `CertifiedPayrollFringeMethod` in
+ * packages/db/prisma/schema/certified-payroll.prisma.
+ */
+export const CERTIFIED_PAYROLL_FRINGE_METHODS = [
+  "APPROVED_PLANS",
+  "PAID_IN_CASH",
+  "BOTH",
+] as const;
+
 export function enumFromForm<T extends readonly string[]>(formData: FormData, key: string, allowed: T): T[number] {
   const raw = String(formData.get(key) ?? "");
   if (!allowed.includes(raw as T[number])) {

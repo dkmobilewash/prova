@@ -313,9 +313,47 @@ describe("fileable", () => {
     expect(form.blocking.length).toBeGreaterThan(0);
   });
 
-  it("always blocks on the statement of compliance, because page 2 is not built", () => {
-    const form = build([entry()]);
-    expect(form.blocking).toContain("statementOfCompliance");
+  it("blocks on the statement of compliance until page 2 is signed for THIS week", () => {
+    // This used to be added unconditionally, because page 2 did not exist.
+    // The defect it now guards is the opposite one: a form that reports
+    // itself ready to file with nobody's signature on page 2.
+    expect(build([entry()]).blocking).toContain("statementOfCompliance");
+    expect(
+      build([entry()], { statementOfComplianceSignedOn: utc("2026-08-31") }).blocking,
+    ).not.toContain("statementOfCompliance");
+  });
+
+  it("reports the signature date it was given, so the page can print it", () => {
+    expect(build([entry()]).statementOfComplianceSignedOn).toBeNull();
+    expect(
+      build([entry()], { statementOfComplianceSignedOn: utc("2026-08-31") })
+        ?.statementOfComplianceSignedOn?.toISOString(),
+    ).toBe("2026-08-31T00:00:00.000Z");
+  });
+
+  it("is fileable once every field is sourced — the whole point of the two structural blockers", () => {
+    // The control for every "is false while anything is blocking" case
+    // above. Without it they are all satisfied by a function that returns
+    // fileable: false unconditionally, which is what this module did until
+    // page 2 and the payroll counter existed.
+    const form = buildWh347({
+      company: COMPANY,
+      job: {
+        name: "Maple Street Medical Office",
+        location: "1200 Maple St, Sacramento CA",
+        contractNumber: "SAC-2026-0041",
+      },
+      weekStart: WEEK_START,
+      entries: [],
+      fringeSchedulesByCraft: schedules,
+      payrollNumber: 12,
+      statementOfComplianceSignedOn: utc("2026-08-31"),
+    });
+    // No workers, so none of the per-worker blockers (identifying number,
+    // deductions, net wages) apply — a "no work performed" payroll, which
+    // is a real filing an agency expects for every week of a contract.
+    expect(form.blocking).toEqual([]);
+    expect(form.fileable).toBe(true);
   });
 
   it("blocks on the payroll number until a counter issues one", () => {

@@ -111,7 +111,7 @@ export const WH347_BLOCKING_FIELD_REASON: Record<Wh347BlockingField, string> = {
     "The header wants the project's location. A job records a name but no address.",
   contractNumber: "The header wants the project or contract number. A job does not record one.",
   statementOfCompliance:
-    "Page 2 is signed under penalty of perjury and names how fringes were paid. It is not built yet.",
+    "Page 2 is signed under penalty of perjury and names how fringes were paid — 4(a) to approved plans, 4(b) in cash, 4(c) exceptions. Nobody has signed one for this week.",
 };
 
 export interface Wh347DayCell {
@@ -190,6 +190,10 @@ export interface Wh347Form {
   days: Date[];
   workers: Wh347WorkerLine[];
   totalHours: number;
+  /** The date page 2 was signed, from the week's `CertifiedPayrollFiling`,
+   * or null while no statement of compliance exists for it. Entered by the
+   * signer, never stamped — see the model comment. */
+  statementOfComplianceSignedOn: Date | null;
   /** Every distinct blocking field across the header and all workers,
    * deduplicated, in a stable order. */
   blocking: Wh347BlockingField[];
@@ -235,6 +239,14 @@ export interface Wh347BuildInput {
   fringeSchedulesByCraft: Map<string, FringeRateScheduleInput[]>;
   /** Issued by a counter when one exists. Absent until then. */
   payrollNumber?: number | null;
+  /** The `signedDate` of this week's `CertifiedPayrollFiling`, if one has
+   * been recorded. Absent means page 2 is unsigned for this week, which
+   * blocks the whole form however complete the grid is.
+   *
+   * A DATE rather than a boolean on purpose: the page prints it on the
+   * form, and a caller holding only `true` would have to fetch the filing
+   * again to say when. */
+  statementOfComplianceSignedOn?: Date | null;
 }
 
 /** The multipliers WH-347 column 7 needs.
@@ -428,13 +440,16 @@ export function buildWh347(input: Wh347BuildInput): Wh347Form {
     contractNumber: input.job.contractNumber ?? null,
   };
 
+  const statementOfComplianceSignedOn = input.statementOfComplianceSignedOn ?? null;
+
   const blocking = new Set<Wh347BlockingField>();
   if (header.payrollNumber == null) blocking.add("payrollNumber");
   if (!header.projectLocation) blocking.add("projectLocation");
   if (!header.contractNumber) blocking.add("contractNumber");
-  // Page 2 does not exist yet, so no week can be filed regardless of the
-  // grid. Stated here rather than left for the reader to notice.
-  blocking.add("statementOfCompliance");
+  // An unsigned week cannot be filed regardless of how complete the grid
+  // is. This used to be added unconditionally, because page 2 did not
+  // exist; it is now a real check against the week's own filing.
+  if (statementOfComplianceSignedOn == null) blocking.add("statementOfCompliance");
   for (const w of workers) for (const b of w.blocking) blocking.add(b);
 
   const ORDER: Wh347BlockingField[] = [
@@ -456,6 +471,7 @@ export function buildWh347(input: Wh347BuildInput): Wh347Form {
     days,
     workers,
     totalHours: workers.reduce((sum, w) => sum + w.totalHours, 0),
+    statementOfComplianceSignedOn,
     blocking: ORDER.filter((f) => blocking.has(f)),
     fileable: blocking.size === 0,
   };

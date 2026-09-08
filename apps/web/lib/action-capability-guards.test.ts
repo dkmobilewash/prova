@@ -654,6 +654,7 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   drawings: () => import("./actions/drawings"),
   closeout: () => import("./actions/closeout"),
   closeoutSubmissions: () => import("./actions/closeoutSubmissions"),
+  certifiedPayroll: () => import("./actions/certifiedPayroll"),
 };
 
 /** The sentence both guard messages share. Asserting on this rather than on
