@@ -21,15 +21,23 @@ import {
  * in whether the job name is shown (on a job page it is the page).
  */
 
-/** What a gallery is showing: the company, and up to two narrowings.
+/** What a gallery is showing: the company, and up to three narrowings.
  *
- * Both narrowings are optional and they COMPOSE — `/photos` can be looking
- * at one job, one tag, both or neither, and "both" has to mean AND. */
+ * All three narrowings are optional and they COMPOSE — `/photos` can be
+ * looking at one job, one tag, whether the client can see it, any
+ * combination or none, and a combination has to mean AND. */
 export type JobMediaFilter = {
   companyId: string;
   jobId?: string;
   /** A `JobMediaTag.id`. Photos carrying that tag, and no others. */
   tagId?: string;
+  /** `true` — only photos the job's client can currently see through their
+   * portal link. `false` — only photos they cannot. UNDEFINED IS BOTH, and
+   * the three-valued shape is the point: `false` and "unset" are different
+   * questions and a plain boolean cannot hold them apart. Every caller
+   * builds this from `SharedFilter`, which is a string union for the same
+   * reason (lib/job-media-tags.ts). */
+  shared?: boolean;
 };
 
 export type JobMediaScope = JobMediaFilter & {
@@ -61,6 +69,19 @@ function jobMediaWhere(filter: JobMediaFilter) {
     // lives one table away and this is the indexed direction of it
     // (`@@index([tagId])` on the assignment exists for this query).
     ...(filter.tagId ? { tags: { some: { tagId: filter.tagId } } } : {}),
+    // Tested against `undefined` rather than truthiness, because `false` is
+    // a real value here and means the opposite of "no filter". Written the
+    // obvious way — `...(filter.shared ? … : {})` — the "not shared" chip
+    // would silently show everything, which is a page that looks perfectly
+    // healthy while answering a question nobody asked.
+    //
+    // `{ not: null }` and `null` rather than a boolean column: the schema
+    // stores WHEN the disclosure happened, so "can the client see it" is
+    // "is that timestamp set". One column, one source of truth, and no
+    // stored flag that can disagree with the date beside it.
+    ...(filter.shared === undefined
+      ? {}
+      : { sharedWithClientAt: filter.shared ? { not: null } : null }),
   };
 }
 
@@ -102,6 +123,9 @@ export async function loadJobMedia(
     capturedAtInputValue: formatCapturedAtInputValue(row.capturedAt, timeZone),
     sizeLabel: formatByteSize(row.byteSize),
     capturedByName: row.capturedBy?.name ?? null,
+    sharedWithClientLabel: row.sharedWithClientAt
+      ? formatCapturedAt(row.sharedWithClientAt, timeZone)
+      : null,
     clockWarning: jobMediaClockWarning(row.capturedAt, row.createdAt),
     // The DISPLAY name, which is the only form any screen shows.
     // `normalizedName` exists to be the target of a unique index and is
@@ -160,4 +184,120 @@ export async function loadJobMediaTags(companyId: string): Promise<JobMediaTagSu
     name: row.name,
     photoCount: row._count.assignments,
   }));
+}
+
+/* ------------------------------------------------------------------ *
+ * The client's half
+ * ------------------------------------------------------------------ */
+
+/**
+ * One photo, as the GC sees it through their portal link.
+ *
+ * A SEPARATE TYPE FROM `JobMediaCardData`, AND DELIBERATELY NOT A SUBSET
+ * SHARED WITH IT. This is the enforcement of the three exclusions
+ * `PortalJobPhotos` explains, moved from a comment somebody can ignore into
+ * a type the compiler will not let them ignore:
+ *
+ *   - NO TAGS. "backcharge", "GC delay", "rework" is this sub's private
+ *     framing of the job, written for their own retrieval and their own
+ *     argument. Handing that vocabulary to the party it is about is the
+ *     single worst thing this feature could do, and it would happen by
+ *     accident the moment somebody reused the internal projection here.
+ *   - NO PHOTOGRAPHER. The GC has no use for which of the crew held the
+ *     phone, and a name on a photo of a defect is a name to complain about.
+ *   - NO `id`-DRIVEN EDIT AFFORDANCES, no file size, no clock warning, no
+ *     `capturedAtInputValue`. Those exist to drive the internal card's edit
+ *     form; the portal has no form.
+ *
+ * So a future reader who wants to "helpfully" put tags on the portal has to
+ * change this type, this query and the component — three deliberate edits,
+ * not one forgetful one. `id` survives only as a React key.
+ */
+export type PortalJobPhoto = {
+  id: string;
+  blobUrl: string;
+  caption: string | null;
+  capturedAtLabel: string;
+};
+
+/**
+ * The photos of one job that its client is allowed to see.
+ *
+ * THE `where` IS THE SECURITY OF THE WHOLE FEATURE, so it is stated here
+ * once, in the module the portal page imports, rather than inline on a page
+ * whose next edit might loosen it.
+ *
+ * Three conditions, and every one of them is load-bearing:
+ *
+ *   1. `sharedWithClientAt: { not: null }` — the opt-in. Null is the
+ *      default for every row this table has ever had, so a photo is
+ *      internal until somebody decided otherwise. Withdrawing sets it back
+ *      to null and the photo leaves this query, which is why the negative
+ *      case is the one worth clicking (see the click-list).
+ *   2. `jobId` — the caller has already proved this job belongs to the
+ *      contact holding the token. Passing the job id rather than the
+ *      contact means this function cannot be called in a way that leaks
+ *      across jobs even by mistake.
+ *   3. `companyId` — belt and braces, and NOT redundant in the way it
+ *      looks. `recordJobMedia` requires a photo's company to match its
+ *      job's, so today these agree for every row; this clause is what makes
+ *      the query still correct if that ever stops being true, at the cost
+ *      of nothing (the `[companyId, capturedAt]` index already exists).
+ *
+ * THE PORTAL HAS NO AUTH — the token IS the credential — so there is no
+ * session to re-check and no capability to assert. The guard is entirely
+ * the caller's token lookup plus these three clauses.
+ *
+ * ONE THING THIS CANNOT DO, and it belongs in writing: unsharing removes a
+ * photo from this list, not from the internet. Blob URLs are
+ * public-but-unguessable (lib/blob.ts), so a GC who saved the link keeps
+ * the file. "Stop sharing" withdraws the photo from the portal; it does not
+ * undo the disclosure, which is exactly why the card asks before it shares
+ * and does not ask before it withdraws.
+ */
+export async function loadSharedJobMediaForClient(
+  { jobId, companyId, take }: { jobId: string; companyId: string; take: number },
+  timeZone: string,
+): Promise<PortalJobPhoto[]> {
+  const rows = await prisma.jobMedia.findMany({
+    where: { jobId, companyId, sharedWithClientAt: { not: null } },
+    take,
+    // Same order as every internal gallery: by when the picture was TAKEN,
+    // newest first. The GC is reading a job's history and it should read in
+    // the same order the sub's does.
+    orderBy: [{ capturedAt: "desc" }, { createdAt: "desc" }],
+    // An explicit `select` rather than the default row, so the columns that
+    // must never reach the portal are not even fetched. `include: { tags }`
+    // added here by a future edit would be visible in review as a change to
+    // this list; a default select that silently gained a column would not.
+    select: { id: true, blobUrl: true, caption: true, capturedAt: true },
+  });
+
+  return rows.map((row) => ({
+    id: row.id,
+    blobUrl: row.blobUrl,
+    caption: row.caption,
+    capturedAtLabel: formatCapturedAt(row.capturedAt, timeZone),
+  }));
+}
+
+/** How many shared photos each of these jobs has, for the portal's job
+ * list.
+ *
+ * ONE `groupBy` FOR THE WHOLE LIST, not a count per job: the list page
+ * already renders every job the contact has, and a count inside that map
+ * would be the N+1 that `loadJobMedia`'s tag include exists to warn about.
+ *
+ * A job with no shared photos is ABSENT from the result rather than present
+ * with a zero, which is what `groupBy` does and what the caller wants — the
+ * portal shows the line only when there is something to look at.
+ */
+export async function countSharedJobMediaByJob(jobIds: string[]): Promise<Map<string, number>> {
+  if (jobIds.length === 0) return new Map();
+  const rows = await prisma.jobMedia.groupBy({
+    by: ["jobId"],
+    where: { jobId: { in: jobIds }, sharedWithClientAt: { not: null } },
+    _count: { _all: true },
+  });
+  return new Map(rows.map((row) => [row.jobId, row._count._all]));
 }

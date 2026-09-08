@@ -7,6 +7,7 @@ import {
   addJobMediaTags,
   deleteJobMedia,
   removeJobMediaTag,
+  setJobMediaClientSharing,
   updateJobMediaDetails,
 } from "@/lib/actions";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
@@ -45,6 +46,12 @@ export type JobMediaCardData = {
    * names only: `normalizedName` exists to be the target of a unique index
    * and is never shown, so it never leaves the query module. */
   tags: { id: string; name: string }[];
+  /** Whether the job's client can currently see this photo through their
+   *  portal link, and when that started. Null means internal-only, which is
+   *  what every photo is until somebody decides otherwise. The LABEL rather
+   *  than the raw date because the card renders it and the viewer's zone is
+   *  resolved server-side. */
+  sharedWithClientLabel: string | null;
   /** Shown only on the company-wide gallery, where one card's job is not
    * implied by the page it is on. */
   jobName?: string;
@@ -57,8 +64,17 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
   /* One mode for the card, with the tag form as a third value rather than
      a second boolean beside `edit`. Two independent flags would allow a
      card showing the caption form and the tag form at once — two inputs,
-     two Save buttons, on a 250px-wide card on a phone. */
-  const [mode, setMode] = useState<"view" | "edit" | "tags">("view");
+     two Save buttons, on a 250px-wide card on a phone.
+
+     "share" is a FOURTH VALUE OF THE SAME STATE and not a second armed
+     flag, which is the only shape that could work here. The confirm
+     `RowActions` provides is the `destructive` slot, and there is exactly
+     one of it — a second independently-armed control living beside the
+     children would put an armed confirm next to live ordinary actions,
+     which is the precise shape #152 exists to remove. Switching mode
+     replaces the whole body instead, so while the share question is on
+     screen there is nothing else on the card to mis-tap. */
+  const [mode, setMode] = useState<"view" | "edit" | "tags" | "share">("view");
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
@@ -94,6 +110,27 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
           unoptimized
           className="object-cover"
         />
+        {/* ON THE IMAGE, not only in the text below it, and that placement
+            is the safeguard rather than decoration. The question this
+            feature has to keep answerable is "which of these can the GC
+            see", asked while scrolling a wall of sixty thumbnails — and a
+            line of small grey type in a card body is not readable at that
+            distance. A solid chip over the corner of the photo is.
+
+            Stated as what it MEANS to the reader ("Client can see this")
+            rather than as the state's name ("Shared"). "Shared" invites the
+            reading "shared with the team"; every photo here is already
+            shared with the team. The whole risk in this feature is somebody
+            misreading which audience is meant.
+
+            White on blue-600 rather than a translucent overlay: the
+            background is an arbitrary photograph, so any contrast a
+            see-through chip has is whatever the picture happened to be. */}
+        {media.sharedWithClientLabel && (
+          <span className="absolute left-2 top-2 rounded-md bg-blue-600 px-2 py-1 text-xs font-medium text-white">
+            Client can see this
+          </span>
+        )}
       </a>
 
       <div className="flex flex-1 flex-col gap-2 p-3">
@@ -236,6 +273,70 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
               </button>
             </div>
           </form>
+        ) : mode === "share" ? (
+          /* THE ONE CONFIRM STEP IN THIS FEATURE, and it guards the SHARE
+             direction only. Both halves of that are decisions:
+
+             WHY SHARE IS CONFIRMED. Every other confirm in this app guards
+             a delete, i.e. something irreversible. Sharing looks reversible
+             — "Stop sharing" is right there — and that reading is wrong in
+             the way that matters. Withdrawal removes the photo from the
+             portal page; it does not remove it from the GC who has already
+             looked at it, and blob URLs stay reachable to anyone who saved
+             one (lib/blob.ts). The DISCLOSURE is the irreversible part, and
+             a disclosure to the other side of a construction contract is
+             exactly what a sub cannot take back. So the thing being
+             confirmed is not "are you sure you want to change this field",
+             it is "are you sure this one is theirs to see" — of the photos
+             on a job, the backcharge evidence and the crew's own mistake
+             are on the same page as the progress shots.
+
+             WHY UNSHARING IS NOT CONFIRMED. It is the safety action. A
+             confirm on it would slow down the one control somebody reaches
+             for having realised they published the wrong photo, and it
+             would buy nothing: the worst outcome of an accidental
+             withdrawal is that the GC stops seeing a photo they were
+             welcome to see, which one tap restores. Friction belongs on the
+             direction that cannot be undone, and putting it on both is how
+             a confirm step stops meaning anything — the same argument the
+             tag chips' one-click remove is written from, further down. */
+          <div className="flex flex-col gap-2">
+            <p className="text-sm font-medium text-slate-200">Show this photo to the client?</p>
+            <p className="text-sm text-slate-400">
+              Anyone holding this job&apos;s portal link will see the photo, its caption and when it
+              was taken. Tags and who took it are never shown. You can stop sharing it later, but you
+              cannot un-show it.
+            </p>
+            {error && <p className="text-sm text-red-400">{error}</p>}
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={isPending}
+                onClick={() => {
+                  setError(null);
+                  startTransition(async () => {
+                    try {
+                      const result = await setJobMediaClientSharing(media.id, true);
+                      if (!result.ok) {
+                        setError(result.error);
+                        return;
+                      }
+                      router.refresh();
+                      setMode("view");
+                    } catch {
+                      setError("Could not share this photo");
+                    }
+                  });
+                }}
+                className="min-h-11 inline-flex items-center rounded-md bg-blue-600 px-4 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+              >
+                {isPending ? "Sharing…" : "Share with client"}
+              </button>
+              <button type="button" disabled={isPending} onClick={() => setMode("view")} className={btn}>
+                Cancel
+              </button>
+            </div>
+          </div>
         ) : (
           <>
             {/* The tags, above the caption, because they are what somebody
@@ -303,6 +404,24 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
               {media.capturedByName ? ` · ${media.capturedByName}` : ""} · {media.sizeLabel}
             </p>
             {media.clockWarning && <p className="text-sm text-amber-400">{media.clockWarning}</p>}
+
+            {/* The second half of "obvious at a glance": the badge on the
+                image says THAT the client can see it, this says SINCE WHEN.
+                Both, rather than one, because they answer different
+                questions and the second is the one that settles an argument
+                — "we sent you that on the 8th" is a claim the timestamp
+                supports and a badge does not.
+
+                blue-300, matching the badge's family, so the two read as one
+                state rather than as two unrelated pieces of furniture. On
+                slate-900 it measures well clear of the 4.5 floor #89 set;
+                the slate-500 that failed it is not used anywhere on this
+                card. */}
+            {media.sharedWithClientLabel && (
+              <p className="text-sm text-blue-300">
+                Shared with client, {media.sharedWithClientLabel}
+              </p>
+            )}
             {error && <p className="text-sm text-red-400">{error}</p>}
 
             {/* Left-aligned cluster, so the default pinned="start" is
@@ -357,6 +476,72 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
               >
                 Add tag
               </button>
+              {/* ALSO A CHILD OF `RowActions`, and it has to be. The
+                  tempting placement is its own row above the cluster, since
+                  "who can see this" is a different kind of thing from
+                  "edit the caption" — but a control outside this component
+                  stays live while the photo's delete is armed, which is
+                  rule 1 of #152 and the exact sibling-of-the-ternary shape
+                  RowActions was built to make impossible. It goes in the
+                  cluster; the badge and the line above are what carry the
+                  state, and they do not need a button's help to be seen.
+
+                  Two different controls rather than one toggle whose label
+                  flips. A single button reading "Share"/"Stop sharing" puts
+                  the destructive-to-privacy direction and the safe one on
+                  the same pixel, so a card that revalidated underneath a
+                  thumb does the opposite of what was aimed at. These also
+                  behave differently on purpose — one asks first, one does
+                  not — and one button that sometimes opens a confirm and
+                  sometimes acts immediately is a worse thing to explain
+                  than two buttons. */}
+              {media.sharedWithClientLabel ? (
+                <button
+                  type="button"
+                  disabled={isPending}
+                  onClick={() => {
+                    setError(null);
+                    startTransition(async () => {
+                      try {
+                        const result = await setJobMediaClientSharing(media.id, false);
+                        if (!result.ok) {
+                          setError(result.error);
+                          return;
+                        }
+                        router.refresh();
+                      } catch {
+                        setError("Could not stop sharing this photo");
+                      }
+                    });
+                  }}
+                  className={btn}
+                >
+                  {/* A CONSTANT LABEL, unlike the delete's "Deleting…", and
+                      the difference is not an oversight. `isPending` is the
+                      card's ONE transition, shared by every control on it —
+                      so a pending label here would also light up while a tag
+                      chip beside it was being removed, announcing work that
+                      is not this button's. The delete can say "Deleting…"
+                      safely because it is only reachable while armed, and
+                      `RowActions` hides every other control in that state,
+                      so nothing else can be in flight. Here the feedback is
+                      the disabled state (#19) and then the button itself
+                      becoming "Show client". */}
+                  Stop sharing
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  disabled={isPending}
+                  onClick={() => {
+                    setError(null);
+                    setMode("share");
+                  }}
+                  className={btn}
+                >
+                  Show client
+                </button>
+              )}
             </RowActions>
           </>
         )}

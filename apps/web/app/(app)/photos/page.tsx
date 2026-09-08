@@ -3,7 +3,7 @@ import { prisma } from "@prova/db";
 import { requireCapability } from "@/lib/authz";
 import { viewerTimeZone } from "@/lib/viewerToday";
 import { countJobMedia, loadJobMedia, loadJobMediaTags } from "@/lib/job-media-query";
-import { photosFilterHref } from "@/lib/job-media-tags";
+import { parseSharedFilter, photosFilterHref } from "@/lib/job-media-tags";
 import { NoAccess } from "@/components/NoAccess";
 import { JobMediaCapture } from "@/components/JobMediaCapture";
 import { JobMediaCard } from "@/components/JobMediaCard";
@@ -11,8 +11,8 @@ import { JobMediaTagDatalist } from "@/components/JobMediaTagDatalist";
 import { JobMediaTagManager } from "@/components/JobMediaTagManager";
 
 /**
- * Every site photo the company has, newest first, filterable by job and by
- * tag.
+ * Every site photo the company has, newest first, filterable by job, by
+ * tag, and by whether the client can see it.
  *
  * The company-wide read. The per-job view lives on `/jobs/[id]` and both
  * render the same card from `loadJobMedia`, so they cannot drift.
@@ -30,13 +30,23 @@ import { JobMediaTagManager } from "@/components/JobMediaTagManager";
  * is honest about what is being withheld — the same shape and the same
  * wording as the job page's own section, which already did this.
  *
- * THE TWO FILTERS COMPOSE. Job AND tag, never one replacing the other:
- * "the west wall on the Riverside job" is the question this page exists to
- * answer, and it is not answerable by either chip alone. Every href on the
- * page is built by `photosFilterHref`, which is pure and tested — a chip
- * that quietly drops the other filter shows MORE photos than were asked
- * for while looking entirely healthy, which is the kind of wrong nobody
- * notices.
+ * THE THREE FILTERS COMPOSE. Job AND tag AND client visibility, never one
+ * replacing another: "the west wall on the Riverside job" is the question
+ * this page exists to answer, and it is not answerable by either chip
+ * alone. Every href on the page is built by `photosFilterHref`, which is
+ * pure and tested — a chip that quietly drops another filter shows MORE
+ * photos than were asked for while looking entirely healthy, which is the
+ * kind of wrong nobody notices.
+ *
+ * THE CLIENT-VISIBILITY FILTER IS THE SUB'S MIRROR OF THE PORTAL. A photo
+ * is shown to the GC one at a time, from a card, by whoever was looking at
+ * that card — which is the right way to decide it and a terrible way to
+ * REVIEW it, because the decisions end up scattered across weeks and
+ * across people. The safeguard the sharing feature rests on is that a sub
+ * can see what the GC can see, and this is where they see it: pick the job
+ * chip, pick "Shared with client", and the page is exactly the portal
+ * gallery for that GC. "Not shared" is the same query inverted, for
+ * checking that nothing was published by accident.
  */
 
 /** Five screens of the three-across grid. Larger than the job page's dozen
@@ -47,12 +57,12 @@ const PHOTO_LIMIT = 60;
 export default async function PhotosPage({
   searchParams,
 }: {
-  searchParams: Promise<{ job?: string; tag?: string }>;
+  searchParams: Promise<{ job?: string; tag?: string; shared?: string }>;
 }) {
   const { context, allowed } = await requireCapability("MANAGE_FIELD");
   if (!allowed) return <NoAccess capability="MANAGE_FIELD" />;
   const { company } = context;
-  const { job: jobFilter, tag: tagFilter } = await searchParams;
+  const { job: jobFilter, tag: tagFilter, shared: sharedFilter } = await searchParams;
 
   const [jobs, tags] = await Promise.all([
     prisma.job.findMany({
@@ -68,6 +78,14 @@ export default async function PhotosPage({
   // nothing on the page can explain.
   const activeJob = jobFilter && jobs.some((j) => j.id === jobFilter) ? jobFilter : null;
   const activeTag = tagFilter && tags.some((t) => t.id === tagFilter) ? tagFilter : null;
+  // Validated the same way, against the only two values that mean anything
+  // — see `parseSharedFilter`. An unrecognised `?shared=` is no filter, not
+  // half of one.
+  const activeShared = parseSharedFilter(sharedFilter);
+  // The one place the string turns into the three-valued query flag.
+  // `undefined` is "both", and it has to be spelled out rather than left to
+  // fall out of a truthiness test: `false` is a filter here.
+  const sharedWhere = activeShared === null ? undefined : activeShared === "yes";
 
   const timeZone = await viewerTimeZone();
   const [media, total] = await Promise.all([
@@ -76,6 +94,7 @@ export default async function PhotosPage({
         companyId: company.id,
         ...(activeJob ? { jobId: activeJob } : {}),
         ...(activeTag ? { tagId: activeTag } : {}),
+        ...(sharedWhere === undefined ? {} : { shared: sharedWhere }),
         withJobName: true,
         take: PHOTO_LIMIT,
       },
@@ -89,6 +108,7 @@ export default async function PhotosPage({
       companyId: company.id,
       ...(activeJob ? { jobId: activeJob } : {}),
       ...(activeTag ? { tagId: activeTag } : {}),
+      ...(sharedWhere === undefined ? {} : { shared: sharedWhere }),
     }),
   ]);
 
@@ -133,13 +153,16 @@ export default async function PhotosPage({
           <JobMediaTagDatalist names={tags.map((tag) => tag.name)} />
 
           <div className="mb-3 flex flex-wrap gap-2">
-            <Link href={photosFilterHref({ tag: activeTag })} className={chip(!activeJob)}>
+            <Link
+              href={photosFilterHref({ tag: activeTag, shared: activeShared })}
+              className={chip(!activeJob)}
+            >
               All jobs
             </Link>
             {jobs.map((job) => (
               <Link
                 key={job.id}
-                href={photosFilterHref({ job: job.id, tag: activeTag })}
+                href={photosFilterHref({ job: job.id, tag: activeTag, shared: activeShared })}
                 className={chip(activeJob === job.id)}
               >
                 {job.name}
@@ -152,13 +175,16 @@ export default async function PhotosPage({
               whatever tag is chosen, so the two narrow together. */}
           {filterableTags.length > 0 && (
             <div className="mb-3 flex flex-wrap gap-2">
-              <Link href={photosFilterHref({ job: activeJob })} className={chip(!activeTag)}>
+              <Link
+                href={photosFilterHref({ job: activeJob, shared: activeShared })}
+                className={chip(!activeTag)}
+              >
                 All tags
               </Link>
               {filterableTags.map((tag) => (
                 <Link
                   key={tag.id}
-                  href={photosFilterHref({ job: activeJob, tag: tag.id })}
+                  href={photosFilterHref({ job: activeJob, tag: tag.id, shared: activeShared })}
                   className={chip(activeTag === tag.id)}
                 >
                   {tag.name}{" "}
@@ -171,6 +197,48 @@ export default async function PhotosPage({
               ))}
             </div>
           )}
+
+          {/* The client-visibility row, last of the three, because it is the
+              narrowing you reach for once you already know which job — "what
+              have we shown Turner on Riverside" is the job chip and then
+              this one.
+
+              ALWAYS RENDERED, unlike the tag row above it, which hides when
+              a company has no tags. The difference is that a tag chip
+              nobody has used leads to a guaranteed-empty gallery, while
+              "Not shared" on a company that has never shared anything is
+              the true and useful answer that everything is still internal.
+              A control that disappears when its answer is "none" is a
+              control you cannot use to CHECK that the answer is none.
+
+              DELIBERATELY NO COUNTS on these two, unlike the tag chips. A
+              tag's count describes the tag and is the same number wherever
+              you stand; a shared count only means anything relative to the
+              job you are looking at, so the honest version of it would
+              change with the job chip while the tag counts beside it did
+              not — two numbers on one row of chips, counting different
+              populations, and no room to say which. The gallery's own
+              "showing N of M" line already states the filtered total. */}
+          <div className="mb-3 flex flex-wrap gap-2">
+            <Link
+              href={photosFilterHref({ job: activeJob, tag: activeTag })}
+              className={chip(!activeShared)}
+            >
+              All photos
+            </Link>
+            <Link
+              href={photosFilterHref({ job: activeJob, tag: activeTag, shared: "yes" })}
+              className={chip(activeShared === "yes")}
+            >
+              Shared with client
+            </Link>
+            <Link
+              href={photosFilterHref({ job: activeJob, tag: activeTag, shared: "no" })}
+              className={chip(activeShared === "no")}
+            >
+              Not shared
+            </Link>
+          </div>
 
           <JobMediaTagManager tags={tags} />
 
@@ -189,27 +257,62 @@ export default async function PhotosPage({
 
           {media.length === 0 ? (
             <div className="rounded-lg border border-slate-800 bg-slate-900 p-6">
+              {/* THE VISIBILITY FILTER GETS THE FIRST WORD when it is on,
+                  because it is then the likeliest reason the gallery is
+                  empty and — unlike the other two — the emptiness is itself
+                  the answer somebody came for. "Nothing on this job has
+                  been shared" is a fact worth reading, not a dead end.
+
+                  Both sentences are phrased about THIS PAGE rather than
+                  about the world, and that is a correctness point rather
+                  than a stylistic one. An empty "Not shared" gallery has two
+                  causes — every photo is shared, or there are no photos —
+                  and the page cannot tell them apart without another query.
+                  "Every photo is shared with the client" would be a
+                  confident lie on a job with no photos at all. */}
               <p className="text-sm text-slate-300">
-                {activeTag && activeJob
-                  ? "No photos on this job carry that tag."
-                  : activeTag
-                    ? "No photos carry that tag."
-                    : activeJob
-                      ? "No photos on this job yet."
-                      : "No photos yet."}
+                {activeShared === "yes"
+                  ? activeJob
+                    ? "Nothing on this job is shared with the client."
+                    : "Nothing here is shared with a client."
+                  : activeShared === "no"
+                    ? "Nothing here is being held back from the client."
+                    : activeTag && activeJob
+                      ? "No photos on this job carry that tag."
+                      : activeTag
+                        ? "No photos carry that tag."
+                        : activeJob
+                          ? "No photos on this job yet."
+                          : "No photos yet."}
               </p>
-              <p className="mt-1 text-sm text-slate-400">
-                {activeTag ? (
+              {/* A way out of every filter that is on, not just the one the
+                  sentence above happened to name. With three filters
+                  composing, the old single-link version could leave somebody
+                  looking at an empty page whose only offered escape was from
+                  a filter that was not the one narrowing it. */}
+              <p className="mt-1 flex flex-wrap gap-x-4 text-sm text-slate-400">
+                {activeShared && (
                   <Link
-                    href={photosFilterHref({ job: activeJob })}
+                    href={photosFilterHref({ job: activeJob, tag: activeTag })}
+                    className="text-blue-400 hover:text-blue-300"
+                  >
+                    Show all photos
+                  </Link>
+                )}
+                {activeTag && (
+                  <Link
+                    href={photosFilterHref({ job: activeJob, shared: activeShared })}
                     className="text-blue-400 hover:text-blue-300"
                   >
                     Clear the tag filter
                   </Link>
-                ) : activeJob ? (
-                  "Add the first one above — a photo of the existing conditions before you start is the one people wish they had."
-                ) : (
-                  "Pick a job above and add the first one."
+                )}
+                {!activeShared && !activeTag && (
+                  <span>
+                    {activeJob
+                      ? "Add the first one above — a photo of the existing conditions before you start is the one people wish they had."
+                      : "Pick a job above and add the first one."}
+                  </span>
                 )}
               </p>
             </div>
@@ -223,7 +326,7 @@ export default async function PhotosPage({
               {total > PHOTO_LIMIT && (
                 <p className="mt-3 text-sm text-slate-400">
                   Showing the {PHOTO_LIMIT} most recent of {total}.{" "}
-                  {activeJob || activeTag
+                  {activeJob || activeTag || activeShared
                     ? "Older photos matching this filter are not on this page yet."
                     : "Pick a job or a tag above to narrow this down."}
                 </p>

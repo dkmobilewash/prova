@@ -651,9 +651,18 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // Site photos. Only the two TAG-VOCABULARY actions land in MUST_ASSERT:
   // renaming and deleting a tag are reachable only from /photos, which
   // demands MANAGE_FIELD. The photo actions themselves — record, update,
-  // delete, add/remove a tag on a photo — are also reachable from
-  // /jobs/[id], which demands no capability, so their doors disagree and
-  // the derivation leaves them alone. They assert MANAGE_FIELD anyway.
+  // delete, add/remove a tag on a photo, and now share/unshare with the
+  // job's client — are also reachable from /jobs/[id], which demands no
+  // capability, so their doors disagree and the derivation leaves them
+  // alone. They assert MANAGE_FIELD anyway.
+  //
+  // `setJobMediaClientSharing` is the one of those with a consequence
+  // outside the tenant, so its refusal IS executed rather than only read
+  // off the source — in lib/job-media-sharing.dbtest.ts, which runs an
+  // ACCOUNTING member at it and then a FIELD member as the control. It is
+  // not listed in MIXED_DOORS because a single entry would make this module
+  // half-enforced against five identical siblings, which this file's own
+  // note on /closeout argues is worse than a consistent state.
   jobMedia: () => import("./actions/jobMedia"),
   materialOrders: () => import("./actions/materialOrders"),
   rfis: () => import("./actions/rfis"),

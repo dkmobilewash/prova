@@ -3,6 +3,14 @@ import { notFound } from "next/navigation";
 import { ContractSummary } from "@/components/ContractSummary";
 import { prisma } from "@prova/db";
 import { money } from "@/lib/money";
+import { PortalJobPhotos } from "@/components/PortalJobPhotos";
+import { countJobMedia, loadSharedJobMediaForClient } from "@/lib/job-media-query";
+import { viewerTimeZone } from "@/lib/viewerToday";
+
+/** The photo cap, matching `/photos`. A GC scrolling a job's history wants
+ * the same generous page the sub gets, and this section is at the bottom of
+ * an already long page. */
+const PHOTO_LIMIT = 60;
 
 export default async function PortalJobPage({
   params,
@@ -45,6 +53,40 @@ export default async function PortalJobPage({
   if (!job || job.contactId !== contact.id) {
     notFound();
   }
+
+  /* THE PHOTO READ SITS BELOW THAT GUARD ON PURPOSE, not beside it in a
+     `Promise.all` with the job lookup. `job.contactId !== contact.id` is
+     the whole of the portal's authorisation — there is no session here, the
+     token IS the credential — and the id it validates is the same `job.id`
+     the query below filters on. Hoisting these two reads to run
+     concurrently would mean the photos of a job this contact does not own
+     were fetched before anything established that they own it, which is the
+     shape of bug that becomes a leak the first time somebody moves a
+     `notFound()`.
+
+     `companyId` is passed as well; see `loadSharedJobMediaForClient` for why
+     it is belt-and-braces rather than redundant, and for the
+     `sharedWithClientAt: { not: null }` clause that is the entire opt-in.
+
+     The ZONE is honest about what it can know. `/portal` renders no
+     `TimeZoneCookie` — that lives in the signed-in layout — so for a GC
+     this resolves to Vercel's geo-IP header, or UTC locally and on the
+     first request from a brand-new browser. A wrong-by-an-hour capture time
+     on a client page is a cost worth naming; the alternative is formatting
+     in the browser during render, which is the hydration break
+     components/localToday.ts exists to warn about. */
+  const timeZone = await viewerTimeZone();
+  const [photos, sharedPhotoCount] = await Promise.all([
+    loadSharedJobMediaForClient(
+      { jobId: job.id, companyId: job.companyId, take: PHOTO_LIMIT },
+      timeZone,
+    ),
+    // Through the SAME builder the internal galleries count with, so the
+    // "showing 60 of N" line cannot come to disagree with the list above it.
+    // `shared: true` here is the same `sharedWithClientAt: { not: null }`
+    // the loader applies.
+    countJobMedia({ companyId: job.companyId, jobId: job.id, shared: true }),
+  ]);
 
   const pendingSignature = job.signatureRequests[0];
 
@@ -97,6 +139,13 @@ export default async function PortalJobPage({
           </ul>
         </section>
       )}
+
+      {/* Contract, then what changed, then what it looked like, then what is
+          owed. The photos go here rather than at the end because they are
+          the evidence the two money sections are arguments about — a change
+          order and an invoice both read differently once you have seen the
+          wall. It renders nothing at all when nothing has been shared. */}
+      <PortalJobPhotos photos={photos} total={sharedPhotoCount} limit={PHOTO_LIMIT} />
 
       {job.invoices.length > 0 && (
         <section>

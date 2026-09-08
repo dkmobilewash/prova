@@ -92,7 +92,37 @@ model JobMedia {
   createdAt DateTime @default(now())
 
   capturedByUserId String?
-  capturedBy       User?   @relation(fields: [capturedByUserId], references: [id])
+  capturedBy       User?   @relation("JobMediaCapturedBy", fields: [capturedByUserId], references: [id])
+
+  /// WHEN THIS PHOTO WAS SHOWN TO THE CLIENT, and null — the default —
+  /// when it never has been. This is the whole of what the GC can see.
+  ///
+  /// SHARING IS OPT-IN, ONE PHOTO AT A TIME, and that is the important
+  /// decision in this feature rather than an incidental one. A job's
+  /// photos are not a set a sub wants published: the same gallery holds
+  /// the shot of another trade's damage being kept for a backcharge, the
+  /// unsafe condition being documented defensively, and the crew's own
+  /// mistake before it was put right. `/portal` already withholds job
+  /// costing from the client for the same reason — see ARCHITECTURE.md —
+  /// and this file's product exists for the sub, not the GC.
+  ///
+  /// A TIMESTAMP RATHER THAN A BOOLEAN, for the cost of nothing. Showing a
+  /// photo to the GC is a disclosure, and in an argument about what they
+  /// were told and when, "shared" answers less than "shared on the 4th".
+  /// Nullable means never shared, so there is no backfill and no row that
+  /// starts life visible.
+  ///
+  /// NOT DERIVED, so storing it breaks no rule: nothing else in the
+  /// database implies this. It is a decision somebody made, which is the
+  /// same reason `ComplianceDocument.status` is stored while its
+  /// expiry-derived state is not.
+  sharedWithClientAt DateTime?
+
+  /// Who shared it. SET NULL on user delete, like `capturedBy` — the fact
+  /// of the disclosure outlives the account that made it, and losing the
+  /// name is better than losing the record that it happened.
+  sharedWithClientByUserId String?
+  sharedWithClientBy       User?   @relation("JobMediaSharedBy", fields: [sharedWithClientByUserId], references: [id])
 
   /// The labels somebody put on this photo. See media-tags.prisma for why
   /// a join to a vocabulary table rather than a string column here.
