@@ -91,13 +91,16 @@ export function tradeScopeFromForm(formData: FormData): (typeof TRADE_SCOPES)[nu
 
 /** Empty selection means "no craft tag" — valid, since not every line item
  * is labor a specific craft performs. When set, verified against this
- * company's own union affiliations (CraftClassification is a global
- * reference table, not company-scoped, so this is the access check). */
+ * company's own craft classifications: CraftClassification carries its own
+ * companyId (added for #136 finding 1 — it used to be a global reference
+ * table gated only by a self-asserted CompanyUnionAgreement, which was the
+ * vulnerability), so this is a direct ownership check now, not a join
+ * through the agreement table. */
 export async function craftClassificationIdFromForm(formData: FormData, companyId: string): Promise<string | null> {
   const raw = String(formData.get("craftClassificationId") ?? "").trim();
   if (!raw) return null;
   const craft = await prisma.craftClassification.findFirst({
-    where: { id: raw, unionLocal: { companyAgreements: { some: { companyId } } } },
+    where: { id: raw, companyId },
   });
   if (!craft) {
     throw new Error("Craft classification not found");
