@@ -12,6 +12,90 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### A crew that can be named on payroll without 25 Clerk accounts (Cyrus)
+`cyrus/crew-members`
+
+`TimeEntry.employeeUserId` is a REQUIRED FK to `User` and there is no
+`Employee` model, so a 25-hand crew is 25 sign-ups before a single
+timesheet — and `/team` invites one email at a time and sends no email.
+Certified payroll, fringe remittance, apprentice ratio and labour cost all
+read `TimeEntry`, so the whole compliance half of the product is gated
+behind every field hand owning a login. `CrewMember` is a person who can
+be named on a filing without one.
+
+Ships **deliberately unwired**: new model, new nullable
+`TimeEntry.crewMemberId`, no action, no UI, `crewMemberId` NULL on every
+row. `employeeUserId` stays REQUIRED — relaxing it is additive and
+permitted, but the moment it is nullable the Prisma type becomes
+`User | null` and six modules printing `employeeUser.name` stop compiling.
+That follow-up is written out in full in the migration header.
+
+:warning: **The BEFORE UPDATE trigger on `TimeEntry` was REMOVED before it
+ever ran, and the guarantee it made is now WEAKER. Read this as a
+downgrade, because that is what it is.**
+
+An earlier draft created `TimeEntry_crew_member_lock`, refusing to repoint
+a row at a different `CrewMember` once one was set. That mattered:
+locking a crew member's legal name is worth nothing if the hours can be
+moved to a different person afterwards — an already-filed certified
+payroll and its source would disagree with nothing to show they had ever
+agreed. These rows end up on a WH-347 signed under penalty of perjury.
+
+It came out because **`TimeEntry` is a live payroll table with real
+production rows**, and a trigger shipped onto it unclicked is the one
+category where being wrong is not an afternoon.
+
+**The `CrewMember` trigger is KEPT.** The two are not equal in risk:
+`CrewMember` is a brand-new table with zero rows anywhere, so its identity
+lock can only ever meet rows this change created. Dropping it too would
+have thrown away a free guarantee to solve a problem it was not causing.
+
+**What replaces the removed one:** `apps/web/lib/timeEntryWriteCensus.test.ts`,
+the same source-census pattern as `rowActionsCensus.test.ts` — which has
+already earned it by catching two real instances in #88 before they merged.
+It does not enforce the rule. It asserts the PRECONDITION the rule rests
+on: that there is no `update`/`updateMany`/`upsert` path to `TimeEntry` at
+all, which CLAUDE.md records was established call site by call site. It
+starts green and goes red the moment somebody adds the path that would
+make reassignment possible, and the failure message says to put the lock
+back in the database rather than in an action.
+
+**Mutation-tested, because a census nobody can trip is worse than the
+trigger it replaced.** Five defects reintroduced one at a time, every one
+red: `prisma.timeEntry.update`, `updateMany`, `upsert`, the same through a
+transaction handle (`tx.timeEntry.update`), and raw `$executeRaw` naming
+the table. Comments are stripped before scanning and that was tested
+directly — PR #176's census was silently disarmed for a whole file because
+an explanatory comment contained the pattern it looked for. Restored
+byte-identical, green.
+
+**A re-run of that mutation suite then found a sixth defect, in the census
+itself.** The raw-SQL pattern was `/g` and used with `.test()` inside a
+`.filter()` over every file. `.test()` on a /g regex carries `lastIndex`
+forward and only resets it when it FAILS, so the file immediately after a
+matching one was searched from the previous match's offset rather than
+from 0. Reproduced on real files: raw SQL planted at the end of
+`lib/actions/labor.ts` and at the start of its scan-order neighbour
+`lib/actions/materialOrders.ts` reported ONLY `labor.ts`, while the same
+SQL in `materialOrders.ts` alone was reported correctly. It could not
+produce a false GREEN — the first offender always matches — but it
+under-reported, so an author fixing the named file would have been told
+they were done while a second write was still there. The flag is gone and
+the two-offender case now names both. This is exactly the failure the
+census exists to prevent, found in the census, which is the argument for
+mutation-testing a guard rather than reading it.
+
+**What the census CANNOT see, said plainly:** a nested write reaching
+`TimeEntry` through another model, and anything run against Neon by hand.
+The trigger could see those. If `crewMemberId` ever becomes writable
+through a form, the lock belongs back in the database.
+
+Two dbtest cases that asserted the trigger raises are **deleted, not
+skipped** — a test asserting a guarantee that no longer exists is worse
+than no test. The third was rewritten to assert what is actually true: an
+entry is attributed at CREATE, which is the only path the app has.
+
+
 ### The money a GC's platform takes off you had nowhere to go (Cyrus)
 `cyrus/payment-fee-fields`
 
