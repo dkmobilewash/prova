@@ -201,6 +201,34 @@ export function countOverdue(queue: readonly LeadActivitySummary[]): number {
   return queue.filter((summary) => summary.followUpStanding === "OVERDUE").length;
 }
 
+/** An opportunity as an activity row needs to know it: just enough to
+ * label which deal it was about. Shaped to match SalesActivityFields'
+ * OpportunityOption so a page can pass the same array to both. */
+export interface ActivityOpportunityOption {
+  id: string;
+  label: string;
+}
+
+/**
+ * Which deal a logged activity was about, as text -- or null when it
+ * wasn't about any specific deal.
+ *
+ * #153 finding 1: SalesActivity.opportunityId was collected on create and
+ * read back only into the edit form; no screen ever displayed it, so the
+ * log answered "what happened" but never "to which deal". Pulled out as a
+ * pure lookup, rather than inlined in the row component, so the one thing
+ * that could actually go wrong here -- matching the wrong option, or
+ * failing silently on a stale id -- is unit-tested rather than trusted by
+ * eye in JSX.
+ */
+export function dealLabelFor(
+  opportunityId: string | null,
+  opportunityOptions: readonly ActivityOpportunityOption[],
+): string | null {
+  if (opportunityId === null) return null;
+  return opportunityOptions.find((o) => o.id === opportunityId)?.label ?? null;
+}
+
 export const SALES_ACTIVITY_TYPE_LABELS: Record<SalesActivityType, string> = {
   CALL: "Call",
   EMAIL: "Email",

@@ -120,6 +120,14 @@ export interface StageSpell {
   days: number | null;
   /** True for the spell the deal is in now. */
   isCurrent: boolean;
+  /**
+   * Why the move INTO this spell happened, if anyone said. Null is common
+   * -- most moves need no explanation, per the column's own comment on
+   * SalesStageChange. This carries RecordedStageChange.note through: #164
+   * found it was being read out of the database and dropped right here,
+   * so nothing downstream ever had it to render.
+   */
+  note: string | null;
 }
 
 /**
@@ -147,6 +155,7 @@ export function stageSpells(
       leftOn: next?.effectiveOn ?? null,
       days: days < 0 ? null : days,
       isCurrent,
+      note: change.note,
     };
   });
 }

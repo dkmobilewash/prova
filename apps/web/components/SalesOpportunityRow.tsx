@@ -157,6 +157,12 @@ export function SalesOpportunityRow({
                       from {spell.enteredOn}
                       {spell.leftOn === null ? " (still)" : ` to ${spell.leftOn}`} —{" "}
                       {stageTiming(spell.days)}
+                      {/* #164: the note explaining WHY this move happened was
+                          stored and read back into `spell.note`, but nothing
+                          rendered it -- the history showed stage, dates and
+                          days-in-stage and silently dropped the one field a
+                          person actually typed. */}
+                      {spell.note && <p className="mt-0.5 text-slate-500">&ldquo;{spell.note}&rdquo;</p>}
                     </li>
                   ))}
                 </ol>
