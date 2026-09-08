@@ -146,6 +146,92 @@ PR description.
 
 ---
 
+### The two fringe-schedule guardrails #200 left open (Cyrus)
+`cyrus/fringe-schedule-guardrails`
+
+Both follow-ons Diego's #136 close named and left to this lane, done the
+day it merged rather than inherited as intentions.
+
+**`deleteFringeRateSchedule` now has a usage check — #199.** There is no
+foreign key from `TimeEntry` to a rate schedule: certified payroll and
+fringe remittance look the effective rate up LIVE by date, so "is this
+schedule used" is window membership, not a join. The action now counts
+the company's own hours for that craft inside the schedule's effective
+window and refuses to delete while any exist, naming the count and
+routing to `endFringeRateSchedule` (which records the end date and leaves
+history alone). A schedule whose window priced no hours — the genuine
+data-entry mistake — still deletes. The over-count case (an overlapping
+schedule might be the one actually picked for some dates) is accepted
+deliberately: refusing a harmless delete costs a click, allowing a
+harmful one changes filed numbers.
+
+**`union-compliance-query.ts`'s schedule read is company-scoped
+directly.** `fringeRateSchedule.findMany` filtered only on craft ids —
+transitively scoped because those ids come from this company's own
+entries, which holds exactly as long as every craft tag is right forever.
+These are wage, pension, H&W and training rates; #200's `companyId`
+column makes the direct filter one line, so it is on the query itself
+now, not on the join being trusted.
+
+The specific checks: `unionCompliance.guard.test.ts` (runnable locally,
+unlike the dbtest suite — #171) asserts the refusal, the deletion, the
+QUERY SHAPES (an unscoped count refuses company A's delete because
+company B worked those dates; `lte: null` in a Prisma where silently
+filters, so the open-ended window spreads the bound conditionally), and
+the remittance query's `companyId`. Four mutations run, each reddening
+its named test, both files restored byte-identical and sha-verified:
+drop the usage check, unscope the count, reintroduce `lte: null`,
+unscope the remittance query. A real-Postgres case rides in
+`unionCompliance.dbtest.ts` for CI.
+### The union audit outlived its question by six commits — #136 (Diego)
+`claude/prova-contractor-os-e3f0iz`
+
+**#200 closed issue #136 finding 1 while this script was still telling people
+to fix it.** Migration `20260907191702_union_tenancy_companyid` put `companyId`
+on the four union tables, backfilled them, made them NOT NULL, and changed a
+local's identity to `[companyId, parentInternational, localNumber]`. The script
+went on stating the OLD constraint as fact and instructing the reader to change
+it — false about the schema — and framing itself around a shared namespace that
+no longer exists. It was caught only because its branch was six commits behind
+and the base drift forced a re-read.
+
+That is CLAUDE.md's own rule landing on the file that quotes it: *a doc note
+saying nobody has fixed X is a claim with an expiry date on it.* Nobody re-read
+the code, because nobody thought to ask whether the question was still open.
+
+**Rewritten from "should we fix this" to "is it still fixed",** which is the
+version that does not expire.
+
+**What it checks, and why that is not the obvious thing.** Almost everything
+#200 established is now enforced by Postgres — NOT NULL plus a foreign key on
+every one of those tables — so asserting any of it would be a check that cannot
+fail. What is enforced by NOTHING is that a row's `companyId` AGREES with the
+`companyId` of the parent it points at. The migration denormalised the column
+onto children and added no CHECK, no trigger and no composite foreign key
+(verified: zero of them in the migration). So a write path that sets one and
+forgets the other files a row under company A hanging off company B's local,
+silently, with every constraint satisfied — #136 returning through the
+denormalisation that fixed it, and the hazard behind this repo's own
+"derived state is never stored" rule. Six such pairs exist; all six are checked.
+
+The job now FAILS on a violation instead of reporting one, so it is a
+regression check rather than something nobody reads.
+
+**Verified against a real Postgres in four states, and the third is the point.**
+Empty → `NOT ESTABLISHED`. One company with real rows → `NOT ESTABLISHED`,
+because with a single tenant every row carries the same `companyId` and the
+comparison is incapable of failing; calling that "clean" is the exact defect
+this file has now been rewritten twice to stop committing. Two companies, clean
+→ `HOLDS`, and it says a disagreement was reachable. Three rows deliberately
+filed under one company while hanging off another's local → all three named,
+by table, exit code 1.
+
+Worth recording that the fixture caught a second thing: `prisma migrate deploy`
+applies migrations but does NOT regenerate the client, so the first seed failed
+silently against a stale client and only the row counts revealed it. The
+script's own queries are raw SQL and were unaffected — which is precisely why
+the counts, not the absence of an error, are what to read.
+
 ### Union tables gain companyId — the destructive half of #136 finding 1 (Diego)
 `diego/fix-cross-tenant-security-136`
 

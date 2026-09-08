@@ -1,30 +1,45 @@
 /**
- * Is the shared union namespace ALREADY shared, or only shareable?
+ * Do the union tables still agree with themselves about who owns what?
  *
- * READ-ONLY. Four SELECTs, no writes.
+ * READ-ONLY. Two SELECTs, no writes. Exits non-zero if an invariant is broken,
+ * so a scheduled run fails loudly rather than printing something nobody reads.
  *
- * Issue #136 finding 1: `UnionLocal`, `CraftClassification`,
- * `FringeRateSchedule` and `ApprenticeRatioRule` carry no `companyId`, and the
- * only access check is a self-asserted `CompanyUnionAgreement`. Whether that is
- * a live breach or a latent one depends on whether two companies have actually
- * landed on the same local, and the backfill that closes it depends on the same
- * answer.
+ * WHAT THIS FILE USED TO BE, AND WHY IT IS NOT THAT ANY MORE. It was written to
+ * answer an open question from issue #136 finding 1: `UnionLocal`,
+ * `CraftClassification`, `FringeRateSchedule` and `ApprenticeRatioRule` carried
+ * no `companyId`, so any company could claim any local by typing its public
+ * number. The question was whether that had already happened, because the
+ * backfill that closes it could only be written once somebody knew.
  *
- * THE RULE THIS SCRIPT IS BUILT AROUND, learned by getting it wrong: a check
- * that cannot fail will report success, fast and confidently. The first version
- * of this file printed "NONE -> the backfill is single-valued. Build it." on a
- * database holding ONE company and ONE agreement, where the `HAVING
- * count(DISTINCT "companyId") > 1` it rests on is ARITHMETICALLY INCAPABLE of
- * returning a row. It also computed the scale that would have revealed that
- * AFTER printing the conclusion.
+ * That question is ANSWERED and the hole is CLOSED. Migration
+ * `20260907191702_union_tenancy_companyid` (#200) added `companyId` to all four
+ * tables, backfilled them, made them NOT NULL, and replaced
+ * `@@unique([parentInternational, localNumber])` with
+ * `@@unique([companyId, parentInternational, localNumber])`, so two contractors
+ * signatory to the same real local now hold their own rows. The advisory
+ * version of this script survived that merge by six commits still telling its
+ * reader to make a change that was already made -- which is why it is rewritten
+ * rather than deleted: the question changed from "should we fix this" to "is it
+ * still fixed", and the second question never stops needing an answer.
  *
- * So: scale is read FIRST, and every verdict below states the condition under
- * which it could have come out the other way and whether the data met it. A
- * verdict that could not have failed is reported as NOT ESTABLISHED, never as
- * good news.
+ * WHAT IS ACTUALLY WORTH CHECKING. Nearly everything the migration established
+ * is now enforced by Postgres: `companyId` is NOT NULL with a foreign key on
+ * every one of those tables. Asserting any of that would be a check that cannot
+ * fail, which is the defect this file has been rewritten twice to stop
+ * committing.
  *
- * Prints the host it read, never the connection string, via the same
- * `describe()` every other script in this directory uses.
+ * What Postgres does NOT enforce is that a row's `companyId` AGREES with the
+ * `companyId` of the parent it points at. The migration denormalised the column
+ * onto children -- `CraftClassification` carries one, and so does the
+ * `UnionLocal` it belongs to -- and there is no CHECK, no trigger and no
+ * composite foreign key tying the two together. Verified: the migration
+ * contains zero of them. So a write path that sets one and forgets the other
+ * creates a row filed under company A hanging off company B's local, silently,
+ * with every constraint satisfied. That is issue #136 coming back through the
+ * denormalisation introduced to fix it, and it is exactly the hazard CLAUDE.md
+ * names when it says derived state is never stored.
+ *
+ * Six such pairs exist. This checks all six.
  *
  *   DATABASE_URL=... node scripts/union-tenancy-audit.mjs
  */
@@ -37,12 +52,12 @@ loadEnvFiles();
 
 const target = describe(process.env.DATABASE_URL);
 if (!target) {
-  console.error("union-audit: DATABASE_URL is not set or is unparseable. Nothing was read.");
+  console.error("union-tenancy: DATABASE_URL is not set or is unparseable. Nothing was read.");
   process.exit(1);
 }
-console.log(`union-audit: database   ${target.label}`);
-console.log(`union-audit: endpoint   ${target.endpointId ?? "(not a Neon host)"}`);
-console.log("union-audit: READ-ONLY — four SELECTs, no writes.\n");
+console.log(`union-tenancy: database   ${target.label}`);
+console.log(`union-tenancy: endpoint   ${target.endpointId ?? "(not a Neon host)"}`);
+console.log("union-tenancy: READ-ONLY — two SELECTs, no writes.\n");
 
 const prisma = new PrismaClient();
 
@@ -56,146 +71,104 @@ function required(rows, column) {
 }
 
 try {
-  /* ---------------------------------------------------------------- scale --
-   * FIRST, not last. Every verdict below is gated on these numbers, so they
-   * cannot be read as a footnote to a conclusion already printed.
-   *
-   * `companiesWithAnyEdge` is the one that decides whether the collision query
-   * could have fired at all, and it deliberately spans BOTH ways a company
-   * reaches a local -- see the note on that query. */
+  /* Read FIRST, so every verdict below has a denominator and none of them is
+   * printed before the numbers that decide whether it could have failed. */
   const scale = await prisma.$queryRaw`
     SELECT
-      (SELECT count(*) FROM "UnionLocal")::int                                  AS locals,
-      (SELECT count(*) FROM "CompanyUnionAgreement")::int                       AS agreements,
-      (SELECT count(*) FROM "ApprenticeshipEnrollment"
-         WHERE "unionLocalId" IS NOT NULL)::int                                 AS enrollments_naming_a_local,
-      (SELECT count(DISTINCT "companyId") FROM (
-         SELECT "companyId" FROM "CompanyUnionAgreement"
-         UNION SELECT "companyId" FROM "ApprenticeshipEnrollment" WHERE "unionLocalId" IS NOT NULL
-       ) e)::int                                                                AS companies_touching_a_local,
-      (SELECT count(*) FROM "CraftClassification")::int                         AS crafts,
-      (SELECT count(*) FROM "FringeRateSchedule")::int                          AS fringe_schedules,
-      (SELECT count(*) FROM "ApprenticeRatioRule")::int                         AS apprentice_ratio_rules
+      (SELECT count(*) FROM "Company")::int                                    AS companies,
+      (SELECT count(*) FROM "UnionLocal")::int                                 AS locals,
+      (SELECT count(*) FROM "CraftClassification")::int                        AS crafts,
+      (SELECT count(*) FROM "FringeRateSchedule")::int                         AS fringe_schedules,
+      (SELECT count(*) FROM "ApprenticeRatioRule")::int                        AS ratio_rules,
+      (SELECT count(*) FROM "CompanyUnionAgreement")::int                      AS agreements,
+      (SELECT count(*) FROM "ApprenticeshipEnrollment")::int                   AS enrollments
   `;
+  const companies = required(scale, "companies");
+  const rowsUnderCheck =
+    required(scale, "crafts") + required(scale, "fringe_schedules") + required(scale, "ratio_rules") +
+    required(scale, "agreements") + required(scale, "enrollments");
 
-  const locals = required(scale, "locals");
-  const companiesTouching = required(scale, "companies_touching_a_local");
-  const crafts = required(scale, "crafts");
-  const fringe = required(scale, "fringe_schedules");
-  const ratioRules = required(scale, "apprentice_ratio_rules");
-
-  console.log("== scale, read FIRST so the verdicts below have a denominator ==");
+  console.log("== scale ==");
   console.table(scale);
   console.log("");
 
-  /* ------------------------------------------------------- 1. collisions --
-   * A local reached by more than one company.
-   *
-   * TWO EDGES, NOT ONE. `CompanyUnionAgreement` is the obvious one and the only
-   * one #136 mentions, but `ApprenticeshipEnrollment` also carries a companyId
-   * AND a nullable unionLocalId -- and its writer takes that id straight out of
-   * FormData (`lib/actions/apprenticeship.ts`). So a company can attach itself
-   * to another company's local with no agreement row at all, and a query over
-   * the agreement table alone would print NONE while it was happening. */
-  const shared = await prisma.$queryRaw`
-    WITH edges AS (
-      SELECT "companyId", "unionLocalId" FROM "CompanyUnionAgreement"
-      UNION
-      SELECT "companyId", "unionLocalId" FROM "ApprenticeshipEnrollment" WHERE "unionLocalId" IS NOT NULL
-    )
-    SELECT e."unionLocalId",
-           count(DISTINCT e."companyId")::int AS companies,
-           l."parentInternational",
-           l."localNumber"
-    FROM edges e JOIN "UnionLocal" l ON l.id = e."unionLocalId"
-    GROUP BY e."unionLocalId", l."parentInternational", l."localNumber"
-    HAVING count(DISTINCT e."companyId") > 1
-    ORDER BY 2 DESC
+  /* The six denormalised pairs. Each counts rows whose own companyId disagrees
+   * with the companyId of the parent it points at. The two enrollment joins are
+   * inner joins on nullable columns on purpose: an enrollment naming no local
+   * or no craft cannot disagree with one. */
+  const drift = await prisma.$queryRaw`
+    SELECT
+      (SELECT count(*) FROM "CraftClassification" c
+         JOIN "UnionLocal" u ON u.id = c."unionLocalId"
+        WHERE c."companyId" <> u."companyId")::int                             AS craft_vs_local,
+      (SELECT count(*) FROM "FringeRateSchedule" f
+         JOIN "CraftClassification" c ON c.id = f."craftClassificationId"
+        WHERE f."companyId" <> c."companyId")::int                             AS fringe_vs_craft,
+      (SELECT count(*) FROM "ApprenticeRatioRule" r
+         JOIN "UnionLocal" u ON u.id = r."unionLocalId"
+        WHERE r."companyId" <> u."companyId")::int                             AS ratio_rule_vs_local,
+      (SELECT count(*) FROM "CompanyUnionAgreement" a
+         JOIN "UnionLocal" u ON u.id = a."unionLocalId"
+        WHERE a."companyId" <> u."companyId")::int                             AS agreement_vs_local,
+      (SELECT count(*) FROM "ApprenticeshipEnrollment" e
+         JOIN "UnionLocal" u ON u.id = e."unionLocalId"
+        WHERE e."companyId" <> u."companyId")::int                             AS enrollment_vs_local,
+      (SELECT count(*) FROM "ApprenticeshipEnrollment" e
+         JOIN "CraftClassification" c ON c.id = e."craftClassificationId"
+        WHERE e."companyId" <> c."companyId")::int                             AS enrollment_vs_craft
   `;
 
-  console.log("== 1. locals reached by more than one company ==");
-  if (shared.length > 0) {
-    console.table(shared);
-    console.log(`   ${shared.length} local(s) shared, across ${companiesTouching} companies.`);
-    console.log("   -> DO NOT write a single-valued backfill. Each of these needs a");
-    console.log("      decision first: a backfill picks a winner and the loser silently");
-    console.log("      loses the wage rates its certified payroll is computed from.\n");
-  } else if (companiesTouching < 2) {
-    // The whole point of this branch. `HAVING count(DISTINCT companyId) > 1`
-    // cannot return a row unless two companies hold edges, so with fewer than
-    // two the empty result carries no information whatsoever.
+  const PAIRS = [
+    ["craft_vs_local", "CraftClassification", "the UnionLocal it belongs to"],
+    ["fringe_vs_craft", "FringeRateSchedule", "the CraftClassification it belongs to"],
+    ["ratio_rule_vs_local", "ApprenticeRatioRule", "the UnionLocal it belongs to"],
+    ["agreement_vs_local", "CompanyUnionAgreement", "the UnionLocal it names"],
+    ["enrollment_vs_local", "ApprenticeshipEnrollment", "the UnionLocal it names"],
+    ["enrollment_vs_craft", "ApprenticeshipEnrollment", "the CraftClassification it names"],
+  ];
+
+  const broken = PAIRS.map(([column, child, parent]) => ({
+    child,
+    parent,
+    rows: required(drift, column),
+  })).filter((pair) => pair.rows > 0);
+
+  console.log("== cross-tenant rows: a companyId that disagrees with its parent's ==");
+  if (broken.length > 0) {
+    for (const pair of broken) {
+      console.log(`   BROKEN  ${pair.rows} ${pair.child} row(s) filed under a different company than ${pair.parent}.`);
+    }
+    console.log("");
+    console.log("   Every constraint in the database is satisfied and the data is still");
+    console.log("   wrong: nothing ties a child's companyId to its parent's. Find the write");
+    console.log("   path that set one without the other before repairing rows, or it will");
+    console.log("   refill behind you.");
+    process.exitCode = 1;
+  } else if (companies < 2) {
+    // The point of this branch. With one company every row in the database
+    // carries the same companyId, so `<>` cannot match and a clean result is
+    // arithmetic rather than evidence.
     console.log("   NOT ESTABLISHED — this check could not have failed.");
-    console.log(`   Only ${companiesTouching} compan${companiesTouching === 1 ? "y has" : "ies have"} any edge to a union local, and the`);
-    console.log("   collision test needs at least 2 before it can return anything.");
-    console.log("   An empty result here is arithmetic, not evidence.");
-    console.log("   -> The backfill happens to be single-valued TODAY because there is");
-    console.log("      barely any data, not because the model prevents sharing.\n");
+    console.log(`   There ${companies === 1 ? "is 1 company" : `are ${companies} companies`} in this database, so every row carries the same`);
+    console.log("   companyId and no pair can disagree. A second tenant is what makes");
+    console.log("   this check mean anything.");
+  } else if (rowsUnderCheck === 0) {
+    console.log("   NOT ESTABLISHED — there are no union rows to check.");
+    console.log(`   ${companies} companies exist, but no craft, schedule, ratio rule,`);
+    console.log("   agreement or enrollment does, so nothing could have disagreed.");
   } else {
-    console.log("   NONE — and this check could have failed:");
-    console.log(`   ${companiesTouching} companies hold edges to locals, so a collision was reachable.`);
-    console.log("   -> the backfill is single-valued as of this run.\n");
+    console.log("   HOLDS. All six parent/child companyId pairs agree, across");
+    console.log(`   ${rowsUnderCheck} row(s) spanning ${companies} companies — so a disagreement was`);
+    console.log("   reachable and none is present.");
   }
-
-  /* ---------------------------------------------------------- 2. orphans --
-   * Locals no company has claimed. These have no company to backfill FROM,
-   * which is what makes NOT NULL a question rather than a default. */
-  const orphans = await prisma.$queryRaw`
-    SELECT count(*)::int AS locals_with_no_edge
-    FROM "UnionLocal" l
-    WHERE NOT EXISTS (SELECT 1 FROM "CompanyUnionAgreement" a WHERE a."unionLocalId" = l.id)
-      AND NOT EXISTS (SELECT 1 FROM "ApprenticeshipEnrollment" e WHERE e."unionLocalId" = l.id)
-  `;
-  const orphanCount = required(orphans, "locals_with_no_edge");
-
-  console.log("== 2. locals no company has claimed ==");
-  console.log(`   ${orphanCount} of ${locals}`);
-  if (orphanCount > 0) {
-    console.log("   -> a NOT NULL companyId would FAIL on these. Decide what an");
-    console.log("      unclaimed local means before writing the constraint.\n");
-  } else if (locals === 0) {
-    console.log("   NOT ESTABLISHED — there are no locals at all, so 0 orphans is");
-    console.log("   vacuous. It says nothing about whether NOT NULL is viable.\n");
-  } else {
-    console.log(`   -> every local has an owner across all ${locals} of them. NOT NULL is`);
-    console.log("      viable on the data as it stands — re-run before you rely on it.\n");
-  }
-
-  /* ------------------------------------------------- 3. is there a leak --
-   * The exposure is one contractor reading another's wage, pension, H&W and
-   * training rates. Those live in CraftClassification/FringeRateSchedule, and
-   * the destructive half of #136 deletes ApprenticeRatioRule by unionLocalId
-   * alone -- so all three belong here, not just the two the first version
-   * counted. */
-  console.log("== 3. is there anything behind the hole yet ==");
-  const exposed = crafts + fringe + ratioRules;
-  if (exposed === 0) {
-    console.log("   NOTHING. 0 craft classifications, 0 fringe rate schedules,");
-    console.log("   0 apprentice ratio rules. The hole is real in code and there is");
-    console.log("   no wage data on the other side of it today.");
-    console.log("   -> lower live urgency, and the cheapest this migration will ever be.\n");
-  } else {
-    console.log(`   ${crafts} craft classification(s), ${fringe} fringe rate schedule(s),`);
-    console.log(`   ${ratioRules} apprentice ratio rule(s) hang off shared locals.`);
-    console.log("   -> real wage data is exposed by the shared namespace.\n");
-  }
-
-  /* ------------------------------------------------- the migration note --
-   * Anyone acting on the above is about to add companyId to UnionLocal. The
-   * constraint below is what makes that more than one line, and no amount of
-   * counting rows would have told them. */
-  console.log("== before you write the backfill ==");
-  console.log("   `UnionLocal` carries @@unique([parentInternational, localNumber]).");
-  console.log("   Adding companyId does NOT by itself let two contractors each hold");
-  console.log("   'Carpenters / 300' — the second insert collides. That constraint has");
-  console.log("   to become ([companyId, parentInternational, localNumber]) in the same");
-  console.log("   migration, or the fix cannot express the case it exists for.");
   console.log("");
-  console.log("   This is a SNAPSHOT. Re-run it immediately before writing the");
-  console.log("   migration — every verdict above expires the moment anyone signs up.");
+  console.log("   Checked: CraftClassification/UnionLocal, FringeRateSchedule/CraftClassification,");
+  console.log("   ApprenticeRatioRule/UnionLocal, CompanyUnionAgreement/UnionLocal, and");
+  console.log("   ApprenticeshipEnrollment against both the local and the craft it names.");
 } catch (error) {
   // Never interpolate the connection string into an error path.
-  console.error(`union-audit: FAILED — ${error?.message ?? "unknown error"}`);
-  console.error("union-audit: no conclusion above is safe to read.");
+  console.error(`union-tenancy: FAILED — ${error?.message ?? "unknown error"}`);
+  console.error("union-tenancy: no verdict above is safe to read.");
   process.exitCode = 1;
 } finally {
   await prisma.$disconnect();
