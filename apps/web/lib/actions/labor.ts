@@ -78,7 +78,11 @@ export async function logTimeEntry(jobId: string, formData: FormData): Promise<A
   // codes) — TimeEntry has no update path at all (see the schema comment),
   // so this only has to catch a CREATE repeating an identical row, and only
   // blocks one landing in the last 10 seconds, not a second, different
-  // entry made later that happens to share every field.
+  // entry made later that happens to share every field. NOT ATOMIC —
+  // read-then-write, no lock — so this closes the sequential double-click
+  // this issue describes, not two requests landing at the exact same
+  // instant. See the longer version of this caveat on logPayment's guard
+  // in lib/actions/billing.ts.
   const recentDuplicate = await prisma.timeEntry.findFirst({
     where: {
       jobId,

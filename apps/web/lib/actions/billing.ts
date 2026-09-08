@@ -292,6 +292,9 @@ export async function submitPayApplication(jobId: string, formData: FormData): P
   // separate `createdAt` (Invoice has none — see billing.prisma), doubles
   // as the creation timestamp here: neither createInvoice nor this action
   // ever sets it, so it always defaults to the moment of submission.
+  // NOT ATOMIC — read-then-write, no lock — so this closes the sequential
+  // double-click, not two requests landing at the exact same instant. See
+  // the longer version of this caveat on logPayment's guard above.
   const lastInvoice = await prisma.invoice.findFirst({
     where: { jobId },
     orderBy: { issuedAt: "desc" },
@@ -419,6 +422,20 @@ export async function logPayment(jobId: string, invoiceId: string, formData: For
   // positives/negatives at the boundary, and using the exact same
   // amount - SUM(payments.amount) shape calculateArAgingInvoice uses, so
   // the two can never drift apart.
+  //
+  // NOT ATOMIC, and worth being honest about: this reads the sum, then
+  // later creates the row, with no transaction or lock around the pair —
+  // two requests landing at the same instant could both read the balance
+  // before either writes and both pass. That closes the sequential
+  // double-click / retried-request shape #102 describes and this file's
+  // tests exercise, not a true concurrent race. A stricter version would
+  // take a Postgres advisory lock on the invoice for the read-then-write —
+  // an unmerged, unshipped WIP branch on this same issue
+  // (`cyrus/idempotent-write-paths`, never a PR) used `pg_advisory_xact_lock`
+  // for this reason on a different set of guards, which is where this
+  // caveat was actually verified from, not invented — but that pattern is
+  // NOT anywhere on `main` today, and adding it here changes the shape of
+  // every call site in this file for a race narrower than the bug reported.
   const priorPayments = await prisma.payment.aggregate({
     where: { invoiceId },
     _sum: { amount: true },

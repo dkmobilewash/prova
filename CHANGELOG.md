@@ -92,6 +92,22 @@ Every one of the five new guards was mutation-tested by hand: disabled,
 confirmed the corresponding `.dbtest.ts` went red on the exact scenario
 #102 described, restored, confirmed green again.
 
+**One limitation, disclosed rather than discovered later: four of the
+five guards (`logPayment`, `logTimeEntry`, `addCostEntry`,
+`submitPayApplication`) are read-then-write with no transaction or lock
+around the pair.** They close the sequential shape #102 describes and
+these tests exercise — a double-click, a retried request — but not two
+requests landing at the exact same instant, which could both read before
+either writes. Only `createBackcharge`'s DB constraint is genuinely atomic.
+Verified this is a real gap, not a hedge: `cyrus/idempotent-write-paths`
+(the stale branch flagged above, never merged) used
+`pg_advisory_xact_lock` for exactly this reason on a different set of
+guards. That pattern is not on `main` today and isn't added here — it
+changes the shape of every call site in these files for a race narrower
+than the bug #102 reported — but it's the honest next step if a true
+concurrent double-submit ever turns up as a real incident rather than a
+theoretical one.
+
 ---
 
 ### Another signatory's wage rates, five lines below the fix for them — #205 (Diego)

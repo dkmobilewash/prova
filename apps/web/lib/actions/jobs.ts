@@ -491,7 +491,10 @@ export async function addCostEntry(jobId: string, lineItemId: string, formData: 
   // material buys logged the same day under the same category — so this
   // only blocks an exact repeat (same line item, description, amount,
   // category and trade) landing within the last 10 seconds, not a second,
-  // deliberate entry made moments later.
+  // deliberate entry made moments later. NOT ATOMIC — read-then-write, no
+  // lock — so this closes the sequential double-click, not two requests
+  // landing at the exact same instant. See the longer version of this
+  // caveat on logPayment's guard in lib/actions/billing.ts.
   const recentDuplicate = await prisma.costEntry.findFirst({
     where: {
       lineItemId,
