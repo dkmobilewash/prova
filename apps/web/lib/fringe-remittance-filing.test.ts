@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  REMITTANCE_FIELD_ORDER,
   REMITTANCE_BLOCKING_FIELD_REASON,
   employerAddressLines,
   remittanceBlockingFields,
@@ -228,8 +229,28 @@ describe("remittanceBlockingFields", () => {
 });
 
 describe("the blocking-field enumeration", () => {
-  it("has a sentence for every field, and every sentence names what to do or what breaks", () => {
-    for (const [field, reason] of Object.entries(REMITTANCE_BLOCKING_FIELD_REASON)) {
+  it("finds fields to check, so an empty table cannot pass by accident", () => {
+    // The loop below is `for (... of Object.entries(TABLE))`, which does
+    // NOTHING on an empty table and reports green. Emptying the table was
+    // measured: 44 passed, nothing red. Same shape as
+    // workerNameCensus.test.ts's "an empty sweep cannot pass", and the
+    // reason that test exists.
+    expect(Object.keys(REMITTANCE_BLOCKING_FIELD_REASON).length).toBeGreaterThan(4);
+  });
+
+  it("has a sentence for every field FIELD_ORDER can emit", () => {
+    // Iterating the table proves nothing about a field the table is
+    // MISSING. Removing duesCheckoff's sentence while leaving the field in
+    // FIELD_ORDER also left 44 tests green — and the page renders
+    // REMITTANCE_BLOCKING_FIELD_REASON[field] directly, so that sheet
+    // would have printed `undefined` inside a red blocking-field box.
+    //
+    // `tsc` does catch it, because the table is a Record over the union.
+    // But a type error is not what somebody editing a sentence at 6am
+    // reads, and this file is the thing that names what breaks.
+    for (const field of REMITTANCE_FIELD_ORDER) {
+      const reason = REMITTANCE_BLOCKING_FIELD_REASON[field];
+      expect(reason, `${field} has no sentence in REMITTANCE_BLOCKING_FIELD_REASON`).toBeDefined();
       expect(reason.length, `${field} has no sentence`).toBeGreaterThan(40);
       // A sentence, not a label. Labels are what this replaced.
       expect(reason.trim().endsWith("."), `${field} is not a sentence`).toBe(true);

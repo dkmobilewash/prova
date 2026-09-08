@@ -53,7 +53,12 @@ export type RemittanceBlockingField =
  * order the checks below happen to run in, so the same month prints the
  * same sheet twice and a diff between two prints means something changed.
  */
-const FIELD_ORDER: RemittanceBlockingField[] = [
+/** The one order these are printed in, so two prints of a month match.
+ * Exported because a test must be able to iterate what the page can
+ * EMIT — iterating the reason table instead proves nothing about a
+ * field the table is missing, and that gap printed `undefined` into a
+ * red blocking-field box before it was closed. */
+export const REMITTANCE_FIELD_ORDER: RemittanceBlockingField[] = [
   "employerAddress",
   "employerEin",
   "fundEmployerNumber",
@@ -161,5 +166,5 @@ export function remittanceBlockingFields(
 
   if (local.uncomputedHours > 0) missing.add("unpricedHours");
 
-  return FIELD_ORDER.filter((field) => missing.has(field));
+  return REMITTANCE_FIELD_ORDER.filter((field) => missing.has(field));
 }

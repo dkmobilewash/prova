@@ -492,6 +492,23 @@ describe("allocateToCents", () => {
     // A member with no priced hours must not be credited a stray cent to
     // make somebody else's rounding work. Their line is unpriced, which
     // is a different statement from "one cent is owed".
+    //
+    // THE FIXTURE MATTERS AND THE OBVIOUS ONE IS VACUOUS. This test
+    // originally asserted allocateToCents([0, 0.004, 0.004], 1) === [0,1,0]
+    // and allocateToCents([0, 0], 0) === [0,0], and BOTH pass with the
+    // zero-share guard deleted. A zero share has remainder 0, which the
+    // largest-remainder comparator already sorts last, so with a residual
+    // of 1 the guard is never consulted. It was offered as proof of the
+    // guard and proved nothing.
+    //
+    // Discriminating requires residual > count of positive shares, so the
+    // comparator runs out of positive candidates and the filter is the
+    // only thing left standing between a zero share and a cent.
+    expect(allocateToCents([0, 0.004], 2)).toEqual([0, 2]); // unguarded: [1, 1]
+    expect(allocateToCents([0, 0, 0.004], 3)).toEqual([0, 0, 3]); // unguarded: [1, 1, 1]
+
+    // Kept because they pin real behaviour, even though neither can fail
+    // on this guard alone.
     expect(allocateToCents([0, 0.004, 0.004], 1)).toEqual([0, 1, 0]);
     expect(allocateToCents([0, 0], 0)).toEqual([0, 0]);
   });
