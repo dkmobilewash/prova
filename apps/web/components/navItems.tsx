@@ -313,6 +313,21 @@ export const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
+    href: "/photos",
+    label: "Site photos",
+    icon: (
+      <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5">
+        <path
+          d="M3.5 6.5h2.2l1.1-1.8h6.4l1.1 1.8h2.2a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1h-13a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1Z"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinejoin="round"
+        />
+        <circle cx="10" cy="11" r="2.6" stroke="currentColor" strokeWidth="1.4" />
+      </svg>
+    ),
+  },
+  {
     href: "/vendors/pricing",
     label: "Vendor pricing",
     icon: (
@@ -445,6 +460,11 @@ export const NAV_GROUPS: NavGroup[] = [
       item("/deployment"),
       item("/punch-lists"),
       item("/field-reports"),
+      // Beside field reports, because it answers the same question on the
+      // same day — the report says what happened, the photos show it. Both
+      // are reached from a phone on site rather than from a desk, which is
+      // what this group is.
+      item("/photos"),
     ],
   },
   {

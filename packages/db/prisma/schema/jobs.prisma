@@ -73,6 +73,7 @@ model Job {
   retainageReleases            RetainageRelease[]
   punchListItems               PunchListItem[]
   dailyFieldReports            DailyFieldReport[]
+  media                        JobMedia[]
   safetyIncidents              SafetyIncident[]
   toolboxTalks                 ToolboxTalk[]
   rfis                         Rfi[]

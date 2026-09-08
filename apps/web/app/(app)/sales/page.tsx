@@ -12,7 +12,12 @@ import {
   type LeadActivitySource,
 } from "@/lib/sales-activity";
 import { SalesPipelineBand } from "@/components/SalesPipelineBand";
-import { buildSalesPipeline, longestOpen, type PipelineOpportunity } from "@/lib/sales-pipeline";
+import {
+  buildSalesPipeline,
+  longestOpen,
+  trackedOpenCount,
+  type PipelineOpportunity,
+} from "@/lib/sales-pipeline";
 import { daysInCurrentStage, type RecordedStageChange } from "@/lib/sales-stage-history";
 
 /**
@@ -116,6 +121,10 @@ export default async function SalesPage() {
 
   const pipeline = buildSalesPipeline(pipelineOpportunities, today);
   const sittingLongest = longestOpen(pipelineOpportunities, 3);
+  // How many open deals that comparison was even drawn from -- see #153
+  // finding 3. SalesPipelineBand needs this to say what "sitting longest"
+  // was computed over instead of presenting it as a claim about everyone.
+  const sittingLongestTrackedCount = trackedOpenCount(pipelineOpportunities);
 
   const queue = followUpQueue(activitySources, today);
   const overdueCount = countOverdue(queue);
@@ -131,7 +140,11 @@ export default async function SalesPage() {
         any tenant.
       </p>
 
-      <SalesPipelineBand pipeline={pipeline} sittingLongest={sittingLongest} />
+      <SalesPipelineBand
+        pipeline={pipeline}
+        sittingLongest={sittingLongest}
+        sittingLongestTrackedCount={sittingLongestTrackedCount}
+      />
 
       {queue.length > 0 && (
         <section className="mb-6 rounded-lg border border-slate-800 bg-slate-900 p-4">
