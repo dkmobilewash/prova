@@ -19,20 +19,17 @@ const TIERS = ["JOURNEYMAN", "APPRENTICE", "FOREMAN"] as const;
  * Records whether a craft classification is journeyman-side or
  * apprentice-side.
  *
- * `CraftClassification` is a GLOBAL reference table, so this edit is
- * visible to every company working under the same local. That is
- * deliberate and correct: whether "Drywall Finisher Apprentice Period 3"
- * is an apprentice classification is a fact about the classification, not
- * an opinion one company holds about it — the same reasoning that makes
- * `name` global. Access is gated by the company actually holding an
- * agreement with that local, which is the same join
- * craftClassificationIdFromForm already uses as its access check.
+ * `CraftClassification` used to be a GLOBAL reference table shared by
+ * every company working under the same local, gated only by holding a
+ * self-asserted `CompanyUnionAgreement` — that sharing was #136 finding 1.
+ * As of the companyId migration each company holds its own classification
+ * row, so this is a direct ownership check now.
  */
 export async function setCraftTier(craftId: string, formData: FormData): Promise<ActionResult> {
   const { company } = await requireCompanyContext();
 
   const craft = await prisma.craftClassification.findFirst({
-    where: { id: craftId, unionLocal: { companyAgreements: { some: { companyId: company.id } } } },
+    where: { id: craftId, companyId: company.id },
   });
   if (!craft) {
     return fail("That classification isn't under a local you hold an agreement with");
@@ -90,12 +87,16 @@ export async function setCraftTier(craftId: string, formData: FormData): Promise
  * only a test could populate — which is the "a control that looks like it
  * works and cannot" shape this codebase keeps catching.
  *
- * Three of these tables are GLOBAL (not company-scoped): UnionLocal,
- * CraftClassification and ApprenticeRatioRule describe the union, not the
- * company, and the same local applies to every contractor working under
- * it. Access is therefore gated on holding a CompanyUnionAgreement with
- * the local, which is the same join craftClassificationIdFromForm already
- * uses as its access check.
+ * UnionLocal, CraftClassification, FringeRateSchedule and
+ * ApprenticeRatioRule were GLOBAL (not company-scoped) until the #136
+ * finding 1 fix: the same real local applies to every contractor working
+ * under it, so they were shared rows, gated only on holding a
+ * CompanyUnionAgreement — which was self-asserted (createUnionLocalAndAgreement
+ * adopted any existing local by name+number, both public information), so
+ * typing a real union's details was enough to read another company's wage
+ * rates and destructively edit its shared rows. All four now carry their
+ * own companyId; each company records its own copy of the local it works
+ * under, exactly like it records its own copy of a GC as a Contact.
  */
 
 class SetupError extends Error {}
@@ -183,11 +184,12 @@ async function runSetup(fn: () => Promise<ActionResult>): Promise<ActionResult> 
   }
 }
 
-/** The local must be one this company holds an agreement with. That join
- * IS the access check for these global tables. */
+/** The local must be one this company owns. `UnionLocal.companyId` is a
+ * direct ownership check as of the #136 fix — no join through the
+ * agreement table needed, and no other company's local can ever match. */
 async function assertLocalUnderAgreement(unionLocalId: string, companyId: string) {
   const local = await prisma.unionLocal.findFirst({
-    where: { id: unionLocalId, companyAgreements: { some: { companyId } } },
+    where: { id: unionLocalId, companyId },
   });
   if (!local) throw new SetupError("That local isn't one you hold an agreement with");
   return local;
@@ -200,12 +202,16 @@ async function assertLocalUnderAgreement(unionLocalId: string, companyId: string
  * company that just typed it in, which would read as the save having
  * failed.
  *
- * If the local already exists globally — another contractor under the same
- * hall recorded it first — it is ADOPTED rather than rejected. The unique
- * key is (parentInternational, localNumber), and two companies working
- * under Carpenters Local 300 are working under the same real local. A
- * duplicate-key error here would be the app telling someone a true fact is
- * already taken.
+ * Each company holds its OWN UnionLocal row (companyId, parentInternational,
+ * localNumber) as of #136 finding 1. It used to be a single global row
+ * ADOPTED by whichever company typed the same name+number second — which is
+ * exactly the vulnerability: an agreement with a global row was
+ * self-asserted, so typing a real local's public name and number was
+ * enough to gain access to another company's classifications and rate
+ * schedules. Two companies signatory to the same real Carpenters Local 300
+ * now each get their own row, the same way they each get their own Contact
+ * row for a shared GC — a duplicate isn't a collision to resolve, it's the
+ * correct shape.
  */
 export async function createUnionLocalAndAgreement(formData: FormData): Promise<ActionResult> {
   const { company } = await requireCompanyContext();
@@ -221,14 +227,17 @@ export async function createUnionLocalAndAgreement(formData: FormData): Promise<
     }
 
     await prisma.$transaction(async (tx) => {
-      const existing = await tx.unionLocal.findUnique({
-        where: { parentInternational_localNumber: { parentInternational, localNumber } },
+      // Scoped to THIS company — re-recording the same local you already
+      // hold (e.g. re-entering after ending a prior agreement) reuses your
+      // own row rather than creating a second one.
+      const existing = await tx.unionLocal.findFirst({
+        where: { companyId: company.id, parentInternational, localNumber },
       });
 
       const local =
         existing ??
         (await tx.unionLocal.create({
-          data: { parentInternational, localNumber, jurisdictionName, tradeJurisdiction },
+          data: { companyId: company.id, parentInternational, localNumber, jurisdictionName, tradeJurisdiction },
         }));
 
       const alreadyAgreed = await tx.companyUnionAgreement.findFirst({
@@ -295,6 +304,7 @@ export async function createCraftClassification(formData: FormData): Promise<Act
     try {
       await prisma.craftClassification.create({
         data: {
+          companyId: company.id,
           unionLocalId,
           name,
           tier: (tierRaw || null) as (typeof TIERS)[number] | null,
@@ -320,6 +330,16 @@ export async function createCraftClassification(formData: FormData): Promise<Act
  * throw a raw Postgres error that production redacts to a digest, and the
  * person would be told nothing at all — whereas "12 time entries are
  * logged against it" tells them exactly why and what to do.
+ *
+ * SIMPLER THAN IT USED TO BE. Before the #136 companyId fix,
+ * CraftClassification was a global row shared by every contractor
+ * signatory to the same hall, so this guard had to count usage GLOBALLY —
+ * scoping it to this company alone would have let one contractor delete a
+ * classification another had already costed work against. Now that every
+ * company holds its own classification row, that cross-company case is
+ * structurally impossible: there is no other company's data to reach
+ * through this row at all, so the usage check only ever needs to look at
+ * this company's own records.
  */
 export async function deleteCraftClassification(craftId: string): Promise<ActionResult> {
   const context = await requireCompanyContext();
@@ -327,28 +347,13 @@ export async function deleteCraftClassification(craftId: string): Promise<Action
     if (context.role !== "OWNER") {
       return fail("Only the account owner can delete a craft classification");
     }
+    const companyId = context.company.id;
     const craft = await prisma.craftClassification.findFirst({
-      where: {
-        id: craftId,
-        unionLocal: { companyAgreements: { some: { companyId: context.company.id } } },
-      },
+      where: { id: craftId, companyId },
     });
     if (!craft) return fail("That classification isn't under a local you hold an agreement with");
 
-    // The guard counts GLOBALLY and must keep doing so. A craft classification
-    // is shared by every contractor signatory to the same hall, so a count
-    // scoped to this company would happily delete a craft that another
-    // company has hours, line items and dispatch slips tagged with — turning
-    // a read leak into a cross-company destructive action, which is the worse
-    // of the two by a distance.
-    //
-    // The MESSAGE is a different question. Naming the global breakdown tells
-    // this company how much work every other contractor under the local has
-    // tagged, which is the same disclosure loadUnionSetup's _count was just
-    // filtered to stop. So the numbers quoted back are always this company's
-    // own, and use elsewhere is reported as the fact that it exists.
-    const companyId = context.company.id;
-    const [timeEntries, lineItems, catalogEntries, dispatchSlips, usedAnywhere] = await Promise.all([
+    const [timeEntries, lineItems, catalogEntries, dispatchSlips] = await Promise.all([
       prisma.timeEntry.count({
         where: { craftClassificationId: craft.id, job: { companyId } },
       }),
@@ -361,30 +366,11 @@ export async function deleteCraftClassification(craftId: string): Promise<Action
       prisma.dispatchSlip.count({
         where: { craftClassificationId: craft.id, job: { companyId } },
       }),
-      prisma.craftClassification.count({
-        where: {
-          id: craft.id,
-          OR: [
-            { timeEntries: { some: {} } },
-            { jobLineItems: { some: {} } },
-            { catalogEntries: { some: {} } },
-            { dispatchSlips: { some: {} } },
-          ],
-        },
-      }),
     ]);
     const used = timeEntries + lineItems + catalogEntries + dispatchSlips;
     if (used > 0) {
       return fail(
         `${used} of your records ${used === 1 ? "is" : "are"} tagged with this classification (${plural(timeEntries, "time entry", "time entries")}, ${plural(lineItems, "line item", "line items")}, ${plural(catalogEntries, "catalog entry", "catalog entries")}, ${plural(dispatchSlips, "dispatch slip", "dispatch slips")}). Deleting it would strip the craft off work that has already been costed.`,
-      );
-    }
-    if (usedAnywhere > 0) {
-      // Nothing of this company's is tagged, so the page reads "nothing
-      // tagged yet" and the refusal would otherwise look like a bug. Says
-      // that it is in use without saying by how much or by whom.
-      return fail(
-        "Nothing of yours is tagged with this classification, but another contractor under this local has work tagged with it. Classifications are shared by everyone signatory to the same hall, so it can't be deleted here.",
       );
     }
 
@@ -410,6 +396,13 @@ export async function deleteCraftClassification(craftId: string): Promise<Action
  * whose answer depends on row order is worse than no ratio check. One rule
  * per local is enforced here, and the query orders deterministically as
  * well.
+ *
+ * The `deleteMany` below is exactly the destructive path #136 finding 1
+ * named directly: with a global UnionLocal, this wiped whichever company
+ * last held a self-asserted agreement's rule, with no ownership check at
+ * all. Scoping both the delete and the create to `companyId` closes it —
+ * `unionLocalId` alone now already resolves to one company, but this
+ * checks its own column directly rather than relying on that indirectly.
  */
 export async function setApprenticeRatioRule(formData: FormData): Promise<ActionResult> {
   const { company } = await requireCompanyContext();
@@ -422,9 +415,9 @@ export async function setApprenticeRatioRule(formData: FormData): Promise<Action
     const programStandardReference = setupText(formData, "programStandardReference") || null;
 
     await prisma.$transaction(async (tx) => {
-      await tx.apprenticeRatioRule.deleteMany({ where: { unionLocalId } });
+      await tx.apprenticeRatioRule.deleteMany({ where: { unionLocalId, companyId: company.id } });
       await tx.apprenticeRatioRule.create({
-        data: { unionLocalId, apprenticeCount, journeymenCount, programStandardReference },
+        data: { companyId: company.id, unionLocalId, apprenticeCount, journeymenCount, programStandardReference },
       });
     });
 
@@ -438,10 +431,7 @@ export async function createFringeRateSchedule(formData: FormData): Promise<Acti
   return runSetup(async () => {
     const craftClassificationId = setupRequired(formData, "craftClassificationId", "Classification");
     const craft = await prisma.craftClassification.findFirst({
-      where: {
-        id: craftClassificationId,
-        unionLocal: { companyAgreements: { some: { companyId: company.id } } },
-      },
+      where: { id: craftClassificationId, companyId: company.id },
     });
     if (!craft) return fail("That classification isn't under a local you hold an agreement with");
 
@@ -456,6 +446,7 @@ export async function createFringeRateSchedule(formData: FormData): Promise<Acti
 
     await prisma.fringeRateSchedule.create({
       data: {
+        companyId: company.id,
         craftClassificationId: craft.id,
         baseWage,
         pensionRate: setupRate(formData, "pensionRate", "Pension"),
@@ -479,12 +470,7 @@ export async function endFringeRateSchedule(scheduleId: string, formData: FormDa
   const { company } = await requireCompanyContext();
   return runSetup(async () => {
     const schedule = await prisma.fringeRateSchedule.findFirst({
-      where: {
-        id: scheduleId,
-        craftClassification: {
-          unionLocal: { companyAgreements: { some: { companyId: company.id } } },
-        },
-      },
+      where: { id: scheduleId, companyId: company.id },
     });
     if (!schedule) return fail("Rate schedule not found");
 
@@ -499,6 +485,22 @@ export async function endFringeRateSchedule(scheduleId: string, formData: FormDa
   });
 }
 
+/**
+ * #136 finding 1's other named destructive path — this used to reach any
+ * company's shared rate schedule by holding a self-asserted agreement with
+ * a global local, with no ownership check and no usage check either. Now
+ * scoped directly to `companyId`, a company can only ever delete its own
+ * schedule; the cross-tenant reach is gone.
+ *
+ * NOT ALSO GIVEN A USAGE CHECK here, unlike deleteCraftClassification —
+ * FringeRateSchedule has no stored foreign key from TimeEntry (the
+ * effective rate is looked up live by date range, never persisted onto a
+ * row), so there is no cheap, honest count of "how much of your own
+ * certified payroll depends on this" to quote back. `endFringeRateSchedule`
+ * above is the intended way to retire a schedule without disturbing
+ * history; this stays a plain, OWNER-gated delete for correcting a genuine
+ * data-entry mistake. Filed as a follow-up rather than guessed at here.
+ */
 export async function deleteFringeRateSchedule(scheduleId: string): Promise<ActionResult> {
   const context = await requireCompanyContext();
   return runSetup(async () => {
@@ -506,12 +508,7 @@ export async function deleteFringeRateSchedule(scheduleId: string): Promise<Acti
       return fail("Only the account owner can delete a rate schedule");
     }
     const schedule = await prisma.fringeRateSchedule.findFirst({
-      where: {
-        id: scheduleId,
-        craftClassification: {
-          unionLocal: { companyAgreements: { some: { companyId: context.company.id } } },
-        },
-      },
+      where: { id: scheduleId, companyId: context.company.id },
     });
     if (!schedule) return fail("Rate schedule not found");
 

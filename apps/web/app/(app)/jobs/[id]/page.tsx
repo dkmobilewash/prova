@@ -225,7 +225,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
     prisma.companyLocation.findMany({ where: { companyId: company.id }, orderBy: { createdAt: "asc" } }),
     prisma.lineItemCatalogEntry.findMany({ where: { companyId: company.id }, orderBy: { description: "asc" } }),
     prisma.craftClassification.findMany({
-      where: { unionLocal: { companyAgreements: { some: { companyId: company.id } } } },
+      where: { companyId: company.id },
       include: { unionLocal: true, fringeRateSchedules: true },
       orderBy: { name: "asc" },
     }),

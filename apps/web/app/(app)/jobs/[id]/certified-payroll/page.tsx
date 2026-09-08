@@ -86,7 +86,7 @@ export default async function CertifiedPayrollPage({
   const [entries, craftClassifications] = await Promise.all([
     loadCertifiedPayrollWeekEntries(company.id, job.id, weekStart),
     prisma.craftClassification.findMany({
-      where: { unionLocal: { companyAgreements: { some: { companyId: company.id } } } },
+      where: { companyId: company.id },
       include: { fringeRateSchedules: true },
     }),
   ]);

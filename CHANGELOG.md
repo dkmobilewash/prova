@@ -12,6 +12,145 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### Union tables gain companyId — the destructive half of #136 finding 1 (Diego)
+`diego/fix-cross-tenant-security-136`
+
+PR #169 fixed the READ half of #136's union-tenancy exposure — the leaked
+cross-company `_count` on `/union-compliance` — and said so plainly in its
+own commit message: "the destructive paths still need the companyId
+decision." This is that decision, made from a real answer rather than a
+guess, and the schema change it requires.
+
+**The vulnerability, restated once more because it is the last open piece
+of #136.** `UnionLocal`, `CraftClassification`, `FringeRateSchedule` and
+`ApprenticeRatioRule` carried no `companyId` — a union local applies to
+every contractor signatory to it, so the tables were global, and the only
+access check was holding a `CompanyUnionAgreement` with the local. That
+agreement was self-asserted: `createUnionLocalAndAgreement` ADOPTED any
+existing row matching `(parentInternational, localNumber)` — both public
+information — and handed out an agreement with it for free. Typing a real
+union's public name and number was the entire attack. From there: read
+access to another company's craft classifications and wage rates (fixed in
+#169), and two destructive paths #136 named directly — `setApprenticeRatioRule`'s
+`deleteMany({ where: { unionLocalId } })`, which wiped whichever company
+last held a self-asserted agreement's ratio rule with no ownership check at
+all, and `deleteFringeRateSchedule`, reachable the same way with no usage
+check either.
+
+**Whether a scoped backfill was even safe depended on a question nobody
+could answer without production credentials** — the one PR #187's read-only
+`union-tenancy-audit` workflow exists to answer without moving a connection
+string. Run against `ep-little-sea` on 2026-09-07:
+
+```
+locals claimed by more than one company: NONE
+locals with no agreement row: 0
+scale: locals 1 | agreements 1 | companies 1 | crafts 0 | fringe_schedules 0
+```
+
+Production holds exactly one `UnionLocal`, owned by exactly one company,
+with zero craft classifications and zero fringe schedules recorded. A
+per-company backfill is single-valued by construction, not by luck, and
+`NOT NULL` is safe because nothing is orphaned.
+
+**The fix.** All four tables now carry `companyId`. `UnionLocal`'s identity
+moves from global — `@@unique([parentInternational, localNumber])` — to
+per-company — `@@unique([companyId, parentInternational, localNumber])` —
+so two companies signatory to the same real local now get their own row,
+the same way they each hold their own `Contact` row for a shared GC.
+`createUnionLocalAndAgreement` no longer adopts an existing global row; it
+looks for (and reuses) only THIS company's own row. Every create/read/delete
+path in `lib/actions/unionCompliance.ts` and `lib/union-compliance-query.ts`
+that used to join through `unionLocal.companyAgreements` now checks
+`companyId` directly — including three page-level Prisma calls
+(`jobs/[id]/page.tsx`, `jobs/[id]/certified-payroll/page.tsx`,
+`catalog/page.tsx`) that read the same join for a craft-classification
+dropdown and would otherwise have kept the old global read alive after the
+query layer was fixed. `deleteCraftClassification`'s usage count, which had
+to count GLOBALLY while classifications were shared, is simplified to a
+plain company-scoped count — the cross-company case it existed for is now
+structurally impossible.
+
+**Migration hand-written** (`20260907191702_union_tenancy_companyid`) — a
+data backfill isn't something Prisma's own diff can generate. Adds each
+column NULLABLE, backfills in dependency order (`UnionLocal` from its
+earliest `CompanyUnionAgreement`, then `CraftClassification` from its
+`UnionLocal`, then `FringeRateSchedule` from its `CraftClassification`, then
+`ApprenticeRatioRule` from its `UnionLocal`), sets all four `NOT NULL`,
+swaps `UnionLocal`'s unique index, adds the four indexes and FKs (`ON DELETE
+RESTRICT`, matching every other `companyId` relation to `Company` in this
+schema). No `DROP TABLE`/`COLUMN`, no `TRUNCATE`, no `DELETE` — the only
+`DROP` is the old unique index, which preflight's destructive-migration
+check does not (and should not) flag. Verified against a real local
+Postgres already holding rows: applied cleanly, and every backfilled
+`companyId` confirmed correct by direct SQL join against its expected
+parent.
+
+**The dbtest suite that assumed two companies could share one `UnionLocal`
+row no longer can** — that was the vulnerability, so a raw-insert fixture
+built on it stopped compiling once `companyId` became required. Rewrote it
+to prove the actual guarantee: a new `describe("two companies naming the
+same public local")` has company B call `createUnionLocalAndAgreement`
+naming the exact same `parentInternational`/`localNumber` as company A's
+existing local — which already carries a craft classification, a fringe
+rate, and an apprentice ratio rule — and asserts B gets its own separate
+row (different id), sees none of A's classifications or rates through
+`loadCrafts`/`loadUnionSetup`, and cannot touch A's ratio rule through the
+destructive `deleteMany` path #136 named, even naming the identical local
+details. The old "adopts a local another company already recorded, rather
+than rejecting it" test asserted the OLD (vulnerable) behaviour by name; it
+now asserts the opposite — a second, separate row, not an adopted one.
+
+**Not fixed here, filed as a follow-up to Cyrus** (union compliance is his
+lane; this is a security fix that couldn't wait on lane scheduling, per the
+working agreement's exception for anything touching shared schema or a
+live cross-tenant hole): `deleteFringeRateSchedule` still has no usage
+check, unlike `deleteCraftClassification`. Not part of #136 — the
+cross-tenant reach is gone either way — but `FringeRateSchedule` has no
+stored FK from `TimeEntry` to check against (the rate is looked up live by
+date range), so a same-company safeguard is a correctness/UX improvement
+worth its own review rather than a guess added here.
+
+**Correction, same day, before this landed.** The audit numbers above are
+what a WIP checkpoint of this entry originally quoted as proof the backfill
+was safe. #190 (merged to `main` while this branch was still in flight)
+found that conclusion was arithmetic, not evidence: with only one company
+anywhere near the union tables, the "no local shared by two companies"
+query COULD NOT have returned a row regardless of the real risk — an empty
+result was guaranteed by the row count, not earned by a check that could
+fail. Re-run with #190's corrected script, immediately before this
+migration, against the same `ep-little-sea` snapshot: still exactly one
+company touching any local (`companies_touching_a_local: 1`), zero
+enrollment-only edges, zero orphaned locals. The backfill is still correct
+today — but because that is what production actually looks like right now,
+not because the original check proved anything. Worth stating precisely,
+since restating a disproven "safe by construction" claim after being told
+it wasn't would be the exact failure #190 exists to catch.
+
+#190 also surfaced a second, previously uncounted edge from a company to a
+union local: `ApprenticeshipEnrollment.unionLocalId`/`craftClassificationId`,
+taken straight from `FormData` in `createApprenticeshipEnrollment` with NO
+ownership check at all — unlike every other write to these tables. Before
+this fix that was a way to attach a company's own record to another
+company's real local/craft with no agreement required, invisible to the
+old audit; after this migration it would have been worse, a silent
+cross-company foreign key on a row that otherwise reads as entirely this
+company's own. Fixed the same way as `setCraftTier`/`createFringeRateSchedule`
+— both IDs now checked against `companyId` before the enrollment is
+created — with a new dbtest proving a craft/local belonging to another
+company is refused by name, matching the existing `apprenticeUserId`
+ownership check right above it in the same file.
+
+Verification, re-run after merging `main` (which had moved 10 commits,
+including #190 and the `payrollWorkerName` fixes to this same query file —
+merged cleanly, one line each side): `migrate:deploy` confirms the
+migration applied and the schema up to date; `typecheck`, `lint`
+(pre-existing warnings only), the full unit suite (1702/1702) and `test:db`
+(241/241, including the rewritten/new union-compliance dbtests and the new
+apprenticeship ownership test) all clean; a full production `build`
+succeeds end to end (all routes, `/union-compliance` included); `preflight`
+passes and correctly names the migration additive-only.
+
 ### A GC who skimmed the sub scored better for it (Cyrus)
 `cyrus/gc-reliability-counts-short-payments`
 
@@ -466,7 +605,6 @@ this page. The grid's arithmetic is proven by unit test; its markup —
 things WERE verified against the running dev server: the route resolves
 and `requireCapability` bounced an unauthenticated request with the
 `weekStart` preserved.
-
 
 ### Whether the man at the gate has a current card (Cyrus)
 `cyrus/worker-certifications`

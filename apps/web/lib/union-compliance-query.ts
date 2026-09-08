@@ -48,13 +48,14 @@ export type CraftRow = {
 /**
  * Craft classifications for the locals this company actually works under.
  *
- * CraftClassification carries no companyId — it is a global reference
- * table — so this join IS the access check, the same one
- * craftClassificationIdFromForm in lib/actions/shared.ts already uses.
+ * CraftClassification carries its own companyId as of the #136 finding 1
+ * fix — it used to be a global reference table with no company scoping at
+ * all, gated only by a self-asserted CompanyUnionAgreement, which is why
+ * this used to be a join instead of a direct filter.
  */
 export async function loadCrafts(companyId: string): Promise<CraftRow[]> {
   const crafts = await prisma.craftClassification.findMany({
-    where: { unionLocal: { companyAgreements: { some: { companyId } } } },
+    where: { companyId },
     include: { unionLocal: true },
     orderBy: [{ unionLocalId: "asc" }, { name: "asc" }],
   });
@@ -223,7 +224,7 @@ export async function loadRatioReviews(companyId: string, month: string): Promis
   // setApprenticeRatioRule now replaces rather than adds, so in practice
   // there is one; this makes the read safe regardless.
   const rules = await prisma.apprenticeRatioRule.findMany({
-    where: { unionLocal: { companyAgreements: { some: { companyId } } } },
+    where: { companyId },
     orderBy: { createdAt: "asc" },
   });
   const ruleByLocal = new Map<string, RatioRuleInput>(

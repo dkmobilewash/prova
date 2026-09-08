@@ -40,6 +40,7 @@ const utc = (iso: string) => new Date(`${iso}T00:00:00.000Z`);
 
 let localId = "";
 let otherLocalId = "";
+let otherCompanyId = "";
 let journeymanCraftId = "";
 let apprenticeCraftId = "";
 let foreignCraftId = "";
@@ -64,12 +65,14 @@ describe("union compliance against a real database", () => {
         role: "OWNER",
       },
     });
-    // UnionLocal is a GLOBAL table unique on (parentInternational,
-    // localNumber), so a fixed number collides with anything a previous
-    // run left behind. Stamped per run.
+    // UnionLocal is unique on (companyId, parentInternational, localNumber)
+    // as of the #136 finding 1 companyId fix, so a fixed number colliding
+    // with a previous run only matters within the same company. Stamped
+    // per run anyway, for the same reason every other fixture here is.
     const stamp = Date.now();
     const local = await prisma.unionLocal.create({
       data: {
+        companyId: company.id,
         localNumber: `t${stamp}`,
         parentInternational: "Carpenters",
         jurisdictionName: "Northern California",
@@ -79,29 +82,37 @@ describe("union compliance against a real database", () => {
       data: { companyId: company.id, unionLocalId: local.id, effectiveFrom: utc("2026-01-01") },
     });
     const journeyman = await prisma.craftClassification.create({
-      data: { unionLocalId: local.id, name: "Journeyman Drywall" },
+      data: { companyId: company.id, unionLocalId: local.id, name: "Journeyman Drywall" },
     });
     const apprentice = await prisma.craftClassification.create({
-      data: { unionLocalId: local.id, name: "Drywall Apprentice" },
+      data: { companyId: company.id, unionLocalId: local.id, name: "Drywall Apprentice" },
     });
 
-    // A local this company holds no agreement with — the access check.
+    // A classification owned by an entirely different company — the access
+    // check. Before the companyId fix this would have been "a local this
+    // company holds no agreement with"; now that CraftClassification and
+    // UnionLocal are company-scoped, the only way to construct a
+    // classification this company can't reach is to give it to someone
+    // else outright.
+    const otherCompany = await prisma.company.create({ data: { name: `Other Contractor ${stamp}` } });
     const otherLocal = await prisma.unionLocal.create({
       data: {
+        companyId: otherCompany.id,
         localNumber: `x${stamp}`,
         parentInternational: "Plasterers",
         jurisdictionName: "Elsewhere",
       },
     });
     const foreign = await prisma.craftClassification.create({
-      data: { unionLocalId: otherLocal.id, name: "Not ours" },
+      data: { companyId: otherCompany.id, unionLocalId: otherLocal.id, name: "Not ours" },
     });
 
     await prisma.apprenticeRatioRule.create({
-      data: { unionLocalId: local.id, apprenticeCount: 1, journeymenCount: 3 },
+      data: { companyId: company.id, unionLocalId: local.id, apprenticeCount: 1, journeymenCount: 3 },
     });
     await prisma.fringeRateSchedule.create({
       data: {
+        companyId: company.id,
         craftClassificationId: journeyman.id,
         baseWage: "45",
         pensionRate: "8",
@@ -121,6 +132,7 @@ describe("union compliance against a real database", () => {
     context.id = owner.id;
     localId = local.id;
     otherLocalId = otherLocal.id;
+    otherCompanyId = otherCompany.id;
     journeymanCraftId = journeyman.id;
     apprenticeCraftId = apprentice.id;
     foreignCraftId = foreign.id;
@@ -142,8 +154,10 @@ describe("union compliance against a real database", () => {
     await prisma.job.deleteMany({ where: { companyId: context.company.id } });
     await prisma.contact.deleteMany({ where: { companyId: context.company.id } });
     await prisma.user.deleteMany({ where: { companyId: context.company.id } });
-    await prisma.company.deleteMany({ where: { id: context.company.id } });
+    // UnionLocal now carries a RESTRICT foreign key to Company, so the local
+    // has to go before the company that owns it — the reverse order 500s.
     await prisma.unionLocal.deleteMany({ where: { id: { in: [localId, otherLocalId] } } });
+    await prisma.company.deleteMany({ where: { id: { in: [context.company.id, otherCompanyId] } } });
     await prisma.$disconnect();
   });
 
@@ -155,9 +169,10 @@ describe("union compliance against a real database", () => {
     expect(crafts).toHaveLength(2);
   });
 
-  it("refuses a classification under a local we hold no agreement with", async () => {
-    // CraftClassification carries no companyId, so this join IS the
-    // access check.
+  it("refuses a classification owned by a different company", async () => {
+    // CraftClassification carries its own companyId as of the #136 finding
+    // 1 fix, so this is a direct ownership check now rather than a join
+    // through a self-asserted agreement.
     const result = await setCraftTier(foreignCraftId, form("JOURNEYMAN"));
     expect(result.ok).toBe(false);
     expect(
@@ -347,8 +362,10 @@ describe("union setup CRUD, from an empty company", () => {
     await prisma.job.deleteMany({ where: { companyId: ctx.company.id } });
     await prisma.contact.deleteMany({ where: { companyId: ctx.company.id } });
     await prisma.user.deleteMany({ where: { companyId: ctx.company.id } });
-    await prisma.company.deleteMany({ where: { id: ctx.company.id } });
+    // UnionLocal now carries a RESTRICT foreign key to Company — delete it
+    // first, or the company delete 500s on a still-referencing row.
     await prisma.unionLocal.deleteMany({ where: { id: { in: localIds } } });
+    await prisma.company.deleteMany({ where: { id: ctx.company.id } });
   });
 
   const localForm = (over: Record<string, string> = {}) =>
@@ -375,26 +392,42 @@ describe("union setup CRUD, from an empty company", () => {
     expect(result.ok).toBe(false);
   });
 
-  it("adopts a local another company already recorded, rather than rejecting it", async () => {
-    // UnionLocal is global and unique on (parentInternational, localNumber).
-    // Two contractors under the same hall are under the same real local; a
-    // duplicate-key error here would tell someone a true fact is taken.
-    const other = await prisma.company.create({ data: { name: "Other Contractor" } });
+  it("gives a second company naming the same public local its own row, not this one's", async () => {
+    // The vulnerability itself: UnionLocal used to be global and unique
+    // only on (parentInternational, localNumber), so createUnionLocalAndAgreement
+    // ADOPTED any existing row with the same public name and number rather
+    // than rejecting or separating it. A local number is public information,
+    // so typing this company's own local's details was enough for another
+    // company to gain a self-asserted agreement with it — and from there,
+    // read access to its craft classifications and rate schedules. UnionLocal
+    // is now unique on (companyId, parentInternational, localNumber), so the
+    // same input from a different company can only ever create THAT
+    // company's own separate row.
+    const other = await prisma.company.create({ data: { name: `Other Contractor ${stamp}` } });
     const before = await prisma.unionLocal.count({
       where: { parentInternational: `ZZ Carpenters ${stamp}` },
     });
 
     context.company.id = other.id;
+    let otherLocalId = "";
     try {
       expect(await createUnionLocalAndAgreement(localForm())).toEqual({ ok: true });
+      const otherSetup = await loadUnionSetup(other.id);
+      expect(otherSetup).toHaveLength(1);
+      otherLocalId = otherSetup[0].unionLocalId;
     } finally {
       context.company.id = ctx.company.id;
     }
 
+    // A SECOND row, not the first company's adopted — the count goes up.
     expect(
       await prisma.unionLocal.count({ where: { parentInternational: `ZZ Carpenters ${stamp}` } }),
-    ).toBe(before);
+    ).toBe(before + 1);
+    const [firstSetup] = await loadUnionSetup(ctx.company.id);
+    expect(otherLocalId).not.toBe(firstSetup.unionLocalId);
+
     await prisma.companyUnionAgreement.deleteMany({ where: { companyId: other.id } });
+    await prisma.unionLocal.deleteMany({ where: { id: otherLocalId } });
     await prisma.company.delete({ where: { id: other.id } });
   });
 
@@ -562,7 +595,7 @@ describe("union setup CRUD, from an empty company", () => {
     ).toBe(0);
   });
 
-  it("refuses a non-owner deleting, and a local nobody holds an agreement with", async () => {
+  it("refuses a non-owner deleting, and a local owned by a different company", async () => {
     const [local] = await loadUnionSetup(ctx.company.id);
     const craft = local.crafts[0];
 
@@ -574,8 +607,14 @@ describe("union setup CRUD, from an empty company", () => {
       context.role = "OWNER";
     }
 
+    // Owned by an entirely different company — the check is now direct
+    // companyId ownership, not "no agreement exists for it" (a local this
+    // company itself owns always has an agreement, by construction of
+    // createUnionLocalAndAgreement).
+    const foreignCo = await prisma.company.create({ data: { name: `ZZ Foreign ${stamp}` } });
     const foreignLocal = await prisma.unionLocal.create({
       data: {
+        companyId: foreignCo.id,
         parentInternational: `ZZ Plasterers ${stamp}`,
         localNumber: "999",
         jurisdictionName: "Elsewhere",
@@ -588,6 +627,9 @@ describe("union setup CRUD, from an empty company", () => {
       ok: false,
       error: "That local isn't one you hold an agreement with",
     });
+
+    await prisma.unionLocal.delete({ where: { id: foreignLocal.id } });
+    await prisma.company.delete({ where: { id: foreignCo.id } });
   });
 
   it("ends an agreement instead of deleting it", async () => {
@@ -602,201 +644,160 @@ describe("union setup CRUD, from an empty company", () => {
 });
 
 /**
- * The cross-company disclosure on a shared classification.
+ * The self-assertion #136 finding 1 actually named — the destructive half,
+ * not just the read leak PR #169 closed first.
  *
- * `CraftClassification` hangs off `UnionLocal`, which is global and
- * deliberately so — two contractors signatory to the same hall mean the
- * same local. What that makes easy to get wrong is counting: a relation
- * count on a global row counts EVERY company's rows, and the setup page
- * renders it as this company's "N records tagged".
- *
- * These build two contractors under one local, give only the second one
- * work, and assert the first one can neither read nor be told the second
- * one's numbers. Unfiltered counts pass every other test in this file.
+ * UnionLocal used to be global and unique only on (parentInternational,
+ * localNumber). createUnionLocalAndAgreement ADOPTED any existing row with
+ * the same public name and number instead of creating a new one, and an
+ * agreement with it — the only access check anything downstream used — was
+ * granted for free. A union local's name and number are public information;
+ * typing them was the entire attack. This is the test that was missing:
+ * company B names the exact same local company A already holds, with a
+ * classification and a rate on it, and the fix is proven only if B ends up
+ * with its own row and can reach none of A's data through it.
  */
-describe("two contractors under one local", () => {
-  const ctx2 = { company: { id: "" }, id: "", role: "OWNER" as string };
+describe("two companies naming the same public local", () => {
   let stamp2 = 0;
-  let sharedLocalId = "";
-  let sharedCraftId = "";
-  let aCompanyId = "";
-  let bCompanyId = "";
-  let aUserId = "";
-  let bUserId = "";
-  let aJobId = "";
-  let bJobId = "";
+  let companyAId = "";
+  let companyBId = "";
+  let ownerBId = "";
+  let localAId = "";
+  let localBId = "";
 
-  // Deliberately uneven, and none of them 1 — a message that leaks B's
-  // figures leaks recognisable numbers rather than something that could
-  // be a coincidence.
-  const B_TIME_ENTRIES = 3;
-  const B_LINE_ITEMS = 2;
-  const B_CATALOG_ENTRIES = 4;
-  const B_DISPATCH_SLIPS = 2;
-  const B_TOTAL = B_TIME_ENTRIES + B_LINE_ITEMS + B_CATALOG_ENTRIES + B_DISPATCH_SLIPS; // 11
-
-  async function contractor(name: string) {
-    const company = await prisma.company.create({ data: { name: `${name} ${stamp2}` } });
-    const owner = await prisma.user.create({
-      data: {
-        companyId: company.id,
-        clerkId: `${name}_${stamp2}`,
-        email: `${name}_${stamp2}@example.test`,
-        role: "OWNER",
-      },
-    });
-    const contact = await prisma.contact.create({ data: { companyId: company.id, name: "GC" } });
-    const job = await prisma.job.create({
-      data: { companyId: company.id, contactId: contact.id, name: `${name} Job` },
-    });
-    await prisma.companyUnionAgreement.create({
-      data: {
-        companyId: company.id,
-        unionLocalId: sharedLocalId,
-        effectiveFrom: utc("2026-01-01"),
-      },
-    });
-    return { companyId: company.id, userId: owner.id, jobId: job.id };
-  }
+  const parentInternational = () => `ZZ Shared International ${stamp2}`;
+  const localNumber = "300";
 
   beforeAll(async () => {
     stamp2 = Date.now();
-    const local = await prisma.unionLocal.create({
+    const companyA = await prisma.company.create({ data: { name: `Acme Drywall ${stamp2}` } });
+    const ownerA = await prisma.user.create({
       data: {
-        parentInternational: `ZZ Shared ${stamp2}`,
-        localNumber: "300",
-        jurisdictionName: "Northern California",
+        companyId: companyA.id,
+        clerkId: `acme_${stamp2}`,
+        email: `acme_${stamp2}@example.test`,
+        role: "OWNER",
       },
     });
-    sharedLocalId = local.id;
-    const craft = await prisma.craftClassification.create({
-      data: { unionLocalId: local.id, name: "Journeyman Taper" },
-    });
-    sharedCraftId = craft.id;
+    companyAId = companyA.id;
 
-    const a = await contractor("acme");
-    const b = await contractor("borden");
-    aCompanyId = a.companyId;
-    aUserId = a.userId;
-    aJobId = a.jobId;
-    bCompanyId = b.companyId;
-    bUserId = b.userId;
-    bJobId = b.jobId;
+    context.company.id = companyAId;
+    context.id = ownerA.id;
+    context.role = "OWNER";
 
-    // Only B does any work. A's page must show nothing.
-    await prisma.timeEntry.createMany({
-      data: Array.from({ length: B_TIME_ENTRIES }, (_, i) => ({
-        jobId: bJobId,
-        employeeUserId: bUserId,
-        craftClassificationId: sharedCraftId,
-        date: utc("2026-08-17"),
-        hours: `${i + 1}`,
-      })),
-    });
-    await prisma.jobLineItem.createMany({
-      data: Array.from({ length: B_LINE_ITEMS }, (_, i) => ({
-        jobId: bJobId,
-        craftClassificationId: sharedCraftId,
-        description: `Borden line ${i}`,
-      })),
-    });
-    await prisma.lineItemCatalogEntry.createMany({
-      data: Array.from({ length: B_CATALOG_ENTRIES }, (_, i) => ({
-        companyId: bCompanyId,
-        craftClassificationId: sharedCraftId,
-        description: `Borden catalog ${i}`,
-      })),
-    });
-    await prisma.dispatchSlip.createMany({
-      data: Array.from({ length: B_DISPATCH_SLIPS }, () => ({
-        jobId: bJobId,
-        employeeUserId: bUserId,
-        craftClassificationId: sharedCraftId,
-        dispatchDate: utc("2026-08-17"),
-      })),
-    });
+    // Company A records its local, a classification, a rate and a ratio
+    // rule — everything #136 said an attacker could read or destroy.
+    expect(
+      await createUnionLocalAndAgreement(
+        form2({
+          parentInternational: parentInternational(),
+          localNumber,
+          jurisdictionName: "Northern California",
+          effectiveFrom: "2026-01-01",
+        }),
+      ),
+    ).toEqual({ ok: true });
+    const [setupA] = await loadUnionSetup(companyAId);
+    localAId = setupA.unionLocalId;
 
-    ctx2.company.id = aCompanyId;
-    ctx2.id = aUserId;
+    expect(
+      await createCraftClassification(
+        form2({ unionLocalId: localAId, name: "Journeyman Taper", tier: "JOURNEYMAN" }),
+      ),
+    ).toEqual({ ok: true });
+    const [setupAWithCraft] = await loadUnionSetup(companyAId);
+    const craftA = setupAWithCraft.crafts.find((c) => c.name === "Journeyman Taper")!;
+
+    expect(
+      await createFringeRateSchedule(
+        form2({ craftClassificationId: craftA.id, baseWage: "45", pensionRate: "8", effectiveFrom: "2026-01-01" }),
+      ),
+    ).toEqual({ ok: true });
+
+    expect(
+      await setApprenticeRatioRule(form2({ unionLocalId: localAId, apprenticeCount: "1", journeymenCount: "3" })),
+    ).toEqual({ ok: true });
+
+    // Company B — a stranger to A who has done nothing except read A's
+    // local's public name and number off a form somewhere.
+    const companyB = await prisma.company.create({ data: { name: `Borden Plastering ${stamp2}` } });
+    const ownerB = await prisma.user.create({
+      data: {
+        companyId: companyB.id,
+        clerkId: `borden_${stamp2}`,
+        email: `borden_${stamp2}@example.test`,
+        role: "OWNER",
+      },
+    });
+    companyBId = companyB.id;
+    ownerBId = ownerB.id;
   });
 
   afterAll(async () => {
-    const companyIds = [aCompanyId, bCompanyId];
-    const jobIds = [aJobId, bJobId];
-    await prisma.timeEntry.deleteMany({ where: { jobId: { in: jobIds } } });
-    await prisma.jobLineItem.deleteMany({ where: { jobId: { in: jobIds } } });
-    await prisma.dispatchSlip.deleteMany({ where: { jobId: { in: jobIds } } });
-    await prisma.lineItemCatalogEntry.deleteMany({ where: { companyId: { in: companyIds } } });
+    const companyIds = [companyAId, companyBId];
+    const localIds = [localAId, localBId].filter(Boolean);
+    await prisma.apprenticeRatioRule.deleteMany({ where: { unionLocalId: { in: localIds } } });
+    await prisma.fringeRateSchedule.deleteMany({ where: { companyId: { in: companyIds } } });
+    await prisma.craftClassification.deleteMany({ where: { unionLocalId: { in: localIds } } });
     await prisma.companyUnionAgreement.deleteMany({ where: { companyId: { in: companyIds } } });
-    await prisma.job.deleteMany({ where: { companyId: { in: companyIds } } });
-    await prisma.contact.deleteMany({ where: { companyId: { in: companyIds } } });
     await prisma.user.deleteMany({ where: { companyId: { in: companyIds } } });
+    // UnionLocal now carries a RESTRICT foreign key to Company — delete it
+    // first, or the company delete 500s on a still-referencing row.
+    await prisma.unionLocal.deleteMany({ where: { id: { in: localIds } } });
     await prisma.company.deleteMany({ where: { id: { in: companyIds } } });
-    await prisma.craftClassification.deleteMany({ where: { id: sharedCraftId } });
-    await prisma.unionLocal.deleteMany({ where: { id: sharedLocalId } });
   });
 
-  it("counts only the viewing company's records, not every contractor's under the local", async () => {
-    const [bView] = await loadUnionSetup(bCompanyId);
-    const bCraft = bView.crafts.find((c) => c.id === sharedCraftId)!;
-    expect(bCraft.usageCount).toBe(B_TOTAL);
-
-    // The one that matters. An unfiltered _count reads 11 here — Borden's
-    // headcount and catalog size, on Acme's page, reached by typing a
-    // public local number.
-    const [aView] = await loadUnionSetup(aCompanyId);
-    const aCraft = aView.crafts.find((c) => c.id === sharedCraftId)!;
-    expect(aCraft.usageCount).toBe(0);
-  });
-
-  it("still refuses Acme's delete, and does so without naming Borden's numbers", async () => {
-    context.company.id = aCompanyId;
-    context.id = aUserId;
+  it("creates company B its own separate local rather than adopting A's", async () => {
+    context.company.id = companyBId;
+    context.id = ownerBId;
     context.role = "OWNER";
 
-    const result = await deleteCraftClassification(sharedCraftId);
+    expect(
+      await createUnionLocalAndAgreement(
+        form2({
+          parentInternational: parentInternational(),
+          localNumber,
+          jurisdictionName: "Northern California",
+          effectiveFrom: "2026-01-01",
+        }),
+      ),
+    ).toEqual({ ok: true });
 
-    // The guard stays GLOBAL on purpose: letting Acme delete a craft that
-    // Borden has costed work tagged with would be a cross-company
-    // destructive action, which is worse than the read leak.
-    expect(result.ok).toBe(false);
-    expect(await prisma.craftClassification.count({ where: { id: sharedCraftId } })).toBe(1);
+    const [setupB] = await loadUnionSetup(companyBId);
+    localBId = setupB.unionLocalId;
 
-    const error = result.ok === false ? result.error : "";
-    expect(error).toContain("another contractor");
-    // No count of any kind. The old message read "11 records are tagged
-    // (3 time entries, 2 line items, 4 catalog entries, 2 dispatch slips)".
-    expect(error).not.toMatch(/\d/);
-    expect(error).not.toContain("Borden");
+    // A SECOND row, not A's adopted — same public name and number, two ids.
+    expect(localBId).not.toBe(localAId);
+    expect(
+      await prisma.unionLocal.count({ where: { parentInternational: parentInternational(), localNumber } }),
+    ).toBe(2);
   });
 
-  it("quotes Acme's own numbers once Acme has work tagged", async () => {
-    await prisma.timeEntry.create({
-      data: {
-        jobId: aJobId,
-        employeeUserId: aUserId,
-        craftClassificationId: sharedCraftId,
-        date: utc("2026-08-18"),
-        hours: "8",
-      },
-    });
+  it("shows company B none of company A's classifications or rates", async () => {
+    const [setupB] = await loadUnionSetup(companyBId);
+    expect(setupB.unionLocalId).toBe(localBId);
+    // Before the fix this local's craftClassifications relation would have
+    // included A's "Journeyman Taper" and its rate — both companies were
+    // signatory to what the database considered the same row.
+    expect(setupB.crafts).toHaveLength(0);
+    expect(setupB.ratio).toBeNull();
+    expect(await loadCrafts(companyBId)).toHaveLength(0);
+  });
 
-    const [aView] = await loadUnionSetup(aCompanyId);
-    expect(aView.crafts.find((c) => c.id === sharedCraftId)!.usageCount).toBe(1);
+  it("cannot reach company A's apprentice ratio rule through the destructive path #136 named", async () => {
+    // setApprenticeRatioRule's deleteMany used to be scoped only to
+    // unionLocalId — on a shared global local that wiped whichever company
+    // held a self-asserted agreement last, with no ownership check. B
+    // setting its OWN ratio, even under a local with the identical public
+    // name and number, must leave A's rule untouched.
+    expect(
+      await setApprenticeRatioRule(form2({ unionLocalId: localBId, apprenticeCount: "1", journeymenCount: "5" })),
+    ).toEqual({ ok: true });
 
-    context.company.id = aCompanyId;
-    context.id = aUserId;
-    context.role = "OWNER";
-    const result = await deleteCraftClassification(sharedCraftId);
+    const ruleA = await prisma.apprenticeRatioRule.findFirst({ where: { unionLocalId: localAId } });
+    expect(ruleA).toMatchObject({ apprenticeCount: 1, journeymenCount: 3 });
 
-    expect(result.ok).toBe(false);
-    const error = result.ok === false ? result.error : "";
-    expect(error).toContain("1 of your records is tagged");
-    expect(error).toContain("1 time entry");
-    // Acme's own zeroes, not Borden's totals. 4 catalog entries and 2
-    // dispatch slips exist under this craft; neither belongs to Acme.
-    expect(error).toContain("0 catalog entries");
-    expect(error).toContain("0 dispatch slips");
-    expect(error).not.toContain(`${B_TOTAL}`);
+    const [setupAAfter] = await loadUnionSetup(companyAId);
+    expect(setupAAfter.ratio).toMatchObject({ apprenticeCount: 1, journeymenCount: 3 });
   });
 });
