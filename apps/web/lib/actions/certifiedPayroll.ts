@@ -291,3 +291,77 @@ export async function recordStatementOfCompliance(formData: FormData): Promise<A
     return ok;
   });
 }
+
+/**
+ * Records the two WH-347 header fields a Job cannot answer from its name:
+ * "Project and Location" and "Project or Contract No."
+ *
+ * This is the only write path to `Job.projectLocation` and
+ * `Job.contractNumber`. Until it existed the two columns were schema-real,
+ * page-read and written by NOTHING — so `fileable: true` was unreachable
+ * in production and the red banner's "fill it in" advice pointed at a
+ * screen that did not exist. Both are Job fields rather than filing
+ * fields: the location and contract number belong to the project, and
+ * every week's form prints the same pair.
+ *
+ * WHICH IS THE PROBLEM THIS ACTION HAS TO REFUSE: page 1 prints these
+ * LIVE from the Job, so editing them after a week has been filed changes
+ * what a reprint of that filed week says — a form the agency already
+ * holds a copy of, silently disagreeing with the one cstream now prints.
+ * The rest of this module locks a filing by having no write path at all;
+ * these two fields need one, so the rule is the nearest thing to a lock
+ * that still lets the fields be filled in at all:
+ *
+ *   - while NO filing exists for the job, edit freely — nothing printed
+ *     under a payroll number can drift, because nothing was filed;
+ *   - once ANY filing exists, a BLANK field can still be filled in (a
+ *     blank was never printed as a value, only as a red sentence), but a
+ *     recorded value can no longer be changed or cleared from here.
+ *
+ * The refusal names the reason rather than hiding the form, because the
+ * person most likely to hit it is correcting a real typo — and the honest
+ * answer is that the correction needs the same amendment flow a filed
+ * statement does, not that the button is broken.
+ */
+export async function recordJobContractDetails(formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  const { company } = context;
+  return runAction(async () => {
+    if (!can(context, "MANAGE_COMPLIANCE")) return fail(COMPLIANCE_ONLY);
+
+    const jobId = required(formData, "jobId", "Job");
+    const job = await prisma.job.findUnique({ where: { id: jobId } });
+    if (!job || job.companyId !== company.id) return fail("Job not found");
+
+    // "" is stored as null, never as an empty string. lib/wh347.ts treats
+    // a blank as absent (a blank box is not a location), and a database
+    // that holds "" would clear the blocker on `!= null` reads elsewhere
+    // while the form still prints an empty box.
+    const projectLocation = text(formData, "projectLocation") || null;
+    const contractNumber = text(formData, "contractNumber") || null;
+
+    const filed = await prisma.certifiedPayrollFiling.findFirst({
+      where: { jobId },
+      select: { id: true },
+    });
+    if (filed) {
+      const changesRecordedValue =
+        (job.projectLocation != null && projectLocation !== job.projectLocation) ||
+        (job.contractNumber != null && contractNumber !== job.contractNumber);
+      if (changesRecordedValue) {
+        return fail(
+          "A payroll has already been filed for this job, and page 1 prints these two boxes live — changing one now would make a reprint of a filed week disagree with the copy the agency holds. A blank box can still be filled in; a recorded value needs an amendment, which isn't built yet.",
+        );
+      }
+    }
+
+    await prisma.job.update({
+      where: { id: jobId },
+      data: { projectLocation, contractNumber },
+    });
+
+    revalidatePath(`/jobs/${jobId}/certified-payroll/wh-347`);
+    revalidatePath(`/jobs/${jobId}/certified-payroll`);
+    return ok;
+  });
+}

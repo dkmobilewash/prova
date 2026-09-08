@@ -12,6 +12,51 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### `fileable` can now fail, and the two header boxes can now be filled (Cyrus)
+`cyrus/wh347-statement-of-compliance-2`
+
+Two defects in this same branch's earlier commits, found by mutation
+before any PR went up, fixed here rather than shipped.
+
+**`fileable` was unfalsifiable with a real worker on the form.** The
+all-clear control test passes `entries: []` — legitimately, a "no work
+performed" payroll — so the three per-worker blockers (identifying
+number, deductions, net wages) were asserted by NOTHING. Deleting all
+three pushes from `buildWh347` left every suite green while the page
+rendered the green "every field this form requires is filled in" banner
+over a worker line with columns 8 and 9 empty. There is now a test with a
+real worker line and everything else sourced that requires exactly those
+three blockers; each of the three mutations reddens it by name.
+
+**`Job.projectLocation` and `Job.contractNumber` had no write path.**
+Schema-real, page-read, written by nothing — so `fileable: true` was
+unreachable in production and the red banner's advice pointed at a screen
+that did not exist. `recordJobContractDetails` is now their only write
+path, behind MANAGE_COMPLIANCE like the rest of the module, with the
+"Project & contract details" form on the WH-347 page. The blocking
+sentences name the form so the reader's next click is visible from where
+they read.
+
+**Once any week is filed, a recorded value locks.** Page 1 prints both
+fields live from the Job, so changing one after a filing would make a
+reprint of a filed week disagree with the copy the agency holds. While
+nothing is filed, edits are free; after a filing, a BLANK field can still
+be filled in (a blank printed as a red sentence, never a value) but a
+recorded value refuses with the reason, and the correction routes through
+the same not-yet-built amendment flow a filed statement does. The check:
+file a week, then try to change the contract number — the action refuses
+and the form says why; a job with no filings edits freely.
+
+The mutation log this branch's earlier test file promised ("see the PR
+body") now exists: eleven mutations run in this session, each reddening
+its named test, every file restored byte-identical and sha-verified —
+three on `wh347.ts` (each per-worker blocker push), four on the new
+action (drop the after-filing lock, store "" instead of null, drop the
+capability guard, drop the company check), four on the pre-existing
+action (payroll number from `max(n)+1` instead of the counter, weekEnding
+trusted from the form, signature date stamped instead of entered, the
+cannot-sign-before-the-week-ends guard removed).
+
 ### A WH-347 that can be signed, and the four boxes still empty (Cyrus)
 `cyrus/wh347-statement-of-compliance-2`
 

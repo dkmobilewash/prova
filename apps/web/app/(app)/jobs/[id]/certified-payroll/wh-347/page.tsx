@@ -29,6 +29,7 @@ import {
 } from "@/lib/certified-payroll-week";
 import { loadCertifiedPayrollWeekEntries } from "@/lib/certified-payroll-query";
 import { payrollWorkerName } from "@/lib/worker-name";
+import { JobContractDetailsForm } from "@/components/JobContractDetailsForm";
 import { StatementOfComplianceForm } from "@/components/StatementOfComplianceForm";
 import {
   WH347_FALSIFICATION_WARNING,
@@ -108,7 +109,7 @@ export default async function Wh347Page({
   // the one covering the hours printed below, not a week off by a day.
   const weekEnding = certifiedPayrollWeekWindow(weekStart).lte;
 
-  const [entries, craftClassifications, filing] = await Promise.all([
+  const [entries, craftClassifications, filing, anyFiling] = await Promise.all([
     loadCertifiedPayrollWeekEntries(company.id, job.id, weekStart),
     prisma.craftClassification.findMany({
       where: { unionLocal: { companyAgreements: { some: { companyId: company.id } } } },
@@ -117,6 +118,14 @@ export default async function Wh347Page({
     prisma.certifiedPayrollFiling.findUnique({
       where: { jobId_weekEnding: { jobId: job.id, weekEnding } },
       include: { signedBy: { select: { name: true, email: true } } },
+    }),
+    // ANY week's filing, not this week's — the moment one exists, the
+    // job's recorded contract details lock (recordJobContractDetails has
+    // the argument). `filing` above cannot answer this: week 1 filed and
+    // week 2 on screen is exactly the case where they disagree.
+    prisma.certifiedPayrollFiling.findFirst({
+      where: { jobId: job.id },
+      select: { id: true },
     }),
   ]);
 
@@ -232,6 +241,19 @@ export default async function Wh347Page({
             </ul>
           </div>
         )}
+
+        {/* The blocking sentences for projectLocation/contractNumber name
+            this form by its title, so it sits directly under them — the
+            reader's next click after "fill it in under Project & contract
+            details" has to be visible from where they read it. */}
+        <div className="mt-4">
+          <JobContractDetailsForm
+            jobId={job.id}
+            projectLocation={job.projectLocation}
+            contractNumber={job.contractNumber}
+            hasFiling={anyFiling != null}
+          />
+        </div>
       </div>
 
       {/* The form sheet. White, black text, printed borders — this is the

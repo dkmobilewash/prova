@@ -115,9 +115,9 @@ export const WH347_BLOCKING_FIELD_REASON: Record<Wh347BlockingField, string> = {
   payrollNumber:
     "Every WH-347 carries a sequential payroll number for the project. One is issued the moment this week's statement of compliance is signed, and nobody has signed it.",
   projectLocation:
-    "The header wants the project's location. This job records none — and nothing in cstream writes that field yet, so it cannot be filled in from a screen today.",
+    "The header wants the project's location. This job records none — fill it in under “Project & contract details” above the form.",
   contractNumber:
-    "The header wants the project or contract number, which the awarding body issues. This job records none, and nothing in cstream writes that field yet either.",
+    "The header wants the project or contract number, which the awarding body issues. This job records none — fill it in under “Project & contract details” above the form.",
   statementOfCompliance:
     "Page 2 is signed under penalty of perjury and names how fringes were paid — 4(a) to approved plans, 4(b) in cash, 4(c) exceptions. Nobody has signed one for this week.",
 };

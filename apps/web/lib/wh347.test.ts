@@ -356,6 +356,37 @@ describe("fileable", () => {
     expect(form.fileable).toBe(true);
   });
 
+  it("stays unfileable with a REAL worker line even when everything else is sourced — columns 8 and 9 and the ID number are still missing", () => {
+    // The other half of the all-clear control above, and the test that
+    // makes the per-worker blockers falsifiable AT ALL. That control
+    // passes `entries: []`, so the three unconditional pushes
+    // (identifyingNumber, deductions, netWages) never execute in it —
+    // deleting them from buildWh347 left every suite green while
+    // page.tsx rendered the green "every field is filled in" banner over
+    // a worker line with columns 8 and 9 empty. A form with real hours on
+    // it is the only kind anyone actually files, so THIS is the case that
+    // has to hold. Verified by that exact mutation: remove any one of the
+    // three pushes and this test goes red by name.
+    const form = buildWh347({
+      company: COMPANY,
+      job: {
+        name: "Maple Street Medical Office",
+        location: "1200 Maple St, Sacramento CA",
+        contractNumber: "SAC-2026-0041",
+      },
+      weekStart: WEEK_START,
+      entries: [entry()], // Rosa Delgado, named, craft-tagged — nothing else blocks
+      fringeSchedulesByCraft: schedules,
+      payrollNumber: 12,
+      statementOfComplianceSignedOn: utc("2026-08-31"),
+    });
+    // Exactly these three, in the form's own order — an extra entry here
+    // means a header blocker leaked past its sourced value; a missing one
+    // means a worker gap stopped being counted.
+    expect(form.blocking).toEqual(["identifyingNumber", "deductions", "netWages"]);
+    expect(form.fileable).toBe(false);
+  });
+
   it("blocks on the payroll number until a counter issues one", () => {
     expect(build([entry()]).blocking).toContain("payrollNumber");
     expect(build([entry()], { payrollNumber: 4 }).blocking).not.toContain("payrollNumber");
