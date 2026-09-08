@@ -14,6 +14,7 @@ import {
   type RemittanceReport,
 } from "@/lib/fringe-remittance";
 import type { FringeRateScheduleInput } from "@/lib/labor-cost";
+import { payrollWorkerName } from "@/lib/worker-name";
 
 /**
  * Fetching and normalising for the union compliance page.
@@ -96,8 +97,10 @@ export async function loadRemittance(companyId: string, month: string): Promise<
     select: {
       date: true,
       hours: true,
+      payType: true,
       craftClassificationId: true,
       craftClassification: { select: { name: true, unionLocalId: true, unionLocal: true } },
+      employeeUserId: true,
       employeeUser: { select: { name: true, email: true } },
       job: { select: { name: true } },
     },
@@ -132,6 +135,13 @@ export async function loadRemittance(companyId: string, month: string): Promise<
       craftLabel: e.craftClassification?.name ?? null,
       unionLocalId: e.craftClassification?.unionLocalId ?? null,
       unionLocalLabel: e.craftClassification ? localLabel(e.craftClassification.unionLocal) : null,
+      payType: e.payType,
+      employeeUserId: e.employeeUserId,
+      // The name that reaches a FILING goes through payrollWorkerName, so
+      // an account with no name recorded prints a placeholder the office
+      // has to chase rather than an email address a trust fund would be
+      // told is somebody's name.
+      employeeFilingName: payrollWorkerName(e.employeeUser),
       employeeName: e.employeeUser.name ?? e.employeeUser.email,
       jobName: e.job.name,
     })),
