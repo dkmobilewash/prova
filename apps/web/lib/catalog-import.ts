@@ -285,6 +285,23 @@ export function parseCatalogImport(text: string): ParsedImport {
 }
 
 /**
+ * The key two catalog descriptions are compared under to decide "same item".
+ *
+ * Trimmed and lower-cased — what a person means by "the same item" — and
+ * exported so every path that can create a catalog entry agrees about what
+ * counts as a duplicate. Before #105 finding 7, `importCatalogEntries`
+ * refused a duplicate with exactly this rule while `createLineItemCatalogEntry`
+ * and `saveLineItemAsCatalogEntry` used no rule at all, so the same item
+ * typed twice — or the same line saved from two jobs — created two rows that
+ * each accumulate their own actuals. With `CATALOG_MIN_SAMPLE = 2`, splitting
+ * one item's history across two rows can keep both under the minimum sample
+ * forever, suppressing a variance flag the merged sample would have raised.
+ */
+export function catalogKey(description: string): string {
+  return description.trim().toLowerCase();
+}
+
+/**
  * Splits parsed rows against what the catalog already holds.
  *
  * Matching on description, case-insensitively, because that is what a
@@ -293,7 +310,7 @@ export function parseCatalogImport(text: string): ParsedImport {
  * second "5/8in Type X board" is how a catalog becomes untrustworthy.
  */
 export function splitAgainstExisting(rows: ImportRow[], existingDescriptions: string[]) {
-  const existing = new Set(existingDescriptions.map((d) => d.trim().toLowerCase()));
+  const existing = new Set(existingDescriptions.map(catalogKey));
   const seenInFile = new Set<string>();
 
   const fresh: ImportRow[] = [];
@@ -301,7 +318,7 @@ export function splitAgainstExisting(rows: ImportRow[], existingDescriptions: st
   const duplicatesWithinFile: ImportRow[] = [];
 
   for (const row of rows) {
-    const key = row.description.trim().toLowerCase();
+    const key = catalogKey(row.description);
     if (seenInFile.has(key)) {
       duplicatesWithinFile.push(row);
       continue;
