@@ -119,6 +119,44 @@ describe("apprenticeship actions against a real database", () => {
     await prisma.company.delete({ where: { id: other.id } });
   });
 
+  it("refuses a craft classification or union local belonging to another company — #136", async () => {
+    // createApprenticeshipEnrollment took craftClassificationId/unionLocalId
+    // straight from FormData with no ownership check at all, found after
+    // the #136 fix to unionCompliance.ts closed every other write path to
+    // these tables. Same shape as the apprenticeUserId check above, applied
+    // to the two IDs that name someone else's union data instead of
+    // someone else's person.
+    const other = await prisma.company.create({ data: { name: "Elsewhere Local 300" } });
+    const otherLocal = await prisma.unionLocal.create({
+      data: { companyId: other.id, parentInternational: "Carpenters", localNumber: "300", jurisdictionName: "Elsewhere" },
+    });
+    const otherCraft = await prisma.craftClassification.create({
+      data: { companyId: other.id, unionLocalId: otherLocal.id, name: "Journeyman" },
+    });
+
+    const badCraft = await createApprenticeshipEnrollment(
+      base({ programNumber: "CA-2026-119", craftClassificationId: otherCraft.id }),
+    );
+    expect(badCraft.ok).toBe(false);
+    if (!badCraft.ok) expect(badCraft.error).toMatch(/isn't one of yours/i);
+
+    const badLocal = await createApprenticeshipEnrollment(
+      base({ programNumber: "CA-2026-120", unionLocalId: otherLocal.id }),
+    );
+    expect(badLocal.ok).toBe(false);
+    if (!badLocal.ok) expect(badLocal.error).toMatch(/isn't one you hold an agreement with/i);
+
+    expect(
+      await prisma.apprenticeshipEnrollment.count({
+        where: { companyId: context.company.id, programNumber: { in: ["CA-2026-119", "CA-2026-120"] } },
+      }),
+    ).toBe(0);
+
+    await prisma.craftClassification.delete({ where: { id: otherCraft.id } });
+    await prisma.unionLocal.delete({ where: { id: otherLocal.id } });
+    await prisma.company.delete({ where: { id: other.id } });
+  });
+
   it("refuses an indenture that is both completed and cancelled", async () => {
     const row = await prisma.apprenticeshipEnrollment.findFirstOrThrow({
       where: { companyId: context.company.id },

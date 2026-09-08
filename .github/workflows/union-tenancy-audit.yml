@@ -1,28 +1,32 @@
-# Answers one question about PRODUCTION and writes nothing.
+# Checks one invariant on PRODUCTION and writes nothing.
 #
-# Issue #136 finding 1: the union tables carry no `companyId` and the only
-# access check is a self-asserted `CompanyUnionAgreement`. Whether that is a
-# live breach or a latent one depends on whether two companies have landed
-# on the same local — and so does the fix, because a backfill can only be
-# written once somebody knows.
+# Issue #136 finding 1 is CLOSED. Migration 20260907191702_union_tenancy_companyid
+# (#200) put `companyId` on UnionLocal, CraftClassification, FringeRateSchedule
+# and ApprenticeRatioRule, backfilled them, made them NOT NULL, and made a
+# local's identity ([companyId, parentInternational, localNumber]) per-company.
 #
-# That question has been open since 2026-09-03 and has been asked in Slack
-# three times. It stayed open because the only people who could answer it
-# are the ones with `ep-little-sea` credentials, and answering meant pasting
-# a connection string somewhere. This workflow removes that step: the
-# credentials are already repository secrets, so the runner has them and
-# nobody has to handle one.
+# This workflow used to answer whether that fix should be written. It now checks
+# whether it still holds, because the fix introduced something the database
+# cannot enforce: `companyId` is DENORMALISED onto children, and no CHECK,
+# trigger or composite foreign key ties a child's copy to its parent's. A write
+# path that sets one and forgets the other files a row under company A hanging
+# off company B's local, with every constraint satisfied. That is #136 returning
+# through the denormalisation that fixed it.
 #
-# READ-ONLY BY CONSTRUCTION. The script issues three SELECTs. It takes no
-# inputs, so there is nothing to inject, and the SQL is fixed in the file
-# rather than assembled here. It prints the host it read, never the
-# connection string.
+# The job FAILS when it finds one, so this is a regression check rather than a
+# report — and it says NOT ESTABLISHED, never "clean", when the database holds
+# fewer than two companies, because a single tenant makes the comparison
+# incapable of failing.
+#
+# READ-ONLY BY CONSTRUCTION. Two SELECTs, no workflow inputs so there is nothing
+# to inject, the SQL fixed in the script rather than assembled here, and the
+# host printed via describe() so the connection string is never echoed.
 name: Union tenancy audit (read-only)
 
 on:
   workflow_dispatch:
 
-# One at a time. Two concurrent runs would answer the same question twice
+# One at a time. Two concurrent runs would check the same invariant twice
 # and hold two connections against a `connection_limit=5` pool for nothing.
 concurrency:
   group: union-tenancy-audit
@@ -30,7 +34,7 @@ concurrency:
 
 jobs:
   audit:
-    name: Is the shared union namespace already shared?
+    name: Does every companyId still agree with its parent's?
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

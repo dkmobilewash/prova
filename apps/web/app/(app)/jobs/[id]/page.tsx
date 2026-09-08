@@ -27,7 +27,12 @@ import {
 } from "@/lib/contract-execution";
 import type { JobStatusValue } from "@/lib/job-status-transitions";
 import { ChangeOrders, type ChangeOrderView } from "@/components/ChangeOrders";
-import { changeOrderValueDelta, pendingChangeOrderExposure, reopenBlockers } from "@/lib/change-order";
+import {
+  changeOrderValueDelta,
+  pendingChangeOrderExposure,
+  pendingChangeOrderUnbookable,
+  reopenBlockers,
+} from "@/lib/change-order";
 import { can } from "@/lib/permissions";
 import { money } from "@/lib/money";
 import { calculateLineItemWip, calculateJobWip } from "@/lib/wip";
@@ -225,7 +230,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
     prisma.companyLocation.findMany({ where: { companyId: company.id }, orderBy: { createdAt: "asc" } }),
     prisma.lineItemCatalogEntry.findMany({ where: { companyId: company.id }, orderBy: { description: "asc" } }),
     prisma.craftClassification.findMany({
-      where: { unionLocal: { companyAgreements: { some: { companyId: company.id } } } },
+      where: { companyId: company.id },
       include: { unionLocal: true, fringeRateSchedules: true },
       orderBy: { name: "asc" },
     }),
@@ -534,6 +539,12 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
   const pendingExposure = Number(
     pendingChangeOrderExposure(job.changeOrders, changeOrderTargetsById),
   );
+  // #105 finding 5: a pending REMOVE (or EDIT) against scope an earlier
+  // approved change order already deleted is worth $0 to the figure above —
+  // it can never actually be booked, since approveChangeOrder refuses it.
+  // Reported rather than silently folded away, so the headline doesn't read
+  // as a total when it's a floor.
+  const pendingUnbookable = pendingChangeOrderUnbookable(job.changeOrders, changeOrderTargetsById);
 
   const updateLineItemWithId = (lineItemId: string) => updateLineItem.bind(null, job.id, lineItemId);
   const updateLineItemForecastWithId = (lineItemId: string) =>
@@ -2069,6 +2080,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             changeOrders={changeOrderViews}
             lineItems={changeOrderTargets}
             pendingExposure={money(pendingExposure)}
+            pendingUnbookable={pendingUnbookable}
           />
         )}
 

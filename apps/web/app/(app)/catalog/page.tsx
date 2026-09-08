@@ -5,7 +5,7 @@ import {
   createLineItemCatalogEntry,
   updateCatalogDefaultsFromActuals,
 } from "@/lib/actions";
-import { catalogActuals } from "@/lib/catalog-actuals";
+import { catalogActuals, type JobStatusForActuals } from "@/lib/catalog-actuals";
 import { CatalogImport } from "@/components/CatalogImport";
 import { CatalogEntryRow } from "@/components/CatalogEntryRow";
 import { TRADE_SCOPE_OPTIONS, tradeScopeLabel } from "@/lib/trade-scopes";
@@ -15,7 +15,7 @@ import { SubmitButton } from "@/components/SubmitButton";
 type CatalogEntryWithLines = {
   id: string;
   defaultBudgetedUnitCost: unknown;
-  jobLineItems: { quantity: unknown; costEntries: { amount: unknown }[] }[];
+  jobLineItems: { quantity: unknown; costEntries: { amount: unknown }[]; job: { status: string } }[];
 };
 
 /**
@@ -44,6 +44,10 @@ function ActualsLine({ entry }: { entry: CatalogEntryWithLines }) {
       quantity: Number(line.quantity),
       actualCost: line.costEntries.reduce((sum, cost) => sum + Number(cost.amount), 0),
       hasCosts: line.costEntries.length > 0,
+      // #105 finding 2: only a FINISHED job's booked cost is a real unit
+      // cost — a job that is still running has quantity from day one but
+      // only partial cost, which reads artificially low every time.
+      jobStatus: line.job.status as JobStatusForActuals,
     })),
     entry.defaultBudgetedUnitCost != null ? Number(entry.defaultBudgetedUnitCost) : null,
   );
@@ -51,7 +55,11 @@ function ActualsLine({ entry }: { entry: CatalogEntryWithLines }) {
   if (actuals.actualUnitCost === null) {
     return (
       <p className="mt-1 text-xs text-slate-500">
-        No costed jobs have used this entry yet — nothing to compare its default against.
+        {actuals.linesExcludedUnfinished > 0
+          ? `${actuals.linesExcludedUnfinished} costed ${
+              actuals.linesExcludedUnfinished === 1 ? "line uses" : "lines use"
+            } this entry, but on a job that hasn't finished yet — nothing to compare its default against until one does.`
+          : "No costed jobs have used this entry yet — nothing to compare its default against."}
       </p>
     );
   }
@@ -76,7 +84,10 @@ function ActualsLine({ entry }: { entry: CatalogEntryWithLines }) {
           action={updateCatalogDefaultsFromActuals.bind(null, entry.id)}
           className="flex flex-wrap items-center gap-2"
         >
-          <input type="hidden" name="actualUnitCost" value={actuals.actualUnitCost.toFixed(2)} />
+          {/* No hidden input carrying the figure any more (#105 finding 3)
+              — the server re-derives it from the line items, so this form
+              sends nothing but the margin checkbox. What's shown above is
+              only ever a preview of what the server will work out itself. */}
           <label className="flex items-center gap-1 text-xs text-slate-400">
             <input type="checkbox" name="alsoUpdatePrice" className="accent-blue-500" />
             also move the sale price, holding margin
@@ -108,12 +119,16 @@ export default async function CatalogPage() {
         // the entry is a template and nothing here writes back to these rows.
         jobLineItems: {
           where: { isDeleted: false },
-          select: { quantity: true, costEntries: { select: { amount: true } } },
+          select: {
+            quantity: true,
+            costEntries: { select: { amount: true } },
+            job: { select: { status: true } },
+          },
         },
       },
     }),
     prisma.craftClassification.findMany({
-      where: { unionLocal: { companyAgreements: { some: { companyId: company.id } } } },
+      where: { companyId: company.id },
       include: { unionLocal: true },
       orderBy: { name: "asc" },
     }),

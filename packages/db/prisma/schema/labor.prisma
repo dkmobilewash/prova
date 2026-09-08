@@ -168,8 +168,37 @@ model PrevailingWageDetermination {
 /// local applies to every company that works under it. Deliberately NOT
 /// seeded: no verified source for real local numbers/jurisdictions, and a
 /// wrong entry here would misattribute a company's CBA to the wrong local.
+/// COMPANY-SCOPED as of #136 finding 1. Until 2026-09-08 this table (and
+/// CraftClassification, FringeRateSchedule, ApprenticeRatioRule below) had
+/// no companyId at all: the only access check was holding a
+/// CompanyUnionAgreement with the local, and that agreement was
+/// self-asserted -- createUnionLocalAndAgreement adopted any existing local
+/// by (parentInternational, localNumber), both public information. Anyone
+/// who signed up and typed a real local's name/number got an agreement with
+/// it for free, and from there: read access to another company's craft
+/// wage rates, a cross-company row count (fixed separately in #169), and a
+/// destructive delete on shared ApprenticeRatioRule/FringeRateSchedule rows
+/// with no usage check.
+///
+/// A read-only production audit (`scripts/union-tenancy-audit.mjs`, run
+/// 2026-09-07) settled the question a scoped fix depends on: whether any
+/// real local was already shared by two companies, which would make a
+/// per-company backfill ambiguous. It was not -- `ep-little-sea` held
+/// exactly one local, one agreement, one company, zero crafts, zero
+/// schedules. The backfill below is therefore single-valued by
+/// construction, not by luck, and NOT NULL is safe because every local had
+/// an owning agreement (0 orphans).
+///
+/// Each company now records its OWN local rather than sharing one global
+/// row. Two companies signatory to the real Carpenters Local 300 get two
+/// separate UnionLocal rows -- duplicated data about the same real-world
+/// local, exactly like two companies each holding their own Contact row for
+/// the same real GC. That duplication is the fix, not a side effect of it:
+/// the old "adopt the existing global row" behavior IS the vulnerability.
 model UnionLocal {
   id                  String   @id @default(cuid())
+  companyId           String
+  company             Company  @relation(fields: [companyId], references: [id])
   parentInternational String // "United Brotherhood of Carpenters", "OPCMIA", "IUPAT", "LIUNA"
   localNumber         String
   jurisdictionName    String
@@ -180,7 +209,8 @@ model UnionLocal {
   apprenticeRatioRules ApprenticeRatioRule[]
   companyAgreements    CompanyUnionAgreement[]
 
-  @@unique([parentInternational, localNumber])
+  @@unique([companyId, parentInternational, localNumber])
+  @@index([companyId])
   apprenticeshipEnrollments ApprenticeshipEnrollment[]
 }
 
@@ -228,8 +258,16 @@ enum CraftTier {
   FOREMAN
 }
 
+/// COMPANY-SCOPED as of #136 finding 1 -- see the comment on UnionLocal
+/// above for why. companyId here is redundant with unionLocal.companyId in
+/// principle, but every other table in this app is checked directly against
+/// its own companyId rather than through a join chain (the #136 audit
+/// called this out as the pattern that keeps IDOR out of this codebase), so
+/// this carries its own column rather than being the one exception.
 model CraftClassification {
   id           String     @id @default(cuid())
+  companyId    String
+  company      Company    @relation(fields: [companyId], references: [id])
   unionLocalId String
   unionLocal   UnionLocal @relation(fields: [unionLocalId], references: [id])
   name         String
@@ -258,6 +296,7 @@ model CraftClassification {
 
   @@unique([unionLocalId, name])
   @@index([unionLocalId])
+  @@index([companyId])
   apprenticeshipEnrollments ApprenticeshipEnrollment[]
 }
 
@@ -271,8 +310,11 @@ model CraftClassification {
 /// SQL; Prisma's schema language has no declarative way to express this,
 /// so it's hand-written raw SQL in the migration rather than generated
 /// from this model).
+/// COMPANY-SCOPED as of #136 finding 1 -- see UnionLocal above.
 model FringeRateSchedule {
   id                    String              @id @default(cuid())
+  companyId             String
+  company               Company             @relation(fields: [companyId], references: [id])
   craftClassificationId String
   craftClassification   CraftClassification @relation(fields: [craftClassificationId], references: [id])
 
@@ -289,6 +331,7 @@ model FringeRateSchedule {
 
   @@index([craftClassificationId])
   @@index([effectiveFrom])
+  @@index([companyId])
 }
 
 /// Captures the ratio rule itself (e.g. 1 apprentice per 3 journeymen).
@@ -299,8 +342,17 @@ model FringeRateSchedule {
 /// check now exists: lib/apprentice-ratio.ts measures it per job per day
 /// against these counts. Nothing is stored — a day's compliance is derived
 /// from the hours logged for it, every time it is read.
+/// COMPANY-SCOPED as of #136 finding 1 -- see UnionLocal above. This is the
+/// table the issue named directly: setApprenticeRatioRule's
+/// deleteMany({ where: { unionLocalId } }) used to wipe another company's
+/// rule for a shared local with no ownership check at all. Once unionLocalId
+/// itself resolves to one company, that deleteMany can no longer reach
+/// anyone else's row -- the company column here makes that true by
+/// construction rather than by remembering to check it at every call site.
 model ApprenticeRatioRule {
   id                       String     @id @default(cuid())
+  companyId                String
+  company                  Company    @relation(fields: [companyId], references: [id])
   unionLocalId             String
   unionLocal               UnionLocal @relation(fields: [unionLocalId], references: [id])
   apprenticeCount          Int
@@ -309,4 +361,5 @@ model ApprenticeRatioRule {
   createdAt                DateTime   @default(now())
 
   @@index([unionLocalId])
+  @@index([companyId])
 }

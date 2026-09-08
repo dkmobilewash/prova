@@ -48,13 +48,14 @@ export type CraftRow = {
 /**
  * Craft classifications for the locals this company actually works under.
  *
- * CraftClassification carries no companyId — it is a global reference
- * table — so this join IS the access check, the same one
- * craftClassificationIdFromForm in lib/actions/shared.ts already uses.
+ * CraftClassification carries its own companyId as of the #136 finding 1
+ * fix — it used to be a global reference table with no company scoping at
+ * all, gated only by a self-asserted CompanyUnionAgreement, which is why
+ * this used to be a join instead of a direct filter.
  */
 export async function loadCrafts(companyId: string): Promise<CraftRow[]> {
   const crafts = await prisma.craftClassification.findMany({
-    where: { unionLocal: { companyAgreements: { some: { companyId } } } },
+    where: { companyId },
     include: { unionLocal: true },
     orderBy: [{ unionLocalId: "asc" }, { name: "asc" }],
   });
@@ -107,8 +108,17 @@ export async function loadRemittance(companyId: string, month: string): Promise<
   });
 
   const craftIds = [...new Set(entries.map((e) => e.craftClassificationId).filter(Boolean))] as string[];
+  // `companyId` directly, not only through the craft join. The craft ids
+  // above come from this company's own time entries, so this was
+  // TRANSITIVELY scoped — safe exactly as long as every craft tag on a
+  // time entry stays company-correct forever. certified-payroll-query.ts's
+  // header says why that is not good enough: an unscoped query under a
+  // scoped-sounding name is how the next caller writes a cross-tenant
+  // read. These are wage, pension, H&W and training rates — the numbers on
+  // the cheque — and the column exists as of #200, so the direct filter is
+  // one line.
   const schedules = await prisma.fringeRateSchedule.findMany({
-    where: { craftClassificationId: { in: craftIds } },
+    where: { craftClassificationId: { in: craftIds }, companyId },
     orderBy: { effectiveFrom: "desc" },
   });
 
@@ -223,7 +233,7 @@ export async function loadRatioReviews(companyId: string, month: string): Promis
   // setApprenticeRatioRule now replaces rather than adds, so in practice
   // there is one; this makes the read safe regardless.
   const rules = await prisma.apprenticeRatioRule.findMany({
-    where: { unionLocal: { companyAgreements: { some: { companyId } } } },
+    where: { companyId },
     orderBy: { createdAt: "asc" },
   });
   const ruleByLocal = new Map<string, RatioRuleInput>(

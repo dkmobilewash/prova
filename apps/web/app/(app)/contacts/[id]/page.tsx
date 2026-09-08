@@ -15,6 +15,7 @@ import { can } from "@/lib/permissions";
 import { calculatePaymentReliability } from "@/lib/gc-reliability";
 import { SubmitButton } from "@/components/SubmitButton";
 import { LinkContactToQuickBooks } from "@/components/LinkContactToQuickBooks";
+import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { ContactEditForm } from "@/components/ContactEditForm";
 import { ContactInteractionForm } from "@/components/ContactInteractionForm";
 import { ContactInteractionRow } from "@/components/ContactInteractionRow";
@@ -241,7 +242,42 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
                   )}
                   {bid.notes && <p className="text-sm text-slate-500">{bid.notes}</p>}
                 </div>
-                <div className="flex items-center gap-2">
+                {/* Two-step delete (#105 finding 6). It used to be one click,
+                    straight to the server, sitting beside "Update" with no
+                    confirm and nothing recoverable — the catalog entry row
+                    already has the two-step pattern this borrows. A won bid
+                    is what /pipeline reads a win rate from and what the AI
+                    drafts are grounded in, so the confirm step says so before
+                    the click goes through. RowActions (not a bare
+                    ConfirmDeleteButton) because "Update" is a live ordinary
+                    action right next to it — arming the delete has to hide
+                    it too, or a hurried second click can land on Update
+                    instead. */}
+                <RowActions
+                  className="flex items-center gap-2"
+                  destructive={
+                    <ConfirmDelete
+                      pinned="end"
+                      action={deleteBidInvitation.bind(null, bid.id)}
+                      deleteClassName="text-xs text-slate-400 hover:text-red-400 hover:underline"
+                      cancelClassName="rounded-md border border-slate-700 px-2 py-1 text-xs text-slate-300 hover:border-slate-500"
+                      confirmClassName="rounded-md border border-red-500 px-2 py-1 text-xs text-red-400 hover:bg-red-500/10"
+                      hint={
+                        bid.status === "WON" ? (
+                          <span className="max-w-[14rem] text-right text-amber-300">
+                            This is a won bid. Deleting it removes it from your win rate with this GC,
+                            permanently.
+                          </span>
+                        ) : (
+                          <span className="max-w-[14rem] text-right text-slate-500">
+                            Deleted for good — bid history is what win rates and past pricing are read
+                            from.
+                          </span>
+                        )
+                      }
+                    />
+                  }
+                >
                   <form action={updateBidInvitationStatus.bind(null, bid.id)} className="flex items-center gap-2">
                     <select
                       key={bid.status}
@@ -269,12 +305,7 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
                       Update
                     </SubmitButton>
                   </form>
-                  <form action={deleteBidInvitation.bind(null, bid.id)}>
-                    <SubmitButton type="submit" className="text-xs text-red-400 hover:underline">
-                      Delete
-                    </SubmitButton>
-                  </form>
-                </div>
+                </RowActions>
               </li>
             ))}
           </ul>

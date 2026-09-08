@@ -76,6 +76,7 @@ beforeAll(async () => {
   });
   const local = await prisma.unionLocal.create({
     data: {
+      companyId: company.id,
       parentInternational: "Carpenters",
       localNumber: `crew-${stamp}`,
       jurisdictionName: "Testland",
@@ -85,10 +86,11 @@ beforeAll(async () => {
     data: { companyId: company.id, unionLocalId: local.id, effectiveFrom: utc("2026-01-01") },
   });
   const craft = await prisma.craftClassification.create({
-    data: { unionLocalId: local.id, name: "Journeyman", tier: "JOURNEYMAN" },
+    data: { companyId: company.id, unionLocalId: local.id, name: "Journeyman", tier: "JOURNEYMAN" },
   });
   await prisma.fringeRateSchedule.create({
     data: {
+      companyId: company.id,
       craftClassificationId: craft.id,
       effectiveFrom: utc("2026-01-01"),
       baseWage: "52.00",
