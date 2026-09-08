@@ -205,7 +205,7 @@ export async function loadRatioReviews(companyId: string, month: string): Promis
   // setApprenticeRatioRule now replaces rather than adds, so in practice
   // there is one; this makes the read safe regardless.
   const rules = await prisma.apprenticeRatioRule.findMany({
-    where: { unionLocal: { companyAgreements: { some: { companyId } } } },
+    where: { companyId },
     orderBy: { createdAt: "asc" },
   });
   const ruleByLocal = new Map<string, RatioRuleInput>(

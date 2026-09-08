@@ -51,6 +51,7 @@ describe("loadCertifiedPayrollWeekEntries against real rows", () => {
     });
     const local = await prisma.unionLocal.create({
       data: {
+        companyId: company.id,
         parentInternational: "Carpenters",
         localNumber: `405-${Date.now()}`,
         jurisdictionName: "Testland",
@@ -60,10 +61,11 @@ describe("loadCertifiedPayrollWeekEntries against real rows", () => {
       data: { companyId: company.id, unionLocalId: local.id, effectiveFrom: utc("2026-01-01") },
     });
     const craft = await prisma.craftClassification.create({
-      data: { unionLocalId: local.id, name: "Journeyman" },
+      data: { companyId: company.id, unionLocalId: local.id, name: "Journeyman" },
     });
     await prisma.fringeRateSchedule.create({
       data: {
+        companyId: company.id,
         craftClassificationId: craft.id,
         effectiveFrom: utc("2026-01-01"),
         baseWage: "52.00",
