@@ -104,6 +104,9 @@ model JobMedia {
   /// `[companyId, capturedAt]` answers that AND everything the bare
   /// `[companyId]` answered, being its leftmost prefix, so keeping both
   /// would only be a second index to write on every insert.
+  /// The labels somebody put on this photo. See media-tags.prisma.
+  tags JobMediaTagAssignment[]
+
   @@index([companyId, capturedAt])
   /// The job page's own query: one job, newest first.
   @@index([jobId, capturedAt])
