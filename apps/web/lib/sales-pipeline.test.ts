@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildSalesPipeline,
   longestOpen,
+  trackedOpenCount,
   winRateLabel,
   type OpportunityStage,
   type PipelineOpportunity,
@@ -237,6 +238,37 @@ describe("longestOpen", () => {
     const deals = [deal("NEW", null, null, 1, "First"), deal("NEW", null, null, 9, "Second")];
     longestOpen(deals, 10);
     expect(deals.map((d) => d.companyName)).toEqual(["First", "Second"]);
+  });
+});
+
+describe("trackedOpenCount", () => {
+  // #153 finding 3: longestOpen's own comparison is correctly restricted to
+  // open deals with a recorded daysInStage, but SalesPipelineBand used to
+  // render its result as an unqualified claim about the whole column. This
+  // is the count that lets it say what the sample actually was.
+  it("counts only OPEN deals that have a recorded history", () => {
+    const opportunities = [
+      deal("TRIAL", null, null, 5, "Tracked"),
+      deal("TRIAL", null, null, null, "Unrecorded"),
+      deal("WON", null, null, 99, "Closed, do not count"),
+      deal("NEW", null, null, 1, "Also tracked"),
+    ];
+    expect(trackedOpenCount(opportunities)).toBe(2);
+  });
+
+  it("is 0 for an empty pipeline, not a division-by-zero surprise later", () => {
+    expect(trackedOpenCount([])).toBe(0);
+  });
+
+  it("is 0 when every open deal is unrecorded", () => {
+    const opportunities = [deal("NEW", null, null, null), deal("TRIAL", null, null, null)];
+    expect(trackedOpenCount(opportunities)).toBe(0);
+  });
+
+  it("equals the open count once every open deal has history — the case where no qualifier is needed", () => {
+    const opportunities = [deal("NEW", null, null, 2), deal("TRIAL", null, null, 9)];
+    const pipeline = buildSalesPipeline(opportunities, TODAY);
+    expect(trackedOpenCount(opportunities)).toBe(pipeline.open.count);
   });
 });
 

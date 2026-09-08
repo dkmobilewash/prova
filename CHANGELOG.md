@@ -60,6 +60,94 @@ for every contractor who ever used it.
 
 ---
 
+### Three display gaps in the sales CRM — #153, #163, #164 (Diego)
+`diego/sales-crm-display-gaps`
+
+Three findings from the same audit that flagged #153, plus two more reports
+filed straight from browser-verifying Phase C. All three are `/sales` and
+`/sales/[id]` — Prova's own internal pipeline, not the customer-facing
+Contacts CRM.
+
+**#153 finding 1 — an activity never said which deal it was about.**
+`SalesActivity.opportunityId` was collected on the form, written on create,
+and read back only into the EDIT form — no screen ever turned it into text a
+person could read. Fixed by surfacing it rather than dropping it: a
+`Re: <deal>` chip on the activity row, next to the date. The lookup itself
+(`dealLabelFor`, `lib/sales-activity.ts`) is a pure function rather than
+inlined in the row's JSX, specifically so the one thing that could go wrong
+— matching the wrong option, or not handling a stale id — is unit-tested
+instead of trusted by eye. (It can't actually go stale: `opportunityId` is
+`onDelete: SetNull`, so a deleted deal clears the reference rather than
+leaving a dangling one — `dealLabelFor` still returns null defensively
+rather than assume that always holds.)
+
+**#153 finding 2 — `updateSalesOpportunity` was the one stage-changing
+action that didn't revalidate `/sales`.** `createSalesOpportunity` and
+`deleteSalesOpportunity` both do; this one only revalidated the lead's own
+page. So moving a deal's stage from `/sales/[id]` left the `/sales` pipeline
+band — its columns, its MRR totals, its "sitting longest" list — showing
+the stage the deal was in before you touched it, until something else
+forced a refresh. Fixed by adding the missing `revalidatePath("/sales")`,
+and made it unconditional rather than gated on `isMove`: the same action
+also edits `estimatedMrr` and `expectedCloseDate`, both of which the
+pipeline band sums and buckets by close date, so an MRR-only edit needs the
+same refresh a stage move does. Two new `.dbtest.ts` cases assert the exact
+call, not just that the action returns ok — the previous tests never
+inspected `revalidatePath` at all, so this bug typechecked and tested green
+for as long as it existed.
+
+**#153 finding 3 — "sitting longest" was a superlative computed over
+whichever open deals happen to have a recorded stage history, presented as
+a claim about the whole column.** `longestOpen` is right to exclude a deal
+with no history rather than sort it as fresh — the alternative is
+backfilling a fake `effectiveOn = createdAt`, which #139 already declined
+for asserting something false and plausible. But the consequence landed one
+level up: with history only starting the day `SalesStageChange` shipped,
+the comparison can be a small, arbitrary slice of the open pipeline, and
+the band said "Sitting longest" with no qualifier. Given the same treatment
+this page already gives `winRate` (null until something's decided) and the
+unpriced-deal total ("$X/mo across 3, 2 unpriced"): a new `trackedOpenCount`
+(`lib/sales-pipeline.ts`) counts how many open deals were even eligible,
+and the heading now reads "Sitting longest — of N with tracked history, out
+of M open" whenever N < M, and says nothing extra once tracking has caught
+up to the whole pipeline.
+
+**#164 — a stage change's "why it moved" note was written and read back out
+of the database, and dropped on the floor one function before it reached
+any screen.** `SalesStageChange.note` was selected correctly everywhere and
+carried faithfully into `RecordedStageChange.note` — but `stageSpells()`,
+which turns that history into the `StageSpell[]` every renderer actually
+reads, built its output field-by-field and simply never copied `note`
+across. So `SalesOpportunityRow`'s stage-history list rendered stage, dates
+and days-in-stage exactly right, from a type that had no note to render in
+the first place. Fixed by adding `note` to `StageSpell` and threading it
+through `stageSpells()`; the history list now shows it under each move it
+belongs to.
+
+**#163 — investigated, not confidently closed.** The reported symptom (a
+newly-logged activity not appearing until a hard refresh) matched #61's
+already-documented shape closely enough to check against it directly
+rather than re-guess. `createSalesActivity` revalidates BOTH
+`/sales/[leadId]` and `/sales` — more thoroughly than `createContactInteraction`,
+the reference this codebase already treats as working, which revalidates
+only one path. `SalesActivityForm`'s client structure (`startTransition` +
+`await action(...)` + `router.refresh()` + `formRef.reset()` +
+`setIsOpen(false)`) is structurally identical to `ContactInteractionForm`
+AND to `TakeoffForm` — the latter has no `router.refresh()` at all and is
+CLAUDE.md's own proof that the mechanism works without it. And the list
+itself is read directly in the server component (`SalesLeadPage`), not
+held in any client-side state that could go stale — ruling out the
+"client component holding stale state" hypothesis directly. No missing
+revalidation, no stale list state: this pattern matches two independently
+-referenced working examples exactly. Given that, and that the report
+came from a live production browser session — the same environment
+CLAUDE.md's #61 capture measured at 1.5-4+ seconds end-to-end, dominated
+by Neon cold-start and full-page re-render cost — the most defensible
+read is that this is the same latency window, not a distinct code defect.
+No fix is shipped here because none was found to be wrong; this repo has
+no browser-automation tooling available to this session to run the kind
+of instrumented capture that actually settled #61, so the PR says this
+plainly rather than claiming closure on a guess.
 ### Eight defects in estimating, the catalog and change orders — #105 (Diego)
 `diego/estimating-catalog-co-defects-105`
 
@@ -231,6 +319,7 @@ its named test, both files restored byte-identical and sha-verified:
 drop the usage check, unscope the count, reintroduce `lte: null`,
 unscope the remittance query. A real-Postgres case rides in
 `unionCompliance.dbtest.ts` for CI.
+
 ### The union audit outlived its question by six commits — #136 (Diego)
 `claude/prova-contractor-os-e3f0iz`
 

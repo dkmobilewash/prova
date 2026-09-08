@@ -8,6 +8,7 @@ import {
   SalesActivityFields,
   type OpportunityOption,
 } from "@/components/SalesActivityFields";
+import { dealLabelFor } from "@/lib/sales-activity";
 
 export type SalesActivityRowData = {
   id: string;
@@ -102,6 +103,9 @@ export function SalesActivityRow({
 
   const typeLabel =
     SALES_ACTIVITY_TYPE_OPTIONS.find((o) => o.value === activity.type)?.label ?? activity.type;
+  // #153 finding 1: which deal this was about, collected on the form and
+  // stored, but never shown anywhere until now.
+  const dealLabel = dealLabelFor(activity.opportunityId, opportunityOptions);
 
   return (
     <li className="flex flex-col gap-2 p-4">
@@ -112,6 +116,11 @@ export function SalesActivityRow({
               {typeLabel}
             </span>
             <span className="text-sm text-slate-300">{activity.occurredOn}</span>
+            {dealLabel && (
+              <span className="rounded-full bg-slate-800 px-2 py-0.5 text-xs font-medium text-slate-400">
+                Re: {dealLabel}
+              </span>
+            )}
             {!activity.hasOccurred && (
               <span className="rounded-full bg-slate-800 px-2 py-0.5 text-xs font-medium text-slate-400">
                 dated in the future — not counted yet
