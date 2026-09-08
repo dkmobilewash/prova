@@ -1,0 +1,212 @@
+"use client";
+
+import { useRef, useState } from "react";
+import { upload } from "@vercel/blob/client";
+import { recordJobMedia } from "@/lib/actions";
+import {
+  JOB_MEDIA_CONTENT_TYPES,
+  JOB_MEDIA_MAX_BYTES,
+  formatByteSize,
+  isAllowedJobMediaType,
+  jobMediaUploadErrorMessage,
+  jobMediaUploadPathname,
+} from "@/lib/job-media";
+
+/**
+ * Picking photos and getting them onto a job.
+ *
+ * THE FILE GOES STRAIGHT TO THE BLOB STORE, not through a Server Action.
+ * `upload()` asks `/api/job-media/upload` for a one-shot token (that route
+ * is where every access decision is made) and then PUTs the bytes to
+ * Vercel Blob directly. Only the resulting URL comes back through a Server
+ * Action, which is a few hundred bytes.
+ *
+ * The alternative — a `<form action={uploadThing}>` carrying the File, as
+ * the four existing document uploads do — cannot work: Next caps a Server
+ * Action body at exactly 1MB and a phone photo is several times that. See
+ * issue #27 and the route handler's header.
+ *
+ * ONE FILE AT A TIME, sequentially, on purpose. A crew on site is on a
+ * phone on LTE inside a steel building; six parallel uploads on that
+ * connection is how you get six timeouts instead of two photos. Sequential
+ * also means the count below is honest about what has actually landed.
+ *
+ * The button is disabled while anything is in flight. `recordJobMedia` is
+ * not idempotent, and this app has a standing scar from create buttons
+ * that stayed live through a slow round-trip and got clicked twice (#19).
+ *
+ * Sizing follows the field-screen rules from #89: 44px minimum tap
+ * targets (`min-h-11`) and `text-base` on anything focusable, because iOS
+ * Safari zooms the whole page when a focused input renders under 16px —
+ * which on a form like this leaves you zoomed in and scrolled sideways
+ * after every tap.
+ *
+ * THE PATHNAME IS SCOPED TO THE JOB, and that is a security boundary
+ * rather than tidy filing. It used to upload to the bare `file.name`, so
+ * the token minted for it named no job at all and nothing downstream could
+ * tell one company's photo from another's. lib/job-media.ts holds the
+ * rule, the route enforces it before minting, and `recordJobMedia`
+ * enforces it again on the URL that comes back.
+ *
+ * THE TYPE IS CHECKED BEFORE ANYTHING IS STORED, for a different reason.
+ * The store decides a blob's content type from the pathname's extension
+ * unless it is told one (@vercel/blob@2.8.0 dist/index.d.ts:461), while
+ * `recordJobMedia` validates `file.type`, which is what the BROWSER said.
+ * When those two disagreed — an extension the store maps differently, or a
+ * HEIC a browser reports as `""` — the upload SUCCEEDED and the record
+ * call then failed, leaving a file in the store with no row pointing at
+ * it and nothing that would ever find it again. So the browser's own value
+ * is checked here first and then passed to `upload()` as an explicit
+ * `contentType`, which makes it the single value both sides see. A file
+ * that cannot be recorded is now never stored.
+ */
+
+type Outcome = { name: string; ok: boolean; message?: string };
+
+const ACCEPT = JOB_MEDIA_CONTENT_TYPES.join(",");
+
+export function JobMediaCapture({ jobId }: { jobId: string }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState<{ index: number; total: number; percent: number } | null>(
+    null,
+  );
+  const [outcomes, setOutcomes] = useState<Outcome[]>([]);
+
+  async function handleFiles(files: File[]) {
+    setBusy(true);
+    setOutcomes([]);
+    const results: Outcome[] = [];
+
+    for (const [index, file] of files.entries()) {
+      setProgress({ index: index + 1, total: files.length, percent: 0 });
+
+      // Checked here so the person is told in the file picker's own terms
+      // rather than by a rejected token three seconds later. The real
+      // enforcement is still server-side, on the token and again in the
+      // action — this is only the fast, kind version of the same rule.
+      if (file.size > JOB_MEDIA_MAX_BYTES) {
+        results.push({
+          name: file.name,
+          ok: false,
+          message: `Too large (${formatByteSize(file.size)}, limit ${formatByteSize(JOB_MEDIA_MAX_BYTES)})`,
+        });
+        continue;
+      }
+
+      // Refused BEFORE the bytes move rather than after they land. This is
+      // the same allowlist the token and the action use; what makes the
+      // check matter here is that the value being checked — the browser's
+      // `file.type` — is the exact value both of those will see, because
+      // it is handed to `upload()` below and sent to `recordJobMedia`
+      // afterwards. An empty `file.type` (a HEIC on a browser that will
+      // not name it) is refused for the same reason: it is a file this app
+      // cannot record, and storing it would orphan it.
+      const contentType = file.type;
+      if (!isAllowedJobMediaType(contentType)) {
+        results.push({
+          name: file.name,
+          ok: false,
+          message: `Not a photo this app can file (${contentType || "the browser did not say what it is"}) — JPEG, PNG, WEBP or HEIC`,
+        });
+        continue;
+      }
+
+      // Null only if the job id is not one this app issued, which would be
+      // a bug rather than a bad file — refused rather than uploaded to
+      // somewhere unscoped.
+      const pathname = jobMediaUploadPathname(jobId, file.name);
+      if (!pathname) {
+        results.push({ name: file.name, ok: false, message: "That job cannot take photos" });
+        continue;
+      }
+
+      try {
+        const blob = await upload(pathname, file, {
+          access: "public",
+          contentType,
+          handleUploadUrl: "/api/job-media/upload",
+          clientPayload: JSON.stringify({ jobId }),
+          onUploadProgress: ({ percentage }) =>
+            setProgress({ index: index + 1, total: files.length, percent: percentage }),
+        });
+
+        const formData = new FormData();
+        formData.set("blobUrl", blob.url);
+        formData.set("contentType", contentType);
+        formData.set("byteSize", String(file.size));
+        // The file's own timestamp is when the picture was taken; `now` is
+        // only a fallback for a browser that reports 0. Sent as an instant
+        // rather than a date so the ordering within a day survives.
+        formData.set(
+          "capturedAt",
+          new Date(file.lastModified || Date.now()).toISOString(),
+        );
+
+        const result = await recordJobMedia(jobId, formData);
+        results.push(
+          result.ok
+            ? { name: file.name, ok: true }
+            : { name: file.name, ok: false, message: result.error },
+        );
+      } catch (err) {
+        // Not `err.message` directly: for anything the token route refuses,
+        // that message is the SDK's own "Failed to  retrieve the client
+        // token" and never the sentence the route wrote — it discards the
+        // response body (dist/client.js:398-400). See
+        // `jobMediaUploadErrorMessage`, which says so rather than dressing
+        // it up.
+        results.push({ name: file.name, ok: false, message: jobMediaUploadErrorMessage(err) });
+      }
+    }
+
+    setOutcomes(results);
+    setProgress(null);
+    setBusy(false);
+    if (inputRef.current) inputRef.current.value = "";
+  }
+
+  const failures = outcomes.filter((o) => !o.ok);
+  const succeeded = outcomes.length - failures.length;
+
+  return (
+    <div className="flex flex-col gap-3">
+      <label className="flex flex-col gap-1 text-base text-slate-300">
+        <span className="text-sm">Photos (JPEG, PNG, WEBP or HEIC — up to 25MB each)</span>
+        <input
+          ref={inputRef}
+          type="file"
+          accept={ACCEPT}
+          multiple
+          disabled={busy}
+          onChange={(event) => {
+            const files = Array.from(event.target.files ?? []);
+            if (files.length) void handleFiles(files);
+          }}
+          className="min-h-11 text-base text-slate-300 file:mr-3 file:min-h-11 file:rounded-md file:border-0 file:bg-slate-800 file:px-4 file:text-base file:font-medium file:text-slate-100 hover:file:bg-slate-700 disabled:opacity-50"
+        />
+      </label>
+
+      {progress && (
+        <p aria-live="polite" className="text-sm text-slate-400">
+          Uploading {progress.index} of {progress.total} — {Math.round(progress.percent)}%
+        </p>
+      )}
+
+      {outcomes.length > 0 && (
+        <div aria-live="polite" className="flex flex-col gap-1 text-sm">
+          {succeeded > 0 && (
+            <p className="text-slate-400">
+              Added {succeeded} photo{succeeded === 1 ? "" : "s"}.
+            </p>
+          )}
+          {failures.map((failure) => (
+            <p key={failure.name} className="text-red-400">
+              {failure.name}: {failure.message}
+            </p>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

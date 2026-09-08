@@ -1,0 +1,82 @@
+/// Tags on site capture — the thing that makes a photo findable a year
+/// later, when the GC asks what the west wall looked like before the pour.
+///
+/// WHY NOT AN ENUM, which is what this schema does for `TradeScope`.
+/// TradeScope is five trade families and every company in the ICP works
+/// within the same five, so a fixed vocabulary is correct there and
+/// `CompanyTradeScope` reuses it rather than keeping a second list that
+/// could drift. Photo tags are the opposite: "west wall", "3rd floor",
+/// "before pour", "damage", "RFI-14" are this contractor's words for this
+/// contractor's building. A fixed list would be wrong for everyone.
+///
+/// WHY A VOCABULARY TABLE RATHER THAN A STRING COLUMN ON THE PHOTO. A
+/// repeated free-text string cannot be renamed (fix a typo on 200 photos),
+/// cannot be listed (there is no "which tags do we use?" query), and
+/// cannot be counted. Those three are most of what tagging is for. One row
+/// per tag per company, joined.
+model JobMediaTag {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  /// As the person typed it, and what every screen shows. "West Wall"
+  /// stays "West Wall" — a tag is a label a human wrote, and lower-casing
+  /// it for storage would quietly rewrite "RFI-14" and "3F" too.
+  name String
+
+  /// The same name folded for comparison, and the ONLY thing uniqueness is
+  /// judged on. Without it "West Wall", "west wall" and "West wall" are
+  /// three tags, the autocomplete offers all three, and the photos of one
+  /// wall end up split across them — at which point tagging has actively
+  /// made retrieval worse than no tagging.
+  ///
+  /// A STORED DERIVED VALUE, which this schema otherwise forbids, and the
+  /// exception is deliberate: it exists to be the target of a UNIQUE
+  /// INDEX, and Postgres cannot enforce uniqueness over an expression
+  /// through Prisma's schema language. It is not read to answer questions
+  /// — every display reads `name` — so the failure mode the no-derived-
+  /// state rule guards against (two fields disagreeing about a fact, and
+  /// the stored one winning) cannot happen here: nothing asks this column
+  /// what a tag is called. `lib/job-media-tags.ts` is the one place that
+  /// computes it, and both writers go through it.
+  normalizedName String
+
+  createdAt DateTime @default(now())
+
+  assignments JobMediaTagAssignment[]
+
+  /// One row per distinct tag per company. Two people typing "West Wall"
+  /// on different photos get the same tag, which is the whole point.
+  @@unique([companyId, normalizedName])
+  @@index([companyId])
+}
+
+/// Which photo carries which tag. A plain join, so a photo has many tags
+/// and a tag has many photos.
+///
+/// CASCADE ON BOTH SIDES, unlike most relations in this schema, which are
+/// RESTRICT. RESTRICT is right where the child is a RECORD that would be
+/// silently lost — a field report, an invoice, a backcharge. This row is
+/// not a record; it is the fact that two records are connected. Deleting a
+/// photo must not be blocked by the fact that somebody labelled it, and
+/// leaving the link behind would be a row pointing at nothing.
+model JobMediaTagAssignment {
+  mediaId String
+  media   JobMedia @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+  tagId   String
+  tag     JobMediaTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  /// Who put this label on, and when. Kept because a tag is a claim about
+  /// what a photo shows, and on a disputed photo the useful question is
+  /// who said so — the same reason `JobMedia.capturedBy` exists.
+  taggedByUserId String?
+  taggedBy       User?   @relation(fields: [taggedByUserId], references: [id])
+  createdAt      DateTime @default(now())
+
+  /// The pair IS the identity — one tag on one photo, once.
+  @@id([mediaId, tagId])
+  /// Serves "every photo with this tag", which is the query this whole
+  /// feature exists for. The primary key already serves the other
+  /// direction ("this photo's tags") on its leftmost column.
+  @@index([tagId])
+}

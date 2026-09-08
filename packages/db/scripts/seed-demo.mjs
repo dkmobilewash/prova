@@ -1307,6 +1307,9 @@ async function undo(companyId) {
     await del("dailyFieldReport", () =>
       prisma.dailyFieldReport.deleteMany({ where: { jobId: { in: jobIds } } }),
     );
+    // RESTRICT on Job — see the note in clean-scratch-data.mjs about the
+    // blobs these rows point at, which this does not remove.
+    await del("jobMedia", () => prisma.jobMedia.deleteMany({ where: { jobId: { in: jobIds } } }));
     // Children first, in dependency order. Adding rows without extending
     // this is how the second run left two of every job behind: the delete
     // failed on a foreign key, `del` swallowed it as "skipped", and the
