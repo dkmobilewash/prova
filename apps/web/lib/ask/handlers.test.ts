@@ -27,7 +27,7 @@ describe("tool wiring", () => {
 
   it("answers an unknown tool name with a refusal rather than throwing", async () => {
     const { runTool } = await import("./handlers");
-    const result = await runTool("company-1", "not_a_tool" as ToolName, {});
+    const result = await runTool({ companyId: "company-1", principal: { role: "OWNER", jobFunction: null } }, "not_a_tool" as ToolName, {});
     expect(result.unavailable).toContain("not_a_tool");
     expect(result.data).toBeNull();
   });

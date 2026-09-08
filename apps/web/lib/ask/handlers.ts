@@ -12,7 +12,9 @@ import { daysPastDueFor, effectiveDueDateFor } from "@/lib/cash-flow";
 import { currentRevision, setState, stateLabel, unreceivedRevisions } from "@/components/drawingLabels";
 import { orderState, stateLabel as orderStateLabel, daysLate } from "@/components/materialOrderLabels";
 import { currentAssignment } from "@/components/equipmentDeployment";
-import { matchesJobName, type ToolName, type ToolResult } from "./tools";
+import { can, type Principal } from "@/lib/permissions";
+import { refusalFor } from "./access";
+import { matchesJobName, TOOLS, type ToolName, type ToolResult } from "./tools";
 
 /**
  * What each tool actually reads.
@@ -54,8 +56,13 @@ export const HANDLERS: Record<
   receivables: (companyId) => receivables(companyId),
 };
 
+/** Who is asking: the company, and the person's role and job function.
+ * Handlers still take only the company id — what changed is that the
+ * gate now stands in front of them. */
+export type ToolActor = { companyId: string; principal: Principal };
+
 export async function runTool(
-  companyId: string,
+  actor: ToolActor,
   name: ToolName,
   input: Input,
 ): Promise<ToolResult> {
@@ -69,7 +76,17 @@ export async function runTool(
       unavailable: `There is no tool called ${name}.`,
     };
   }
-  return handler(companyId, input);
+
+  // Re-checked here even though `toolsFor()` already filtered the list the
+  // model was offered. The list is advisory; this is the boundary — and a
+  // FIELD-function member used to be answered with the margin figures the
+  // dashboard beside this box withholds from them.
+  const definition = TOOLS.find((tool) => tool.name === name);
+  if (definition?.capability && !can(actor.principal, definition.capability)) {
+    return { data: null, citations: [], unavailable: refusalFor(definition.capability) };
+  }
+
+  return handler(actor.companyId, input);
 }
 
 async function crewAssignments(companyId: string): Promise<ToolResult> {
