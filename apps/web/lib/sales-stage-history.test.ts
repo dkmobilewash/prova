@@ -19,13 +19,14 @@ function change(
   toStage: OpportunityStage,
   effectiveOn: string,
   recordedAt?: string,
+  note: string | null = null,
 ): RecordedStageChange {
   return {
     id,
     fromStage,
     toStage,
     effectiveOn,
-    note: null,
+    note,
     recordedAt: recordedAt ?? `${effectiveOn}T12:00:00.000Z`,
   };
 }
@@ -172,6 +173,24 @@ describe("stageSpells", () => {
   it("gives a future-dated current spell null days rather than a negative", () => {
     const spells = stageSpells([change("a", "NEW", "TRIAL", "2026-09-08")], TODAY);
     expect(spells[0].days).toBeNull();
+  });
+
+  // #164: the note explaining WHY a move happened was written and read back
+  // into RecordedStageChange, but stageSpells built its output straight from
+  // the literal fields and dropped it -- so every renderer downstream had a
+  // spell with no note to show, no matter how carefully it rendered.
+  it("carries each move's note through to its spell", () => {
+    const history = [
+      change("a", null, "NEW", "2026-08-01", undefined, "started here"),
+      change("b", "NEW", "TRIAL", "2026-08-20", undefined, "passed the demo"),
+    ];
+    const spells = stageSpells(history, TODAY);
+    expect(spells.map((s) => s.note)).toEqual(["started here", "passed the demo"]);
+  });
+
+  it("is null on a spell whose move carried no note, not an empty string", () => {
+    const spells = stageSpells([change("a", null, "NEW", "2026-08-01")], TODAY);
+    expect(spells[0].note).toBeNull();
   });
 
   it("orders by the day it happened, not by the order given", () => {

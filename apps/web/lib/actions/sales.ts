@@ -334,6 +334,12 @@ export async function updateSalesOpportunity(opportunityId: string, formData: Fo
     });
 
     revalidatePath(`/sales/${opportunity.leadId}`);
+    // Its siblings (create, delete) both revalidate /sales too -- this one
+    // didn't, so a stage move made from the detail page left the pipeline
+    // band on /sales showing the old stage until something else forced a
+    // refresh. /sales's pipeline totals, columns and "sitting longest" are
+    // all derived from exactly the stage this action just moved. #153.
+    revalidatePath("/sales");
     return ok;
   });
 }
