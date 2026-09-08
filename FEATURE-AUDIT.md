@@ -23,7 +23,7 @@ in flight. Left as-is here rather than guessed at from the outside; the next
 update to touch those sheets should come from whoever actually verified them
 against a fresh clone.
 
-**122 items audited — 96 built / 19 partial / 6 missing / 1 descoped**
+**124 items audited — 98 built / 19 partial / 6 missing / 1 descoped**
 
 (Recounted from the rows on merging `main` into this branch, which is the
 only thing that settles it — the fourth time this exact conflict shape has
@@ -45,7 +45,7 @@ header cannot.)
 
 | Status | Count |
 | --- | --- |
-| Built | 96 |
+| Built | 98 |
 | Partial | 19 |
 | Missing | 6 |
 | Descoped | 1 |
