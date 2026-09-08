@@ -65,6 +65,28 @@ export async function createApprenticeshipEnrollment(formData: FormData): Promis
   const craftClassificationId = text(formData, "craftClassificationId") || null;
   const unionLocalId = text(formData, "unionLocalId") || null;
 
+  // #136 finding 1: found 2026-09-08, after the fix in unionCompliance.ts —
+  // these two came straight out of FormData with no ownership check at all,
+  // unlike every other write to these tables. Before UnionLocal/
+  // CraftClassification carried companyId this was a read-leak vector (an
+  // enrollment could be pointed at any real local/craft in the whole app,
+  // no agreement required); after companyId it would have been worse, a
+  // silent cross-company FK on a row that otherwise looks entirely like
+  // this company's own. Scoped the same way createFringeRateSchedule and
+  // setCraftTier are.
+  if (craftClassificationId) {
+    const craft = await prisma.craftClassification.findFirst({
+      where: { id: craftClassificationId, companyId: company.id },
+    });
+    if (!craft) return fail("That classification isn't one of yours.");
+  }
+  if (unionLocalId) {
+    const local = await prisma.unionLocal.findFirst({
+      where: { id: unionLocalId, companyId: company.id },
+    });
+    if (!local) return fail("That local isn't one you hold an agreement with.");
+  }
+
   // Same person, same sponsor, same date on the indenture is the SAME
   // indenture being entered twice, not a second one.
   //

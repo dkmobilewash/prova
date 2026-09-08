@@ -111,12 +111,45 @@ stored FK from `TimeEntry` to check against (the rate is looked up live by
 date range), so a same-company safeguard is a correctness/UX improvement
 worth its own review rather than a guess added here.
 
-Verification: `migrate:deploy` confirms the migration applied and the
-schema up to date; `typecheck`, `lint` (pre-existing warnings only), the
-full unit suite (1552/1552) and `test:db` (203/203, including the rewritten
-and new union-compliance dbtests) all clean; a full production `build`
-succeeds end to end (all 36 routes, `/union-compliance` included);
-`preflight` passes and correctly names the migration additive-only.
+**Correction, same day, before this landed.** The audit numbers above are
+what a WIP checkpoint of this entry originally quoted as proof the backfill
+was safe. #190 (merged to `main` while this branch was still in flight)
+found that conclusion was arithmetic, not evidence: with only one company
+anywhere near the union tables, the "no local shared by two companies"
+query COULD NOT have returned a row regardless of the real risk — an empty
+result was guaranteed by the row count, not earned by a check that could
+fail. Re-run with #190's corrected script, immediately before this
+migration, against the same `ep-little-sea` snapshot: still exactly one
+company touching any local (`companies_touching_a_local: 1`), zero
+enrollment-only edges, zero orphaned locals. The backfill is still correct
+today — but because that is what production actually looks like right now,
+not because the original check proved anything. Worth stating precisely,
+since restating a disproven "safe by construction" claim after being told
+it wasn't would be the exact failure #190 exists to catch.
+
+#190 also surfaced a second, previously uncounted edge from a company to a
+union local: `ApprenticeshipEnrollment.unionLocalId`/`craftClassificationId`,
+taken straight from `FormData` in `createApprenticeshipEnrollment` with NO
+ownership check at all — unlike every other write to these tables. Before
+this fix that was a way to attach a company's own record to another
+company's real local/craft with no agreement required, invisible to the
+old audit; after this migration it would have been worse, a silent
+cross-company foreign key on a row that otherwise reads as entirely this
+company's own. Fixed the same way as `setCraftTier`/`createFringeRateSchedule`
+— both IDs now checked against `companyId` before the enrollment is
+created — with a new dbtest proving a craft/local belonging to another
+company is refused by name, matching the existing `apprenticeUserId`
+ownership check right above it in the same file.
+
+Verification, re-run after merging `main` (which had moved 10 commits,
+including #190 and the `payrollWorkerName` fixes to this same query file —
+merged cleanly, one line each side): `migrate:deploy` confirms the
+migration applied and the schema up to date; `typecheck`, `lint`
+(pre-existing warnings only), the full unit suite (1702/1702) and `test:db`
+(241/241, including the rewritten/new union-compliance dbtests and the new
+apprenticeship ownership test) all clean; a full production `build`
+succeeds end to end (all routes, `/union-compliance` included); `preflight`
+passes and correctly names the migration additive-only.
 
 ### A GC who skimmed the sub scored better for it (Cyrus)
 `cyrus/gc-reliability-counts-short-payments`
