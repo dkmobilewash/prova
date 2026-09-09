@@ -60,8 +60,14 @@ high-water mark rather than per-job data, and resetting it reissues a
 retired OSHA case number (#148). Per-job counters go with their job;
 company-level ones never do.
 
-`CLAUDE.md` said "there is no `InvoiceCounter` anywhere in the repo",
-which was true when it was written and false the moment #224 merged. It
-now says what `main` actually holds, and adds the rule the whole episode
-is about: a new counter is not done when it issues numbers correctly — it
-is done when the scripts that delete jobs know it exists.
+`CLAUDE.md`'s counter entry was corrected by **#225**, not by this — that
+session got there first and with the better version: the roll call
+re-derived by two commands rather than asserted, and the retirement of the
+"delete invoice 3 of 3" story that #224 showed the product cannot do. This
+branch had written a competing correction; it was dropped in favour of
+theirs when main was merged in, rather than argued for.
+
+What this adds to that entry is the one thing neither #224 nor #225
+covered, because both were looking at numbering: a new counter is not done
+when it issues numbers correctly. It is done when the scripts that delete
+jobs know it exists.

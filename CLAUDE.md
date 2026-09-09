@@ -230,44 +230,85 @@ scrollback gets broken by whoever didn't scroll far enough.
 - **Sequence numbers** come from a counter row that only increments,
   bumped inside the same transaction as the insert. Never `max(n)+1`,
   never `count()+1` — anything derived from surviving rows is reissued
-  when a row is deleted. Every counter model in the schema does this, and
-  the exceptions are the entry — there are none left.
+  when a row is deleted. EIGHT counters exist and all eight do this:
+  `SafetyCaseCounter`, `RfiCounter`, `SubmittalCounter` and
+  `MaterialOrderCounter` (`operations.prisma`), `ChangeOrderCounter`
+  (`jobs.prisma`), `BackchargeCounter` (`backcharges.prisma`),
+  `CloseoutSubmissionCounter` (`closeout.prisma`), `InvoiceCounter`
+  (`billing.prisma`).
 
-  **INVOICE NUMBERS WERE THE LAST HOLDOUT AND ARE FIXED AS OF #224**
-  (`c5da778`, 2026-09-09). This entry spent a week saying "there is no
-  `InvoiceCounter` anywhere in the repo", which was true when written and
-  is now false: `InvoiceCounter` is in `billing.prisma`, and
-  `issueInvoiceNumber` in `apps/web/lib/actions/billing.ts` upserts it with
-  `{ increment: 1 }` inside the caller's transaction. Both call sites —
-  `createInvoice` and the AIA pay-application submit — take it from there,
-  inside their own `$transaction`. `nextInvoiceNumber` and its
-  `max(number) + 1` are gone. Verified by reading `main`, not by reading
-  the PR.
+  That count is the kind this file has deleted elsewhere for rotting
+  faster than the claim it decorates, so here is how to re-derive it in
+  one line rather than trust it — the two numbers must match, and both
+  were 8 on 2026-09-09:
 
-  What it actually cost, stated the way #224 corrected it rather than the
-  way this file used to: the reissue story ("delete invoice 3 of 3 and the
-  next is 3 again") describes something the product CANNOT DO — there is no
-  `deleteInvoice`, because invoices are evidence records. The reachable
-  defect was the race. Two concurrent submits on one job both read the same
-  max and collided on `@@unique([jobId, number])`, and production REDACTS
-  the thrown message, so a GC-facing document failed with nothing to
-  render. Worth keeping as its own small lesson: the rule was right and the
-  reason given for it was not, which is how a real bug ends up argued from
-  a scenario a reviewer can disprove.
+      grep -rh '^model .*Counter {' packages/db/prisma/schema/*.prisma | wc -l
+      grep -rho 'tx\.[a-zA-Z]*Counter\.upsert' apps/web/lib --include=*.ts | sort -u | wc -l
 
-  **A NEW COUNTER IS NOT DONE WHEN IT ISSUES NUMBERS CORRECTLY.** #224 was
-  right about numbering and still broke both cleanup scripts, because a
-  per-job counter is a RESTRICT child of `Job` that deleting the job's
-  invoices does not reach — it is keyed on `jobId`, so it outlives them and
-  blocks the job delete. Adding one means three edits, not one: the model,
+  The second is the half worth running: a counter model that no action
+  bumps inside a transaction is this repo's "written, documented, and
+  never called" shape wearing a schema.
+
+  **INVOICE NUMBERS JOINED THEM 2026-09-09, and this entry said the
+  opposite for a week.** #224 (`c5da778`) added `InvoiceCounter` and
+  `issueInvoiceNumber`, which copies `issueRfiNumber` and takes the
+  transaction client, so the bump and the insert are one transaction.
+  Migration `20260909180000_add_invoice_counter`, applied to
+  `ep-little-sea` by `Migrate` run `34394634352`.
+
+  **Read the shape of this correction before the content of it.** For a
+  week this file said invoice numbers came from a counter when they did
+  not, and that sentence stopped anyone looking. It was then corrected to
+  say they did not — and two hours after #224 merged, THAT was the false
+  sentence, pointing the next agent at a fix already made. A claim about
+  what the code does not have is exactly as perishable as a claim about
+  what it does. Both versions of this entry were true when written.
+
+  **What #224 also established, and it is worth more than the fix.** The
+  headline this entry led with — "delete invoice 3 of 3 and the next
+  invoice is 3 again, on a document a GC has already been sent" —
+  described something the product CANNOT DO. There is no `deleteInvoice`
+  in this app; every `invoice.delete`/`deleteMany` in the repo is dbtest
+  teardown, `clean-scratch-data.mjs` or `seed-demo.mjs`. That is
+  deliberate, and it is this file's own evidence-record rule: sent
+  correspondence closes, it never deletes. So the scariest sentence in the
+  entry was unreachable, and the real defect was the one mentioned last
+  and in passing: two concurrent submits read the same max and the second
+  collided on `@@unique([jobId, number])`, throwing a message production
+  REDACTS, with `createInvoice` returning void so there was nothing to
+  render. Reproduced, not argued — the mutation test throws
+  `Unique constraint failed on the fields: (jobId, number)`.
+
+  The lesson for the next entry somebody writes here: a vivid failure
+  nobody can reach makes a bug look urgent for the wrong reason, and the
+  boring one underneath it goes unfixed for a week.
+
+  **The migration BACKFILLS from `MAX(number)` per job**, and that line is
+  load-bearing rather than tidy: a counter starting at zero would make the
+  first invoice on every existing job collide with its own history. Tested
+  against a real Postgres 16 — seed invoices 1-3, apply the migration,
+  get `lastNumber` 3 and a next number of 4; delete the backfilled row and
+  the counter issues 1, whose insert fails on `Invoice_jobId_number_key`.
+  One case cannot be fixed and is not pretended away: a job whose invoices
+  were ALL deleted before that migration starts at 1 again, since nothing
+  records what it once issued.
+
+  **AND A NEW COUNTER IS NOT DONE WHEN IT ISSUES NUMBERS CORRECTLY.** #224
+  was right about numbering and still broke both cleanup scripts, which is
+  the half of it neither that PR nor the correction above caught. A per-job
+  counter is a RESTRICT child of `Job` that deleting the job's invoices does
+  NOT reach — it is keyed on `jobId`, so it outlives them and then refuses
+  the job delete. Adding one is three edits, not one: the model,
   `HANDLED_MODELS` in `packages/db/scripts/scratch-scope.mjs`, and the
   `del(...)` order in BOTH `clean-scratch-data.mjs` and `seed-demo.mjs`.
+  Fixed for `InvoiceCounter` by the PR that added this paragraph; the guard
+  that should have caught it has its own entry under Traps, because it was
+  green the whole time.
 
-  `SafetyCaseCounter` is the one counter that is NOT in those lists, and
-  deliberately: it is company-scoped, a high-water mark rather than
-  per-job data, and resetting it reissues a retired OSHA case number
-  (issue #148). Per-job counters go with their job; company-level ones
-  never do.
+  `SafetyCaseCounter` is the one counter deliberately NOT in those lists:
+  company-scoped, a high-water mark rather than per-job data, and resetting
+  it reissues a retired OSHA case number (issue #148). Per-job counters go
+  with their job; company-level ones never do.
 - **Derived state is never stored** (overdue, recordable, current
   revision) — a stored flag can disagree with what it was derived from.
 - **Evidence records** (safety incidents, RFIs, submittals, invoices):
