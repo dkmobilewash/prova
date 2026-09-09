@@ -1373,6 +1373,16 @@ async function undo(companyId) {
       prisma.invoiceLineItem.deleteMany({ where: { invoice: { jobId: { in: jobIds } } } }),
     );
     await del("invoice", () => prisma.invoice.deleteMany({ where: { jobId: { in: jobIds } } }));
+    // InvoiceCounter is RESTRICT on Job and is NOT reached by deleting the
+    // invoices — it is keyed on jobId, so a job whose every invoice is gone
+    // still has its counter and still blocks the job delete. Safe to remove
+    // here for the reason the high-water-mark rule gives: this is a PER-JOB
+    // sequence and the job is going too, so the numbering ceases to exist
+    // rather than restarting. (Contrast SafetyCaseCounter, which is
+    // company-scoped and deliberately kept.)
+    await del("invoiceCounter", () =>
+      prisma.invoiceCounter.deleteMany({ where: { jobId: { in: jobIds } } }),
+    );
     await del("complianceDocument", () =>
       prisma.complianceDocument.deleteMany({ where: { jobId: { in: jobIds } } }),
     );

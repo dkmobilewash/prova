@@ -230,34 +230,39 @@ scrollback gets broken by whoever didn't scroll far enough.
 - **Sequence numbers** come from a counter row that only increments,
   bumped inside the same transaction as the insert. Never `max(n)+1`,
   never `count()+1` — anything derived from surviving rows is reissued
-  when a row is deleted. Seven counters exist and all seven do this:
-  `SafetyCaseCounter`, `RfiCounter`, `SubmittalCounter` and
-  `MaterialOrderCounter` (`operations.prisma`), `ChangeOrderCounter`
-  (`jobs.prisma`), `BackchargeCounter` (`backcharges.prisma`),
-  `CloseoutSubmissionCounter` (`closeout.prisma`).
+  when a row is deleted. Every counter model in the schema does this, and
+  the exceptions are the entry — there are none left.
 
-  **INVOICE NUMBERS ARE NOT AMONG THEM, and this file said they were.**
-  Corrected 2026-09-02, re-verified against `main` 2026-09-06 and still
-  true. There is no `InvoiceCounter` anywhere in the repo.
-  `apps/web/lib/actions/billing.ts:151` is:
+  **INVOICE NUMBERS WERE THE LAST HOLDOUT AND ARE FIXED AS OF #224**
+  (`c5da778`, 2026-09-09). This entry spent a week saying "there is no
+  `InvoiceCounter` anywhere in the repo", which was true when written and
+  is now false: `InvoiceCounter` is in `billing.prisma`, and
+  `issueInvoiceNumber` in `apps/web/lib/actions/billing.ts` upserts it with
+  `{ increment: 1 }` inside the caller's transaction. Both call sites —
+  `createInvoice` and the AIA pay-application submit — take it from there,
+  inside their own `$transaction`. `nextInvoiceNumber` and its
+  `max(number) + 1` are gone. Verified by reading `main`, not by reading
+  the PR.
 
-      async function nextInvoiceNumber(jobId: string) {
-        const last = await prisma.invoice.findFirst({ where: { jobId }, orderBy: { number: "desc" } });
-        return (last?.number ?? 0) + 1;
-      }
+  What it used to cost, kept because it is the reason to care: delete
+  invoice 3 of 3 and the next invoice was 3 again, on a document a GC had
+  already been sent — and two concurrent submits on one job could collide
+  on `@@unique([jobId, number])`, which production REDACTS into an
+  unexplained failure.
 
-  That is `max(n)+1`, the exact thing the rule above forbids, and it is
-  read OUTSIDE any transaction — both call sites (`createInvoice` and the
-  AIA pay-application submit) compute it and then `create` separately, so
-  two concurrent submits on one job can also collide on
-  `@@unique([jobId, number])`. Delete invoice 3 of 3 and the next invoice
-  is 3 again, on a document a GC has already been sent.
+  **A NEW COUNTER IS NOT DONE WHEN IT ISSUES NUMBERS CORRECTLY.** #224 was
+  right about numbering and still broke both cleanup scripts, because a
+  per-job counter is a RESTRICT child of `Job` that deleting the job's
+  invoices does not reach — it is keyed on `jobId`, so it outlives them and
+  blocks the job delete. Adding one means three edits, not one: the model,
+  `HANDLED_MODELS` in `packages/db/scripts/scratch-scope.mjs`, and the
+  `del(...)` order in BOTH `clean-scratch-data.mjs` and `seed-demo.mjs`.
 
-  The cost of the wrong sentence is not the bug, it is the search: an
-  agent told "invoice numbers come from a counter" does not go and look.
-  This entry is now the reason to look. NOT FIXED HERE — a docs branch is
-  the wrong place to change money-document numbering, and billing is
-  Diego's lane, so it goes to him as an issue per working agreement 3.
+  `SafetyCaseCounter` is the one counter that is NOT in those lists, and
+  deliberately: it is company-scoped, a high-water mark rather than
+  per-job data, and resetting it reissues a retired OSHA case number
+  (issue #148). Per-job counters go with their job; company-level ones
+  never do.
 - **Derived state is never stored** (overdue, recordable, current
   revision) — a stored flag can disagree with what it was derived from.
 - **Evidence records** (safety incidents, RFIs, submittals, invoices):
@@ -909,6 +914,45 @@ scrollback gets broken by whoever didn't scroll far enough.
   a missing verdict is its own failure state and must be reported as one,
   never folded into "refuted", "passed" or "clean". If a tool reports
   totals, ask it for the per-item verdicts and count them yourself.
+
+- **A GUARD THAT PARSES SQL BY REGEX IS ONE LINE BREAK FROM SEEING
+  NOTHING, AND IT GOES GREEN WHEN IT DOES.** 2026-09-09, and the newest
+  member of the family directly above.
+
+  `apps/web/lib/scratch-cleanup-order.test.ts` exists so that adding a
+  model with a required `jobId` fails on a laptop in a second instead of
+  failing on somebody's database halfway through a cleanup. It derives the
+  blocking foreign keys from the migration SQL, which is the right source
+  — the database enforces what the migrations wrote, not what the schema
+  file reads like. Its pattern spelled every gap in `ALTER TABLE … ADD
+  CONSTRAINT … FOREIGN KEY … ON DELETE …` as ONE LITERAL SPACE, which was
+  invisibly fine while every migration was Prisma-generated: Prisma emits
+  that statement on a single line, and 180 of them matched.
+
+  #224's migration was written by hand and wrapped after the constraint
+  name. The pattern skipped it. The set came back 180 instead of 181, the
+  one missing entry was `InvoiceCounter.jobId -> Job RESTRICT` — a brand
+  new blocker on `Job`, exactly what the file is for — and all thirteen
+  tests passed. Both cleanup scripts shipped unable to delete a job that
+  had ever been invoiced, with the guard green the whole way.
+
+  Two fixes, and the second is the transferable one. The pattern now uses
+  `\s+` so SQL formatting stops being load-bearing. And the file counts
+  the literal string `FOREIGN KEY` across the migrations INDEPENDENTLY of
+  the pattern and requires the parse to return exactly that many — so the
+  next formatting surprise fails with "the migrations declare 181 foreign
+  keys and this file parsed 180" instead of quietly shrinking the set.
+  Both were mutation-tested by restoring the old pattern and watching the
+  count test go red.
+
+  **The general rule, because this will not be the last parser here: a
+  check that DERIVES its input has two failure modes, not one.** It can
+  get the answer wrong, and it can get an empty question. Only the first
+  one looks like a failure. Anything that greps, matches or scrapes a set
+  it then reasons about must assert the SIZE of that set against a source
+  that cannot drift with it — otherwise a pattern matching nothing at all
+  passes every downstream assertion, since nothing is ever missing from an
+  empty list and nothing is ever out of order in it.
 
 - `FEATURE-AUDIT.md`: the 26-category roadmap and source of truth for
   what's built. It has drifted more than once; don't let it.
