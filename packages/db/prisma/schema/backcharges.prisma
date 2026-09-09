@@ -74,6 +74,19 @@ model Backcharge {
   /// The GC's own document number for it, which is what they will quote
   /// back at us. Free text and nullable: plenty of backcharges arrive as
   /// a line on a pay-application deduction sheet with no number at all.
+  ///
+  /// This is the natural key for "the same backcharge, logged twice" (#102)
+  /// -- enforced per JOB, since two different GCs on two different jobs can
+  /// coincidentally reuse the same reference. A PARTIAL unique index on
+  /// (jobId, gcReference) WHERE gcReference IS NOT NULL does the enforcing,
+  /// in migration 20260908130000_add_backcharge_gc_reference_unique --
+  /// hand-written because Prisma's schema language cannot express a partial
+  /// index (no precedent for one existed in this schema before). A plain
+  /// (non-partial) unique index would be wrong here: every backcharge with
+  /// no GC reference at all would collide with every other one. If you run
+  /// `prisma migrate dev` against this model, that index will not appear as
+  /// drift to fix -- it is real, on the database, just not representable
+  /// here.
   gcReference String?
 
   category    BackchargeCategory @default(OTHER)

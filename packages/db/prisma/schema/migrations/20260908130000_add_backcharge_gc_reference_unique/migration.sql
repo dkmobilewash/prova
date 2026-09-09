@@ -1,0 +1,28 @@
+-- #102: createBackcharge never checked gcReference, the GC's own notice
+-- number and the natural key for "is this the same backcharge logged
+-- twice". An $8,000 backcharge submitted twice read as $16,000 of
+-- exposure, with the application-level check in createBackcharge
+-- (lib/actions/backcharges.ts) as the only thing standing between a
+-- double-click and a second row -- a race between two concurrent submits
+-- could still land both.
+--
+-- Purely additive: one new index, nothing dropped, no backfill, no column
+-- changed. Hand-written because Prisma's schema language cannot express a
+-- partial (WHERE-qualified) index -- see the comment on
+-- Backcharge.gcReference in backcharges.prisma.
+--
+-- PARTIAL, not a plain unique index, and that qualifier is load-bearing.
+-- gcReference is nullable -- plenty of backcharges arrive as a line on a
+-- pay-application deduction sheet with no GC document number at all -- and
+-- Postgres treats every NULL as distinct from every other NULL in an
+-- ordinary unique index, so a plain `UNIQUE (jobId, gcReference)` would
+-- already allow any number of backcharges with a null reference on the
+-- same job. It is written as a partial index anyway, rather than relying
+-- on that NULL behavior implicitly, so the intent (dedup only when the GC
+-- actually gave us a reference) is legible in the index definition itself
+-- rather than inferred from a Postgres quirk.
+--
+-- Scoped to jobId, not companyId: two different GCs on two different jobs
+-- can coincidentally reuse the same reference number, and that is not a
+-- duplicate of anything.
+CREATE UNIQUE INDEX "Backcharge_jobId_gcReference_key" ON "Backcharge"("jobId", "gcReference") WHERE "gcReference" IS NOT NULL;

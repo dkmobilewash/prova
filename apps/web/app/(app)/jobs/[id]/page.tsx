@@ -12,6 +12,9 @@ import { TakeoffForm } from "@/components/TakeoffForm";
 import { DailyFieldReports } from "@/components/DailyFieldReports";
 import { JobMediaSection } from "@/components/JobMediaSection";
 import { PayApplications, StatusForm } from "@/components/PayApplications";
+import { AddCostEntryForm } from "@/components/AddCostEntryForm";
+import { LogPaymentForm } from "@/components/LogPaymentForm";
+import { LogTimeEntryForm } from "@/components/LogTimeEntryForm";
 import { PushPaymentToQuickBooks } from "@/components/PushPaymentToQuickBooks";
 import { PushInvoiceToQuickBooks } from "@/components/PushInvoiceToQuickBooks";
 import { pushBlockers } from "@/lib/quickbooks-sync";
@@ -46,7 +49,6 @@ import { LaborHoursField } from "@/components/LaborHoursField";
 import { calculateRetainageSummary } from "@/lib/retainage";
 import { SubmitButton } from "@/components/SubmitButton";
 import {
-  addCostEntry,
   addLineItem,
   addLineItemFromCatalog,
   assignCrewMember,
@@ -60,8 +62,6 @@ import {
   deletePrevailingWageDetermination,
   deleteRetainageRelease,
   deleteTimeEntry,
-  logPayment,
-  logTimeEntry,
   updateJobRetainageTerms,
   uploadDispatchSlip,
   markJobContracted,
@@ -75,7 +75,6 @@ import {
   uploadContractDocument,
 } from "@/lib/actions";
 
-const COST_CATEGORIES = ["LABOR", "MATERIAL", "SUBCONTRACTOR", "OTHER"] as const;
 const TIME_ENTRY_PAY_TYPE_OPTIONS = [
   { value: "STRAIGHT", label: "Straight" },
   { value: "OVERTIME", label: "Overtime" },
@@ -554,14 +553,12 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
     updateLineItemForecast.bind(null, job.id, lineItemId);
   const deleteLineItemWithId = (lineItemId: string) => deleteLineItem.bind(null, job.id, lineItemId);
   const markContractedWithId = markJobContracted.bind(null, job.id);
-  const addCostEntryWithId = (lineItemId: string) => addCostEntry.bind(null, job.id, lineItemId);
   const deleteCostEntryWithId = (costEntryId: string) => deleteCostEntry.bind(null, job.id, costEntryId);
   const updateScheduleWithId = updateJobSchedule.bind(null, job.id);
   const assignCrewWithId = assignCrewMember.bind(null, job.id);
   const unassignCrewWithId = (userId: string) => unassignCrewMember.bind(null, job.id, userId);
   const createSignatureRequestWithId = createSignatureRequest.bind(null, job.id);
   const createInvoiceWithId = createInvoice.bind(null, job.id);
-  const logTimeEntryWithId = logTimeEntry.bind(null, job.id);
   const deleteTimeEntryWithId = (timeEntryId: string) => deleteTimeEntry.bind(null, job.id, timeEntryId);
   const uploadDispatchSlipWithId = uploadDispatchSlip.bind(null, job.id);
   const deleteDispatchSlipWithId = (dispatchSlipId: string) => deleteDispatchSlip.bind(null, job.id, dispatchSlipId);
@@ -1062,53 +1059,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                     </ul>
                   )}
 
-                  <form
-                    action={addCostEntryWithId(item.id)}
-                    className="mt-3 flex flex-wrap items-end gap-2 border-t border-slate-800 pt-3"
-                  >
-                    <input
-                      name="description"
-                      placeholder="Cost description"
-                      required
-                      className="flex-1 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
-                    />
-                    <input
-                      name="amount"
-                      placeholder="Amount"
-                      required
-                      className="w-24 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
-                    />
-                    <select
-                      name="category"
-                      defaultValue="OTHER"
-                      className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
-                    >
-                      {COST_CATEGORIES.map((c) => (
-                        <option key={c} value={c}>
-                          {c}
-                        </option>
-                      ))}
-                    </select>
-                    <select
-                      name="tradeScope"
-                      defaultValue={item.tradeScope ?? ""}
-                      title="Trade this expense belongs to — defaults to this line item's trade, but can differ (e.g. a general-conditions line spanning several trades)"
-                      className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
-                    >
-                      <option value="">No trade tag</option>
-                      {TRADE_SCOPE_OPTIONS.map((t) => (
-                        <option key={t.value} value={t.value}>
-                          {t.label}
-                        </option>
-                      ))}
-                    </select>
-                    <SubmitButton
-                      type="submit"
-                      className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-100 hover:bg-slate-700"
-                    >
-                      Log cost
-                    </SubmitButton>
-                  </form>
+                  <AddCostEntryForm jobId={job.id} lineItemId={item.id} defaultTradeScope={item.tradeScope} />
 
                   <form
                     action={updateLineItemForecastWithId(item.id)}
@@ -1203,111 +1154,15 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             </ul>
           )}
 
-          <form action={logTimeEntryWithId} className="flex flex-wrap items-end gap-2 rounded-lg border border-slate-800 bg-slate-900 p-3">
-            <label className="flex flex-col gap-1 text-xs text-slate-400">
-              Employee
-              <select
-                name="employeeUserId"
-                required
-                className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
-              >
-                {companyMembers.map((member) => (
-                  <option key={member.id} value={member.id}>
-                    {member.name ?? member.email}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="flex flex-col gap-1 text-xs text-slate-400">
-              Date
-              <input
-                type="date"
-                name="date"
-                required
-                className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-xs text-slate-400">
-              Hours
-              <input
-                name="hours"
-                placeholder="8"
-                required
-                className="w-20 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-xs text-slate-400">
-              Pay type
-              <select
-                name="payType"
-                defaultValue="STRAIGHT"
-                className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
-              >
-                {TIME_ENTRY_PAY_TYPE_OPTIONS.map((p) => (
-                  <option key={p.value} value={p.value}>
-                    {p.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="flex flex-col gap-1 text-xs text-slate-400">
-              Cost code / SOV line
-              <select
-                name="lineItemId"
-                defaultValue=""
-                className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
-              >
-                <option value="">No specific line</option>
-                {job.lineItems.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.description}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="flex flex-col gap-1 text-xs text-slate-400">
-              Craft classification
-              <select
-                name="craftClassificationId"
-                defaultValue=""
-                className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
-              >
-                <option value="">No craft tag</option>
-                {craftClassifications.map((craft) => (
-                  <option key={craft.id} value={craft.id}>
-                    {craft.unionLocal.parentInternational} {craft.unionLocal.localNumber} — {craft.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="flex flex-col gap-1 text-xs text-slate-400">
-              Per diem
-              <input
-                name="perDiemAmount"
-                placeholder="optional"
-                className="w-24 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-600 focus:border-blue-500 focus:outline-none"
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-xs text-slate-400">
-              Travel pay
-              <input
-                name="travelPayAmount"
-                placeholder="optional"
-                className="w-24 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-600 focus:border-blue-500 focus:outline-none"
-              />
-            </label>
-            <input
-              name="note"
-              placeholder="Note (optional)"
-              className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
-            />
-            <SubmitButton
-              type="submit"
-              className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-100 hover:bg-slate-700"
-            >
-              Log time
-            </SubmitButton>
-          </form>
+          <LogTimeEntryForm
+            jobId={job.id}
+            employees={companyMembers}
+            lineItems={job.lineItems}
+            craftOptions={craftClassifications.map((craft) => ({
+              id: craft.id,
+              label: `${craft.unionLocal.parentInternational} ${craft.unionLocal.localNumber} — ${craft.name}`,
+            }))}
+          />
         </section>
 
         <section className="mb-10">
@@ -1492,7 +1347,6 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
               {job.invoices.map((invoice) => {
                 const paid = invoice.payments.reduce((s, p) => s + Number(p.amount), 0);
                 const balance = Number(invoice.amount) - paid;
-                const logPaymentWithIds = logPayment.bind(null, job.id, invoice.id);
                 return (
                   <div key={invoice.id} className="rounded-lg border border-slate-800 bg-slate-900 p-4">
                     <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -1585,35 +1439,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                       </ul>
                     )}
 
-                    {balance > 0 && (
-                      <form
-                        action={logPaymentWithIds}
-                        className="mt-3 flex flex-wrap items-end gap-2 border-t border-slate-800 pt-3"
-                      >
-                        <input
-                          name="amount"
-                          placeholder="Amount"
-                          required
-                          className="w-24 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
-                        />
-                        <input
-                          name="method"
-                          placeholder="Method (check, cash...)"
-                          className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
-                        />
-                        <input
-                          name="note"
-                          placeholder="Note (optional)"
-                          className="flex-1 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
-                        />
-                        <SubmitButton
-                          type="submit"
-                          className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-100 hover:bg-slate-700"
-                        >
-                          Log payment
-                        </SubmitButton>
-                      </form>
-                    )}
+                    {balance > 0 && <LogPaymentForm jobId={job.id} invoiceId={invoice.id} />}
                   </div>
                 );
               })}

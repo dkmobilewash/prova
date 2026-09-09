@@ -12,6 +12,102 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### Six write paths that duplicated money or evidence on a second run — #102 (Diego)
+`diego/idempotent-writes-102`
+
+#102 filed ten write paths as its title and listed six in its actual
+checklist. Treated the six checkboxes as the real scope rather than hunting
+for four more to hit a round number — the title had drifted from its own
+body, and the honest fix is to say so, not to invent work.
+
+One of the six was **already fixed** before this branch existed:
+`1c8bf6a`, the same day the issue was filed, restructured the QuickBooks
+invoice push to write the `QuickBooksEntityLink` immediately after the
+create succeeds, before the read-back — exactly the fix this issue asked
+for — and its commit message cites #102 directly. Verified by reading the
+current `pushInvoiceToQuickBooks`, not by trusting the issue text: the
+write-link-then-verify ordering, the `findInvoicesByDocNumber` natural-key
+check before a first create, and the 425-line
+`quickbooks-invoice-push.test.ts` are all already on `main`. Nothing here
+touches that function again. The remaining five:
+
+- **`logPayment`** now refuses a payment that would push an invoice's
+  total paid PAST its total — the same `amount - SUM(payments.amount)`
+  arithmetic `calculateArAgingInvoice` (lib/cash-flow.ts) uses, so the two
+  can never disagree about what "overpaid" means. This is a business
+  invariant ("you cannot pay more than is owed"), not a duplicate
+  detector, and it has a real, disclosed blind spot: a repeat that lands
+  EXACTLY on the remaining balance is mathematically identical to a
+  legitimate final payment clearing it, and no ceiling check can tell
+  those apart — only going PAST the total is unambiguous. The guard still
+  closes the general shape #102 named (a resubmission silently inflating
+  `paidAmount` past the truth, dropping the invoice out of A/R aging and
+  `totalOutstanding` while money is still owed) for every case except that
+  one exact boundary.
+- **`logTimeEntry`**, **`addCostEntry`** and **`submitPayApplication`**
+  each gained a narrow, short-window duplicate guard instead: reject an
+  exact repeat of the same row (same job/employee/line/craft/date/hours/
+  pay-type for time entries; same line/description/amount/category/trade
+  for cost entries; same job/amount/per-line breakdown for pay
+  applications) landing within 10 seconds, long enough to catch a
+  double-click or a retried request, short enough that a genuinely
+  distinct second entry made moments later still goes through. None of
+  these three has a real natural key (a payment, a time entry, a cost
+  entry are all freeform amount+description+date, and multiple real
+  entries per employee per day, or per line item per day, are normal
+  here) — the fix pattern is a request-shape check, not a DB constraint.
+- **`createBackcharge`** got the fix pattern the issue actually described:
+  `gcReference` — the GC's own notice number — is a real natural key, so a
+  second backcharge on the same job with the same reference is now
+  refused with a sentence naming the existing row, backed by a NEW partial
+  unique index (nullable column: plenty of backcharges arrive with no GC
+  reference at all, and a plain unique index would treat every one of
+  those as a duplicate of every other one). Migration
+  `20260908130000_add_backcharge_gc_reference_unique`, additive, no
+  precedent for a partial index existed in this schema before — Prisma's
+  schema language cannot express one, so it is hand-written and the model
+  comment says so. `updateBackcharge` got the same natural-key check,
+  since an edit can retarget `gcReference` onto a value the index would
+  then refuse — without it, that edit would have surfaced as a raw
+  constraint-violation digest instead of a sentence. Mutation-tested both
+  layers independently: with only the application check disabled, the
+  partial index still refused the duplicate (a generic message, but
+  refused); with the index ALSO dropped, the duplicate went through
+  uncaught — proving the two layers are each doing real work, not just
+  agreeing with each other.
+
+`logPayment`, `logTimeEntry` and `addCostEntry` moved from throwing plain
+`Error`s to `ActionResult` for these specific new checks only — production
+redacts thrown Server Action messages, and a refusal a normal user can
+trigger needs to reach them. Everything else those three functions already
+threw for (malformed input a working form never sends) stays a throw,
+matching this codebase's own rule that not every validation belongs in the
+same style. Three inline forms on `jobs/[id]/page.tsx`
+(log payment, log time entry, add cost entry) became small client
+components (`LogPaymentForm`, `LogTimeEntryForm`, `AddCostEntryForm`) for
+the same reason `PayApplications.tsx` already is one: a plain
+`<form action={fn}>` has nowhere to show what the action returns.
+
+Every one of the five new guards was mutation-tested by hand: disabled,
+confirmed the corresponding `.dbtest.ts` went red on the exact scenario
+#102 described, restored, confirmed green again.
+
+**One limitation, disclosed rather than discovered later: four of the
+five guards (`logPayment`, `logTimeEntry`, `addCostEntry`,
+`submitPayApplication`) are read-then-write with no transaction or lock
+around the pair.** They close the sequential shape #102 describes and
+these tests exercise — a double-click, a retried request — but not two
+requests landing at the exact same instant, which could both read before
+either writes. Only `createBackcharge`'s DB constraint is genuinely atomic.
+Verified this is a real gap, not a hedge: `cyrus/idempotent-write-paths`
+(the stale branch flagged above, never merged) used
+`pg_advisory_xact_lock` for exactly this reason on a different set of
+guards. That pattern is not on `main` today and isn't added here — it
+changes the shape of every call site in these files for a race narrower
+than the bug #102 reported — but it's the honest next step if a true
+concurrent double-submit ever turns up as a real incident rather than a
+theoretical one.
+
 ### The Ask box logs the day, moves the lift and receives the truck — phase 2a, over the field lane's own actions (Diego)
 `claude/prova-ai-task-completion-96pjes`
 

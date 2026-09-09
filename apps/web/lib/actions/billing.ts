@@ -5,6 +5,7 @@ import { headers } from "next/headers";
 import { putDocument } from "@/lib/blob";
 import { linkToken } from "@/lib/tokens";
 import { requireCompanyContext } from "@/lib/auth";
+import { money as formatMoney } from "@/lib/money";
 import { prisma } from "@prova/db";
 import { revokeToken, refreshTokens, getCompanyInfo, generateWipNarrative, type QuickBooksCompanyInfo } from "@prova/integrations";
 import { calculateLineItemWip, calculateJobWip } from "@/lib/wip";
@@ -278,6 +279,47 @@ export async function submitPayApplication(jobId: string, formData: FormData): P
   const retainageWithheld =
     job.retainagePercent != null ? ((amount * Number(job.retainagePercent)) / 100).toFixed(2) : null;
 
+  // A resubmitted click bills the GC again for the same period at a new
+  // invoice number, and retainageWithheld is snapshotted at creation and
+  // deliberately never recomputed (see the field comment on Invoice) — so a
+  // duplicate here isn't just a second document, it's a second retainage
+  // figure nothing ever reconciles against the first. There is no period
+  // field on Invoice to use as a natural key (see billing.prisma), so this
+  // checks the job's single most recent invoice for an identical amount and
+  // per-line breakdown submitted in the last 10 seconds — long enough to
+  // catch a double-click or retried request, short enough that a genuine
+  // correction re-sent minutes later still goes through. `issuedAt`, not a
+  // separate `createdAt` (Invoice has none — see billing.prisma), doubles
+  // as the creation timestamp here: neither createInvoice nor this action
+  // ever sets it, so it always defaults to the moment of submission.
+  // NOT ATOMIC — read-then-write, no lock — so this closes the sequential
+  // double-click, not two requests landing at the exact same instant. See
+  // the longer version of this caveat on logPayment's guard above.
+  const lastInvoice = await prisma.invoice.findFirst({
+    where: { jobId },
+    orderBy: { issuedAt: "desc" },
+    include: { lineItems: true },
+  });
+  if (
+    lastInvoice &&
+    Date.now() - lastInvoice.issuedAt.getTime() < 10_000 &&
+    Number(lastInvoice.amount).toFixed(2) === amount.toFixed(2) &&
+    lastInvoice.lineItems.length === rows.length &&
+    rows.every((row) =>
+      lastInvoice.lineItems.some(
+        (line) =>
+          line.lineItemId === row.lineItemId &&
+          Number(line.thisPeriodBilled) === row.thisPeriodBilled &&
+          Number(line.materialsStoredValue) === row.materialsStoredValue,
+      ),
+    )
+  ) {
+    return actionFail(
+      `Invoice #${lastInvoice.number} was just submitted with this exact breakdown — check the invoices ` +
+        "list before submitting again.",
+    );
+  }
+
   const number = await nextInvoiceNumber(jobId);
   await prisma.invoice.create({
     data: {
@@ -347,8 +389,13 @@ export async function updateInvoiceStatus(jobId: string, invoiceId: string, form
 
 /** Logs a payment received against an invoice. Not a charge — just a
  * record (check, cash, card handled elsewhere). Supports partial payments;
- * an invoice's balance is always amount - SUM(payments.amount). */
-export async function logPayment(jobId: string, invoiceId: string, formData: FormData) {
+ * an invoice's balance is always amount - SUM(payments.amount).
+ *
+ * Returns an ActionResult, unlike most of this module's create actions —
+ * production redacts thrown Server Action messages, and the overpayment
+ * guard below is a real refusal a normal user action can trigger, not a
+ * bug. It needs to reach the person who tried to log it. */
+export async function logPayment(jobId: string, invoiceId: string, formData: FormData): Promise<ActionResult> {
   const { company } = await requireCompanyContext();
   await assertJobInCompany(jobId, company.id);
   const invoice = await assertInvoiceInCompany(invoiceId, company.id);
@@ -360,11 +407,61 @@ export async function logPayment(jobId: string, invoiceId: string, formData: For
   const method = String(formData.get("method") ?? "").trim();
   const note = String(formData.get("note") ?? "").trim();
 
+  // #102's shape: calculateArAgingInvoice (lib/cash-flow.ts) treats
+  // balance <= 0 as fully paid and returns null, dropping the invoice from
+  // A/R aging and totalOutstanding — with nothing rendering a negative
+  // balance to give it away. This is a business invariant, not a
+  // duplicate-detector: no invoice can go into NEGATIVE-balance territory,
+  // whether the payment pushing it there was a genuine second payment, a
+  // resubmitted duplicate, or a typo. It does NOT catch every duplicate --
+  // a repeat that happens to land EXACTLY on the remaining balance (as in
+  // #102's own $10,000-twice-on-$20,000 example) is mathematically
+  // identical to a legitimate final payment clearing that same balance,
+  // and no ceiling check can tell those apart; only going PAST the total
+  // is unambiguous. Computed in cents to avoid float-precision false
+  // positives/negatives at the boundary, and using the exact same
+  // amount - SUM(payments.amount) shape calculateArAgingInvoice uses, so
+  // the two can never drift apart.
+  //
+  // NOT ATOMIC, and worth being honest about: this reads the sum, then
+  // later creates the row, with no transaction or lock around the pair —
+  // two requests landing at the same instant could both read the balance
+  // before either writes and both pass. That closes the sequential
+  // double-click / retried-request shape #102 describes and this file's
+  // tests exercise, not a true concurrent race. A stricter version would
+  // take a Postgres advisory lock on the invoice for the read-then-write —
+  // an unmerged, unshipped WIP branch on this same issue
+  // (`cyrus/idempotent-write-paths`, never a PR) used `pg_advisory_xact_lock`
+  // for this reason on a different set of guards, which is where this
+  // caveat was actually verified from, not invented — but that pattern is
+  // NOT anywhere on `main` today, and adding it here changes the shape of
+  // every call site in this file for a race narrower than the bug reported.
+  const priorPayments = await prisma.payment.aggregate({
+    where: { invoiceId },
+    _sum: { amount: true },
+  });
+  const alreadyPaidCents = Math.round(Number(priorPayments._sum.amount ?? 0) * 100);
+  const invoiceTotalCents = Math.round(Number(invoice.amount) * 100);
+  const newAmountCents = Math.round(Number(amount) * 100);
+  if (alreadyPaidCents + newAmountCents > invoiceTotalCents) {
+    const remainingCents = invoiceTotalCents - alreadyPaidCents;
+    return actionFail(
+      remainingCents <= 0
+        ? "This invoice is already paid in full — there is nothing left to log a payment against."
+        : `That would bring total payments to ${formatMoney(
+            (alreadyPaidCents + newAmountCents) / 100,
+          )}, more than the ${formatMoney(invoiceTotalCents / 100)} invoice total. Only ${formatMoney(
+            remainingCents / 100,
+          )} is left owing.`,
+    );
+  }
+
   await prisma.payment.create({
     data: { invoiceId, amount, method: method || null, note: note || null },
   });
 
   revalidatePath(`/jobs/${jobId}`);
+  return actionOk;
 }
 
 /** Removes a mistaken payment entry. */
