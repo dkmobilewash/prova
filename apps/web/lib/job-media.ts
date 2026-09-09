@@ -91,6 +91,22 @@ export function isBlobStorageUrl(candidate: string): boolean {
 }
 
 /**
+ * The two environment variables a store id can come from.
+ *
+ * The INDEX SIGNATURE is what lets `process.env` be passed directly. Node
+ * types it as `ProcessEnv`, which is an index signature plus `TZ`, and a
+ * parameter listing only optional named keys rejects it outright —
+ * `TS2559: Type 'ProcessEnv' has no properties in common`. The named keys
+ * are kept alongside it so the two this actually reads are still written
+ * down rather than hidden behind a bare `Record<string, string>`.
+ */
+type BlobCredentialEnv = {
+  readonly BLOB_READ_WRITE_TOKEN?: string;
+  readonly BLOB_STORE_ID?: string;
+  readonly [key: string]: string | undefined;
+};
+
+/**
  * The id of the store our own credentials name, or null if they name none.
  *
  * WHY THIS IS DERIVABLE AT ALL. The store id is not a secret and is not a
@@ -115,10 +131,7 @@ export function isBlobStorageUrl(candidate: string): boolean {
  * must refuse, and a thrown Server Action message is redacted in
  * production.
  */
-export function blobStoreId(env: {
-  BLOB_READ_WRITE_TOKEN?: string;
-  BLOB_STORE_ID?: string;
-}): string | null {
+export function blobStoreId(env: BlobCredentialEnv): string | null {
   const token = env.BLOB_READ_WRITE_TOKEN?.trim();
   if (token) {
     const parts = token.split("_");
@@ -163,10 +176,7 @@ export function blobStoreId(env: {
  * is that label and nothing else. `isBlobStorageUrl` has already proved
  * the suffix and the protocol, so what remains is exactly the label.
  */
-export function isOurBlobStoreUrl(
-  candidate: string,
-  env: { BLOB_READ_WRITE_TOKEN?: string; BLOB_STORE_ID?: string },
-): boolean {
+export function isOurBlobStoreUrl(candidate: string, env: BlobCredentialEnv): boolean {
   const ours = blobStoreId(env);
   if (!ours) return false;
   if (!isBlobStorageUrl(candidate)) return false;
