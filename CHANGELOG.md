@@ -2,10 +2,21 @@
 
 What actually changed, in plain English, newest first.
 
-**Rule: update this in the same PR as the work.** A changelog maintained
-separately from the code drifts away from it within a week — exactly how
-FEATURE-AUDIT.md on `main` twice ended up claiming features that weren't
-there. If a PR changes behaviour, it edits this file too.
+**Rule: your PR writes its entry in the same PR as the work — but it does
+NOT edit this file.** It adds one file to `changelog.d/`, named after its
+branch. See `changelog.d/README.md`.
+
+A changelog maintained separately from the code drifts away from it within a
+week — exactly how FEATURE-AUDIT.md on `main` twice ended up claiming
+features that weren't there. So the entry still ships with the work. What
+changed on 2026-09-09 is only WHERE it is written: this file is newest-first,
+so everyone was prepending to the same first line, and every merge
+re-conflicted every open PR. A conflicted PR never queues CI at all, and an
+absent check reads exactly like a passing one — so the cost was not the
+conflict, it was nearly trusting a green that had never run.
+
+`node scripts/changelog-collect.mjs` folds the pending entries in here,
+newest first, in one commit that touches nothing else.
 
 Entries say what changed and why it mattered, not which functions moved.
 `git log` already covers the functions.

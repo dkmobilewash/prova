@@ -913,7 +913,30 @@ scrollback gets broken by whoever didn't scroll far enough.
 - `FEATURE-AUDIT.md`: the 26-category roadmap and source of truth for
   what's built. It has drifted more than once; don't let it.
 - `CHANGELOG.md`: newest first; says why decisions were made and the
-  specific check for each trap, not which functions moved.
+  specific check for each trap, not which functions moved. **Your PR does
+  NOT edit it.** It adds one file to `changelog.d/`, named after its branch
+  — see `changelog.d/README.md` — and `pnpm changelog:collect` folds the
+  pending entries in later, in one commit that touches nothing else.
+
+  Added 2026-09-09, and the reason is a scar rather than tidiness. Because
+  this file is newest-first, every PR prepended to the SAME FIRST LINE, so
+  every merge re-conflicted every other open PR. In one day that cost four
+  resolutions of one conflict across three PRs — #213's alone was resolved
+  three times as `main` moved under it.
+
+  **The expensive part was never the conflict.** On the middle attempt the
+  push landed and CI NEVER QUEUED, because a PR conflicting with its base
+  queues nothing — so the branch sat with no check at all, and that absence
+  was nearly read as "still running" rather than "never started". That is
+  the `gh pr checks` scar above arriving from the other direction: the
+  conflict does not merely delay a merge, it silently removes the evidence
+  you would merge on. One file per PR makes the collision impossible rather
+  than survivable.
+
+  `changelog-entries.test.ts` fails the build on a malformed entry and on
+  this convention disappearing from `CHANGELOG.md`'s own preamble — the
+  second being the one that matters, since a convention nobody is told
+  about is abandoned within a week. Both were mutation-tested.
 - `ARCHITECTURE.md`: read before adding any model that smells like
   line-item data — `Job`/`JobLineItem` is deliberately one unified object.
 - `WORK-SPLIT.md`: the lanes.
