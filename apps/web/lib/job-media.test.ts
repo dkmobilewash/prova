@@ -10,6 +10,8 @@ import {
   isBlobStorageUrl,
   isJobMediaBlobUrl,
   isJobMediaPathname,
+  isOurBlobStoreUrl,
+  blobStoreId,
   jobMediaClockWarning,
   jobMediaFileName,
   jobMediaUploadErrorMessage,
@@ -55,6 +57,85 @@ group("what may be uploaded", () => {
   // 1MB body cap (#27) applies again.
   it("is far above the 1MB a Server Action body allows", () => {
     expect(JOB_MEDIA_MAX_BYTES).toBeGreaterThan(1024 * 1024);
+  });
+});
+
+group("proving the store is OURS, not merely a Vercel one", () => {
+  // The gap both other checks leave open: they are about the SHAPE of a
+  // URL — a blob host, a path under this job — and anyone can create a
+  // Vercel blob store and put any path they like in it. `recordJobMedia`
+  // is a Server Action, so a caller who knows a job id can post directly.
+  const OURS = "abc123xyz";
+  const ENV = { BLOB_READ_WRITE_TOKEN: `vercel_blob_rw_${OURS}_s3cr3tPart` };
+  const url = (store: string) =>
+    `https://${store}.public.blob.vercel-storage.com/job-media/job_1/site-Xk92.jpg`;
+
+  it("reads the store id out of a read-write token", () => {
+    // vercel_blob_rw_<storeId>_<secret> — the SDK's own parse is
+    // token.split("_")[3] (chunk-YYMLUMXS.js:120).
+    expect(blobStoreId(ENV)).toBe(OURS);
+  });
+
+  it("reads it from BLOB_STORE_ID under OIDC, where no token exists", () => {
+    // Not hypothetical: resolveBlobAuth (:161-205) takes this path when
+    // there is no read-write token. Deriving only from the token would
+    // fail CLOSED on such a deployment and stop every upload.
+    expect(blobStoreId({ BLOB_STORE_ID: OURS })).toBe(OURS);
+  });
+
+  it("strips the store_ prefix BLOB_STORE_ID may carry, as normalizeStoreId does", () => {
+    expect(blobStoreId({ BLOB_STORE_ID: `store_${OURS}` })).toBe(OURS);
+  });
+
+  it("prefers the token when both are set, matching resolveBlobAuth's order", () => {
+    expect(blobStoreId({ ...ENV, BLOB_STORE_ID: "someotherstore" })).toBe(OURS);
+  });
+
+  it("derives nothing from a token that is not a read-write token", () => {
+    // Fewer than five segments cannot be vercel_blob_rw_<id>_<secret>.
+    expect(blobStoreId({ BLOB_READ_WRITE_TOKEN: "vercel_blob_rw_onlyfour" })).toBeNull();
+    expect(blobStoreId({ BLOB_READ_WRITE_TOKEN: "" })).toBeNull();
+    expect(blobStoreId({})).toBeNull();
+  });
+
+  it("accepts a URL from our own store", () => {
+    expect(isOurBlobStoreUrl(url(OURS), ENV)).toBe(true);
+  });
+
+  it("REFUSES a well-formed URL from somebody else's Vercel store", () => {
+    // The whole point. This URL passes isBlobStorageUrl and, for job_1,
+    // isJobMediaBlobUrl too — it is a real blob host and a correct path.
+    expect(isBlobStorageUrl(url("attackerstore"))).toBe(true);
+    expect(isJobMediaBlobUrl(url("attackerstore"), "job_1")).toBe(true);
+    expect(isOurBlobStoreUrl(url("attackerstore"), ENV)).toBe(false);
+  });
+
+  it("refuses a store id that merely starts with ours", () => {
+    expect(isOurBlobStoreUrl(url(`${OURS}evil`), ENV)).toBe(false);
+  });
+
+  it("refuses ours pushed down into a longer host", () => {
+    expect(isOurBlobStoreUrl(url(`evil.${OURS}`), ENV)).toBe(false);
+    expect(isOurBlobStoreUrl(url(`${OURS}.evil`), ENV)).toBe(false);
+  });
+
+  it("compares case-insensitively, because URL lowercases a hostname", () => {
+    expect(isOurBlobStoreUrl(url(OURS), { BLOB_READ_WRITE_TOKEN: `vercel_blob_rw_${OURS.toUpperCase()}_x_y` })).toBe(
+      true,
+    );
+  });
+
+  it("FAILS CLOSED with no credentials at all", () => {
+    // Safe rather than merely cautious: without credentials the upload
+    // route cannot mint a token, so no legitimate URL exists to record.
+    expect(isOurBlobStoreUrl(url(OURS), {})).toBe(false);
+  });
+
+  it("still refuses everything isBlobStorageUrl refuses", () => {
+    expect(isOurBlobStoreUrl("https://evil.test/photo.jpg", ENV)).toBe(false);
+    expect(isOurBlobStoreUrl(`http://${OURS}.public.blob.vercel-storage.com/x.jpg`, ENV)).toBe(false);
+    expect(isOurBlobStoreUrl(`https://${OURS}.public.blob.vercel-storage.com@evil.test/x.jpg`, ENV)).toBe(false);
+    expect(isOurBlobStoreUrl("not a url", ENV)).toBe(false);
   });
 });
 
