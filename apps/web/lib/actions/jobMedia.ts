@@ -9,6 +9,7 @@ import {
   isAllowedJobMediaType,
   isBlobStorageUrl,
   isJobMediaBlobUrl,
+  isOurBlobStoreUrl,
   JOB_MEDIA_MAX_BYTES,
 } from "@/lib/job-media";
 import {
@@ -89,6 +90,21 @@ export async function recordJobMedia(jobId: string, formData: FormData): Promise
   // (`https://evil.test/?x=blob.vercel-storage.com`, a userinfo prefix like
   // `https://public.blob.vercel-storage.com@evil.test/`, and so on).
   if (!isBlobStorageUrl(blobUrl)) {
+    return fail("That file did not come from this app's storage");
+  }
+
+  // AND THAT THE STORE IS OURS, which the host check above cannot say
+  // either: it proves "some Vercel blob store", and anyone can create one.
+  // A caller who knows a job id could put `job-media/<jobId>/x.jpg` in
+  // their OWN store and post that URL here — every check below would pass,
+  // because they are all about the path, and the path is precisely what an
+  // attacker with their own store chooses. The gallery would then render
+  // an image they control inside this company's job.
+  //
+  // The store id is not a secret and needs no new setting: it is already
+  // inside the credentials this app holds, and `blobStoreId` reads it out
+  // the same two ways the SDK does. See lib/job-media.ts.
+  if (!isOurBlobStoreUrl(blobUrl, process.env)) {
     return fail("That file did not come from this app's storage");
   }
 
