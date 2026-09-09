@@ -2,19 +2,26 @@ import Link from "next/link";
 import { prisma } from "@prova/db";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
+import { AskDraftNotice } from "@/components/AskDraftNotice";
+import { loadPunchDraft } from "@/lib/ask/drafts";
 import { PunchListForm } from "@/components/PunchListForm";
 import { PunchListRow } from "@/components/PunchListRow";
 
 export default async function PunchListsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ job?: string; show?: string }>;
+  searchParams: Promise<{ job?: string; show?: string; draft?: string }>;
 }) {
   const { context, allowed } = await requireCapability("MANAGE_FIELD");
   if (!allowed) return <NoAccess capability="MANAGE_FIELD" />;
   const { company, ...currentUser } = context;
-  const { job: jobFilter, show } = await searchParams;
+  const { job: jobFilter, show, draft } = await searchParams;
   const showDone = show === "all";
+
+  // A card from the Ask box (lib/ask/drafts.ts): the form opens prefilled
+  // from the server-held row, and its own Add is the write.
+  const askDraft = await loadPunchDraft(context, draft);
+  const punchDraft = askDraft.kind === "draft" ? askDraft.draft : undefined;
 
   const jobs = await prisma.job.findMany({
     where: { companyId: company.id },
@@ -64,9 +71,14 @@ export default async function PunchListsPage({
         memory.
       </p>
 
+      {askDraft.kind === "gone" && <AskDraftNotice what="punch item" />}
       <section className="mb-8 rounded-lg border border-slate-800 bg-slate-900 p-4">
         <h2 className="mb-3 text-sm font-semibold text-slate-300">Add an item</h2>
-        <PunchListForm jobs={jobOptions} defaultJobId={activeJob ?? undefined} />
+        <PunchListForm
+          jobs={jobOptions}
+          defaultJobId={punchDraft?.jobId ?? activeJob ?? undefined}
+          draft={punchDraft}
+        />
       </section>
 
       {jobOptions.length > 0 && (

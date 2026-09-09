@@ -2,20 +2,26 @@
 
 import Link from "next/link";
 import { useRef, useState, useTransition } from "react";
-import { createRfi } from "@/lib/actions";
+import { createRfi, settleAskDraft } from "@/lib/actions";
 import { RfiFields, type JobOption } from "@/components/RfiFields";
 import { localToday } from "@/components/localToday";
+import type { RfiDraft } from "@/lib/ask/drafts";
 
 export function RfiForm({
   jobs,
   defaultJobId,
   today,
+  draft,
 }: {
   jobs: JobOption[];
   defaultJobId?: string;
   today: string;
+  /** A card from the Ask box: the form opens with these filled in, and
+   * tells the card it saved. The sent date is NOT part of it — it stays
+   * the form's own default below. */
+  draft?: RfiDraft;
 }) {
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(draft !== undefined);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
@@ -63,6 +69,7 @@ export function RfiForm({
         startTransition(async () => {
           try {
             await createRfi(formData);
+            if (draft) void settleAskDraft(draft.proposalId);
             formRef.current?.reset();
             setIsOpen(false);
           } catch (err) {
@@ -78,10 +85,10 @@ export function RfiForm({
         jobs={jobs}
         defaultJobId={defaultJobId}
         defaults={{
-          subject: "",
-          question: "",
-          drawingReference: null,
-          specSection: null,
+          subject: draft?.subject ?? "",
+          question: draft?.question ?? "",
+          drawingReference: draft?.drawingReference ?? null,
+          specSection: draft?.specSection ?? null,
           dueBy: null,
           sentOn: localToday(),
         }}

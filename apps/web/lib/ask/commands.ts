@@ -4,6 +4,8 @@ import { equipmentCommands, equipmentExclusions } from "./commands/equipment";
 import { estimatingCommands, estimatingExclusions } from "./commands/estimating";
 import { notYetRegistered } from "./commands/exclusions";
 import { fieldCommands, fieldExclusions } from "./commands/field";
+import { punchListCommands, punchListExclusions } from "./commands/punchLists";
+import { rfiCommands, rfiExclusions } from "./commands/rfis";
 
 /**
  * The commands: what Ask can DO, as distinct from what it can answer.
@@ -43,17 +45,23 @@ export type CommandName =
   | "log_daily_field_report"
   | "record_material_delivery"
   | "send_equipment_to_job"
-  | "bring_equipment_back";
+  | "bring_equipment_back"
+  | "raise_rfi"
+  | "add_punch_item";
 
 /** Risk tier. T5 (delete, void, contract, admin, outward send without a
  * composer) has no member on purpose: it cannot be registered. */
 export type CommandTier = "T1_DRAFT" | "T2_MODIFY" | "T3_MONEY_EVIDENCE" | "T4_OUTWARD";
 
-/** DIRECT: the tap executes. HANDOFF (phase 2): the tap opens the existing
- * form prefilled, and that form's own Server Action is the write. A command
- * may be DIRECT only when its `execute` calls a lifted core or an action
- * that returns ActionResult — production redacts thrown messages, and a
- * card cannot show a sentence that never arrives. */
+/** DIRECT: the tap executes. HANDOFF: the tap is a link to the page named
+ * by `handoffHref`, which reads `?draft=<card>`, loads the server-held
+ * payload (lib/ask/drafts.ts) and opens its existing form prefilled; that
+ * form's own Server Action is the write, and the form tells the card it
+ * saved (`settleAskDraft`). A command may be DIRECT only when its
+ * `execute` calls a lifted core or an action that returns ActionResult —
+ * production redacts thrown messages, and a card cannot show a sentence
+ * that never arrives — so an action that throws is HANDOFF until its
+ * owner converts it. commands.coverage.test.ts holds both halves. */
 export type CommandMode = "DIRECT" | "HANDOFF";
 
 export type Actor = { companyId: string; userId: string; principal: Principal };
@@ -95,7 +103,7 @@ export type Executed =
   | { ok: true; message: string; created?: Link & { targetType: string; targetId: string } }
   | { ok: false; error: string };
 
-export type CommandDefinition = {
+type CommandBase = {
   name: CommandName;
   /** For the model: what it does AND does not do, and what it needs. */
   description: string;
@@ -108,11 +116,6 @@ export type CommandDefinition = {
   mode: CommandMode;
   /** The exported name in lib/actions/*.ts this stands in for. */
   action: string;
-  /** What `execute` calls: a lifted core in lib/estimating, or an
-   * ActionResult-returning action called through commands/adapter.ts.
-   * Required for DIRECT, and commands.coverage.test.ts checks the name
-   * is real. */
-  core?: string;
   /** The card's heading: "Create the job". */
   title: string;
   /** Status line while resolving: "Preparing the job". */
@@ -127,10 +130,36 @@ export type CommandDefinition = {
   continuationKeys?: string[];
   /** Reads only. Never writes. */
   resolve: (ctx: CommandContext, input: CommandInput) => Promise<Resolution>;
+};
+
+/** The tap executes. */
+export type DirectCommandDefinition = CommandBase & {
+  mode: "DIRECT";
+  /** What `execute` calls: a lifted core in lib/estimating, or an
+   * ActionResult-returning action called through commands/adapter.ts.
+   * commands.coverage.test.ts checks the name is real. */
+  core: string;
   /** Writes, through a core or an ActionResult action. Called only by
    * `confirmAskProposal` after the claim. */
   execute: (ctx: CommandContext, resolved: ResolvedPayload) => Promise<Executed>;
+  handoffHref?: never;
 };
+
+/** The tap is a link; the page's own form is the write. */
+export type HandoffCommandDefinition = CommandBase & {
+  mode: "HANDOFF";
+  /** Where the card's primary goes, given the card id. The page must be
+   * the one `ROUTE_CAPABILITY` guards with this command's capability, and
+   * it reads `?draft=` (lib/ask/drafts.ts). */
+  handoffHref: (proposalId: string) => string;
+  core?: never;
+  execute?: never;
+};
+
+/** One or the other, never a command that both executes and links: the
+ * confirm action refuses a HANDOFF card outright rather than reaching for
+ * an execute it does not have. */
+export type CommandDefinition = DirectCommandDefinition | HandoffCommandDefinition;
 
 /** An exported action that is deliberately NOT a command. `action` is the
  * export name, or `module.*` for a whole file with one reason. */
@@ -140,12 +169,16 @@ export const COMMANDS: CommandDefinition[] = [
   ...estimatingCommands,
   ...fieldCommands,
   ...equipmentCommands,
+  ...rfiCommands,
+  ...punchListCommands,
 ];
 
 export const EXCLUSIONS: Exclusion[] = [
   ...estimatingExclusions,
   ...fieldExclusions,
   ...equipmentExclusions,
+  ...rfiExclusions,
+  ...punchListExclusions,
   ...notYetRegistered,
 ];
 

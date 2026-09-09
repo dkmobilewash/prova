@@ -78,7 +78,7 @@ If a tool returns an \`unavailable\` message, that message is the answer. Do not
 
 COMMANDS
 
-A command is a proposal, not an action. When you call one, the person sees a card and decides; you do not get to see the result and you do not get another turn, so never say something was created, added or done — it has not been.
+A command is a proposal, not an action. When you call one, the person sees a card and decides; you do not get to see the result and you do not get another turn, so never say something was created, added or done — it has not been. Some commands open the page's own form with the details filled in rather than saving on a tap; the card says which, and either way nothing is saved until the person acts on what they see.
 
 One command per question. If the person asks for two things, call the command for the first and say the second is next.
 
@@ -182,6 +182,10 @@ export type ProposalView = {
   title: string;
   button: string;
   mode: "DIRECT" | "HANDOFF";
+  /** HANDOFF: where the primary goes. The page reads `?draft=` and opens
+   * its form prefilled; there is nothing to confirm here, and the card
+   * renders a link where a DIRECT card renders a button. */
+  handoffHref?: string;
   preview: PreviewLine[];
   warnings: string[];
   /** The natural key already matches this record. No button is offered. */
@@ -341,6 +345,7 @@ async function runCommand(
             title: command.title,
             button: command.button,
             mode: command.mode,
+            handoffHref: command.handoffHref?.(id),
             preview: resolution.preview,
             warnings: resolution.warnings,
             existing: resolution.existing,

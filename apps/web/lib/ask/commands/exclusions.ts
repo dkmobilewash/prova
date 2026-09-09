@@ -6,11 +6,13 @@ import type { Exclusion } from "../commands";
  * A wildcard here is a placeholder with an expiry, not a decision about
  * every action in the file: when a lane registers its first command from a
  * module, it deletes that module's wildcard and lists the rest per action,
- * in its own file under ./commands. Phase 2 (Cyrus's lane) replaces the
- * field, RFI and equipment lines — the field and equipment ones went in
- * phase 2a, over Cyrus's actions unchanged, in commands/field.ts and
- * commands/equipment.ts; phase 3 (Diego's lane) replaces billing and
- * labor once the invoice counter and the #102 natural keys exist.
+ * in its own file under ./commands. Phase 2 (Cyrus's lane) replaced the
+ * field, equipment, RFI and punch list lines — field and equipment in
+ * phase 2a as DIRECT over Cyrus's ActionResult actions (commands/field.ts,
+ * commands/equipment.ts), RFIs and punch items in phase 2b as HANDOFF over
+ * his throwing ones (commands/rfis.ts, commands/punchLists.ts); phase 3
+ * (Diego's lane) replaces billing and labor once the invoice counter and
+ * the #102 natural keys exist.
  *
  * commands.coverage.test.ts fails the moment a new module appears with no
  * line here and no registration — so adding an action file is a decision
@@ -52,9 +54,7 @@ export const notYetRegistered: Exclusion[] = [
   { action: "vendors.*", reason: CYRUS },
   { action: "vendorPricing.*", reason: CYRUS },
   { action: "equipment.*", reason: CYRUS },
-  { action: "punchLists.*", reason: "HANDOFF candidate (createPunchListItem throws): needs /punch-lists to read ?draft= and open its form prefilled, which is Cyrus's page; phase 2b." },
   { action: "safety.*", reason: CYRUS },
-  { action: "rfis.*", reason: "HANDOFF candidate (createRfi throws and issues a counter number): needs /rfis to read ?draft= and open its form prefilled, which is Cyrus's page; phase 2b." },
   { action: "submittals.*", reason: CYRUS },
   { action: "drawings.*", reason: CYRUS },
   { action: "closeout.*", reason: CYRUS },

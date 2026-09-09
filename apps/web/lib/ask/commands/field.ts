@@ -1,11 +1,13 @@
 import { prisma } from "@prova/db";
 import { createDailyFieldReport } from "@/lib/actions/fieldReports";
 import { recordMaterialDelivery } from "@/lib/actions/materialOrders";
-import { resolveJob, resolveOpenMaterialOrder } from "../resolve";
+import { resolveOpenMaterialOrder } from "../resolve";
 import { formDataFrom, throughAction } from "./adapter";
+import { findJob } from "./findJob";
 import type {
   CommandContext,
   CommandDefinition,
+  DirectCommandDefinition,
   CommandInput,
   Exclusion,
   PreviewLine,
@@ -31,29 +33,6 @@ const str = (payload: ResolvedPayload, key: string): string | null =>
   typeof payload[key] === "string" ? (payload[key] as string) : null;
 
 const utcMidnight = (day: string) => new Date(`${day}T00:00:00.000Z`);
-
-async function findJob(ctx: CommandContext, input: CommandInput): Promise<
-  { kind: "job"; job: { id: string; name: string } } | Resolution
-> {
-  if (input.jobId) {
-    const row = await prisma.job.findFirst({
-      where: { id: input.jobId, companyId: ctx.companyId },
-      select: { id: true, name: true },
-    });
-    if (!row) return { kind: "refuse", reason: "That job isn't on your account." };
-    return { kind: "job", job: row };
-  }
-  const jobName = input.jobName ?? "";
-  if (!jobName) return { kind: "need", missing: "which job" };
-  const found = await resolveJob(ctx.companyId, jobName);
-  if (found.kind === "none") {
-    return { kind: "refuse", reason: `No job matches "${jobName}".`, href: "/dashboard" };
-  }
-  if (found.kind === "many") {
-    return { kind: "clarify", field: "jobId", question: "Which job?", options: found.options };
-  }
-  return { kind: "job", job: { id: found.match.id, name: found.match.name } };
-}
 
 // ---------------------------------------------------------- daily report
 
@@ -144,7 +123,7 @@ async function executeDailyReport(ctx: CommandContext, payload: ResolvedPayload)
   };
 }
 
-export const logDailyFieldReportCommand: CommandDefinition = {
+export const logDailyFieldReportCommand: DirectCommandDefinition = {
   name: "log_daily_field_report",
   description:
     "Files TODAY's daily field report for a job: what work was done, who was on the crew, the weather, any delays. Needs the job's name and the work performed in the person's words; ask for either if missing. Always for today on the person's own calendar — it does NOT file a report for another day (that is done on the field reports page), and it refuses when today's report for that job already exists.",
@@ -272,7 +251,7 @@ async function executeDelivery(ctx: CommandContext, payload: ResolvedPayload) {
   };
 }
 
-export const recordMaterialDeliveryCommand: CommandDefinition = {
+export const recordMaterialDeliveryCommand: DirectCommandDefinition = {
   name: "record_material_delivery",
   description:
     "Records that material arrived TODAY against an open order on a job. Needs the job's name; the order is picked from that job's open orders by what the person called the material or the vendor, and the person chooses when several match. Marks the order complete only when the person says everything arrived. Does NOT create orders, does NOT know quantities, and refuses when the job has no open order.",

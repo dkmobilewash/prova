@@ -74,6 +74,14 @@ export async function confirmAskProposal(
     return fail(refusalFor(command.capability));
   }
 
+  // A HANDOFF card has nothing to execute: its primary is a link, and the
+  // write is the form's on the page it opens. Reaching here means a stale
+  // or hand-built request, and the answer is the link, not a write — so
+  // the row is left unclaimed for the page to load.
+  if (command.mode === "HANDOFF") {
+    return fail("That card opens a form rather than saving anything itself. Use its link.");
+  }
+
   const claimed = await prisma.askProposal.updateMany({
     where: { id: row.id, claimedAt: null },
     data: { claimedAt: now },
@@ -141,10 +149,40 @@ export async function cancelAskProposal(proposalId: string): Promise<ActionResul
 }
 
 /**
+ * The form a HANDOFF card opened has saved.
+ *
+ * Called by that form after its own Server Action returned, so the card is
+ * recorded as done rather than left to expire as though nobody acted. The
+ * row's `resolved` payload is NOT re-read or compared: the person may have
+ * changed every field on the form before saving, and what was saved is
+ * the form's record, not the card's — the card only ever proposed. Guarded
+ * the same way as the tap (own row, HANDOFF, unclaimed, unsettled), and
+ * idempotent and quiet like cancel: a second call finds nothing to do.
+ */
+export async function settleAskDraft(proposalId: string): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  const now = new Date();
+  await prisma.askProposal.updateMany({
+    where: {
+      id: proposalId,
+      companyId: context.company.id,
+      createdByUserId: context.id,
+      mode: "HANDOFF",
+      claimedAt: null,
+      outcome: null,
+    },
+    data: { claimedAt: now, outcome: "OK" },
+  });
+  return actionOk;
+}
+
+/**
  * Reattaches a card after a phone browser has been backgrounded or the
  * tab reloaded. Returns only a card that is still the asking person's own,
- * unsettled, unclaimed and unexpired; everything else is a quiet failure
- * the panel answers by forgetting the id. What comes back is what the row
+ * unsettled, unclaimed, unexpired and — for a HANDOFF card — not yet
+ * opened on its page, since a form that is already open somewhere must
+ * not be offered a second time; everything else is a quiet failure the
+ * panel answers by forgetting the id. What comes back is what the row
  * holds: the preview lines the person already saw. Warnings were shown
  * once and are not stored, so a reattached card carries none.
  */
@@ -158,6 +196,7 @@ export async function loadAskProposal(
   if (!row || row.createdByUserId !== context.id) return fail("That card isn't one you can reopen.");
   if (row.outcome || row.claimedAt) return fail("That card is already settled.");
   if (row.expiresAt < new Date()) return fail("That card has expired. Ask again.");
+  if (row.openedAt) return fail("That card was opened on its page. Finish it there, or ask again.");
   if (!isCommandName(row.command)) return fail("That command no longer exists. Ask again.");
   const command = commandNamed(row.command);
   return {
@@ -170,6 +209,7 @@ export async function loadAskProposal(
         title: command.title,
         button: command.button,
         mode: command.mode,
+        handoffHref: command.handoffHref?.(row.id),
         preview: Array.isArray(row.preview) ? (row.preview as PreviewLine[]) : [],
         warnings: [],
         alsoRequested: [],

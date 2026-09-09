@@ -1,7 +1,8 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
-import { createPunchListItem } from "@/lib/actions";
+import { createPunchListItem, settleAskDraft } from "@/lib/actions";
+import type { PunchDraft } from "@/lib/ask/drafts";
 
 // 16px, not the 14px inherited from the `text-sm` label: iOS Safari zooms the
 // whole page when a focused input is under 16px, and the foreman then has to
@@ -16,7 +17,17 @@ export type JobOption = { id: string; name: string };
  * items get logged in bursts during a walkthrough — five in a row, same
  * job — so collapsing after each one would fight the user. The job
  * selection is kept; the description clears. */
-export function PunchListForm({ jobs, defaultJobId }: { jobs: JobOption[]; defaultJobId?: string }) {
+export function PunchListForm({
+  jobs,
+  defaultJobId,
+  draft,
+}: {
+  jobs: JobOption[];
+  defaultJobId?: string;
+  /** A card from the Ask box: one item, prefilled, and the card is told
+   * it saved. The job comes through `defaultJobId` like any other. */
+  draft?: PunchDraft;
+}) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [jobId, setJobId] = useState(defaultJobId ?? jobs[0]?.id ?? "");
@@ -29,6 +40,7 @@ export function PunchListForm({ jobs, defaultJobId }: { jobs: JobOption[]; defau
     startTransition(async () => {
       try {
         await createPunchListItem(formData);
+        if (draft) void settleAskDraft(draft.proposalId);
         if (descriptionRef.current) {
           descriptionRef.current.value = "";
           descriptionRef.current.focus();
@@ -72,6 +84,7 @@ export function PunchListForm({ jobs, defaultJobId }: { jobs: JobOption[]; defau
           type="text"
           name="description"
           required
+          defaultValue={draft?.description}
           placeholder="e.g. Ceiling grid out of level, east corridor"
           className={inputClass}
         />

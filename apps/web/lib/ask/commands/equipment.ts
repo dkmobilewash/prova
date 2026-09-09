@@ -5,6 +5,7 @@ import { formDataFrom, throughAction } from "./adapter";
 import type {
   CommandContext,
   CommandDefinition,
+  DirectCommandDefinition,
   CommandInput,
   Exclusion,
   ResolvedPayload,
@@ -166,7 +167,7 @@ async function executeSend(ctx: CommandContext, payload: ResolvedPayload) {
   };
 }
 
-export const sendEquipmentToJobCommand: CommandDefinition = {
+export const sendEquipmentToJobCommand: DirectCommandDefinition = {
   name: "send_equipment_to_job",
   description:
     "Records a piece of equipment as sent out to a job TODAY. Needs which piece (name, type or asset tag, as the person said it) and which job; ask for either if missing. This is a dispatch record, not a location — there is no GPS. Refuses when the piece is already out on a job and not yet brought back. Does NOT move a piece between jobs in one step: bring it back first.",
@@ -250,7 +251,7 @@ async function executeReturn(ctx: CommandContext, payload: ResolvedPayload) {
   };
 }
 
-export const bringEquipmentBackCommand: CommandDefinition = {
+export const bringEquipmentBackCommand: DirectCommandDefinition = {
   name: "bring_equipment_back",
   description:
     "Records a piece of equipment as brought back to the yard TODAY from the job it is out on. Needs which piece (name, type or asset tag); ask if missing. Refuses when the piece is not out on any job. This closes the current dispatch record; it does NOT say where the machine physically is.",
