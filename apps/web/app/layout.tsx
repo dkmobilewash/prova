@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { ClerkProvider } from "@clerk/nextjs";
+import { StaleDeployBanner } from "@/components/StaleDeployBanner";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -39,7 +40,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       }}
     >
       <html lang="en">
-        <body className="min-h-screen bg-slate-950 text-slate-100">{children}</body>
+        <body className="min-h-screen bg-slate-950 text-slate-100">
+          {/* #118: covers every route group, including the public portal
+              and esign pages, which are just as likely to be left open
+              across a deployment as anything under (app). Renders nothing
+              until it actually fires -- see the component's own comment. */}
+          <StaleDeployBanner />
+          {children}
+        </body>
       </html>
     </ClerkProvider>
   );
