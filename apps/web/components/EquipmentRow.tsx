@@ -119,12 +119,12 @@ export function EquipmentRow({ canDelete, item }: EquipmentRowProps) {
           cancel cannot open the edit form instead.
 
           Classes are #89's touch targets (min-h-11, py-2, gap-3). #89 also
-          made this row stack below sm, so `pinned="end"` was re-measured
-          against the MERGED layout rather than carried over: 1100px 100% ->
-          0%, 375px 75% -> 85%. It stays because it makes the desktop case
-          exactly safe; at 375 the cluster is left-aligned and NEITHER order
-          is safe, which is a layout problem this prop cannot reach. See the
-          rule-2 block in `rowActionsCensus.test.ts`. */}
+          made this row stack below sm, and `pinned="end"` is measured against
+          the merged layout: 1100px 100% -> 0%. At 375px the prop reached
+          nothing — 86% overlap either way — until #184 gave the armed pair a
+          full-width column below sm, which takes this row to 0% at 375 and
+          639 with Cancel covering the whole vacated box. See the rule-2 block
+          in `rowActionsCensus.test.ts`. */}
       <RowActions
         className="flex shrink-0 flex-wrap items-center gap-3"
         destructive={

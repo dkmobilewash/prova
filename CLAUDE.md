@@ -712,6 +712,34 @@ scrollback gets broken by whoever didn't scroll far enough.
   right and only rule 1 (hide every ordinary action, not just the one
   somebody remembered) was broken on the first two.
 
+  **ON A PHONE THE RULE HAS NO X AXIS TO WORK ON, AND THAT IS THE HALF THIS
+  ENTRY WAS MISSING.** Added 2026-09-08 from issue #184. The table above is
+  all desktop. Below 640px the field rows STACK (`flex flex-col …
+  sm:flex-row`, #89), the cluster stops being right-pinned, and `RowActions`
+  hides the ordinary actions — so the armed pair reflows to the LEFT EDGE
+  while the Delete it replaced sat to the right of an "Edit" that is now
+  gone. Neither end is stable, because nothing is at the delete's pixel any
+  more: `EquipmentRow` at 375px measured 86% confirm overlap as
+  [Confirm][Cancel] and 75% as [Cancel][Confirm]. No value of `pinned` could
+  reach it, and two plausible fixes were measured and rejected — reserving
+  the hidden actions' width INVERTS (the restored slot is last at 1100px and
+  first at 375px, so one prop would need two contradictory values), and
+  right-aligning the stacked cluster works only by permanently moving the
+  UNARMED row's buttons on five phone screens.
+
+  So the rule keeps its shape and changes its axis: below `sm` the armed pair
+  is a full-width COLUMN with **Cancel on top**, which is "Cancel inherits the
+  delete pixel" read vertically. `ConfirmDelete` adds it itself
+  (`max-sm:flex-col` / `max-sm:flex-col-reverse`, `contents` at >=640 so the
+  desktop rects are byte-identical), so no caller can get it wrong. Measured
+  0% overlap and 100% Cancel cover on eight rows at 639 and 375. `pinned` is
+  now purely a desktop decision, which is why `PINNED_EXCEPTIONS` is empty —
+  the three rows that were in it had no value that was right at both widths,
+  and that conflict no longer exists.
+
+  It costs 56px of row height while armed and makes both buttons full width,
+  at phone widths only.
+
 - **A watcher whose needle is ALREADY ON THE PAGE cannot fail, and it will
   report a fast, confident, wrong number.** Born from the #61 capture
   above, and the same shape as every other vacuous test in this file — it
@@ -859,6 +887,28 @@ scrollback gets broken by whoever didn't scroll far enough.
   nothing referenced the dead code. So when reviewing a fix, grep for the
   new symbol and confirm something CALLS it — the tests passing is not
   that evidence, and neither is the diff looking complete.
+
+- **A verifier that cannot distinguish "refuted" from "never ran" reports
+  clean and means nothing.** Diego, 2026-09-07, on #195: a multi-agent
+  review of the diff came back "0 confirmed, 10 refuted". Every one of the
+  verify agents had died on a session limit before writing a verdict, and
+  the post-processing counted "no verdict" as "refuted". Three of the seven
+  review dimensions had never run at all. Cyrus hit the same shape the same
+  day, from the other direction — a workflow scoring branches "contested"
+  with `refutedBy: 0/0`, because a dead agent and a refutation look
+  identical to a counter.
+
+  Same family as the `gh pr checks` scar (green about a commit nobody
+  asked about), the vacuous watcher above (fired on a needle already on the
+  page), and the census that a comment quoting its own pattern disarmed
+  (#185): the check was not lying, it was answering a question nobody
+  asked. The rule for anything that aggregates verdicts — a review
+  workflow, a mutation run, a click-list tally: **absence of a failure is
+  not a pass.** Count the verdicts that were actually RETURNED and require
+  that number to equal the number requested before reading any of them;
+  a missing verdict is its own failure state and must be reported as one,
+  never folded into "refuted", "passed" or "clean". If a tool reports
+  totals, ask it for the per-item verdicts and count them yourself.
 
 - `FEATURE-AUDIT.md`: the 26-category roadmap and source of truth for
   what's built. It has drifted more than once; don't let it.

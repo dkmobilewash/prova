@@ -39,4 +39,20 @@ describe("calculateRetainageSummary", () => {
       }).totalWithheld,
     ).toBe(500);
   });
+
+  it("reports a negative balance when releases exceed what was withheld", () => {
+    // The balance is SIGNED, and lib/retainage-query.ts depends on that:
+    // its two aggregates are only arithmetically identical to summing each
+    // job's balance because there is no per-job clamp at zero, so a sum of
+    // differences is the difference of sums. A later `Math.max(0, …)` here
+    // would look like a tidy-up and would silently make the metric bar and
+    // the /dashboard card disagree — with nothing else in the suite red.
+    const summary = calculateRetainageSummary({
+      invoiceRetainageWithheld: [1000],
+      releaseAmounts: [1500],
+      substantialCompletionDate: null,
+    });
+
+    expect(summary.balance).toBe(-500);
+  });
 });

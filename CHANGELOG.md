@@ -42,6 +42,345 @@ variable. The Vercel MCP has no environment-variable tool at all, checked
 three times now, and a read-write token is a credential that does not
 travel through an agent channel regardless.
 
+
+### Six write paths that duplicated money or evidence on a second run — #102 (Diego)
+`diego/idempotent-writes-102`
+
+#102 filed ten write paths as its title and listed six in its actual
+checklist. Treated the six checkboxes as the real scope rather than hunting
+for four more to hit a round number — the title had drifted from its own
+body, and the honest fix is to say so, not to invent work.
+
+One of the six was **already fixed** before this branch existed:
+`1c8bf6a`, the same day the issue was filed, restructured the QuickBooks
+invoice push to write the `QuickBooksEntityLink` immediately after the
+create succeeds, before the read-back — exactly the fix this issue asked
+for — and its commit message cites #102 directly. Verified by reading the
+current `pushInvoiceToQuickBooks`, not by trusting the issue text: the
+write-link-then-verify ordering, the `findInvoicesByDocNumber` natural-key
+check before a first create, and the 425-line
+`quickbooks-invoice-push.test.ts` are all already on `main`. Nothing here
+touches that function again. The remaining five:
+
+- **`logPayment`** now refuses a payment that would push an invoice's
+  total paid PAST its total — the same `amount - SUM(payments.amount)`
+  arithmetic `calculateArAgingInvoice` (lib/cash-flow.ts) uses, so the two
+  can never disagree about what "overpaid" means. This is a business
+  invariant ("you cannot pay more than is owed"), not a duplicate
+  detector, and it has a real, disclosed blind spot: a repeat that lands
+  EXACTLY on the remaining balance is mathematically identical to a
+  legitimate final payment clearing it, and no ceiling check can tell
+  those apart — only going PAST the total is unambiguous. The guard still
+  closes the general shape #102 named (a resubmission silently inflating
+  `paidAmount` past the truth, dropping the invoice out of A/R aging and
+  `totalOutstanding` while money is still owed) for every case except that
+  one exact boundary.
+- **`logTimeEntry`**, **`addCostEntry`** and **`submitPayApplication`**
+  each gained a narrow, short-window duplicate guard instead: reject an
+  exact repeat of the same row (same job/employee/line/craft/date/hours/
+  pay-type for time entries; same line/description/amount/category/trade
+  for cost entries; same job/amount/per-line breakdown for pay
+  applications) landing within 10 seconds, long enough to catch a
+  double-click or a retried request, short enough that a genuinely
+  distinct second entry made moments later still goes through. None of
+  these three has a real natural key (a payment, a time entry, a cost
+  entry are all freeform amount+description+date, and multiple real
+  entries per employee per day, or per line item per day, are normal
+  here) — the fix pattern is a request-shape check, not a DB constraint.
+- **`createBackcharge`** got the fix pattern the issue actually described:
+  `gcReference` — the GC's own notice number — is a real natural key, so a
+  second backcharge on the same job with the same reference is now
+  refused with a sentence naming the existing row, backed by a NEW partial
+  unique index (nullable column: plenty of backcharges arrive with no GC
+  reference at all, and a plain unique index would treat every one of
+  those as a duplicate of every other one). Migration
+  `20260908130000_add_backcharge_gc_reference_unique`, additive, no
+  precedent for a partial index existed in this schema before — Prisma's
+  schema language cannot express one, so it is hand-written and the model
+  comment says so. `updateBackcharge` got the same natural-key check,
+  since an edit can retarget `gcReference` onto a value the index would
+  then refuse — without it, that edit would have surfaced as a raw
+  constraint-violation digest instead of a sentence. Mutation-tested both
+  layers independently: with only the application check disabled, the
+  partial index still refused the duplicate (a generic message, but
+  refused); with the index ALSO dropped, the duplicate went through
+  uncaught — proving the two layers are each doing real work, not just
+  agreeing with each other.
+
+`logPayment`, `logTimeEntry` and `addCostEntry` moved from throwing plain
+`Error`s to `ActionResult` for these specific new checks only — production
+redacts thrown Server Action messages, and a refusal a normal user can
+trigger needs to reach them. Everything else those three functions already
+threw for (malformed input a working form never sends) stays a throw,
+matching this codebase's own rule that not every validation belongs in the
+same style. Three inline forms on `jobs/[id]/page.tsx`
+(log payment, log time entry, add cost entry) became small client
+components (`LogPaymentForm`, `LogTimeEntryForm`, `AddCostEntryForm`) for
+the same reason `PayApplications.tsx` already is one: a plain
+`<form action={fn}>` has nowhere to show what the action returns.
+
+Every one of the five new guards was mutation-tested by hand: disabled,
+confirmed the corresponding `.dbtest.ts` went red on the exact scenario
+#102 described, restored, confirmed green again.
+
+**One limitation, disclosed rather than discovered later: four of the
+five guards (`logPayment`, `logTimeEntry`, `addCostEntry`,
+`submitPayApplication`) are read-then-write with no transaction or lock
+around the pair.** They close the sequential shape #102 describes and
+these tests exercise — a double-click, a retried request — but not two
+requests landing at the exact same instant, which could both read before
+either writes. Only `createBackcharge`'s DB constraint is genuinely atomic.
+Verified this is a real gap, not a hedge: `cyrus/idempotent-write-paths`
+(the stale branch flagged above, never merged) used
+`pg_advisory_xact_lock` for exactly this reason on a different set of
+guards. That pattern is not on `main` today and isn't added here — it
+changes the shape of every call site in these files for a race narrower
+than the bug #102 reported — but it's the honest next step if a true
+concurrent double-submit ever turns up as a real incident rather than a
+theoretical one.
+
+### The Ask box logs the day, moves the lift and receives the truck — phase 2a, over the field lane's own actions (Diego)
+`claude/prova-ai-task-completion-96pjes`
+
+Four more commands, all on Cyrus's actions and none of his files: "log
+today's daily report on Riverside: hung board on level 2, crew of 6"
+(`createDailyFieldReport`), "send the scissor lift to Maple"
+(`assignEquipment`), "the lift is back" (`returnEquipment`), and "the
+board showed up on Maple" (`recordMaterialDelivery`). Each shows a card,
+one tap executes, and the sentence on refusal is the action's own: the
+overlap check inside `assignEquipment`'s transaction, the one-report-per-
+day constraint, "closed out by the delivery on…".
+
+**How a command calls a form-shaped action.** `lib/ask/commands/adapter.ts`
+builds the FormData the form would have posted — checkboxes are the
+string "on", an absent optional is absent, dates are `yyyy-mm-dd` — and
+calls the action in-process. The action's own `requireCompanyContext()`,
+`can()` and transaction run unchanged. Nothing here re-implements a rule.
+A throw inside the action is a bug, not a refusal, and becomes "did not
+complete, check the page before trying again" rather than a claim about
+what was or was not saved. `lib/actions/ask.dbtest.ts` now executes that
+call against a real Postgres: one report lands with the asking user as
+filer, and the second card for the same day gets the constraint's
+sentence back through the tap.
+
+**Who may be DIRECT, enforced rather than remembered.** The coverage test
+now accepts a DIRECT command only when its core is a `lib/estimating`
+export or an action whose signature promises `ActionResult`. Production
+redacts a thrown message, so a command over a throwing action would put a
+digest on a card; RFIs and punch items stay excluded for exactly that
+reason, with the HANDOFF plan named in their exclusion.
+
+**Today is the person's day.** Every date on these cards is `ctx.today`,
+resolved on the server from the timezone cookie by `viewerToday()`. The
+model never supplies a date: "yesterday's report" is a page job and the
+command description says so.
+
+**Resolvers for things that are not jobs.** `resolveEquipment` matches
+name, type or asset tag, an exact tag wins outright, and a chip row shows
+each candidate's tag and where it is booked ("SL-2 · out on Maple Street
+since 2026-08-20"). `resolveOpenMaterialOrder` lists a job's orders with
+no closing delivery, narrowed by what the person called the material or
+the vendor. Neither ever picks between two matches.
+
+**A card survives a backgrounded phone.** The pending card's id is kept in
+`sessionStorage`; on mount the panel asks `loadAskProposal` for it, which
+returns only a card that is still that person's, unsettled, unclaimed and
+unexpired. Anything else and the id is forgotten. sessionStorage rather
+than localStorage on purpose: a card dies with the tab, because a card is
+not a standing instruction.
+
+**Per-action exclusions replace three module wildcards.** Every other
+export of `fieldReports.ts`, `equipmentAssignments.ts` and
+`materialOrders.ts` is now excluded by name with its reason, in
+`commands/field.ts` and `commands/equipment.ts`. The plan had Cyrus
+writing those files; Diego asked for phase 2 to start, so they were
+written here and are his to rewrite. Announced in #prova-build before the
+push; no schema change.
+
+typecheck, lint, the unit suite and a full build pass; the database test
+runs in CI only. **Nobody has clicked it.** The click list is in the PR
+body.
+
+---
+
+### The three sales rows stop hand-rolling their armed delete — #152 (Diego)
+`claude/happy-volta-g8dg26`
+
+`SalesActivityRow`, `SalesLeadRow` and `SalesOpportunityRow` were the last
+three rows in the app holding their own `isConfirmingDelete` state. #183
+fixed issue #152's rule 1 on them by wrapping the ordinary-action group in
+a guard, and Cyrus tried to take them out of the census's
+`KNOWN_EXCEPTIONS` on the strength of that — the census went red on all
+three, because it scans for the MECHANISM (a component remembering for
+itself whether a delete is armed), not for the guard. He put them back
+with a note saying "the conversions are still owed and they are your
+lane". This is the conversion.
+
+All three are now `<RowActions destructive={<ConfirmDelete …/>}>`. "Edit"
+is a child of `RowActions` on the activity and opportunity rows, so it is
+not rendered at all while armed rather than hidden by a guard somebody has
+to remember. The two right-pinned clusters (`shrink-0` inside a
+`justify-between` parent) pass `pinned="end"`, which is the order they
+already had by hand; the lead row's cluster is left-aligned, so it takes
+the default and keeps its "Delete Acme Drywall?" prompt. Failed deletes
+now leave the row armed with the error shown, like every other converted
+row (#176's deliberate behaviour change), rather than silently disarming.
+
+`KNOWN_EXCEPTIONS` in `rowActionsCensus.test.ts` is now the shared
+component and nothing else. Mutation-tested rather than trusted: putting a
+`[isConfirmingDelete, setIsConfirmingDelete] = useState` back into
+`SalesLeadRow` turns the census red naming that file; deleting
+`pinned="end"` from `SalesActivityRow` turns the pinned check red naming
+that one. Both restored. One thing the first attempt at that mutation
+taught: `const [armed] = useState(false)` with no setter is INVISIBLE to
+the census, because the scan requires the comma before the setter. That
+is not a gap worth closing — a state with no setter cannot arm anything —
+but it is the kind of mutation that passes and proves nothing, so it is
+written down here.
+
+Also in this PR, because documentation rides with the work: the CLAUDE.md
+entry Diego said he would write and Cyrus asked him to — a verifier that
+cannot tell "refuted" from "never ran" reports clean and means nothing.
+
+**Not clicked.** Typecheck, lint and the unit suite only. The click-list
+is in the PR body.
+
+---
+
+### Another signatory's wage rates, five lines below the fix for them — #205 (Diego)
+`claude/prova-contractor-os-e3f0iz`
+
+Cyrus's #203 scoped `loadRemittance`'s fringe query to `companyId` at `:108`.
+Two hundred lines down, `loadUnionSetup` reached three more relations under
+`unionLocal` with no `where` at all: `apprenticeRatioRules`,
+`craftClassifications`, and `fringeRateSchedules` nested inside them. The fix
+and the gap sat **five lines apart in the same file**, which is most of why
+neither of us saw it — the block reads as already handled.
+
+Unfiltered, `schedules[]` maps another signatory's `baseWage`, `pensionRate`,
+`vacationRate`, `healthWelfareRate` and `trainingRate` into `UnionLocalCard`,
+and `ratio` resolves to the newest rule on the local **by anybody**, so a
+company can be shown a ratio rule it never set. Three `where: { companyId }`
+lines. No migration; the column landed in #200.
+
+**How reachable it is, stated accurately rather than alarmingly.** No action in
+this app can produce the shape it needs. `createUnionLocalAndAgreement` both
+looks up and creates with `companyId: company.id`, so a company's agreement
+always points at its own local — checked, not assumed. What is NOT enforced is
+that the edge stays that way: there is no composite foreign key tying
+`CompanyUnionAgreement.companyId` to `UnionLocal.companyId`, and #200's
+backfill assigned each shared local to its EARLIEST agreement, leaving any
+later company's agreement pointing at somebody else's row. So this is a real
+hazard on any database carrying pre-#200 residue — Cyrus's `ZZ FIXTURE` was
+built as exactly that shape — and defence for an invariant nothing enforces,
+rather than a leak rendering on production today. Production holds one company.
+
+**Proved by mutation, not by reading.** The new dbtest seeds the cross-tenant
+edge directly, because no action can make it. With the three clauses reverted
+it fails on `expected [ { …(8) } ] to have a length of +0 but got 1` — B
+reading A's craft through B's agreement. With them restored, 26/26 in that
+file and 245/245 across the DB suite. It asserts B still REACHES the local
+before asserting what is missing, so it cannot pass by finding nothing.
+
+**Two stale comments went with it**, both stating the schema is something it
+stopped being in #200 and both load-bearing. `// CraftClassification is
+global` sat directly beneath the unfiltered line as its justification — that
+sentence is how #205 survived #203. The function header's *"the local table is
+global"* was equally false; driving from the agreement is still right, but for
+a different reason than the one written down.
+
+
+### On a phone the armed confirm sat on the delete pixel (Cyrus)
+`cyrus/armed-delete-mobile-layout`
+
+Issue #184. Rule 2 of #152 says the confirm of an armed delete must not
+occupy the position the delete button just vacated, so a hurried second tap
+costs a click rather than the record. #176 fixed that on the desktop with
+`pinned="start" | "end"`. On a phone no value of `pinned` could fix it, and
+this is the layout change that does.
+
+**Why the prop could not reach it.** #89 made the field rows stack below
+640px. Stacked, the cluster is not right-pinned; it is a full-width
+left-aligned strip. `RowActions` hides the ordinary actions while armed, so
+the pair reflows to the strip's LEFT edge — while the Delete it replaced sat
+to the RIGHT of an "Edit" that is now gone. Nothing can inherit the delete's
+pixel because nothing is AT the delete's pixel. Measured in real Chromium at
+375px, confirm overlap with the vacated Delete box: 86% as [Confirm][Cancel],
+75% as [Cancel][Confirm]. Both are "the confirm is under your thumb".
+
+**Two other fixes were measured first and neither survived.** Reserving the
+hidden actions' width does not fail, it INVERTS: it restores the delete's
+slot, and that slot is the LAST control at 1100px and the FIRST at 375px, so
+Cancel would have to render last and first at once. Right-aligning the
+stacked cluster does work for five rows, but it pays for the two seconds a
+delete is armed by permanently moving the UNARMED row's buttons ~153px on
+five phone screens, and it still leaves RfiRow worse than it is today.
+
+**What shipped.** Below `sm`, `ConfirmDelete` renders its two buttons as a
+full-width COLUMN WITH CANCEL ON TOP — `max-sm:flex-col` for the
+[Cancel][Confirm] order, `max-sm:flex-col-reverse` for [Confirm][Cancel] — so
+Cancel lands in the band the delete vacated whatever `pinned` says. It is
+inside the shared component, not in six callers, so no row can get it wrong
+and the next row gets it for free. At >=640px the wrapper is `contents`: not
+a box at all, the buttons are flex items of the caller's cluster exactly as
+before, and the 1100px rects are byte-identical to `main`'s, compared field
+by field on every row.
+
+Confirm overlap as a share of the area of the vacated Delete box, real
+Chromium, class strings read out of the `.tsx` files rather than retyped:
+
+| row | main 1100/639/375 | now 1100/639/375 |
+| --- | --- | --- |
+| `EquipmentRow` | 0% / 86% / 86% | 0% / 0% / 0% |
+| `FieldReportEntry` | 0% / 86% / 86% | 0% / 0% / 0% |
+| `PunchListRow` | 0% / 86% / 86% | 0% / 0% / 0% |
+| `DailyFieldReports` | 0% / 79% / 79% | 0% / 0% / 0% |
+| `SafetyIncidentRow` | 100% / 75% / 75% | 0% / 0% / 0% |
+| `RfiRow` | 20% / 0% / 0% | 20% / 0% / 0% |
+| `ToolboxTalkRow` | 100% / 0% / 0% | 0% / 0% / 0% |
+| `RuleSetRow` | 100% / 72% / 72% | 0% / 0% / 0% |
+
+Below 640px Cancel covers 100% of the vacated box on all eight, with 12px of
+clear air before the confirm starts.
+
+**Three rows were flipped to `pinned="end"`, and that is a desktop bug fix
+rather than the consistency tidy-up #184 files it as.** `SafetyIncidentRow`,
+`ToolboxTalkRow` and `RuleSetRow` were in `PINNED_EXCEPTIONS` because no
+value of the prop was right at both widths — which left all three at **100%
+overlap at 1100px**, the exact defect #176 shipped to fix. The armed column
+settles the phone, so the prop now has one correct answer per cluster and the
+conflict that created those exceptions is gone. `PINNED_EXCEPTIONS` is empty.
+
+**RfiRow's 20% at 1100px is pre-existing and is not touched.** #184 and #176
+both say the desktop is at 0% on every row; on that row it is 20%, and the
+cause is structural: in a right-pinned cluster the confirm clears the vacated
+box only when Cancel plus the gap (70 + 12 = 82px) is at least as wide as the
+delete button, and "Delete draft" is 103px. Any delete label longer than
+about "Remove" leaves the same residue. The column removes it below `sm`;
+nothing here removes it at 1100. Keep delete labels short.
+
+**What it costs, said plainly.** At 639px and below, an armed row grows 56px
+and pushes everything under it down, and the two buttons go full width — at
+639px that is a 557px-wide button, defensible on a phone and chunky at the
+top of the stacked range. Nothing changes in the unarmed state at any width,
+and nothing changes at all at >=640px. Someone should look at it before it
+ships.
+
+**Tests assert only what a DOM environment can observe** (issue #150: happy-
+dom does no layout, so `getBoundingClientRect` is zeros and a position
+assertion there cannot fail). `rowActions.test.ts` computes the top-to-bottom
+order from the two things a DOM can read — the buttons' order and the
+wrapper's flex-direction class — and requires Cancel on top for BOTH values
+of `pinned`; swap the two class constants and it goes red. The overlap
+percentages come from a real-Chromium harness that arms one row at a time so
+both states are measured at the same place in the same layout.
+
+**Not verified in the running app.** Every number above is from the harness.
+`/equipment` at 375px still owes one click-through, which is the same caveat
+#184 ends on.
+
+CLAUDE.md's armed-delete entry was desktop-only and is now wrong by omission
+rather than by statement; the phone half has been added to it there.
 ### The Ask box can start an estimate — a command proposes, a person confirms, one tap executes (Diego)
 `claude/prova-ai-task-completion-96pjes`
 
@@ -227,6 +566,31 @@ for every contractor who ever used it.
 
 ---
 
+### `deleteContact`'s refusal message named zero counts as a reason — #76 (Diego)
+`diego/delete-contact-zero-count-message`
+
+Small wording defect, filed against #72: refusing to delete a contact with
+history on file listed every count unconditionally — "Acme GC has 0
+job(s), 3 bid invitation(s), 0 logged interaction(s), and 0 people on
+file". A contact blocked by three bid invitations alone was told about
+three kinds of history it doesn't have.
+
+Fixed by filtering to the non-zero counts before joining them, and
+pluralising properly (`plural(count, one, many)`) instead of the blanket
+`(s)` suffix — same message now reads "Acme GC has 3 bid invitations on
+file". `plural` moved from `unionCompliance.ts` (the only existing caller)
+into `lib/actions/shared.ts` rather than growing a second copy, since this
+is now two call sites; `unionCompliance.ts` imports it from there and
+nothing else about that file changed.
+
+Proved by mutation: reverted the fix, confirmed the new dbtest
+(`company.dbtest.ts`) failed with the exact old string, restored it, green
+again. `deleteContact`'s tenant scoping, owner gate, and refusal logic
+itself are all untouched — this only changes what the message says, not
+when it refuses.
+
+---
+
 ### Three display gaps in the sales CRM — #153, #163, #164 (Diego)
 `diego/sales-crm-display-gaps`
 
@@ -315,6 +679,9 @@ No fix is shipped here because none was found to be wrong; this repo has
 no browser-automation tooling available to this session to run the kind
 of instrumented capture that actually settled #61, so the PR says this
 plainly rather than claiming closure on a guess.
+
+---
+
 ### Eight defects in estimating, the catalog and change orders — #105 (Diego)
 `diego/estimating-catalog-co-defects-105`
 

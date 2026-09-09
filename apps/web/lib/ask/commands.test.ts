@@ -90,13 +90,30 @@ describe("every command", () => {
 });
 
 describe("who is offered what", () => {
-  it("offers an owner everything and a FIELD member no estimating command", () => {
+  it("offers an owner everything, and a FIELD member the field commands and nothing that prices", () => {
     expect(commandsFor(OWNER).length).toBe(COMMANDS.length);
-    expect(commandsFor(FIELD)).toEqual([]);
+    const field = commandsFor(FIELD).map((c) => c.name);
+    expect(field).toEqual([
+      "log_daily_field_report",
+      "record_material_delivery",
+      "send_equipment_to_job",
+      "bring_equipment_back",
+    ]);
+    for (const command of commandsFor(FIELD)) {
+      expect(command.capability, command.name).toBe("MANAGE_FIELD");
+    }
   });
 
-  it("offers an estimator the estimating commands — they hold VIEW_JOB_COSTS too", () => {
-    expect(commandsFor(ESTIMATOR).map((c) => c.name)).toEqual(COMMANDS.map((c) => c.name));
+  it("offers an estimator exactly the estimating commands — VIEW_JOB_COSTS held, MANAGE_FIELD not", () => {
+    expect(commandsFor(ESTIMATOR).map((c) => c.name)).toEqual([
+      "create_estimate_job",
+      "draft_estimate_lines",
+      "add_catalog_line",
+    ]);
+  });
+
+  it("offers accounting no command at all — nothing here is billing", () => {
+    expect(commandsFor(ACCOUNTING)).toEqual([]);
   });
 
   it("withholds create_estimate_job from accounting, who could not open the estimate it made", () => {

@@ -10,8 +10,10 @@ import {
   commandNamed,
   isCommandName,
   type Link,
+  type PreviewLine,
   type ResolvedPayload,
 } from "@/lib/ask/commands";
+import type { ProposalView } from "@/lib/ask/answer";
 import { actionOk, type ActionResult, type ActionResultWith } from "./shared";
 
 /**
@@ -136,6 +138,45 @@ export async function cancelAskProposal(proposalId: string): Promise<ActionResul
     data: { outcome: "CANCELLED" },
   });
   return actionOk;
+}
+
+/**
+ * Reattaches a card after a phone browser has been backgrounded or the
+ * tab reloaded. Returns only a card that is still the asking person's own,
+ * unsettled, unclaimed and unexpired; everything else is a quiet failure
+ * the panel answers by forgetting the id. What comes back is what the row
+ * holds: the preview lines the person already saw. Warnings were shown
+ * once and are not stored, so a reattached card carries none.
+ */
+export async function loadAskProposal(
+  proposalId: string,
+): Promise<ActionResultWith<{ question: string; proposal: ProposalView }>> {
+  const context = await requireCompanyContext();
+  const row = await prisma.askProposal.findFirst({
+    where: { id: proposalId, companyId: context.company.id },
+  });
+  if (!row || row.createdByUserId !== context.id) return fail("That card isn't one you can reopen.");
+  if (row.outcome || row.claimedAt) return fail("That card is already settled.");
+  if (row.expiresAt < new Date()) return fail("That card has expired. Ask again.");
+  if (!isCommandName(row.command)) return fail("That command no longer exists. Ask again.");
+  const command = commandNamed(row.command);
+  return {
+    ok: true,
+    value: {
+      question: row.question,
+      proposal: {
+        proposalId: row.id,
+        command: command.name,
+        title: command.title,
+        button: command.button,
+        mode: command.mode,
+        preview: Array.isArray(row.preview) ? (row.preview as PreviewLine[]) : [],
+        warnings: [],
+        alsoRequested: [],
+        expiresAt: row.expiresAt.toISOString(),
+      },
+    },
+  };
 }
 
 async function stamp(

@@ -7,6 +7,7 @@ import {
   actionFail as fail,
   actionOk as ok,
   isUniqueConstraintError,
+  plural,
   type ActionResult,
 } from "./shared";
 
@@ -100,12 +101,6 @@ export async function setCraftTier(craftId: string, formData: FormData): Promise
  */
 
 class SetupError extends Error {}
-
-/** "1 time entry" / "2 time entries". This message is the one an
- * inspector-facing user reads carefully, and it read "1 time entries". */
-function plural(count: number, one: string, many: string) {
-  return `${count} ${count === 1 ? one : many}`;
-}
 
 function setupText(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();

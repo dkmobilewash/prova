@@ -343,9 +343,13 @@ export type SetupLocalRow = {
  * agreement with, and under each one its ratio rule, classifications and
  * their rate schedules.
  *
- * Driven from the AGREEMENT rather than from UnionLocal, because the local
- * table is global — listing locals directly would show this company every
- * hall every other contractor has ever recorded.
+ * Driven from the AGREEMENT rather than from UnionLocal. That used to be
+ * because the local table was global; since #200 it is not — UnionLocal
+ * carries a companyId and its identity is
+ * (companyId, parentInternational, localNumber). The agreement is still the
+ * right driver, because holding one is what makes a local YOURS to see
+ * rather than merely one you happen to own a row for, but the old reason is
+ * gone and is not why this is shaped this way any more.
  */
 export async function loadUnionSetup(companyId: string): Promise<SetupLocalRow[]> {
   const agreements = await prisma.companyUnionAgreement.findMany({
@@ -354,19 +358,30 @@ export async function loadUnionSetup(companyId: string): Promise<SetupLocalRow[]
     include: {
       unionLocal: {
         include: {
-          apprenticeRatioRules: { orderBy: { createdAt: "desc" }, take: 1 },
+          // ROWS scoped, not just the counts below. Two contractors can be
+          // signatory to the same real local, so an agreement of yours still
+          // reaches a local carrying everyone's classifications, schedules and
+          // ratio rules. Unfiltered, `schedules[]` renders ANOTHER signatory's
+          // baseWage, pension, H&W and training rates on /union-compliance —
+          // the numbers on the cheque — and `ratio` resolves to the newest rule
+          // on the local by anybody, so a company can be shown a rule it never
+          // set. Issue #205; the column these filters need landed in #200.
+          apprenticeRatioRules: { where: { companyId }, orderBy: { createdAt: "desc" }, take: 1 },
           craftClassifications: {
+            where: { companyId },
             orderBy: { name: "asc" },
             include: {
-              fringeRateSchedules: { orderBy: { effectiveFrom: "desc" } },
-              // Every one of these four is FILTERED to the viewing company.
-              // CraftClassification is global, so an unfiltered _count here
-              // counts every contractor's rows and renders them as this
-              // company's "N records tagged" — someone else's headcount and
-              // catalog size, read off a page you reach by typing a public
-              // local number. TimeEntry, JobLineItem and DispatchSlip reach a
-              // company only through Job; LineItemCatalogEntry carries
-              // companyId itself.
+              fringeRateSchedules: { where: { companyId }, orderBy: { effectiveFrom: "desc" } },
+              // Every one of these four is FILTERED to the viewing company, and
+              // still needs to be after the row filters above: a count relation
+              // reaches a company through Job rather than carrying companyId
+              // itself. TimeEntry, JobLineItem and DispatchSlip reach a company
+              // only through Job; LineItemCatalogEntry carries companyId.
+              //
+              // The justification here used to read "CraftClassification is
+              // global". That was true when written and false since #200, and
+              // it was the stated reason the rows around it went unfiltered —
+              // which is how #205 survived #203.
               _count: {
                 select: {
                   timeEntries: { where: { job: { companyId } } },
