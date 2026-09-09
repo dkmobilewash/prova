@@ -14,6 +14,7 @@ import {
   enumFromForm,
   nullableDecimalFromForm,
   optionalEnumFromForm,
+  plural,
 } from "./shared";
 
 /** Thrown by the form parsers below, caught at each action's boundary and
@@ -162,14 +163,22 @@ export async function deleteContact(contactId: string): Promise<ActionResult> {
     });
     if (!contact || contact.companyId !== context.company.id) return fail("Contact not found");
 
-    if (
-      contact._count.jobs > 0 ||
-      contact._count.bidInvitations > 0 ||
-      contact._count.interactions > 0 ||
-      contact._count.people > 0
-    ) {
+    // #76: this used to name every count, including the zero ones —
+    // "0 job(s) and 3 bid invitation(s)". List only what's actually there.
+    const reasons = [
+      contact._count.jobs > 0 ? plural(contact._count.jobs, "job", "jobs") : null,
+      contact._count.bidInvitations > 0
+        ? plural(contact._count.bidInvitations, "bid invitation", "bid invitations")
+        : null,
+      contact._count.interactions > 0
+        ? plural(contact._count.interactions, "logged interaction", "logged interactions")
+        : null,
+      contact._count.people > 0 ? plural(contact._count.people, "person", "people") : null,
+    ].filter((reason): reason is string => reason !== null);
+
+    if (reasons.length > 0) {
       return fail(
-        `${contact.name} has ${contact._count.jobs} job(s), ${contact._count.bidInvitations} bid invitation(s), ${contact._count.interactions} logged interaction(s), and ${contact._count.people} people on file, so its record stays. Only a contact with no history can be deleted.`,
+        `${contact.name} has ${reasons.join(", ")} on file, so its record stays. Only a contact with no history can be deleted.`,
       );
     }
 

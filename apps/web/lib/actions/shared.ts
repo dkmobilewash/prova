@@ -246,3 +246,10 @@ export function isUniqueConstraintError(err: unknown): boolean {
     (err as { code?: unknown }).code === "P2002"
   );
 }
+
+/** "1 job" / "3 bid invitations" — for messages that name a count.
+ * Originally local to unionCompliance.ts; moved here (#76) so a second
+ * caller doesn't grow its own copy. */
+export function plural(count: number, one: string, many: string) {
+  return `${count} ${count === 1 ? one : many}`;
+}
