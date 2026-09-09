@@ -88,6 +88,7 @@ describe("confirmAskProposal against a real database", () => {
   });
 
   afterAll(async () => {
+    await prisma.dailyFieldReport.deleteMany({ where: { companyId } });
     await prisma.job.deleteMany({ where: { companyId } });
     await prisma.askProposal.deleteMany({ where: { companyId } });
     await prisma.contact.deleteMany({ where: { companyId } });
@@ -150,6 +151,60 @@ describe("confirmAskProposal against a real database", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(/cancelled/i);
     expect(await prisma.job.count({ where: { companyId, name: jobName } })).toBe(0);
+  });
+
+  it("a field-report card executes Cyrus's action in-process, and the action's own guard refuses the second", async () => {
+    // Phase 2: the command builds the FormData the form would have posted
+    // and calls createDailyFieldReport itself. This is the first place that
+    // call is executed against a real database rather than reasoned about.
+    const job = await prisma.job.create({
+      data: { companyId, contactId, name: `ASK-DBTEST field ${Date.now()}` },
+    });
+    const card = async () => {
+      const id = linkToken();
+      proposalIds.push(id);
+      await prisma.askProposal.create({
+        data: {
+          id,
+          companyId,
+          createdByUserId: ownerId,
+          command: "log_daily_field_report",
+          mode: "DIRECT",
+          question: "log today's report",
+          input: { jobName: job.name, workPerformed: "hung board" },
+          resolved: {
+            jobId: job.id,
+            jobName: job.name,
+            reportDate: "2026-09-08",
+            workPerformed: "hung board on level 2",
+            crewPresent: "crew of 6",
+            weather: null,
+            delays: null,
+          },
+          preview: [],
+          model: "test",
+          toolUseId: "tu_test",
+          toolUseIdsInContext: [],
+          expiresAt: new Date(Date.now() + 10 * 60_000),
+        },
+      });
+      return id;
+    };
+
+    const first = await confirmAskProposal(await card());
+    expect(first.ok).toBe(true);
+    const reports = await prisma.dailyFieldReport.findMany({ where: { jobId: job.id } });
+    expect(reports).toHaveLength(1);
+    expect(reports[0].workPerformed).toBe("hung board on level 2");
+    expect(reports[0].filedByUserId).toBe(ownerId);
+    expect(reports[0].reportDate.toISOString()).toBe("2026-09-08T00:00:00.000Z");
+
+    // A second card for the same day: the unique constraint inside the
+    // action refuses, and its sentence is what the tap returns.
+    const second = await confirmAskProposal(await card());
+    expect(second.ok).toBe(false);
+    if (!second.ok) expect(second.error).toMatch(/already exists for that date/);
+    expect(await prisma.dailyFieldReport.count({ where: { jobId: job.id } })).toBe(1);
   });
 
   it("a card whose natural key already matches a job links to it rather than making a twin", async () => {

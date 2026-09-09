@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import type { AskRequest, AskStreamEvent, ClarifyView, ProposalView } from "@/lib/ask/answer";
 import type { Citation } from "@/lib/ask/tools";
-import { cancelAskProposal, confirmAskProposal } from "@/lib/actions";
+import { cancelAskProposal, confirmAskProposal, loadAskProposal } from "@/lib/actions";
 import { AskProposalCard, type ProposalOutcome } from "@/components/AskProposalCard";
 
 /** The ask box on the dashboard.
@@ -28,6 +28,29 @@ import { AskProposalCard, type ProposalOutcome } from "@/components/AskProposalC
  * And none of them names a specific job. One did, and the job did not
  * exist in the data: a chip that asks about a job you do not have is the
  * same broken promise, dressed as a worked example. */
+/** Where a pending card's id lives while a phone browser is backgrounded.
+ * sessionStorage, not localStorage: it dies with the tab, and a card is
+ * not a standing instruction. Every access is wrapped, since storage can
+ * throw in a private window and the panel must still render. */
+const PENDING_CARD_KEY = "askProposalId";
+
+function rememberCard(id: string | null) {
+  try {
+    if (id) sessionStorage.setItem(PENDING_CARD_KEY, id);
+    else sessionStorage.removeItem(PENDING_CARD_KEY);
+  } catch {
+    // No storage, no reattach; nothing else changes.
+  }
+}
+
+function rememberedCard(): string | null {
+  try {
+    return sessionStorage.getItem(PENDING_CARD_KEY);
+  } catch {
+    return null;
+  }
+}
+
 const EXAMPLES = [
   "What's overdue and who do I chase first?",
   "Which drawings am I not building to the latest revision of?",
@@ -78,6 +101,25 @@ export function AskPanel() {
   // overwrites the one being read.
   useEffect(() => () => abortRef.current?.abort(), []);
 
+  // A card proposed before the tab went to the background comes back with
+  // it. The server decides whether it is still this person's, unsettled
+  // and unexpired; anything else and the id is simply forgotten.
+  useEffect(() => {
+    const id = rememberedCard();
+    if (!id) return;
+    startConfirm(async () => {
+      const result = await loadAskProposal(id);
+      if (result.ok) {
+        setAsked(result.value.question);
+        setProposal(result.value.proposal);
+      } else {
+        rememberCard(null);
+      }
+    });
+    // Mount only: a reattach is a one-time read of what the tab remembered.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   function apply(event: AskStreamEvent) {
     switch (event.type) {
       case "tools":
@@ -123,6 +165,7 @@ export function AskPanel() {
         // Terminal. Whatever the model was saying is not the answer; the
         // card is.
         setProposal(event.proposal);
+        rememberCard(event.proposal.proposalId);
         setStatus(null);
         progressRef.current = "";
         setProgress("");
@@ -148,6 +191,7 @@ export function AskPanel() {
    * stale tab. */
   function clearResult() {
     if (proposal && !outcome) void cancelAskProposal(proposal.proposalId);
+    rememberCard(null);
     setAnswer("");
     setCitations([]);
     setError(null);
@@ -255,6 +299,7 @@ export function AskPanel() {
       const result = await confirmAskProposal(current.proposalId);
       if (result.ok) {
         setOutcome(result.value);
+        rememberCard(null);
       } else {
         setTapError(result.error);
       }
@@ -266,6 +311,7 @@ export function AskPanel() {
       await cancelAskProposal(current.proposalId);
       setProposal(null);
       setTapError(null);
+      rememberCard(null);
     });
   }
 

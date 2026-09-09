@@ -20,6 +20,8 @@ import { COMMANDS, EXCLUSIONS } from "./commands";
  */
 const actionsDir = fileURLToPath(new URL("../actions/", import.meta.url));
 
+const actionSources: string[] = [];
+
 function exportedActions(): { moduleName: string; name: string }[] {
   const found: { moduleName: string; name: string }[] = [];
   for (const file of readdirSync(actionsDir)) {
@@ -28,6 +30,7 @@ function exportedActions(): { moduleName: string; name: string }[] {
     if (file.endsWith(".test.ts") || file.endsWith(".dbtest.ts")) continue;
     const moduleName = file.replace(/\.ts$/, "");
     const source = readFileSync(join(actionsDir, file), "utf8");
+    actionSources.push(source);
     for (const match of source.matchAll(/^export async function (\w+)/gm)) {
       found.push({ moduleName, name: match[1] });
     }
@@ -84,14 +87,27 @@ describe("command coverage of lib/actions", () => {
     }
   });
 
-  it("names every DIRECT command's core in lib/estimating or a sibling lib", () => {
+  it("lets a DIRECT command execute only through a lifted core or an action that RETURNS its failures", () => {
+    // Production redacts a thrown Server Action message, so a command over
+    // a throwing action would put a digest on the card. A DIRECT command's
+    // core is therefore either a lib/estimating export (plain result) or
+    // an action whose signature promises ActionResult. A throwing action
+    // is HANDOFF until its owner converts it.
     const libDir = fileURLToPath(new URL("../", import.meta.url));
+    const estimatingDir = join(libDir, "estimating");
+    const estimatingSource = readdirSync(estimatingDir)
+      .map((file) => readFileSync(join(estimatingDir, file), "utf8"))
+      .join("\n");
     for (const command of COMMANDS) {
       if (command.mode !== "DIRECT" || !command.core) continue;
-      const hits = readdirSync(join(libDir, "estimating")).some((file) =>
-        readFileSync(join(libDir, "estimating", file), "utf8").includes(`export async function ${command.core}`),
+      const liftedCore = estimatingSource.includes(`export async function ${command.core}`);
+      const returningAction = actionSources.some((source) =>
+        new RegExp(`export async function ${command.core}\\([^)]*\\)[^{]*Promise<ActionResult>`).test(source),
       );
-      expect(hits, `${command.name} names core ${command.core}, which no lib/estimating file exports`).toBe(true);
+      expect(
+        liftedCore || returningAction,
+        `${command.name}: core ${command.core} is neither a lib/estimating export nor an ActionResult-returning action; a throwing action must be HANDOFF`,
+      ).toBe(true);
     }
   });
 });
