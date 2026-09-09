@@ -47,7 +47,10 @@ payload, the same rule as the tap on a DIRECT card. The first load stamps
 `openedAt`, which is what stops the dashboard reattaching a card whose
 form is already open somewhere. A page opened with a card it cannot load
 renders `<AskDraftNotice>` above the blank form rather than a silently
-blank form. After the form's action succeeds, `settleAskDraft` records
+blank form — except for the person's own card already saved, since the
+page after the form's save re-renders with `?draft=` still in the URL and
+must not call a just-saved card gone; only the owner gets that
+distinction. After the form's action succeeds, `settleAskDraft` records
 the card as done; it does NOT re-read the payload, because the person
 may have changed every field before saving, and what was saved is the
 form's record — the card only ever proposed.

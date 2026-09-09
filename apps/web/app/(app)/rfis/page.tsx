@@ -2,6 +2,8 @@ import Link from "next/link";
 import { prisma } from "@prova/db";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
+import { AskDraftNotice } from "@/components/AskDraftNotice";
+import { loadRfiDraft } from "@/lib/ask/drafts";
 import { RfiForm } from "@/components/RfiForm";
 import { RfiRow } from "@/components/RfiRow";
 import { isOpen, isOverdue } from "@/components/rfiLabels";
@@ -16,13 +18,18 @@ function isoDate(date: Date | null) {
 export default async function RfisPage({
   searchParams,
 }: {
-  searchParams: Promise<{ job?: string; show?: string }>;
+  searchParams: Promise<{ job?: string; show?: string; draft?: string }>;
 }) {
   const { context, allowed } = await requireCapability("MANAGE_JOBS");
   if (!allowed) return <NoAccess capability="MANAGE_JOBS" />;
   const { company, ...currentUser } = context;
-  const { job: jobFilter, show } = await searchParams;
+  const { job: jobFilter, show, draft } = await searchParams;
   const showClosed = show === "all";
+
+  // A card from the Ask box (lib/ask/drafts.ts): the form opens prefilled
+  // from the server-held row, and its own Save is the write.
+  const askDraft = await loadRfiDraft(context, draft);
+  const rfiDraft = askDraft.kind === "draft" ? askDraft.draft : undefined;
 
   const today = new Date().toISOString().slice(0, 10);
 
@@ -106,7 +113,13 @@ export default async function RfisPage({
       </p>
 
       <section className="mb-8">
-        <RfiForm jobs={jobs} defaultJobId={activeJob ?? undefined} today={today} />
+        {askDraft.kind === "gone" && <AskDraftNotice what="RFI" />}
+        <RfiForm
+          jobs={jobs}
+          defaultJobId={rfiDraft?.jobId ?? activeJob ?? undefined}
+          today={today}
+          draft={rfiDraft}
+        />
       </section>
 
       <div className="mb-4 grid gap-3 sm:grid-cols-3">

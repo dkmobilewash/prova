@@ -6,8 +6,9 @@ import { prisma } from "@prova/db";
  * once per person, the tap cannot execute it, the form settles it, and
  * after that neither the page nor the dashboard sees it again. Every rule
  * in lib/ask/drafts.ts's comment is a case here, because a loader that
- * answers null for six reasons is exactly the kind of thing that passes
- * by never being asked the seventh.
+ * answers "gone" for six reasons is exactly the kind of thing that passes
+ * by never being asked the seventh — and one that must answer "settled"
+ * to the owner alone is the kind that leaks by answering it to everyone.
  */
 const context = {
   company: { id: "" },
@@ -90,12 +91,15 @@ describe("a HANDOFF card against a real database", () => {
     const id = await card("raise_rfi");
     const first = await loadRfiDraft(viewer(), id);
     expect(first).toEqual({
-      proposalId: id,
-      jobId,
-      subject: "Head-of-wall",
-      question: "Which governs?",
-      drawingReference: "A-501 / 3",
-      specSection: null,
+      kind: "draft",
+      draft: {
+        proposalId: id,
+        jobId,
+        subject: "Head-of-wall",
+        question: "Which governs?",
+        drawingReference: "A-501 / 3",
+        specSection: null,
+      },
     });
     const opened = (await prisma.askProposal.findUniqueOrThrow({ where: { id } })).openedAt;
     expect(opened).not.toBeNull();
@@ -103,27 +107,31 @@ describe("a HANDOFF card against a real database", () => {
     // A reload of the page before saving still has the draft, and the
     // first opening is the one on record.
     const second = await loadRfiDraft(viewer(), id);
-    expect(second?.subject).toBe("Head-of-wall");
+    expect(second.kind === "draft" ? second.draft.subject : null).toBe("Head-of-wall");
     expect((await prisma.askProposal.findUniqueOrThrow({ where: { id } })).openedAt).toEqual(opened);
   });
 
-  it("does not load for somebody else in the same company, for the wrong page, in DIRECT mode, or after expiry", async () => {
+  it("answers 'gone' alike for somebody else's card, the wrong page, DIRECT mode, expiry and a made-up id — and 'none' for no card at all", async () => {
     const theirs = await card("raise_rfi", { createdByUserId: otherUserId });
-    expect(await loadRfiDraft(viewer(), theirs)).toBeNull();
+    expect(await loadRfiDraft(viewer(), theirs)).toEqual({ kind: "gone" });
     expect((await prisma.askProposal.findUniqueOrThrow({ where: { id: theirs } })).openedAt).toBeNull();
 
     const punch = await card("add_punch_item");
-    expect(await loadRfiDraft(viewer(), punch)).toBeNull();
-    expect(await loadPunchDraft(viewer(), punch)).toEqual({ proposalId: punch, jobId, description: "grid out of level" });
+    expect(await loadRfiDraft(viewer(), punch)).toEqual({ kind: "gone" });
+    expect(await loadPunchDraft(viewer(), punch)).toEqual({
+      kind: "draft",
+      draft: { proposalId: punch, jobId, description: "grid out of level" },
+    });
 
     const direct = await card("raise_rfi", { mode: "DIRECT" });
-    expect(await loadRfiDraft(viewer(), direct)).toBeNull();
+    expect(await loadRfiDraft(viewer(), direct)).toEqual({ kind: "gone" });
 
     const expired = await card("raise_rfi", { expiresAt: new Date(Date.now() - 60_000) });
-    expect(await loadRfiDraft(viewer(), expired)).toBeNull();
+    expect(await loadRfiDraft(viewer(), expired)).toEqual({ kind: "gone" });
 
-    expect(await loadRfiDraft(viewer(), undefined)).toBeNull();
-    expect(await loadRfiDraft(viewer(), "not-a-card")).toBeNull();
+    expect(await loadRfiDraft(viewer(), "not-a-card")).toEqual({ kind: "gone" });
+    expect(await loadRfiDraft(viewer(), "")).toEqual({ kind: "gone" });
+    expect(await loadRfiDraft(viewer(), undefined)).toEqual({ kind: "none" });
   });
 
   it("cannot be executed by the tap, and the tap leaves it for the page", async () => {
@@ -134,19 +142,23 @@ describe("a HANDOFF card against a real database", () => {
     const row = await prisma.askProposal.findUniqueOrThrow({ where: { id } });
     expect(row.claimedAt).toBeNull();
     expect(row.outcome).toBeNull();
-    expect(await loadPunchDraft(viewer(), id)).not.toBeNull();
+    expect((await loadPunchDraft(viewer(), id)).kind).toBe("draft");
   });
 
-  it("is settled by the form once, and then neither the page nor the dashboard offers it", async () => {
+  it("is settled by the form once; the page then sees its own card as settled, not gone, and the dashboard drops it", async () => {
     const id = await card("raise_rfi");
-    expect(await loadRfiDraft(viewer(), id)).not.toBeNull();
+    expect((await loadRfiDraft(viewer(), id)).kind).toBe("draft");
 
     expect((await settleAskDraft(id)).ok).toBe(true);
     const row = await prisma.askProposal.findUniqueOrThrow({ where: { id } });
     expect(row.outcome).toBe("OK");
     expect(row.claimedAt).not.toBeNull();
 
-    expect(await loadRfiDraft(viewer(), id)).toBeNull();
+    // The page after the form's own save still carries ?draft= in its
+    // URL; it must not tell the person their card is gone.
+    expect(await loadRfiDraft(viewer(), id)).toEqual({ kind: "settled" });
+    // But a colleague with the same URL learns nothing.
+    expect(await loadRfiDraft({ company: { id: companyId }, id: otherUserId }, id)).toEqual({ kind: "gone" });
     const reattach = await loadAskProposal(id);
     expect(reattach.ok).toBe(false);
 
