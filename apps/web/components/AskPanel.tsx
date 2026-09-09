@@ -117,7 +117,6 @@ export function AskPanel() {
       }
     });
     // Mount only: a reattach is a one-time read of what the tab remembered.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function apply(event: AskStreamEvent) {
@@ -444,6 +443,10 @@ export function AskPanel() {
               outcome={outcome}
               onConfirm={() => confirm(proposal)}
               onCancel={() => cancel(proposal)}
+              // Leaving for the page the card hands off to. The card is
+              // forgotten here rather than cancelled: the page will load
+              // it, and the server refuses to reattach an opened card.
+              onOpen={() => rememberCard(null)}
             />
           )}
 

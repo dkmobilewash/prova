@@ -6,6 +6,9 @@ import type { ProposalView } from "@/lib/ask/answer";
 /** What a confirmed card shows in place of its buttons. */
 export type ProposalOutcome = { message: string; created?: { label: string; href: string } };
 
+const PRIMARY =
+  "inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 py-2 text-base font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50";
+
 /**
  * The card a command puts in front of a person.
  *
@@ -22,6 +25,12 @@ export type ProposalOutcome = { message: string; created?: { label: string; href
  * confirm that timed out may have landed (the row's claim says so, not the
  * response), and a second tap is exactly the duplicate this app has paid
  * for before.
+ *
+ * A HANDOFF card (`handoffHref` set) renders a LINK in the primary's place,
+ * styled the same: the tap goes to the page whose form does the write,
+ * with the card id in the URL and nothing else. There is nothing to
+ * confirm here and nothing in flight, so it is never disabled; `onOpen`
+ * lets the panel forget the card as the person leaves.
  */
 export function AskProposalCard({
   proposal,
@@ -30,6 +39,7 @@ export function AskProposalCard({
   outcome,
   onConfirm,
   onCancel,
+  onOpen,
 }: {
   proposal: ProposalView;
   pending: boolean;
@@ -37,9 +47,11 @@ export function AskProposalCard({
   outcome: ProposalOutcome | null;
   onConfirm: () => void;
   onCancel: () => void;
+  onOpen?: () => void;
 }) {
   const settled = outcome !== null;
   const offersButton = !settled && !proposal.existing;
+  const handoff = proposal.handoffHref;
 
   return (
     <div
@@ -83,6 +95,12 @@ export function AskProposalCard({
         </p>
       )}
 
+      {handoff && offersButton && (
+        <p className="mt-2 text-xs text-ink-body" data-ask="handoff-note">
+          Opens the form with these filled in. Nothing is saved until you save it there.
+        </p>
+      )}
+
       {outcome && (
         <p className="mt-2 text-sm text-ink" data-ask="outcome">
           {outcome.created && (
@@ -112,13 +130,18 @@ export function AskProposalCard({
           >
             {offersButton ? "Cancel" : "Dismiss"}
           </button>
-          {offersButton && (
+          {offersButton && handoff && (
+            <Link href={handoff} onClick={onOpen} className={PRIMARY} data-ask="handoff">
+              {proposal.button}
+            </Link>
+          )}
+          {offersButton && !handoff && (
             <button
               type="button"
               onClick={onConfirm}
               disabled={pending}
               aria-busy={pending || undefined}
-              className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 py-2 text-base font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+              className={PRIMARY}
             >
               {pending ? "Working…" : proposal.button}
             </button>

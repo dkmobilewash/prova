@@ -7,6 +7,7 @@ import { resolveCatalogEntry, resolveContact, resolveJob } from "../resolve";
 import type {
   CommandContext,
   CommandDefinition,
+  DirectCommandDefinition,
   CommandInput,
   Exclusion,
   PreviewLine,
@@ -191,7 +192,7 @@ async function executeCreateJob(ctx: CommandContext, payload: ResolvedPayload) {
   return { ok: true as const, message, created: link };
 }
 
-export const createEstimateJobCommand: CommandDefinition = {
+export const createEstimateJobCommand: DirectCommandDefinition = {
   name: "create_estimate_job",
   description:
     "Starts a NEW job at the ESTIMATE stage for a general contractor. There is no separate estimate record: a job's line items ARE its estimate. Needs the job's name and the GC's name — if the person gave either one no name, ask them for it instead of calling this. When a scope of work is given, line items are drafted from it after the job exists, flagged for review. Does NOT contract the job, price anything itself, or send anything. It proposes only: the person confirms on a card before anything is created.",
@@ -306,7 +307,7 @@ async function executeDraftLines(ctx: CommandContext, payload: ResolvedPayload) 
   };
 }
 
-export const draftEstimateLinesCommand: CommandDefinition = {
+export const draftEstimateLinesCommand: DirectCommandDefinition = {
   name: "draft_estimate_lines",
   description:
     "Drafts line items for an EXISTING estimate-stage job from a scope of work, each flagged for review. Needs the job's name; uses the scope the person gives now, or the scope already recorded on the job when they give none. Refuses when the job already has drafted lines or is past the estimate stage. Does NOT price anything itself: a price comes from the company's catalog or its won bids, or is marked as a guess.",
@@ -443,7 +444,7 @@ async function executeCatalogLine(ctx: CommandContext, payload: ResolvedPayload)
   };
 }
 
-export const addCatalogLineCommand: CommandDefinition = {
+export const addCatalogLineCommand: DirectCommandDefinition = {
   name: "add_catalog_line",
   description:
     "Adds ONE line to an estimate-stage job from the company's own catalog, at the catalog's price. Needs the job's name, the catalog item as the person named it, and a quantity; ask for whichever is missing. Does NOT invent an item or a price: when the catalog has no such item it refuses and says so. Does NOT total anything.",
