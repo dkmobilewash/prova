@@ -141,6 +141,37 @@ model Invoice {
   @@index([jobId])
 }
 
+/// Issues invoice numbers per job. The eighth counter, and the last
+/// sequence in this product that was still computed from surviving rows.
+///
+/// `nextInvoiceNumber` was `max(number) + 1`, read outside any
+/// transaction. CLAUDE.md's sequence rule forbids exactly that, and this
+/// model is what makes invoice numbers obey it.
+///
+/// WHAT THAT ACTUALLY COST, stated narrowly because the obvious reading
+/// overstates it. The documented headline was "delete invoice 3 of 3 and
+/// the next invoice is 3 again" — but there is no deleteInvoice anywhere
+/// in this app, by design: an invoice is an evidence record, so it closes
+/// and never deletes. Reissue-after-deletion needs a row removed by hand.
+///
+/// The reachable defect was the RACE. Two submits on one job read the same
+/// max, computed the same next number, and the second violated
+/// @@unique([jobId, number]) — a thrown Server Action message, which
+/// production REDACTS, on a document a GC is waiting for. An upsert bumped
+/// inside the insert's own transaction cannot produce two of a number,
+/// whoever submits.
+///
+/// BACKFILLED from MAX(number) per job when it was created. Starting every
+/// counter at zero would have made the first invoice on every existing job
+/// collide with its own history immediately.
+model InvoiceCounter {
+  jobId      String @id
+  job        Job    @relation(fields: [jobId], references: [id])
+  lastNumber Int    @default(0)
+
+  updatedAt DateTime @updatedAt
+}
+
 /// A payment received against an Invoice. No payment processor — this is a
 /// manual record (check, cash, card swipe elsewhere), not a charge. An
 /// invoice can have several, supporting partial/progress payments.

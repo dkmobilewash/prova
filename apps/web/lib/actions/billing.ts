@@ -6,7 +6,7 @@ import { putDocument } from "@/lib/blob";
 import { linkToken } from "@/lib/tokens";
 import { requireCompanyContext } from "@/lib/auth";
 import { money as formatMoney } from "@/lib/money";
-import { prisma } from "@prova/db";
+import { prisma, Prisma } from "@prova/db";
 import { revokeToken, refreshTokens, getCompanyInfo, generateWipNarrative, type QuickBooksCompanyInfo } from "@prova/integrations";
 import { calculateLineItemWip, calculateJobWip } from "@/lib/wip";
 import { MIN_EARNED_COVERAGE } from "@/lib/company-financials";
@@ -149,9 +149,40 @@ export async function enablePortalAccess(contactId: string) {
   revalidatePath(`/contacts/${contactId}`);
 }
 
-async function nextInvoiceNumber(jobId: string) {
-  const last = await prisma.invoice.findFirst({ where: { jobId }, orderBy: { number: "desc" } });
-  return (last?.number ?? 0) + 1;
+/**
+ * The next invoice number for a job, from a counter row that only ever
+ * increments — the eighth of these, and the same shape as issueRfiNumber.
+ *
+ * WHAT THIS REPLACED, and why the replacement takes a `tx`. It was
+ * `max(number) + 1` off the surviving invoices, read outside any
+ * transaction, with both call sites computing it and then calling `create`
+ * separately. CLAUDE.md's sequence-number rule forbids exactly that, and
+ * this is the last sequence in the product that was still breaking it.
+ *
+ * THE REACHABLE COST WAS THE RACE, not the reissue the rule usually warns
+ * about. Two submits on one job read the same max, computed the same next
+ * number, and the second violated @@unique([jobId, number]) — a thrown
+ * Server Action message, which production REDACTS, on a document a GC is
+ * waiting for. #19's in-flight button disable and the pay application's
+ * ten-second duplicate guard both narrow that window; neither closes it,
+ * and neither helps two people billing one job at once.
+ *
+ * Reissue-after-deletion, which the rule leads with, was never reachable
+ * here: there is no deleteInvoice in this app, by design, because an
+ * invoice is an evidence record that closes rather than deletes.
+ *
+ * Taking the transaction client rather than reaching for `prisma` is the
+ * whole point — the bump and the insert have to be one transaction, or
+ * this is the old bug wearing a counter.
+ */
+async function issueInvoiceNumber(tx: Prisma.TransactionClient, jobId: string) {
+  const counter = await tx.invoiceCounter.upsert({
+    where: { jobId },
+    create: { jobId, lastNumber: 1 },
+    update: { lastNumber: { increment: 1 } },
+    select: { lastNumber: true },
+  });
+  return counter.lastNumber;
 }
 
 /** Bills the client. Only once a job is CONTRACTED or later — you don't
@@ -174,9 +205,17 @@ export async function createInvoice(jobId: string, formData: FormData) {
   const retainageWithheld =
     job.retainagePercent != null ? (Number(amount) * (Number(job.retainagePercent) / 100)).toFixed(2) : null;
 
-  const number = await nextInvoiceNumber(jobId);
-  await prisma.invoice.create({
-    data: { jobId, number, description: description || null, amount, dueAt, retainageWithheld },
+  await prisma.$transaction(async (tx) => {
+    await tx.invoice.create({
+      data: {
+        jobId,
+        number: await issueInvoiceNumber(tx, jobId),
+        description: description || null,
+        amount,
+        dueAt,
+        retainageWithheld,
+      },
+    });
   });
 
   revalidatePath(`/jobs/${jobId}`);
@@ -320,23 +359,24 @@ export async function submitPayApplication(jobId: string, formData: FormData): P
     );
   }
 
-  const number = await nextInvoiceNumber(jobId);
-  await prisma.invoice.create({
-    data: {
-      jobId,
-      number,
-      description: description || null,
-      amount: amount.toFixed(2),
-      dueAt,
-      retainageWithheld,
-      lineItems: {
-        create: rows.map((row) => ({
-          lineItemId: row.lineItemId,
-          thisPeriodBilled: row.thisPeriodBilled.toFixed(2),
-          materialsStoredValue: row.materialsStoredValue.toFixed(2),
-        })),
+  await prisma.$transaction(async (tx) => {
+    await tx.invoice.create({
+      data: {
+        jobId,
+        number: await issueInvoiceNumber(tx, jobId),
+        description: description || null,
+        amount: amount.toFixed(2),
+        dueAt,
+        retainageWithheld,
+        lineItems: {
+          create: rows.map((row) => ({
+            lineItemId: row.lineItemId,
+            thisPeriodBilled: row.thisPeriodBilled.toFixed(2),
+            materialsStoredValue: row.materialsStoredValue.toFixed(2),
+          })),
+        },
       },
-    },
+    });
   });
 
   revalidatePath(`/jobs/${jobId}`);

@@ -31,7 +31,7 @@ vi.mock("next/cache", () => ({
   },
 }));
 
-const { logPayment, submitPayApplication } = await import("./billing");
+const { createInvoice, logPayment, submitPayApplication } = await import("./billing");
 
 let jobId = "";
 let invoiceId = "";
@@ -154,6 +154,11 @@ describe("submitPayApplication against a real database", () => {
     await prisma.invoiceLineItem.deleteMany({ where: { invoice: { jobId } } });
     await prisma.invoice.deleteMany({ where: { jobId } });
     await prisma.jobLineItem.deleteMany({ where: { jobId } });
+    // InvoiceCounter holds a RESTRICT foreign key to Job, and
+    // submitPayApplication now writes one — so the job delete below fails
+    // without this. Found by the counter breaking this teardown, which is
+    // the same way #136's ON DELETE RESTRICT surfaced in three afterAlls.
+    await prisma.invoiceCounter.deleteMany({ where: { jobId } });
     await prisma.job.deleteMany({ where: { companyId: context.company.id } });
     await prisma.contact.deleteMany({ where: { companyId: context.company.id } });
     await prisma.company.delete({ where: { id: context.company.id } });
@@ -217,5 +222,78 @@ describe("submitPayApplication against a real database", () => {
     );
     expect(result).toEqual({ ok: true });
     expect(await prisma.invoice.count({ where: { jobId } })).toBe(3);
+  });
+});
+
+
+describe("invoice numbers come from a counter, against a real database", () => {
+  const ctx = { companyId: "", jobId: "" };
+
+  beforeAll(async () => {
+    const company = await prisma.company.create({ data: { name: "Invoice Counter Test Co" } });
+    ctx.companyId = company.id;
+    const contact = await prisma.contact.create({ data: { companyId: company.id, name: "Counter GC" } });
+    const job = await prisma.job.create({
+      data: { companyId: company.id, contactId: contact.id, name: "Counter Job", status: "CONTRACTED" },
+    });
+    ctx.jobId = job.id;
+    context.company.id = company.id;
+  });
+
+  afterAll(async () => {
+    await prisma.invoice.deleteMany({ where: { jobId: ctx.jobId } });
+    await prisma.invoiceCounter.deleteMany({ where: { jobId: ctx.jobId } });
+    await prisma.job.deleteMany({ where: { companyId: ctx.companyId } });
+    await prisma.contact.deleteMany({ where: { companyId: ctx.companyId } });
+    await prisma.company.delete({ where: { id: ctx.companyId } });
+  });
+
+  it("issues 1 then 2, and records the counter alongside", async () => {
+    context.company.id = ctx.companyId;
+    await createInvoice(ctx.jobId, form({ amount: "1000" }));
+    await createInvoice(ctx.jobId, form({ amount: "2000" }));
+
+    const numbers = (
+      await prisma.invoice.findMany({ where: { jobId: ctx.jobId }, orderBy: { number: "asc" } })
+    ).map((i) => i.number);
+    expect(numbers).toEqual([1, 2]);
+
+    const counter = await prisma.invoiceCounter.findUnique({ where: { jobId: ctx.jobId } });
+    expect(counter?.lastNumber).toBe(2);
+  });
+
+  it("does NOT reissue a number after the row it belonged to is removed", async () => {
+    // The property the counter exists for. There is no deleteInvoice in
+    // the app — an invoice is an evidence record — so this deletes
+    // directly, which is the only way it could happen at all. Under
+    // max(number) + 1 the next invoice here would be 2 a second time, on a
+    // document a GC has already been sent.
+    await prisma.invoice.delete({ where: { jobId_number: { jobId: ctx.jobId, number: 2 } } });
+    await createInvoice(ctx.jobId, form({ amount: "3000" }));
+
+    const numbers = (
+      await prisma.invoice.findMany({ where: { jobId: ctx.jobId }, orderBy: { number: "asc" } })
+    ).map((i) => i.number);
+    expect(numbers).toEqual([1, 3]);
+  });
+
+  it("cannot issue the same number twice when two submits race", async () => {
+    // The reachable half of the defect, and the reason this is a fix
+    // rather than a tidy-up. Under max(number) + 1 both reads returned the
+    // same max and the second create violated @@unique([jobId, number]) —
+    // a thrown Server Action message, which production redacts, on a
+    // GC-facing document. Run concurrently rather than in sequence,
+    // because sequential calls could never have exhibited it.
+    await Promise.all([
+      createInvoice(ctx.jobId, form({ amount: "10" })),
+      createInvoice(ctx.jobId, form({ amount: "20" })),
+      createInvoice(ctx.jobId, form({ amount: "30" })),
+    ]);
+
+    const numbers = (
+      await prisma.invoice.findMany({ where: { jobId: ctx.jobId }, orderBy: { number: "asc" } })
+    ).map((i) => i.number);
+    expect(new Set(numbers).size).toBe(numbers.length);
+    expect(numbers).toEqual([1, 3, 4, 5, 6]);
   });
 });
