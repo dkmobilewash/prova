@@ -543,6 +543,52 @@ scrollback gets broken by whoever didn't scroll far enough.
   next person setting up a laptop will find it and reasonably assume it
   does something. Setting it does nothing at all, which is the worst of
   the three possible behaviours.)
+- **PREVIEW ISOLATION IS PER-RESOURCE, AND THE BLOB STORE IS NOT THE
+  DATABASE.** The three-project table above isolates one resource. It says
+  nothing about file storage, and "previews are isolated" is the sentence
+  a reader takes away from it — which was harmless until #195 shipped
+  photo upload and gave previews something to write that is not a row.
+
+  **A Vercel Blob store is ONE store, shared by every tenant.** That is
+  not incidental; it is the fact #195's own security fix rests on, and
+  why a URL from the store was never proof of whose file it was.
+
+  Diego's call, 2026-09-09: **Preview gets its own store, not
+  production's** — the same reason previews left `ep-little-sea`, that
+  browser testing must not write real things. Two details make sharing
+  worse than it looks: #195 ships no reaper, so a failed preview upload
+  strands a file nothing collects, and `isBlobStorageUrl` proves "some
+  Vercel store" rather than ours.
+
+  **Verify it the way the preview database is verified — from evidence
+  the app already emits, not from the dashboard.** Every blob URL is
+  built as
+
+      `https://${storeId}.${access}.blob.vercel-storage.com/${pathname}`
+
+  (`constructBlobUrl`, `@vercel/blob@2.8.0` `dist/chunk-YYMLUMXS.js:339`),
+  so **the first label of the hostname IS the store id**. Upload one photo
+  on a preview and one on production and compare that label: same means
+  one shared store, different means isolated. The URL is on screen in the
+  gallery; no credentials and no dashboard access are involved.
+
+  The same store id is derivable from the token, which is what closes
+  #195's open provenance item. The SDK reads `BLOB_READ_WRITE_TOKEN` as
+  `token.split("_")[3]` (`:120` — i.e. `vercel_blob_rw_<storeId>_<secret>`)
+  and strips a leading `store_` (`:158`). So pinning `isBlobStorageUrl` to
+  OUR store is one line, needs no new secret, and gets more useful with
+  two stores rather than less: each environment's own token names its own
+  store, so the check follows the environment automatically.
+
+  Two things no agent in this repo can do, so do not spend the afternoon
+  looking: **the Vercel MCP has no environment-variable tool** — projects,
+  deployments, build and runtime logs, deployment protection, domains and
+  analytics, and nothing that reads or writes an env var (checked three
+  times now, most recently 2026-09-09) — and a read-write blob token is a
+  credential, so it never travels through an agent channel regardless.
+  Connecting the store to an environment in the dashboard mints the
+  variable itself, which is better than pasting one: nothing is copied, so
+  nothing can be pasted into the wrong project.
 - **A successful write can show up as an empty list — cause NOT
   established, and now with TWO dead explanations instead of one.**
   Observed: the action returned ok, the row was in the database, the page

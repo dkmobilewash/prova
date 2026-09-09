@@ -68,6 +68,37 @@ point renders as a working empty state.
 
 ---
 
+### Preview isolation stopped at the database, and #195 gave previews files to write (Diego)
+`claude/prova-vercel-direct-url-hg1acx`
+
+**Docs-only, and an audit under working agreement 1's exception** — it
+corrects a claim this file's own reader takes away from CLAUDE.md and
+records what an investigation established, so nobody re-runs the checks.
+
+The three-Neon-project table isolates ONE resource. What people read off
+it is "previews are isolated", which was harmless until #195 shipped
+photo upload and gave a preview something to write that is not a row. A
+Vercel Blob store is one store shared by every tenant — the fact #195's
+own security fix rests on — so previews sharing production's store puts
+test files in the bucket holding real ones, with no reaper for the
+orphans a failed upload leaves. Diego's call: Preview gets its own store.
+
+The reusable half is that the split is now VERIFIABLE from the app rather
+than from a dashboard, the same way the preview database was settled from
+a build log. `@vercel/blob@2.8.0` builds every URL as
+`https://${storeId}.${access}.blob.vercel-storage.com/${pathname}`, so the
+first label of a photo's hostname IS the store id: upload one on a preview
+and one on production and compare. It also parses `BLOB_READ_WRITE_TOKEN`
+as `token.split("_")[3]`, which makes #195's open item — `isBlobStorageUrl`
+proving "some Vercel store" rather than ours — one line that needs no new
+secret and follows each environment to its own store.
+
+Also recorded so it stops being rediscovered: no agent here can set the
+variable. The Vercel MCP has no environment-variable tool at all, checked
+three times now, and a read-write token is a credential that does not
+travel through an agent channel regardless.
+
+
 ### Six write paths that duplicated money or evidence on a second run — #102 (Diego)
 `diego/idempotent-writes-102`
 
