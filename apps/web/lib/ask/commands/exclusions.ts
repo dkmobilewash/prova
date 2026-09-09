@@ -10,16 +10,17 @@ import type { Exclusion } from "../commands";
  * field, equipment, RFI and punch list lines — field and equipment in
  * phase 2a as DIRECT over Cyrus's ActionResult actions (commands/field.ts,
  * commands/equipment.ts), RFIs and punch items in phase 2b as HANDOFF over
- * his throwing ones (commands/rfis.ts, commands/punchLists.ts); phase 3
- * (Diego's lane) replaces billing and labor once the invoice counter and
- * the #102 natural keys exist.
+ * his throwing ones (commands/rfis.ts, commands/punchLists.ts). Phase 3
+ * (Diego's lane) replaced billing and labor once the invoice counter
+ * (#224) and the #102 guards (#213) existed — commands/billing.ts and
+ * commands/labor.ts.
  *
  * commands.coverage.test.ts fails the moment a new module appears with no
  * line here and no registration — so adding an action file is a decision
  * somebody makes, not something that happens.
  */
 const CYRUS = "Cyrus's lane (WORK-SPLIT.md); registered per action from his own file under lib/ask/commands in phase 2.";
-const MONEY = "Money or evidence tier (T3): waits for the invoice counter and the #102 natural keys, phase 3 in Diego's lane.";
+const MONEY = "Money or evidence tier (T3): registered per action from its own file under lib/ask/commands once its guards return sentences rather than throwing.";
 const ADMIN = "Owner administration (T5): a permission or connection an assistant could widen is not a permission. Never a command.";
 
 export const notYetRegistered: Exclusion[] = [
@@ -30,9 +31,7 @@ export const notYetRegistered: Exclusion[] = [
   { action: "ask.*", reason: "The confirm and cancel actions are the write path a card resolves to; never a command." },
 
   // Diego's lane, later phases.
-  { action: "billing.*", reason: MONEY },
-  { action: "labor.*", reason: MONEY },
-  { action: "changeOrders.*", reason: "Change orders move contract value a sent pay application may depend on (T5 decisions, T3 drafts); not before phase 3." },
+  { action: "changeOrders.*", reason: "Change orders move contract value a sent pay application may depend on (T5 decisions, T3 drafts); a later phase." },
   { action: "backcharges.*", reason: MONEY },
   { action: "closeoutSubmissions.*", reason: "Counter-numbered closeout packages go to a GC; phase 3 once retries are safe." },
   { action: "quickbooks.*", reason: ADMIN },

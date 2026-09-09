@@ -90,17 +90,18 @@ describe("command coverage of lib/actions", () => {
   it("lets a DIRECT command execute only through a lifted core or an action that RETURNS its failures", () => {
     // Production redacts a thrown Server Action message, so a command over
     // a throwing action would put a digest on the card. A DIRECT command's
-    // core is therefore either a lib/estimating export (plain result) or
-    // an action whose signature promises ActionResult. A throwing action
-    // is HANDOFF until its owner converts it.
+    // core is therefore either a lifted core in lib/estimating or
+    // lib/billing (plain result) or an action whose signature promises
+    // ActionResult. A throwing action is HANDOFF until its owner converts
+    // it.
     const libDir = fileURLToPath(new URL("../", import.meta.url));
-    const estimatingDir = join(libDir, "estimating");
-    const estimatingSource = readdirSync(estimatingDir)
-      .map((file) => readFileSync(join(estimatingDir, file), "utf8"))
+    const coreSource = ["estimating", "billing"]
+      .map((dir) => join(libDir, dir))
+      .flatMap((dir) => readdirSync(dir).map((file) => readFileSync(join(dir, file), "utf8")))
       .join("\n");
     for (const command of COMMANDS) {
       if (command.mode !== "DIRECT" || !command.core) continue;
-      const liftedCore = estimatingSource.includes(`export async function ${command.core}`);
+      const liftedCore = coreSource.includes(`export async function ${command.core}`);
       const returningAction = actionSources.some((source) =>
         new RegExp(`export async function ${command.core}\\([^)]*\\)[^{]*Promise<ActionResult>`).test(source),
       );

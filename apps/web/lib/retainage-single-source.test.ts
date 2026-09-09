@@ -82,7 +82,10 @@ const RETAINAGE_COLUMN_FILES: Record<string, string> = {
   "lib/closeout-query.ts": "Retainage at stake on one job's closeout row.",
 
   // ----------------------------------- writes, exports, documentation ---
-  "lib/actions/billing.ts": "WRITES the snapshot at invoice creation. Never reads a total.",
+  "lib/actions/billing.ts":
+    "WRITES the snapshot when a pay application is submitted. The plain-invoice write moved out in phase 3 of the Ask build (below). Never reads a total.",
+  "lib/billing/create-invoice.ts":
+    "WRITES the snapshot for a plain invoice: createInvoice's body, lifted so the form and the draft_invoice card share one write and one formula. Never reads a total.",
   "lib/actions/quickbooks.ts": "Maps one invoice's snapshot into a QuickBooks memo.",
   "lib/export.ts": "Names the column in the Invoice CSV export.",
   "lib/pay-application.ts": "Pure G702 arithmetic — documentation only, no query.",
@@ -95,6 +98,8 @@ const RETAINAGE_COLUMN_FILES: Record<string, string> = {
   "lib/closeout-query.dbtest.ts": "Proves the closeout row reads the same sum.",
   "lib/actions/quickbooks-invoice-push.test.ts":
     "Pins the invoice-push idempotency path, which asserts on the retainage snapshot it sends. Arrived with #160.",
+  "lib/ask/commands/billing.test.ts": "Fakes the lifted core's result, snapshot included, to pin what the invoice card hands back.",
+  "lib/actions/ask.dbtest.ts": "Asserts the snapshot on the invoice a tapped card created, against real rows.",
 };
 
 /** Case-sensitive, and not matched inside a longer identifier: this is the

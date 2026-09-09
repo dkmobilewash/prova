@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { prisma } from "@prova/db";
+import { prisma, type Prisma } from "@prova/db";
 
 /**
  * The claim, against a real Postgres.
@@ -88,6 +88,10 @@ describe("confirmAskProposal against a real database", () => {
   });
 
   afterAll(async () => {
+    await prisma.timeEntry.deleteMany({ where: { job: { companyId } } });
+    await prisma.payment.deleteMany({ where: { invoice: { job: { companyId } } } });
+    await prisma.invoice.deleteMany({ where: { job: { companyId } } });
+    await prisma.invoiceCounter.deleteMany({ where: { job: { companyId } } });
     await prisma.dailyFieldReport.deleteMany({ where: { companyId } });
     await prisma.job.deleteMany({ where: { companyId } });
     await prisma.askProposal.deleteMany({ where: { companyId } });
@@ -215,5 +219,148 @@ describe("confirmAskProposal against a real database", () => {
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.value.message).toMatch(/already exists/i);
     expect(await prisma.job.count({ where: { companyId, name: { equals: jobName, mode: "insensitive" } } })).toBe(1);
+  });
+  /** A DIRECT card for any command, with the server-held payload a
+   * resolver would have written. Phase 3's cards are all made this way. */
+  async function cardFor(command: string, resolved: Prisma.InputJsonObject) {
+    const id = linkToken();
+    proposalIds.push(id);
+    await prisma.askProposal.create({
+      data: {
+        id,
+        companyId,
+        createdByUserId: ownerId,
+        command,
+        mode: "DIRECT",
+        question: command,
+        input: {},
+        resolved,
+        preview: [],
+        model: "test",
+        toolUseId: "tu_test",
+        toolUseIdsInContext: [],
+        expiresAt: new Date(Date.now() + 10 * 60_000),
+      },
+    });
+    return id;
+  }
+
+  it("an invoice card takes the counter's next number and snapshots retainage; an estimate is refused in the core's words", async () => {
+    // Phase 3: the first money command, through the lifted core against a
+    // real InvoiceCounter row (#224). Two cards, two numbers, one counter.
+    const contracted = await prisma.job.create({
+      data: { companyId, contactId, name: `ASK-DBTEST invoice ${Date.now()}`, status: "IN_PROGRESS", retainagePercent: "10" },
+    });
+    const card = () =>
+      cardFor("draft_invoice", {
+        jobId: contracted.id,
+        jobName: contracted.name,
+        amount: "45000.00",
+        description: "September progress",
+        dueAt: "2026-10-08",
+      });
+    const firstId = await card();
+    const first = await confirmAskProposal(firstId);
+    expect(first.ok).toBe(true);
+    if (first.ok) expect(first.value.message).toContain("Invoice #1");
+    const second = await confirmAskProposal(await card());
+    expect(second.ok).toBe(true);
+    if (second.ok) expect(second.value.message).toContain("Invoice #2");
+
+    const invoices = await prisma.invoice.findMany({ where: { jobId: contracted.id }, orderBy: { number: "asc" } });
+    expect(invoices.map((i) => i.number)).toEqual([1, 2]);
+    expect(Number(invoices[0].amount)).toBe(45000);
+    expect(Number(invoices[0].retainageWithheld)).toBe(4500);
+    expect(invoices[0].description).toBe("September progress");
+    expect(invoices[0].dueAt?.toISOString()).toBe("2026-10-08T00:00:00.000Z");
+    const counter = await prisma.invoiceCounter.findUniqueOrThrow({ where: { jobId: contracted.id } });
+    expect(counter.lastNumber).toBe(2);
+    const row = await prisma.askProposal.findUniqueOrThrow({ where: { id: firstId } });
+    expect(row.outcome).toBe("OK");
+    expect(row.targetType).toBe("Invoice");
+    expect(row.targetId).toBe(invoices[0].id);
+
+    // The core's own refusal, on a job that is still an estimate: no
+    // invoice, no counter row, and the sentence stamped on the card.
+    const estimate = await prisma.job.create({ data: { companyId, contactId, name: `ASK-DBTEST estimate ${Date.now()}` } });
+    const refusedId = await cardFor("draft_invoice", {
+      jobId: estimate.id,
+      jobName: estimate.name,
+      amount: "100.00",
+      description: null,
+      dueAt: null,
+    });
+    const refused = await confirmAskProposal(refusedId);
+    expect(refused.ok).toBe(false);
+    if (!refused.ok) expect(refused.error).toMatch(/Contract this job before invoicing it/);
+    expect(await prisma.invoice.count({ where: { jobId: estimate.id } })).toBe(0);
+    expect(await prisma.invoiceCounter.count({ where: { jobId: estimate.id } })).toBe(0);
+    const stamped = await prisma.askProposal.findUniqueOrThrow({ where: { id: refusedId } });
+    expect(stamped.outcome).toBe("FAILED");
+    expect(stamped.outcomeNote).toMatch(/Contract this job before invoicing it/);
+  });
+
+  it("a payment card runs logPayment in-process, and the action's own ceiling refuses the second", async () => {
+    const job = await prisma.job.create({
+      data: { companyId, contactId, name: `ASK-DBTEST payment ${Date.now()}`, status: "IN_PROGRESS" },
+    });
+    const invoice = await prisma.invoice.create({ data: { jobId: job.id, number: 1, amount: "45000.00" } });
+    const card = (amount: string) =>
+      cardFor("log_payment", {
+        jobId: job.id,
+        jobName: job.name,
+        invoiceId: invoice.id,
+        invoiceNumber: 1,
+        amount,
+        method: "check",
+        note: "4471",
+      });
+    const firstId = await card("12500.00");
+    const first = await confirmAskProposal(firstId);
+    expect(first.ok).toBe(true);
+    const payments = await prisma.payment.findMany({ where: { invoiceId: invoice.id } });
+    expect(payments).toHaveLength(1);
+    expect(Number(payments[0].amount)).toBe(12500);
+    expect(payments[0].method).toBe("check");
+    expect(payments[0].note).toBe("4471");
+    const row = await prisma.askProposal.findUniqueOrThrow({ where: { id: firstId } });
+    expect(row.targetType).toBe("Payment");
+    expect(row.targetId).toBe(payments[0].id);
+
+    // $40,000 more on a $45,000 invoice with $12,500 paid: the action's
+    // guard, not the resolver's (the resolver never saw this card).
+    const second = await confirmAskProposal(await card("40000.00"));
+    expect(second.ok).toBe(false);
+    if (!second.ok) expect(second.error).toMatch(/more than the .*45,000.* invoice total/);
+    expect(await prisma.payment.count({ where: { invoiceId: invoice.id } })).toBe(1);
+  });
+
+  it("an hours card runs logTimeEntry in-process with the form's own field names", async () => {
+    const job = await prisma.job.create({
+      data: { companyId, contactId, name: `ASK-DBTEST hours ${Date.now()}`, status: "IN_PROGRESS" },
+    });
+    const id = await cardFor("log_time_entry", {
+      jobId: job.id,
+      jobName: job.name,
+      employeeUserId: ownerId,
+      employeeName: "Owner",
+      date: "2026-09-08",
+      hours: "8",
+      payType: "OVERTIME",
+      note: null,
+    });
+    const result = await confirmAskProposal(id);
+    expect(result.ok).toBe(true);
+    const entries = await prisma.timeEntry.findMany({ where: { jobId: job.id } });
+    expect(entries).toHaveLength(1);
+    expect(Number(entries[0].hours)).toBe(8);
+    expect(entries[0].payType).toBe("OVERTIME");
+    expect(entries[0].employeeUserId).toBe(ownerId);
+    expect(entries[0].date.toISOString()).toBe("2026-09-08T00:00:00.000Z");
+    expect(entries[0].lineItemId).toBeNull();
+    expect(entries[0].craftClassificationId).toBeNull();
+    const row = await prisma.askProposal.findUniqueOrThrow({ where: { id } });
+    expect(row.targetType).toBe("TimeEntry");
+    expect(row.targetId).toBe(entries[0].id);
   });
 });
