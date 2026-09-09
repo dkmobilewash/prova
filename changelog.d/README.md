@@ -19,6 +19,16 @@ cannot collide:
 
     changelog.d/claude-prova-contractor-os-e3f0iz.md
 
+**Only uniqueness actually matters**, and the branch name is just the
+convenient way to get it. If you are REUSING a branch that already has a
+pending entry — an agent branch restarted from `main` after its last PR
+merged — that name is taken, and a second PR would overwrite the first
+entry rather than collide loudly. Name it after the PR instead:
+
+    changelog.d/219-our-blob-store-only.md
+
+Found on the first reuse, one PR after this directory shipped.
+
 The content is exactly the block that used to go at the top of
 `CHANGELOG.md` — same voice, same shape:
 
