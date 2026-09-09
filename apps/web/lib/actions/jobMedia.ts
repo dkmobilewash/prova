@@ -566,3 +566,67 @@ export async function deleteJobMediaTag(tagId: string): Promise<ActionResult> {
   revalidatePath("/jobs/[id]", "page");
   return ok;
 }
+
+/**
+ * Show a photo to the job's client, or stop showing it.
+ *
+ * WHAT THIS DECIDES. `/portal/[token]` is the GC's view of their own jobs,
+ * reached by an unguessable link rather than an account. It shows only
+ * photos whose `sharedWithClientAt` is set, so until somebody calls this,
+ * a photo is internal. That default is the feature: the same gallery holds
+ * the shot of another trade's damage kept for a backcharge, the unsafe
+ * condition documented defensively, and the crew's own mistake before it
+ * was put right. None of those are things a sub publishes to the GC by
+ * accident.
+ *
+ * MANAGE_FIELD, THE SAME AS EVERY OTHER PHOTO ACTION, and that is a
+ * deliberate choice rather than an oversight. The tempting alternative is
+ * MANAGE_JOBS — "correspondence with the GC" — which reads like it keeps
+ * the crew from publishing something rash. It does not: `FIELD` holds
+ * BOTH capabilities (lib/permissions.ts), so the only functions the
+ * stricter gate would exclude are PAYROLL_COMPLIANCE and ACCOUNTING, who
+ * have no reason to be in here anyway. It would have been a guard that
+ * reads as protection and protects nobody, which is a shape this codebase
+ * has paid for. The real safeguard is that sharing is off by default,
+ * one photo at a time, and visible at a glance on the card.
+ *
+ * WHO AND WHEN ARE RECORDED because this is a disclosure. Unsharing
+ * clears both rather than keeping a "was shared" flag: the column answers
+ * "can the client see this", and a photo that has been withdrawn cannot.
+ * The audit value is in the CHANGELOG of the row's life, which this
+ * schema does not keep for photos and should not start keeping for one
+ * field — if that history is ever needed it wants its own table, not a
+ * second meaning bolted onto this one.
+ */
+export async function setJobMediaClientSharing(
+  mediaId: string,
+  shared: boolean,
+): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_FIELD")) return fail(FIELD_ONLY);
+
+  const media = await prisma.jobMedia.findUnique({
+    where: { id: mediaId },
+    select: { id: true, companyId: true, jobId: true, sharedWithClientAt: true },
+  });
+  if (!media || media.companyId !== context.companyId) return fail("Photo not found");
+
+  // Idempotent in both directions: sharing an already-shared photo keeps
+  // the ORIGINAL timestamp rather than moving it forward, because the
+  // question the column answers is when the client first saw it, and a
+  // second click on a button that already did its job must not rewrite
+  // that. Unsharing something already private is a no-op.
+  if (shared && media.sharedWithClientAt) return ok;
+  if (!shared && !media.sharedWithClientAt) return ok;
+
+  await prisma.jobMedia.update({
+    where: { id: media.id },
+    data: shared
+      ? { sharedWithClientAt: new Date(), sharedWithClientByUserId: context.id }
+      : { sharedWithClientAt: null, sharedWithClientByUserId: null },
+  });
+
+  revalidatePath("/photos");
+  revalidatePath(`/jobs/${media.jobId}`);
+  return ok;
+}

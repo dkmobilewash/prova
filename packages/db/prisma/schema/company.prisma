@@ -132,7 +132,8 @@ model User {
   createdRetainageReleases             RetainageRelease[]
   raisedPunchListItems                 PunchListItem[]
   filedDailyFieldReports               DailyFieldReport[]
-  capturedJobMedia                     JobMedia[]
+  capturedJobMedia                     JobMedia[]              @relation("JobMediaCapturedBy")
+  sharedJobMedia                       JobMedia[]              @relation("JobMediaSharedBy")
   jobMediaTagAssignments               JobMediaTagAssignment[]
   askedRfis                            Rfi[]
   loggedBackcharges                    Backcharge[]

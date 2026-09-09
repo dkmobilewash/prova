@@ -4,6 +4,7 @@ import {
   JOB_MEDIA_TAG_MAX_LENGTH,
   displayTagName,
   normalizeTagName,
+  parseSharedFilter,
   parseTagInput,
   photosFilterHref,
   tagCapProblemMessage,
@@ -235,7 +236,31 @@ group("tagCapProblemMessage caps a photo's tags", () => {
   });
 });
 
-group("photosFilterHref composes the gallery's two filters", () => {
+group("parseSharedFilter admits exactly two values", () => {
+  it("takes the two that mean something", () => {
+    expect(parseSharedFilter("yes")).toBe("yes");
+    expect(parseSharedFilter("no")).toBe("no");
+  });
+
+  it("treats everything else as no filter at all", () => {
+    // Not as one half of one. An unrecognised value must not quietly pick a
+    // side: `?shared=true` silently meaning "yes" would hide half the
+    // gallery from somebody who thinks they are looking at all of it, and
+    // `?shared=false` silently meaning "yes" would show the GC-facing set to
+    // somebody checking the opposite.
+    expect(parseSharedFilter("true")).toBeNull();
+    expect(parseSharedFilter("false")).toBeNull();
+    expect(parseSharedFilter("1")).toBeNull();
+    expect(parseSharedFilter("0")).toBeNull();
+    expect(parseSharedFilter("YES")).toBeNull();
+    expect(parseSharedFilter("shared")).toBeNull();
+    expect(parseSharedFilter("")).toBeNull();
+    expect(parseSharedFilter(undefined)).toBeNull();
+    expect(parseSharedFilter(null)).toBeNull();
+  });
+});
+
+group("photosFilterHref composes the gallery's three filters", () => {
   it("is the bare gallery when nothing is filtered", () => {
     expect(photosFilterHref({})).toBe("/photos");
     expect(photosFilterHref({ job: null, tag: null })).toBe("/photos");
@@ -264,5 +289,62 @@ group("photosFilterHref composes the gallery's two filters", () => {
     // about the function rather than about today's data: a filter value is
     // still a value going into a URL.
     expect(photosFilterHref({ tag: "a b&c=d" })).toBe("/photos?tag=a+b%26c%3Dd");
+  });
+
+  it("carries the client-visibility filter on its own, in both directions", () => {
+    expect(photosFilterHref({ shared: "yes" })).toBe("/photos?shared=yes");
+    // THE ONE THAT A BOOLEAN WOULD HAVE LOST. `false` is falsy, so the
+    // idiom every other line here uses — `if (filter.x) params.set(…)` —
+    // would drop it and hand back the unfiltered gallery. That failure has
+    // no symptom: the page renders perfectly, showing every photo, to
+    // somebody who asked which ones the client cannot see.
+    expect(photosFilterHref({ shared: "no" })).toBe("/photos?shared=no");
+    expect(photosFilterHref({ shared: null })).toBe("/photos");
+  });
+
+  it("carries all THREE, which is the requirement now", () => {
+    // "What have we shown this GC of the west wall" is one question and it
+    // needs all three chips at once. Any one of them silently dropped
+    // answers a different question with total confidence.
+    expect(photosFilterHref({ job: "job_1", tag: "tag_1", shared: "yes" })).toBe(
+      "/photos?job=job_1&tag=tag_1&shared=yes",
+    );
+    expect(photosFilterHref({ job: "job_1", shared: "no" })).toBe("/photos?job=job_1&shared=no");
+    expect(photosFilterHref({ tag: "tag_1", shared: "yes" })).toBe("/photos?tag=tag_1&shared=yes");
+  });
+
+  it("clearing any one of the three keeps the other two", () => {
+    // Every chip on the page is one of these calls: the "All photos" chip
+    // passes no `shared` and both of the others, and so on round.
+    expect(photosFilterHref({ job: "job_1", tag: "tag_1" })).toBe("/photos?job=job_1&tag=tag_1");
+    expect(photosFilterHref({ job: "job_1", tag: null, shared: "yes" })).toBe(
+      "/photos?job=job_1&shared=yes",
+    );
+    expect(photosFilterHref({ job: null, tag: "tag_1", shared: "no" })).toBe(
+      "/photos?tag=tag_1&shared=no",
+    );
+  });
+
+  it("orders the parameters the same way however the filter object is built", () => {
+    // So that two routes to the same view produce the same URL — a chip
+    // clicked from a shared gallery and the same chip clicked from a tag
+    // gallery must not look like two different pages to a browser's history
+    // or to anyone reading a pasted link.
+    const fromOneOrder = photosFilterHref({ shared: "yes", tag: "tag_1", job: "job_1" });
+    const fromAnother = photosFilterHref({ job: "job_1", shared: "yes", tag: "tag_1" });
+    expect(fromOneOrder).toBe(fromAnother);
+    expect(fromOneOrder).toBe("/photos?job=job_1&tag=tag_1&shared=yes");
+  });
+
+  it("round-trips through parseSharedFilter, which is how the page reads it back", () => {
+    // The two halves of one contract: this function writes the value into
+    // the URL and `parseSharedFilter` reads it out on the next request. If
+    // either side changed its spelling alone, the chip would render as
+    // active and filter nothing — a page in a state it says it is not in.
+    for (const shared of ["yes", "no"] as const) {
+      const href = photosFilterHref({ shared });
+      const value = new URL(href, "https://example.test").searchParams.get("shared");
+      expect(parseSharedFilter(value)).toBe(shared);
+    }
   });
 });

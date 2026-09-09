@@ -134,23 +134,67 @@ export function tagCapProblemMessage(existing: number, adding: number): string |
 }
 
 /**
- * The gallery's two filters, composed into one URL.
+ * Which photos a gallery is showing by client visibility.
  *
- * `/photos` filters by job AND by tag, and the two have to survive each
- * other: clicking a tag while a job is chosen must narrow, not replace.
- * That is the entire content of this function, and it is a function rather
- * than a template string at each chip because the failure mode of getting
- * it wrong — one filter silently dropped when the other is clicked — looks
- * exactly like a page that is working, just with more photos on it than
- * you expected. A pure function is a thing a test can hold still.
+ * A STRING UNION RATHER THAN A BOOLEAN, and that is the only reason this
+ * type exists rather than `shared?: boolean` on the filter below. Every
+ * other filter here is composed with `if (filter.x) params.set(...)`, which
+ * is correct for an id and catastrophic for a boolean: `false` is falsy, so
+ * "show me what the client CANNOT see" would be silently dropped and the
+ * page would answer a different question while looking entirely healthy.
+ * That is the exact failure `photosFilterHref` was written to prevent, and
+ * a boolean would have reintroduced it through the front door. Both members
+ * here are truthy.
  *
- * `null` for either half means "not filtered by that", which is what the
- * "All jobs" and "All tags" chips pass.
+ * `"yes"` — the client can see it (`sharedWithClientAt` is set).
+ * `"no"`  — the client cannot (it is null). Not "never shared": a photo
+ *           that was shared and then withdrawn is internal again, which is
+ *           what the column means.
  */
-export function photosFilterHref(filter: { job?: string | null; tag?: string | null }): string {
+export type SharedFilter = "yes" | "no";
+
+/**
+ * A `?shared=` query value, or null for "not filtered by that".
+ *
+ * Anything else — a stale link, a hand-edited URL, a typo — falls back to
+ * no filter rather than to one of the two halves. The same posture
+ * `/photos` already takes with a job or tag id it does not recognise: an
+ * unrecognised filter must not produce a gallery that is quietly withholding
+ * photos with nothing on the page to say so.
+ */
+export function parseSharedFilter(raw: string | null | undefined): SharedFilter | null {
+  return raw === "yes" || raw === "no" ? raw : null;
+}
+
+/**
+ * The gallery's three filters, composed into one URL.
+ *
+ * `/photos` filters by job AND by tag AND by whether the client can see it,
+ * and all three have to survive each other: clicking a tag while a job is
+ * chosen must narrow, not replace. That is the entire content of this
+ * function, and it is a function rather than a template string at each chip
+ * because the failure mode of getting it wrong — one filter silently
+ * dropped when another is clicked — looks exactly like a page that is
+ * working, just with more photos on it than you expected. A pure function
+ * is a thing a test can hold still.
+ *
+ * The client-visibility filter joined the other two rather than replacing
+ * them because the question the sub actually asks is compound: "what have
+ * we shown THIS GC" is the job chip and the shared chip together, and
+ * neither answers it alone.
+ *
+ * `null` for any of the three means "not filtered by that", which is what
+ * the "All jobs", "All tags" and "All photos" chips pass.
+ */
+export function photosFilterHref(filter: {
+  job?: string | null;
+  tag?: string | null;
+  shared?: SharedFilter | null;
+}): string {
   const params = new URLSearchParams();
   if (filter.job) params.set("job", filter.job);
   if (filter.tag) params.set("tag", filter.tag);
+  if (filter.shared) params.set("shared", filter.shared);
   const query = params.toString();
   return query ? `/photos?${query}` : "/photos";
 }
