@@ -230,34 +230,56 @@ scrollback gets broken by whoever didn't scroll far enough.
 - **Sequence numbers** come from a counter row that only increments,
   bumped inside the same transaction as the insert. Never `max(n)+1`,
   never `count()+1` — anything derived from surviving rows is reissued
-  when a row is deleted. Seven counters exist and all seven do this:
+  when a row is deleted. Eight counters exist and all eight do this:
   `SafetyCaseCounter`, `RfiCounter`, `SubmittalCounter` and
   `MaterialOrderCounter` (`operations.prisma`), `ChangeOrderCounter`
   (`jobs.prisma`), `BackchargeCounter` (`backcharges.prisma`),
-  `CloseoutSubmissionCounter` (`closeout.prisma`).
+  `CloseoutSubmissionCounter` (`closeout.prisma`), `InvoiceCounter`
+  (`billing.prisma`).
 
-  **INVOICE NUMBERS ARE NOT AMONG THEM, and this file said they were.**
-  Corrected 2026-09-02, re-verified against `main` 2026-09-06 and still
-  true. There is no `InvoiceCounter` anywhere in the repo.
-  `apps/web/lib/actions/billing.ts:151` is:
+  **INVOICE NUMBERS WERE NOT AMONG THEM FOR SEVEN DAYS, AND NOW THEY ARE.**
+  This entry has now been wrong in both directions, which is the whole
+  reason it is still here rather than deleted. Until 2026-09-02 it claimed
+  invoices came from a counter when they did not. From 2026-09-02 to
+  2026-09-09 it correctly said they did not — and then #224 fixed it while
+  those words stayed on `main` saying nobody had.
 
-      async function nextInvoiceNumber(jobId: string) {
-        const last = await prisma.invoice.findFirst({ where: { jobId }, orderBy: { number: "desc" } });
-        return (last?.number ?? 0) + 1;
-      }
+  Re-read against `main` at `c5da778` on 2026-09-09, code first:
 
-  That is `max(n)+1`, the exact thing the rule above forbids, and it is
-  read OUTSIDE any transaction — both call sites (`createInvoice` and the
-  AIA pay-application submit) compute it and then `create` separately, so
-  two concurrent submits on one job can also collide on
-  `@@unique([jobId, number])`. Delete invoice 3 of 3 and the next invoice
-  is 3 again, on a document a GC has already been sent.
+    - `InvoiceCounter` exists, `billing.prisma:167` — `jobId` as the id,
+      `lastNumber Int @default(0)`. Migration
+      `20260909180000_add_invoice_counter`.
+    - `nextInvoiceNumber` and its `findFirst`/`orderBy: { number: "desc" }`
+      are GONE from `billing.ts`. Nothing in the repo computes an invoice
+      number from surviving rows.
+    - `issueInvoiceNumber` (`billing.ts:178`) takes a
+      `Prisma.TransactionClient` rather than reaching for `prisma`, and
+      upserts with `lastNumber: { increment: 1 }`. Both call sites —
+      `createInvoice` and the AIA pay-application submit — call it inside
+      `prisma.$transaction`, so the bump and the insert are one
+      transaction. That is the rule above, satisfied the same way the
+      other seven satisfy it.
 
-  The cost of the wrong sentence is not the bug, it is the search: an
-  agent told "invoice numbers come from a counter" does not go and look.
-  This entry is now the reason to look. NOT FIXED HERE — a docs branch is
-  the wrong place to change money-document numbering, and billing is
-  Diego's lane, so it goes to him as an issue per working agreement 3.
+  So the paragraph that used to live here — quoting the `max(n)+1` body,
+  and ending "NOT FIXED HERE ... it goes to him as an issue" — is deleted
+  rather than softened. Every sentence in it was false by the time you
+  read this.
+
+  **The lesson is not "invoices have a counter now". It is that this entry
+  predicted its own failure and still failed.** It ends by explaining that
+  the cost of a wrong sentence is the search it prevents — an agent told
+  invoice numbers come from a counter does not go and look — and the
+  Neon entry below states the general form: a doc note saying nobody has
+  fixed X is a claim with an expiry date. Both were written down. Neither
+  stopped this file carrying a known-false "NOT FIXED" for the days
+  between the fix landing and somebody re-reading.
+
+  What actually caught it was incidental: a session resetting a branch
+  onto `main` read the commit subjects going past and recognised one.
+  Nothing checks this. If you are editing this file for any reason, the
+  cheap habit that would have caught it is to grep for the symbol a
+  paragraph says does not exist before trusting the paragraph.
+
 - **Derived state is never stored** (overdue, recordable, current
   revision) — a stored flag can disagree with what it was derived from.
 - **Evidence records** (safety incidents, RFIs, submittals, invoices):
@@ -325,6 +347,27 @@ scrollback gets broken by whoever didn't scroll far enough.
   owns the domain), only via a proxy at `/__clerk`, and that proxy needs
   `@clerk/nextjs` v7. We are on 6.x. `/__clerk/:path*` is in the
   middleware matcher and inert; leave it.
+
+  **A PREVIEW CANNOT BE CLICKED WITH A PRODUCTION SESSION, and that is
+  this table doing its job rather than anything being broken.** Established
+  2026-09-09 while clicking #214. Previews run the DEVELOPMENT instance —
+  its sign-in box says "Development mode" in orange, which is the tell —
+  and `app.cstream.ai` runs the Production one. Being signed into the app
+  therefore does nothing for a preview: it redirects to
+  `/sign-in?redirect_url=…` and stays there. Sign in on the preview
+  separately.
+
+  The trap is what happens NEXT, and it looks like a broken feature.
+  `requireCompanyContext` (`lib/auth.ts`) adopts a row by verified email,
+  but only if one exists in the database it is talking to — and a preview
+  is talking to the DEMO project, not production. An address with no row
+  there falls through to the create branch and silently gets a brand new
+  company named "<Your Name>'s Company", empty. Every list page then shows
+  its empty state, which reads exactly like the feature you came to click
+  is broken. If a preview shows you no jobs, check whether you are in a
+  company you just created before you go looking at the code. The **Seed
+  demo data** workflow scopes to the oldest company or a `company_id` you
+  pass; it seeds jobs, not photos.
 
 - **A domain change breaks QuickBooks silently.** `QUICKBOOKS_REDIRECT_URI`
   has to change in Vercel AND the same string must be registered on
@@ -825,9 +868,16 @@ scrollback gets broken by whoever didn't scroll far enough.
       production resolves `ep-little-sea`. Confirmed from build logs on two
       unrelated branches plus a production control — see the preview
       paragraph above for the method, which needs no dashboard access.
-      This was the best hypothesis: a preview URL is a different host from
-      `app.cstream.ai`, so it would pass the egress proxies that 403 both
-      agents' containers. It is still wrong;
+      This was the best hypothesis, and its stated reason was ALSO wrong:
+      it said a preview URL, being a different host from `app.cstream.ai`,
+      "would pass the egress proxies that 403 both agents' containers".
+      Measured 2026-09-09 from an agent container, twice: the preview host
+      is denied exactly like production — `curl` fails at CONNECT and the
+      proxy's own status endpoint names it, `connect_rejected`, "gateway
+      answered 403 to CONNECT (policy denial)". So an agent container
+      cannot reach a preview either, and the hypothesis was dead on a
+      second ground nobody had checked. The conclusion is unchanged and
+      still rests on the build logs above;
     - **Scheduled Routines are not it.** One exists on Diego's account, the
       hourly status desk. Disabled, and its prompt is STATUS ONLY — no
       code, no pushes, and no path to the app;
