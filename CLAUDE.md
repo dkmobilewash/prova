@@ -376,6 +376,27 @@ scrollback gets broken by whoever didn't scroll far enough.
   `@clerk/nextjs` v7. We are on 6.x. `/__clerk/:path*` is in the
   middleware matcher and inert; leave it.
 
+  **A PREVIEW CANNOT BE CLICKED WITH A PRODUCTION SESSION, and that is
+  this table doing its job rather than anything being broken.** Established
+  2026-09-09 while clicking #214. Previews run the DEVELOPMENT instance —
+  its sign-in box says "Development mode" in orange, which is the tell —
+  and `app.cstream.ai` runs the Production one. Being signed into the app
+  therefore does nothing for a preview: it redirects to
+  `/sign-in?redirect_url=…` and stays there. Sign in on the preview
+  separately.
+
+  The trap is what happens NEXT, and it looks like a broken feature.
+  `requireCompanyContext` (`lib/auth.ts`) adopts a row by verified email,
+  but only if one exists in the database it is talking to — and a preview
+  is talking to the DEMO project, not production. An address with no row
+  there falls through to the create branch and silently gets a brand new
+  company named "<Your Name>'s Company", empty. Every list page then shows
+  its empty state, which reads exactly like the feature you came to click
+  is broken. If a preview shows you no jobs, check whether you are in a
+  company you just created before you go looking at the code. The **Seed
+  demo data** workflow scopes to the oldest company or a `company_id` you
+  pass; it seeds jobs, not photos.
+
 - **A domain change breaks QuickBooks silently.** `QUICKBOOKS_REDIRECT_URI`
   has to change in Vercel AND the same string must be registered on
   Intuit's DEVELOPMENT tab (we run `QUICKBOOKS_ENVIRONMENT=sandbox`;
@@ -875,9 +896,16 @@ scrollback gets broken by whoever didn't scroll far enough.
       production resolves `ep-little-sea`. Confirmed from build logs on two
       unrelated branches plus a production control — see the preview
       paragraph above for the method, which needs no dashboard access.
-      This was the best hypothesis: a preview URL is a different host from
-      `app.cstream.ai`, so it would pass the egress proxies that 403 both
-      agents' containers. It is still wrong;
+      This was the best hypothesis, and its stated reason was ALSO wrong:
+      it said a preview URL, being a different host from `app.cstream.ai`,
+      "would pass the egress proxies that 403 both agents' containers".
+      Measured 2026-09-09 from an agent container, twice: the preview host
+      is denied exactly like production — `curl` fails at CONNECT and the
+      proxy's own status endpoint names it, `connect_rejected`, "gateway
+      answered 403 to CONNECT (policy denial)". So an agent container
+      cannot reach a preview either, and the hypothesis was dead on a
+      second ground nobody had checked. The conclusion is unchanged and
+      still rests on the build logs above;
     - **Scheduled Routines are not it.** One exists on Diego's account, the
       hourly status desk. Disabled, and its prompt is STATUS ONLY — no
       code, no pushes, and no path to the app;
