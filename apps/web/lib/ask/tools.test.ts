@@ -163,3 +163,19 @@ describe("matchesJobName", () => {
     expect(matchesJobName("Riverside Medical", "  riverside  ")).toBe(true);
   });
 });
+
+describe("the actor boundary", () => {
+  it("catches an actor or proposal field the way it catches a tenant field", () => {
+    // Added with the command registry: a command that accepted a user id,
+    // a role, or a proposal id from the model would let the model choose
+    // who is acting or which card it is executing.
+    for (const key of ["role", "jobFunction", "actorId", "ownerId", "proposalId"]) {
+      expect(
+        toolsAcceptNoTenantInput([
+          { input_schema: { type: "object", properties: { [key]: { type: "string", description: "x" } } } },
+        ]),
+        key,
+      ).toBe(false);
+    }
+  });
+});

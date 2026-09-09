@@ -67,7 +67,7 @@ jobs:
 
   # The 144 database tests that, until now, nothing ran.
   #
-  # `vitest.db.config.ts` existed with a docstring explaining how to run it
+  # `vitest.db.config.mts` (`.ts` until #171) existed with a docstring explaining how to run it
   # by hand, and no runner referenced it — not this workflow, not
   # preflight.sh, not any package script. `vitest.config.mts` includes only
   # `**/*.test.ts`, so every `.dbtest.ts` was invisible to `pnpm test`.

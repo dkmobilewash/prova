@@ -864,4 +864,52 @@ describe("two companies naming the same public local", () => {
     const [setupAAfter] = await loadUnionSetup(companyAId);
     expect(setupAAfter.ratio).toMatchObject({ apprenticeCount: 1, journeymenCount: 3 });
   });
+
+  /**
+   * Issue #205, and the reason it survived #200 and #203.
+   *
+   * Every test above proves company B gets its OWN local, which is what
+   * createUnionLocalAndAgreement now guarantees — it looks up and creates
+   * with `companyId: company.id`, so no action in this app can point one
+   * company's agreement at another company's local.
+   *
+   * That is exactly why the rows under `unionLocal` went unfiltered and
+   * nobody noticed: with per-company locals the relation LOOKS scoped. It is
+   * scoped only as long as that edge stays company-correct, and NOTHING
+   * enforces it — there is no composite foreign key tying
+   * CompanyUnionAgreement.companyId to UnionLocal.companyId, and the #200
+   * backfill assigned each shared local to its EARLIEST agreement, leaving
+   * any later company's agreement pointing at somebody else's row.
+   *
+   * So the edge is seeded directly here rather than through an action,
+   * because an action cannot make it — which is the honest shape of the
+   * hazard, not a contrived one. Without the three `where: { companyId }`
+   * clauses this test reads A's wage rates through B's agreement.
+   */
+  it("shows B nothing of A's when B's agreement points at A's local", async () => {
+    await prisma.companyUnionAgreement.create({
+      data: {
+        companyId: companyBId,
+        unionLocalId: localAId,
+        effectiveFrom: new Date("2026-02-01T00:00:00.000Z"),
+      },
+    });
+
+    const rows = await loadUnionSetup(companyBId);
+    const throughA = rows.find((row) => row.unionLocalId === localAId);
+
+    // B reaches the local — that edge is real and this test would be vacuous
+    // if it did not, so assert it before asserting what is missing.
+    expect(throughA).toBeDefined();
+
+    // ...and reaches none of A's data hanging off it.
+    expect(throughA?.crafts).toHaveLength(0);
+    expect(throughA?.ratio).toBeNull();
+    expect(throughA?.crafts.flatMap((craft) => craft.schedules)).toHaveLength(0);
+
+    // A is untouched by any of it.
+    const [setupA] = await loadUnionSetup(companyAId);
+    expect(setupA.crafts.length).toBeGreaterThan(0);
+    expect(setupA.ratio).not.toBeNull();
+  });
 });

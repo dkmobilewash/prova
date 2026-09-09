@@ -150,12 +150,18 @@ export function RuleSetRow({
           by someone aiming for a cancel. This row was also the one place
           where "Edit" did NOT clear the armed flag, so leaving the edit form
           dropped you back onto a still-armed row; RowActions owns that state
-          per-arming now and the inconsistency is gone. */}
+          per-arming now and the inconsistency is gone.
+
+          `pinned="end"` is new here (#184). This row sat in PINNED_EXCEPTIONS
+          at the default — 100% overlap at 1100px, 72% at 375 — because no
+          value was right at both widths. The armed column settles the phone,
+          so `end` is now simply right: 0% at 1100, 639 and 375. */}
       <RowActions
         className="flex shrink-0 flex-wrap items-center gap-2"
         destructive={
           canDelete ? (
             <ConfirmDelete
+              pinned="end"
               confirmLabel="Confirm delete"
               pendingLabel="Deleting…"
               pending={isPending}

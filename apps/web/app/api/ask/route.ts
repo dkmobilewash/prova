@@ -1,5 +1,7 @@
 import { requireCompanyContext } from "@/lib/auth";
-import { streamAnswer } from "@/lib/ask/answer";
+import { viewerToday } from "@/lib/viewerToday";
+import { streamAnswer, type AskRequest } from "@/lib/ask/answer";
+import type { CommandContext } from "@/lib/ask/commands";
 
 /** Ask, streamed.
  *
@@ -9,13 +11,19 @@ import { streamAnswer } from "@/lib/ask/answer";
  * database, and a static "Reading your records…" for that long reads as a
  * hang rather than as work.
  *
- * PROTECTED. The company comes from the Clerk session on this side and is
- * passed down as an argument; it is never read from the request body, so
+ * The one thing this route does NOT do is write anything a person would
+ * call a record. A command ends the stream with a card; the tap that
+ * executes it is a Server Action (lib/actions/ask.ts), for the reason
+ * given there.
+ *
+ * PROTECTED. The company AND the person come from the Clerk session on
+ * this side and are passed down as arguments; nothing is read from the
+ * request body except the question and, for a chip answer, the pick. So
  * there is nothing a caller could put in a payload to reach another
- * company's rows. `/api/ask` is also on the middleware's protected list —
- * requireCompanyContext already redirects an anonymous caller, but that
- * list is the allowlist a reader checks, and a route missing from it looks
- * public whether or not it is.
+ * company's rows or act as somebody else. `/api/ask` is also on the
+ * middleware's protected list — requireCompanyContext already redirects
+ * an anonymous caller, but that list is the allowlist a reader checks,
+ * and a route missing from it looks public whether or not it is.
  */
 
 export const runtime = "nodejs";
@@ -23,10 +31,37 @@ export const runtime = "nodejs";
 // and on rows that change.
 export const dynamic = "force-dynamic";
 
-type Body = { question?: unknown };
+type Body = { question?: unknown; continuation?: unknown };
+
+/** Only string values, only string keys, and never more than a handful:
+ * a chip answer is one field. */
+function stringRecord(value: unknown): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (typeof value !== "object" || value === null) return out;
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>).slice(0, 12)) {
+    if (typeof entry === "string") out[key] = entry;
+  }
+  return out;
+}
+
+function parseRequest(body: Body): AskRequest {
+  const question = typeof body.question === "string" ? body.question : "";
+  const raw = body.continuation;
+  if (typeof raw !== "object" || raw === null) return { question };
+  const c = raw as { command?: unknown; partialInput?: unknown; answers?: unknown };
+  if (typeof c.command !== "string") return { question };
+  return {
+    question,
+    continuation: {
+      command: c.command,
+      partialInput: stringRecord(c.partialInput),
+      answers: stringRecord(c.answers),
+    },
+  };
+}
 
 export async function POST(request: Request) {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
 
   let body: Body;
   try {
@@ -34,10 +69,20 @@ export async function POST(request: Request) {
   } catch {
     return new Response("Malformed body", { status: 400 });
   }
-  const question = typeof body.question === "string" ? body.question : "";
+
+  // Everything that reads the request (the session, the timezone cookie)
+  // is resolved HERE, before the stream starts: a ReadableStream's pull
+  // runs after this handler has returned, outside the request scope, and
+  // cookies() would not answer there.
+  const ctx: CommandContext = {
+    companyId: context.company.id,
+    userId: context.id,
+    principal: { role: context.role, jobFunction: context.jobFunction },
+    today: await viewerToday(),
+  };
 
   const encoder = new TextEncoder();
-  const events = streamAnswer(company.id, question);
+  const events = streamAnswer(ctx, parseRequest(body));
 
   const stream = new ReadableStream<Uint8Array>({
     async pull(controller) {
