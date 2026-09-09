@@ -177,3 +177,147 @@ export async function resolveCatalogEntry(
     })),
   };
 }
+
+// ------------------------------------------------------------------ equipment
+
+export type ResolvedEquipment = {
+  id: string;
+  name: string;
+  assetTag: string | null;
+  type: string | null;
+  /** The stay with no return date, if any: where the piece is booked to
+   * be. A dispatch record, not a position — there is no GPS. */
+  openStay: { id: string; jobId: string; jobName: string; sentOutOn: string } | null;
+};
+
+/** Exact on the name OR the asset tag wins outright — a tag is the thing
+ * painted on the machine, and "SS-114" typed exactly is not a guess. */
+export function rankEquipment<T extends { name: string; assetTag: string | null }>(
+  rows: T[],
+  text: string,
+): T[] {
+  const wanted = text.trim().toLowerCase();
+  if (!wanted) return [];
+  const exact = rows.filter(
+    (row) =>
+      row.name.trim().toLowerCase() === wanted ||
+      (row.assetTag ?? "").trim().toLowerCase() === wanted,
+  );
+  if (exact.length > 0) return exact;
+  return rows;
+}
+
+const isoDay = (date: Date) => date.toISOString().slice(0, 10);
+
+export async function resolveEquipment(
+  companyId: string,
+  text: string,
+): Promise<Resolved<ResolvedEquipment>> {
+  const wanted = text.trim();
+  if (!wanted) return { kind: "none" };
+  const rows = await prisma.equipment.findMany({
+    where: {
+      companyId,
+      OR: [
+        { name: { contains: wanted, mode: "insensitive" } },
+        { assetTag: { contains: wanted, mode: "insensitive" } },
+        { type: { contains: wanted, mode: "insensitive" } },
+      ],
+    },
+    select: {
+      id: true,
+      name: true,
+      assetTag: true,
+      type: true,
+      assignments: {
+        where: { returnedOn: null },
+        orderBy: { sentOutOn: "desc" },
+        take: 1,
+        select: { id: true, jobId: true, sentOutOn: true, job: { select: { name: true } } },
+      },
+    },
+    orderBy: { name: "asc" },
+    take: MAX_CANDIDATES,
+  });
+  const candidates: ResolvedEquipment[] = rankEquipment(rows, wanted).map((row) => {
+    const stay = row.assignments[0];
+    return {
+      id: row.id,
+      name: row.name,
+      assetTag: row.assetTag,
+      type: row.type,
+      openStay: stay
+        ? { id: stay.id, jobId: stay.jobId, jobName: stay.job.name, sentOutOn: isoDay(stay.sentOutOn) }
+        : null,
+    };
+  });
+  if (candidates.length === 0) return { kind: "none" };
+  if (candidates.length === 1) return { kind: "one", match: candidates[0] };
+  return {
+    kind: "many",
+    options: candidates.map((piece) => ({
+      value: piece.id,
+      label: piece.name,
+      detail: `${piece.assetTag ?? "no tag"} · ${
+        piece.openStay ? `out on ${piece.openStay.jobName} since ${piece.openStay.sentOutOn}` : "in the yard"
+      }`,
+    })),
+  };
+}
+
+// ------------------------------------------------------------ material orders
+
+export type ResolvedOrder = {
+  id: string;
+  number: number;
+  description: string;
+  vendorName: string;
+  promisedFor: string | null;
+};
+
+/** Open orders on one job — those with no closing delivery — optionally
+ * narrowed by what the person called the material or the vendor. */
+export async function resolveOpenMaterialOrder(
+  companyId: string,
+  jobId: string,
+  text: string | undefined,
+): Promise<Resolved<ResolvedOrder>> {
+  const rows = await prisma.materialOrder.findMany({
+    where: { companyId, jobId, deliveries: { none: { completesOrder: true } } },
+    select: {
+      id: true,
+      number: true,
+      description: true,
+      promisedFor: true,
+      vendor: { select: { name: true } },
+    },
+    orderBy: { number: "desc" },
+    take: MAX_CANDIDATES,
+  });
+  const wanted = (text ?? "").trim().toLowerCase();
+  const narrowed = wanted
+    ? rows.filter(
+        (row) =>
+          row.description.toLowerCase().includes(wanted) ||
+          row.vendor.name.toLowerCase().includes(wanted),
+      )
+    : rows;
+  const exact = wanted ? narrowed.filter((row) => row.description.trim().toLowerCase() === wanted) : [];
+  const candidates = (exact.length > 0 ? exact : narrowed).map((row) => ({
+    id: row.id,
+    number: row.number,
+    description: row.description,
+    vendorName: row.vendor.name,
+    promisedFor: row.promisedFor ? isoDay(row.promisedFor) : null,
+  }));
+  if (candidates.length === 0) return { kind: "none" };
+  if (candidates.length === 1) return { kind: "one", match: candidates[0] };
+  return {
+    kind: "many",
+    options: candidates.map((order) => ({
+      value: order.id,
+      label: `#${order.number} ${order.description}`,
+      detail: `${order.vendorName}${order.promisedFor ? ` · promised ${order.promisedFor}` : ""}`,
+    })),
+  };
+}

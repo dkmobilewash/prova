@@ -1,7 +1,9 @@
 import type { AskToolDefinition } from "@prova/integrations";
 import { can, type Capability, type Principal } from "@/lib/permissions";
+import { equipmentCommands, equipmentExclusions } from "./commands/equipment";
 import { estimatingCommands, estimatingExclusions } from "./commands/estimating";
 import { notYetRegistered } from "./commands/exclusions";
+import { fieldCommands, fieldExclusions } from "./commands/field";
 
 /**
  * The commands: what Ask can DO, as distinct from what it can answer.
@@ -34,7 +36,14 @@ import { notYetRegistered } from "./commands/exclusions";
  * — would be worse.
  */
 
-export type CommandName = "create_estimate_job" | "draft_estimate_lines" | "add_catalog_line";
+export type CommandName =
+  | "create_estimate_job"
+  | "draft_estimate_lines"
+  | "add_catalog_line"
+  | "log_daily_field_report"
+  | "record_material_delivery"
+  | "send_equipment_to_job"
+  | "bring_equipment_back";
 
 /** Risk tier. T5 (delete, void, contract, admin, outward send without a
  * composer) has no member on purpose: it cannot be registered. */
@@ -99,7 +108,10 @@ export type CommandDefinition = {
   mode: CommandMode;
   /** The exported name in lib/actions/*.ts this stands in for. */
   action: string;
-  /** The lifted core `execute` calls. Required for DIRECT. */
+  /** What `execute` calls: a lifted core in lib/estimating, or an
+   * ActionResult-returning action called through commands/adapter.ts.
+   * Required for DIRECT, and commands.coverage.test.ts checks the name
+   * is real. */
   core?: string;
   /** The card's heading: "Create the job". */
   title: string;
@@ -124,9 +136,18 @@ export type CommandDefinition = {
  * export name, or `module.*` for a whole file with one reason. */
 export type Exclusion = { action: string; reason: string };
 
-export const COMMANDS: CommandDefinition[] = [...estimatingCommands];
+export const COMMANDS: CommandDefinition[] = [
+  ...estimatingCommands,
+  ...fieldCommands,
+  ...equipmentCommands,
+];
 
-export const EXCLUSIONS: Exclusion[] = [...estimatingExclusions, ...notYetRegistered];
+export const EXCLUSIONS: Exclusion[] = [
+  ...estimatingExclusions,
+  ...fieldExclusions,
+  ...equipmentExclusions,
+  ...notYetRegistered,
+];
 
 const BY_NAME = new Map<string, CommandDefinition>(COMMANDS.map((command) => [command.name, command]));
 
