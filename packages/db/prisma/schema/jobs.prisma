@@ -78,6 +78,7 @@ model Job {
   toolboxTalks                 ToolboxTalk[]
   rfis                         Rfi[]
   invoiceCounter               InvoiceCounter?
+  contractDocumentVersionCounter ContractDocumentVersionCounter?
   rfiCounter                   RfiCounter?
   submittals                   Submittal[]
   submittalCounter             SubmittalCounter?

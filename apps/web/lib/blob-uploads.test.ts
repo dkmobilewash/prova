@@ -69,6 +69,12 @@ function record(model: string) {
   };
 }
 
+// ContractDocumentVersionCounter, in memory — issue #106 finding 5 moved
+// `uploadContractDocument` off `MAX(versionNumber) + 1`, so this fake now
+// needs the counter model too, upserted the same way `issueInvoiceNumber`
+// and `issueContractDocumentVersion` do it against the real database.
+const contractDocumentVersionCounters: Record<string, number> = {};
+
 const prisma = {
   job: { findUnique: async () => ({ id: JOB_ID, companyId: COMPANY_ID, status: "ESTIMATE" }) },
   user: { findUnique: async () => ({ id: "usr_1", companyId: COMPANY_ID }) },
@@ -78,12 +84,24 @@ const prisma = {
   prevailingWageDetermination: { create: record("prevailingWageDetermination") },
   contractDocument: {
     create: record("contractDocument"),
-    findFirst: async () => {
-      const rows = created.contractDocument ?? [];
-      if (rows.length === 0) return null;
-      return rows.reduce((a, b) => (Number(a.versionNumber) > Number(b.versionNumber) ? a : b));
+  },
+  contractDocumentVersionCounter: {
+    upsert: async ({ where }: { where: { jobId: string } }) => {
+      const next = (contractDocumentVersionCounters[where.jobId] ?? 0) + 1;
+      contractDocumentVersionCounters[where.jobId] = next;
+      return { lastNumber: next };
     },
   },
+  // `uploadContractDocument` runs the counter bump and the create inside
+  // `prisma.$transaction(async (tx) => ...)`. This fake has no real
+  // transaction semantics to offer — there's nothing here that can roll
+  // back — so it just hands the callback this same object, which is
+  // enough for these tests: they only care what ends up in `created` and
+  // `contractDocumentVersionCounters`, not isolation. `tx`'s type is left
+  // as `any` rather than `typeof prisma` — the object being typed can't
+  // refer to its own type in its own initializer.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  $transaction: async (fn: (tx: any) => Promise<unknown>) => fn(prisma),
 };
 
 vi.mock("@vercel/blob", () => ({
@@ -125,6 +143,7 @@ beforeEach(() => {
   storedPaths.clear();
   suffixSeed = 0;
   for (const key of Object.keys(created)) delete created[key];
+  for (const key of Object.keys(contractDocumentVersionCounters)) delete contractDocumentVersionCounters[key];
 });
 
 /** The one assertion that matters, applied identically to all four sites. */

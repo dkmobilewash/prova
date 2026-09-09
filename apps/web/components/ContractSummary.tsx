@@ -2,6 +2,23 @@ import type { ReactNode } from "react";
 import { StatusBadge } from "@prova/ui";
 import { money } from "@/lib/money";
 
+/**
+ * Issue #106 finding 6, pulled out as a pure function so the wording
+ * decision is testable without rendering the component — this repo has no
+ * React component test harness, so logic like this is extracted rather
+ * than left inline. `frozen: true` is /esign/[token]'s SIGNED branch,
+ * where `lineItems` come from a frozen `SignatureRequest.snapshot`
+ * sitting a few lines below a banner that already says "This reflects
+ * exactly what was agreed to at the time of signing." The old caption
+ * claimed "current" unconditionally and contradicted that banner on
+ * exactly this render.
+ */
+export function contractSummaryFooterCopy(frozen: boolean): string {
+  return frozen
+    ? "This reflects the scope and pricing agreed to at the time of signing. It does not include any change order approved afterward."
+    : "This reflects the current agreed scope and pricing for this job, including any approved change orders.";
+}
+
 export type ContractSummaryLineItem = {
   id: string;
   description: string;
@@ -28,6 +45,7 @@ export function ContractSummary({
   scope,
   lineItems,
   footer,
+  frozen = false,
 }: {
   companyName: string;
   jobName: string;
@@ -36,6 +54,17 @@ export function ContractSummary({
   scope: string | null;
   lineItems: ContractSummaryLineItem[];
   footer?: ReactNode;
+  /** Issue #106 finding 6. `false` (the default) is every LIVE render of
+   * this component — /jobs/[id], /portal, and the unsigned /esign view —
+   * where "current agreed scope and pricing" is true: it reads
+   * JobLineItem fresh, so an approved change order really does show up
+   * here. `true` is exactly one caller: /esign/[token]'s SIGNED branch,
+   * which passes `lineItems` from a frozen `SignatureRequest.snapshot`
+   * instead — data that was true at signing and will never move again,
+   * sitting on the same page as a banner that already says so. The old
+   * single caption claimed "current" in both cases, contradicting that
+   * banner on the one render where it doesn't apply. */
+  frozen?: boolean;
 }) {
   const total = lineItems.reduce(
     (sum, item) => sum + (item.unitPrice != null ? Number(item.quantity) * Number(item.unitPrice) : 0),
@@ -107,8 +136,7 @@ export function ContractSummary({
       <p className="mt-4 text-right text-lg font-semibold">Total: {money(total)}</p>
 
       <p className="mt-6 text-xs text-ink-body print:mt-16 print:text-slate-500">
-        This reflects the current agreed scope and pricing for this job, including any approved
-        change orders.
+        {contractSummaryFooterCopy(frozen)}
       </p>
 
       {footer && <div className="mt-4 print:hidden">{footer}</div>}
