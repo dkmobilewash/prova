@@ -98,7 +98,78 @@ variable. The Vercel MCP has no environment-variable tool at all, checked
 three times now, and a read-write token is a credential that does not
 travel through an agent channel regardless.
 
+---
 
+### A stale deployment can crash the whole page, not just fail to load — #118 (Diego)
+`diego/stale-deploy-recovery-118`
+
+Found during a full CRM click-through on production, 2026-09-09: logging a
+second sales activity seconds after the first threw `TypeError: network
+error` from a `_next/static/chunks` file and took the ENTIRE page down to
+Next's own generic "client-side exception" screen, not this app's
+`(app)/error.tsx`. The data was fine — both activities survived a reload —
+only the client crashed.
+
+**Why `error.tsx` never saw it.** A React error boundary only catches
+errors React itself sees during render or a commit. This one was thrown
+from code that runs outside that entirely — an async fetch callback or an
+awaited dynamic import that isn't inside a transition — so it became an
+uncaught exception with no boundary in its path, and fell through to
+Next's bare fallback instead.
+
+**What the error actually was, once named.** A stale JS chunk: the tab had
+been open across a production deployment, and the chunk it tried to fetch
+had already been replaced on the CDN by a newer one. `error.tsx`'s "Try
+again" button calls `reset()`, which re-renders the same failed subtree —
+useless here, since that just re-requests the exact same now-missing URL.
+The only real fix is a hard reload.
+
+**Two additive changes, not a fix for a bug that can be reliably
+reproduced on demand** (it depends on hitting a live deploy cutover at the
+right instant, which nothing here forces):
+
+1. `lib/stale-deploy-error.ts`'s `isStaleDeployError` recognizes the
+   shape — webpack's own `ChunkLoadError`/"Loading chunk ... failed"/
+   "Failed to fetch dynamically imported module" unambiguously, and the
+   bare "network error" TypeError actually captured on #118 only when the
+   stack also names a `_next/static` asset (a bare network error on its
+   own is just as likely to be an ordinary dropped connection on a real
+   data request, and misreading that as "safe to reload, nothing lost"
+   would be actively wrong).
+2. `components/StaleDeployBanner.tsx`, mounted in the ROOT layout (not
+   just `(app)`, since `/portal` and `/esign` are just as likely to be
+   left open across a deploy) — a window-level `error`/`unhandledrejection`
+   listener that is a supplementary net for exactly the gap above: an
+   error that never reaches ANY React boundary still gets a plain "reload,
+   don't resubmit" message instead of nothing. `(app)/error.tsx` itself
+   also branches on `isStaleDeployError` now, for the case where it DOES
+   land inside a boundary — its CTA is a real `window.location.reload()`
+   in that case, not `reset()`.
+
+**Said plainly: this could not be verified against the original crash,
+only against the error's SHAPE.** 10 new unit tests cover the predicate
+(including the false-positive case a plain "network error" match would
+have caused, mutation-tested by hand) and the listener wiring via
+synthetic DOM events. If this recurs, whether the person sees the new
+banner/copy or still hits Next's bare screen is itself the next piece of
+evidence — it would mean the error is escaping through a third path
+neither boundary reaches.
+
+**Also on #118: a competing hypothesis for the RSC-prefetch 503s, from the
+same test session.** Hovering all 18 `/contacts` rows twice, ~2 minutes
+apart, went from 1-of-13 failing to 10-of-14 — spanning arbitrary routes,
+not tied to specific data, and clearing on retry. Vercel's own runtime
+logs for that window show ZERO 500-series responses and zero error-level
+log lines, which rules out a server-side throw (Neon wake, pool exhaustion)
+as the mechanism, since either would show up there. The second, worse
+sweep landed within about a minute of a production deployment
+(`dpl_...`, `#216`, 16:43:30 UTC) — suggestive of deployment-cutover
+routing instability rather than the app's own database connection, though
+not proven; full timing writeup is on #118. Not fixed here — that part
+needs Vercel-side investigation this repo doesn't have tooling for
+(pull the platform's own edge/routing logs for the exact window).
+
+---
 ### Six write paths that duplicated money or evidence on a second run — #102 (Diego)
 `diego/idempotent-writes-102`
 

@@ -1,5 +1,7 @@
 "use client";
 
+import { isStaleDeployError } from "@/lib/stale-deploy-error";
+
 /**
  * What the app shows when a page fails to render.
  *
@@ -42,26 +44,50 @@ export default function AppError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  // #118: a stale JS chunk from a deployment that has since been replaced
+  // is not fixable by reset() -- that just re-renders the same failed
+  // subtree, which re-issues a fetch for the exact same now-missing URL.
+  // The only real remedy is a hard reload, so this case gets its own copy
+  // and its own button rather than a "Try again" that cannot work.
+  const staleDeploy = isStaleDeployError(error);
+
   return (
     <div className="mx-auto max-w-2xl px-6 py-12">
       <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 p-5">
         <h1 className="text-lg font-semibold text-rose-200">This page didn&apos;t load</h1>
-        <p className="mt-2 text-sm text-rose-100/90">
-          Something went wrong reading your data. This is a problem loading the page, not
-          necessarily a problem with anything you just saved.
-        </p>
+        {staleDeploy ? (
+          <p className="mt-2 text-sm text-rose-100/90">
+            A new version of Prova was published while this page was open, and part of it is now
+            missing from your browser&apos;s cache. This is not a problem with anything you just
+            saved — reloading fetches the new version.
+          </p>
+        ) : (
+          <p className="mt-2 text-sm text-rose-100/90">
+            Something went wrong reading your data. This is a problem loading the page, not
+            necessarily a problem with anything you just saved.
+          </p>
+        )}
         <p className="mt-3 text-sm font-medium text-rose-100">
           If you were saving something, don&apos;t submit it again yet — reload first and check
           whether it&apos;s there. Saving twice is how duplicates get made.
         </p>
 
         <div className="mt-5 flex flex-wrap gap-3">
-          <button
-            onClick={reset}
-            className="rounded-md bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-500"
-          >
-            Try again
-          </button>
+          {staleDeploy ? (
+            <button
+              onClick={() => window.location.reload()}
+              className="rounded-md bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-500"
+            >
+              Reload the page
+            </button>
+          ) : (
+            <button
+              onClick={reset}
+              className="rounded-md bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-500"
+            >
+              Try again
+            </button>
+          )}
           <a
             href="/dashboard"
             className="rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-200 hover:bg-slate-800"
