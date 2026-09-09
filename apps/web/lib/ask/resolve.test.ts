@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { pickContact, rankByName } from "./resolve";
+import { pickContact, rankByName, rankEquipment } from "./resolve";
 
 /** The ranking is the part that decides whether money lands on the right
  * "Riverside". Pure, so it is pinned without a database. */
@@ -65,5 +65,26 @@ describe("pickContact", () => {
       { id: "t2", name: "Turner", email: null, jobCount: 5 },
     ]);
     expect(picked.kind).toBe("many");
+  });
+});
+
+describe("rankEquipment", () => {
+  const rows = [
+    { id: "a", name: "Scissor lift", assetTag: "SL-1" },
+    { id: "b", name: "Scissor lift", assetTag: "SL-2" },
+    { id: "c", name: "Skid steer", assetTag: null },
+  ];
+
+  it("lets an exact asset tag pick one piece outright", () => {
+    expect(rankEquipment(rows, "sl-2").map((r) => r.id)).toEqual(["b"]);
+  });
+
+  it("returns every exact name match, never a pick between them", () => {
+    expect(rankEquipment(rows, "Scissor Lift").map((r) => r.id)).toEqual(["a", "b"]);
+  });
+
+  it("returns everything the query matched when nothing is exact", () => {
+    expect(rankEquipment(rows, "lift").map((r) => r.id)).toEqual(["a", "b", "c"]);
+    expect(rankEquipment(rows, "")).toEqual([]);
   });
 });
