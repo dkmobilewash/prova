@@ -2,9 +2,13 @@
 `claude/prova-contractor-os-e3f0iz`
 
 #224 was right. Invoice numbers were the last sequence in the app still
-coming from `max(number) + 1`, and `InvoiceCounter` ended that — delete
-invoice 3 of 3 and the next one is 4, on a document a GC has already been
-sent.
+coming from `max(number) + 1`, read outside any transaction, and
+`InvoiceCounter` ended that. Its own body is careful about why that
+mattered and this entry follows it: the reissue story needs a
+`deleteInvoice` the app does not have. The reachable defect was the race —
+two concurrent submits on one job collided on `@@unique([jobId, number])`,
+which production redacts into an unexplained failure on a GC-facing
+document.
 
 What it also did, unnoticed, was add a RESTRICT child to `Job` that
 nothing cleans up. A per-job counter is keyed on `jobId`, not on the

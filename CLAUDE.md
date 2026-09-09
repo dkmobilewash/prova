@@ -244,11 +244,16 @@ scrollback gets broken by whoever didn't scroll far enough.
   `max(number) + 1` are gone. Verified by reading `main`, not by reading
   the PR.
 
-  What it used to cost, kept because it is the reason to care: delete
-  invoice 3 of 3 and the next invoice was 3 again, on a document a GC had
-  already been sent — and two concurrent submits on one job could collide
-  on `@@unique([jobId, number])`, which production REDACTS into an
-  unexplained failure.
+  What it actually cost, stated the way #224 corrected it rather than the
+  way this file used to: the reissue story ("delete invoice 3 of 3 and the
+  next is 3 again") describes something the product CANNOT DO — there is no
+  `deleteInvoice`, because invoices are evidence records. The reachable
+  defect was the race. Two concurrent submits on one job both read the same
+  max and collided on `@@unique([jobId, number])`, and production REDACTS
+  the thrown message, so a GC-facing document failed with nothing to
+  render. Worth keeping as its own small lesson: the rule was right and the
+  reason given for it was not, which is how a real bug ends up argued from
+  a scenario a reviewer can disprove.
 
   **A NEW COUNTER IS NOT DONE WHEN IT ISSUES NUMBERS CORRECTLY.** #224 was
   right about numbering and still broke both cleanup scripts, because a
