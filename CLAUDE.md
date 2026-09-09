@@ -301,9 +301,8 @@ scrollback gets broken by whoever didn't scroll far enough.
   the job delete. Adding one is three edits, not one: the model,
   `HANDLED_MODELS` in `packages/db/scripts/scratch-scope.mjs`, and the
   `del(...)` order in BOTH `clean-scratch-data.mjs` and `seed-demo.mjs`.
-  Fixed for `InvoiceCounter` by the PR that added this paragraph; the guard
-  that should have caught it has its own entry under Traps, because it was
-  green the whole time.
+  Fixed for `InvoiceCounter` in #227; the guard that should have caught it
+  has its own entry under Traps, because it was green the whole time.
 
   `SafetyCaseCounter` is the one counter deliberately NOT in those lists:
   company-scoped, a high-water mark rather than per-job data, and resetting
