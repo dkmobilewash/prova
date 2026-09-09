@@ -76,6 +76,50 @@ body.
 
 ---
 
+### The three sales rows stop hand-rolling their armed delete — #152 (Diego)
+`claude/happy-volta-g8dg26`
+
+`SalesActivityRow`, `SalesLeadRow` and `SalesOpportunityRow` were the last
+three rows in the app holding their own `isConfirmingDelete` state. #183
+fixed issue #152's rule 1 on them by wrapping the ordinary-action group in
+a guard, and Cyrus tried to take them out of the census's
+`KNOWN_EXCEPTIONS` on the strength of that — the census went red on all
+three, because it scans for the MECHANISM (a component remembering for
+itself whether a delete is armed), not for the guard. He put them back
+with a note saying "the conversions are still owed and they are your
+lane". This is the conversion.
+
+All three are now `<RowActions destructive={<ConfirmDelete …/>}>`. "Edit"
+is a child of `RowActions` on the activity and opportunity rows, so it is
+not rendered at all while armed rather than hidden by a guard somebody has
+to remember. The two right-pinned clusters (`shrink-0` inside a
+`justify-between` parent) pass `pinned="end"`, which is the order they
+already had by hand; the lead row's cluster is left-aligned, so it takes
+the default and keeps its "Delete Acme Drywall?" prompt. Failed deletes
+now leave the row armed with the error shown, like every other converted
+row (#176's deliberate behaviour change), rather than silently disarming.
+
+`KNOWN_EXCEPTIONS` in `rowActionsCensus.test.ts` is now the shared
+component and nothing else. Mutation-tested rather than trusted: putting a
+`[isConfirmingDelete, setIsConfirmingDelete] = useState` back into
+`SalesLeadRow` turns the census red naming that file; deleting
+`pinned="end"` from `SalesActivityRow` turns the pinned check red naming
+that one. Both restored. One thing the first attempt at that mutation
+taught: `const [armed] = useState(false)` with no setter is INVISIBLE to
+the census, because the scan requires the comma before the setter. That
+is not a gap worth closing — a state with no setter cannot arm anything —
+but it is the kind of mutation that passes and proves nothing, so it is
+written down here.
+
+Also in this PR, because documentation rides with the work: the CLAUDE.md
+entry Diego said he would write and Cyrus asked him to — a verifier that
+cannot tell "refuted" from "never ran" reports clean and means nothing.
+
+**Not clicked.** Typecheck, lint and the unit suite only. The click-list
+is in the PR body.
+
+---
+
 ### Another signatory's wage rates, five lines below the fix for them — #205 (Diego)
 `claude/prova-contractor-os-e3f0iz`
 
@@ -395,6 +439,31 @@ for every contractor who ever used it.
 
 ---
 
+### `deleteContact`'s refusal message named zero counts as a reason — #76 (Diego)
+`diego/delete-contact-zero-count-message`
+
+Small wording defect, filed against #72: refusing to delete a contact with
+history on file listed every count unconditionally — "Acme GC has 0
+job(s), 3 bid invitation(s), 0 logged interaction(s), and 0 people on
+file". A contact blocked by three bid invitations alone was told about
+three kinds of history it doesn't have.
+
+Fixed by filtering to the non-zero counts before joining them, and
+pluralising properly (`plural(count, one, many)`) instead of the blanket
+`(s)` suffix — same message now reads "Acme GC has 3 bid invitations on
+file". `plural` moved from `unionCompliance.ts` (the only existing caller)
+into `lib/actions/shared.ts` rather than growing a second copy, since this
+is now two call sites; `unionCompliance.ts` imports it from there and
+nothing else about that file changed.
+
+Proved by mutation: reverted the fix, confirmed the new dbtest
+(`company.dbtest.ts`) failed with the exact old string, restored it, green
+again. `deleteContact`'s tenant scoping, owner gate, and refusal logic
+itself are all untouched — this only changes what the message says, not
+when it refuses.
+
+---
+
 ### Three display gaps in the sales CRM — #153, #163, #164 (Diego)
 `diego/sales-crm-display-gaps`
 
@@ -483,6 +552,9 @@ No fix is shipped here because none was found to be wrong; this repo has
 no browser-automation tooling available to this session to run the kind
 of instrumented capture that actually settled #61, so the PR says this
 plainly rather than claiming closure on a guess.
+
+---
+
 ### Eight defects in estimating, the catalog and change orders — #105 (Diego)
 `diego/estimating-catalog-co-defects-105`
 

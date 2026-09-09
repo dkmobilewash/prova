@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { deleteSalesLead } from "@/lib/actions";
+import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { SALES_LEAD_SOURCE_OPTIONS } from "@/components/SalesLeadFields";
 
 const btn =
@@ -53,7 +54,6 @@ export function SalesLeadRow({
     followUpStanding: "OVERDUE" | "DUE_TODAY" | "UPCOMING" | null;
   };
 }) {
-  const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -89,44 +89,40 @@ export function SalesLeadRow({
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
-        {isConfirmingDelete ? (
-          <>
-            <span className="text-xs text-slate-400">Delete {lead.companyName}?</span>
-            <button
-              type="button"
-              disabled={isPending}
-              onClick={() => {
-                setError(null);
-                startTransition(async () => {
-                  try {
-                    const result = await deleteSalesLead(lead.id);
-                    if (!result.ok) {
-                      setError(result.error);
-                      setIsConfirmingDelete(false);
-                      return;
-                    }
-                    router.refresh();
-                  } catch {
-                    setError("Could not delete the lead");
-                    setIsConfirmingDelete(false);
+      {/* Issue #152 in the shared component rather than by hand. This
+          cluster has no ordinary action beside the delete, so #183 found
+          nothing to hide here — but the arming state was still its own,
+          which is the mechanism the census scans for. It is LEFT-ALIGNED
+          (a plain flex row, nothing pinning it right), so the FIRST slot is
+          the stable one and the default `pinned` order puts Cancel first,
+          on the pixel Delete vacated. */}
+      <RowActions
+        className="flex items-center gap-2"
+        destructive={
+          <ConfirmDelete
+            prompt={`Delete ${lead.companyName}?`}
+            pendingLabel="Deleting…"
+            pending={isPending}
+            onConfirm={() => {
+              setError(null);
+              startTransition(async () => {
+                try {
+                  const result = await deleteSalesLead(lead.id);
+                  if (!result.ok) {
+                    setError(result.error);
+                    return;
                   }
-                });
-              }}
-              className="rounded-md border border-red-500 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 disabled:opacity-50"
-            >
-              {isPending ? "Deleting…" : "Confirm delete"}
-            </button>
-            <button type="button" disabled={isPending} onClick={() => setIsConfirmingDelete(false)} className={btn}>
-              Cancel
-            </button>
-          </>
-        ) : (
-          <button type="button" onClick={() => setIsConfirmingDelete(true)} className={btn}>
-            Delete
-          </button>
-        )}
-      </div>
+                  router.refresh();
+                } catch {
+                  setError("Could not delete the lead");
+                }
+              });
+            }}
+            deleteClassName={btn}
+            cancelClassName={btn}
+          />
+        }
+      />
 
       {error && <p className="text-xs text-red-400">{error}</p>}
     </li>
