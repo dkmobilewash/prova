@@ -116,6 +116,38 @@ const jobFilter = {
   },
 };
 
+/** For bid_status: OUTSTANDING is the two not-yet-decided statuses
+ * together (INVITED and SUBMITTED), because "which bids are outstanding"
+ * is asked far more often than any one status by itself. */
+const bidStatusFilter = {
+  type: "object" as const,
+  properties: {
+    status: {
+      type: "string",
+      enum: ["OUTSTANDING", "INVITED", "SUBMITTED", "WON", "LOST", "DECLINED"],
+      description:
+        "Optional. Narrow to one status. OUTSTANDING means invited-or-submitted — not yet won, lost or declined — and is what 'which bids are outstanding' means. Omit to cover every bid invitation, most recent decision first.",
+    },
+  },
+};
+
+/** material_deliveries has no stored status to filter on — delivery state
+ * is derived from the deliveries on every read, never stored, so
+ * OUTSTANDING here means "not yet COMPLETE" computed the same way the
+ * page computes it. */
+const materialDeliveryFilter = {
+  type: "object" as const,
+  properties: {
+    jobName: jobFilter.properties.jobName,
+    status: {
+      type: "string",
+      enum: ["OUTSTANDING"],
+      description:
+        "Optional. OUTSTANDING narrows to orders that have not fully arrived — nothing delivered yet, or only partly delivered. Omit to cover every order, most recently promised first.",
+    },
+  },
+};
+
 export const TOOLS: ToolDefinition[] = [
   {
     name: "crew_assignments",
@@ -162,8 +194,8 @@ export const TOOLS: ToolDefinition[] = [
     // /bids
     capability: "MANAGE_ESTIMATING",
     description:
-      "Bid invitations by status — invited, submitted, won, lost, declined — with the GC, trade and due date. Answers 'which bids are outstanding and who has not come back to us'.",
-    input_schema: noInput,
+      "Bid invitations by status — invited, submitted, won, lost, declined — with the GC, trade and due date. Answers 'which bids are outstanding and who has not come back to us'. Pass status: OUTSTANDING for exactly that question. A result always carries the true total and outstanding counts, even if the list itself is capped.",
+    input_schema: bidStatusFilter,
   },
   {
     name: "open_rfis",
@@ -178,8 +210,8 @@ export const TOOLS: ToolDefinition[] = [
     // /material-orders
     capability: "MANAGE_FIELD",
     description:
-      "Material orders with their delivery state — delivered, partly delivered, nothing yet — and how many days late against the promised date. Answers 'did the material actually turn up'.",
-    input_schema: jobFilter,
+      "Material orders with their delivery state — delivered, partly delivered, nothing yet — and how many days late against the promised date. Answers 'did the material actually turn up'. Pass status: OUTSTANDING for orders that have not fully arrived. A result always carries the true total and outstanding counts, even if the list itself is capped.",
+    input_schema: materialDeliveryFilter,
   },
   {
     name: "equipment_location",
