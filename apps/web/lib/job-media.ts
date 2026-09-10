@@ -10,18 +10,37 @@
  * silently rejected a dropdown option that the UI offered (see CLAUDE.md).
  */
 
-/** What a phone or a laptop may upload today.
+/**
+ * What a phone or a laptop may upload, split by KIND.
  *
- * PHOTOS ONLY, deliberately. Video is a later step and is not merely a
- * bigger number here: it needs multipart upload, a poster frame, and a
- * storage budget nobody has signed off. Leaving `video/*` out of this list
- * means an accidental video upload fails at the token with a sentence,
- * rather than succeeding and rendering as a broken image.
+ * This list said PHOTOS ONLY until video shipped, and the reason it gave
+ * was that video "needs multipart upload, a poster frame, and a storage
+ * budget nobody has signed off". Two of those three did not survive being
+ * checked, which is worth recording because the sentence had discouraged
+ * the work:
  *
- * HEIC/HEIF are included because that is what an iPhone shoots by default.
+ *   - multipart is not a new mechanism, it is `multipart: true` on the
+ *     SAME `upload()` call already in use (@vercel/blob@2.8.0
+ *     dist/client.d.ts:43-46), which splits, parallelises and retries
+ *     parts on its own;
+ *   - a poster frame is not required to render video. `<video
+ *     preload="metadata">` shows a first frame, and generating a real
+ *     poster server-side would need ffmpeg in a serverless function,
+ *     which is the actual reason there is no poster rather than a reason
+ *     to delay the feature.
+ *
+ * The third was true and is now decided rather than deferred: the budget
+ * is the per-kind cap below.
+ *
+ * HEIC/HEIF are here because that is what an iPhone shoots by default.
  * Safari usually transcodes to JPEG on its way through a file input, but
- * "usually" is not a guarantee worth a failed upload on a roof. */
-export const JOB_MEDIA_CONTENT_TYPES = [
+ * "usually" is not a guarantee worth a failed upload on a roof.
+ */
+/* The three lists are module-private. Nothing outside needs to ask "is
+   this a video type" — it asks `jobMediaKind` — and an export nothing
+   imports is surface that invites a second way to answer the same
+   question, which is how two allowlists come to disagree. */
+const JOB_MEDIA_PHOTO_TYPES = [
   "image/jpeg",
   "image/png",
   "image/webp",
@@ -29,22 +48,149 @@ export const JOB_MEDIA_CONTENT_TYPES = [
   "image/heif",
 ] as const;
 
+/**
+ * WHAT A PHONE'S OWN CAMERA PRODUCES, which is the whole list.
+ *
+ * `video/quicktime` is the one nobody expects and the one that matters:
+ * an iPhone records `.mov`, and unlike a HEIC still it is NOT transcoded
+ * on its way through a file input. Leaving it out would mean the feature
+ * worked on Android and failed on the device most of this ICP carries.
+ *
+ * `video/webm` is what Android Chrome produces. `video/mp4` is what
+ * everything else produces and the only one that plays everywhere.
+ */
+const JOB_MEDIA_VIDEO_TYPES = [
+  "video/mp4",
+  "video/quicktime",
+  "video/webm",
+] as const;
+
+/**
+ * Voice notes — the "walk through and explain the job" half of capture.
+ *
+ * `audio/mp4` is what iOS Voice Memos exports (an `.m4a`) and what a
+ * Safari recorder produces; `audio/mpeg` is a plain `.mp3` picked off a
+ * laptop; `audio/webm` and `audio/ogg` are what Chrome's recorder emits.
+ *
+ * ⚠ THESE DO NOT ALL PLAY EVERYWHERE, and pretending otherwise would put
+ * unplayable evidence in front of a GC. Safari cannot play `audio/webm`
+ * or `audio/ogg` at all. A voice note recorded on Android Chrome and then
+ * shared to a GC on an iPhone is silence. That is not fixed here — fixing
+ * it means transcoding, which needs a server that can run ffmpeg — but it
+ * is the reason `jobMediaPlaybackWarning` below exists and is shown BEFORE
+ * a file is shared rather than discovered afterwards.
+ */
+const JOB_MEDIA_AUDIO_TYPES = [
+  "audio/mp4",
+  "audio/mpeg",
+  "audio/webm",
+  "audio/ogg",
+] as const;
+
+export const JOB_MEDIA_CONTENT_TYPES = [
+  ...JOB_MEDIA_PHOTO_TYPES,
+  ...JOB_MEDIA_VIDEO_TYPES,
+  ...JOB_MEDIA_AUDIO_TYPES,
+] as const;
+
 export type JobMediaContentType = (typeof JOB_MEDIA_CONTENT_TYPES)[number];
+
+/**
+ * Photo, video or voice note — DERIVED from the content type, never stored.
+ *
+ * The schema comment on `JobMedia.contentType` asked for exactly this and
+ * said why: a stored `kind` column beside the content type is a second
+ * source of truth that can disagree with it, and this schema's standing
+ * rule is that derived state is never stored (CLAUDE.md). There WAS a
+ * `jobMediaKind()` here once, deleted because nothing called it — the
+ * "written, documented, and never called" shape. This one has callers:
+ * the token route, the recording action, both galleries and the portal.
+ *
+ * `null` for anything not on the lists above, which is also what makes
+ * this the single allowlist check — see `isAllowedJobMediaType`.
+ */
+export type JobMediaKind = "photo" | "video" | "audio";
+
+export function jobMediaKind(contentType: string): JobMediaKind | null {
+  if ((JOB_MEDIA_PHOTO_TYPES as readonly string[]).includes(contentType)) return "photo";
+  if ((JOB_MEDIA_VIDEO_TYPES as readonly string[]).includes(contentType)) return "video";
+  if ((JOB_MEDIA_AUDIO_TYPES as readonly string[]).includes(contentType)) return "audio";
+  return null;
+}
+
+export function isAllowedJobMediaType(contentType: string): boolean {
+  return jobMediaKind(contentType) !== null;
+}
 
 /** 25MB. Comfortably above a 12-megapixel phone photo (3-6MB) and a
  * 48-megapixel one (8-12MB), while still refusing something that is
- * obviously not a photo.
- *
- * Unlike the four 15MB constants in lib/actions/*.ts, this one is
- * ENFORCEABLE: it is handed to the blob store as `maximumSizeInBytes` when
- * the upload token is minted, so it is applied to the transfer itself
- * rather than checked after a file that already arrived. Those four are
- * checked after a body that the framework rejects at 1MB, which is why
- * they have never once fired for the case they describe (#27). */
-export const JOB_MEDIA_MAX_BYTES = 25 * 1024 * 1024;
+ * obviously not a photo. */
+export const JOB_MEDIA_PHOTO_MAX_BYTES = 25 * 1024 * 1024;
 
-export function isAllowedJobMediaType(contentType: string): boolean {
-  return (JOB_MEDIA_CONTENT_TYPES as readonly string[]).includes(contentType);
+/** 200MB — about three minutes of 1080p from a phone, and the number that
+ * decides what this feature costs.
+ *
+ * Chosen against the job rather than the format: the clip that settles an
+ * argument with a GC is a walk-through of one wall or one riser, not a
+ * tour of the building. Three minutes is generous for that and still small
+ * enough that a crew on LTE inside a steel building finishes the upload.
+ * A cap an order of magnitude higher would not buy a better clip; it would
+ * buy a ten-minute upload that fails at minute nine. */
+export const JOB_MEDIA_VIDEO_MAX_BYTES = 200 * 1024 * 1024;
+
+/** 25MB — roughly forty minutes of voice memo at the bitrate a phone
+ * records at. Nobody narrates a wall for forty minutes; this is sized so
+ * the cap never fires on honest use rather than to ration anything. */
+export const JOB_MEDIA_AUDIO_MAX_BYTES = 25 * 1024 * 1024;
+
+/**
+ * The cap for one content type, or null if it is not a type we accept.
+ *
+ * WHY PER KIND RATHER THAN ONE NUMBER. The old single 25MB constant was
+ * handed to the blob store as `maximumSizeInBytes` when the token was
+ * minted, which is what makes it enforceable on the transfer itself
+ * rather than checked after the bytes have already arrived (unlike the
+ * four 15MB constants in lib/actions/*.ts, which sit behind a 1MB
+ * framework limit and have therefore never once fired for the case they
+ * describe — #27). Keeping that property while allowing video means the
+ * token has to be minted for ONE type at its OWN cap, which is what the
+ * route now does.
+ */
+export function jobMediaMaxBytes(contentType: string): number | null {
+  switch (jobMediaKind(contentType)) {
+    case "photo":
+      return JOB_MEDIA_PHOTO_MAX_BYTES;
+    case "video":
+      return JOB_MEDIA_VIDEO_MAX_BYTES;
+    case "audio":
+      return JOB_MEDIA_AUDIO_MAX_BYTES;
+    default:
+      return null;
+  }
+}
+
+/**
+ * The sentence to show beside a file a common browser cannot play, or null.
+ *
+ * Only about PLAYBACK, never about whether the file was accepted — a `.mov`
+ * uploads and stores fine, it just will not play in Chrome on a desktop,
+ * and a `webm`/`ogg` voice note will not play in Safari at all. The person
+ * choosing whether to show something to a GC is the one who needs to know,
+ * which is why this is rendered on the card and in the share confirmation
+ * rather than logged.
+ *
+ * Deliberately NOT a blocker. Refusing these formats would refuse what the
+ * crew's own phone produced, and a clip the sub can watch is still worth
+ * keeping even on a day the GC cannot.
+ */
+export function jobMediaPlaybackWarning(contentType: string): string | null {
+  if (contentType === "video/quicktime") {
+    return "A .mov plays on Apple devices but not in Chrome or Firefox on a desktop.";
+  }
+  if (contentType === "audio/webm" || contentType === "audio/ogg") {
+    return "This recording does not play in Safari, so an iPhone or a Mac cannot hear it.";
+  }
+  return null;
 }
 
 /** The public host every Vercel Blob URL sits under. */
