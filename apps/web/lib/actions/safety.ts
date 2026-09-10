@@ -9,6 +9,7 @@ import {
   actionFail,
   actionOk,
   assertOwner,
+  ownerRefusal,
   type ActionResult,
 } from "./shared";
 // The one definition of what OSHA counts as recordable, shared with the log
@@ -284,7 +285,8 @@ export async function deleteSafetyIncident(
   // docstring argues against.
   const context = await requireCompanyContext();
   if (!can(context, "MANAGE_FIELD")) return actionFail(FIELD_ONLY);
-  assertOwner(context, "Only the account owner can remove a safety case");
+  const refusal = ownerRefusal(context, "Only the account owner can remove a safety case");
+  if (refusal) return refusal;
   const { company } = context;
 
   const incident = await prisma.safetyIncident.findUnique({ where: { id: incidentId } });

@@ -45,7 +45,13 @@ import {
   verifyPushedPayment,
   type PaymentToPush,
 } from "@/lib/quickbooks-payment-sync";
-import { type ActionResult, actionFail, actionOk, assertOwner } from "./shared";
+import {
+  actionFail,
+  actionOk,
+  assertOwner,
+  ownerRefusal,
+  type ActionResult,
+} from "./shared";
 
 /**
  * Pushing accounting data to QuickBooks.
@@ -161,7 +167,8 @@ export async function loadQuickBooksAccounts(): Promise<
   { ok: true; accounts: QuickBooksAccount[] } | { ok: false; error: string }
 > {
   const context = await requireCompanyContext();
-  assertOwner(context, "Only the account owner can configure QuickBooks");
+  const refusal = ownerRefusal(context, "Only the account owner can configure QuickBooks");
+  if (refusal) return refusal;
   const { company } = context;
 
   const token = await accessTokenFor(company.id);
@@ -185,7 +192,8 @@ export async function loadQuickBooksAccounts(): Promise<
  * time. */
 export async function saveQuickBooksAccountMapping(formData: FormData): Promise<ActionResult> {
   const context = await requireCompanyContext();
-  assertOwner(context, "Only the account owner can configure QuickBooks");
+  const refusal = ownerRefusal(context, "Only the account owner can configure QuickBooks");
+  if (refusal) return refusal;
   const { company } = context;
 
   const purpose = String(formData.get("purpose") ?? "").trim();
@@ -207,7 +215,8 @@ export async function saveQuickBooksAccountMapping(formData: FormData): Promise<
 
 export async function clearQuickBooksAccountMapping(purpose: string): Promise<ActionResult> {
   const context = await requireCompanyContext();
-  assertOwner(context, "Only the account owner can configure QuickBooks");
+  const refusal = ownerRefusal(context, "Only the account owner can configure QuickBooks");
+  if (refusal) return refusal;
   const { company } = context;
 
   await prisma.quickBooksAccountMapping.deleteMany({ where: { companyId: company.id, purpose } });
@@ -230,7 +239,8 @@ export async function clearQuickBooksAccountMapping(purpose: string): Promise<Ac
  */
 export async function linkContactToQuickBooks(contactId: string): Promise<ActionResult> {
   const context = await requireCompanyContext();
-  assertOwner(context, "Only the account owner can link QuickBooks customers");
+  const refusal = ownerRefusal(context, "Only the account owner can link QuickBooks customers");
+  if (refusal) return refusal;
   const { company, ...user } = context;
 
   const contact = await prisma.contact.findUnique({ where: { id: contactId } });
@@ -427,7 +437,8 @@ async function resolveIncomeItemId(
  */
 export async function pushInvoiceToQuickBooks(invoiceId: string): Promise<ActionResult> {
   const context = await requireCompanyContext();
-  assertOwner(context, "Only the account owner can push to QuickBooks");
+  const refusal = ownerRefusal(context, "Only the account owner can push to QuickBooks");
+  if (refusal) return refusal;
   const { company, ...user } = context;
 
   const invoice = await prisma.invoice.findUnique({
@@ -1036,7 +1047,8 @@ export async function reconcileQuickBooksInvoices(): Promise<
   { ok: true; rows: Reconciliation[] } | { ok: false; error: string }
 > {
   const context = await requireCompanyContext();
-  assertOwner(context, "Only the account owner can reconcile QuickBooks");
+  const refusal = ownerRefusal(context, "Only the account owner can reconcile QuickBooks");
+  if (refusal) return refusal;
   const { company } = context;
 
   const token = await accessTokenFor(company.id);
@@ -1109,7 +1121,8 @@ export async function reconcileQuickBooksInvoices(): Promise<
  */
 export async function pushPaymentToQuickBooks(paymentId: string): Promise<ActionResult> {
   const context = await requireCompanyContext();
-  assertOwner(context, "Only the account owner can push to QuickBooks");
+  const refusal = ownerRefusal(context, "Only the account owner can push to QuickBooks");
+  if (refusal) return refusal;
   const { company, ...user } = context;
 
   const payment = await prisma.payment.findUnique({
