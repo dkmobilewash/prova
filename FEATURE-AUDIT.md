@@ -23,7 +23,7 @@ in flight. Left as-is here rather than guessed at from the outside; the next
 update to touch those sheets should come from whoever actually verified them
 against a fresh clone.
 
-**124 items audited — 98 built / 19 partial / 6 missing / 1 descoped**
+**125 items audited — 99 built / 19 partial / 6 missing / 1 descoped**
 
 (Recounted from the rows on merging `main` into this branch, which is the
 only thing that settles it — the fourth time this exact conflict shape has
@@ -45,7 +45,7 @@ header cannot.)
 
 | Status | Count |
 | --- | --- |
-| Built | 98 |
+| Built | 99 |
 | Partial | 19 |
 | Missing | 6 |
 | Descoped | 1 |
@@ -268,7 +268,7 @@ file's own Built rows already showed before this update touched anything.*
 | Built | RFI log per job | `Rfi` + `RfiCounter`, `/rfis` — number issued per job and never reissued, sent/due/answered dates, overdue derived, cost/schedule impact flags. Removed from nav 3 Sep 2026 — see `NAV-IA-AUDIT.md` |
 | Built | Current drawing set storage/versioning per job | `DrawingSet` + `DrawingRevision`, `/drawings` — one set per discipline per job, issues recorded under the ARCHITECT'S label (no counter: we don't issue these numbers), issued/received dates entered not stamped, current revision and "issued but never received" both derived per render. The set itself is linked, not uploaded — a Server Action body caps around 1MB and real sets are far larger. Removed from nav 3 Sep 2026 — see `NAV-IA-AUDIT.md` |
 
-## 17. Safety & Field Operations — 6 built · 0 partial · 0 missing
+## 17. Safety & Field Operations — 7 built · 0 partial · 0 missing
 
 *Updated 3 Sep 2026: `/safety` stays Built and unchanged — it's now
 rendered `disabled` ("coming soon") in the nav rather than removed, since
@@ -281,8 +281,9 @@ elsewhere in this pass. Reasoning in `NAV-IA-AUDIT.md`.*
 | Built | Toolbox talk / safety meeting logs | `ToolboxTalk`, `/safety` |
 | Built | Worker certification and safety-training tracking, per person, with expiry | `WorkerCertification` + `CertificationRequirement`, `/certifications` — OSHA cards, scaffold/lift qualifications, fit tests. Keyed on `User`, not free text. Standing is derived per read from `expiresOn` (never stored); a renewal is a NEW row and the superseded card stays. A blank expiry reads as *no expiry recorded*, never as current. `CertificationRequirement` is what makes an ABSENT record visible — a worker with no row looks identical to one who doesn't need it until something declares it required. Raises no alert yet |
 | Built | Daily field reports (crew present, work performed, weather, delays) | `DailyFieldReport`, one per job per day enforced by the database. Filed from the job page or from `/field-reports`, which groups every job's reports into Mon–Sun weeks, derives coverage and NAMES the finished weekdays nothing was filed for (never today, never a day still to come, never a weekend), and writes the week out as plain text to hand a GC — missing days included in that text rather than omitted |
-| Built | Site photo capture, filed against a job | `JobMedia`, `/photos` and a section on `/jobs/[id]`. The browser uploads STRAIGHT to Vercel Blob via a one-shot token from `/api/job-media/upload` — not through a Server Action, whose body Next caps at exactly 1MB against a phone photo's 3-12MB (issue #27, which is four existing uploaders, not one). The blob's pathname is scoped `job-media/<jobId>/` and that prefix is enforced when the token is minted AND again when the row is recorded: one blob store serves every tenant, so a URL from it is not evidence of whose it is. `capturedAt` is an instant (the hour is the point on a site), entered not stamped, correctable, and rendered in the viewer's zone; `createdAt` is kept beside it because device clocks lie |
+| Built | Site capture — photo, video and voice note — filed against a job | `JobMedia`, `/photos` and a section on `/jobs/[id]`. Photos, video (`mp4`/`mov`/`webm`) and voice notes (`m4a`/`mp3`/`webm`/`ogg`); the KIND is derived from `contentType` at read time and stored nowhere, because a `kind` column beside the type is a second source of truth that can disagree with it. Recording uses the PHONE'S OWN camera and voice recorder through the file input, not `MediaRecorder` — a browser recorder on Android emits `audio/webm`, which Safari cannot play, so the natural build would have produced voice notes a GC on an iPhone hears as silence. The upload token is minted for ONE declared content type at THAT kind's cap (25MB a photo, 200MB a video), and the store enforces the signed type, so declaring `video/mp4` to earn the bigger ceiling and then sending something else just fails. The browser uploads STRAIGHT to Vercel Blob via a one-shot token from `/api/job-media/upload` — not through a Server Action, whose body Next caps at exactly 1MB against a phone photo's 3-12MB (issue #27, which is four existing uploaders, not one). The blob's pathname is scoped `job-media/<jobId>/` and that prefix is enforced when the token is minted AND again when the row is recorded: one blob store serves every tenant, so a URL from it is not evidence of whose it is. `capturedAt` is an instant (the hour is the point on a site), entered not stamped, correctable, and rendered in the viewer's zone; `createdAt` is kept beside it because device clocks lie |
 | Built | Photo tagging and retrieval | `JobMediaTag` + `JobMediaTagAssignment` — a per-company vocabulary, not an enum and not a string column, so a tag can be renamed across every photo at once and counted. Names are compared folded (NFKC, lower, whitespace collapsed) and shown as typed, which is what stops "West Wall" and "west wall" becoming two tags and splitting one wall's photos across them. `/photos` filters by job and tag together. Per-tag counts derived per read, stored nowhere |
+| Built | Show chosen site captures to the GC, through the portal link they already have | `JobMedia.sharedWithClientAt` — a timestamp, not a boolean, because showing a photo to a GC is a disclosure and "shared on the 4th" answers more than "shared". OPT-IN, one file at a time, off by default: a job's gallery also holds another trade's damage kept for a backcharge, the unsafe condition documented defensively, and the crew's own mistake before it was put right. The portal's exclusions are enforced by `PortalJobPhoto` NOT HAVING the fields rather than by remembering not to render them — no tags (our framing is not for the party it is about), no photographer, no file size, no edit. `/photos` mirrors it with a third filter (`shared=yes|no`) that composes with job and tag. Unsharing removes a file from the portal, not from the internet: blob URLs are public-but-unguessable, which is why the card asks before sharing and does not ask before withdrawing |
 
 ## 18. Scheduling & Crew Dispatch — 3 built · 0 partial · 0 missing
 

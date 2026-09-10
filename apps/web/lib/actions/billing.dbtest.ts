@@ -297,3 +297,70 @@ describe("invoice numbers come from a counter, against a real database", () => {
     expect(numbers).toEqual([1, 3, 4, 5, 6]);
   });
 });
+
+describe("InvoiceCounter is a cleanup-script hazard — #227, proved against a real database", () => {
+  // #224 added InvoiceCounter and did NOT register it in the three cleanup
+  // scripts, so a job that had ever been invoiced could no longer be
+  // deleted: the counter is keyed on jobId and outlives the invoices, and
+  // its foreign key to Job is ON DELETE RESTRICT. #227 registered it.
+  //
+  // WHY THIS TEST EXISTS SEPARATELY FROM THAT FIX. The static check that
+  // should have caught it — scratch-cleanup-order.test.ts — was blind to
+  // the constraint, because #224's migration wraps its ALTER TABLE after
+  // the constraint name and the pattern demanded single spaces. #227 made
+  // that regex whitespace-tolerant, and it now parses 182 of 182 declared
+  // foreign keys. But that is a check on the SQL TEXT. This one is the
+  // by-result half: it asks the database.
+  //
+  // The equivalent for ContractDocumentVersionCounter shipped with #228
+  // (contract-documents.dbtest.ts). This is the one it was modelled on and
+  // the one that was still missing.
+  const ctx = { companyId: "", jobId: "" };
+
+  beforeAll(async () => {
+    const company = await prisma.company.create({ data: { name: "Invoice Counter Hazard Co" } });
+    ctx.companyId = company.id;
+    context.company.id = company.id;
+    const contact = await prisma.contact.create({ data: { companyId: company.id, name: "Hazard GC" } });
+    const job = await prisma.job.create({
+      data: { companyId: company.id, contactId: contact.id, name: "Hazard Job", status: "CONTRACTED" },
+    });
+    ctx.jobId = job.id;
+    await createInvoice(ctx.jobId, form({ amount: "500" }));
+  });
+
+  afterAll(async () => {
+    await prisma.invoice.deleteMany({ where: { jobId: ctx.jobId } });
+    await prisma.invoiceCounter.deleteMany({ where: { jobId: ctx.jobId } });
+    await prisma.job.deleteMany({ where: { companyId: ctx.companyId } });
+    await prisma.contact.deleteMany({ where: { companyId: ctx.companyId } });
+    await prisma.company.delete({ where: { id: ctx.companyId } });
+  });
+
+  it("is keyed on jobId and outlives its Invoice rows, so deleting the invoices alone does NOT free the job", async () => {
+    await prisma.invoice.deleteMany({ where: { jobId: ctx.jobId } });
+    expect(await prisma.invoice.count({ where: { jobId: ctx.jobId } })).toBe(0);
+    // The counter is still there, and RESTRICT means it alone blocks the
+    // delete — a cleanup script that removes every evidence row and not
+    // this one dies partway through, on real data.
+    expect(await prisma.invoiceCounter.count({ where: { jobId: ctx.jobId } })).toBe(1);
+
+    // NAMED, not merely thrown. `rejects.toThrow()` alone would pass if the
+    // job were blocked by any other child — this job has a Contact and could
+    // grow more relations tomorrow — so the assertion would go green while
+    // saying nothing about InvoiceCounter, which is the failure mode this
+    // whole file exists to catch. Prisma puts the constraint in `meta`.
+    const blocked = await prisma.job
+      .delete({ where: { id: ctx.jobId } })
+      .then(() => null)
+      .catch((error: unknown) => error as { meta?: { constraint?: string } });
+    expect(blocked).not.toBeNull();
+    expect(blocked?.meta?.constraint).toBe("InvoiceCounter_jobId_fkey");
+  });
+
+  it("deleting the counter too is what actually frees the job — the fix in scratch-scope.mjs / clean-scratch-data.mjs / seed-demo.mjs", async () => {
+    await prisma.invoiceCounter.deleteMany({ where: { jobId: ctx.jobId } });
+    await expect(prisma.job.delete({ where: { id: ctx.jobId } })).resolves.toBeTruthy();
+  });
+});
+

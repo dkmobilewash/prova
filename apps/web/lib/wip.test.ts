@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { calculateJobWip, calculateLineItemWip, type WipLineItemInput } from "./wip";
+import {
+  calculateJobWip,
+  calculateLineItemWip,
+  formatCoveragePercent,
+  formatPercentComplete,
+  type WipLineItemInput,
+} from "./wip";
 
 // wip.ts had NO unit test at all until this file. company-financials.test.ts
 // hand-builds WipJobResult literals and never calls calculateJobWip, so not
@@ -217,5 +223,34 @@ describe("how much of the job's VALUE has an earned-revenue figure (#99)", () =>
     expect(calculateJobWip([costOnly], 0).estimatedCoverage).toBe(0);
     expect(calculateJobWip([costOnly], 0).earnedCoverage).toBe(0);
     expect(calculateJobWip([budgeted], 0).estimatedCoverage).toBe(1);
+  });
+});
+
+describe("formatPercentComplete / formatCoveragePercent (issue #103, finding 1)", () => {
+  // Ask's job_margin tool used to hand the model these 0..1 fractions raw.
+  // These two functions are the one place both /jobs/[id] and that tool
+  // now turn a fraction into the string a person reads, so a future change
+  // to either format changes both at once instead of only the one someone
+  // remembered to edit.
+  it("formats percent complete to one decimal place, matching /jobs/[id]", () => {
+    expect(formatPercentComplete(0.4)).toBe("40.0%");
+    expect(formatPercentComplete(1)).toBe("100.0%");
+    expect(formatPercentComplete(0)).toBe("0.0%");
+  });
+
+  it("never confuses the raw fraction with the percentage — the exact old bug", () => {
+    // 0.4 is "40.0% complete", never "0.4% complete".
+    expect(formatPercentComplete(0.004)).toBe("0.4%");
+    expect(formatPercentComplete(0.4)).not.toBe("0.4%");
+  });
+
+  it("returns null rather than a fabricated 0% when there is nothing to divide by", () => {
+    expect(formatPercentComplete(null)).toBeNull();
+  });
+
+  it("rounds coverage to a whole percent, matching /jobs/[id]'s amber note — no decimal", () => {
+    expect(formatCoveragePercent(1)).toBe("100%");
+    expect(formatCoveragePercent(0)).toBe("0%");
+    expect(formatCoveragePercent(0.965)).toBe("97%");
   });
 });

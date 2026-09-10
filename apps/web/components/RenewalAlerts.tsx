@@ -1,6 +1,7 @@
 import Link from "next/link";
 import {
   renewalCoverage,
+  renewalCoverageMessage,
   renewalTiming,
   summarizeRenewals,
   type Renewal,
@@ -68,19 +69,11 @@ export function RenewalAlerts({
     return (
       <section className="rounded-lg border border-slate-800 bg-slate-900 p-4">
         <h2 className="text-sm font-semibold text-slate-300">{heading}</h2>
-        {coverage === "NOTHING_TRACKED" ? (
-          <p className="mt-1 text-sm text-amber-300">
-            Nothing is being tracked. No certificate, licence, policy or bond is on file — which
-            is not the same as everything being current. A COI nobody uploaded cannot expire,
-            and cannot warn you either.
-          </p>
-        ) : (
-          <p className="mt-1 text-sm text-slate-400">
-            Nothing expiring. All {trackedCount} tracked{" "}
-            {trackedCount === 1 ? "record is" : "records are"} current — certificates, licences,
-            policies and bonds.
-          </p>
-        )}
+        <p
+          className={`mt-1 text-sm ${coverage === "NOTHING_TRACKED" ? "text-amber-300" : "text-slate-400"}`}
+        >
+          {renewalCoverageMessage(coverage, trackedCount)}
+        </p>
       </section>
     );
   }
