@@ -230,24 +230,33 @@ scrollback gets broken by whoever didn't scroll far enough.
 - **Sequence numbers** come from a counter row that only increments,
   bumped inside the same transaction as the insert. Never `max(n)+1`,
   never `count()+1` — anything derived from surviving rows is reissued
-  when a row is deleted. EIGHT counters exist and all eight do this:
-  `SafetyCaseCounter`, `RfiCounter`, `SubmittalCounter` and
-  `MaterialOrderCounter` (`operations.prisma`), `ChangeOrderCounter`
-  (`jobs.prisma`), `BackchargeCounter` (`backcharges.prisma`),
-  `CloseoutSubmissionCounter` (`closeout.prisma`), `InvoiceCounter`
+  when a row is deleted. `SafetyCaseCounter`, `RfiCounter`,
+  `SubmittalCounter` and `MaterialOrderCounter` (`operations.prisma`),
+  `ChangeOrderCounter` (`jobs.prisma`), `BackchargeCounter`
+  (`backcharges.prisma`), `CloseoutSubmissionCounter` (`closeout.prisma`),
+  `InvoiceCounter` and `ContractDocumentVersionCounter`
   (`billing.prisma`).
 
-  That count is the kind this file has deleted elsewhere for rotting
-  faster than the claim it decorates, so here is how to re-derive it in
-  one line rather than trust it — the two numbers must match, and both
-  were 8 on 2026-09-09:
+  **THE COUNT THAT USED TO BE IN THAT SENTENCE IS NOW A TEST, and the
+  reason is that it rotted in a day.** This paragraph said EIGHT, with two
+  shell commands to re-derive it rather than be trusted, and noted that a
+  bare count is the kind this file deletes elsewhere for rotting faster
+  than the claim it decorates. #228 added `ContractDocumentVersionCounter`
+  the following morning. Both commands printed 9; the prose still said 8.
 
-      grep -rh '^model .*Counter {' packages/db/prisma/schema/*.prisma | wc -l
-      grep -rho 'tx\.[a-zA-Z]*Counter\.upsert' apps/web/lib --include=*.ts | sort -u | wc -l
+  The commands were right to be there — they are what caught it, in one
+  line, rather than anyone noticing. But a re-derivation nobody runs is a
+  claim with an expiry date, so it lives in
+  `apps/web/lib/counterCensus.test.ts` now and fails the build instead:
+  every counter model is bumped through a TRANSACTION client, none is
+  bumped on the bare `prisma` client, and no counter model exists that
+  nothing increments — the "written, documented, and never called" shape
+  wearing a schema. It counts what it parses against a literal that cannot
+  drift with the pattern, so a regex matching nothing fails loudly rather
+  than passing everything downstream.
 
-  The second is the half worth running: a counter model that no action
-  bumps inside a transaction is this repo's "written, documented, and
-  never called" shape wearing a schema.
+  Do not re-add a number here. Add the counter to the roll-call above and
+  let the test say how many there are.
 
   **INVOICE NUMBERS JOINED THEM 2026-09-09, and this entry said the
   opposite for a week.** #224 (`c5da778`) added `InvoiceCounter` and
