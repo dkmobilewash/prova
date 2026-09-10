@@ -59,7 +59,11 @@ export function PortalJobPhotos({
 
   return (
     <section className="mb-10">
-      <h2 className="mb-3 text-lg font-semibold text-slate-100">Site photos</h2>
+      {/* "and videos" because the section can now hold clips and voice
+          notes, and a heading that says photos over a video player is the
+          kind of small wrongness a GC reads as carelessness about the rest
+          of it. */}
+      <h2 className="mb-3 text-lg font-semibold text-slate-100">Site photos and videos</h2>
 
       <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {photos.map((photo) => (
@@ -73,20 +77,42 @@ export function PortalJobPhotos({
                 JobMediaCard's own comment carries the reading of
                 next@15.5.23 that establishes why that is correct rather
                 than an oversight. */}
-            <a
-              href={photo.blobUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="relative block aspect-[4/3] bg-slate-950"
-            >
-              <Image
-                src={photo.blobUrl}
-                alt={photo.caption ?? "Site photo"}
-                fill
-                unoptimized
-                className="object-cover"
-              />
-            </a>
+            {/* The same three-way branch the internal card makes, and for
+                the same reason: only the photo is wrapped in a link,
+                because a player inside an anchor navigates away on every
+                tap of play or scrub. The GC gets controls instead. */}
+            <div className="relative block aspect-[4/3] bg-slate-950">
+              {photo.kind === "photo" ? (
+                <a
+                  href={photo.blobUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="absolute inset-0"
+                >
+                  <Image
+                    src={photo.blobUrl}
+                    alt={photo.caption ?? "Site photo"}
+                    fill
+                    unoptimized
+                    className="object-cover"
+                  />
+                </a>
+              ) : photo.kind === "video" ? (
+                <video
+                  src={photo.blobUrl}
+                  controls
+                  preload="metadata"
+                  playsInline
+                  className="absolute inset-0 h-full w-full bg-black object-contain"
+                />
+              ) : (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-4">
+                  <span aria-hidden className="text-3xl">🎙️</span>
+                  <p className="text-sm text-slate-400">Voice note</p>
+                  <audio src={photo.blobUrl} controls preload="metadata" className="w-full" />
+                </div>
+              )}
+            </div>
             <div className="flex flex-col gap-1 p-3">
               <p className="text-sm text-slate-200">
                 {photo.caption ?? <span className="text-slate-400">No caption</span>}

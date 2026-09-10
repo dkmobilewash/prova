@@ -1,8 +1,10 @@
 import { describe as group, expect, it } from "vitest";
 import {
   JOB_MEDIA_CLOCK_SKEW_MS,
+  JOB_MEDIA_AUDIO_MAX_BYTES,
   JOB_MEDIA_CONTENT_TYPES,
-  JOB_MEDIA_MAX_BYTES,
+  JOB_MEDIA_PHOTO_MAX_BYTES,
+  JOB_MEDIA_VIDEO_MAX_BYTES,
   formatByteSize,
   formatCapturedAt,
   formatCapturedAtInputValue,
@@ -14,6 +16,9 @@ import {
   blobStoreId,
   jobMediaClockWarning,
   jobMediaFileName,
+  jobMediaKind,
+  jobMediaMaxBytes,
+  jobMediaPlaybackWarning,
   jobMediaUploadErrorMessage,
   jobMediaUploadPathname,
 } from "./job-media";
@@ -33,9 +38,19 @@ group("what may be uploaded", () => {
     expect(isAllowedJobMediaType("image/heic")).toBe(true);
   });
 
-  it("refuses video for now, rather than storing something nothing can render", () => {
-    expect(isAllowedJobMediaType("video/mp4")).toBe(false);
-    expect(isAllowedJobMediaType("video/quicktime")).toBe(false);
+  // This test used to assert the OPPOSITE — "refuses video for now" — and
+  // it is inverted rather than deleted so the change of policy is legible
+  // in the diff instead of looking like coverage quietly disappearing.
+  it("accepts what a phone's own camera and voice recorder produce", () => {
+    expect(isAllowedJobMediaType("video/mp4")).toBe(true);
+    // The one nobody expects: an iPhone records .mov and does NOT
+    // transcode it on the way through a file input, the way it does a HEIC
+    // still. Refusing this would mean the feature worked on Android and
+    // failed on the device most of this ICP carries.
+    expect(isAllowedJobMediaType("video/quicktime")).toBe(true);
+    // iOS Voice Memos exports .m4a; Chrome's recorder emits webm.
+    expect(isAllowedJobMediaType("audio/mp4")).toBe(true);
+    expect(isAllowedJobMediaType("audio/webm")).toBe(true);
   });
 
   it("refuses a PDF and an executable", () => {
@@ -47,16 +62,83 @@ group("what may be uploaded", () => {
     expect(isAllowedJobMediaType("image/svg+xml")).toBe(false);
   });
 
-  it("caps well above a real phone photo and well below a video", () => {
-    expect(JOB_MEDIA_MAX_BYTES).toBeGreaterThan(12 * 1024 * 1024);
-    expect(JOB_MEDIA_MAX_BYTES).toBeLessThan(100 * 1024 * 1024);
+  it("caps a photo well above a real phone photo and well below a video", () => {
+    expect(JOB_MEDIA_PHOTO_MAX_BYTES).toBeGreaterThan(12 * 1024 * 1024);
+    expect(JOB_MEDIA_PHOTO_MAX_BYTES).toBeLessThan(100 * 1024 * 1024);
+  });
+
+  // The property that actually matters, rather than the numbers: a video
+  // may be bigger than a photo, and neither cap may be so large that a
+  // mis-picked file is a several-hundred-megabyte upload on a hotspot.
+  it("gives video more room than a photo, and still bounds it", () => {
+    expect(JOB_MEDIA_VIDEO_MAX_BYTES).toBeGreaterThan(JOB_MEDIA_PHOTO_MAX_BYTES);
+    expect(JOB_MEDIA_VIDEO_MAX_BYTES).toBeLessThanOrEqual(512 * 1024 * 1024);
+  });
+
+  // THE CAP MUST FOLLOW THE KIND, because it is minted into the upload
+  // token per type. A photo silently earning the video ceiling is how a
+  // 200MB "photo" gets into the store.
+  it("hands each kind its own cap, and refuses to cap what it does not accept", () => {
+    expect(jobMediaMaxBytes("image/jpeg")).toBe(JOB_MEDIA_PHOTO_MAX_BYTES);
+    expect(jobMediaMaxBytes("video/mp4")).toBe(JOB_MEDIA_VIDEO_MAX_BYTES);
+    expect(jobMediaMaxBytes("audio/mp4")).toBe(JOB_MEDIA_AUDIO_MAX_BYTES);
+    expect(jobMediaMaxBytes("application/pdf")).toBeNull();
   });
 
   // The whole point of this feature's upload path. If this ever passes at
   // 1MB, somebody has moved uploads back onto a Server Action and the
   // 1MB body cap (#27) applies again.
   it("is far above the 1MB a Server Action body allows", () => {
-    expect(JOB_MEDIA_MAX_BYTES).toBeGreaterThan(1024 * 1024);
+    expect(JOB_MEDIA_PHOTO_MAX_BYTES).toBeGreaterThan(1024 * 1024);
+    expect(JOB_MEDIA_VIDEO_MAX_BYTES).toBeGreaterThan(1024 * 1024);
+    expect(JOB_MEDIA_AUDIO_MAX_BYTES).toBeGreaterThan(1024 * 1024);
+  });
+});
+
+group("which kind a stored capture is", () => {
+  // The card, both galleries and the portal all branch on this, and none
+  // of them stores it — the model comment on `contentType` refuses a
+  // `kind` column precisely because it could disagree with the type it
+  // came from.
+  it("names each kind from its content type", () => {
+    expect(jobMediaKind("image/heic")).toBe("photo");
+    expect(jobMediaKind("video/quicktime")).toBe("video");
+    expect(jobMediaKind("audio/mpeg")).toBe("audio");
+  });
+
+  it("is null for anything not accepted, which is what makes it the allowlist", () => {
+    expect(jobMediaKind("application/pdf")).toBeNull();
+    expect(jobMediaKind("")).toBeNull();
+    // Not fooled by a prefix, the same way isAllowedJobMediaType is not:
+    // "video/mp4-fake" is not video and must not earn the video cap.
+    expect(jobMediaKind("video/mp4-fake")).toBeNull();
+  });
+
+  // Every accepted type must have a kind and a cap. Without this a type
+  // added to one list and not the others is a token that cannot be minted
+  // — which fails closed, but fails at the roof rather than in CI.
+  it("gives every accepted type both a kind and a cap", () => {
+    for (const type of JOB_MEDIA_CONTENT_TYPES) {
+      expect(jobMediaKind(type)).not.toBeNull();
+      expect(jobMediaMaxBytes(type)).toBeGreaterThan(0);
+    }
+  });
+});
+
+group("warning about what will not play", () => {
+  // Not a refusal — the file is the crew's own phone's output and is worth
+  // keeping either way. The point is that the person deciding to show it
+  // to a GC is told BEFORE they decide.
+  it("flags the formats a common browser cannot play", () => {
+    expect(jobMediaPlaybackWarning("video/quicktime")).toContain("Chrome");
+    expect(jobMediaPlaybackWarning("audio/webm")).toContain("Safari");
+    expect(jobMediaPlaybackWarning("audio/ogg")).toContain("Safari");
+  });
+
+  it("says nothing about the formats that play everywhere", () => {
+    expect(jobMediaPlaybackWarning("image/jpeg")).toBeNull();
+    expect(jobMediaPlaybackWarning("video/mp4")).toBeNull();
+    expect(jobMediaPlaybackWarning("audio/mp4")).toBeNull();
   });
 });
 

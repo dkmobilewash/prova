@@ -83,13 +83,19 @@ let sharedOnOtherJobId = "";
 const TAG_NAME = "backcharge";
 const PHOTOGRAPHER = "Marisol Vega";
 
-function media(name: string, job: string, capturedAt: string, caption: string | null) {
+function media(
+  name: string,
+  job: string,
+  capturedAt: string,
+  caption: string | null,
+  contentType = "image/jpeg",
+) {
   return prisma.jobMedia.create({
     data: {
       companyId,
       jobId: job,
       blobUrl: `https://public.blob.vercel-storage.com/job-media/${job}/${name}.jpg`,
-      contentType: "image/jpeg",
+      contentType,
       byteSize: 1024,
       caption,
       capturedAt: at(capturedAt),
@@ -353,6 +359,18 @@ describe("client sharing for site photos", () => {
     // the type. `PortalJobPhoto` not having a `tags` field is what stops
     // this today; this is what fails on the day somebody widens the type or
     // the select, which is the day it matters.
+    //
+    // IT DID FAIL, ON PURPOSE, when video and voice notes shipped: the
+    // portal has to know whether to render a picture, a player or a
+    // recording, so `kind` was added and this assertion went red naming the
+    // extra key. That is the check working, not the check being in the way,
+    // and the key list below is widened by exactly one field rather than
+    // relaxed into something that would not notice the next one.
+    //
+    // `contentType` is now SELECTED but deliberately absent below: it is
+    // fetched only so `kind` can be derived from it, and the raw type never
+    // reaches the GC. If it ever appears in these keys, the mapping stopped
+    // mapping.
     const photos = await loadSharedJobMediaForClient(
       { jobId, companyId, take: 60 },
       "America/Los_Angeles",
@@ -361,7 +379,88 @@ describe("client sharing for site photos", () => {
 
     expect(serialised).not.toContain(TAG_NAME);
     expect(serialised).not.toContain(PHOTOGRAPHER);
-    expect(Object.keys(photos[0]).sort()).toEqual(["blobUrl", "caption", "capturedAtLabel", "id"]);
+    expect(Object.keys(photos[0]).sort()).toEqual([
+      "blobUrl",
+      "caption",
+      "capturedAtLabel",
+      "id",
+      "kind",
+    ]);
+    // And the widening carries what it was widened for: a real value the
+    // portal can branch on, derived from the stored content type.
+    expect(photos[0].kind).toBe("photo");
+  });
+
+  // WHAT THE GC ACTUALLY GETS HANDED when the capture is not a photo.
+  // The portal branches on `kind` to choose between an image, a `<video>`
+  // and an `<audio>`, and that branch is only as good as the value behind
+  // it — which is derived from a stored string, so only a real row proves
+  // it. Rendered output is not checked here (this repo has no precedent
+  // for rendering a page in a test); what is checked is that the portal
+  // read carries the right answer to the component.
+  it("tells the portal a shared video is a video, and a voice note a voice note", async () => {
+    const clip = await media(
+      "walkthrough",
+      jobId,
+      "2026-09-07T08:00:00.000",
+      "Level 2 riser before close-up",
+      "video/quicktime",
+    );
+    const note = await media(
+      "narration",
+      jobId,
+      "2026-09-07T08:05:00.000",
+      "What is behind this wall",
+      "audio/mp4",
+    );
+    // Cleaned up in a `finally`, because this suite's fixtures are three
+    // rows created once and only their VISIBILITY is reset between cases —
+    // so a row left behind here changes the counts and the ordering every
+    // later test asserts. Its own beforeEach promises no case depends on
+    // the order the file runs in, and rows that outlive their test are how
+    // that promise quietly stops being true.
+    try {
+      await setJobMediaClientSharing(clip.id, true);
+      await setJobMediaClientSharing(note.id, true);
+
+      const photos = await loadSharedJobMediaForClient(
+        { jobId, companyId, take: 60 },
+        "America/Los_Angeles",
+      );
+      const byId = new Map(photos.map((p) => [p.id, p]));
+      expect(byId.get(clip.id)?.kind).toBe("video");
+      expect(byId.get(note.id)?.kind).toBe("audio");
+      // The photo already in the fixture must not have been reclassified by
+      // any of this — the derivation is per row, not per gallery.
+      expect(byId.get(sharedId)?.kind).toBe("photo");
+    } finally {
+      await prisma.jobMedia.deleteMany({ where: { id: { in: [clip.id, note.id] } } });
+    }
+  });
+
+  // A video is still OPT-IN, and this is the case worth having rather than
+  // assuming: the sharing filter is a `where` on a timestamp and knows
+  // nothing about kinds, so nothing about adding video should change it —
+  // but "should" is what this suite exists to stop anyone relying on.
+  it("keeps an unshared video out of the portal exactly like an unshared photo", async () => {
+    const clip = await media(
+      "unshared-clip",
+      jobId,
+      "2026-09-07T09:00:00.000",
+      "Our own mistake, before we fixed it",
+      "video/mp4",
+    );
+
+    try {
+      const photos = await loadSharedJobMediaForClient(
+        { jobId, companyId, take: 60 },
+        "America/Los_Angeles",
+      );
+      expect(photos.map((p) => p.id)).not.toContain(clip.id);
+      expect(JSON.stringify(photos)).not.toContain("unshared-clip");
+    } finally {
+      await prisma.jobMedia.delete({ where: { id: clip.id } });
+    }
   });
 
   it("orders by when the picture was TAKEN, newest first", async () => {

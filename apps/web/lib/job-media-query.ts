@@ -1,11 +1,14 @@
 import { prisma } from "@prova/db";
 import type { JobMediaCardData } from "@/components/JobMediaCard";
 import type { JobMediaTagSummary } from "@/components/JobMediaTagManager";
+import type { JobMediaKind } from "@/lib/job-media";
 import {
   formatByteSize,
   formatCapturedAt,
   formatCapturedAtInputValue,
   jobMediaClockWarning,
+  jobMediaKind,
+  jobMediaPlaybackWarning,
 } from "@/lib/job-media";
 
 /**
@@ -118,6 +121,21 @@ export async function loadJobMedia(
   return rows.map((row) => ({
     id: row.id,
     blobUrl: row.blobUrl,
+    // DERIVED HERE, ONCE, for both galleries and every card in them. The
+    // column it comes from is the only stored fact; a `kind` column beside
+    // it would be a second source of truth that could disagree, which is
+    // what the model comment on `contentType` refuses.
+    //
+    // The fallback is "photo" rather than a throw, and that is a decision
+    // about a row that already exists: a content type this build does not
+    // recognise can only be one an older build accepted, and the useful
+    // behaviour for a stored capture is to render something rather than
+    // 500 the whole gallery. It renders as an image, which for anything
+    // this app ever accepted is right, and for anything else shows a
+    // broken thumbnail next to a working "Open file" — visibly wrong in
+    // one card rather than invisibly wrong on the page.
+    kind: jobMediaKind(row.contentType) ?? "photo",
+    playbackWarning: jobMediaPlaybackWarning(row.contentType),
     caption: row.caption,
     capturedAtLabel: formatCapturedAt(row.capturedAt, timeZone),
     capturedAtInputValue: formatCapturedAtInputValue(row.capturedAt, timeZone),
@@ -216,6 +234,13 @@ export async function loadJobMediaTags(companyId: string): Promise<JobMediaTagSu
 export type PortalJobPhoto = {
   id: string;
   blobUrl: string;
+  /** Photo, video or voice note. Added when capture stopped being
+   *  photos-only, and it is the one widening of this type that carries no
+   *  disclosure: it is derived from the file's own content type, which the
+   *  GC already holds — they have the file. Without it the portal renders
+   *  an `<img>` at a `.mov` and the GC sees a broken thumbnail of evidence
+   *  the sub deliberately chose to show them. */
+  kind: JobMediaKind;
   caption: string | null;
   capturedAtLabel: string;
 };
@@ -270,12 +295,13 @@ export async function loadSharedJobMediaForClient(
     // must never reach the portal are not even fetched. `include: { tags }`
     // added here by a future edit would be visible in review as a change to
     // this list; a default select that silently gained a column would not.
-    select: { id: true, blobUrl: true, caption: true, capturedAt: true },
+    select: { id: true, blobUrl: true, caption: true, capturedAt: true, contentType: true },
   });
 
   return rows.map((row) => ({
     id: row.id,
     blobUrl: row.blobUrl,
+    kind: jobMediaKind(row.contentType) ?? "photo",
     caption: row.caption,
     capturedAtLabel: formatCapturedAt(row.capturedAt, timeZone),
   }));

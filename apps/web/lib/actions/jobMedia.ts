@@ -10,7 +10,7 @@ import {
   isBlobStorageUrl,
   isJobMediaBlobUrl,
   isOurBlobStoreUrl,
-  JOB_MEDIA_MAX_BYTES,
+  jobMediaMaxBytes,
 } from "@/lib/job-media";
 import {
   displayTagName,
@@ -126,12 +126,20 @@ export async function recordJobMedia(jobId: string, formData: FormData): Promise
   }
 
   if (!isAllowedJobMediaType(contentType)) {
-    return fail("Upload a JPEG, PNG, WEBP or HEIC image");
+    return fail("Upload a photo, a video, or a voice recording");
   }
 
   const byteSize = Number(text(formData, "byteSize"));
   if (!Number.isInteger(byteSize) || byteSize <= 0) return fail("The upload did not complete — try again");
-  if (byteSize > JOB_MEDIA_MAX_BYTES) return fail("That file is too large");
+  // The cap for THIS file's kind, not one number for all three. Re-checked
+  // here even though the store already refused anything over the signed
+  // ceiling, for the same reason every other check in this function is
+  // repeated: a Server Action is an endpoint, and the only claims this can
+  // rely on are the ones it verifies itself. The store enforced the cap on
+  // the transfer; this enforces it on the row.
+  const maxBytes = jobMediaMaxBytes(contentType);
+  if (maxBytes === null) return fail("Upload a photo, a video, or a voice recording");
+  if (byteSize > maxBytes) return fail("That file is too large");
 
   // Entered, not stamped: a crew uploading Friday's photos on Monday must
   // not have them filed as Monday's. The client sends the file's own
