@@ -6,6 +6,7 @@ import { money } from "@/lib/money";
 import { PortalJobPhotos } from "@/components/PortalJobPhotos";
 import { countJobMedia, loadSharedJobMediaForClient } from "@/lib/job-media-query";
 import { viewerTimeZone } from "@/lib/viewerToday";
+import { isPortalAccessRevoked, CLIENT_VISIBLE_CHANGE_ORDER_STATUS } from "@/lib/access-tokens";
 
 /** The photo cap, matching `/photos`. A GC scrolling a job's history wants
  * the same generous page the sub gets, and this section is at the bottom of
@@ -20,7 +21,13 @@ export default async function PortalJobPage({
   const { token, jobId } = await params;
 
   const contact = await prisma.contact.findUnique({ where: { portalToken: token } });
-  if (!contact) {
+  // Issue #106 finding 2: a revoked link, and a contact the sub has set
+  // INACTIVE (a PM who left, a relationship that's over), read exactly
+  // like a token that never existed — 404, not a different error shape.
+  // Distinguishing "revoked" from "never was" would tell whoever is
+  // holding a dead link that it once worked, which the portal's existing
+  // "wrong jobId 404s" convention already treats as worth avoiding.
+  if (!contact || isPortalAccessRevoked(contact)) {
     notFound();
   }
 
@@ -34,12 +41,23 @@ export default async function PortalJobPage({
         orderBy: { createdAt: "asc" },
         include: { originChangeOrder: true },
       },
+      // Issue #106 finding 1: APPROVED only. Every other read site treats
+      // a change order as live scope only once the GC has agreed to it
+      // (see ChangeOrderStatus's own comment in jobs.prisma) — DRAFT is
+      // the sub's own unsent internal note, SUBMITTED is a pending ask,
+      // REJECTED and VOID are things that didn't happen. None of that is
+      // the sub's to show a GC, and VOID/REJECTED numbers would also
+      // expose gaps in the sequence with no context for why.
       changeOrders: {
+        where: { status: CLIENT_VISIBLE_CHANGE_ORDER_STATUS },
         orderBy: { number: "asc" },
         include: { edits: true },
       },
+      // `revokedAt: null` and the `expiresAt` clause: don't hand the GC a
+      // "Review and sign" link to a request that will 404 the moment they
+      // click it — see issue #106 finding 2.
       signatureRequests: {
-        where: { status: "PENDING" },
+        where: { status: "PENDING", revokedAt: null, OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] },
         orderBy: { createdAt: "desc" },
         take: 1,
       },

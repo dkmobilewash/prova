@@ -230,6 +230,24 @@ model Contact {
   /// Neither has a schema default; the action writing the row supplies it.
   portalToken String? @unique
 
+  /// Kills the portal link without deleting or rotating it — set by
+  /// `revokeClientPortalAccess`. Both /portal/[token] and
+  /// /portal/[token]/jobs/[jobId] 404 (never a different error shape) when
+  /// this is non-null, the same way they already 404 a token that never
+  /// existed at all: a GC watching for the difference between "revoked"
+  /// and "never was" would learn something the sub didn't intend to tell
+  /// them.
+  ///
+  /// Separate from `status: INACTIVE` on purpose. Setting a contact
+  /// INACTIVE and revoking their portal link are two different decisions —
+  /// a contact can go inactive without anyone remembering to touch the
+  /// link, which is issue #106 finding 2's actual complaint, so the read
+  /// side checks BOTH rather than only this column. This column exists for
+  /// the case status doesn't cover: an active contact whose specific link
+  /// needs to die (a PM who left, a leaked URL) without changing anything
+  /// else about the relationship.
+  portalRevokedAt DateTime?
+
   /// Standing terms this GC typically works under — a starting point to
   /// pre-fill Job.retainagePercent when scoping a new job with them, not a
   /// value enforced anywhere itself. Actual per-job retainage withheld/

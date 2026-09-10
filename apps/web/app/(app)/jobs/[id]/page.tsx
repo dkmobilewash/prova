@@ -48,12 +48,14 @@ import { burdenedHourlyRate, estimateBurdenedLaborCost, laborRateDateFor } from 
 import { LaborHoursField } from "@/components/LaborHoursField";
 import { calculateRetainageSummary } from "@/lib/retainage";
 import { SubmitButton } from "@/components/SubmitButton";
+import { formatSignedDate } from "@/lib/signed-date";
 import {
   addLineItem,
   addLineItemFromCatalog,
   assignCrewMember,
   createInvoice,
   createSignatureRequest,
+  revokeSignatureRequest,
   deleteCostEntry,
   createRetainageRelease,
   deleteDispatchSlip,
@@ -558,6 +560,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
   const assignCrewWithId = assignCrewMember.bind(null, job.id);
   const unassignCrewWithId = (userId: string) => unassignCrewMember.bind(null, job.id, userId);
   const createSignatureRequestWithId = createSignatureRequest.bind(null, job.id);
+  const revokeSignatureRequestWithId = (requestId: string) => revokeSignatureRequest.bind(null, requestId);
   const createInvoiceWithId = createInvoice.bind(null, job.id);
   const deleteTimeEntryWithId = (timeEntryId: string) => deleteTimeEntry.bind(null, job.id, timeEntryId);
   const uploadDispatchSlipWithId = uploadDispatchSlip.bind(null, job.id);
@@ -584,12 +587,15 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
   // section by section, so the section is withheld rather than the page.
   const showsField = can(principal, "MANAGE_FIELD");
   const jobMediaLimit = 12;
+  // Issue #106 finding 7's fix reuses this: the signature date below is
+  // rendered in it too, rather than the server's own clock.
+  const timeZone = await viewerTimeZone();
   // The company's whole tag vocabulary, for the cards' autocomplete — the
   // point of the vocabulary table is that people reuse a word instead of
   // inventing a fourth spelling of it, which only works if they can see it.
   const [jobMedia, jobMediaTotal, jobMediaTags] = showsField
     ? await Promise.all([
-        loadJobMedia({ companyId: company.id, jobId: job.id, take: jobMediaLimit }, await viewerTimeZone()),
+        loadJobMedia({ companyId: company.id, jobId: job.id, take: jobMediaLimit }, timeZone),
         countJobMedia({ companyId: company.id, jobId: job.id }),
         loadJobMediaTags(company.id),
       ])
@@ -802,21 +808,50 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             {signedSignature ? (
               <p className="text-sm text-green-400">
                 Signed by {signedSignature.signerName} on{" "}
-                {signedSignature.signedAt?.toLocaleDateString("en-US", {
-                  month: "short",
-                  day: "numeric",
-                  year: "numeric",
-                })}
+                {signedSignature.signedAt && formatSignedDate(signedSignature.signedAt, timeZone)}
                 .
               </p>
+            ) : pendingSignature && pendingSignature.revokedAt ? (
+              // Issue #106 finding 2 / #217: revoked, not deleted — a new
+              // link can still be created below once this reads as "no
+              // signing link" again. createSignatureRequest already
+              // reuses any PENDING request rather than spawning a second
+              // one, so a revoked request has to fall through to the
+              // "create a new one" branch, not stay stuck here.
+              <div className="text-sm">
+                <p className="mb-3 text-amber-400">
+                  This signing link was revoked and no longer works.
+                </p>
+                <form action={createSignatureRequestWithId}>
+                  <SubmitButton
+                    type="submit"
+                    className="rounded-md bg-slate-800 px-3 py-2 text-sm font-medium text-slate-100 hover:bg-slate-700"
+                  >
+                    Create a new signing link
+                  </SubmitButton>
+                </form>
+              </div>
             ) : pendingSignature ? (
               <div className="text-sm">
                 <p className="mb-2 text-slate-300">
                   Waiting on the client to sign. Share this link with them:
                 </p>
-                <p className="break-all rounded-md bg-slate-950 px-3 py-2 font-mono text-xs text-blue-400">
+                <p className="mb-3 break-all rounded-md bg-slate-950 px-3 py-2 font-mono text-xs text-blue-400">
                   {origin}/esign/{pendingSignature.token}
                 </p>
+                {pendingSignature.expiresAt && (
+                  <p className="mb-3 text-xs text-slate-500">
+                    Expires {formatSignedDate(pendingSignature.expiresAt, timeZone)}.
+                  </p>
+                )}
+                <form action={revokeSignatureRequestWithId(pendingSignature.id)}>
+                  <SubmitButton
+                    type="submit"
+                    className="rounded-md border border-rose-800 px-3 py-2 text-sm font-medium text-rose-300 hover:bg-rose-950"
+                  >
+                    Revoke signing link
+                  </SubmitButton>
+                </form>
               </div>
             ) : (
               <div>

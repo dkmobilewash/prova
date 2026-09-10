@@ -282,6 +282,11 @@ async function main() {
     await del("closeoutSubmissionCounter", () => prisma.closeoutSubmissionCounter.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("signatureRequest", () => prisma.signatureRequest.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("contractDocument", () => prisma.contractDocument.deleteMany({ where: { jobId: { in: jobIds } } }));
+    // ContractDocumentVersionCounter is RESTRICT on Job and is NOT reached by
+    // deleting the contract documents -- it is keyed on jobId, so a job whose
+    // every document is gone still has its counter and still blocks the job
+    // delete. Same shape as InvoiceCounter (#227).
+    await del("contractDocumentVersionCounter", () => prisma.contractDocumentVersionCounter.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("retainageRelease", () => prisma.retainageRelease.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("estimateVersion", () => prisma.estimateVersion.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("dispatchSlip", () => prisma.dispatchSlip.deleteMany({ where: { jobId: { in: jobIds } } }));
