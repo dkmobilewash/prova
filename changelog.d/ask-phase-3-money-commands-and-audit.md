@@ -44,6 +44,14 @@ after, and a HANDOFF card opened on its page but never saved reads as
 "form opened, not saved". Owner-only on top of the settings capability,
 because the list carries every member's questions and, now, amounts.
 
+**An Anthropic API failure now logs its status, error type, request id
+and model** (`packages/integrations/src/ask.ts`), never the key or the
+prompt. Found by clicking: a preview whose Ask box said "The assistant is
+unavailable right now" had nothing at all in its runtime log, so a rejected
+key, a model the org cannot use and an overloaded API were one
+indistinguishable sentence. The screen still shows one sentence; the log
+now says which.
+
 **Verified, and how.** Unit tests pin the parsing, the refusals and the
 exact FormData each action receives. `ask.dbtest.ts` now runs a payment
 and an invoice through the tap against a real Postgres: the invoice takes
