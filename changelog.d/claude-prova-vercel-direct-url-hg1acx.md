@@ -1,34 +1,43 @@
-### The counter entry went false two hours after it came true (Diego)
+### The InvoiceCounter cleanup hazard, asked of the database instead of the SQL text (Diego)
 `claude/prova-vercel-direct-url-hg1acx`
 
-**Docs-only, and an audit under working agreement 1's exception:** it
-corrects a claim that is false as of `c5da778`, with the evidence.
+#227 registered `InvoiceCounter` in the three cleanup scripts and made
+`scratch-cleanup-order.test.ts`'s regex whitespace-tolerant, so it parses
+182 of 182 declared foreign keys instead of 180. #228 shipped the
+by-result counterpart for `ContractDocumentVersionCounter` — a dbtest that
+creates a job, deletes only its documents, and watches `job.delete()`
+refuse. The equivalent for `InvoiceCounter`, the counter the whole shape
+was found on, was never written. This is it.
 
-#224 gave invoice numbers a counter. CLAUDE.md's sequence-number entry
-still said `InvoiceCounter` did not exist, that `billing.ts` computed
-`max(n)+1`, and that the fix had not been made and should go to Diego as
-an issue. All three were false within two hours of the merge, and the last
-one would have sent the next agent to redo finished work.
+**Why both halves are needed.** The static check reads the migration TEXT
+and asks "is this constraint declared and handled". It was blind to
+exactly this constraint for a day because #224's `ALTER TABLE` wraps after
+the constraint name, and a check that never receives a question passes it.
+The dbtest asks Postgres instead, so no amount of formatting can hide the
+answer.
 
-**The shape is worth more than the content, and is now written into the
-entry.** For a week this file said invoice numbers came from a counter
-when they did not, and that sentence stopped anyone looking. It was
-corrected to say they did not — and that became the false one the moment
-the fix landed. A claim about what the code does NOT have is exactly as
-perishable as a claim about what it does; both versions were true when
-written.
+**Both new cases name the constraint rather than merely expecting a
+throw**, and that is the point rather than a flourish. `rejects.toThrow()`
+goes green if *any* child blocks the job — the `Contact` does, and a
+relation added next month would too — so it can pass while proving nothing
+about the counter it is named after. Prisma exposes
+`meta.constraint`, so the assertion is
+`InvoiceCounter_jobId_fkey` exactly. Mutation-tested twice: delete the
+counter before the attempt (2 red — the job is no longer blocked at all)
+and assert the wrong constraint name (1 red).
 
-Also recorded, because #224 established it and it outlives the fix: the
-headline the entry led with — "delete invoice 3 of 3 and the next invoice
-is 3 again" — described something the product cannot do, since there is no
-`deleteInvoice` anywhere in the app and that absence is the evidence-record
-rule working. The reachable defect was the concurrency collision the entry
-mentioned last and in passing. A vivid failure nobody can reach makes a bug
-look urgent for the wrong reason, and the boring one underneath it went
-unfixed for a week.
+The same weakening was in #228's sibling case, so it now carries the same
+named assertion. One line of behaviour, no test removed.
 
-The counter roll-call now carries the two commands that re-derive it —
-model count and `tx.*Counter.upsert` call sites, both 8 — because a bare
-count is what this file deletes elsewhere for rotting, and a counter model
-no action bumps is the "written, documented, never called" shape wearing a
-schema.
+Run against a real Postgres 16 in this container, not only in CI: the full
+database suite is 30 files / 318 tests green.
+
+**One thing worth recording because it cost the run twice.** The suite
+first reported 12 failures with `PrismaClientValidationError`, and they
+reproduced on clean `main` — which reads exactly like "main is broken".
+It was a stale generated client: `prisma migrate deploy` does not
+regenerate, so a client generated before #228's columns existed rejects
+queries the schema now allows. `prisma generate` and all 318 pass. This
+file already records that `migrate deploy` leaves the client alone; it is
+worth knowing that the symptom is a validation error on unrelated
+suites, which looks like someone else's bug.

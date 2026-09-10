@@ -160,7 +160,18 @@ describe("ContractDocumentVersionCounter is a cleanup-script hazard, same shape 
     // exactly the failure #227 found for InvoiceCounter — a cleanup script
     // that deletes only the child evidence rows and not this counter dies
     // partway through `job.delete()` on real data.
-    await expect(prisma.job.delete({ where: { id: ctx.jobId } })).rejects.toThrow();
+    //
+    // NAMED rather than merely thrown. This was `rejects.toThrow()`, which
+    // passes if ANY child blocks the job — the Contact does, and a relation
+    // added tomorrow would too — so it could stay green while saying nothing
+    // about this counter, which is the only thing it is here to prove.
+    // Same assertion as billing.dbtest.ts's InvoiceCounter case.
+    const blocked = await prisma.job
+      .delete({ where: { id: ctx.jobId } })
+      .then(() => null)
+      .catch((error: unknown) => error as { meta?: { constraint?: string } });
+    expect(blocked).not.toBeNull();
+    expect(blocked?.meta?.constraint).toBe("ContractDocumentVersionCounter_jobId_fkey");
   });
 
   it("deleting the counter too is what actually frees the job — the fix in scratch-scope.mjs / clean-scratch-data.mjs / seed-demo.mjs", async () => {
