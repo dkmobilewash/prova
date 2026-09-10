@@ -58,6 +58,13 @@ export const HANDLED_MODELS = [
   "ChangeOrderCounter",
   "BackchargeCounter",
   "CloseoutSubmissionCounter",
+  // Keyed on jobId, not reached by deleting a job's contract documents, and
+  // RESTRICT on Job -- same shape as InvoiceCounter (#227), which blocked
+  // both cleanup scripts until it was added here. ContractDocument itself
+  // stays in NEVER_DELETE below (it's the signed evidence); the counter
+  // isn't evidence, it's just the number sequence, so it goes with the
+  // other per-job counters instead.
+  "ContractDocumentVersionCounter",
 ];
 
 /**

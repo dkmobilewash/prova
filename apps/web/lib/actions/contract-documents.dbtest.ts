@@ -124,6 +124,51 @@ describe("ContractDocument versions come from a counter, against a real database
   });
 });
 
+describe("ContractDocumentVersionCounter is a cleanup-script hazard, same shape as #227's InvoiceCounter", () => {
+  const ctx = { companyId: "", jobId: "" };
+
+  beforeAll(async () => {
+    const company = await prisma.company.create({ data: { name: "Doc Counter Cleanup Co" } });
+    ctx.companyId = company.id;
+    context.company.id = company.id;
+    const user = await prisma.user.create({
+      data: { companyId: company.id, clerkId: "clerk_doc_cleanup", email: "doc-cleanup@test.example", role: "OWNER" },
+    });
+    context.id = user.id;
+    const contact = await prisma.contact.create({ data: { companyId: company.id, name: "Cleanup GC" } });
+    const job = await prisma.job.create({
+      data: { companyId: company.id, contactId: contact.id, name: "Cleanup Job", status: "CONTRACTED" },
+    });
+    ctx.jobId = job.id;
+    await uploadContractDocument(ctx.jobId, fileForm("cleanup-test.pdf"));
+  });
+
+  afterAll(async () => {
+    await prisma.contact.deleteMany({ where: { companyId: ctx.companyId } });
+    await prisma.user.deleteMany({ where: { companyId: ctx.companyId } });
+    await prisma.company.deleteMany({ where: { id: ctx.companyId } });
+    await prisma.$disconnect();
+  });
+
+  it("is keyed on jobId and outlives its ContractDocument rows, so deleting the documents alone does NOT free the job", async () => {
+    await prisma.contractDocument.deleteMany({ where: { jobId: ctx.jobId } });
+
+    const counter = await prisma.contractDocumentVersionCounter.findUnique({ where: { jobId: ctx.jobId } });
+    expect(counter).not.toBeNull();
+
+    // RESTRICT on Job: the counter alone is enough to block the job delete,
+    // exactly the failure #227 found for InvoiceCounter — a cleanup script
+    // that deletes only the child evidence rows and not this counter dies
+    // partway through `job.delete()` on real data.
+    await expect(prisma.job.delete({ where: { id: ctx.jobId } })).rejects.toThrow();
+  });
+
+  it("deleting the counter too is what actually frees the job — the fix in scratch-scope.mjs / clean-scratch-data.mjs / seed-demo.mjs", async () => {
+    await prisma.contractDocumentVersionCounter.deleteMany({ where: { jobId: ctx.jobId } });
+    await expect(prisma.job.delete({ where: { id: ctx.jobId } })).resolves.toBeTruthy();
+  });
+});
+
 describe("deleteContractDocument also deletes the blob — issue #106 finding 3", () => {
   const ctx = { companyId: "", jobId: "" };
 
