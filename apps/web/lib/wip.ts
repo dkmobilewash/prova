@@ -139,6 +139,29 @@ export interface WipJobResult {
   overUnderBilling: number;
 }
 
+/** "42.0%", or null when there's nothing to divide by — the exact format
+ * /jobs/[id] renders percentComplete in (one decimal place, a trailing
+ * "%"). Shared with the Ask job_margin tool (lib/ask/handlers.ts) so an
+ * answer and the screen it cites can never print two different numbers
+ * for the same fraction. Before this existed, the tool handed over the
+ * raw 0..1 fraction and the model — forbidden from doing arithmetic —
+ * either said "0.4% complete" (the fraction, mistaken for the percentage)
+ * or multiplied it itself, the one thing it must never do (issue #103,
+ * finding 1). */
+export function formatPercentComplete(percentComplete: number | null): string | null {
+  return percentComplete != null ? `${(percentComplete * 100).toFixed(1)}%` : null;
+}
+
+/** "42%" — /jobs/[id]'s own format for a 0..1 coverage ratio (rounded, no
+ * decimal): costCoverage, earnedCoverage, estimatedCoverage. Kept separate
+ * from formatPercentComplete rather than reusing it because the page
+ * itself uses a different rounding rule for coverage than for percent
+ * complete — one shared function per on-screen format, not one function
+ * pretending both formats are the same. */
+export function formatCoveragePercent(coverage: number): string {
+  return `${Math.round(coverage * 100)}%`;
+}
+
 export function calculateJobWip(lineItems: WipLineItemResult[], billedToDate: number): WipJobResult {
   const contractValue = lineItems.reduce((sum, item) => sum + item.contractValue, 0);
   const actualCostToDate = lineItems.reduce((sum, item) => sum + item.actualCostToDate, 0);

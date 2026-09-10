@@ -213,6 +213,30 @@ export function renewalCoverage(renewals: Renewal[], trackedCount: number): Rene
   return trackedCount === 0 ? "NOTHING_TRACKED" : "ALL_CURRENT";
 }
 
+/**
+ * The sentence for an empty renewal list, kept in one place so
+ * `RenewalAlerts` (the page) and Ask's `compliance_status` tool cannot say
+ * two different things about the same coverage — the same reasoning as
+ * `renewalCoverage` itself, one level up.
+ *
+ * Before this existed, Ask's tool checked only `alerts.length === 0` and
+ * printed one reassuring sentence for both NOTHING_TRACKED and ALL_CURRENT,
+ * so "is my GL still good?" from a company that had never filed a
+ * certificate of insurance got answered as "every certificate, licence,
+ * policy and bond on file is current" — true of an empty set, and read as
+ * reassurance about a fact nobody had checked (issue #103, finding 2).
+ *
+ * Returns null for HAS_ALERTS: there is no substitute sentence, the caller
+ * renders the rows.
+ */
+export function renewalCoverageMessage(coverage: RenewalCoverage, trackedCount: number): string | null {
+  if (coverage === "HAS_ALERTS") return null;
+  if (coverage === "NOTHING_TRACKED") {
+    return "Nothing is being tracked: no certificate, licence, policy or bond is on file. That is not the same as everything being current — a document nobody uploaded cannot expire, and cannot warn you either.";
+  }
+  return `Nothing expiring. All ${trackedCount} tracked ${trackedCount === 1 ? "record is" : "records are"} current — certificates, licences, policies and bonds.`;
+}
+
 export function summarizeRenewals(renewals: Renewal[]) {
   return {
     expired: renewals.filter((r) => r.urgency === "EXPIRED").length,

@@ -123,6 +123,26 @@ describe("tool definitions", () => {
   });
 });
 
+describe("bid_status / material_deliveries status filter (issue #103, finding 4)", () => {
+  // Neither schema marks status required — the "marks no input as
+  // required" test above already covers that generically — this pins the
+  // specific values a model is allowed to pass, since a truncation fix that
+  // silently drops OUTSTANDING would defeat the whole point of finding 4.
+  it("offers bid_status an OUTSTANDING status alongside each real one", () => {
+    const tool = TOOLS.find((t) => t.name === "bid_status")!;
+    expect(tool.input_schema.properties.status?.enum).toEqual(
+      expect.arrayContaining(["OUTSTANDING", "INVITED", "SUBMITTED", "WON", "LOST", "DECLINED"]),
+    );
+  });
+
+  it("offers material_deliveries only OUTSTANDING — there is no stored status to filter to a specific value", () => {
+    const tool = TOOLS.find((t) => t.name === "material_deliveries")!;
+    expect(tool.input_schema.properties.status?.enum).toEqual(["OUTSTANDING"]);
+    // Still takes jobName — the status filter is additive, not a replacement.
+    expect(tool.input_schema.properties.jobName).toBeDefined();
+  });
+});
+
 describe("KNOWN_GAPS", () => {
   it("explains every gap rather than just naming it", () => {
     // "We don't track that" is only a good answer when it says what would

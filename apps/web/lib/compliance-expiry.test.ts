@@ -5,6 +5,7 @@ import {
   daysUntil,
   renewalAlerts,
   renewalCoverage,
+  renewalCoverageMessage,
   renewalTiming,
   renewalUrgency,
   summarizeRenewals,
@@ -230,5 +231,27 @@ describe("renewalCoverage", () => {
     expect(renewalCoverage(expired, 1)).toBe("HAS_ALERTS");
     // Even a tracked count of zero cannot silence a real alert.
     expect(renewalCoverage(expired, 0)).toBe("HAS_ALERTS");
+  });
+});
+
+describe("renewalCoverageMessage (issue #103, finding 2)", () => {
+  // Ask's compliance_status tool used to check only `alerts.length === 0`
+  // and print the ALL_CURRENT sentence for NOTHING_TRACKED too — this is
+  // the one function both RenewalAlerts.tsx and that tool now call, so the
+  // two can never tell a different story about the same empty list again.
+  it("never says 'is current' for a company that has filed nothing", () => {
+    const message = renewalCoverageMessage("NOTHING_TRACKED", 0);
+    expect(message).toMatch(/nothing is being tracked/i);
+    expect(message).not.toMatch(/is current/i);
+  });
+
+  it("says how many records are current, and does not claim nothing is tracked", () => {
+    expect(renewalCoverageMessage("ALL_CURRENT", 3)).toMatch(/all 3 tracked records are current/i);
+    expect(renewalCoverageMessage("ALL_CURRENT", 1)).toMatch(/all 1 tracked record is current/i);
+    expect(renewalCoverageMessage("ALL_CURRENT", 1)).not.toMatch(/nothing is being tracked/i);
+  });
+
+  it("returns null for HAS_ALERTS — there is no substitute sentence, the rows speak", () => {
+    expect(renewalCoverageMessage("HAS_ALERTS", 5)).toBeNull();
   });
 });
