@@ -1,4 +1,4 @@
-import { put, type PutBlobResult } from "@vercel/blob";
+import { put, del, type PutBlobResult } from "@vercel/blob";
 
 /**
  * The one way this app uploads a document, and the one place the upload
@@ -64,4 +64,30 @@ export function putDocument(
     addRandomSuffix: true,
     contentType,
   });
+}
+
+/**
+ * Deletes the actual file behind a document row. Issue #106 finding 3:
+ * `deleteContractDocument` removed the `ContractDocument` row and left the
+ * PDF sitting at its public, unguessable-but-permanent URL forever —
+ * `del` was never imported from `@vercel/blob` anywhere in this repo. A
+ * document deleted because it was uploaded by mistake, or superseded by a
+ * corrected version, or pulled because it should never have been shared,
+ * stayed downloadable by anyone who had ever held the link.
+ *
+ * BEST-EFFORT ON PURPOSE. `del` is documented as idempotent — deleting an
+ * already-gone or never-existed blob does not throw — but this still
+ * swallows any failure rather than let a storage-API blip block the
+ * document row from being removed. The alternative is worse: a person
+ * asking to delete a document (often because it should not be public)
+ * would be told the deletion failed while the row stays, exactly wrong
+ * for the case that matters most. A failure here leaves a blob orphaned
+ * rather than a row un-deletable, and is logged so it isn't silent.
+ */
+export async function deleteDocument(url: string): Promise<void> {
+  try {
+    await del(url);
+  } catch (error) {
+    console.error("[blob] failed to delete", url, error);
+  }
 }

@@ -292,6 +292,22 @@ scrollback gets broken by whoever didn't scroll far enough.
   One case cannot be fixed and is not pretended away: a job whose invoices
   were ALL deleted before that migration starts at 1 again, since nothing
   records what it once issued.
+
+  **AND A NEW COUNTER IS NOT DONE WHEN IT ISSUES NUMBERS CORRECTLY.** #224
+  was right about numbering and still broke both cleanup scripts, which is
+  the half of it neither that PR nor the correction above caught. A per-job
+  counter is a RESTRICT child of `Job` that deleting the job's invoices does
+  NOT reach — it is keyed on `jobId`, so it outlives them and then refuses
+  the job delete. Adding one is three edits, not one: the model,
+  `HANDLED_MODELS` in `packages/db/scripts/scratch-scope.mjs`, and the
+  `del(...)` order in BOTH `clean-scratch-data.mjs` and `seed-demo.mjs`.
+  Fixed for `InvoiceCounter` in #227; the guard that should have caught it
+  has its own entry under Traps, because it was green the whole time.
+
+  `SafetyCaseCounter` is the one counter deliberately NOT in those lists:
+  company-scoped, a high-water mark rather than per-job data, and resetting
+  it reissues a retired OSHA case number (issue #148). Per-job counters go
+  with their job; company-level ones never do.
 - **Derived state is never stored** (overdue, recordable, current
   revision) — a stored flag can disagree with what it was derived from.
 - **Evidence records** (safety incidents, RFIs, submittals, invoices):
@@ -971,6 +987,45 @@ scrollback gets broken by whoever didn't scroll far enough.
   a missing verdict is its own failure state and must be reported as one,
   never folded into "refuted", "passed" or "clean". If a tool reports
   totals, ask it for the per-item verdicts and count them yourself.
+
+- **A GUARD THAT PARSES SQL BY REGEX IS ONE LINE BREAK FROM SEEING
+  NOTHING, AND IT GOES GREEN WHEN IT DOES.** 2026-09-09, and the newest
+  member of the family directly above.
+
+  `apps/web/lib/scratch-cleanup-order.test.ts` exists so that adding a
+  model with a required `jobId` fails on a laptop in a second instead of
+  failing on somebody's database halfway through a cleanup. It derives the
+  blocking foreign keys from the migration SQL, which is the right source
+  — the database enforces what the migrations wrote, not what the schema
+  file reads like. Its pattern spelled every gap in `ALTER TABLE … ADD
+  CONSTRAINT … FOREIGN KEY … ON DELETE …` as ONE LITERAL SPACE, which was
+  invisibly fine while every migration was Prisma-generated: Prisma emits
+  that statement on a single line, and 180 of them matched.
+
+  #224's migration was written by hand and wrapped after the constraint
+  name. The pattern skipped it. The set came back 180 instead of 181, the
+  one missing entry was `InvoiceCounter.jobId -> Job RESTRICT` — a brand
+  new blocker on `Job`, exactly what the file is for — and all thirteen
+  tests passed. Both cleanup scripts shipped unable to delete a job that
+  had ever been invoiced, with the guard green the whole way.
+
+  Two fixes, and the second is the transferable one. The pattern now uses
+  `\s+` so SQL formatting stops being load-bearing. And the file counts
+  the literal string `FOREIGN KEY` across the migrations INDEPENDENTLY of
+  the pattern and requires the parse to return exactly that many — so the
+  next formatting surprise fails with "the migrations declare 181 foreign
+  keys and this file parsed 180" instead of quietly shrinking the set.
+  Both were mutation-tested by restoring the old pattern and watching the
+  count test go red.
+
+  **The general rule, because this will not be the last parser here: a
+  check that DERIVES its input has two failure modes, not one.** It can
+  get the answer wrong, and it can get an empty question. Only the first
+  one looks like a failure. Anything that greps, matches or scrapes a set
+  it then reasons about must assert the SIZE of that set against a source
+  that cannot drift with it — otherwise a pattern matching nothing at all
+  passes every downstream assertion, since nothing is ever missing from an
+  empty list and nothing is ever out of order in it.
 
 - `FEATURE-AUDIT.md`: the 26-category roadmap and source of truth for
   what's built. It has drifted more than once; don't let it.

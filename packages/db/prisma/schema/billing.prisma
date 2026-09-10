@@ -59,6 +59,27 @@ model SignatureRequest {
 
   createdAt DateTime @default(now())
 
+  /// Issue #106 finding 2. A PENDING request renders LIVE line items —
+  /// `esign/[token]/page.tsx` reads `job.lineItems` fresh on every open and
+  /// again at submit — so a link sent once and sat on for weeks can bind
+  /// whatever the job's pricing has become by the time someone finally
+  /// opens it, not what was true when it was sent. Both are nullable with
+  /// NO backfill: existing PENDING requests keep working exactly as before
+  /// (open-ended) rather than being retroactively expired the moment this
+  /// migration runs, which would silently break a real, still-wanted
+  /// signature already in someone's inbox.
+  ///
+  /// Neither is consulted once `status` is SIGNED. A signed request only
+  /// ever renders its own frozen `snapshot` (see above) — never live
+  /// data — so revoking or expiring after the fact would hide a legitimate
+  /// evidence record without closing any actual exposure. Same shape as
+  /// "sent correspondence can close but never delete" in CLAUDE.md.
+  revokedAt DateTime?
+  /// Set at creation by `createSignatureRequest` (30 days out) for new
+  /// requests only; see the backfill note above for why existing rows stay
+  /// NULL. NULL reads as "no expiry" everywhere this is checked.
+  expiresAt DateTime?
+
   @@index([jobId])
 }
 
@@ -106,6 +127,28 @@ model ContractDocument {
 
   @@unique([jobId, versionNumber])
   @@index([jobId])
+}
+
+/// Issues ContractDocument version numbers per job. Same defect,
+/// same fix, as InvoiceCounter above (see that model's comment for the
+/// full reasoning) — `uploadContractDocument` computed `versionNumber` as
+/// `MAX(versionNumber) + 1` off the surviving rows, read outside any
+/// transaction. Two amendments uploaded for the same job at once could
+/// both read the same max and collide on `@@unique([jobId, versionNumber])`,
+/// and deleting a version and re-uploading would let two different legal
+/// documents both be called "Version 2" — the exact failure
+/// `ChangeOrderCounter`'s comment warns about, on a document a GC may be
+/// relying on as the version of record.
+///
+/// BACKFILLED from MAX(versionNumber) per job when created, for the same
+/// reason InvoiceCounter was: starting every counter at zero would collide
+/// with a job's existing contract documents immediately.
+model ContractDocumentVersionCounter {
+  jobId      String @id
+  job        Job    @relation(fields: [jobId], references: [id])
+  lastNumber Int    @default(0)
+
+  updatedAt DateTime @updatedAt
 }
 
 /// A bill against a Job. Amount paid and balance are always

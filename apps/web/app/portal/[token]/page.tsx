@@ -4,6 +4,7 @@ import { StatusBadge } from "@prova/ui";
 import { prisma } from "@prova/db";
 import { money } from "@/lib/money";
 import { countSharedJobMediaByJob } from "@/lib/job-media-query";
+import { isPortalAccessRevoked } from "@/lib/access-tokens";
 
 export default async function PortalPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
@@ -19,7 +20,11 @@ export default async function PortalPage({ params }: { params: Promise<{ token: 
     },
   });
 
-  if (!contact) {
+  // Issue #106 finding 2: same revoked/INACTIVE check as
+  // /portal/[token]/jobs/[jobId] — see that page's comment for why this
+  // 404s rather than showing a different error for "revoked" than for
+  // "never existed".
+  if (!contact || isPortalAccessRevoked(contact)) {
     notFound();
   }
 

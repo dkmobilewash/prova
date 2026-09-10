@@ -2,6 +2,10 @@ import { notFound } from "next/navigation";
 import { prisma } from "@prova/db";
 import { ContractSummary } from "@/components/ContractSummary";
 import { signRequest } from "@/lib/actions";
+import { SubmitButton } from "@/components/SubmitButton";
+import { viewerTimeZone } from "@/lib/viewerToday";
+import { isSignatureLinkDead } from "@/lib/access-tokens";
+import { formatSignedDate } from "@/lib/signed-date";
 
 type Snapshot = {
   companyName: string;
@@ -31,7 +35,19 @@ export default async function EsignPage({ params }: { params: Promise<{ token: s
     },
   });
 
+  // Issue #106 finding 2: a REVOKED or EXPIRED PENDING request 404s
+  // exactly like a token that never existed, matching the portal's
+  // "wrong jobId 404s" convention rather than telling whoever holds a
+  // dead link that it once worked. Checked only while PENDING — a SIGNED
+  // request only ever renders its own frozen `snapshot` below, never live
+  // job data, so there is nothing left for revocation or expiry to
+  // protect and a signed contract stays a readable evidence record
+  // regardless (CLAUDE.md: sent correspondence can close but never
+  // delete).
   if (!request) {
+    notFound();
+  }
+  if (isSignatureLinkDead(request, new Date())) {
     notFound();
   }
 
@@ -39,15 +55,21 @@ export default async function EsignPage({ params }: { params: Promise<{ token: s
 
   if (request.status === "SIGNED") {
     const snapshot = request.snapshot as unknown as Snapshot;
+    // Issue #106 finding 7: rendered in the SIGNER's zone, not the
+    // server's. There is no TimeZoneCookie on this route (it only mounts
+    // in the signed-in (app) layout, and there is no signed-in session
+    // here to mount it into) so this falls back to Vercel's geo-IP header
+    // in production, or the honest UTC floor otherwise — see
+    // viewerTimeZone's own comment for the full fallback order. Either is
+    // strictly better than the server's own clock, which is what rendered
+    // an evening signature west of UTC a day late on the one date a
+    // dispute turns on.
+    const timeZone = await viewerTimeZone();
     return (
       <main className="mx-auto max-w-2xl px-6 py-12">
         <div className="mb-6 rounded-lg border border-green-500/30 bg-green-500/10 p-4 text-sm text-green-300">
           Signed by {request.signerName} on{" "}
-          {request.signedAt?.toLocaleDateString("en-US", {
-            month: "short",
-            day: "numeric",
-            year: "numeric",
-          })}
+          {request.signedAt && formatSignedDate(request.signedAt, timeZone)}
           . This reflects exactly what was agreed to at the time of signing.
         </div>
         <ContractSummary
@@ -68,6 +90,12 @@ export default async function EsignPage({ params }: { params: Promise<{ token: s
             unitPrice: item.unitPrice,
             changeOrderNumber: null,
           }))}
+          // Issue #106 finding 6: this IS the frozen snapshot the banner
+          // above already says it is — ContractSummary's default footer
+          // claims "the CURRENT agreed scope and pricing", which
+          // contradicted the banner four lines up on the same page. See
+          // ContractSummary's `frozen` prop.
+          frozen
         />
       </main>
     );
@@ -123,12 +151,18 @@ export default async function EsignPage({ params }: { params: Promise<{ token: s
             this form constitutes my legal signature accepting this contract.
           </span>
         </label>
-        <button
+        {/* Issue #106 finding 8: was a bare `<button>`, clickable for the
+            whole round trip. A second click before the first request
+            returned re-submitted the form; the server side of that race
+            is closed in `signRequest` itself (an idempotent `updateMany`
+            keyed on still-PENDING), and this closes the client side the
+            same way every create button in this app already does. */}
+        <SubmitButton
           type="submit"
           className="inline-flex w-fit items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
         >
           Sign contract
-        </button>
+        </SubmitButton>
       </form>
     </main>
   );
