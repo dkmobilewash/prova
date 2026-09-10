@@ -355,6 +355,25 @@ scrollback gets broken by whoever didn't scroll far enough.
   | --- | --- | --- | --- |
   | Development | `striking-jaybird-….clerk.accounts.dev` | `pk_test_`/`sk_test_` | the original users |
   | Production | `cstream.ai` (FAPI at `clerk.cstream.ai`) | `pk_live_`/`sk_live_` | the live users |
+  | Cyrus's laptop | `smart-rattler-7073.clerk.accounts.dev` | its own `pk_test_`/`sk_test_` | his local test users |
+
+  **THREE now, not two — the third is a separate Clerk APP, not a third
+  instance of the same one.** Established 2026-09-10 while rebuilding
+  Cyrus's laptop from nothing, which is exactly the situation this entry
+  exists for and the one it failed: this table sent that rebuild hunting
+  for `striking-jaybird` keys that Cyrus's Clerk account cannot see at
+  all. His local stack is its own app named Prova, in his own Clerk
+  organisation ("Cyrus's Organization", Development environment only —
+  the dashboard shows "No Production Environment"), and it pairs with his
+  own Neon project: `smart-rattler-7073` + `ep-icy-hat`, the laptop-local
+  mirror of the three-Neon-projects table below. Proved by result, not
+  inference — signing in locally with `smart-rattler` keys against
+  `ep-icy-hat` showed the test jobs created before the old laptop died,
+  so that pairing is what his data actually lives under. The rule the
+  table already states covers this row too: name the instance. "The dev
+  keys" now means two different things, only one of which a given person
+  can obtain — `striking-jaybird`'s from Diego's dashboard,
+  `smart-rattler`'s from Cyrus's.
 
   The app is at **app.cstream.ai**. Clerk takes the registrable ROOT for
   its own infrastructure, so its DNS records are `clerk`, `clkmail`,
