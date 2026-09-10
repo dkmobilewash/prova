@@ -1,0 +1,115 @@
+/// What somebody drew ON a site capture, kept BESIDE it rather than burned
+/// into it.
+///
+/// THE DECISION THIS WHOLE FILE RESTS ON: the pixels are never modified.
+/// The obvious build is to flatten the drawing into a new JPEG and store
+/// that, and it is wrong here for a reason this schema already has a rule
+/// about. A site photo is an evidence record — identity fields locked after
+/// creation, sent correspondence closes but never deletes — and flattening
+/// either destroys the original or silently forks it into two files that
+/// disagree. Keeping the marks as rows means the photograph stays exactly
+/// what the camera produced, the markup stays editable and dated, and both
+/// can be shown together.
+///
+/// WHAT THAT COSTS, stated here because it is real and not yet paid: the
+/// raw blob URL still serves an UNMARKED photo. Anyone who downloads the
+/// file, rather than reading the page, gets the picture without the arrows.
+/// The app therefore never offers a marked-up photo's file as "the photo" —
+/// it says "original, without markup" — and the fix, a flattened export, is
+/// the same piece of work as the PDF report that has to exist before a
+/// marked-up photo is ever ATTACHED to anything. It is deliberately not
+/// faked in the meantime.
+enum JobMediaAnnotationKind {
+  /// A line with a head, pointing at the thing being talked about.
+  ARROW
+
+  /// A rectangle around a region. "Highlight" in the product, `BOX` here,
+  /// because it is a shape and not a colour.
+  BOX
+
+  /// A word or a sentence placed at a point — "их conduit", "rework".
+  TEXT
+
+  /// A line whose LABEL is a distance the person typed.
+  ///
+  /// THE APP DOES NOT MEASURE ANYTHING, and this comment is the only place
+  /// that can stop somebody assuming it does. There is no scale reference
+  /// in a jobsite photograph and no perspective correction here, so a
+  /// pixel length is not a distance and cannot be converted into one. What
+  /// this stores is a LINE the person drew and a STRING the person typed —
+  /// their claim about a distance, on their own authority, exactly like the
+  /// number they would have written on a printout in marker. Computing a
+  /// figure and showing it to a GC as though the software had measured it
+  /// would be inventing evidence.
+  MEASURE
+}
+
+/// One mark on one capture.
+///
+/// A ROW PER SHAPE rather than one JSON blob per photo, which is the other
+/// obvious build. Three reasons, in order of how much they matter:
+///
+///   - each mark carries its OWN author and timestamp. On a photo two
+///     people annotated across a fortnight, "who said this arrow points at
+///     their damage, and when" is answerable. Inside a blob it is not;
+///   - the marks are then ordinary rows that a query can count, cap and
+///     order, rather than a document the application has to parse before it
+///     knows how many there are;
+///   - a blob is a second place for shape-validity to be enforced, and it
+///     is enforced nowhere: a malformed JSON payload becomes a row that
+///     every later reader has to defend against. `lib/job-media-annotations.ts`
+///     validates a shape once, on the way in, and the columns below are
+///     what survived.
+model JobMediaAnnotation {
+  id String @id @default(cuid())
+
+  /// CASCADE, unlike most of this schema's RESTRICT children, and the
+  /// distinction is the one `JobMediaTagAssignment` already draws: a mark
+  /// is not a record that would be silently lost with its parent, it is
+  /// part of the parent. Deleting a photo must not be blocked because
+  /// somebody drew on it, and a mark pointing at a photo that no longer
+  /// exists is not evidence of anything.
+  ///
+  /// It also keeps this model out of the cleanup scripts entirely — the
+  /// trap #224 and #228 both fell into is a per-job RESTRICT child that
+  /// blocks the job delete, and a CASCADE child of `JobMedia` is reached by
+  /// the `jobMedia.deleteMany` both scripts already run.
+  mediaId String
+  media   JobMedia @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+
+  kind JobMediaAnnotationKind
+
+  /// WHERE, IN FRACTIONS OF THE IMAGE, never in pixels.
+  ///
+  /// 0..1 on each axis, relative to the image's own intrinsic size. A photo
+  /// is rendered at whatever width the card, the gallery, the portal or a
+  /// phone in landscape happens to give it, and a pixel coordinate is only
+  /// meaningful next to the size it was captured at — which would mean
+  /// storing that size too and trusting it forever. A fraction survives
+  /// every one of those without a second column to disagree with.
+  ///
+  /// `x2`/`y2` are the far end of a line or the opposite corner of a box,
+  /// and are NULL for `TEXT`, which is a point. Nullable rather than
+  /// duplicating `x1`/`y1` into them: a text mark has no second point, and
+  /// writing one in would be a value that reads as real and means nothing.
+  x1 Float
+  y1 Float
+  x2 Float?
+  y2 Float?
+
+  /// The words. Required in practice for `TEXT` and `MEASURE` and refused
+  /// for neither at the database level, because the rule is per kind and
+  /// lives in the one pure module both writers import.
+  label String?
+
+  /// Who drew it. SET NULL on user delete, the same choice `capturedBy` and
+  /// `sharedWithClientBy` make: the mark outlives the account, and losing
+  /// the name is better than losing the mark.
+  createdByUserId String?
+  createdBy       User?   @relation("JobMediaAnnotationBy", fields: [createdByUserId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  /// Every read is "the marks on this photo", in a stable order.
+  @@index([mediaId, createdAt])
+}

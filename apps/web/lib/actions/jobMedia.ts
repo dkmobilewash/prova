@@ -13,6 +13,12 @@ import {
   jobMediaMaxBytes,
 } from "@/lib/job-media";
 import {
+  annotationProblem,
+  annotationProblemMessage,
+  annotationSetProblemMessage,
+  type JobMediaAnnotationInput,
+} from "@/lib/job-media-annotations";
+import {
   displayTagName,
   normalizeTagName,
   parseTagInput,
@@ -649,6 +655,81 @@ export async function setJobMediaClientSharing(
       ? { sharedWithClientAt: new Date(), sharedWithClientByUserId: context.id }
       : { sharedWithClientAt: null, sharedWithClientByUserId: null },
   });
+
+  revalidatePath("/photos");
+  revalidatePath(`/jobs/${media.jobId}`);
+  return ok;
+}
+
+/**
+ * Replace every mark on one capture with the set the editor just drew.
+ *
+ * REPLACE, NOT MERGE, and that is the shape the editor forced rather than a
+ * shortcut. Drawing is one activity: somebody opens a photo, adds three
+ * arrows, deletes one, moves nothing, and taps Save. Sending that as a diff
+ * means the client computing which marks are new, which are gone and which
+ * are unchanged — three chances to send a wrong id, against a table whose
+ * rows are cheap to recreate. The set that arrives IS the picture.
+ *
+ * WHAT REPLACE COSTS, and why it is acceptable here: every mark's `id`,
+ * `createdAt` and `createdBy` are reissued on every save, so a mark drawn
+ * by one person and left untouched by a second person's save is now
+ * attributed to the second. That is a real loss of the per-mark authorship
+ * the schema was shaped for, and it is taken knowingly because the
+ * alternative — a diff — loses correctness rather than metadata. If
+ * authorship-per-mark ever has to survive an edit, that is the day this
+ * becomes a diff, and the schema is already ready for it.
+ *
+ * IN ONE TRANSACTION, so a save that fails halfway cannot leave a photo
+ * holding half of its old marks and half of its new ones — which would be
+ * a picture nobody drew.
+ */
+export async function saveJobMediaAnnotations(
+  mediaId: string,
+  marks: JobMediaAnnotationInput[],
+): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_FIELD")) return fail(FIELD_ONLY);
+
+  const media = await prisma.jobMedia.findUnique({
+    where: { id: mediaId },
+    select: { id: true, companyId: true, jobId: true },
+  });
+  if (!media || media.companyId !== context.companyId) return fail("Photo not found");
+
+  // The cap first: a person who has somehow drawn thirty marks should be
+  // told that, rather than told about whichever one of them is also
+  // malformed.
+  const setProblem = annotationSetProblemMessage(marks.length);
+  if (setProblem) return fail(setProblem);
+
+  // Every mark re-checked HERE even though the editor checked each one as
+  // it was drawn, for the standing reason: a Server Action is an endpoint
+  // any signed-in caller can post to directly, so the editor's checks are a
+  // courtesy and these are the enforcement.
+  for (const mark of marks) {
+    const problem = annotationProblem(mark);
+    if (problem) return fail(annotationProblemMessage(problem));
+  }
+
+  await prisma.$transaction([
+    prisma.jobMediaAnnotation.deleteMany({ where: { mediaId: media.id } }),
+    prisma.jobMediaAnnotation.createMany({
+      data: marks.map((mark) => ({
+        mediaId: media.id,
+        kind: mark.kind,
+        x1: mark.x1,
+        y1: mark.y1,
+        x2: mark.x2,
+        y2: mark.y2,
+        // Trimmed on the way in so the column never holds the trailing
+        // space somebody typed before tapping Save, and null rather than
+        // "" so "has a label" is one check everywhere.
+        label: mark.label?.trim() || null,
+        createdByUserId: context.id,
+      })),
+    }),
+  ]);
 
   revalidatePath("/photos");
   revalidatePath(`/jobs/${media.jobId}`);

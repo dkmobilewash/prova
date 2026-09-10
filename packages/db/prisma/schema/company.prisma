@@ -134,6 +134,7 @@ model User {
   filedDailyFieldReports               DailyFieldReport[]
   capturedJobMedia                     JobMedia[]              @relation("JobMediaCapturedBy")
   sharedJobMedia                       JobMedia[]              @relation("JobMediaSharedBy")
+  jobMediaAnnotations                  JobMediaAnnotation[]    @relation("JobMediaAnnotationBy")
   jobMediaTagAssignments               JobMediaTagAssignment[]
   askedRfis                            Rfi[]
   loggedBackcharges                    Backcharge[]

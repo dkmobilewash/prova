@@ -2,6 +2,7 @@ import { prisma } from "@prova/db";
 import type { JobMediaCardData } from "@/components/JobMediaCard";
 import type { JobMediaTagSummary } from "@/components/JobMediaTagManager";
 import type { JobMediaKind } from "@/lib/job-media";
+import type { JobMediaMark } from "@/components/JobMediaMarks";
 import {
   formatByteSize,
   formatCapturedAt,
@@ -10,6 +11,36 @@ import {
   jobMediaKind,
   jobMediaPlaybackWarning,
 } from "@/lib/job-media";
+
+/** One stored annotation as the overlay wants it.
+ *
+ * ONE PROJECTION FOR BOTH GALLERIES AND THE PORTAL, because the marks the
+ * GC sees must be the marks the sub saw when they decided to share — two
+ * mappings would be two chances for an arrow to land somewhere else on the
+ * page where that matters most. The author and timestamp are dropped here
+ * rather than in each caller: nothing on any screen renders them today, and
+ * a field shipped to a client component and read by nothing is the shape
+ * CLAUDE.md names.
+ */
+function toMark(row: {
+  id: string;
+  kind: JobMediaMark["kind"];
+  x1: number;
+  y1: number;
+  x2: number | null;
+  y2: number | null;
+  label: string | null;
+}): JobMediaMark {
+  return {
+    id: row.id,
+    kind: row.kind,
+    x1: row.x1,
+    y1: row.y1,
+    x2: row.x2,
+    y2: row.y2,
+    label: row.label,
+  };
+}
 
 /**
  * Reading site capture for a gallery, in the shape the card wants.
@@ -115,6 +146,12 @@ export async function loadJobMedia(
       // it, and chips that reshuffle when a page revalidates look like
       // something changed when nothing did.
       tags: { include: { tag: true }, orderBy: { tag: { name: "asc" } } },
+      // Same one-query-for-the-page shape as the tags above rather than a
+      // read per card, and ordered here so the marks are drawn in a stable
+      // order between renders — SVG paints in document order, so an
+      // unordered to-many is an overlay whose overlapping marks reshuffle
+      // on a revalidate.
+      annotations: { orderBy: [{ createdAt: "asc" }, { id: "asc" }] },
     },
   });
 
@@ -152,6 +189,7 @@ export async function loadJobMedia(
       id: assignment.tag.id,
       name: assignment.tag.name,
     })),
+    marks: row.annotations.map(toMark),
     ...(scope.withJobName && "job" in row && row.job ? { jobName: row.job.name } : {}),
   }));
 }
@@ -234,6 +272,10 @@ export async function loadJobMediaTags(companyId: string): Promise<JobMediaTagSu
 export type PortalJobPhoto = {
   id: string;
   blobUrl: string;
+  /** What the sub drew on it. Carried to the portal ON PURPOSE — see the
+   *  select below — but stripped of who drew it and when, like every other
+   *  field on this type. */
+  marks: JobMediaMark[];
   /** Photo, video or voice note. Added when capture stopped being
    *  photos-only, and it is the one widening of this type that carries no
    *  disclosure: it is derived from the file's own content type, which the
@@ -295,7 +337,23 @@ export async function loadSharedJobMediaForClient(
     // must never reach the portal are not even fetched. `include: { tags }`
     // added here by a future edit would be visible in review as a change to
     // this list; a default select that silently gained a column would not.
-    select: { id: true, blobUrl: true, caption: true, capturedAt: true, contentType: true },
+    select: {
+      id: true,
+      blobUrl: true,
+      caption: true,
+      capturedAt: true,
+      contentType: true,
+      // THE MARKS GO TO THE GC, and that is the point of the feature rather
+      // than a widening to be nervous about: an arrow drawn to show a GC
+      // where the damage is, is worthless if the GC cannot see it. What is
+      // still withheld is everything ABOUT the mark — no author, no
+      // timestamp — so the projection below takes the geometry and the
+      // words and nothing else.
+      annotations: {
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        select: { id: true, kind: true, x1: true, y1: true, x2: true, y2: true, label: true },
+      },
+    },
   });
 
   return rows.map((row) => ({
@@ -304,6 +362,7 @@ export async function loadSharedJobMediaForClient(
     kind: jobMediaKind(row.contentType) ?? "photo",
     caption: row.caption,
     capturedAtLabel: formatCapturedAt(row.capturedAt, timeZone),
+    marks: row.annotations.map(toMark),
   }));
 }
 
