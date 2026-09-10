@@ -208,6 +208,52 @@ export function factDigest(values: string[]): string {
   return `${values.length}d-${hash.toString(16).padStart(8, "0")}`;
 }
 
+/**
+ * How coarse a dollar figure must move before a money-bearing alert's
+ * dismissal lapses.
+ *
+ * JUDGMENT CALL, not a fact derived from the code -- flagged as such in
+ * issue #109's PR. The four kinds this feeds (WIP_VARIANCE, RETAINAGE_RELEASE,
+ * CLOSEOUT_WITH_GC/CLOSEOUT_REJECTED, BACKCHARGE_RESPONSE) run from
+ * backcharge claims in the hundreds to retainage balances and WIP overruns
+ * in the tens of thousands, so cent precision is meaningless noise and one
+ * bucket size for all four was chosen over a bucket per kind -- the issue
+ * was explicit that WIP_VARIANCE should not stay the odd one out with its
+ * own scheme. $1,000 was picked because it swallows a routine day-to-day
+ * cost entry (the issue's own example is a $12.40 delivery ticket) while
+ * still catching the kind of swing the issue was filed over ($500 to
+ * $42,000). Whether $1,000 is where THIS business actually draws the line
+ * between "routine" and "worth re-raising" is NOT verified against
+ * anything -- it is a reasonable-sounding number, not a derived one.
+ */
+export const ALERT_AMOUNT_BUCKET = 1000;
+
+/**
+ * Combines a money alert's non-money fact (a date, a status, or a stable
+ * marker) with its amount into one opaque digest, so the dismissal key is
+ * sensitive to both without ever putting a human-readable dollar figure
+ * into a string that is a prop on the client component rendering it.
+ *
+ * Issue #109's findings 1-3 are one fix wearing three symptoms, not three
+ * fixes: the leak (the exact figure sat in the key, which visibleToPrincipal
+ * never touched -- it only ever nulled `amount`) and the granularity
+ * failures (a date-only key missed amount swings entirely; WIP_VARIANCE's
+ * cent-exact float meant it could never stabilize against daily cost
+ * entries) all trace back to a key built from the raw number. Bucketing
+ * first and then hashing fixes both at once: the bucket is what makes a
+ * small change not count, and the hash is what makes the figure unreadable
+ * even at that coarser grain -- so there is no longer a bucket size small
+ * enough to make this safe to read off the key, the way there would be if
+ * this only rounded.
+ *
+ * Built on factDigest rather than a second hashing scheme, so this file
+ * keeps exactly one hashing primitive doing both jobs.
+ */
+export function moneyFact(fact: string, amount: number): string {
+  const bucket = Math.round(amount / ALERT_AMOUNT_BUCKET);
+  return factDigest([fact, String(bucket)]);
+}
+
 function severityForDate(dateIso: string | null, todayIso: string, horizon: number): AlertSeverity | null {
   if (!dateIso) return null;
   const days = daysUntilIso(dateIso, todayIso);
@@ -278,7 +324,11 @@ export function backchargeAlerts(
 
     const days = daysUntilIso(bc.respondByDate, todayIso);
     alerts.push({
-      key: alertKey("BACKCHARGE_RESPONSE", bc.id, bc.respondByDate),
+      // Issue #109 findings 1-3: the deadline alone missed a claimed
+      // amount that grew after the fact, and a raw figure in the key would
+      // have been exactly as readable in the flight payload as
+      // WIP_VARIANCE's was. moneyFact folds both into one opaque digest.
+      key: alertKey("BACKCHARGE_RESPONSE", bc.id, moneyFact(bc.respondByDate, bc.claimedAmount)),
       kind: "BACKCHARGE_RESPONSE",
       severity,
       title: `Backcharge ${bc.number} on ${bc.jobName} is unanswered`,
@@ -306,19 +356,39 @@ export type RetainageAlertSource = {
   closeoutAcceptedOn: string | null;
   /** The forecast anchor, used only when there is no accepted package. */
   substantialCompletionDate: string | null;
+  /** Whether ANY closeout submission exists for this job, regardless of
+   * its status -- SUBMITTED and REJECTED both count, not just ACCEPTED.
+   * Used only to raise issue #109 finding 5's case below; the accepted and
+   * forecast branches above read the two fields above instead and never
+   * look at this one. */
+  hasCloseoutSubmission: boolean;
 };
 
 /**
- * Retainage that is now collectable, or about to be.
+ * Retainage that is now collectable, about to be, or has no path to
+ * either yet.
  *
- * Two grounds, and they are not equally good, so the wording says which
- * one it is. An ACCEPTED closeout package is an event: the GC took the
- * paperwork, and whatever the contract says the clock started. Substantial
- * completion is a FORECAST — Job.substantialCompletionDate records when a
- * job is expected to reach it, not that it did (lib/retainage.ts learned
- * that the hard way and says so). So a forecast-grounded alert is raised
- * only once the date is behind us and is worded as a prompt to check, not
- * as a claim that money is due.
+ * THREE grounds now, not two, after issue #109 finding 5 -- and they are
+ * not equally good, so the wording says which one it is. An ACCEPTED
+ * closeout package is an event: the GC took the paperwork, and the clock
+ * started -- but issue #109 finding 4 is that this file defined
+ * ALERT_HORIZON_DAYS.RETAINAGE_RELEASE and then never read it, so "the GC
+ * accepted the package zero days ago" read as OVERDUE, sorted above
+ * genuinely blown deadlines because it carried the biggest number.
+ * OVERDUE is now only once that horizon has actually elapsed since
+ * acceptance; before that it is DUE_SOON, which is a real severity here
+ * and not a downgrade -- it says "on track", not "ignore this".
+ *
+ * Substantial completion is a FORECAST — Job.substantialCompletionDate
+ * records when a job is expected to reach it, not that it did
+ * (lib/retainage.ts learned that the hard way and says so). So a
+ * forecast-grounded alert is raised only once the date is behind us and is
+ * worded as a prompt to check, not as a claim that money is due.
+ *
+ * And a job with NEITHER an accepted package NOR even a forecast date
+ * raised nothing at all before finding 5 -- silently, on what can be the
+ * largest sum this app tracks, because nothing above this line ever fires
+ * for it. See the third branch below.
  *
  * Nothing is raised on a zero balance: there is no money to release.
  */
@@ -327,20 +397,38 @@ export function retainageAlerts(
   todayIso: string,
 ): Alert[] {
   const alerts: Alert[] = [];
+  const horizon = ALERT_HORIZON_DAYS.RETAINAGE_RELEASE ?? 14;
 
   for (const job of sources) {
     if (job.balance <= 0) continue;
 
     if (job.closeoutAcceptedOn) {
-      const days = daysUntilIso(job.closeoutAcceptedOn, todayIso);
+      // Collectable once the horizon has elapsed SINCE acceptance, not the
+      // instant acceptance is recorded -- issue #109 finding 4.
+      const releaseDueOn = addDays(job.closeoutAcceptedOn, horizon);
+      const days = daysUntilIso(releaseDueOn, todayIso);
+      const severity: AlertSeverity = days < 0 ? "OVERDUE" : "DUE_SOON";
+      const heldDays = -daysUntilIso(job.closeoutAcceptedOn, todayIso);
+      const heldWord = heldDays === 1 ? "day" : "days";
+
       alerts.push({
-        key: alertKey("RETAINAGE_RELEASE", job.jobId, job.closeoutAcceptedOn),
+        // Issue #109 findings 1-3: the amount rides along in the key (so a
+        // balance that grows from $500 to $42,000 does not stay dismissed
+        // on the strength of an unchanged date) via moneyFact, which never
+        // puts the raw figure into a string handed to the client.
+        key: alertKey("RETAINAGE_RELEASE", job.jobId, moneyFact(job.closeoutAcceptedOn, job.balance)),
         kind: "RETAINAGE_RELEASE",
-        severity: "OVERDUE",
-        title: `Retainage on ${job.jobName} is collectable`,
-        detail: `The GC accepted the closeout package ${Math.abs(days)} ${Math.abs(days) === 1 ? "day" : "days"} ago and this is still held.`,
+        severity,
+        title:
+          severity === "OVERDUE"
+            ? `Retainage on ${job.jobName} is collectable`
+            : `Retainage on ${job.jobName} will be collectable soon`,
+        detail:
+          severity === "OVERDUE"
+            ? `The GC accepted the closeout package ${heldDays} ${heldWord} ago and this is still held.`
+            : `The GC accepted the closeout package ${heldDays} ${heldWord} ago. Collectable ${Math.abs(days)} ${Math.abs(days) === 1 ? "day" : "days"} from now, ${horizon} days after acceptance.`,
         href: "/closeout",
-        dueOn: job.closeoutAcceptedOn,
+        dueOn: releaseDueOn,
         daysUntil: days,
         amount: job.balance,
       });
@@ -349,7 +437,7 @@ export function retainageAlerts(
 
     if (job.substantialCompletionDate && job.substantialCompletionDate <= todayIso) {
       alerts.push({
-        key: alertKey("RETAINAGE_RELEASE", job.jobId, job.substantialCompletionDate),
+        key: alertKey("RETAINAGE_RELEASE", job.jobId, moneyFact(job.substantialCompletionDate, job.balance)),
         kind: "RETAINAGE_RELEASE",
         severity: "STANDING",
         title: `Retainage on ${job.jobName} may be due`,
@@ -362,6 +450,35 @@ export function retainageAlerts(
         href: "/closeout",
         dueOn: job.substantialCompletionDate,
         daysUntil: daysUntilIso(job.substantialCompletionDate, todayIso),
+        amount: job.balance,
+      });
+      continue;
+    }
+
+    // Issue #109 finding 5. Neither branch above will EVER fire for a job
+    // with no accepted package and no forecast completion date at all --
+    // this is the case that raised nothing, silently, on the largest sum
+    // this app can track. Purely additive: both branches above `continue`
+    // past this one the moment either fact exists, so a job that already
+    // had one of them behaves exactly as it did before this alert existed.
+    //
+    // Own key scheme, deliberately NOT amount-sensitive via moneyFact: the
+    // fact this alert is about is structural (no submission, no forecast
+    // date), not a dollar figure, so a balance moving up or down should
+    // not by itself lapse a dismissal of "there is no path to closeout
+    // yet" -- only recording one of the two facts above does that, and
+    // both of those continue past this branch entirely when they happen.
+    if (!job.hasCloseoutSubmission && !job.substantialCompletionDate) {
+      alerts.push({
+        key: alertKey("RETAINAGE_RELEASE", job.jobId, "no-closeout-path"),
+        kind: "RETAINAGE_RELEASE",
+        severity: "STANDING",
+        title: `Retainage on ${job.jobName} has no path to release yet`,
+        detail:
+          "No closeout package has been submitted and no substantial completion date is recorded, so nothing is moving this toward release.",
+        href: "/closeout",
+        dueOn: null,
+        daysUntil: null,
         amount: job.balance,
       });
     }
@@ -439,7 +556,12 @@ export function closeoutAlerts(sources: CloseoutAlertSource[], todayIso: string)
       const elapsed = ago === 0 ? "today" : `${ago} ${ago === 1 ? "day" : "days"} ago`;
 
       alerts.push({
-        key: alertKey("CLOSEOUT_REJECTED", job.jobId, since),
+        // Issue #109 findings 1-3: the date alone missed a retainage
+        // balance that moved after the rejection was recorded, and folding
+        // the raw figure into a readable key would have leaked it the same
+        // way WIP_VARIANCE did. No money capability check needed here --
+        // moneyFact never puts the figure into the string at all.
+        key: alertKey("CLOSEOUT_REJECTED", job.jobId, amount !== null ? moneyFact(since, amount) : since),
         kind: "CLOSEOUT_REJECTED",
         // No deadline exists to be past: most subcontracts say nothing
         // about how fast a bounced package must go back. Same argument as
@@ -461,7 +583,13 @@ export function closeoutAlerts(sources: CloseoutAlertSource[], todayIso: string)
     if (daysWith < CLOSEOUT_CHASE_DAYS) continue;
 
     alerts.push({
-      key: alertKey("CLOSEOUT_WITH_GC", job.jobId, job.submittedOn),
+      // Same fix as CLOSEOUT_REJECTED above: fold the amount into the key
+      // via moneyFact rather than key on the date alone.
+      key: alertKey(
+        "CLOSEOUT_WITH_GC",
+        job.jobId,
+        amount !== null ? moneyFact(job.submittedOn, amount) : job.submittedOn,
+      ),
       kind: "CLOSEOUT_WITH_GC",
       severity: "STANDING",
       title: `Closeout package on ${job.jobName} has had no response`,
@@ -629,7 +757,16 @@ export function wipAlerts(sources: WipAlertSource[]): Alert[] {
   for (const job of sources) {
     if (job.overrun <= 0) continue;
     alerts.push({
-      key: alertKey("WIP_VARIANCE", job.jobId, job.overrun.toFixed(2)),
+      // Issue #109 findings 1-3. This used to be `job.overrun.toFixed(2)`
+      // -- a cent-exact float, in the clear, in the one field
+      // visibleToPrincipal never touches. A $12.40 delivery ticket minted
+      // a new key on a job with daily cost entries, so it could never stay
+      // dismissed; and the exact overrun sat readable in the RSC flight
+      // payload for anyone the amount field itself was nulled for, because
+      // the key was never nulled alongside it. moneyFact buckets the
+      // amount before hashing it, so a bucket-sized-or-smaller change
+      // leaves the key alone and the raw figure never appears in it at all.
+      key: alertKey("WIP_VARIANCE", job.jobId, moneyFact("overrun", job.overrun)),
       kind: "WIP_VARIANCE",
       severity: "STANDING",
       title: `${job.jobName} is forecast over its contract value`,
