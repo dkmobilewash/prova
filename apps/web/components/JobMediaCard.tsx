@@ -12,6 +12,7 @@ import {
 } from "@/lib/actions";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { JOB_MEDIA_TAG_DATALIST_ID, JOB_MEDIA_TAGS_PER_PHOTO_MAX } from "@/lib/job-media-tags";
+import type { JobMediaKind } from "@/lib/job-media";
 
 /** Everything the card needs, already formatted on the server.
  *
@@ -22,16 +23,26 @@ import { JOB_MEDIA_TAG_DATALIST_ID, JOB_MEDIA_TAGS_PER_PHOTO_MAX } from "@/lib/j
  * disagree with the server's — the hydration break components/localToday.ts
  * exists to warn about.
  *
- * NO `contentType`. It was shipped to every card and read by nothing —
- * this renders an `<Image>` unconditionally, because photos are the only
- * thing that can be uploaded. It goes back in on the day the card actually
- * branches on it (video), and not before: a field nothing reads is
- * indistinguishable from one whose reader is broken, which is the
- * `acknowledgedSeverity` shape CLAUDE.md names. The COLUMN stays — it is
- * what that branch will be derived from. */
+ * `kind` RATHER THAN `contentType`, and that is this comment's third
+ * position on the same field. It was originally shipped raw and read by
+ * nothing; it was then removed, with a note saying it would come back "on
+ * the day the card actually branches on it (video), and not before". This
+ * is that day, and what comes back is the DERIVED kind, not the raw type:
+ * the card needs to know whether to render a picture, a player or a
+ * recording, and every screen that asks should get the same answer from
+ * `jobMediaKind` rather than each re-deriving it from a MIME string.
+ *
+ * `playbackWarning` is derived the same way and for a blunter reason: some
+ * of what a phone records does not play in some browsers, and the person
+ * deciding whether to show a clip to a GC is the one who has to be told. */
 export type JobMediaCardData = {
   id: string;
   blobUrl: string;
+  /** Photo, video or voice note — derived from `contentType` at read time
+   *  and stored nowhere. */
+  kind: JobMediaKind;
+  /** Non-null when a common browser cannot play this file. */
+  playbackWarning: string | null;
   caption: string | null;
   capturedAtLabel: string;
   /** The same instant as a datetime-local input value, in the viewer's
@@ -102,14 +113,54 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
           That same early return drops `srcSet` and `sizes`, so there is
           deliberately no `sizes` prop here: it would be inert, and an inert
           prop reads like a working one. Sizing is entirely CSS. */}
-      <a href={media.blobUrl} target="_blank" rel="noopener noreferrer" className="relative block aspect-[4/3] bg-slate-950">
-        <Image
-          src={media.blobUrl}
-          alt={media.caption ?? "Site photo"}
-          fill
-          unoptimized
-          className="object-cover"
-        />
+      <div className="relative block aspect-[4/3] bg-slate-950">
+        {/* THREE RENDERINGS, ONE BOX. The aspect box is kept for all three
+            so a mixed gallery stays a grid rather than reflowing around
+            whichever card happens to hold a voice note.
+
+            Only the photo is a LINK to the raw file. A `<video>`/`<audio>`
+            wrapped in an anchor is a control inside a link: every tap on
+            play, scrub or volume also navigates, which on a phone means
+            leaving the gallery to land on a bare blob URL. The players get
+            their own controls instead, and the file is still reachable —
+            the caption row below carries a plain "Open file" link. */}
+        {media.kind === "photo" ? (
+          <a
+            href={media.blobUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="absolute inset-0"
+          >
+            <Image
+              src={media.blobUrl}
+              alt={media.caption ?? "Site photo"}
+              fill
+              unoptimized
+              className="object-cover"
+            />
+          </a>
+        ) : media.kind === "video" ? (
+          /* `preload="metadata"` rather than `auto`: a gallery of a dozen
+             clips must not pull a dozen videos down a hotspot to show
+             twelve first frames. `playsInline` is what stops iOS Safari
+             taking over the whole screen the moment play is tapped, which
+             on a walk-through you want to be the person's choice. */
+          <video
+            src={media.blobUrl}
+            controls
+            preload="metadata"
+            playsInline
+            className="absolute inset-0 h-full w-full bg-black object-contain"
+          />
+        ) : (
+          /* A voice note has nothing to show, so the box says what it is
+             and the control sits under it rather than floating in black. */
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-4">
+            <span aria-hidden className="text-3xl">🎙️</span>
+            <p className="text-sm text-slate-400">Voice note</p>
+            <audio src={media.blobUrl} controls preload="metadata" className="w-full" />
+          </div>
+        )}
         {/* ON THE IMAGE, not only in the text below it, and that placement
             is the safeguard rather than decoration. The question this
             feature has to keep answerable is "which of these can the GC
@@ -131,7 +182,7 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
             Client can see this
           </span>
         )}
-      </a>
+      </div>
 
       <div className="flex flex-1 flex-col gap-2 p-3">
         {media.jobName && <p className="text-sm font-medium text-slate-200">{media.jobName}</p>}
@@ -303,10 +354,17 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
           <div className="flex flex-col gap-2">
             <p className="text-sm font-medium text-slate-200">Show this photo to the client?</p>
             <p className="text-sm text-slate-400">
-              Anyone holding this job&apos;s portal link will see the photo, its caption and when it
+              Anyone holding this job&apos;s portal link will see the file, its caption and when it
               was taken. Tags and who took it are never shown. You can stop sharing it later, but you
               cannot un-show it.
             </p>
+            {/* HERE, not only on the card, because this is the moment the
+                decision is made. A .mov shown to a GC on a Windows laptop
+                is a blank box, and finding that out from the GC is worse
+                than finding it out from this sentence. */}
+            {media.playbackWarning && (
+              <p className="text-sm text-amber-400">{media.playbackWarning}</p>
+            )}
             {error && <p className="text-sm text-red-400">{error}</p>}
             <div className="flex flex-wrap gap-2">
               <button
@@ -404,6 +462,27 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
               {media.capturedByName ? ` · ${media.capturedByName}` : ""} · {media.sizeLabel}
             </p>
             {media.clockWarning && <p className="text-sm text-amber-400">{media.clockWarning}</p>}
+            {/* Amber like the clock warning and for the same reason: it is
+                a caveat about the file rather than a failure, and the
+                person who needs it is the one about to show this to a GC. */}
+            {media.playbackWarning && (
+              <p className="text-sm text-amber-400">{media.playbackWarning}</p>
+            )}
+            {/* The photo IS its own link (the whole image opens the file).
+                A video and a voice note are not — wrapping a player in an
+                anchor makes every tap on play or scrub navigate away — so
+                they get this instead, which is also the only way to hand
+                the raw file to somebody who wants to download it. */}
+            {media.kind !== "photo" && (
+              <a
+                href={media.blobUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm text-blue-400 hover:text-blue-300"
+              >
+                Open file
+              </a>
+            )}
 
             {/* The second half of "obvious at a glance": the badge on the
                 image says THAT the client can see it, this says SINCE WHEN.

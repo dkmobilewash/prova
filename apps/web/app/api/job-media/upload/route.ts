@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
-import { JOB_MEDIA_CONTENT_TYPES, JOB_MEDIA_MAX_BYTES, isJobMediaPathname } from "@/lib/job-media";
+import { isAllowedJobMediaType, isJobMediaPathname, jobMediaMaxBytes } from "@/lib/job-media";
 
 /**
  * The browser uploads the file to Vercel Blob DIRECTLY; this route only
@@ -91,15 +91,22 @@ export async function POST(request: Request): Promise<NextResponse> {
           throw new Error("Site photos aren't part of your job function.");
         }
 
-        // The client says which job. We check it rather than trust it.
+        // The client says which job, and what it is about to send. Both
+        // are treated as claims to check, never as instructions.
         let jobId: unknown;
+        let declaredType: unknown;
         try {
-          jobId = JSON.parse(clientPayload ?? "{}")?.jobId;
+          const payload = JSON.parse(clientPayload ?? "{}");
+          jobId = payload?.jobId;
+          declaredType = payload?.contentType;
         } catch {
           throw new Error("Malformed upload request");
         }
         if (typeof jobId !== "string" || !jobId) {
           throw new Error("A job is required");
+        }
+        if (typeof declaredType !== "string" || !isAllowedJobMediaType(declaredType)) {
+          throw new Error("That is not a file type this app can file");
         }
         const job = await prisma.job.findUnique({
           where: { id: jobId },
@@ -116,9 +123,34 @@ export async function POST(request: Request): Promise<NextResponse> {
           throw new Error("That upload path does not belong to this job");
         }
 
+        // ONE TYPE, AT ITS OWN CAP, and that pairing is the point.
+        //
+        // This used to sign the whole allowlist and a single 25MB ceiling.
+        // With three kinds that cannot work: a 200MB video cap applied to
+        // every token would let a 200MB "photo" through, and a 25MB
+        // ceiling would refuse every video. So the token is minted for the
+        // exact type the client declared, at that type's cap.
+        //
+        // WHAT STOPS THE CLIENT LYING TO GET THE BIGGER CAP. Declaring
+        // `video/mp4` to earn 200MB and then sending a photo does not
+        // work: the STORE enforces the signed list and refuses the PUT
+        // with "contentType ... is not allowed" (@vercel/blob@2.8.0
+        // dist/chunk-YYMLUMXS.js:653 maps exactly that response). The lie
+        // costs the liar a failed upload and nothing else. This is
+        // therefore strictly tighter than the old token, which accepted
+        // any of five types under one number.
+        const maximumSizeInBytes = jobMediaMaxBytes(declaredType);
+        if (maximumSizeInBytes === null) {
+          // Unreachable — `isAllowedJobMediaType` above already refused
+          // anything without a cap. Written rather than asserted with `!`
+          // because the two functions are separate and a later edit could
+          // make them disagree; if that happens this fails closed.
+          throw new Error("That is not a file type this app can file");
+        }
+
         return {
-          allowedContentTypes: [...JOB_MEDIA_CONTENT_TYPES],
-          maximumSizeInBytes: JOB_MEDIA_MAX_BYTES,
+          allowedContentTypes: [declaredType],
+          maximumSizeInBytes,
           addRandomSuffix: true,
           // WHAT ACTUALLY BINDS THE TOKEN TO A JOB IS THE PATHNAME ABOVE,
           // not this payload. This used to claim "the token is scoped to
