@@ -7,7 +7,7 @@ import { isSignatureLinkDead } from "@/lib/access-tokens";
 import { linkToken } from "@/lib/tokens";
 import { requireCompanyContext } from "@/lib/auth";
 import { money as formatMoney } from "@/lib/money";
-import { prisma } from "@prova/db";
+import { prisma, Prisma } from "@prova/db";
 import { revokeToken, refreshTokens, getCompanyInfo, generateWipNarrative, type QuickBooksCompanyInfo } from "@prova/integrations";
 import { calculateLineItemWip, calculateJobWip } from "@/lib/wip";
 import { createInvoiceRecord } from "@/lib/billing/create-invoice";

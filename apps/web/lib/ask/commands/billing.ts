@@ -319,6 +319,8 @@ export const billingCommands: DirectCommandDefinition[] = [draftInvoiceCommand, 
 export const billingExclusions: Exclusion[] = [
   { action: "createSignatureRequest", reason: "Mints a bearer link that legally signs a contract (T4 outward); a page action with its own link handling." },
   { action: "signRequest", reason: "The CLIENT signs, on an unauthenticated page, with a token — nothing an assistant inside the app should touch." },
+  { action: "revokeSignatureRequest", reason: "Voids a live e-sign link the client may be holding (T5); one deliberate tap on the job page, never a command." },
+  { action: "revokeClientPortalAccess", reason: "Kills the GC's portal link (T5 owner administration of an outward token); one deliberate tap on the contact, never a command." },
   { action: "enablePortalAccess", reason: "Mints the GC's portal link (T4 outward); one owner tap on the contact, never a command." },
   { action: "submitPayApplication", reason: "A per-line AIA document composed on the job page from the schedule of values; a card cannot carry a continuation sheet." },
   { action: "updateJobRetainageTerms", reason: "Contract terms that every later invoice snapshots; edited on the job, deliberately not by prompt." },
