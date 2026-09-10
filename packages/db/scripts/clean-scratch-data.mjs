@@ -259,6 +259,14 @@ async function main() {
     await del("payment", () => prisma.payment.deleteMany({ where: { invoice: { jobId: { in: jobIds } } } }));
     await del("invoiceLineItem", () => prisma.invoiceLineItem.deleteMany({ where: { invoice: { jobId: { in: jobIds } } } }));
     await del("invoice", () => prisma.invoice.deleteMany({ where: { jobId: { in: jobIds } } }));
+    // InvoiceCounter is RESTRICT on Job and is NOT reached by deleting the
+    // invoices — it is keyed on jobId, so a job whose every invoice is gone
+    // still has its counter and still blocks the job delete. Safe to remove
+    // here for the reason the high-water-mark rule gives: this is a PER-JOB
+    // sequence and the job is going too, so the numbering ceases to exist
+    // rather than restarting. (Contrast SafetyCaseCounter, which is
+    // company-scoped and deliberately kept.)
+    await del("invoiceCounter", () => prisma.invoiceCounter.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("complianceDocument", () => prisma.complianceDocument.deleteMany({ where: { jobId: { in: jobIds } } }));
     // Everything from here to jobLineItem is a RESTRICT child of Job that
     // this script did not delete. On an empty or lightly-used database
@@ -274,6 +282,11 @@ async function main() {
     await del("closeoutSubmissionCounter", () => prisma.closeoutSubmissionCounter.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("signatureRequest", () => prisma.signatureRequest.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("contractDocument", () => prisma.contractDocument.deleteMany({ where: { jobId: { in: jobIds } } }));
+    // ContractDocumentVersionCounter is RESTRICT on Job and is NOT reached by
+    // deleting the contract documents -- it is keyed on jobId, so a job whose
+    // every document is gone still has its counter and still blocks the job
+    // delete. Same shape as InvoiceCounter (#227).
+    await del("contractDocumentVersionCounter", () => prisma.contractDocumentVersionCounter.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("retainageRelease", () => prisma.retainageRelease.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("estimateVersion", () => prisma.estimateVersion.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("dispatchSlip", () => prisma.dispatchSlip.deleteMany({ where: { jobId: { in: jobIds } } }));

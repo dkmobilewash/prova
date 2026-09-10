@@ -8,6 +8,7 @@ import {
   createBidInvitation,
   deleteBidInvitation,
   enablePortalAccess,
+  revokeClientPortalAccess,
   updateBidInvitationStatus,
 } from "@/lib/actions";
 import { money } from "@/lib/money";
@@ -149,6 +150,7 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
     : null;
 
   const enablePortalWithId = enablePortalAccess.bind(null, contact.id);
+  const revokePortalWithId = revokeClientPortalAccess.bind(null, contact.id);
   const createBidInvitationWithId = createBidInvitation.bind(null, contact.id);
 
   const headerList = await headers();
@@ -449,14 +451,42 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
 
       <section className="mb-10 rounded-lg border border-slate-800 bg-slate-900 p-6">
         <h2 className="mb-3 text-lg font-semibold text-slate-100">Client portal</h2>
-        {contact.portalToken ? (
+        {contact.portalToken && contact.portalRevokedAt ? (
+          // Issue #106 finding 2 / #217: revoked, not deleted or rotated —
+          // the link below stays visible so re-enabling doesn't require
+          // regenerating and re-sending a new one.
+          <div className="text-sm">
+            <p className="mb-2 text-amber-300">
+              Portal access is revoked. This link no longer works for {contact.name}.
+            </p>
+            <p className="mb-3 break-all rounded-md bg-slate-950 px-3 py-2 font-mono text-xs text-slate-500 line-through">
+              {origin}/portal/{contact.portalToken}
+            </p>
+            <form action={enablePortalWithId}>
+              <SubmitButton
+                type="submit"
+                className="rounded-md bg-slate-800 px-3 py-2 text-sm font-medium text-slate-100 hover:bg-slate-700"
+              >
+                Re-enable client portal
+              </SubmitButton>
+            </form>
+          </div>
+        ) : contact.portalToken ? (
           <div className="text-sm">
             <p className="mb-2 text-slate-300">
               Share this link so {contact.name} can view their jobs, contracts, and invoices:
             </p>
-            <p className="break-all rounded-md bg-slate-950 px-3 py-2 font-mono text-xs text-blue-400">
+            <p className="mb-3 break-all rounded-md bg-slate-950 px-3 py-2 font-mono text-xs text-blue-400">
               {origin}/portal/{contact.portalToken}
             </p>
+            <form action={revokePortalWithId}>
+              <SubmitButton
+                type="submit"
+                className="rounded-md border border-rose-800 px-3 py-2 text-sm font-medium text-rose-300 hover:bg-rose-950"
+              >
+                Revoke portal access
+              </SubmitButton>
+            </form>
           </div>
         ) : (
           <div>

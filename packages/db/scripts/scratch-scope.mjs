@@ -40,12 +40,34 @@
  * one kind of row that MUST go with the job: sequence numbers come from a
  * counter that only increments, so a stale one would keep issuing numbers
  * for a job nobody can see.
+ *
+ * `InvoiceCounter` joined them on 2026-09-09, with #224 — invoice numbers
+ * were the last sequence still coming from `max(number) + 1`. Neither
+ * cleanup script knew about it, so a scratch job that had been invoiced
+ * could not be deleted at all.
+ *
+ * THE LIST IS NOT WHAT KEPT THAT SAFE; THE LIST IS WHAT FELL BEHIND. Two
+ * other things were supposed to catch it, and exactly one did.
+ * `clean-test-jobs.mjs` counts every model carrying a jobId from the DMMF at
+ * runtime and refuses on anything outside this list, so it would have
+ * stopped with the table named — that one worked. The test that was meant
+ * to catch it BEFORE anyone ran a script did not: it derives the blocking
+ * foreign keys by pattern-matching the migrations, and #224's migration
+ * wrapped its `ALTER TABLE` across two lines where every generated one is
+ * a single line, so the pattern skipped it and all thirteen tests passed.
+ * See `apps/web/lib/scratch-cleanup-order.test.ts`.
+ *
+ * So: a hand-maintained list is only safe while something else is checking
+ * it, and a checker is only safe while something is checking THE CHECKER.
  */
 export const HANDLED_MODELS = [
   "CostEntry",
   "InvoiceLineItem",
   "Payment",
   "Invoice",
+  // Keyed on jobId, not reached by deleting the invoices, and RESTRICT on
+  // Job — so it blocks the job delete however clean the invoices are.
+  "InvoiceCounter",
   "RetainageRelease",
   "TimeEntry",
   "JobAssignment",
@@ -58,6 +80,13 @@ export const HANDLED_MODELS = [
   "ChangeOrderCounter",
   "BackchargeCounter",
   "CloseoutSubmissionCounter",
+  // Keyed on jobId, not reached by deleting a job's contract documents, and
+  // RESTRICT on Job -- same shape as InvoiceCounter (#227), which blocked
+  // both cleanup scripts until it was added here. ContractDocument itself
+  // stays in NEVER_DELETE below (it's the signed evidence); the counter
+  // isn't evidence, it's just the number sequence, so it goes with the
+  // other per-job counters instead.
+  "ContractDocumentVersionCounter",
 ];
 
 /**

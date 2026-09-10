@@ -230,34 +230,84 @@ scrollback gets broken by whoever didn't scroll far enough.
 - **Sequence numbers** come from a counter row that only increments,
   bumped inside the same transaction as the insert. Never `max(n)+1`,
   never `count()+1` — anything derived from surviving rows is reissued
-  when a row is deleted. Seven counters exist and all seven do this:
+  when a row is deleted. EIGHT counters exist and all eight do this:
   `SafetyCaseCounter`, `RfiCounter`, `SubmittalCounter` and
   `MaterialOrderCounter` (`operations.prisma`), `ChangeOrderCounter`
   (`jobs.prisma`), `BackchargeCounter` (`backcharges.prisma`),
-  `CloseoutSubmissionCounter` (`closeout.prisma`).
+  `CloseoutSubmissionCounter` (`closeout.prisma`), `InvoiceCounter`
+  (`billing.prisma`).
 
-  **INVOICE NUMBERS ARE NOT AMONG THEM, and this file said they were.**
-  Corrected 2026-09-02, re-verified against `main` 2026-09-06 and still
-  true. There is no `InvoiceCounter` anywhere in the repo.
-  `apps/web/lib/actions/billing.ts:151` is:
+  That count is the kind this file has deleted elsewhere for rotting
+  faster than the claim it decorates, so here is how to re-derive it in
+  one line rather than trust it — the two numbers must match, and both
+  were 8 on 2026-09-09:
 
-      async function nextInvoiceNumber(jobId: string) {
-        const last = await prisma.invoice.findFirst({ where: { jobId }, orderBy: { number: "desc" } });
-        return (last?.number ?? 0) + 1;
-      }
+      grep -rh '^model .*Counter {' packages/db/prisma/schema/*.prisma | wc -l
+      grep -rho 'tx\.[a-zA-Z]*Counter\.upsert' apps/web/lib --include=*.ts | sort -u | wc -l
 
-  That is `max(n)+1`, the exact thing the rule above forbids, and it is
-  read OUTSIDE any transaction — both call sites (`createInvoice` and the
-  AIA pay-application submit) compute it and then `create` separately, so
-  two concurrent submits on one job can also collide on
-  `@@unique([jobId, number])`. Delete invoice 3 of 3 and the next invoice
-  is 3 again, on a document a GC has already been sent.
+  The second is the half worth running: a counter model that no action
+  bumps inside a transaction is this repo's "written, documented, and
+  never called" shape wearing a schema.
 
-  The cost of the wrong sentence is not the bug, it is the search: an
-  agent told "invoice numbers come from a counter" does not go and look.
-  This entry is now the reason to look. NOT FIXED HERE — a docs branch is
-  the wrong place to change money-document numbering, and billing is
-  Diego's lane, so it goes to him as an issue per working agreement 3.
+  **INVOICE NUMBERS JOINED THEM 2026-09-09, and this entry said the
+  opposite for a week.** #224 (`c5da778`) added `InvoiceCounter` and
+  `issueInvoiceNumber`, which copies `issueRfiNumber` and takes the
+  transaction client, so the bump and the insert are one transaction.
+  Migration `20260909180000_add_invoice_counter`, applied to
+  `ep-little-sea` by `Migrate` run `34394634352`.
+
+  **Read the shape of this correction before the content of it.** For a
+  week this file said invoice numbers came from a counter when they did
+  not, and that sentence stopped anyone looking. It was then corrected to
+  say they did not — and two hours after #224 merged, THAT was the false
+  sentence, pointing the next agent at a fix already made. A claim about
+  what the code does not have is exactly as perishable as a claim about
+  what it does. Both versions of this entry were true when written.
+
+  **What #224 also established, and it is worth more than the fix.** The
+  headline this entry led with — "delete invoice 3 of 3 and the next
+  invoice is 3 again, on a document a GC has already been sent" —
+  described something the product CANNOT DO. There is no `deleteInvoice`
+  in this app; every `invoice.delete`/`deleteMany` in the repo is dbtest
+  teardown, `clean-scratch-data.mjs` or `seed-demo.mjs`. That is
+  deliberate, and it is this file's own evidence-record rule: sent
+  correspondence closes, it never deletes. So the scariest sentence in the
+  entry was unreachable, and the real defect was the one mentioned last
+  and in passing: two concurrent submits read the same max and the second
+  collided on `@@unique([jobId, number])`, throwing a message production
+  REDACTS, with `createInvoice` returning void so there was nothing to
+  render. Reproduced, not argued — the mutation test throws
+  `Unique constraint failed on the fields: (jobId, number)`.
+
+  The lesson for the next entry somebody writes here: a vivid failure
+  nobody can reach makes a bug look urgent for the wrong reason, and the
+  boring one underneath it goes unfixed for a week.
+
+  **The migration BACKFILLS from `MAX(number)` per job**, and that line is
+  load-bearing rather than tidy: a counter starting at zero would make the
+  first invoice on every existing job collide with its own history. Tested
+  against a real Postgres 16 — seed invoices 1-3, apply the migration,
+  get `lastNumber` 3 and a next number of 4; delete the backfilled row and
+  the counter issues 1, whose insert fails on `Invoice_jobId_number_key`.
+  One case cannot be fixed and is not pretended away: a job whose invoices
+  were ALL deleted before that migration starts at 1 again, since nothing
+  records what it once issued.
+
+  **AND A NEW COUNTER IS NOT DONE WHEN IT ISSUES NUMBERS CORRECTLY.** #224
+  was right about numbering and still broke both cleanup scripts, which is
+  the half of it neither that PR nor the correction above caught. A per-job
+  counter is a RESTRICT child of `Job` that deleting the job's invoices does
+  NOT reach — it is keyed on `jobId`, so it outlives them and then refuses
+  the job delete. Adding one is three edits, not one: the model,
+  `HANDLED_MODELS` in `packages/db/scripts/scratch-scope.mjs`, and the
+  `del(...)` order in BOTH `clean-scratch-data.mjs` and `seed-demo.mjs`.
+  Fixed for `InvoiceCounter` in #227; the guard that should have caught it
+  has its own entry under Traps, because it was green the whole time.
+
+  `SafetyCaseCounter` is the one counter deliberately NOT in those lists:
+  company-scoped, a high-water mark rather than per-job data, and resetting
+  it reissues a retired OSHA case number (issue #148). Per-job counters go
+  with their job; company-level ones never do.
 - **Derived state is never stored** (overdue, recordable, current
   revision) — a stored flag can disagree with what it was derived from.
 - **Evidence records** (safety incidents, RFIs, submittals, invoices):
@@ -325,6 +375,27 @@ scrollback gets broken by whoever didn't scroll far enough.
   owns the domain), only via a proxy at `/__clerk`, and that proxy needs
   `@clerk/nextjs` v7. We are on 6.x. `/__clerk/:path*` is in the
   middleware matcher and inert; leave it.
+
+  **A PREVIEW CANNOT BE CLICKED WITH A PRODUCTION SESSION, and that is
+  this table doing its job rather than anything being broken.** Established
+  2026-09-09 while clicking #214. Previews run the DEVELOPMENT instance —
+  its sign-in box says "Development mode" in orange, which is the tell —
+  and `app.cstream.ai` runs the Production one. Being signed into the app
+  therefore does nothing for a preview: it redirects to
+  `/sign-in?redirect_url=…` and stays there. Sign in on the preview
+  separately.
+
+  The trap is what happens NEXT, and it looks like a broken feature.
+  `requireCompanyContext` (`lib/auth.ts`) adopts a row by verified email,
+  but only if one exists in the database it is talking to — and a preview
+  is talking to the DEMO project, not production. An address with no row
+  there falls through to the create branch and silently gets a brand new
+  company named "<Your Name>'s Company", empty. Every list page then shows
+  its empty state, which reads exactly like the feature you came to click
+  is broken. If a preview shows you no jobs, check whether you are in a
+  company you just created before you go looking at the code. The **Seed
+  demo data** workflow scopes to the oldest company or a `company_id` you
+  pass; it seeds jobs, not photos.
 
 - **A domain change breaks QuickBooks silently.** `QUICKBOOKS_REDIRECT_URI`
   has to change in Vercel AND the same string must be registered on
@@ -825,9 +896,16 @@ scrollback gets broken by whoever didn't scroll far enough.
       production resolves `ep-little-sea`. Confirmed from build logs on two
       unrelated branches plus a production control — see the preview
       paragraph above for the method, which needs no dashboard access.
-      This was the best hypothesis: a preview URL is a different host from
-      `app.cstream.ai`, so it would pass the egress proxies that 403 both
-      agents' containers. It is still wrong;
+      This was the best hypothesis, and its stated reason was ALSO wrong:
+      it said a preview URL, being a different host from `app.cstream.ai`,
+      "would pass the egress proxies that 403 both agents' containers".
+      Measured 2026-09-09 from an agent container, twice: the preview host
+      is denied exactly like production — `curl` fails at CONNECT and the
+      proxy's own status endpoint names it, `connect_rejected`, "gateway
+      answered 403 to CONNECT (policy denial)". So an agent container
+      cannot reach a preview either, and the hypothesis was dead on a
+      second ground nobody had checked. The conclusion is unchanged and
+      still rests on the build logs above;
     - **Scheduled Routines are not it.** One exists on Diego's account, the
       hourly status desk. Disabled, and its prompt is STATUS ONLY — no
       code, no pushes, and no path to the app;
@@ -909,6 +987,45 @@ scrollback gets broken by whoever didn't scroll far enough.
   a missing verdict is its own failure state and must be reported as one,
   never folded into "refuted", "passed" or "clean". If a tool reports
   totals, ask it for the per-item verdicts and count them yourself.
+
+- **A GUARD THAT PARSES SQL BY REGEX IS ONE LINE BREAK FROM SEEING
+  NOTHING, AND IT GOES GREEN WHEN IT DOES.** 2026-09-09, and the newest
+  member of the family directly above.
+
+  `apps/web/lib/scratch-cleanup-order.test.ts` exists so that adding a
+  model with a required `jobId` fails on a laptop in a second instead of
+  failing on somebody's database halfway through a cleanup. It derives the
+  blocking foreign keys from the migration SQL, which is the right source
+  — the database enforces what the migrations wrote, not what the schema
+  file reads like. Its pattern spelled every gap in `ALTER TABLE … ADD
+  CONSTRAINT … FOREIGN KEY … ON DELETE …` as ONE LITERAL SPACE, which was
+  invisibly fine while every migration was Prisma-generated: Prisma emits
+  that statement on a single line, and 180 of them matched.
+
+  #224's migration was written by hand and wrapped after the constraint
+  name. The pattern skipped it. The set came back 180 instead of 181, the
+  one missing entry was `InvoiceCounter.jobId -> Job RESTRICT` — a brand
+  new blocker on `Job`, exactly what the file is for — and all thirteen
+  tests passed. Both cleanup scripts shipped unable to delete a job that
+  had ever been invoiced, with the guard green the whole way.
+
+  Two fixes, and the second is the transferable one. The pattern now uses
+  `\s+` so SQL formatting stops being load-bearing. And the file counts
+  the literal string `FOREIGN KEY` across the migrations INDEPENDENTLY of
+  the pattern and requires the parse to return exactly that many — so the
+  next formatting surprise fails with "the migrations declare 181 foreign
+  keys and this file parsed 180" instead of quietly shrinking the set.
+  Both were mutation-tested by restoring the old pattern and watching the
+  count test go red.
+
+  **The general rule, because this will not be the last parser here: a
+  check that DERIVES its input has two failure modes, not one.** It can
+  get the answer wrong, and it can get an empty question. Only the first
+  one looks like a failure. Anything that greps, matches or scrapes a set
+  it then reasons about must assert the SIZE of that set against a source
+  that cannot drift with it — otherwise a pattern matching nothing at all
+  passes every downstream assertion, since nothing is ever missing from an
+  empty list and nothing is ever out of order in it.
 
 - `FEATURE-AUDIT.md`: the 26-category roadmap and source of truth for
   what's built. It has drifted more than once; don't let it.

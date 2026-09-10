@@ -43,8 +43,22 @@ type Fk = { child: string; column: string; parent: string; onDelete: string };
  * — grep the migrations for `DROP CONSTRAINT`. */
 function foreignKeys(): Fk[] {
   const out: Fk[] = [];
+  // EVERY GAP HERE IS `\s+`, NOT A SPACE, AND THAT IS THE WHOLE FIX.
+  // This pattern spelled each gap as one literal space for as long as every
+  // migration was Prisma-generated, because Prisma emits the statement on a
+  // single line. #224's was written by hand and wrapped the line after the
+  // constraint name — so the pattern did not match it, `foreignKeys()`
+  // returned 180 instead of 181, and the ONE missing entry was
+  // `InvoiceCounter.jobId -> Job RESTRICT`: a new blocker on Job, which is
+  // precisely the thing this file exists to catch. All 13 tests passed.
+  //
+  // Same shape as every other vacuous check this repo has paid for: it was
+  // not lying, it was answering about a set that no longer contained the
+  // row anybody cared about. A whitespace-insensitive pattern makes SQL
+  // formatting stop being load-bearing; the count test below makes a future
+  // formatting surprise fail loudly instead of shrinking the set again.
   const pattern =
-    /ALTER TABLE "(\w+)" ADD CONSTRAINT "\w+" FOREIGN KEY \("(\w+)"\) REFERENCES "(\w+)"\("\w+"\) ON DELETE (RESTRICT|CASCADE|SET NULL|SET DEFAULT|NO ACTION)/g;
+    /ALTER TABLE "(\w+)"\s+ADD CONSTRAINT "\w+"\s+FOREIGN KEY \("(\w+)"\)\s+REFERENCES "(\w+)"\("\w+"\)\s+ON DELETE (RESTRICT|CASCADE|SET NULL|SET DEFAULT|NO ACTION)/g;
   for (const dir of readdirSync(migrationsDir)) {
     const file = join(migrationsDir, dir, "migration.sql");
     if (!existsSync(file)) continue;
@@ -97,6 +111,44 @@ describe("foreign-key derivation", () => {
   it("reads the migrations and finds foreign keys", () => {
     expect(fks.length).toBeGreaterThan(100);
     expect(fks.some((f) => f.child === "EquipmentAssignment" && f.parent === "Job")).toBe(true);
+    // Declared across two lines in 20260909180000_add_invoice_counter, which
+    // is the formatting that defeated the old pattern. Named here so the
+    // specific case stays pinned and greppable, not just covered in
+    // aggregate by the count below.
+    expect(
+      fks.find((f) => f.child === "InvoiceCounter" && f.parent === "Job")?.onDelete,
+    ).toBe("RESTRICT");
+  });
+
+  it("parses EVERY foreign key in the migrations, not just the ones it can read", () => {
+    // The rule this file learned the hard way, and the one worth stating
+    // generally: ABSENCE OF A FAILURE IS NOT A PASS. `foreignKeys()` returns
+    // whatever its pattern happened to match, and a pattern that matches
+    // nothing at all would sail through every other test in this file —
+    // `blockers()` of an empty set is empty, so nothing is ever missing and
+    // nothing is ever out of order. Thirteen green tests, zero coverage.
+    //
+    // So count the statements INDEPENDENTLY of the pattern that parses them
+    // and require the two to agree. `FOREIGN KEY` is the needle because it
+    // appears once per foreign key and in nothing else — `ADD CONSTRAINT`
+    // does not work, it also introduces the unique and primary-key
+    // constraints (186 of those against 181 of these).
+    let literal = 0;
+    for (const dir of readdirSync(migrationsDir)) {
+      const file = join(migrationsDir, dir, "migration.sql");
+      if (!existsSync(file)) continue;
+      const sql = readFileSync(file, "utf8")
+        .split("\n")
+        .filter((line) => !line.trim().startsWith("--"))
+        .join("\n");
+      literal += (sql.match(/FOREIGN KEY/g) ?? []).length;
+    }
+    expect(
+      fks.length,
+      `the migrations declare ${literal} foreign keys and this file parsed ${fks.length}. ` +
+        "The pattern in foreignKeys() has fallen behind the SQL — find the statement it " +
+        "cannot read before trusting anything else in this file.",
+    ).toBe(literal);
   });
 
   it("no migration drops a foreign key, so the cumulative list is current", () => {
