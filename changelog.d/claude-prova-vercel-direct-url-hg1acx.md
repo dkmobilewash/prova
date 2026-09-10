@@ -1,43 +1,45 @@
-### The InvoiceCounter cleanup hazard, asked of the database instead of the SQL text (Diego)
+### The counter roll-call became a test, because the number rotted in a day (Diego)
 `claude/prova-vercel-direct-url-hg1acx`
 
-#227 registered `InvoiceCounter` in the three cleanup scripts and made
-`scratch-cleanup-order.test.ts`'s regex whitespace-tolerant, so it parses
-182 of 182 declared foreign keys instead of 180. #228 shipped the
-by-result counterpart for `ContractDocumentVersionCounter` — a dbtest that
-creates a job, deletes only its documents, and watches `job.delete()`
-refuse. The equivalent for `InvoiceCounter`, the counter the whole shape
-was found on, was never written. This is it.
+CLAUDE.md's sequence-number rule carried a count — "EIGHT counters exist
+and all eight do this" — plus two shell commands to re-derive it rather
+than be trusted, and a note that a bare count is the kind this file
+deletes elsewhere for rotting faster than the claim it decorates. That was
+written on 9 Sep. #228 added `ContractDocumentVersionCounter` the next
+morning. Both commands printed 9; the prose still said 8.
 
-**Why both halves are needed.** The static check reads the migration TEXT
-and asks "is this constraint declared and handled". It was blind to
-exactly this constraint for a day because #224's `ALTER TABLE` wraps after
-the constraint name, and a check that never receives a question passes it.
-The dbtest asks Postgres instead, so no amount of formatting can hide the
-answer.
+**The commands were right to be there.** They are what caught it, in one
+line, rather than anyone noticing. But a re-derivation nobody runs is
+still a claim with an expiry date, so it is now
+`apps/web/lib/counterCensus.test.ts` and fails the build instead.
 
-**Both new cases name the constraint rather than merely expecting a
-throw**, and that is the point rather than a flourish. `rejects.toThrow()`
-goes green if *any* child blocks the job — the `Contact` does, and a
-relation added next month would too — so it can pass while proving nothing
-about the counter it is named after. Prisma exposes
-`meta.constraint`, so the assertion is
-`InvoiceCounter_jobId_fkey` exactly. Mutation-tested twice: delete the
-counter before the attempt (2 red — the job is no longer blocked at all)
-and assert the wrong constraint name (1 red).
+It asserts three things, each a defect this repo has actually shipped:
+every counter model is bumped through a **transaction** client; none is
+bumped on the bare `prisma` client (that is #224's `max(n)+1` wearing a
+counter's clothes, and it is not atomic with the insert it numbers); and
+no counter model exists that nothing increments — the "written,
+documented, and never called" shape wearing a schema.
 
-The same weakening was in #228's sibling case, so it now carries the same
-named assertion. One line of behaviour, no test removed.
+**It counts what it parses against a literal that cannot drift with the
+pattern**, which is the lesson `scratch-cleanup-order.test.ts` paid for:
+that guard passed all thirteen of its assertions while parsing 180 of 181
+foreign keys, because a pattern matching nothing is never missing
+anything.
 
-Run against a real Postgres 16 in this container, not only in CI: the full
-database suite is 30 files / 318 tests green.
+Four mutations, each reddening its named test: bump a counter on the bare
+client (3 red), add a counter model nothing bumps (1 red), make the model
+pattern match nothing (1 red), and make it miss exactly one counter — the
+180-of-181 shape (1 red). Every file restored byte-identical.
 
-**One thing worth recording because it cost the run twice.** The suite
-first reported 12 failures with `PrismaClientValidationError`, and they
-reproduced on clean `main` — which reads exactly like "main is broken".
-It was a stale generated client: `prisma migrate deploy` does not
-regenerate, so a client generated before #228's columns existed rejects
-queries the schema now allows. `prisma generate` and all 318 pass. This
-file already records that `migrate deploy` leaves the client alone; it is
-worth knowing that the symptom is a validation error on unrelated
-suites, which looks like someone else's bug.
+**One of those mutations initially failed to redden, and that was the
+mutation's fault rather than the guard's.** Narrowing the pattern's `\s+`
+to a single space changed nothing, because the schema is formatted with
+single spaces — so it still matched all nine. A mutation that does not
+actually break the thing it is aimed at reports the same green as a guard
+that works, which is the whole family of defect this file keeps
+recording. Replaced with two that genuinely empty the set.
+
+Also checked while in here, and clean: all eight per-job counters are
+registered in `HANDLED_MODELS`, `clean-scratch-data.mjs` and
+`seed-demo.mjs`, and company-scoped `SafetyCaseCounter` correctly is not.
+No third instance of the #224/#228 cleanup miss.
