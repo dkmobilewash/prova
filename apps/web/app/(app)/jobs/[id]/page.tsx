@@ -41,7 +41,12 @@ import { can } from "@/lib/permissions";
 import { countJobMedia, loadJobMedia, loadJobMediaTags } from "@/lib/job-media-query";
 import { viewerTimeZone } from "@/lib/viewerToday";
 import { money } from "@/lib/money";
-import { calculateLineItemWip, calculateJobWip } from "@/lib/wip";
+import {
+  calculateLineItemWip,
+  calculateJobWip,
+  formatPercentComplete,
+  formatCoveragePercent,
+} from "@/lib/wip";
 import { jobEarnedRevenue, jobOverUnderBilling } from "@/lib/company-financials";
 import { calculateTimeEntryLaborCost, findEffectiveFringeRateSchedule } from "@/lib/labor-cost";
 import { burdenedHourlyRate, estimateBurdenedLaborCost, laborRateDateFor } from "@/lib/estimate-labor-cost";
@@ -978,7 +983,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             <div>
               <p className="text-xs text-slate-500">% complete</p>
               <p className="text-slate-100">
-                {jobWip.percentComplete != null ? `${(jobWip.percentComplete * 100).toFixed(1)}%` : "—"}
+                {formatPercentComplete(jobWip.percentComplete) ?? "—"}
               </p>
               {/* This tile is what a surety's WIP schedule gets typed from,
                   so it says what it is based on. Cost-to-cost runs over the
@@ -992,10 +997,10 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
               {jobWip.percentComplete != null &&
                 (jobWip.estimatedCoverage < 1 || jobWip.costCoverage < 1) && (
                   <p className="mt-1 text-xs text-amber-400">
-                    Over the {Math.round(jobWip.estimatedCoverage * 100)}% of contract value that
+                    Over the {formatCoveragePercent(jobWip.estimatedCoverage)} of contract value that
                     carries a cost forecast
                     {jobWip.costCoverage < 1
-                      ? `, and ${Math.round(jobWip.costCoverage * 100)}% of cost to date`
+                      ? `, and ${formatCoveragePercent(jobWip.costCoverage)} of cost to date`
                       : ""}
                     .
                   </p>
@@ -1019,7 +1024,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
               <p className="text-xs text-slate-500">Over / under billed</p>
               {billingPosition === null ? (
                 <p className="text-slate-400">
-                  Only {Math.round(jobWip.earnedCoverage * 100)}% of this job&apos;s value has an
+                  Only {formatCoveragePercent(jobWip.earnedCoverage)} of this job&apos;s value has an
                   earned-revenue figure, so a billing position would be guesswork. Budget the rest
                   to see where it lands.
                 </p>
@@ -1062,7 +1067,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                     </span>
                     <span className="text-slate-400">Actual {money(wip.actualCostToDate)}</span>
                     <span className="text-slate-400">
-                      % complete {wip.percentComplete != null ? `${(wip.percentComplete * 100).toFixed(1)}%` : "—"}
+                      % complete {formatPercentComplete(wip.percentComplete) ?? "—"}
                     </span>
                     <span className="text-slate-400">
                       Earned {wip.earnedRevenue != null ? money(wip.earnedRevenue) : "—"}
