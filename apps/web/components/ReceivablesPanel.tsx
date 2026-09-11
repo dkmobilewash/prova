@@ -88,8 +88,8 @@ export function ReceivablesList() {
                   setOpenId(isOpen ? null : row.id);
                 }}
                 aria-expanded={isOpen}
-                className={`flex w-full items-center justify-between gap-3 px-1 py-2.5 text-left transition-colors hover:bg-tag-slate ${
-                  isOpen ? "bg-tag-slate" : ""
+                className={`flex w-full items-center justify-between gap-3 px-1 py-2.5 text-left transition-colors hover:bg-neutral-100 ${
+                  isOpen ? "bg-neutral-100" : ""
                 }`}
               >
                 <span className="min-w-0">

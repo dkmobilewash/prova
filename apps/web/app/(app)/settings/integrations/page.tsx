@@ -117,7 +117,7 @@ export default async function IntegrationsPage() {
               <div className="flex flex-wrap items-center gap-2">
                 <h2 className="text-sm font-semibold text-ink">{entry.name}</h2>
                 {planned ? (
-                  <span className="inline-flex items-center rounded-full bg-tag-slate px-2.5 py-0.5 text-xs font-medium text-tag-slate-ink">
+                  <span className="inline-flex items-center rounded-full border border-line-card bg-tag-slate px-2.5 py-0.5 text-xs font-medium text-tag-slate-ink">
                     Coming soon
                   </span>
                 ) : (
@@ -140,7 +140,7 @@ export default async function IntegrationsPage() {
             {impl.kind === "external" && (
               <Link
                 href={impl.href}
-                className="inline-flex items-center justify-center rounded-md border border-line-card bg-surface px-4 py-2 text-sm font-medium text-ink-label hover:bg-tag-slate"
+                className="inline-flex items-center justify-center rounded-md border border-line-card bg-surface px-4 py-2 text-sm font-medium text-ink-label hover:bg-neutral-100"
               >
                 Manage in {impl.managedAt}
               </Link>
