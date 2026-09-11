@@ -13,7 +13,8 @@ import type { Exclusion } from "../commands";
  * his throwing ones (commands/rfis.ts, commands/punchLists.ts). Phase 3
  * (Diego's lane) replaced billing and labor once the invoice counter
  * (#224) and the #102 guards (#213) existed — commands/billing.ts and
- * commands/labor.ts.
+ * commands/labor.ts. Phase 4a replaced messages as HANDOFF into the
+ * /messages composer, the first T4 command (commands/messages.ts).
  *
  * commands.coverage.test.ts fails the moment a new module appears with no
  * line here and no registration — so adding an action file is a decision
@@ -44,7 +45,6 @@ export const notYetRegistered: Exclusion[] = [
   { action: "sales.*", reason: "Prova-operator-only CRM, unreachable for any contractor tenant; excluded from the agent surface entirely." },
   { action: "alerts.*", reason: "Snooze and dismiss are done on the alert being read; nothing to resolve by name." },
   { action: "notifications.*", reason: "Sends the person their own digest; not a task anyone asks the box for." },
-  { action: "messages.*", reason: "Outward email (T4): hand-off into the /messages composer in phase 4, never DIRECT." },
   { action: "prevailingWage.*", reason: "Rule sets are compliance configuration edited on their own page; needs a File for determinations." },
   { action: "apprenticeship.*", reason: "Enrollment and period sign-off are evidence with sign-off dates; page only for now." },
   { action: "unionCompliance.*", reason: "Craft, local and rate configuration; several writes are global reference data. Never a command." },

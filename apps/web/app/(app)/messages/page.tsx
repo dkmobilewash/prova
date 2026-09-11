@@ -4,6 +4,8 @@ import { requireCompanyContext } from "@/lib/auth";
 import { emailSetupProblem } from "@prova/integrations";
 import { MessageRow } from "@/components/MessageRow";
 import { MessageComposer } from "@/components/MessageComposer";
+import { AskDraftNotice } from "@/components/AskDraftNotice";
+import { loadMessageDraft } from "@/lib/ask/drafts";
 import { deliveryRate, needsAttention, stale } from "@/components/messageLabels";
 import { StatusLine } from "@/components/StatusLine";
 import { messagesStatus } from "@/lib/status-sentences";
@@ -20,14 +22,20 @@ const MESSAGE_LIMIT = 200;
 export default async function MessagesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ show?: string }>;
+  searchParams: Promise<{ show?: string; draft?: string }>;
 }) {
-  const { company, ...currentUser } = await requireCompanyContext();
-  const { show } = await searchParams;
+  const context = await requireCompanyContext();
+  const { company, ...currentUser } = context;
+  const { show, draft } = await searchParams;
   const onlyProblems = show === "problems";
 
   const today = new Date().toISOString().slice(0, 10);
   const setupProblem = emailSetupProblem();
+
+  // A card from the Ask box (lib/ask/drafts.ts): the composer opens
+  // prefilled from the server-held row, and its own Send is the send.
+  const askDraft = await loadMessageDraft(context, draft);
+  const messageDraft = askDraft.kind === "draft" ? askDraft.draft : undefined;
 
   const jobs = await prisma.job.findMany({
     where: { companyId: company.id },
@@ -120,7 +128,8 @@ export default async function MessagesPage({
       )}
 
       <div className="mb-6">
-        <MessageComposer jobs={jobs} canSend={setupProblem === null} />
+        {askDraft.kind === "gone" && <AskDraftNotice what="email" />}
+        <MessageComposer jobs={jobs} canSend={setupProblem === null} draft={messageDraft} />
       </div>
 
       {truncated && (

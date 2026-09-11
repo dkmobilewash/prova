@@ -6,6 +6,7 @@ import { notYetRegistered } from "./commands/exclusions";
 import { billingCommands, billingExclusions } from "./commands/billing";
 import { fieldCommands, fieldExclusions } from "./commands/field";
 import { laborCommands, laborExclusions } from "./commands/labor";
+import { messageCommands, messageExclusions } from "./commands/messages";
 import { punchListCommands, punchListExclusions } from "./commands/punchLists";
 import { rfiCommands, rfiExclusions } from "./commands/rfis";
 
@@ -52,10 +53,13 @@ export type CommandName =
   | "add_punch_item"
   | "draft_invoice"
   | "log_payment"
-  | "log_time_entry";
+  | "log_time_entry"
+  | "send_email";
 
 /** Risk tier. T5 (delete, void, contract, admin, outward send without a
- * composer) has no member on purpose: it cannot be registered. */
+ * composer) has no member on purpose: it cannot be registered. T4 is an
+ * outward send THROUGH a composer — HANDOFF only, so the person's own
+ * press of Send is the send. */
 export type CommandTier = "T1_DRAFT" | "T2_MODIFY" | "T3_MONEY_EVIDENCE" | "T4_OUTWARD";
 
 /** DIRECT: the tap executes. HANDOFF: the tap is a link to the page named
@@ -178,6 +182,7 @@ export const COMMANDS: CommandDefinition[] = [
   ...punchListCommands,
   ...billingCommands,
   ...laborCommands,
+  ...messageCommands,
 ];
 
 export const EXCLUSIONS: Exclusion[] = [
@@ -188,6 +193,7 @@ export const EXCLUSIONS: Exclusion[] = [
   ...punchListExclusions,
   ...billingExclusions,
   ...laborExclusions,
+  ...messageExclusions,
   ...notYetRegistered,
 ];
 

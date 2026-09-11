@@ -20,6 +20,19 @@ const FIELD: Principal = { role: "MEMBER", jobFunction: "FIELD" };
 const ESTIMATOR: Principal = { role: "MEMBER", jobFunction: "ESTIMATOR" };
 const ACCOUNTING: Principal = { role: "MEMBER", jobFunction: "ACCOUNTING" };
 
+/**
+ * A HANDOFF page with no ROUTE_CAPABILITY entry, each with the reason it
+ * is open. The invariant below is that nobody offered a command can land
+ * on NoAccess when they tap it; a guarded page satisfies that only when
+ * its guard IS the command's capability, and an open page satisfies it
+ * for everyone. Listed by hand so an unguarded page is a decision here
+ * rather than an omission in lib/permissions.ts.
+ */
+const OPEN_HANDOFF_PAGES: Record<string, string> = {
+  "/messages":
+    "On lib/permissions.test.ts's open list: the delivery log is open to every signed-in person, and sending is the action's problem, not the page's. send_email's MANAGE_JOBS narrows who is OFFERED the card, not who can reach the composer.",
+};
+
 describe("every command", () => {
   it("has a unique name that is not also a read tool's", () => {
     const names = COMMANDS.map((command) => command.name);
@@ -65,11 +78,16 @@ describe("every command", () => {
         expect(command.core, `${command.name} is HANDOFF with a core`).toBeUndefined();
         expect(typeof command.handoffHref, `${command.name} is HANDOFF with no page`).toBe("function");
         // The page it opens is the one guarded by the command's own
-        // capability, and the card id rides in ?draft= and nowhere else.
+        // capability — or open to everyone, with the reason recorded above
+        // — and the card id rides in ?draft= and nowhere else.
         const href = command.handoffHref!("card-id");
         const [path, query] = href.split("?");
         expect(query, command.name).toBe("draft=card-id");
-        expect(ROUTE_CAPABILITY[path], `${command.name} opens ${path}`).toBe(command.capability);
+        if (path in OPEN_HANDOFF_PAGES) {
+          expect(ROUTE_CAPABILITY[path], `${path} is listed open but is guarded`).toBeUndefined();
+        } else {
+          expect(ROUTE_CAPABILITY[path], `${command.name} opens ${path}`).toBe(command.capability);
+        }
       }
     }
   });
@@ -109,7 +127,7 @@ describe("every command", () => {
 });
 
 describe("who is offered what", () => {
-  it("offers an owner everything, and a FIELD member the field and RFI commands and nothing that prices", () => {
+  it("offers an owner everything, and a FIELD member the field, RFI and email commands and nothing that prices", () => {
     expect(commandsFor(OWNER).length).toBe(COMMANDS.length);
     const field = commandsFor(FIELD).map((c) => c.name);
     expect(field).toEqual([
@@ -120,6 +138,7 @@ describe("who is offered what", () => {
       "raise_rfi",
       "add_punch_item",
       "log_time_entry",
+      "send_email",
     ]);
     // FIELD holds MANAGE_FIELD and MANAGE_JOBS (lib/permissions.ts: "an
     // RFI when the drawings are wrong"), and nothing else — so no money.
@@ -128,21 +147,31 @@ describe("who is offered what", () => {
     }
   });
 
-  it("offers an estimator the estimating commands and the RFI — MANAGE_JOBS held, MANAGE_FIELD not", () => {
+  it("offers an estimator the estimating commands, the RFI and the email — MANAGE_JOBS held, MANAGE_FIELD not", () => {
     expect(commandsFor(ESTIMATOR).map((c) => c.name)).toEqual([
       "create_estimate_job",
       "draft_estimate_lines",
       "add_catalog_line",
       "raise_rfi",
+      "send_email",
     ]);
     expect(commandsFor(ESTIMATOR).map((c) => c.name)).not.toContain("add_punch_item");
   });
 
-  it("offers accounting exactly the two money commands, and nothing that touches the field", () => {
+  it("offers accounting exactly the two money commands, and nothing that touches the field or writes to a GC", () => {
     expect(commandsFor(ACCOUNTING).map((c) => c.name)).toEqual(["draft_invoice", "log_payment"]);
     for (const command of commandsFor(ACCOUNTING)) {
       expect(command.capability, command.name).toBe("MANAGE_BILLING");
       expect(command.tier, command.name).toBe("T3_MONEY_EVIDENCE");
+    }
+  });
+
+  it("registers the outward send as T4 and HANDOFF only — a tap never sends", () => {
+    const outward = COMMANDS.filter((c) => c.tier === "T4_OUTWARD");
+    expect(outward.map((c) => c.name)).toEqual(["send_email"]);
+    for (const command of outward) {
+      expect(command.mode, command.name).toBe("HANDOFF");
+      expect(command.execute, command.name).toBeUndefined();
     }
   });
 

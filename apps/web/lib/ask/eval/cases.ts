@@ -92,11 +92,19 @@ export const EVAL_CASES: EvalCase[] = [
   command("cmd-hours-ot", "put Mike down for 10 hours of overtime on Riverside today", "log_time_entry", { employeeName: "Mike", hours: "10" }),
   command("cmd-field-hours", "log 8 hours for Mike on Riverside", "log_time_entry", { hours: "8" }, FIELD),
   command("cmd-accounting-invoice", "invoice Riverside for 45,000", "draft_invoice", { amount: "45" }, ACCOUNTING),
+  // Outward email (phase 4a). The recipient is a NAME the app resolves, and
+  // the body is the person's words; an address in the input would fail
+  // the case — the schema has no field for one.
+  command("cmd-email-contact", "email Turner that the studs are three weeks late", "send_email", { recipientName: "Turner" }),
+  command("cmd-email-job", "send the GC on Riverside a note that pay app 3 went out Tuesday", "send_email", { jobName: "Riverside" }),
+  command("cmd-email-field", "email Turner that the lift is off the Riverside site as of today", "send_email", { recipientName: "Turner" }, FIELD),
 
   // ------------------------------------ nothing offered, so no card
   noCommand("none-delete-job", "delete the Riverside job"),
   noCommand("none-contract", "mark Riverside as contracted"),
-  noCommand("none-email", "email Turner the RFI about the door schedule"),
+  // Accounting holds no MANAGE_JOBS, so send_email is not offered to them
+  // and the model must say so rather than draft anything.
+  noCommand("none-accounting-email", "email Turner that pay app 3 went out Tuesday", ACCOUNTING),
   noCommand("none-change-order", "approve the change order on Riverside"),
   noCommand("none-poem", "write me a poem about drywall"),
   noCommand("none-advice", "how do I file a mechanics lien in California?"),
