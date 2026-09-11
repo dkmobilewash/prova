@@ -29,9 +29,9 @@ const KIND_LABELS: Record<Renewal["kind"], string> = {
 };
 
 function toneFor(renewal: Renewal) {
-  if (renewal.urgency === "EXPIRED") return "border-rose-800 bg-rose-950/40 text-rose-200";
-  if (renewal.urgency === "DUE_SOON") return "border-amber-800 bg-amber-950/40 text-amber-200";
-  return "border-slate-700 bg-slate-900 text-slate-300";
+  if (renewal.urgency === "EXPIRED") return "border-rose-300 bg-tag-rose text-tag-rose-ink";
+  if (renewal.urgency === "DUE_SOON") return "border-amber-300 bg-tag-amber text-tag-amber-ink";
+  return "border-line-card bg-surface text-ink-label";
 }
 
 export function RenewalAlerts({
@@ -67,10 +67,10 @@ export function RenewalAlerts({
 
   if (coverage !== "HAS_ALERTS") {
     return (
-      <section className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-        <h2 className="text-sm font-semibold text-slate-300">{heading}</h2>
+      <section className="rounded-lg border border-line-card bg-surface p-4">
+        <h2 className="text-sm font-semibold text-ink-label">{heading}</h2>
         <p
-          className={`mt-1 text-sm ${coverage === "NOTHING_TRACKED" ? "text-amber-300" : "text-slate-400"}`}
+          className={`mt-1 text-sm ${coverage === "NOTHING_TRACKED" ? "text-tag-amber-ink" : "text-ink-body"}`}
         >
           {renewalCoverageMessage(coverage, trackedCount)}
         </p>
@@ -82,22 +82,22 @@ export function RenewalAlerts({
   const shown = limit ? renewals.slice(0, limit) : renewals;
 
   return (
-    <section className="rounded-lg border border-slate-800 bg-slate-900 p-4">
+    <section className="rounded-lg border border-line-card bg-surface p-4">
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-sm font-semibold text-slate-300">{heading}</h2>
+        <h2 className="text-sm font-semibold text-ink-label">{heading}</h2>
         <div className="flex flex-wrap gap-2 text-xs">
           {counts.expired > 0 && (
-            <span className="rounded-full border border-rose-800 bg-rose-950 px-2 py-0.5 text-rose-300">
+            <span className="rounded-full border border-rose-300 bg-tag-rose px-2 py-0.5 text-tag-rose-ink">
               {counts.expired} expired
             </span>
           )}
           {counts.dueSoon > 0 && (
-            <span className="rounded-full border border-amber-800 bg-amber-950 px-2 py-0.5 text-amber-300">
+            <span className="rounded-full border border-amber-300 bg-tag-amber px-2 py-0.5 text-tag-amber-ink">
               {counts.dueSoon} due soon
             </span>
           )}
           {counts.undated > 0 && (
-            <span className="rounded-full border border-slate-600 bg-slate-800 px-2 py-0.5 text-slate-300">
+            <span className="rounded-full border border-neutral-400 bg-neutral-100 px-2 py-0.5 text-ink-label">
               {counts.undated} with no date
             </span>
           )}
@@ -122,7 +122,7 @@ export function RenewalAlerts({
               {/* Neither fact is corrected automatically. A person entered
                   both and which one is stale isn't knowable from here. */}
               {renewal.disagreement && (
-                <p className="mt-0.5 text-xs text-amber-300">
+                <p className="mt-0.5 text-xs text-tag-amber-ink">
                   {renewal.disagreement} Check which is right.
                 </p>
               )}
@@ -135,7 +135,7 @@ export function RenewalAlerts({
       </ul>
 
       {limit && renewals.length > shown.length && (
-        <p className="mt-2 text-xs text-slate-400">
+        <p className="mt-2 text-xs text-ink-body">
           and {renewals.length - shown.length} more —{" "}
           <Link href="/compliance" className="underline hover:no-underline">
             see all renewals

@@ -55,7 +55,7 @@ export function CatalogEntryRow({
               onConfirm={handleDelete}
               hint={
                 linkedLineCount > 0 ? (
-                  <span className="max-w-[16rem] text-right text-amber-300">
+                  <span className="max-w-[16rem] text-right text-tag-amber-ink">
                     {linkedLineCount} costed {linkedLineCount === 1 ? "line" : "lines"} priced from
                     this entry will keep their numbers but stop feeding actuals back here.
                   </span>
@@ -64,7 +64,7 @@ export function CatalogEntryRow({
             />
           }
         />
-        {error && <p className="max-w-[16rem] text-right text-xs text-rose-300">{error}</p>}
+        {error && <p className="max-w-[16rem] text-right text-xs text-tag-rose-ink">{error}</p>}
       </div>
     </li>
   );

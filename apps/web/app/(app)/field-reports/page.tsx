@@ -89,13 +89,13 @@ export default async function FieldReportsPage() {
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-slate-100">Field reports</h1>
-      <p className="mb-6 text-sm text-slate-400">
+      <h1 className="mb-2 text-xl font-semibold text-ink">Field reports</h1>
+      <p className="mb-6 text-sm text-ink-body">
         What happened on site, one entry per job per day. Grouped by week, because a week is
         what a schedule dispute gets argued over — and a week with a day missing from it is
         worth less than one that says which day is missing. Each job&apos;s own reports also
         stay on{" "}
-        <Link href="/dashboard" className="text-blue-400 hover:text-blue-300">
+        <Link href="/dashboard" className="text-link hover:text-link-hover">
           its job page
         </Link>
         .
@@ -106,9 +106,9 @@ export default async function FieldReportsPage() {
       </div>
 
       {weeks.length === 0 ? (
-        <div className="rounded-lg border border-slate-800 bg-slate-900 p-6">
-          <p className="text-slate-300">Nothing filed yet.</p>
-          <p className="mt-2 text-sm text-slate-400">
+        <div className="rounded-lg border border-line-card bg-surface p-6">
+          <p className="text-ink-label">Nothing filed yet.</p>
+          <p className="mt-2 text-sm text-ink-body">
             One entry a day: who was on site, what got done, the weather, and anything that
             cost time. The weather and delay fields are the ones a claim is argued from
             months later, when nobody remembers whether it rained.
@@ -123,12 +123,12 @@ export default async function FieldReportsPage() {
 
             return (
               <section key={week.start}>
-                <header className="mb-3 border-b border-slate-800 pb-2">
-                  <h2 className="font-semibold text-slate-100">{weekLabel(week.start)}</h2>
-                  {/* slate-400 — slate-500 measures 3.83:1 on this ground,
+                <header className="mb-3 border-b border-line-row pb-2">
+                  <h2 className="font-semibold text-ink">{weekLabel(week.start)}</h2>
+                  {/* ink-body — ink-muted is under the 4.5 floor on this ground,
                       under the 4.5 floor for text, and the coverage figure is
                       the point of grouping by week. */}
-                  <p className="mt-1 flex flex-wrap gap-x-3 text-xs text-slate-400">
+                  <p className="mt-1 flex flex-wrap gap-x-3 text-xs text-ink-body">
                     <span>
                       {week.reports.length} {week.reports.length === 1 ? "report" : "reports"}
                     </span>
@@ -136,7 +136,7 @@ export default async function FieldReportsPage() {
                       <span>{week.coveragePercent}% of finished weekdays covered</span>
                     )}
                     {week.delayDays.length > 0 && (
-                      <span className="text-amber-400">
+                      <span className="text-amber-700">
                         {week.delayDays.length}{" "}
                         {week.delayDays.length === 1 ? "day" : "days"} with delays
                       </span>
@@ -144,7 +144,7 @@ export default async function FieldReportsPage() {
                   </p>
 
                   {week.missing.length > 0 && (
-                    <p className="mt-2 rounded bg-amber-500/10 px-2 py-1.5 text-xs text-amber-300">
+                    <p className="mt-2 rounded bg-tag-amber px-2 py-1.5 text-xs text-tag-amber-ink">
                       Nothing filed on any job for {week.missing.map(dayLabel).join(" · ")}.
                       Days still to come aren&apos;t counted, and neither is today — only days
                       that are over and unrecorded.
@@ -156,7 +156,7 @@ export default async function FieldReportsPage() {
                       grouped as days nobody filed — reports that exist, on
                       the page a schedule dispute gets argued from. */}
                   {week.partial && (
-                    <p className="mt-2 rounded bg-slate-800 px-2 py-1.5 text-xs text-slate-400">
+                    <p className="mt-2 rounded bg-neutral-100 px-2 py-1.5 text-xs text-ink-body">
                       Only part of this week is loaded — this page shows the most recent{" "}
                       {REPORT_LIMIT} reports. Nothing is claimed about the days before it, and no
                       coverage figure is shown for this week for the same reason.

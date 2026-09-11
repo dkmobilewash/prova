@@ -22,8 +22,8 @@ const TYPE_LABELS: Record<string, string> = {
 const TYPE_OPTIONS = Object.entries(TYPE_LABELS);
 
 const inputClass =
-  "rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-100 focus:border-blue-500 focus:outline-none";
-const labelClass = "flex flex-col gap-1 text-xs text-slate-400";
+  "rounded-md border border-line-card bg-canvas px-2 py-1.5 text-sm text-ink focus:border-link focus:outline-none";
+const labelClass = "flex flex-col gap-1 text-xs text-ink-body";
 
 function formatDate(date: Date | null) {
   return date ? formatCalendarDate(date, "numeric") : "—";
@@ -50,8 +50,8 @@ function expirationStatus(date: Date | null, todayIso: string) {
   const iso = toIsoDate(date);
   if (!iso) return null;
   const days = daysUntil(iso, todayIso);
-  if (days < 0) return { text: "Expired", className: "text-red-400" };
-  if (days <= 30) return { text: `Expires in ${days}d`, className: "text-amber-400" };
+  if (days < 0) return { text: "Expired", className: "text-red-600" };
+  if (days <= 30) return { text: `Expires in ${days}d`, className: "text-amber-700" };
   return null;
 }
 
@@ -171,18 +171,18 @@ export function ComplianceDocumentRow({
             <button
               type="submit"
               disabled={isPending}
-              className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+              className="rounded-md bg-brand px-3 py-1.5 text-xs font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
             >
               {isPending ? "Saving…" : "Save"}
             </button>
             <button
               type="button"
               onClick={() => setIsEditing(false)}
-              className="text-xs text-slate-400 hover:text-slate-200"
+              className="text-xs text-ink-body hover:text-ink-label"
             >
               Cancel
             </button>
-            {error && <p className="text-xs text-red-400">{error}</p>}
+            {error && <p className="text-xs text-red-600">{error}</p>}
           </div>
         </form>
       </li>
@@ -200,27 +200,27 @@ export function ComplianceDocumentRow({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <p className="font-medium text-slate-100">{TYPE_LABELS[doc.type] ?? doc.type}</p>
+            <p className="font-medium text-ink">{TYPE_LABELS[doc.type] ?? doc.type}</p>
             <span
               className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                doc.status === "RECEIVED" ? "bg-green-500/15 text-green-300" : "bg-slate-800 text-slate-300"
+                doc.status === "RECEIVED" ? "bg-tag-green text-tag-green-ink" : "bg-neutral-100 text-ink-label"
               }`}
             >
               {doc.status === "RECEIVED" ? "Received" : "Pending"}
             </span>
             {doc.aiExtracted && (
-              <span className="inline-flex items-center rounded-full bg-blue-500/15 px-2 py-0.5 text-xs font-medium text-blue-300">
+              <span className="inline-flex items-center rounded-full bg-tag-blue px-2 py-0.5 text-xs font-medium text-tag-blue-ink">
                 AI-extracted — verify
               </span>
             )}
             {expiration && <span className={`text-xs font-medium ${expiration.className}`}>{expiration.text}</span>}
           </div>
-          <p className="mt-1 text-sm text-slate-400">
+          <p className="mt-1 text-sm text-ink-body">
             {doc.partyName}
             {doc.jobName && <> · {doc.jobName}</>}
             {doc.amount != null && <> · {money(Number(doc.amount))}</>}
           </p>
-          <p className="mt-1 text-xs text-slate-500">
+          <p className="mt-1 text-xs text-ink-muted">
             {doc.periodStart || doc.periodEnd ? (
               <>
                 Period {formatDate(doc.periodStart)} – {formatDate(doc.periodEnd)}
@@ -230,13 +230,13 @@ export function ComplianceDocumentRow({
             Effective {formatDate(doc.effectiveDate)}
             {doc.expiresAt && <> · Expires {formatDate(doc.expiresAt)}</>}
           </p>
-          {doc.notes && <p className="mt-1 text-xs text-slate-500">Note: {doc.notes}</p>}
+          {doc.notes && <p className="mt-1 text-xs text-ink-muted">Note: {doc.notes}</p>}
           {doc.fileUrl && (
             <a
               href={doc.fileUrl}
               target="_blank"
               rel="noreferrer"
-              className="mt-1 inline-block text-xs text-blue-400 hover:underline"
+              className="mt-1 inline-block text-xs text-link hover:underline"
             >
               {doc.fileName ?? "View file"}
             </a>
@@ -263,7 +263,7 @@ export function ComplianceDocumentRow({
           <button
             type="button"
             onClick={() => setIsEditing(true)}
-            className="rounded-md border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-800"
+            className="rounded-md border border-line-card px-3 py-1.5 text-xs font-medium text-ink-label hover:bg-neutral-100"
           >
             Edit
           </button>
@@ -271,7 +271,7 @@ export function ComplianceDocumentRow({
             <form action={markComplianceDocumentReceived.bind(null, doc.id)}>
               <button
                 type="submit"
-                className="rounded-md border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-800"
+                className="rounded-md border border-line-card px-3 py-1.5 text-xs font-medium text-ink-label hover:bg-neutral-100"
               >
                 Mark received
               </button>

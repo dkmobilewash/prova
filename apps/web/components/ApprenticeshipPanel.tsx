@@ -23,15 +23,15 @@ function StandingNote({
 }) {
   const tone =
     standing === "MET"
-      ? "text-green-300"
+      ? "text-tag-green-ink"
       : standing === "SHORT"
-        ? "text-amber-300"
-        : "text-slate-500";
+        ? "text-tag-amber-ink"
+        : "text-ink-muted";
 
   return (
     <span className={`text-xs ${tone}`}>
       {done === null ? "—" : `${done} ${unit}`}
-      {required !== null && <span className="text-slate-500"> of {required}</span>}
+      {required !== null && <span className="text-ink-muted"> of {required}</span>}
       {" · "}
       {standingLabel(standing as never)}
       {shortfallHours !== null && shortfallHours > 0 && ` · ${shortfallHours} short`}
@@ -48,9 +48,9 @@ export function ApprenticeshipPanel({
 }) {
   if (rows.length === 0) {
     return (
-      <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-        <p className="text-sm text-slate-300">No apprenticeship registrations recorded.</p>
-        <p className="mt-2 text-xs text-slate-500">
+      <div className="rounded-lg border border-line-card bg-surface p-4">
+        <p className="text-sm text-ink-label">No apprenticeship registrations recorded.</p>
+        <p className="mt-2 text-xs text-ink-muted">
           The ratio review above reads who is on which side of a crew from the craft
           classifications. This is the other half — the programme itself: who sponsors it, the
           registration number, classroom hours and the sign-offs that move somebody up a period.
@@ -63,30 +63,30 @@ export function ApprenticeshipPanel({
   return (
     <div className="flex flex-col gap-3">
       {rows.map((row) => (
-        <div key={row.enrollmentId} className="rounded-lg border border-slate-800 bg-slate-900 p-4">
+        <div key={row.enrollmentId} className="rounded-lg border border-line-card bg-surface p-4">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <span className="font-medium text-slate-100">{row.apprenticeName}</span>
-            <span className="rounded bg-slate-800 px-1.5 py-0.5 text-xs text-slate-300">
+            <span className="font-medium text-ink">{row.apprenticeName}</span>
+            <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs text-ink-label">
               Period {row.period}
             </span>
             {row.state === "COMPLETED" && (
-              <span className="rounded bg-green-500/15 px-1.5 py-0.5 text-xs text-green-300">
+              <span className="rounded bg-tag-green px-1.5 py-0.5 text-xs text-tag-green-ink">
                 Completed
               </span>
             )}
             {row.state === "CANCELLED" && (
-              <span className="rounded bg-slate-800 px-1.5 py-0.5 text-xs text-slate-400">
+              <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs text-ink-body">
                 Cancelled
               </span>
             )}
             {row.state === "CONTRADICTORY" && (
-              <span className="rounded bg-red-500/15 px-1.5 py-0.5 text-xs text-red-300">
+              <span className="rounded bg-tag-rose px-1.5 py-0.5 text-xs text-tag-rose-ink">
                 Recorded as both completed and cancelled — fix the dates
               </span>
             )}
           </div>
 
-          <p className="mt-1 text-xs text-slate-400">
+          <p className="mt-1 text-xs text-ink-body">
             {row.sponsorName}
             {row.programNumber !== null && ` · ${row.programNumber}`}
             {row.craftName !== null && ` · ${row.craftName}`}
@@ -96,7 +96,7 @@ export function ApprenticeshipPanel({
 
           <div className="mt-3 flex flex-col gap-1">
             <div>
-              <span className="text-xs text-slate-400">On the job, this period </span>
+              <span className="text-xs text-ink-body">On the job, this period </span>
               <StandingNote
                 done={row.ojtHoursThisPeriod}
                 required={row.requiredOjtHoursPerPeriod}
@@ -105,9 +105,9 @@ export function ApprenticeshipPanel({
                 unit="hrs"
               />
             </div>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-ink-muted">
               Counted from{" "}
-              <Link href="/field-reports" className="underline hover:text-slate-300">
+              <Link href="/field-reports" className="underline hover:text-ink-label">
                 the timesheets
               </Link>{" "}
               since {row.periodStartedOn} — nothing here is a second copy of those hours, so a
@@ -116,7 +116,7 @@ export function ApprenticeshipPanel({
           </div>
 
           {row.periods.length > 0 && (
-            <ul className="mt-3 divide-y divide-slate-800 border-t border-slate-800">
+            <ul className="mt-3 divide-y divide-line-row border-t border-line-row">
               {row.periods.map((p) => (
                 <ApprenticeshipPeriodRow
                   key={p.periodNumber}
@@ -126,8 +126,8 @@ export function ApprenticeshipPanel({
                   signedOffBy={p.signedOffBy}
                   canDelete={canDelete}
                 >
-                  <span className="text-xs text-slate-300">Period {p.periodNumber}</span>
-                  <span className="text-xs text-slate-500">
+                  <span className="text-xs text-ink-label">Period {p.periodNumber}</span>
+                  <span className="text-xs text-ink-muted">
                     {p.signedOffOn === null ? "not signed off" : `signed off ${p.signedOffOn}`}
                   </span>
                   <StandingNote

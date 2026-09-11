@@ -18,7 +18,7 @@ export type RuleSetRowData = RuleSetDefaults & {
 };
 
 const btn =
-  "rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50";
+  "rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-neutral-100 disabled:opacity-50";
 
 export function RuleSetRow({
   ruleSet,
@@ -66,14 +66,14 @@ export function RuleSetRow({
           }}
           className="flex flex-col gap-3"
         >
-          <p className="text-sm font-semibold text-slate-300">{ruleSet.name}</p>
+          <p className="text-sm font-semibold text-ink-label">{ruleSet.name}</p>
           <RuleSetFields defaults={ruleSet} />
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && <p className="text-sm text-red-600">{error}</p>}
           <div className="flex gap-2">
             <button
               type="submit"
               disabled={isPending}
-              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+              className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
             >
               {isPending ? "Saving…" : "Save changes"}
             </button>
@@ -92,30 +92,30 @@ export function RuleSetRow({
     <li className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start">
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-slate-100">{ruleSet.name}</span>
-          <span className="rounded bg-slate-800 px-1.5 py-0.5 text-xs text-slate-400">
+          <span className="text-ink">{ruleSet.name}</span>
+          <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs text-ink-body">
             {ruleSet.jurisdiction} · {authorityLabel(ruleSet.authority)}
           </span>
           {current ? (
-            <span className="rounded bg-green-500/15 px-1.5 py-0.5 text-xs text-green-300">In force</span>
+            <span className="rounded bg-tag-green px-1.5 py-0.5 text-xs text-tag-green-ink">In force</span>
           ) : (
-            <span className="rounded bg-slate-800 px-1.5 py-0.5 text-xs text-slate-500">
+            <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs text-ink-muted">
               {ruleSet.effectiveTo && ruleSet.effectiveTo < today ? "Superseded" : "Not yet in force"}
             </span>
           )}
         </div>
 
-        <p className="mt-1 text-sm text-slate-400">
+        <p className="mt-1 text-sm text-ink-body">
           Daily OT {thresholdLabel(ruleSet.dailyOvertimeAfterHours)} · 2×{" "}
           {thresholdLabel(ruleSet.dailyDoubleTimeAfterHours)} · Weekly OT{" "}
           {thresholdLabel(ruleSet.weeklyOvertimeAfterHours)}
         </p>
-        <p className="text-sm text-slate-400">
+        <p className="text-sm text-ink-body">
           7th straight day — OT {thresholdLabel(ruleSet.seventhDayOvertimeAfterHours)}, 2×{" "}
           {thresholdLabel(ruleSet.seventhDayDoubleTimeAfterHours)}
         </p>
 
-        <p className="mt-1 text-xs text-slate-500">
+        <p className="mt-1 text-xs text-ink-muted">
           {filingFrequencyLabel(ruleSet.filingFrequency)}
           {ruleSet.filingDueDays !== null && `, due ${ruleSet.filingDueDays} days after the period`}
           {ruleSet.formName && ` · ${ruleSet.formName}`}
@@ -123,18 +123,18 @@ export function RuleSetRow({
           {ruleSet.effectiveTo ? ` to ${ruleSet.effectiveTo}` : ""}
         </p>
 
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-ink-muted">
           {ruleSet.sourceUrl ? (
-            <a href={ruleSet.sourceUrl} target="_blank" rel="noreferrer" className="text-blue-400">
+            <a href={ruleSet.sourceUrl} target="_blank" rel="noreferrer" className="text-link">
               Source
             </a>
           ) : (
-            <span className="text-amber-300">No source recorded</span>
+            <span className="text-tag-amber-ink">No source recorded</span>
           )}
           {ruleSet.portalUrl && (
             <>
               {" · "}
-              <a href={ruleSet.portalUrl} target="_blank" rel="noreferrer" className="text-blue-400">
+              <a href={ruleSet.portalUrl} target="_blank" rel="noreferrer" className="text-link">
                 Filing portal
               </a>
             </>
@@ -142,8 +142,8 @@ export function RuleSetRow({
           {ruleSet.jobNames.length > 0 && ` · used on ${ruleSet.jobNames.join(", ")}`}
         </p>
 
-        {ruleSet.note && <p className="mt-1 text-sm text-slate-400">{ruleSet.note}</p>}
-        {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
+        {ruleSet.note && <p className="mt-1 text-sm text-ink-body">{ruleSet.note}</p>}
+        {error && <p className="mt-1 text-sm text-red-600">{error}</p>}
       </div>
 
       {/* Arming "Delete" empties this cluster, so "Edit" cannot be clicked
@@ -168,7 +168,7 @@ export function RuleSetRow({
               onConfirm={() => run(() => deletePrevailingWageRuleSet(ruleSet.id))}
               deleteClassName={btn}
               cancelClassName={btn}
-              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-600 hover:bg-tag-rose disabled:opacity-50"
             />
           ) : null
         }

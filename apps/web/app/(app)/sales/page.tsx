@@ -35,8 +35,8 @@ export default async function SalesPage() {
   if (!company.isProvaOperator) {
     return (
       <div className="mx-auto max-w-2xl px-6 py-16">
-        <h1 className="mb-2 text-xl font-semibold text-slate-100">Not part of your access</h1>
-        <p className="text-sm text-slate-400">Nothing here for this account.</p>
+        <h1 className="mb-2 text-xl font-semibold text-ink">Not part of your access</h1>
+        <p className="text-sm text-ink-body">Nothing here for this account.</p>
       </div>
     );
   }
@@ -44,8 +44,8 @@ export default async function SalesPage() {
   if (currentUser.role !== "OWNER") {
     return (
       <div className="mx-auto max-w-2xl px-6 py-16">
-        <h1 className="mb-2 text-xl font-semibold text-slate-100">Owner only</h1>
-        <p className="text-sm text-slate-400">
+        <h1 className="mb-2 text-xl font-semibold text-ink">Owner only</h1>
+        <p className="text-sm text-ink-body">
           The sales CRM is restricted to the account owner, same as Team management and billing
           settings.
         </p>
@@ -134,8 +134,8 @@ export default async function SalesPage() {
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-8">
-      <h1 className="mb-1 text-lg font-semibold text-slate-100">Sales CRM</h1>
-      <p className="mb-6 text-sm text-slate-400">
+      <h1 className="mb-1 text-lg font-semibold text-ink">Sales CRM</h1>
+      <p className="mb-6 text-sm text-ink-body">
         Prospective Prova customers and the deals in progress with them -- internal, not visible to
         any tenant.
       </p>
@@ -147,28 +147,28 @@ export default async function SalesPage() {
       />
 
       {queue.length > 0 && (
-        <section className="mb-6 rounded-lg border border-slate-800 bg-slate-900 p-4">
-          <h2 className="mb-1 text-sm font-semibold text-slate-100">
+        <section className="mb-6 rounded-lg border border-line-card bg-surface p-4">
+          <h2 className="mb-1 text-sm font-semibold text-ink">
             {queue.length} {queue.length === 1 ? "lead owes" : "leads owe"} a follow-up
-            {overdueCount > 0 && <span className="text-red-400"> — {overdueCount} overdue</span>}
+            {overdueCount > 0 && <span className="text-red-600"> — {overdueCount} overdue</span>}
           </h2>
-          <p className="mb-3 text-xs text-slate-500">
+          <p className="mb-3 text-xs text-ink-muted">
             Read from each lead&apos;s most recent activity. Logging the next one with the follow-up
             date left blank is what takes a lead off this list.
           </p>
-          <ul className="divide-y divide-slate-800">
+          <ul className="divide-y divide-line-row">
             {queue.map((row) => (
               <li key={row.leadId} className="flex items-center justify-between gap-3 py-2">
-                <Link href={`/sales/${row.leadId}`} className="text-sm text-slate-200 hover:underline">
+                <Link href={`/sales/${row.leadId}`} className="text-sm text-ink-label hover:underline">
                   {row.companyName}
                 </Link>
                 <span
                   className={`text-xs ${
                     row.followUpStanding === "OVERDUE"
-                      ? "text-red-400"
+                      ? "text-red-600"
                       : row.followUpStanding === "DUE_TODAY"
-                        ? "text-amber-300"
-                        : "text-slate-500"
+                        ? "text-tag-amber-ink"
+                        : "text-ink-muted"
                   }`}
                 >
                   {row.followUpStanding === "OVERDUE"
@@ -184,9 +184,9 @@ export default async function SalesPage() {
       )}
 
       {leads.length === 0 ? (
-        <p className="mb-4 text-sm text-slate-400">No leads recorded yet.</p>
+        <p className="mb-4 text-sm text-ink-body">No leads recorded yet.</p>
       ) : (
-        <ul className="mb-4 divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900">
+        <ul className="mb-4 divide-y divide-line-row rounded-lg border border-line-card bg-surface">
           {leads.map((lead) => (
             <SalesLeadRow
               key={lead.id}

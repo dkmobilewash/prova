@@ -15,11 +15,11 @@ import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
 // a time. `inline-flex` + `items-center` is what makes min-h centre the label
 // instead of pinning it to the top.
 const rowBtn =
-  "inline-flex min-h-11 items-center justify-center rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50";
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-neutral-100 disabled:opacity-50";
 const rowBtnDanger =
-  "inline-flex min-h-11 items-center justify-center rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:border-red-500 hover:text-red-400 disabled:opacity-50";
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:border-red-500 hover:text-red-600 disabled:opacity-50";
 const rowBtnConfirm =
-  "inline-flex min-h-11 items-center justify-center rounded-md border border-red-500 px-3 py-2 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50";
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-red-500 px-3 py-2 text-sm text-red-600 hover:bg-tag-rose disabled:opacity-50";
 
 /** One day in the company-wide log. Reading, editing, or confirming a
  * delete — the same three states every row in this app has.
@@ -53,7 +53,7 @@ export function FieldReportEntry({
 
   if (isEditing) {
     return (
-      <li className="rounded-md border border-slate-800 bg-slate-900 p-4">
+      <li className="rounded-md border border-line-card bg-surface p-4">
         <form
           ref={draft.formRef}
           onChange={draft.save}
@@ -71,17 +71,17 @@ export function FieldReportEntry({
           }}
           className="flex flex-col gap-3"
         >
-          <p className="text-sm font-medium text-slate-100">
+          <p className="text-sm font-medium text-ink">
             {dayLabel(report.reportDate)} · {report.jobName}
           </p>
           <FormDraftNotice draft={draft} />
           <FieldReportFields report={asFields} />
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && <p className="text-sm text-red-600">{error}</p>}
           <div className="flex flex-wrap gap-2">
             <button
               type="submit"
               disabled={isPending}
-              className="inline-flex min-h-11 items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+              className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
             >
               {isPending ? "Saving…" : "Save changes"}
             </button>
@@ -92,7 +92,7 @@ export function FieldReportEntry({
                 setIsEditing(false);
                 setError(null);
               }}
-              className="inline-flex min-h-11 items-center justify-center rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50"
+              className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-neutral-100 disabled:opacity-50"
             >
               Cancel
             </button>
@@ -103,38 +103,38 @@ export function FieldReportEntry({
   }
 
   return (
-    <li className="rounded-md border border-slate-800 bg-slate-900 p-4">
+    <li className="rounded-md border border-line-card bg-surface p-4">
       {/* Stacks on a phone: the three confirm-delete buttons are ~266px wide
           and this row only has 293px of content box at 375px, which left the
           report itself nothing to render in. */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <p className="flex flex-wrap items-baseline gap-x-2">
-            <span className="font-medium text-slate-100">{dayLabel(report.reportDate)}</span>
+            <span className="font-medium text-ink">{dayLabel(report.reportDate)}</span>
             {/* A report is evidence ABOUT a job, so the job is where you go
                 next. This was already styled link-blue and wasn't a link,
                 which is worse than plain text: it invites a click that does
                 nothing. */}
             <Link
               href={`/jobs/${report.jobId}`}
-              className="text-sm text-blue-400 hover:text-blue-300 hover:underline"
+              className="text-sm text-link hover:text-link-hover hover:underline"
             >
               {report.jobName}
             </Link>
           </p>
-          {report.crewPresent && <p className="text-sm text-slate-400">{report.crewPresent}</p>}
-          <p className="mt-1 text-sm text-slate-300">{report.workPerformed}</p>
-          {/* slate-400, not slate-500 — measured 3.83:1 on this card, under
+          {report.crewPresent && <p className="text-sm text-ink-body">{report.crewPresent}</p>}
+          <p className="mt-1 text-sm text-ink-label">{report.workPerformed}</p>
+          {/* ink-body, not ink-muted — the muted level is under
               the 4.5 floor for text. Weather is what a delay claim is argued
               from months later. */}
           {report.weather && (
-            <p className="mt-1 text-sm text-slate-400">Weather: {report.weather}</p>
+            <p className="mt-1 text-sm text-ink-body">Weather: {report.weather}</p>
           )}
-          {report.delays && <p className="text-sm text-amber-400">Delays: {report.delays}</p>}
+          {report.delays && <p className="text-sm text-amber-700">Delays: {report.delays}</p>}
           {report.filedByName && (
-            <p className="mt-1 text-xs text-slate-400">filed by {report.filedByName}</p>
+            <p className="mt-1 text-xs text-ink-body">filed by {report.filedByName}</p>
           )}
-          {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
+          {error && <p className="mt-1 text-sm text-red-600">{error}</p>}
         </div>
 
         {/* Arming "Remove" empties this row: "Edit" is a child of RowActions

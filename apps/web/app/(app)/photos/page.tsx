@@ -116,7 +116,7 @@ export default async function PhotosPage({
   // on site taps to get to their own job.
   const chip = (active: boolean) =>
     `inline-flex min-h-11 items-center rounded-md border px-3 py-2 text-sm ${
-      active ? "border-blue-500 text-blue-400" : "border-slate-700 text-slate-300 hover:border-slate-500"
+      active ? "border-brand text-link" : "border-line-card text-ink-label hover:bg-neutral-100"
     }`;
 
   // A tag with no photos on it is a dead chip: tapping it empties the
@@ -128,20 +128,20 @@ export default async function PhotosPage({
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-10">
-      <h1 className="mb-1 text-2xl font-semibold text-slate-100">Site photos</h1>
-      <p className="mb-6 text-sm text-slate-400">
+      <h1 className="mb-1 text-2xl font-semibold text-ink">Site photos</h1>
+      <p className="mb-6 text-sm text-ink-body">
         What the job actually looked like, on the day. Photos are filed against a job, tagged in
         this company&apos;s own words, and stay in Prova rather than on somebody&apos;s phone.
       </p>
 
       {jobs.length === 0 ? (
-        <div className="rounded-lg border border-slate-800 bg-slate-900 p-6">
-          <p className="text-sm text-slate-300">
+        <div className="rounded-lg border border-line-card bg-surface p-6">
+          <p className="text-sm text-ink-label">
             There are no jobs yet, and a photo is always filed against one.
           </p>
           <Link
             href="/jobs/new"
-            className="mt-3 inline-flex min-h-11 items-center rounded-md bg-blue-600 px-4 text-sm font-medium text-white hover:bg-blue-500"
+            className="mt-3 inline-flex min-h-11 items-center rounded-md bg-brand px-4 text-sm font-semibold text-ink-label hover:bg-yellow-500"
           >
             Create a job
           </Link>
@@ -192,7 +192,7 @@ export default async function PhotosPage({
                       see loadJobMediaTags. It counts the tag's photos
                       company-wide, not within the chosen job, because it is
                       describing the TAG rather than the current filter. */}
-                  <span className="ml-1 text-slate-400">{tag.photoCount}</span>
+                  <span className="ml-1 text-ink-body">{tag.photoCount}</span>
                 </Link>
               ))}
             </div>
@@ -246,17 +246,17 @@ export default async function PhotosPage({
               chosen. On the job page it is always there, because the job is
               the page. */}
           {activeJob ? (
-            <div className="mb-8 rounded-lg border border-slate-800 bg-slate-900 p-4">
+            <div className="mb-8 rounded-lg border border-line-card bg-surface p-4">
               <JobMediaCapture jobId={activeJob} />
             </div>
           ) : (
-            <p className="mb-8 text-sm text-slate-400">
+            <p className="mb-8 text-sm text-ink-body">
               Pick a job above to add photos, or open the job itself.
             </p>
           )}
 
           {media.length === 0 ? (
-            <div className="rounded-lg border border-slate-800 bg-slate-900 p-6">
+            <div className="rounded-lg border border-line-card bg-surface p-6">
               {/* THE VISIBILITY FILTER GETS THE FIRST WORD when it is on,
                   because it is then the likeliest reason the gallery is
                   empty and — unlike the other two — the emptiness is itself
@@ -270,7 +270,7 @@ export default async function PhotosPage({
                   and the page cannot tell them apart without another query.
                   "Every photo is shared with the client" would be a
                   confident lie on a job with no photos at all. */}
-              <p className="text-sm text-slate-300">
+              <p className="text-sm text-ink-label">
                 {activeShared === "yes"
                   ? activeJob
                     ? "Nothing on this job is shared with the client."
@@ -290,11 +290,11 @@ export default async function PhotosPage({
                   composing, the old single-link version could leave somebody
                   looking at an empty page whose only offered escape was from
                   a filter that was not the one narrowing it. */}
-              <p className="mt-1 flex flex-wrap gap-x-4 text-sm text-slate-400">
+              <p className="mt-1 flex flex-wrap gap-x-4 text-sm text-ink-body">
                 {activeShared && (
                   <Link
                     href={photosFilterHref({ job: activeJob, tag: activeTag })}
-                    className="text-blue-400 hover:text-blue-300"
+                    className="text-link hover:text-link-hover"
                   >
                     Show all photos
                   </Link>
@@ -302,7 +302,7 @@ export default async function PhotosPage({
                 {activeTag && (
                   <Link
                     href={photosFilterHref({ job: activeJob, shared: activeShared })}
-                    className="text-blue-400 hover:text-blue-300"
+                    className="text-link hover:text-link-hover"
                   >
                     Clear the tag filter
                   </Link>
@@ -324,7 +324,7 @@ export default async function PhotosPage({
                 ))}
               </ul>
               {total > PHOTO_LIMIT && (
-                <p className="mt-3 text-sm text-slate-400">
+                <p className="mt-3 text-sm text-ink-body">
                   Showing the {PHOTO_LIMIT} most recent of {total}.{" "}
                   {activeJob || activeTag || activeShared
                     ? "Older photos matching this filter are not on this page yet."

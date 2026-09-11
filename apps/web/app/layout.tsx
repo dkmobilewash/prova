@@ -28,19 +28,23 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       signUpUrl="/sign-up"
       appearance={{
         variables: {
-          colorPrimary: "#3b82f6",
-          colorBackground: "#0f172a",
-          colorInputBackground: "#1e293b",
-          colorInputText: "#f1f5f9",
-          colorText: "#f1f5f9",
-          colorTextSecondary: "#94a3b8",
-          colorNeutral: "#94a3b8",
+          // The yellow/black/white light palette (2026-09-11). Yellow
+          // cannot carry white text, so the on-primary colour is set
+          // explicitly instead of letting Clerk assume light-on-primary.
+          colorPrimary: "#facc15",
+          colorTextOnPrimaryBackground: "#171717",
+          colorBackground: "#ffffff",
+          colorInputBackground: "#ffffff",
+          colorInputText: "#0a0a0a",
+          colorText: "#0a0a0a",
+          colorTextSecondary: "#404040",
+          colorNeutral: "#404040",
           borderRadius: "0.5rem",
         },
       }}
     >
       <html lang="en">
-        <body className="min-h-screen bg-slate-950 text-slate-100">
+        <body className="min-h-screen bg-canvas text-ink">
           {/* #118: covers every route group, including the public portal
               and esign pages, which are just as likely to be left open
               across a deployment as anything under (app). Renders nothing

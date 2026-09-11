@@ -33,9 +33,9 @@ export type SubmittalRowData = SubmittalDefaults & {
 };
 
 const btn =
-  "rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50";
+  "rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-neutral-100 disabled:opacity-50";
 const primaryBtn =
-  "rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50";
+  "rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50";
 
 export function SubmittalRow({
   submittal,
@@ -93,12 +93,12 @@ export function SubmittalRow({
           }}
           className="flex flex-col gap-3"
         >
-          <p className="text-sm font-semibold text-slate-300">
+          <p className="text-sm font-semibold text-ink-label">
             Submittal {submittal.number} · {submittal.jobName}
           </p>
           <FormDraftNotice draft={editDraft} />
           <SubmittalFields defaults={submittal} />
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && <p className="text-sm text-red-600">{error}</p>}
           <div className="flex gap-2">
             <button type="submit" disabled={isPending} className={primaryBtn}>
               {isPending ? "Saving…" : "Save changes"}
@@ -131,7 +131,7 @@ export function SubmittalRow({
           }}
           className="flex flex-col gap-3"
         >
-          <p className="text-sm font-semibold text-slate-300">
+          <p className="text-sm font-semibold text-ink-label">
             {nextRevisionNumber === 1
               ? `Send submittal ${submittal.number}`
               : `Send revision ${nextRevisionNumber} of submittal ${submittal.number}`}
@@ -142,7 +142,7 @@ export function SubmittalRow({
             <label className={labelClass}>
               Date sent
               <input type="date" name="sentOn" required defaultValue={localToday()} className={inputClass} />
-              <span className="text-xs text-slate-500">
+              <span className="text-xs text-ink-muted">
                 The date it actually left, not today — backdate it when you&apos;re entering history.
               </span>
             </label>
@@ -152,7 +152,7 @@ export function SubmittalRow({
             </label>
           </div>
 
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && <p className="text-sm text-red-600">{error}</p>}
 
           <div className="flex gap-2">
             <button type="submit" disabled={isPending} className={primaryBtn}>
@@ -186,7 +186,7 @@ export function SubmittalRow({
           }}
           className="flex flex-col gap-3"
         >
-          <p className="text-sm font-semibold text-slate-300">
+          <p className="text-sm font-semibold text-ink-label">
             What came back on revision {latest?.revisionNumber} of submittal {submittal.number}?
           </p>
           <FormDraftNotice draft={respondDraft} />
@@ -213,7 +213,7 @@ export function SubmittalRow({
               defaultValue={latest?.returnedOn ?? localToday()}
               className={inputClass}
             />
-            <span className="text-xs text-slate-500">
+            <span className="text-xs text-ink-muted">
               The date it actually came back, not today — a response entered late must not read as a
               late response.
             </span>
@@ -230,7 +230,7 @@ export function SubmittalRow({
             />
           </label>
 
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && <p className="text-sm text-red-600">{error}</p>}
 
           <div className="flex gap-2">
             <button type="submit" disabled={isPending} className={primaryBtn}>
@@ -247,42 +247,42 @@ export function SubmittalRow({
 
   const stateChip =
     state === "APPROVED"
-      ? "bg-green-500/15 text-green-300"
+      ? "bg-tag-green text-tag-green-ink"
       : state === "REVISE"
-        ? "bg-amber-500/15 text-amber-300"
+        ? "bg-tag-amber text-tag-amber-ink"
         : state === "WITH_GC"
-          ? "bg-blue-500/15 text-blue-300"
-          : "bg-slate-800 text-slate-400";
+          ? "bg-tag-blue text-tag-blue-ink"
+          : "bg-neutral-100 text-ink-body";
 
   return (
     <li className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start">
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="font-mono text-xs text-slate-500">SUB {submittal.number}</span>
-          <span className="text-slate-100">{submittal.title}</span>
+          <span className="font-mono text-xs text-ink-muted">SUB {submittal.number}</span>
+          <span className="text-ink">{submittal.title}</span>
           {overdue ? (
-            <span className="rounded bg-red-500/15 px-1.5 py-0.5 text-xs text-red-300">Overdue</span>
+            <span className="rounded bg-tag-rose px-1.5 py-0.5 text-xs text-tag-rose-ink">Overdue</span>
           ) : (
             <span className={`rounded px-1.5 py-0.5 text-xs ${stateChip}`}>{stateLabel(state)}</span>
           )}
           {state === "APPROVED" && latest && (
-            <span className="rounded bg-slate-800 px-1.5 py-0.5 text-xs text-slate-400">
+            <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs text-ink-body">
               Build from revision {latest.revisionNumber}
             </span>
           )}
         </div>
 
-        {submittal.description && <p className="mt-1 text-sm text-slate-300">{submittal.description}</p>}
+        {submittal.description && <p className="mt-1 text-sm text-ink-label">{submittal.description}</p>}
 
         {submittal.revisions.length > 0 && (
-          <ul className="mt-2 flex flex-col gap-1 border-l-2 border-slate-700 pl-3">
+          <ul className="mt-2 flex flex-col gap-1 border-l-2 border-line-card pl-3">
             {[...submittal.revisions]
               .sort((a, b) => a.revisionNumber - b.revisionNumber)
               .map((rev) => {
                 const days = rev.returnedOn ? daysBetween(rev.sentOn, rev.returnedOn) : null;
                 return (
-                  <li key={rev.revisionNumber} className="text-xs text-slate-400">
-                    <span className="font-mono text-slate-500">R{rev.revisionNumber}</span>
+                  <li key={rev.revisionNumber} className="text-xs text-ink-body">
+                    <span className="font-mono text-ink-muted">R{rev.revisionNumber}</span>
                     {` · sent ${rev.sentOn}`}
                     {rev.dueBack && !rev.returnedOn && ` · due back ${rev.dueBack}`}
                     {rev.returnedOn && rev.outcome && (
@@ -292,7 +292,7 @@ export function SubmittalRow({
                       </>
                     )}
                     {rev.responseNotes && (
-                      <span className="text-slate-500"> — {rev.responseNotes}</span>
+                      <span className="text-ink-muted"> — {rev.responseNotes}</span>
                     )}
                   </li>
                 );
@@ -300,14 +300,14 @@ export function SubmittalRow({
           </ul>
         )}
 
-        <p className="mt-1 text-xs text-slate-500">
-          {showJob && <span className="text-blue-400">{submittal.jobName} · </span>}
+        <p className="mt-1 text-xs text-ink-muted">
+          {showJob && <span className="text-link">{submittal.jobName} · </span>}
           {[submittal.specSection, submittal.drawingReference].filter(Boolean).join(" · ")}
           {submittal.submittedByName &&
             `${submittal.specSection || submittal.drawingReference ? " · " : ""}logged by ${submittal.submittedByName}`}
         </p>
 
-        {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
+        {error && <p className="mt-1 text-sm text-red-600">{error}</p>}
       </div>
 
       {/* Arming the delete empties this row. "Record as sent" is gated on
@@ -327,7 +327,7 @@ export function SubmittalRow({
               onConfirm={() => run(() => deleteSubmittal(submittal.id))}
               deleteClassName={btn}
               cancelClassName={btn}
-              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-600 hover:bg-tag-rose disabled:opacity-50"
             />
           ) : null
         }
@@ -337,7 +337,7 @@ export function SubmittalRow({
             type="button"
             disabled={isPending}
             onClick={() => setMode("send")}
-            className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+            className="rounded-md bg-brand px-3 py-1.5 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
           >
             Record as sent
           </button>
@@ -354,7 +354,7 @@ export function SubmittalRow({
             type="button"
             disabled={isPending}
             onClick={() => setMode("send")}
-            className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+            className="rounded-md bg-brand px-3 py-1.5 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
           >
             Send revision {nextRevisionNumber}
           </button>

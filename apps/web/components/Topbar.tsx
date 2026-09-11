@@ -49,7 +49,7 @@ export function Topbar({
             <path d="M8.5 14.5a1.6 1.6 0 0 0 3 0" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
           </svg>
           {alertCount > 0 && (
-            <span className="absolute -right-0.5 -top-0.5 min-w-[1.15rem] rounded-full bg-red-500 px-1 text-center text-[0.65rem] font-semibold leading-[1.15rem] text-white">
+            <span className="absolute -right-0.5 -top-0.5 min-w-[1.15rem] rounded-full bg-red-600 px-1 text-center text-[0.65rem] font-semibold leading-[1.15rem] text-white">
               {alertCount > 99 ? "99+" : alertCount}
             </span>
           )}

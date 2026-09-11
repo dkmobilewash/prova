@@ -779,7 +779,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
           <div
             className={`mb-3 rounded-lg border p-4 ${
               isContractExecuted
-                ? "border-green-900 bg-green-950/40"
+                ? "border-green-300 bg-tag-green"
                 : "border-line-card bg-surface"
             }`}
           >
@@ -853,7 +853,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                 <form action={revokeSignatureRequestWithId(pendingSignature.id)}>
                   <SubmitButton
                     type="submit"
-                    className="rounded-md border border-rose-800 px-3 py-2 text-sm font-medium text-tag-rose-ink hover:bg-rose-950"
+                    className="rounded-md border border-rose-300 px-3 py-2 text-sm font-medium text-tag-rose-ink hover:bg-tag-rose"
                   >
                     Revoke signing link
                   </SubmitButton>
@@ -900,7 +900,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                           and only one of them is the evidence that made this
                           job billable. */}
                       {doc.executedSignedDate && (
-                        <span className="ml-2 rounded-full bg-green-950 px-2 py-0.5 text-xs font-medium text-tag-green-ink">
+                        <span className="ml-2 rounded-full bg-tag-green px-2 py-0.5 text-xs font-medium text-tag-green-ink">
                           Executed — GC signed {formatUtcDate(doc.executedSignedDate)}
                         </span>
                       )}
@@ -1763,7 +1763,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                         type="submit"
                         formAction={deleteLineItemWithId(item.id)}
                         title="Remove"
-                        className="rounded-md bg-red-950 px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-900"
+                        className="rounded-md bg-tag-rose px-2 py-1 text-xs font-medium text-red-600 hover:bg-tag-rose"
                       >
                         Remove
                       </SubmitButton>

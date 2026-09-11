@@ -26,30 +26,30 @@ export default async function SchedulePage() {
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-8">
-      <h1 className="mb-6 text-xl font-semibold text-slate-100">Schedule</h1>
+      <h1 className="mb-6 text-xl font-semibold text-ink">Schedule</h1>
 
       <section className="mb-10">
-        <h2 className="mb-3 text-sm font-semibold text-slate-300">Scheduled</h2>
+        <h2 className="mb-3 text-sm font-semibold text-ink-label">Scheduled</h2>
         {scheduled.length === 0 ? (
-          <p className="text-slate-400">No jobs scheduled yet.</p>
+          <p className="text-ink-body">No jobs scheduled yet.</p>
         ) : (
-          <ul className="divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900">
+          <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
             {scheduled.map((job) => (
               <li key={job.id} className="p-4">
                 <Link href={`/jobs/${job.id}`} className="flex items-center justify-between gap-3">
                   <div>
                     <div className="flex items-center gap-2">
-                      <p className="font-medium text-slate-100">{job.name}</p>
+                      <p className="font-medium text-ink">{job.name}</p>
                       <StatusBadge status={job.status} />
                     </div>
-                    <p className="text-sm text-slate-400">{job.contact.name}</p>
+                    <p className="text-sm text-ink-body">{job.contact.name}</p>
                     {job.assignments.length > 0 && (
-                      <p className="mt-1 text-xs text-slate-500">
+                      <p className="mt-1 text-xs text-ink-muted">
                         Crew: {job.assignments.map((a) => a.user.name ?? a.user.email).join(", ")}
                       </p>
                     )}
                   </div>
-                  <p className="whitespace-nowrap text-sm text-slate-300">
+                  <p className="whitespace-nowrap text-sm text-ink-label">
                     {formatDate(job.startDate!)}
                     {job.endDate ? ` – ${formatDate(job.endDate)}` : ""}
                   </p>
@@ -62,16 +62,16 @@ export default async function SchedulePage() {
 
       {unscheduled.length > 0 && (
         <section>
-          <h2 className="mb-3 text-sm font-semibold text-slate-300">Unscheduled</h2>
-          <ul className="divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900">
+          <h2 className="mb-3 text-sm font-semibold text-ink-label">Unscheduled</h2>
+          <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
             {unscheduled.map((job) => (
               <li key={job.id} className="p-4">
                 <Link href={`/jobs/${job.id}`} className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
-                    <p className="font-medium text-slate-100">{job.name}</p>
+                    <p className="font-medium text-ink">{job.name}</p>
                     <StatusBadge status={job.status} />
                   </div>
-                  <p className="text-sm text-slate-400">{job.contact.name}</p>
+                  <p className="text-sm text-ink-body">{job.contact.name}</p>
                 </Link>
               </li>
             ))}

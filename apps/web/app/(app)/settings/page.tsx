@@ -97,18 +97,18 @@ function dateStatus(date: Date | null, kind: RenewalKind) {
     },
     serverToday(),
   );
-  if (renewal.urgency === "EXPIRED") return { text: "Expired", className: "text-red-400" };
+  if (renewal.urgency === "EXPIRED") return { text: "Expired", className: "text-red-600" };
   if (renewal.urgency === "DUE_SOON") {
-    return { text: renewalTiming(renewal), className: "text-amber-400" };
+    return { text: renewalTiming(renewal), className: "text-amber-700" };
   }
   return null;
 }
 
 const inputClass =
-  "rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none";
-const labelClass = "flex flex-col gap-1 text-sm text-slate-300";
+  "rounded-md border border-line-card bg-canvas px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none";
+const labelClass = "flex flex-col gap-1 text-sm text-ink-label";
 const addButtonClass =
-  "inline-flex items-center justify-center rounded-md bg-slate-800 px-4 py-2 text-sm font-medium text-slate-100 hover:bg-slate-700";
+  "inline-flex items-center justify-center rounded-md bg-neutral-100 px-4 py-2 text-sm font-medium text-ink hover:bg-neutral-200";
 
 export default async function SettingsPage({
   searchParams,
@@ -126,8 +126,8 @@ export default async function SettingsPage({
   if (currentUser.role !== "OWNER") {
     return (
       <div className="mx-auto max-w-3xl px-6 py-8">
-        <h1 className="mb-2 text-xl font-semibold text-slate-100">Settings</h1>
-        <p className="text-sm text-slate-400">Only the account owner can manage integrations.</p>
+        <h1 className="mb-2 text-xl font-semibold text-ink">Settings</h1>
+        <p className="text-sm text-ink-body">Only the account owner can manage integrations.</p>
       </div>
     );
   }
@@ -180,15 +180,15 @@ export default async function SettingsPage({
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-slate-100">Settings</h1>
+      <h1 className="mb-2 text-xl font-semibold text-ink">Settings</h1>
 
       {/* The Integrations page is the framework's own surface; QuickBooks
           keeps its section below because it predates that framework and has
           an account mapping and reconciliation the generic page has no place
           for. The link exists so there is one route to look for connections
           from, rather than two pages neither of which mentions the other. */}
-      <p className="mb-6 text-sm text-slate-400">
-        <Link href="/settings/integrations" className="text-blue-400 hover:text-blue-300">
+      <p className="mb-6 text-sm text-ink-body">
+        <Link href="/settings/integrations" className="text-link hover:text-link-hover">
           Integrations
         </Link>{" "}
         — connect and disconnect third-party services.
@@ -196,8 +196,8 @@ export default async function SettingsPage({
 
       {/* Every card the Ask box has ever put in front of somebody, with
           what became of it. Owner-only, like this page's integrations. */}
-      <p className="mb-6 text-sm text-slate-400">
-        <Link href="/settings/assistant" className="text-blue-400 hover:text-blue-300">
+      <p className="mb-6 text-sm text-ink-body">
+        <Link href="/settings/assistant" className="text-link hover:text-link-hover">
           Assistant
         </Link>{" "}
         — what the Ask box has proposed, and what became of it.
@@ -206,27 +206,27 @@ export default async function SettingsPage({
       {/* Findable without asking anyone, which is most of the point: the
           research found four vendors where getting your history out meant a
           support ticket, a sales call, or nothing at all. */}
-      <p className="mb-6 text-sm text-slate-400">
-        <Link href="/settings/export" className="text-blue-400 hover:text-blue-300">
+      <p className="mb-6 text-sm text-ink-body">
+        <Link href="/settings/export" className="text-link hover:text-link-hover">
           Export your data
         </Link>{" "}
         — every job, price, cost and hour, as CSV or one JSON file.
       </p>
 
       {qb === "connected" && (
-        <p className="mb-6 rounded-md border border-green-900 bg-green-950/50 px-4 py-3 text-sm text-green-400">
+        <p className="mb-6 rounded-md border border-green-300 bg-tag-green px-4 py-3 text-sm text-green-700">
           QuickBooks connected successfully.
         </p>
       )}
       {qb === "error" && (
-        <p className="mb-6 rounded-md border border-red-900 bg-red-950/50 px-4 py-3 text-sm text-red-400">
+        <p className="mb-6 rounded-md border border-red-300 bg-tag-rose px-4 py-3 text-sm text-red-600">
           {(qb_detail && QB_ERROR_MESSAGES[qb_detail]) ?? "Couldn't connect to QuickBooks — please try again."}
         </p>
       )}
 
       <section className="mb-10">
-        <h2 className="mb-3 text-sm font-semibold text-slate-300">QuickBooks Online</h2>
-        <p className="mb-4 text-sm text-slate-400">
+        <h2 className="mb-3 text-sm font-semibold text-ink-label">QuickBooks Online</h2>
+        <p className="mb-4 text-sm text-ink-body">
           Connects your QuickBooks Online company so invoices can be pushed to it. Deliberately
           ONE direction: Prova writes to QuickBooks and reads the record back to confirm what
           landed. It does not pull edits made in QuickBooks back into Prova, and does not
@@ -235,40 +235,40 @@ export default async function SettingsPage({
         </p>
 
         {connection ? (
-          <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-            <p className="text-sm text-slate-100">
+          <div className="rounded-lg border border-line-card bg-surface p-4">
+            <p className="text-sm text-ink">
               Connected
               {connection.connectedByUser && ` by ${connection.connectedByUser.name ?? connection.connectedByUser.email}`}
             </p>
-            <p className="mb-4 text-xs text-slate-500">
+            <p className="mb-4 text-xs text-ink-muted">
               QuickBooks company ID: {connection.realmId} · connected{" "}
               {formatInstant(connection.createdAt, timeZone, "numeric")}
             </p>
             <div className="flex flex-wrap items-center gap-3">
               <QuickBooksTestConnectionButton />
               <form action={disconnectQuickBooks}>
-                <SubmitButton type="submit" className="text-sm text-red-400 hover:underline">
+                <SubmitButton type="submit" className="text-sm text-red-600 hover:underline">
                   Disconnect
                 </SubmitButton>
               </form>
             </div>
 
-            <div className="mt-6 border-t border-slate-800 pt-4">
-              <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
+            <div className="mt-6 border-t border-line-row pt-4">
+              <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink-body">
                 Chart of accounts
               </h3>
-              <p className="mb-3 text-xs text-slate-500">
+              <p className="mb-3 text-xs text-ink-muted">
                 Nothing is guessed here. An account picked for you is how books get wrong in a way
                 nobody notices until tax time.
               </p>
               <QuickBooksMapping mappings={accountMappings} />
             </div>
 
-            <div className="mt-6 border-t border-slate-800 pt-4">
-              <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
+            <div className="mt-6 border-t border-line-row pt-4">
+              <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink-body">
                 Does QuickBooks still agree?
               </h3>
-              <p className="mb-3 text-xs text-slate-500">
+              <p className="mb-3 text-xs text-ink-muted">
                 This sync only writes to QuickBooks — an edit made there is refused rather than
                 absorbed, and nothing here changes until you ask. This is how you find out that
                 someone changed an invoice on the other side.
@@ -276,11 +276,11 @@ export default async function SettingsPage({
               <QuickBooksReconcile />
             </div>
 
-            <div className="mt-6 border-t border-slate-800 pt-4">
-              <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
+            <div className="mt-6 border-t border-line-row pt-4">
+              <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink-body">
                 Recent sync activity
               </h3>
-              <p className="mb-3 text-xs text-slate-500">
+              <p className="mb-3 text-xs text-ink-muted">
                 Every attempt, including refusals and anything that landed differently from what
                 was sent.
               </p>
@@ -293,7 +293,7 @@ export default async function SettingsPage({
           // for why this needs to be a real GET navigation).
           <a
             href="/api/quickbooks/start"
-            className="inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
+            className="inline-flex items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500"
           >
             Connect QuickBooks
           </a>
@@ -301,27 +301,27 @@ export default async function SettingsPage({
       </section>
 
       <section className="mb-10">
-        <h2 className="mb-3 text-sm font-semibold text-slate-300">Company locations</h2>
-        <p className="mb-4 text-sm text-slate-400">
+        <h2 className="mb-3 text-sm font-semibold text-ink-label">Company locations</h2>
+        <p className="mb-4 text-sm text-ink-body">
           Offices, yards, and warehouses this company operates out of. Jobs can be tagged with the
           location running them from the job&apos;s Schedule section.
         </p>
 
         {locations.length > 0 && (
-          <ul className="mb-4 divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900">
+          <ul className="mb-4 divide-y divide-line-row rounded-lg border border-line-card bg-surface">
             {locations.map((location) => (
               <li key={location.id} className="flex items-start justify-between gap-4 p-4">
                 <div>
-                  <p className="text-sm font-medium text-slate-100">
+                  <p className="text-sm font-medium text-ink">
                     {location.name ?? labelFor(LOCATION_TYPE_OPTIONS, location.locationType)}
                   </p>
-                  <p className="text-xs text-slate-500">
+                  <p className="text-xs text-ink-muted">
                     {labelFor(LOCATION_TYPE_OPTIONS, location.locationType)} · {location.addressLine1}
                     {location.addressLine2 ? `, ${location.addressLine2}` : ""}, {location.city},{" "}
                     {location.state} {location.zip}
                   </p>
                   {(location.primaryContactName || location.primaryContactPhone) && (
-                    <p className="text-xs text-slate-500">
+                    <p className="text-xs text-ink-muted">
                       {[location.primaryContactName, location.primaryContactPhone].filter(Boolean).join(" · ")}
                     </p>
                   )}
@@ -332,8 +332,8 @@ export default async function SettingsPage({
           </ul>
         )}
 
-        <details className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-          <summary className="cursor-pointer text-sm font-medium text-slate-300">Add a location</summary>
+        <details className="rounded-lg border border-line-card bg-surface p-4">
+          <summary className="cursor-pointer text-sm font-medium text-ink-label">Add a location</summary>
           <form action={createCompanyLocation} className="mt-4 flex flex-col gap-3">
             <div className="flex flex-wrap gap-3">
               <label className={labelClass}>
@@ -391,8 +391,8 @@ export default async function SettingsPage({
       </section>
 
       <section className="mb-10">
-        <h2 className="mb-3 text-sm font-semibold text-slate-300">Contractor licences</h2>
-        <p className="mb-4 text-sm text-slate-400">
+        <h2 className="mb-3 text-sm font-semibold text-ink-label">Contractor licences</h2>
+        <p className="mb-4 text-sm text-ink-body">
           One row per licence you hold, not per state — some jurisdictions have no state licence at
           all, only municipal ones, so working in two Colorado cities means two rows here. These feed
           the renewals list on Compliance.
@@ -419,27 +419,27 @@ export default async function SettingsPage({
       </section>
 
       <section className="mb-10">
-        <h2 className="mb-3 text-sm font-semibold text-slate-300">Insurance policies</h2>
-        <p className="mb-4 text-sm text-slate-400">
+        <h2 className="mb-3 text-sm font-semibold text-ink-label">Insurance policies</h2>
+        <p className="mb-4 text-sm text-ink-body">
           This company&apos;s own coverage — the source data per-job certificates of insurance would
           eventually be generated from.
         </p>
 
         {insurancePolicies.length > 0 && (
-          <ul className="mb-4 divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900">
+          <ul className="mb-4 divide-y divide-line-row rounded-lg border border-line-card bg-surface">
             {insurancePolicies.map((policy) => {
               const status = dateStatus(policy.expirationDate, "INSURANCE_POLICY");
               return (
                 <li key={policy.id} className="flex items-start justify-between gap-4 p-4">
                   <div>
-                    <p className="text-sm font-medium text-slate-100">
+                    <p className="text-sm font-medium text-ink">
                       {labelFor(INSURANCE_POLICY_TYPE_OPTIONS, policy.policyType)} · {policy.carrier}
                     </p>
-                    <p className="text-xs text-slate-500">
+                    <p className="text-xs text-ink-muted">
                       Policy #{policy.policyNumber}
                       {policy.coverageLimits && ` · ${policy.coverageLimits}`}
                     </p>
-                    <p className="text-xs text-slate-500">
+                    <p className="text-xs text-ink-muted">
                       {formatDate(policy.effectiveDate)} – {formatDate(policy.expirationDate)}
                       {status && <span className={`ml-2 ${status.className}`}>{status.text}</span>}
                     </p>
@@ -451,8 +451,8 @@ export default async function SettingsPage({
           </ul>
         )}
 
-        <details className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-          <summary className="cursor-pointer text-sm font-medium text-slate-300">Add a policy</summary>
+        <details className="rounded-lg border border-line-card bg-surface p-4">
+          <summary className="cursor-pointer text-sm font-medium text-ink-label">Add a policy</summary>
           <form action={createInsurancePolicy} className="mt-4 flex flex-col gap-3">
             <div className="flex flex-wrap gap-3">
               <label className={labelClass}>
@@ -500,36 +500,36 @@ export default async function SettingsPage({
       </section>
 
       <section>
-        <h2 className="mb-3 text-sm font-semibold text-slate-300">Bonding</h2>
-        <p className="mb-4 text-sm text-slate-400">
+        <h2 className="mb-3 text-sm font-semibold text-ink-label">Bonding</h2>
+        <p className="mb-4 text-sm text-ink-body">
           License bonds and overall performance/payment bonding capacity, and who to contact to
           increase it or pull a bond for a specific job.
         </p>
 
         {bonds.length > 0 && (
-          <ul className="mb-4 divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900">
+          <ul className="mb-4 divide-y divide-line-row rounded-lg border border-line-card bg-surface">
             {bonds.map((bond) => {
               const status = dateStatus(bond.renewalDate, "BOND");
               return (
                 <li key={bond.id} className="flex items-start justify-between gap-4 p-4">
                   <div>
-                    <p className="text-sm font-medium text-slate-100">
+                    <p className="text-sm font-medium text-ink">
                       {labelFor(BOND_TYPE_OPTIONS, bond.bondType)} · {bond.suretyName}
                     </p>
-                    <p className="text-xs text-slate-500">
+                    <p className="text-xs text-ink-muted">
                       {bond.aggregateBondingCapacity != null &&
                         `Aggregate ${money(Number(bond.aggregateBondingCapacity))}`}
                       {bond.singleJobLimit != null &&
                         ` · Single job ${money(Number(bond.singleJobLimit))}`}
                     </p>
                     {(bond.agentContactName || bond.agentContactPhone || bond.agentContactEmail) && (
-                      <p className="text-xs text-slate-500">
+                      <p className="text-xs text-ink-muted">
                         {[bond.agentContactName, bond.agentContactPhone, bond.agentContactEmail]
                           .filter(Boolean)
                           .join(" · ")}
                       </p>
                     )}
-                    <p className="text-xs text-slate-500">
+                    <p className="text-xs text-ink-muted">
                       Renewal: {formatDate(bond.renewalDate)}
                       {status && <span className={`ml-2 ${status.className}`}>{status.text}</span>}
                     </p>
@@ -541,8 +541,8 @@ export default async function SettingsPage({
           </ul>
         )}
 
-        <details className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-          <summary className="cursor-pointer text-sm font-medium text-slate-300">Add a bond</summary>
+        <details className="rounded-lg border border-line-card bg-surface p-4">
+          <summary className="cursor-pointer text-sm font-medium text-ink-label">Add a bond</summary>
           <form action={createBond} className="mt-4 flex flex-col gap-3">
             <div className="flex flex-wrap gap-3">
               <label className={labelClass}>

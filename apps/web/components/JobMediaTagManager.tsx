@@ -21,7 +21,7 @@ export type JobMediaTagSummary = {
 };
 
 const btn =
-  "min-h-11 inline-flex items-center rounded-md border border-slate-700 px-3 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50";
+  "min-h-11 inline-flex items-center rounded-md border border-line-card px-3 text-sm text-ink-label hover:bg-neutral-100 disabled:opacity-50";
 
 /**
  * Renaming and deleting the company's photo tags.
@@ -51,20 +51,20 @@ export function JobMediaTagManager({ tags }: { tags: JobMediaTagSummary[] }) {
       </button>
 
       {open && (
-        <div className="mt-3 rounded-lg border border-slate-800 bg-slate-900">
+        <div className="mt-3 rounded-lg border border-line-card bg-surface">
           {tags.length === 0 ? (
             <div className="p-4">
-              <p className="text-sm text-slate-300">No tags yet.</p>
+              <p className="text-sm text-ink-label">No tags yet.</p>
               {/* A real way out rather than a dead end: this list is filled
                   from the photos, not from here, and saying so is the
                   difference between an empty state and a broken screen. */}
-              <p className="mt-1 text-sm text-slate-400">
+              <p className="mt-1 text-sm text-ink-body">
                 Tags are made by using them. Add one to a photo below — &ldquo;west wall&rdquo;,
                 &ldquo;before pour&rdquo; — and it appears here for everyone to reuse.
               </p>
             </div>
           ) : (
-            <ul className="divide-y divide-slate-800">
+            <ul className="divide-y divide-line-row">
               {tags.map((tag) => (
                 <JobMediaTagRow key={tag.id} tag={tag} />
               ))}
@@ -119,23 +119,23 @@ function JobMediaTagRow({ tag }: { tag: JobMediaTagSummary }) {
           className="flex flex-col gap-2"
         >
           <FormDraftNotice draft={draft} />
-          <label className="flex flex-col gap-1 text-sm text-slate-300">
+          <label className="flex flex-col gap-1 text-sm text-ink-label">
             Tag name
             <input
               name="name"
               defaultValue={tag.name}
               maxLength={JOB_MEDIA_TAG_MAX_LENGTH}
               autoFocus
-              className="min-h-11 rounded-md border border-slate-700 bg-slate-950 px-3 text-base text-slate-100 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none"
+              className="min-h-11 rounded-md border border-line-card bg-canvas px-3 text-base text-ink placeholder:text-ink-body focus:border-link focus:outline-none"
             />
           </label>
-          <p className="text-sm text-slate-400">Renaming it changes it on all {photos}.</p>
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          <p className="text-sm text-ink-body">Renaming it changes it on all {photos}.</p>
+          {error && <p className="text-sm text-red-600">{error}</p>}
           <div className="flex flex-wrap gap-2">
             <button
               type="submit"
               disabled={isPending}
-              className="min-h-11 inline-flex items-center rounded-md bg-blue-600 px-4 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+              className="min-h-11 inline-flex items-center rounded-md bg-brand px-4 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
             >
               {isPending ? "Saving…" : "Save"}
             </button>
@@ -151,11 +151,11 @@ function JobMediaTagRow({ tag }: { tag: JobMediaTagSummary }) {
   return (
     <li className="flex flex-col gap-2 p-4 sm:flex-row sm:items-center sm:justify-between">
       <div className="min-w-0">
-        <p className="font-medium text-slate-100">{tag.name}</p>
-        {/* slate-400, not slate-500: #89 measured slate-500 on slate-900 at
+        <p className="font-medium text-ink">{tag.name}</p>
+        {/* ink-body, not ink-muted: #89 measured the muted level at
             3.83:1, under the 4.5 contrast floor. */}
-        <p className="text-sm text-slate-400">On {photos}</p>
-        {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
+        <p className="text-sm text-ink-body">On {photos}</p>
+        {error && <p className="mt-1 text-sm text-red-600">{error}</p>}
       </div>
 
       {/* Arming the delete empties this row of everything else — "Rename"
@@ -192,7 +192,7 @@ function JobMediaTagRow({ tag }: { tag: JobMediaTagSummary }) {
             }}
             deleteClassName={btn}
             cancelClassName={btn}
-            confirmClassName="min-h-11 inline-flex items-center rounded-md border border-red-500 px-3 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+            confirmClassName="min-h-11 inline-flex items-center rounded-md border border-red-500 px-3 text-sm text-red-600 hover:bg-tag-rose disabled:opacity-50"
           />
         }
       >

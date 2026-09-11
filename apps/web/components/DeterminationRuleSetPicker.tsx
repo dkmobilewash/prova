@@ -53,7 +53,7 @@ export function DeterminationRuleSetPicker({
             }
           });
         }}
-        className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 disabled:opacity-50"
+        className="rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink disabled:opacity-50"
       >
         <option value="">No rules attached</option>
         {options.map((option) => (
@@ -62,7 +62,7 @@ export function DeterminationRuleSetPicker({
           </option>
         ))}
       </select>
-      {error && <p className="max-w-[16rem] text-right text-xs text-red-400">{error}</p>}
+      {error && <p className="max-w-[16rem] text-right text-xs text-red-600">{error}</p>}
     </div>
   );
 }

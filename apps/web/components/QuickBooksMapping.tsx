@@ -63,25 +63,25 @@ export function QuickBooksMapping({ mappings }: { mappings: MappingRow[] }) {
           type="button"
           onClick={load}
           disabled={isPending}
-          className="rounded-md border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-800 disabled:opacity-50"
+          className="rounded-md border border-line-card px-3 py-1.5 text-xs font-medium text-ink-label hover:bg-neutral-100 disabled:opacity-50"
         >
           {isPending ? "Loading…" : accounts ? "Reload accounts" : "Load accounts from QuickBooks"}
         </button>
-        {error && <p className="text-xs text-rose-300">{error}</p>}
+        {error && <p className="text-xs text-tag-rose-ink">{error}</p>}
       </div>
 
-      <ul className="divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900">
+      <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
         {PURPOSES.map((purpose) => {
           const mapped = current.get(purpose.value);
           return (
             <li key={purpose.value} className="flex flex-wrap items-center justify-between gap-3 p-3">
               <div className="min-w-0">
-                <p className="text-sm font-medium text-slate-100">{purpose.label}</p>
-                <p className="text-xs text-slate-400">{purpose.hint}</p>
+                <p className="text-sm font-medium text-ink">{purpose.label}</p>
+                <p className="text-xs text-ink-body">{purpose.hint}</p>
               </div>
 
               {accounts === null ? (
-                <p className="text-xs text-slate-400">
+                <p className="text-xs text-ink-body">
                   {mapped ? mapped.qboAccountName : "Not mapped"}
                 </p>
               ) : (
@@ -101,7 +101,7 @@ export function QuickBooksMapping({ mappings }: { mappings: MappingRow[] }) {
                           chosen.name;
                       }
                     }}
-                    className="max-w-[16rem] rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-100"
+                    className="max-w-[16rem] rounded-md border border-line-card bg-canvas px-2 py-1.5 text-xs text-ink"
                   >
                     <option value="">— Choose an account —</option>
                     {accounts.map((account) => (
@@ -118,7 +118,7 @@ export function QuickBooksMapping({ mappings }: { mappings: MappingRow[] }) {
                   <button
                     type="submit"
                     disabled={isPending}
-                    className="rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800 disabled:opacity-50"
+                    className="rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-neutral-100 disabled:opacity-50"
                   >
                     Save
                   </button>
@@ -131,7 +131,7 @@ export function QuickBooksMapping({ mappings }: { mappings: MappingRow[] }) {
                           await clearQuickBooksAccountMapping(purpose.value);
                         })
                       }
-                      className="text-xs text-slate-400 hover:text-rose-300 disabled:opacity-50"
+                      className="text-xs text-ink-body hover:text-tag-rose-ink disabled:opacity-50"
                     >
                       Clear
                     </button>
@@ -156,10 +156,10 @@ export type SyncAttemptRow = {
 };
 
 const OUTCOME_TONE: Record<string, string> = {
-  SUCCEEDED: "border-emerald-800 bg-emerald-950/40 text-emerald-200",
-  VERIFY_MISMATCH: "border-amber-800 bg-amber-950/40 text-amber-200",
-  FAILED: "border-rose-800 bg-rose-950/40 text-rose-200",
-  SKIPPED: "border-slate-700 bg-slate-900 text-slate-300",
+  SUCCEEDED: "border-emerald-300 bg-tag-green text-tag-green-ink",
+  VERIFY_MISMATCH: "border-amber-300 bg-tag-amber text-tag-amber-ink",
+  FAILED: "border-rose-300 bg-tag-rose text-tag-rose-ink",
+  SKIPPED: "border-line-card bg-surface text-ink-label",
 };
 
 const OUTCOME_LABEL: Record<string, string> = {
@@ -180,7 +180,7 @@ const OUTCOME_LABEL: Record<string, string> = {
 export function QuickBooksSyncLog({ attempts }: { attempts: SyncAttemptRow[] }) {
   if (attempts.length === 0) {
     return (
-      <p className="text-sm text-slate-400">
+      <p className="text-sm text-ink-body">
         Nothing has been sent to QuickBooks yet. Every attempt will be recorded here — including
         the ones that fail, and the ones where what landed didn&apos;t match what was sent.
       </p>

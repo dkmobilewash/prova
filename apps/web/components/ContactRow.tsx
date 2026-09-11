@@ -8,13 +8,13 @@ import { CONTACT_STATUS_OPTIONS, CONTACT_TYPE_OPTIONS } from "@/components/Conta
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 
 const STATUS_STYLE: Record<string, string> = {
-  PROSPECT: "bg-slate-800 text-slate-300",
-  ACTIVE: "bg-green-500/15 text-green-300",
-  INACTIVE: "bg-slate-800 text-slate-500",
+  PROSPECT: "bg-neutral-100 text-ink-label",
+  ACTIVE: "bg-tag-green text-tag-green-ink",
+  INACTIVE: "bg-neutral-100 text-ink-muted",
 };
 
 const btn =
-  "rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:border-slate-500 disabled:opacity-50";
+  "rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-neutral-100 disabled:opacity-50";
 
 export function ContactRow({
   contact,
@@ -42,25 +42,25 @@ export function ContactRow({
         <Link href={`/contacts/${contact.id}`} className="flex min-w-0 flex-1 items-center gap-3">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <p className="font-medium text-slate-100">{contact.name}</p>
+              <p className="font-medium text-ink">{contact.name}</p>
               <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLE[contact.status]}`}>
                 {CONTACT_STATUS_OPTIONS.find((o) => o.value === contact.status)?.label ?? contact.status}
               </span>
               {contact.accountType && (
-                <span className="rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-400">
+                <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-ink-body">
                   {CONTACT_TYPE_OPTIONS.find((o) => o.value === contact.accountType)?.label ?? contact.accountType}
                 </span>
               )}
             </div>
-            <p className="text-sm text-slate-400">{contact.email ?? contact.phone ?? "No contact info"}</p>
+            <p className="text-sm text-ink-body">{contact.email ?? contact.phone ?? "No contact info"}</p>
           </div>
         </Link>
-        <div className="shrink-0 text-right text-sm text-slate-400">
+        <div className="shrink-0 text-right text-sm text-ink-body">
           <p>
             {contact.jobCount} {contact.jobCount === 1 ? "job" : "jobs"}
           </p>
           {contact.openBidCount > 0 && (
-            <p className="text-xs text-blue-400">
+            <p className="text-xs text-link">
               {contact.openBidCount} open {contact.openBidCount === 1 ? "bid" : "bids"}
             </p>
           )}
@@ -92,13 +92,13 @@ export function ContactRow({
               }}
               deleteClassName={btn}
               cancelClassName={btn}
-              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-xs text-red-600 hover:bg-tag-rose disabled:opacity-50"
             />
           }
         />
       )}
 
-      {error && <p className="text-xs text-red-400">{error}</p>}
+      {error && <p className="text-xs text-red-600">{error}</p>}
     </li>
   );
 }

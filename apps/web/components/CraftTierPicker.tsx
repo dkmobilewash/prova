@@ -66,7 +66,7 @@ export function CraftTierPicker({
             setPeriod(nextPeriod);
             save(next, nextPeriod);
           }}
-          className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 disabled:opacity-50"
+          className="rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink disabled:opacity-50"
         >
           <option value="">Not classified</option>
           {Object.entries(TIER_LABELS).map(([tierValue, label]) => (
@@ -87,15 +87,15 @@ export function CraftTierPicker({
             placeholder="period"
             onChange={(event) => setPeriod(event.target.value)}
             onBlur={() => save(value, period)}
-            className="w-20 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 disabled:opacity-50"
+            className="w-20 rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink disabled:opacity-50"
           />
         )}
       </div>
 
       {value === "" && (
-        <p className="text-xs text-amber-300">Hours on this craft can&apos;t be counted either way</p>
+        <p className="text-xs text-tag-amber-ink">Hours on this craft can&apos;t be counted either way</p>
       )}
-      {error && <p className="max-w-[16rem] text-right text-xs text-red-400">{error}</p>}
+      {error && <p className="max-w-[16rem] text-right text-xs text-red-600">{error}</p>}
     </div>
   );
 }

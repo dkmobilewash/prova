@@ -54,7 +54,7 @@ function ActualsLine({ entry }: { entry: CatalogEntryWithLines }) {
 
   if (actuals.actualUnitCost === null) {
     return (
-      <p className="mt-1 text-xs text-slate-500">
+      <p className="mt-1 text-xs text-ink-muted">
         {actuals.linesExcludedUnfinished > 0
           ? `${actuals.linesExcludedUnfinished} costed ${
               actuals.linesExcludedUnfinished === 1 ? "line uses" : "lines use"
@@ -67,7 +67,7 @@ function ActualsLine({ entry }: { entry: CatalogEntryWithLines }) {
   const pct = actuals.variancePct;
   return (
     <div className="mt-1 flex flex-wrap items-center gap-2">
-      <p className={`text-xs ${actuals.isFlagged ? "text-amber-300" : "text-slate-500"}`}>
+      <p className={`text-xs ${actuals.isFlagged ? "text-tag-amber-ink" : "text-ink-muted"}`}>
         Actual {money(actuals.actualUnitCost)}/unit across {actuals.linesWithCosts}{" "}
         {actuals.linesWithCosts === 1 ? "costed line" : "costed lines"}
         {actuals.defaultBudgetedUnitCost != null && (
@@ -88,13 +88,13 @@ function ActualsLine({ entry }: { entry: CatalogEntryWithLines }) {
               — the server re-derives it from the line items, so this form
               sends nothing but the margin checkbox. What's shown above is
               only ever a preview of what the server will work out itself. */}
-          <label className="flex items-center gap-1 text-xs text-slate-400">
-            <input type="checkbox" name="alsoUpdatePrice" className="accent-blue-500" />
+          <label className="flex items-center gap-1 text-xs text-ink-body">
+            <input type="checkbox" name="alsoUpdatePrice" className="accent-yellow-500" />
             also move the sale price, holding margin
           </label>
           <SubmitButton
             type="submit"
-            className="rounded-md border border-amber-700 px-2 py-1 text-xs text-amber-300 hover:bg-amber-950"
+            className="rounded-md border border-amber-300 px-2 py-1 text-xs text-tag-amber-ink hover:bg-tag-amber"
           >
             Update default from actuals
           </SubmitButton>
@@ -136,8 +136,8 @@ export default async function CatalogPage() {
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-slate-100">Line item catalog</h1>
-      <p className="mb-6 text-sm text-slate-400">
+      <h1 className="mb-2 text-xl font-semibold text-ink">Line item catalog</h1>
+      <p className="mb-6 text-sm text-ink-body">
         Reusable line items for estimating — add one here, or from an existing job&apos;s line item
         (&quot;Save as catalog item&quot;), then pull it into a new estimate with &quot;Add from
         catalog&quot; on any ESTIMATE-stage job.
@@ -149,9 +149,9 @@ export default async function CatalogPage() {
 
       <section className="mb-8">
         {entries.length === 0 ? (
-          <p className="text-slate-400">No catalog entries yet.</p>
+          <p className="text-ink-body">No catalog entries yet.</p>
         ) : (
-          <ul className="divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900">
+          <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
             {entries.map((entry) => (
               <CatalogEntryRow
                 key={entry.id}
@@ -159,8 +159,8 @@ export default async function CatalogPage() {
                 linkedLineCount={entry.jobLineItems.length}
               >
                 <>
-                  <p className="font-medium text-slate-100">{entry.description}</p>
-                  <p className="text-sm text-slate-400">
+                  <p className="font-medium text-ink">{entry.description}</p>
+                  <p className="text-sm text-ink-body">
                     {entry.unit && <>{entry.unit} · </>}
                     {entry.defaultUnitPrice != null && <>{money(Number(entry.defaultUnitPrice))}/unit · </>}
                     {entry.defaultBudgetedUnitCost != null && (
@@ -184,55 +184,55 @@ export default async function CatalogPage() {
         )}
       </section>
 
-      <section className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-        <h2 className="mb-3 text-sm font-semibold text-slate-300">Add a catalog entry</h2>
+      <section className="rounded-lg border border-line-card bg-surface p-4">
+        <h2 className="mb-3 text-sm font-semibold text-ink-label">Add a catalog entry</h2>
         <form action={createLineItemCatalogEntry} className="flex flex-wrap items-end gap-3">
-          <label className="flex flex-1 min-w-[200px] flex-col gap-1 text-sm text-slate-300">
+          <label className="flex flex-1 min-w-[200px] flex-col gap-1 text-sm text-ink-label">
             Description
             <input
               name="description"
               required
-              className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
+              className="rounded-md border border-line-card bg-canvas px-3 py-2 text-ink focus:border-link focus:outline-none"
             />
           </label>
-          <label className="flex flex-col gap-1 text-sm text-slate-300">
+          <label className="flex flex-col gap-1 text-sm text-ink-label">
             Unit
             <input
               name="unit"
               placeholder="e.g. sq ft"
-              className="w-28 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+              className="w-28 rounded-md border border-line-card bg-canvas px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
             />
           </label>
-          <label className="flex flex-col gap-1 text-sm text-slate-300">
+          <label className="flex flex-col gap-1 text-sm text-ink-label">
             Default unit price
             <input
               name="defaultUnitPrice"
               placeholder="optional"
-              className="w-32 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+              className="w-32 rounded-md border border-line-card bg-canvas px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
             />
           </label>
-          <label className="flex flex-col gap-1 text-sm text-slate-300">
+          <label className="flex flex-col gap-1 text-sm text-ink-label">
             Default budgeted cost
             <input
               name="defaultBudgetedUnitCost"
               placeholder="optional"
-              className="w-32 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+              className="w-32 rounded-md border border-line-card bg-canvas px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
             />
           </label>
-          <label className="flex flex-col gap-1 text-sm text-slate-300">
+          <label className="flex flex-col gap-1 text-sm text-ink-label">
             Default labor hrs
             <input
               name="defaultLaborHours"
               placeholder="optional"
-              className="w-28 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+              className="w-28 rounded-md border border-line-card bg-canvas px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
             />
           </label>
-          <label className="flex flex-col gap-1 text-sm text-slate-300">
+          <label className="flex flex-col gap-1 text-sm text-ink-label">
             Trade
             <select
               name="tradeScope"
               defaultValue=""
-              className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
+              className="rounded-md border border-line-card bg-canvas px-3 py-2 text-ink focus:border-link focus:outline-none"
             >
               <option value="">No trade tag</option>
               {TRADE_SCOPE_OPTIONS.map((t) => (
@@ -243,12 +243,12 @@ export default async function CatalogPage() {
             </select>
           </label>
           {craftClassifications.length > 0 && (
-            <label className="flex flex-col gap-1 text-sm text-slate-300">
+            <label className="flex flex-col gap-1 text-sm text-ink-label">
               Craft
               <select
                 name="craftClassificationId"
                 defaultValue=""
-                className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
+                className="rounded-md border border-line-card bg-canvas px-3 py-2 text-ink focus:border-link focus:outline-none"
               >
                 <option value="">No craft tag</option>
                 {craftClassifications.map((c) => (
@@ -261,7 +261,7 @@ export default async function CatalogPage() {
           )}
           <SubmitButton
             type="submit"
-            className="inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
+            className="inline-flex items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500"
           >
             Add entry
           </SubmitButton>

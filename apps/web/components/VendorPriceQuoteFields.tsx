@@ -46,7 +46,7 @@ export function VendorPriceQuoteFields({
             </option>
           ))}
         </select>
-        <span className="text-xs text-slate-500">
+        <span className="text-xs text-ink-muted">
           Whose price this is. Prices are only ever compared between vendors, never averaged into
           one.
         </span>
@@ -62,7 +62,7 @@ export function VendorPriceQuoteFields({
           placeholder={'e.g. 5/8" Type X gypsum board, 4x12'}
           className={inputClass}
         />
-        <span className="text-xs text-slate-500">
+        <span className="text-xs text-ink-muted">
           Their wording, not yours — when you ring up to query the price, this is what has to be
           read back to them.
         </span>
@@ -91,7 +91,7 @@ export function VendorPriceQuoteFields({
             placeholder="e.g. SF, MSF, EA"
             className={inputClass}
           />
-          <span className="text-xs text-slate-500">
+          <span className="text-xs text-ink-muted">
             Their unit, kept as they give it. Prices are only compared within one unit — MSF is
             never converted to SF, because the factor is theirs to state, not ours to guess.
           </span>
@@ -108,7 +108,7 @@ export function VendorPriceQuoteFields({
             defaultValue={defaults.quotedOn}
             className={inputClass}
           />
-          <span className="text-xs text-slate-500">
+          <span className="text-xs text-ink-muted">
             The day they gave it, not the day you typed it in. Every movement figure is measured
             off this date.
           </span>
@@ -121,7 +121,7 @@ export function VendorPriceQuoteFields({
             defaultValue={defaults.validUntil ?? ""}
             className={inputClass}
           />
-          <span className="text-xs text-slate-500">
+          <span className="text-xs text-ink-muted">
             Only if they said so. Leave blank otherwise — an invented expiry would drop a live
             price out of the comparison.
           </span>
@@ -153,7 +153,7 @@ export function VendorPriceQuoteFields({
             </option>
           ))}
         </select>
-        <span className="text-xs text-slate-500">
+        <span className="text-xs text-ink-muted">
           Optional, and the whole point when it&apos;s set: it puts this price next to the catalog
           default you bid off, so a template nobody will sell at shows up before the bid does.
         </span>

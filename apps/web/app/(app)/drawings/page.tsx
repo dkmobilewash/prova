@@ -69,13 +69,13 @@ export default async function DrawingsPage({
 
   const chip = (active: boolean) =>
     `rounded-md border px-3 py-1.5 text-sm ${
-      active ? "border-blue-500 text-blue-400" : "border-slate-700 text-slate-300 hover:border-slate-500"
+      active ? "border-brand text-link" : "border-line-card text-ink-label hover:bg-neutral-100"
     }`;
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-slate-100">Drawings</h1>
-      <p className="mb-6 text-sm text-slate-400">
+      <h1 className="mb-2 text-xl font-semibold text-ink">Drawings</h1>
+      <p className="mb-6 text-sm text-ink-body">
         Which revision of each set is current, and whether it&apos;s actually in the trailer. A
         revision that has been issued supersedes the one before it whether or not it has reached you
         — so an issue you haven&apos;t received means the crew is building from paper that is already
@@ -88,21 +88,21 @@ export default async function DrawingsPage({
       </section>
 
       <div className="mb-4 grid gap-3 sm:grid-cols-3">
-        <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-          <p className={`text-2xl font-semibold ${behindCount > 0 ? "text-red-300" : "text-slate-100"}`}>
+        <div className="rounded-lg border border-line-card bg-surface p-4">
+          <p className={`text-2xl font-semibold ${behindCount > 0 ? "text-tag-rose-ink" : "text-ink"}`}>
             {behindCount}
           </p>
-          <p className="text-xs text-slate-500">Sets whose newest issue isn&apos;t here</p>
+          <p className="text-xs text-ink-muted">Sets whose newest issue isn&apos;t here</p>
         </div>
-        <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-          <p className={`text-2xl font-semibold ${missingIssues > 0 ? "text-amber-300" : "text-slate-100"}`}>
+        <div className="rounded-lg border border-line-card bg-surface p-4">
+          <p className={`text-2xl font-semibold ${missingIssues > 0 ? "text-tag-amber-ink" : "text-ink"}`}>
             {missingIssues}
           </p>
-          <p className="text-xs text-slate-500">Issues never received</p>
+          <p className="text-xs text-ink-muted">Issues never received</p>
         </div>
-        <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-          <p className="text-2xl font-semibold text-green-300">{inHandCount}</p>
-          <p className="text-xs text-slate-500">Sets current in hand</p>
+        <div className="rounded-lg border border-line-card bg-surface p-4">
+          <p className="text-2xl font-semibold text-tag-green-ink">{inHandCount}</p>
+          <p className="text-xs text-ink-muted">Sets current in hand</p>
         </div>
       </div>
 
@@ -119,18 +119,18 @@ export default async function DrawingsPage({
         </div>
       )}
 
-      <h2 className="mb-3 text-sm font-semibold text-slate-300">
+      <h2 className="mb-3 text-sm font-semibold text-ink-label">
         {rows.length} {rows.length === 1 ? "set" : "sets"}
       </h2>
 
       {rows.length === 0 ? (
-        <p className="text-slate-400">
+        <p className="text-ink-body">
           No drawing sets yet. Add one per discipline the job issues separately — the log of which
           revision governed on which date is what answers &ldquo;why did the crew build it that
           way.&rdquo;
         </p>
       ) : (
-        <ul className="divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900">
+        <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
           {rows.map((set) => (
             <DrawingSetRow
               key={set.id}

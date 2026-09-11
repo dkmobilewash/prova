@@ -53,21 +53,21 @@ export default function AppError({
 
   return (
     <div className="mx-auto max-w-2xl px-6 py-12">
-      <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 p-5">
-        <h1 className="text-lg font-semibold text-rose-200">This page didn&apos;t load</h1>
+      <div className="rounded-lg border border-rose-300 bg-tag-rose p-5">
+        <h1 className="text-lg font-semibold text-tag-rose-ink">This page didn&apos;t load</h1>
         {staleDeploy ? (
-          <p className="mt-2 text-sm text-rose-100/90">
+          <p className="mt-2 text-sm text-tag-rose-ink/90">
             A new version of Prova was published while this page was open, and part of it is now
             missing from your browser&apos;s cache. This is not a problem with anything you just
             saved — reloading fetches the new version.
           </p>
         ) : (
-          <p className="mt-2 text-sm text-rose-100/90">
+          <p className="mt-2 text-sm text-tag-rose-ink/90">
             Something went wrong reading your data. This is a problem loading the page, not
             necessarily a problem with anything you just saved.
           </p>
         )}
-        <p className="mt-3 text-sm font-medium text-rose-100">
+        <p className="mt-3 text-sm font-medium text-tag-rose-ink">
           If you were saving something, don&apos;t submit it again yet — reload first and check
           whether it&apos;s there. Saving twice is how duplicates get made.
         </p>
@@ -90,7 +90,7 @@ export default function AppError({
           )}
           <a
             href="/dashboard"
-            className="rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-200 hover:bg-slate-800"
+            className="rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-neutral-100"
           >
             Back to jobs
           </a>
@@ -101,11 +101,11 @@ export default function AppError({
             applies migrations on merge — so saying it there would be noise
             pointing at the wrong thing. */}
         {process.env.NEXT_PUBLIC_DEPLOY_ENV === "preview" && (
-          <div className="mt-5 rounded-md border border-amber-500/30 bg-amber-500/10 p-3">
-            <p className="text-sm font-medium text-amber-100">
+          <div className="mt-5 rounded-md border border-amber-300 bg-tag-amber p-3">
+            <p className="text-sm font-medium text-tag-amber-ink">
               On a preview, this is usually the database, not the code.
             </p>
-            <p className="mt-1 text-sm text-amber-100/80">
+            <p className="mt-1 text-sm text-tag-amber-ink/80">
               A branch that adds a table or a column runs against a database that doesn&apos;t
               have it yet — migrations only land when the PR merges. Run the{" "}
               <span className="font-medium">Migrate demo database</span> workflow from THIS
@@ -119,7 +119,7 @@ export default function AppError({
             logs — quoting it is the difference between "it broke" and a
             report someone can actually trace. */}
         {error.digest && (
-          <p className="mt-5 text-xs text-rose-200/70">
+          <p className="mt-5 text-xs text-tag-rose-ink/70">
             If you report this, include reference <code className="font-mono">{error.digest}</code>.
           </p>
         )}

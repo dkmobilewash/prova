@@ -47,7 +47,7 @@ export function DrawingSetFields({
           placeholder="e.g. Architectural, Structural, Life Safety"
           className={inputClass}
         />
-        <span className="text-xs text-slate-500">
+        <span className="text-xs text-ink-muted">
           Whatever the job calls it. One name per job — two sets with the same name would make
           &ldquo;which is current&rdquo; unanswerable.
         </span>

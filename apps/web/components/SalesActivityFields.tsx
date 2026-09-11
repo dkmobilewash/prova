@@ -67,7 +67,7 @@ export function SalesActivityFields({
             defaultValue={defaults.followUpOn ?? ""}
             className={inputClass}
           />
-          <span className="mt-1 block text-xs font-normal text-slate-500">
+          <span className="mt-1 block text-xs font-normal text-ink-muted">
             Leave blank if nothing is owed. This replaces whatever the lead owed before.
           </span>
         </label>

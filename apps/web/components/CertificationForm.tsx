@@ -39,16 +39,16 @@ export function CertificationForm({
 
   if (workers.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed border-slate-700 bg-slate-900/50 p-5">
-        <p className="text-sm font-medium text-slate-200">Nobody on the team yet</p>
-        <p className="mt-1 text-sm text-slate-400">
+      <div className="rounded-lg border border-dashed border-line-card bg-surface/50 p-5">
+        <p className="text-sm font-medium text-ink-label">Nobody on the team yet</p>
+        <p className="mt-1 text-sm text-ink-body">
           A certification belongs to a person, and the point of recording one is knowing whether the
           crew you dispatch tomorrow is clear. Invite the people you dispatch and this form appears
           here.
         </p>
         <Link
           href="/team"
-          className="mt-3 inline-block rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
+          className="mt-3 inline-block rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500"
         >
           Go to Team
         </Link>
@@ -61,7 +61,7 @@ export function CertificationForm({
       <button
         type="button"
         onClick={() => setIsOpen(true)}
-        className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
+        className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500"
       >
         Record a certification
       </button>
@@ -87,24 +87,24 @@ export function CertificationForm({
           }
         });
       }}
-      className="flex flex-col gap-3 rounded-lg border border-slate-800 bg-slate-900 p-4"
+      className="flex flex-col gap-3 rounded-lg border border-line-card bg-surface p-4"
     >
-      <h2 className="text-sm font-semibold text-slate-300">Record a certification</h2>
+      <h2 className="text-sm font-semibold text-ink-label">Record a certification</h2>
       <FormDraftNotice draft={draft} />
-      <p className="text-xs text-slate-500">
+      <p className="text-xs text-ink-muted">
         A renewal is a new record, not an edit of the old one. The superseded card stays on file —
         it is what says who was qualified on the day of an incident.
       </p>
 
       <CertificationFields defaults={EMPTY} workers={workers} defaultWorkerId={defaultWorkerId} />
 
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {error && <p className="text-sm text-red-600">{error}</p>}
 
       <div className="flex gap-2">
         <button
           type="submit"
           disabled={isPending}
-          className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+          className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
         >
           {isPending ? "Saving…" : "Save certification"}
         </button>
@@ -115,7 +115,7 @@ export function CertificationForm({
             setIsOpen(false);
             setError(null);
           }}
-          className="rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50"
+          className="rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-neutral-100 disabled:opacity-50"
         >
           Cancel
         </button>

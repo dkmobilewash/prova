@@ -24,7 +24,7 @@ export type MessageRowData = MessageData & {
   wentOut: boolean;
 };
 
-const linkBtn = "text-xs text-slate-500 underline disabled:opacity-50";
+const linkBtn = "text-xs text-ink-muted underline disabled:opacity-50";
 
 export function MessageRow({
   message,
@@ -53,12 +53,12 @@ export function MessageRow({
 
   const chip =
     state === "DELIVERED"
-      ? "bg-green-500/15 text-green-300"
+      ? "bg-tag-green text-tag-green-ink"
       : attention
-        ? "bg-red-500/15 text-red-300"
+        ? "bg-tag-rose text-tag-rose-ink"
         : isStale
-          ? "bg-amber-500/15 text-amber-300"
-          : "bg-slate-800 text-slate-400";
+          ? "bg-tag-amber text-tag-amber-ink"
+          : "bg-neutral-100 text-ink-body";
 
   // The reason a bounce is actionable at all. Surfaced on the row rather
   // than hidden behind the expander, because a bounce nobody reads is the
@@ -69,35 +69,35 @@ export function MessageRow({
   return (
     <li className="flex flex-col gap-2 p-4">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="font-mono text-xs text-slate-500">
+        <span className="font-mono text-xs text-ink-muted">
           {channelLabel(message.channel)}
         </span>
-        <span className="text-slate-100">
+        <span className="text-ink">
           {message.subject ?? "(no subject)"}
         </span>
         <span className={`rounded px-1.5 py-0.5 text-xs ${chip}`}>
           {stateLabel(state)}
         </span>
         {isStale && !attention && (
-          <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-xs text-amber-300">
+          <span className="rounded bg-tag-amber px-1.5 py-0.5 text-xs text-tag-amber-ink">
             No confirmation since {message.sentAt}
           </span>
         )}
       </div>
 
-      <p className="text-sm text-slate-300">
+      <p className="text-sm text-ink-label">
         To {recipient(message)}
-        <span className="text-slate-500">
+        <span className="text-ink-muted">
           {" · from "}
           {message.fromAddress}
         </span>
       </p>
 
-      {reason && <p className="text-sm text-red-300">{reason}</p>}
+      {reason && <p className="text-sm text-tag-rose-ink">{reason}</p>}
 
-      <p className="text-xs text-slate-500">
+      <p className="text-xs text-ink-muted">
         {message.jobName && (
-          <span className="text-blue-400">{message.jobName} · </span>
+          <span className="text-link">{message.jobName} · </span>
         )}
         sent {message.sentAt}
         {message.relatedType && ` · about ${relatedLabel(message.relatedType)}`}
@@ -119,7 +119,7 @@ export function MessageRow({
                 onConfirm={() => run(() => deleteOutboundMessage(message.id))}
                 deleteClassName={`${linkBtn} ml-2`}
                 cancelClassName={`${linkBtn} ml-2`}
-                confirmClassName="ml-2 text-xs text-red-400 underline disabled:opacity-50"
+                confirmClassName="ml-2 text-xs text-red-600 underline disabled:opacity-50"
               />
             ) : null
           }
@@ -136,32 +136,32 @@ export function MessageRow({
       </p>
 
       {open && (
-        <div className="rounded-md border border-slate-800 bg-slate-950 p-3">
-          <p className="whitespace-pre-wrap text-sm text-slate-300">
+        <div className="rounded-md border border-line-row bg-canvas p-3">
+          <p className="whitespace-pre-wrap text-sm text-ink-label">
             {message.body}
           </p>
           {message.events.length > 0 && (
-            <ul className="mt-3 flex flex-col gap-1 border-l-2 border-slate-700 pl-3">
+            <ul className="mt-3 flex flex-col gap-1 border-l-2 border-line-card pl-3">
               {newestFirst(message.events).map((event) => (
-                <li key={event.id} className="text-xs text-slate-400">
-                  <span className="font-mono text-slate-500">{event.type}</span>
+                <li key={event.id} className="text-xs text-ink-body">
+                  <span className="font-mono text-ink-muted">{event.type}</span>
                   {` · ${event.occurredAt.replace("T", " ").slice(0, 16)}`}
                   {event.detail && (
-                    <span className="text-slate-500"> — {event.detail}</span>
+                    <span className="text-ink-muted"> — {event.detail}</span>
                   )}
                 </li>
               ))}
             </ul>
           )}
           {message.events.length === 0 && (
-            <p className="mt-3 text-xs text-slate-500">
+            <p className="mt-3 text-xs text-ink-muted">
               The provider hasn&apos;t reported anything about this one yet.
             </p>
           )}
         </div>
       )}
 
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {error && <p className="text-sm text-red-600">{error}</p>}
     </li>
   );
 }

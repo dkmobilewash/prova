@@ -128,24 +128,24 @@ export function FormDraftNotice({ draft }: { draft: FormDraft }) {
   if (!draft.restored) return null;
   return (
     <div
-      className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-slate-700 bg-slate-950 px-3 py-2"
+      className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-line-card bg-canvas px-3 py-2"
       data-draft="restored"
     >
-      <p className="text-sm text-slate-300">
+      <p className="text-sm text-ink-label">
         Brought back what you&apos;d typed here earlier — it was never saved.
       </p>
       <span className="flex gap-2">
         <button
           type="button"
           onClick={draft.discard}
-          className="inline-flex min-h-11 items-center justify-center rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:border-slate-500"
+          className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-neutral-100"
         >
           Discard it
         </button>
         <button
           type="button"
           onClick={draft.dismiss}
-          className="inline-flex min-h-11 items-center justify-center rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:border-slate-500"
+          className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-neutral-100"
         >
           Dismiss
         </button>

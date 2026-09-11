@@ -151,17 +151,17 @@ export default async function CertifiedPayrollPage({
   return (
     <div className="mx-auto max-w-4xl p-6 print:p-0">
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3 print:hidden">
-        <Link href={`/jobs/${job.id}`} className="text-sm text-blue-400 hover:underline">
+        <Link href={`/jobs/${job.id}`} className="text-sm text-link hover:underline">
           ← Back to job
         </Link>
         <PrintButton />
       </div>
 
-      <h1 className="text-xl font-semibold text-slate-100">Certified payroll — {job.name}</h1>
-      <p className="mt-1 text-sm text-slate-500">
+      <h1 className="text-xl font-semibold text-ink">Certified payroll — {job.name}</h1>
+      <p className="mt-1 text-sm text-ink-muted">
         {job.contact.name} · Week of {formatDate(weekStart)} – {formatDate(weekEnd)}
       </p>
-      <p className="mt-3 max-w-2xl text-xs text-slate-500">
+      <p className="mt-3 max-w-2xl text-xs text-ink-muted">
         This is a certified-payroll-style summary of logged hours and computed wages for this job/week — it is not
         formatted as a federal WH-347 or state-equivalent form. Wage costs use the FringeRateSchedule effective for
         each craft classification and date; rows without a craft tag or an effective schedule show hours only,
@@ -171,38 +171,38 @@ export default async function CertifiedPayrollPage({
       <div className="mb-4 mt-4 flex items-center justify-between gap-3 print:hidden">
         <Link
           href={`/jobs/${job.id}/certified-payroll?weekStart=${isoDate(previousWeek)}`}
-          className="text-sm text-slate-400 hover:underline"
+          className="text-sm text-ink-body hover:underline"
         >
           ← Previous week
         </Link>
         <Link
           href={`/jobs/${job.id}/certified-payroll?weekStart=${isoDate(nextWeek)}`}
-          className="text-sm text-slate-400 hover:underline"
+          className="text-sm text-ink-body hover:underline"
         >
           Next week →
         </Link>
       </div>
 
       {employeeSummaries.length === 0 ? (
-        <p className="mt-8 text-sm text-slate-500">No time entries logged on this job for this week.</p>
+        <p className="mt-8 text-sm text-ink-muted">No time entries logged on this job for this week.</p>
       ) : (
         <div className="mt-4 flex flex-col gap-6">
           {/* Ahead of the summaries rather than as a footnote: this decides
               whether the week can be filed at all, and a note under the last
               table is the thing nobody reads before printing. */}
           {missingName.size > 0 && (
-            <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-4 text-sm">
-              <p className="font-medium text-amber-300">
+            <div className="rounded-lg border border-amber-300 bg-amber-500/5 p-4 text-sm">
+              <p className="font-medium text-tag-amber-ink">
                 {missingName.size === 1
                   ? "One person on this week has no name on their account."
                   : `${missingName.size} people on this week have no name on their account.`}
               </p>
-              <p className="mt-1 text-xs text-amber-200/80">
+              <p className="mt-1 text-xs text-tag-amber-ink/80">
                 The worker-name column on a WH-347 is a statement about who did the work, so it is
                 left as &ldquo;Name not recorded&rdquo; rather than filled with an email address.
                 Set the name on each account under Team, then reload this page before filing.
               </p>
-              <ul className="mt-2 flex flex-col gap-0.5 text-xs text-amber-200/80">
+              <ul className="mt-2 flex flex-col gap-0.5 text-xs text-tag-amber-ink/80">
                 {[...missingName.values()].map((email) => (
                   <li key={email}>{email}</li>
                 ))}
@@ -210,11 +210,11 @@ export default async function CertifiedPayrollPage({
             </div>
           )}
           {employeeSummaries.map((employee) => (
-            <div key={employee.employeeUserId} className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-              <p className="font-medium text-slate-100">
+            <div key={employee.employeeUserId} className="rounded-lg border border-line-card bg-surface p-4">
+              <p className="font-medium text-ink">
                 {employee.employeeName}
                 {missingName.has(employee.employeeUserId) && (
-                  <span className="ml-2 text-xs font-normal text-amber-400">
+                  <span className="ml-2 text-xs font-normal text-amber-700">
                     — no name on {missingName.get(employee.employeeUserId)}
                   </span>
                 )}
@@ -222,7 +222,7 @@ export default async function CertifiedPayrollPage({
               <div className="mt-2 overflow-x-auto">
                 <table className="w-full min-w-[480px] text-left text-sm">
                   <thead>
-                    <tr className="text-xs text-slate-500">
+                    <tr className="text-xs text-ink-muted">
                       <th className="pb-1 pr-3 font-normal">Classification</th>
                       {PAY_TYPE_COLUMNS.map((col) => (
                         <th key={col.value} className="pb-1 pr-3 text-right font-normal">
@@ -235,24 +235,24 @@ export default async function CertifiedPayrollPage({
                   </thead>
                   <tbody>
                     {employee.rows.map((row) => (
-                      <tr key={row.craftLabel} className="border-t border-slate-800">
-                        <td className="py-1 pr-3 text-slate-300">{row.craftLabel}</td>
+                      <tr key={row.craftLabel} className="border-t border-line-row">
+                        <td className="py-1 pr-3 text-ink-label">{row.craftLabel}</td>
                         {PAY_TYPE_COLUMNS.map((col) => (
-                          <td key={col.value} className="py-1 pr-3 text-right text-slate-400">
+                          <td key={col.value} className="py-1 pr-3 text-right text-ink-body">
                             {row.hoursByPayType[col.value] > 0 ? row.hoursByPayType[col.value] : "—"}
                           </td>
                         ))}
-                        <td className="py-1 pr-3 text-right text-slate-100">{row.totalHours}</td>
-                        <td className="py-1 text-right text-slate-100">
+                        <td className="py-1 pr-3 text-right text-ink">{row.totalHours}</td>
+                        <td className="py-1 text-right text-ink">
                           {row.wageCost != null ? money(row.wageCost) : "—"}
-                          {row.hasUncomputedHours && <span className="ml-1 text-amber-400">*</span>}
+                          {row.hasUncomputedHours && <span className="ml-1 text-amber-700">*</span>}
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 border-t border-slate-800 pt-2 text-xs text-slate-500">
+              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 border-t border-line-row pt-2 text-xs text-ink-muted">
                 <span>Total hours: {employee.totalHours}</span>
                 <span>Total wages: {employee.totalWageCost != null ? money(employee.totalWageCost) : "—"}</span>
                 {employee.perDiemTotal > 0 && <span>Per diem: {money(employee.perDiemTotal)}</span>}
@@ -261,10 +261,10 @@ export default async function CertifiedPayrollPage({
             </div>
           ))}
 
-          <div className="rounded-lg border border-slate-800 bg-slate-900 p-4 text-sm">
-            <p className="text-slate-100">Week total: {weekTotalHours} hours across {employeeSummaries.length} employee(s)</p>
-            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 border-t border-slate-800 pt-2 text-xs text-slate-500">
-              <span className="text-slate-400">Hours by day:</span>
+          <div className="rounded-lg border border-line-card bg-surface p-4 text-sm">
+            <p className="text-ink">Week total: {weekTotalHours} hours across {employeeSummaries.length} employee(s)</p>
+            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 border-t border-line-row pt-2 text-xs text-ink-muted">
+              <span className="text-ink-body">Hours by day:</span>
               {hoursByDay.map(([iso, hours]) => (
                 <span key={iso}>
                   {dayLabel(new Date(`${iso}T00:00:00.000Z`))} — {hours}
@@ -272,7 +272,7 @@ export default async function CertifiedPayrollPage({
               ))}
             </div>
             {anyUncomputed && (
-              <p className="mt-1 text-xs text-amber-400">
+              <p className="mt-1 text-xs text-amber-700">
                 * Some hours have no craft tag or no effective fringe rate schedule and aren&rsquo;t priced above.
               </p>
             )}

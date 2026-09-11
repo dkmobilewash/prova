@@ -35,14 +35,14 @@ export function StaleDeployBanner() {
   return (
     <div
       role="alert"
-      className="fixed inset-x-0 top-0 z-50 border-b border-amber-500/40 bg-amber-950 px-4 py-3 text-center text-sm text-amber-100"
+      className="fixed inset-x-0 top-0 z-50 border-b border-amber-300 bg-tag-amber px-4 py-3 text-center text-sm text-tag-amber-ink"
     >
       A new version of Prova was published while this page was open.{" "}
       <span className="font-medium">Finish anything you&apos;re typing first</span> — reloading
       discards unsaved form fields, but nothing you&apos;ve already saved is at risk.{" "}
       <button
         onClick={() => window.location.reload()}
-        className="ml-2 rounded-md bg-amber-600 px-3 py-1 font-medium text-white hover:bg-amber-500"
+        className="ml-2 rounded-md bg-amber-700 px-3 py-1 font-medium text-white hover:bg-amber-600"
       >
         Reload now
       </button>

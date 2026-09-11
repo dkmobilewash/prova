@@ -34,12 +34,12 @@ export function SalesLeadEditForm({ leadId, defaults }: { leadId: string; defaul
     >
       <SalesLeadFields defaults={defaults} />
 
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {error && <p className="text-sm text-red-600">{error}</p>}
 
       <SubmitButton
         type="submit"
         disabled={isPending}
-        className="mt-2 inline-flex w-fit items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+        className="mt-2 inline-flex w-fit items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
       >
         {isPending ? "Saving…" : "Save"}
       </SubmitButton>

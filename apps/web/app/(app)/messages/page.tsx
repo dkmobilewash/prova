@@ -87,23 +87,23 @@ export default async function MessagesPage({
 
   const chip = (active: boolean) =>
     `rounded-md border px-3 py-1.5 text-sm ${
-      active ? "border-blue-500 text-blue-400" : "border-slate-700 text-slate-300 hover:border-slate-500"
+      active ? "border-brand text-link" : "border-line-card text-ink-label hover:bg-neutral-100"
     }`;
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-slate-100">Messages</h1>
-      <p className="mb-6 text-sm text-slate-400">
+      <h1 className="mb-2 text-xl font-semibold text-ink">Messages</h1>
+      <p className="mb-6 text-sm text-ink-body">
         Everything this company has sent, and whether it actually arrived. Mail that silently never
         lands is the failure nobody catches — you find out when the GC says they never heard from
         you, on a date that matters.
       </p>
 
       {setupProblem && (
-        <div className="mb-6 rounded-lg border border-amber-700/60 bg-amber-500/10 p-4">
-          <p className="text-sm font-medium text-amber-200">Sending isn&apos;t set up yet</p>
-          <p className="mt-1 text-sm text-amber-100/80">{setupProblem}</p>
-          <p className="mt-2 text-xs text-amber-100/60">
+        <div className="mb-6 rounded-lg border border-amber-300 bg-tag-amber p-4">
+          <p className="text-sm font-medium text-tag-amber-ink">Sending isn&apos;t set up yet</p>
+          <p className="mt-1 text-sm text-tag-amber-ink/80">{setupProblem}</p>
+          <p className="mt-2 text-xs text-tag-amber-ink/60">
             It needs <span className="font-mono">RESEND_API_KEY</span> and{" "}
             <span className="font-mono">OUTBOUND_EMAIL_FROM</span> set to an address on your own
             domain, verified with the provider — plus{" "}
@@ -119,28 +119,28 @@ export default async function MessagesPage({
       </div>
 
       {truncated && (
-        <p className="mb-2 text-xs text-slate-500">
+        <p className="mb-2 text-xs text-ink-muted">
           Showing the most recent {MESSAGE_LIMIT} messages. The three figures below are counted
           over those {MESSAGE_LIMIT}, not over everything ever sent.
         </p>
       )}
 
       <div className="mb-4 grid gap-3 sm:grid-cols-3">
-        <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-          <p className={`text-2xl font-semibold ${problems > 0 ? "text-red-300" : "text-slate-100"}`}>
+        <div className="rounded-lg border border-line-card bg-surface p-4">
+          <p className={`text-2xl font-semibold ${problems > 0 ? "text-tag-rose-ink" : "text-ink"}`}>
             {problems}
           </p>
-          <p className="text-xs text-slate-500">Bounced, refused or spam-flagged</p>
+          <p className="text-xs text-ink-muted">Bounced, refused or spam-flagged</p>
         </div>
-        <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-          <p className={`text-2xl font-semibold ${unconfirmed > 0 ? "text-amber-300" : "text-slate-100"}`}>
+        <div className="rounded-lg border border-line-card bg-surface p-4">
+          <p className={`text-2xl font-semibold ${unconfirmed > 0 ? "text-tag-amber-ink" : "text-ink"}`}>
             {unconfirmed}
           </p>
-          <p className="text-xs text-slate-500">Sent, never confirmed</p>
+          <p className="text-xs text-ink-muted">Sent, never confirmed</p>
         </div>
-        <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-          <p className="text-2xl font-semibold text-green-300">{rate === null ? "—" : `${rate}%`}</p>
-          <p className="text-xs text-slate-500">
+        <div className="rounded-lg border border-line-card bg-surface p-4">
+          <p className="text-2xl font-semibold text-tag-green-ink">{rate === null ? "—" : `${rate}%`}</p>
+          <p className="text-xs text-ink-muted">
             {rate === null ? "Nothing confirmed yet" : "Reached the far end"}
           </p>
         </div>
@@ -155,18 +155,18 @@ export default async function MessagesPage({
         </Link>
       </div>
 
-      <h2 className="mb-3 text-sm font-semibold text-slate-300">
+      <h2 className="mb-3 text-sm font-semibold text-ink-label">
         {visible.length} {visible.length === 1 ? "message" : "messages"}
       </h2>
 
       {visible.length === 0 ? (
-        <p className="text-slate-400">
+        <p className="text-ink-body">
           {rows.length === 0
             ? "Nothing sent yet. Once sending is set up, anything the app sends on your behalf is recorded here with what the provider said happened to it."
             : "Nothing needs attention — everything sent has either been delivered or is still in flight."}
         </p>
       ) : (
-        <ul className="divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900">
+        <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
           {visible.map((message) => (
             <MessageRow
               key={message.id}

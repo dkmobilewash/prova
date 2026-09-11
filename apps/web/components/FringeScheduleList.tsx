@@ -15,7 +15,7 @@ import { money } from "@/lib/money";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 
 const btn =
-  "rounded-md border border-slate-700 px-2 py-1 text-xs text-slate-300 hover:border-slate-500 disabled:opacity-50";
+  "rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-100 disabled:opacity-50";
 
 /** The effective-dated wage and fringe rates for one classification.
  *
@@ -75,9 +75,9 @@ export function FringeScheduleList({
     (s.pensionRate ?? 0) + (s.vacationRate ?? 0) + (s.healthWelfareRate ?? 0) + (s.trainingRate ?? 0);
 
   return (
-    <div className="mt-2 border-l-2 border-slate-800 pl-3">
+    <div className="mt-2 border-l-2 border-line-row pl-3">
       {schedules.length === 0 ? (
-        <p className="text-xs text-amber-300">
+        <p className="text-xs text-tag-amber-ink">
           No rate recorded — hours on this classification can&apos;t be priced, and the remittance
           reports them as unpriced rather than as $0.
         </p>
@@ -88,16 +88,16 @@ export function FringeScheduleList({
               schedule.effectiveFrom <= today &&
               (schedule.effectiveTo === null || schedule.effectiveTo >= today);
             return (
-              <li key={schedule.id} className="text-xs text-slate-400">
-                <span className="font-mono text-slate-300">{money(schedule.baseWage)}</span> base +{" "}
-                <span className="font-mono text-slate-300">{money(fringeTotal(schedule))}</span> fringe
-                <span className="text-slate-500">
+              <li key={schedule.id} className="text-xs text-ink-body">
+                <span className="font-mono text-ink-label">{money(schedule.baseWage)}</span> base +{" "}
+                <span className="font-mono text-ink-label">{money(fringeTotal(schedule))}</span> fringe
+                <span className="text-ink-muted">
                   {" "}
                   · from {schedule.effectiveFrom}
                   {schedule.effectiveTo ? ` to ${schedule.effectiveTo}` : ""}
                 </span>
                 {current && (
-                  <span className="ml-2 rounded bg-green-500/15 px-1.5 py-0.5 text-green-300">in force</span>
+                  <span className="ml-2 rounded bg-tag-green px-1.5 py-0.5 text-tag-green-ink">in force</span>
                 )}
 
                 {endingId === schedule.id ? (
@@ -141,9 +141,9 @@ export function FringeScheduleList({
                           cancelLabel="cancel"
                           pending={isPending}
                           onConfirm={() => run(() => deleteFringeRateSchedule(schedule.id))}
-                          deleteClassName="text-slate-500 underline"
-                          cancelClassName="text-slate-400 underline"
-                          confirmClassName="text-red-400 underline"
+                          deleteClassName="text-ink-muted underline"
+                          cancelClassName="text-ink-body underline"
+                          confirmClassName="text-red-600 underline"
                         />
                       ) : null
                     }
@@ -156,7 +156,7 @@ export function FringeScheduleList({
                           setEndingId(schedule.id);
                           setError(null);
                         }}
-                        className="text-blue-400 underline"
+                        className="text-link underline"
                       >
                         end it
                       </button>
@@ -169,15 +169,15 @@ export function FringeScheduleList({
         </ul>
       )}
 
-      {error && <p className="mt-1 text-xs text-red-400">{error}</p>}
+      {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
 
       {isAdding ? (
         <form
           onSubmit={(e) => submit(e, createFringeRateSchedule, () => setIsAdding(false))}
-          className="mt-2 flex flex-col gap-2 rounded-md border border-slate-700 p-2"
+          className="mt-2 flex flex-col gap-2 rounded-md border border-line-card p-2"
         >
           <input type="hidden" name="craftClassificationId" value={craftId} />
-          <p className="text-xs text-slate-400">Rate for {craftName}</p>
+          <p className="text-xs text-ink-body">Rate for {craftName}</p>
           <div className="grid gap-2 sm:grid-cols-5">
             {[
               ["baseWage", "Base wage", true],
@@ -200,14 +200,14 @@ export function FringeScheduleList({
               </label>
             ))}
           </div>
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-ink-muted">
             Blank on a fund means nothing is contributed to it — different from zero being unknown.
           </p>
           <div className="grid gap-2 sm:grid-cols-2">
             <label className={labelClass}>
               <span className="text-xs">In force from</span>
               <input type="date" name="effectiveFrom" required className={`${inputClass} py-1 text-xs`} />
-              <span className="text-xs text-slate-500">
+              <span className="text-xs text-ink-muted">
                 Not pre-filled — a rate usually took effect on a date the CBA names, not today.
               </span>
             </label>
@@ -216,7 +216,7 @@ export function FringeScheduleList({
               <input type="date" name="effectiveTo" className={`${inputClass} py-1 text-xs`} />
             </label>
           </div>
-          {error && <p className="text-xs text-red-400">{error}</p>}
+          {error && <p className="text-xs text-red-600">{error}</p>}
           <div className="flex gap-2">
             <button type="submit" disabled={isPending} className={btn}>
               {isPending ? "Saving…" : "Save rate"}
@@ -234,7 +234,7 @@ export function FringeScheduleList({
             setIsAdding(true);
             setError(null);
           }}
-          className="mt-1 text-xs text-blue-400 underline disabled:opacity-50"
+          className="mt-1 text-xs text-link underline disabled:opacity-50"
         >
           Add a rate
         </button>

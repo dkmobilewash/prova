@@ -419,8 +419,8 @@ export default async function FringeRemittanceDocumentPage({
         </Link>
         <div className="mt-3 flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-semibold text-slate-100">Fringe remittance</h1>
-            <p className="mt-1 text-sm text-slate-400">
+            <h1 className="text-2xl font-semibold text-ink">Fringe remittance</h1>
+            <p className="mt-1 text-sm text-ink-body">
               One report per local, {start} through {end}. Each hall gets its own sheet and its own
               cheque, so nothing here is totalled across halls.
             </p>
@@ -429,28 +429,28 @@ export default async function FringeRemittanceDocumentPage({
         </div>
 
         <div className="mt-4 flex flex-wrap items-center gap-3">
-          <Link href={href(previousMonth, localParam)} className="text-sm text-blue-400">
+          <Link href={href(previousMonth, localParam)} className="text-sm text-link">
             ← {previousMonth}
           </Link>
-          <span className="text-sm text-slate-300">{month}</span>
-          <Link href={href(nextMonth, localParam)} className="text-sm text-blue-400">
+          <span className="text-sm text-ink-label">{month}</span>
+          <Link href={href(nextMonth, localParam)} className="text-sm text-link">
             {nextMonth} →
           </Link>
           {localParam && (
-            <Link href={href(month)} className="text-sm text-blue-400">
+            <Link href={href(month)} className="text-sm text-link">
               Show every local
             </Link>
           )}
         </div>
 
         {reconciliation.length === 0 && report.locals.length > 1 && !localParam && (
-          <p className="mt-4 text-xs text-slate-500">
+          <p className="mt-4 text-xs text-ink-muted">
             Printing now produces {report.locals.length} sheets, one per local, each starting on its
             own page. To print just one, open it on its own:{" "}
             {report.locals.map((local, index) => (
               <span key={local.unionLocalId}>
                 {index > 0 && " · "}
-                <Link href={href(month, local.unionLocalId)} className="text-blue-400">
+                <Link href={href(month, local.unionLocalId)} className="text-link">
                   {local.unionLocalLabel}
                 </Link>
               </span>
@@ -464,32 +464,32 @@ export default async function FringeRemittanceDocumentPage({
         // The refusal. No sheet is rendered at all — printing a remittance
         // whose lines disagree with its own total is the one thing a
         // fund's clerk checks before looking at the money.
-        <div className="mt-6 rounded-lg border border-red-500/40 bg-red-500/10 p-4">
-          <p className="text-sm font-semibold text-red-300">
+        <div className="mt-6 rounded-lg border border-red-300 bg-tag-rose p-4">
+          <p className="text-sm font-semibold text-tag-rose-ink">
             This report will not print. Its member lines do not add up to the classification totals
             above them.
           </p>
-          <p className="mt-1 text-xs text-red-200/80">
+          <p className="mt-1 text-xs text-tag-rose-ink/80">
             That is a bug in cstream, not something you can fix from this page. Send these lines to
             support; the figures themselves are withheld rather than shown, because a remittance
             that does not reconcile is worse than no remittance.
           </p>
           <ul className="mt-3 flex flex-col gap-1.5">
             {reconciliation.map((error) => (
-              <li key={error} className="font-mono text-xs leading-snug text-red-200">
+              <li key={error} className="font-mono text-xs leading-snug text-tag-rose-ink">
                 {error}
               </li>
             ))}
           </ul>
         </div>
       ) : sheets.length === 0 ? (
-        <div className="mt-6 rounded-lg border border-slate-800 bg-slate-900 p-4">
-          <p className="text-sm text-slate-300">
+        <div className="mt-6 rounded-lg border border-line-card bg-surface p-4">
+          <p className="text-sm text-ink-label">
             {localParam
               ? "That local has no hours in this month, so there is no report to file for it."
               : "No hours were logged this month against a craft classification, so there is nothing to remit."}
           </p>
-          <p className="mt-1 text-xs text-slate-500">
+          <p className="mt-1 text-xs text-ink-muted">
             A hall you are signatory to may still expect a report saying so — check the agreement
             before assuming silence is acceptable.
           </p>

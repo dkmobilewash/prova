@@ -14,11 +14,11 @@ export default async function VendorsPage() {
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-slate-100">Vendors</h1>
-      <p className="mb-6 text-sm text-slate-400">
+      <h1 className="mb-2 text-xl font-semibold text-ink">Vendors</h1>
+      <p className="mb-6 text-sm text-ink-body">
         Suppliers and service vendors you buy from — board and steel suppliers, equipment rental, scaffolding.
         What each of them has quoted, and which way those prices are moving, is on{" "}
-        <Link href="/vendors/pricing" className="text-blue-400 hover:text-blue-300">
+        <Link href="/vendors/pricing" className="text-link hover:text-link-hover">
           vendor pricing
         </Link>
         .
@@ -29,14 +29,14 @@ export default async function VendorsPage() {
       </div>
 
       <section>
-        <h2 className="mb-3 text-sm font-semibold text-slate-300">Directory</h2>
+        <h2 className="mb-3 text-sm font-semibold text-ink-label">Directory</h2>
         {vendors.length === 0 ? (
-          <p className="text-slate-400">
+          <p className="text-ink-body">
             No vendors yet. Add the suppliers you buy from most — board and steel, scaffolding,
             equipment rental — so material costs have a source attached to them.
           </p>
         ) : (
-          <ul className="divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900">
+          <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
             {vendors.map((vendor) => (
               <VendorRow
                 key={vendor.id}

@@ -36,7 +36,7 @@ export function WeekSummary({ text, label }: { text: string; label: string }) {
         <button
           type="button"
           onClick={() => setIsOpen((v) => !v)}
-          className="rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:border-slate-500"
+          className="rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-neutral-100"
         >
           {isOpen ? "Hide summary" : `Summary for ${label}`}
         </button>
@@ -44,7 +44,7 @@ export function WeekSummary({ text, label }: { text: string; label: string }) {
           <button
             type="button"
             onClick={copy}
-            className="rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:border-slate-500"
+            className="rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-neutral-100"
           >
             {copied ? "Copied" : "Copy"}
           </button>
@@ -53,10 +53,10 @@ export function WeekSummary({ text, label }: { text: string; label: string }) {
 
       {isOpen && (
         <>
-          <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap rounded-md border border-slate-800 bg-slate-950 p-3 text-xs leading-relaxed text-slate-300">
+          <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap rounded-md border border-line-row bg-canvas p-3 text-xs leading-relaxed text-ink-label">
             {text}
           </pre>
-          <p className="mt-1 text-xs text-slate-500">
+          <p className="mt-1 text-xs text-ink-muted">
             Days with no report are named in here rather than left out. A summary that lists
             only the days that exist reads as a complete week, and overstating your own record
             to a GC is worse than showing the hole.

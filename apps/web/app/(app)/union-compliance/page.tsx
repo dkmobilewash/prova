@@ -12,11 +12,11 @@ import { ApprenticeshipForm } from "@/components/ApprenticeshipForm";
 import { ApprenticeshipPanel } from "@/components/ApprenticeshipPanel";
 
 const STATUS_TONE: Record<string, string> = {
-  WITHIN: "text-green-300",
-  OVER: "text-red-300",
-  NO_JOURNEYMAN: "text-red-300",
-  INCOMPLETE: "text-amber-300",
-  NOT_APPLICABLE: "text-slate-500",
+  WITHIN: "text-tag-green-ink",
+  OVER: "text-tag-rose-ink",
+  NO_JOURNEYMAN: "text-tag-rose-ink",
+  INCOMPLETE: "text-tag-amber-ink",
+  NOT_APPLICABLE: "text-ink-muted",
 };
 
 const STATUS_LABEL: Record<string, string> = {
@@ -73,29 +73,29 @@ export default async function UnionCompliancePage({
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-slate-100">Union fringe &amp; apprenticeship</h1>
-      <p className="mb-2 text-sm text-slate-400">
+      <h1 className="mb-2 text-xl font-semibold text-ink">Union fringe &amp; apprenticeship</h1>
+      <p className="mb-2 text-sm text-ink-body">
         What is owed to the trust funds this month, and whether the crews ran within their
         apprentice-to-journeyman ratio. Both computed from the hours actually logged — nothing here
         is stored, and nothing here files anything for you.
       </p>
-      <p className="mb-6 text-xs text-slate-500">
-        Ratios are checked <span className="text-slate-400">per day</span>, because that is how the
+      <p className="mb-6 text-xs text-ink-muted">
+        Ratios are checked <span className="text-ink-body">per day</span>, because that is how the
         rule is written: a crew that runs two apprentices to one journeyman on Monday is out of ratio
         on Monday, and a monthly average would hide the exact day an inspector asks about. Hours on a
         craft with no tier recorded are never counted as journeyman hours — the day reads{" "}
-        <span className="text-slate-400">can&apos;t be judged</span> instead, so a half-configured
+        <span className="text-ink-body">can&apos;t be judged</span> instead, so a half-configured
         company never gets a clean bill of health.
       </p>
 
       <div className="mb-6 flex items-center gap-3">
-        <Link href={`/union-compliance?month=${previousMonth}`} className="text-sm text-blue-400">
+        <Link href={`/union-compliance?month=${previousMonth}`} className="text-sm text-link">
           ← {previousMonth}
         </Link>
-        <span className="text-sm text-slate-300">
+        <span className="text-sm text-ink-label">
           {start} to {end}
         </span>
-        <Link href={`/union-compliance?month=${nextMonth}`} className="text-sm text-blue-400">
+        <Link href={`/union-compliance?month=${nextMonth}`} className="text-sm text-link">
           {nextMonth} →
         </Link>
       </div>
@@ -103,36 +103,36 @@ export default async function UnionCompliancePage({
       {/* ------------------------------------------------ remittance --- */}
       <section className="mb-10">
         <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-sm font-semibold text-slate-300">Fringe remittance</h2>
-          <span className={`text-xs ${remittance.filed ? "text-green-300" : "text-amber-300"}`}>
+          <h2 className="text-sm font-semibold text-ink-label">Fringe remittance</h2>
+          <span className={`text-xs ${remittance.filed ? "text-tag-green-ink" : "text-tag-amber-ink"}`}>
             {remittance.filed
               ? "A filing covering this whole month is on record"
               : "No filing covering this whole month on record"}
           </span>
         </div>
 
-        <p className="mb-3 text-xs text-slate-500">
-          A rate hangs off the <span className="text-slate-400">classification</span>, not its tier,
+        <p className="mb-3 text-xs text-ink-muted">
+          A rate hangs off the <span className="text-ink-body">classification</span>, not its tier,
           so hours can be priced here on a day the ratio below can&apos;t judge. The two answer
           different questions — what is owed to the funds, and whether the crew was within ratio —
           and one being unanswerable doesn&apos;t make the other so.
         </p>
 
         {remittance.locals.length === 0 ? (
-          <p className="text-sm text-slate-400">
+          <p className="text-sm text-ink-body">
             No hours logged this month against a craft classification, so there is nothing to remit.
           </p>
         ) : (
           <div className="space-y-4">
             {remittance.locals.map((local) => (
-              <div key={local.unionLocalId} className="rounded-lg border border-slate-800 bg-slate-900 p-4">
+              <div key={local.unionLocalId} className="rounded-lg border border-line-card bg-surface p-4">
                 <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
-                  <p className="text-slate-100">{local.unionLocalLabel}</p>
-                  <p className="font-mono text-slate-100">{money(local.total)}</p>
+                  <p className="text-ink">{local.unionLocalLabel}</p>
+                  <p className="font-mono text-ink">{money(local.total)}</p>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[34rem] text-sm">
-                    <thead className="text-xs uppercase tracking-wide text-slate-500">
+                    <thead className="text-xs uppercase tracking-wide text-ink-muted">
                       <tr>
                         <th className="py-1 text-left font-medium">Classification</th>
                         <th className="py-1 text-right font-medium">Hours</th>
@@ -143,7 +143,7 @@ export default async function UnionCompliancePage({
                         <th className="py-1 text-right font-medium">Total</th>
                       </tr>
                     </thead>
-                    <tbody className="text-slate-300">
+                    <tbody className="text-ink-label">
                       {local.crafts.map((craft) => {
                         // Nothing on this row could be priced. Printing
                         // $0.00 five times reads as "nothing owed", which
@@ -151,13 +151,13 @@ export default async function UnionCompliancePage({
                         // isWhollyUnpriced.
                         const blank = isWhollyUnpriced(craft);
                         const cell = (value: number) =>
-                          blank ? <span className="text-slate-600">—</span> : money(value);
+                          blank ? <span className="text-ink-muted">—</span> : money(value);
                         return (
-                        <tr key={craft.craftClassificationId} className="border-t border-slate-800">
+                        <tr key={craft.craftClassificationId} className="border-t border-line-row">
                           <td className="py-1.5">
                             {craft.craftLabel}
                             {craft.uncomputedHours > 0 && (
-                              <span className="ml-2 text-xs text-amber-300">
+                              <span className="ml-2 text-xs text-tag-amber-ink">
                                 {craft.uncomputedHours} hrs unpriced
                               </span>
                             )}
@@ -179,11 +179,11 @@ export default async function UnionCompliancePage({
               </div>
             ))}
 
-            <p className="text-sm text-slate-400">
-              <span className="font-mono text-slate-200">{money(remittance.total)}</span> across{" "}
+            <p className="text-sm text-ink-body">
+              <span className="font-mono text-ink-label">{money(remittance.total)}</span> across{" "}
               {remittance.totalHours} hours.
               {remittance.uncomputedHours > 0 && (
-                <span className="text-amber-300">
+                <span className="text-tag-amber-ink">
                   {" "}
                   {remittance.uncomputedHours} of those hours could not be priced — no craft tag, or no
                   rate schedule in force on the day — so this total is short by whatever they are
@@ -197,21 +197,21 @@ export default async function UnionCompliancePage({
 
       {/* ----------------------------------------------------- ratio --- */}
       <section className="mb-10">
-        <h2 className="mb-3 text-sm font-semibold text-slate-300">Apprentice ratio</h2>
+        <h2 className="mb-3 text-sm font-semibold text-ink-label">Apprentice ratio</h2>
 
         {ratioReviews.length === 0 ? (
-          <p className="text-sm text-slate-400">No hours logged this month.</p>
+          <p className="text-sm text-ink-body">No hours logged this month.</p>
         ) : (
           <div className="space-y-4">
             {(flagged.length > 0 || incomplete.length > 0) && (
-              <p className="text-sm text-slate-400">
+              <p className="text-sm text-ink-body">
                 {flagged.length > 0 && (
-                  <span className="text-red-300">
+                  <span className="text-tag-rose-ink">
                     {flagged.length} {flagged.length === 1 ? "job" : "jobs"} went over the ratio.{" "}
                   </span>
                 )}
                 {incomplete.length > 0 && (
-                  <span className="text-amber-300">
+                  <span className="text-tag-amber-ink">
                     {incomplete.length} {incomplete.length === 1 ? "job has" : "jobs have"} days that
                     can&apos;t be judged.
                   </span>
@@ -222,22 +222,22 @@ export default async function UnionCompliancePage({
             {ratioReviews.map((review) => (
               <div
                 key={`${review.jobId}-${review.unionLocalId}`}
-                className="rounded-lg border border-slate-800 bg-slate-900 p-4"
+                className="rounded-lg border border-line-card bg-surface p-4"
               >
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <Link href={`/jobs/${review.jobId}`} className="text-slate-100">
+                  <Link href={`/jobs/${review.jobId}`} className="text-ink">
                     {review.jobName}
                   </Link>
-                  <span className="text-xs text-slate-500">{review.unionLocalLabel}</span>
+                  <span className="text-xs text-ink-muted">{review.unionLocalLabel}</span>
                 </div>
-                <p className="mt-1 text-xs text-slate-500">
+                <p className="mt-1 text-xs text-ink-muted">
                   {review.rule ? (
                     <>
                       {ratioLabel(review.rule)}
                       {review.rule.programStandardReference && ` · ${review.rule.programStandardReference}`}
                     </>
                   ) : (
-                    <span className="text-amber-300">
+                    <span className="text-tag-amber-ink">
                       No ratio rule recorded for this local — nothing to measure against
                     </span>
                   )}
@@ -248,9 +248,9 @@ export default async function UnionCompliancePage({
                     .filter((day) => day.status !== "NOT_APPLICABLE")
                     .map((day) => (
                       <li key={day.date} className="text-sm">
-                        <span className="font-mono text-xs text-slate-500">{day.date}</span>{" "}
+                        <span className="font-mono text-xs text-ink-muted">{day.date}</span>{" "}
                         <span className={STATUS_TONE[day.status]}>{STATUS_LABEL[day.status]}</span>
-                        <span className="text-slate-500">
+                        <span className="text-ink-muted">
                           {" "}
                           · {day.journeymanHours} jrny / {day.apprenticeHours} appr
                           {day.allowedApprenticeHours !== null && ` (allows ${day.allowedApprenticeHours})`}
@@ -260,7 +260,7 @@ export default async function UnionCompliancePage({
                       </li>
                     ))}
                   {review.days.every((day) => day.status === "NOT_APPLICABLE") && (
-                    <li className="text-sm text-slate-500">No apprentice hours this month.</li>
+                    <li className="text-sm text-ink-muted">No apprentice hours this month.</li>
                   )}
                 </ul>
               </div>
@@ -271,13 +271,13 @@ export default async function UnionCompliancePage({
 
       {/* --------------------------------------- apprenticeship --- */}
       <section className="mb-10">
-        <h2 className="mb-1 text-sm font-semibold text-slate-300">Apprenticeship programmes</h2>
-        <p className="mb-3 text-xs text-slate-500">
+        <h2 className="mb-1 text-sm font-semibold text-ink-label">Apprenticeship programmes</h2>
+        <p className="mb-3 text-xs text-ink-muted">
           The registration itself — sponsor, programme number, classroom hours and the sign-offs
           that close a period. On-the-job hours are read from the timesheets and stored nowhere
           here; a period is closed by a signature, never by an hour count reaching a line.
         </p>
-        <p className="mb-3 text-xs text-amber-300/80">
+        <p className="mb-3 text-xs text-tag-amber-ink/80">
           {/* Browser testing found this section reading "30 hrs" inches from
               "No hours logged this month" for the same person. Both were true
               under different windows, and nothing said so. */}
@@ -297,23 +297,23 @@ export default async function UnionCompliancePage({
       {/* ----------------------------------------------------- setup --- */}
       <section>
         <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-sm font-semibold text-slate-300">Locals, classifications and rates</h2>
-          <span className="text-xs text-slate-500">
+          <h2 className="text-sm font-semibold text-ink-label">Locals, classifications and rates</h2>
+          <span className="text-xs text-ink-muted">
             {untiered.length > 0 && (
-              <span className="text-amber-300">
+              <span className="text-tag-amber-ink">
                 {untiered.length} classification{untiered.length === 1 ? "" : "s"} not tiered
               </span>
             )}
             {untiered.length > 0 && unpriced.length > 0 && " · "}
             {unpriced.length > 0 && (
-              <span className="text-amber-300">
+              <span className="text-tag-amber-ink">
                 {unpriced.length} with no rate
               </span>
             )}
           </span>
         </div>
 
-        <p className="mb-3 text-xs text-slate-500">
+        <p className="mb-3 text-xs text-ink-muted">
           Everything above reads from here. A classification with no tier can&apos;t be counted on
           either side of a ratio, and one with no rate in force on a date can&apos;t be priced — both
           are reported as such rather than guessed.
@@ -324,13 +324,13 @@ export default async function UnionCompliancePage({
         </div>
 
         {setup.length === 0 ? (
-          <p className="text-slate-400">
+          <p className="text-ink-body">
             No locals recorded. Add the one you work under and its classifications — nothing here is
             seeded, because there is no verified source for real local numbers and a wrong entry would
             attribute your CBA to the wrong hall.
           </p>
         ) : (
-          <ul className="divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900">
+          <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
             {setup.map((local) => (
               <UnionLocalCard
                 key={local.agreementId}

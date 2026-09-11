@@ -10,9 +10,9 @@ import {
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 
 const field =
-  "rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-600 focus:border-blue-500 focus:outline-none";
+  "rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none";
 const btn =
-  "rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50";
+  "rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-neutral-100 disabled:opacity-50";
 
 export function ApprenticeshipRowActions({
   enrollmentId,
@@ -67,10 +67,10 @@ export function ApprenticeshipRowActions({
           );
         }}
         onInput={() => setError(null)}
-        className="mt-3 flex flex-col gap-2 border-t border-slate-800 pt-3"
+        className="mt-3 flex flex-col gap-2 border-t border-line-row pt-3"
       >
         <div className="flex flex-wrap items-end gap-2">
-          <label className="flex flex-col gap-1 text-xs text-slate-400">
+          <label className="flex flex-col gap-1 text-xs text-ink-body">
             Sponsor
             <input
               name="sponsorName"
@@ -78,7 +78,7 @@ export function ApprenticeshipRowActions({
               className={`w-56 ${field}`}
             />
           </label>
-          <label className="flex flex-col gap-1 text-xs text-slate-400">
+          <label className="flex flex-col gap-1 text-xs text-ink-body">
             Program number
             <input
               name="programNumber"
@@ -87,7 +87,7 @@ export function ApprenticeshipRowActions({
               className={`w-40 ${field}`}
             />
           </label>
-          <label className="flex flex-col gap-1 text-xs text-slate-400">
+          <label className="flex flex-col gap-1 text-xs text-ink-body">
             Completed on
             {/* Not defaulted to today. The date an indenture completed is
                 the sponsor's, entered from their paperwork — the same rule
@@ -99,7 +99,7 @@ export function ApprenticeshipRowActions({
               className={field}
             />
           </label>
-          <label className="flex flex-col gap-1 text-xs text-slate-400">
+          <label className="flex flex-col gap-1 text-xs text-ink-body">
             Cancelled on
             <input
               type="date"
@@ -111,7 +111,7 @@ export function ApprenticeshipRowActions({
         </div>
 
         <div className="flex flex-wrap items-end gap-2">
-          <label className="flex flex-col gap-1 text-xs text-slate-400">
+          <label className="flex flex-col gap-1 text-xs text-ink-body">
             Required OJT hours / period
             <input
               name="requiredOjtHoursPerPeriod"
@@ -124,7 +124,7 @@ export function ApprenticeshipRowActions({
               className={`w-32 ${field}`}
             />
           </label>
-          <label className="flex flex-col gap-1 text-xs text-slate-400">
+          <label className="flex flex-col gap-1 text-xs text-ink-body">
             Required classroom hours / period
             <input
               name="requiredClassroomHoursPerPeriod"
@@ -146,14 +146,14 @@ export function ApprenticeshipRowActions({
           className={field}
         />
 
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-ink-muted">
           An indenture is either completed or cancelled, not both — filling in both dates is
           refused rather than resolved, because quietly picking one would bury a data-entry error
           on a record somebody may have to defend. Clearing both puts it back to active.
         </p>
 
         {error && (
-          <p role="alert" className="text-sm text-red-400">
+          <p role="alert" className="text-sm text-red-600">
             {error}
           </p>
         )}
@@ -162,7 +162,7 @@ export function ApprenticeshipRowActions({
           <button
             type="submit"
             disabled={isPending}
-            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+            className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
           >
             {isPending ? "Saving…" : "Save enrolment"}
           </button>
@@ -195,10 +195,10 @@ export function ApprenticeshipRowActions({
           });
         }}
         onInput={() => setError(null)}
-        className="mt-3 flex flex-col gap-2 border-t border-slate-800 pt-3"
+        className="mt-3 flex flex-col gap-2 border-t border-line-row pt-3"
       >
         <div className="flex flex-wrap items-end gap-2">
-          <label className="flex flex-col gap-1 text-xs text-slate-400">
+          <label className="flex flex-col gap-1 text-xs text-ink-body">
             Period
             <input
               name="periodNumber"
@@ -206,29 +206,29 @@ export function ApprenticeshipRowActions({
               className={`w-20 ${field}`}
             />
           </label>
-          <label className="flex flex-col gap-1 text-xs text-slate-400">
+          <label className="flex flex-col gap-1 text-xs text-ink-body">
             Classroom hours
             <input name="classroomHours" placeholder="blank" className={`w-28 ${field}`} />
           </label>
-          <label className="flex flex-col gap-1 text-xs text-slate-400">
+          <label className="flex flex-col gap-1 text-xs text-ink-body">
             Signed off on
             {/* Not defaulted. A sign-off has the sponsor's date on it, and
                 a period left open is a real and common state. */}
             <input type="date" name="signedOffOn" className={field} />
           </label>
-          <label className="flex flex-col gap-1 text-xs text-slate-400">
+          <label className="flex flex-col gap-1 text-xs text-ink-body">
             Signed off by
             <input name="signedOffBy" placeholder="optional" className={`w-40 ${field}`} />
           </label>
         </div>
 
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-ink-muted">
           Leave “signed off on” blank to record a period that is still open. Blank classroom hours
           means nobody has recorded them — which is not the same as attending none.
         </p>
 
         {error && (
-          <p role="alert" className="text-sm text-red-400">
+          <p role="alert" className="text-sm text-red-600">
             {error}
           </p>
         )}
@@ -237,7 +237,7 @@ export function ApprenticeshipRowActions({
           <button
             type="submit"
             disabled={isPending}
-            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+            className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
           >
             {isPending ? "Saving…" : "Record period"}
           </button>
@@ -258,7 +258,7 @@ export function ApprenticeshipRowActions({
   }
 
   return (
-    <div className="mt-3 border-t border-slate-800 pt-3">
+    <div className="mt-3 border-t border-line-row pt-3">
       {/* Every ordinary action here is hidden while a delete is armed, and
           that is now STRUCTURAL rather than remembered. The history is the
           reason: browser testing found "Record a period" sitting live beside
@@ -287,7 +287,7 @@ export function ApprenticeshipRowActions({
               hint="Removes the registration and its periods. No timesheet is touched."
               deleteClassName={btn}
               cancelClassName={btn}
-              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-600 hover:bg-tag-rose disabled:opacity-50"
             />
           ) : null
         }
@@ -314,7 +314,7 @@ export function ApprenticeshipRowActions({
       {/* Outside RowActions on purpose: an error hidden by arming a delete
           would be a new bug. */}
       {error && (
-        <p role="alert" className="mt-2 text-sm text-red-400">
+        <p role="alert" className="mt-2 text-sm text-red-600">
           {error}
         </p>
       )}

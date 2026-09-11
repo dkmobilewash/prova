@@ -49,19 +49,19 @@ export function PublicRouteError({
 
   return (
     <main className="mx-auto max-w-2xl px-6 py-12">
-      <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 p-5">
-        <h1 className="text-lg font-semibold text-rose-200">This page didn&apos;t load</h1>
+      <div className="rounded-lg border border-rose-300 bg-tag-rose p-5">
+        <h1 className="text-lg font-semibold text-tag-rose-ink">This page didn&apos;t load</h1>
         {staleDeploy ? (
-          <p className="mt-2 text-sm text-rose-100/90">
+          <p className="mt-2 text-sm text-tag-rose-ink/90">
             This page was updated while you had it open. Reloading will fix it.
           </p>
         ) : (
-          <p className="mt-2 text-sm text-rose-100/90">
+          <p className="mt-2 text-sm text-tag-rose-ink/90">
             Something went wrong loading this page. This is a problem showing the page, not
             necessarily a problem with anything you just did.
           </p>
         )}
-        <p className="mt-3 text-sm font-medium text-rose-100">
+        <p className="mt-3 text-sm font-medium text-tag-rose-ink">
           If you were signing or submitting something, don&apos;t do it again yet — reload first
           and check whether it went through.
         </p>
@@ -85,7 +85,7 @@ export function PublicRouteError({
         </div>
 
         {error.digest && (
-          <p className="mt-5 text-xs text-rose-200/70">
+          <p className="mt-5 text-xs text-tag-rose-ink/70">
             If you report this, include reference <code className="font-mono">{error.digest}</code>.
           </p>
         )}

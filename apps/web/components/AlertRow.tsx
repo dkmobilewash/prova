@@ -11,7 +11,7 @@ import { kindLabel, severityBadgeClass, severityLabel } from "@/components/alert
 import { money } from "@/lib/money";
 
 const btn =
-  "rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:border-slate-500 disabled:opacity-50";
+  "rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-neutral-100 disabled:opacity-50";
 
 /** One alert, with the two things a person can do about it that this app
  * can honestly record: go and fix it, or say they have seen it.
@@ -54,18 +54,18 @@ export function AlertRow({ alert, silenced }: { alert: Alert; silenced: boolean 
           <span className={`rounded px-1.5 py-0.5 text-xs ${severityBadgeClass(alert.severity)}`}>
             {severityLabel(alert.severity)}
           </span>
-          <span className="rounded bg-slate-800 px-1.5 py-0.5 text-xs text-slate-400">
+          <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs text-ink-body">
             {kindLabel(alert.kind)}
           </span>
-          <span className="text-slate-100">{alert.title}</span>
+          <span className="text-ink">{alert.title}</span>
           {alert.amount !== null && alert.amount > 0 && (
-            <span className="font-mono text-sm text-slate-300">{money(alert.amount)}</span>
+            <span className="font-mono text-sm text-ink-label">{money(alert.amount)}</span>
           )}
         </div>
 
-        <p className="mt-1 text-sm text-slate-400">{alert.detail}</p>
+        <p className="mt-1 text-sm text-ink-body">{alert.detail}</p>
 
-        {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
+        {error && <p className="mt-1 text-sm text-red-600">{error}</p>}
 
         {isSnoozing && (
           <form
@@ -79,7 +79,7 @@ export function AlertRow({ alert, silenced }: { alert: Alert; silenced: boolean 
             <label className={labelClass}>
               Remind me again on
               <input type="date" name="snoozeUntil" required className={inputClass} />
-              <span className="text-xs text-slate-500">
+              <span className="text-xs text-ink-muted">
                 It comes back sooner than this if the situation changes — the reminder is keyed to the
                 date on the record, so renewing or answering it clears this by itself.
               </span>
@@ -88,7 +88,7 @@ export function AlertRow({ alert, silenced }: { alert: Alert; silenced: boolean 
               <button
                 type="submit"
                 disabled={isPending}
-                className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+                className="rounded-md bg-brand px-3 py-1.5 text-xs font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
               >
                 {isPending ? "Saving…" : "Snooze"}
               </button>
@@ -108,7 +108,7 @@ export function AlertRow({ alert, silenced }: { alert: Alert; silenced: boolean 
       <div className="flex shrink-0 flex-wrap items-center gap-2">
         <Link
           href={alert.href}
-          className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-500"
+          className="rounded-md bg-brand px-3 py-1.5 text-xs font-semibold text-ink-label hover:bg-yellow-500"
         >
           Go and fix it
         </Link>

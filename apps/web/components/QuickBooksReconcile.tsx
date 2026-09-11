@@ -30,10 +30,10 @@ type Row = {
 };
 
 const TONE: Record<string, string> = {
-  DIFFERS: "border-rose-800 bg-rose-950/40 text-rose-200",
-  MISSING_IN_QUICKBOOKS: "border-amber-800 bg-amber-950/40 text-amber-200",
-  NEVER_SENT: "border-slate-700 bg-slate-900 text-slate-300",
-  MATCHES: "border-emerald-900 bg-emerald-950/30 text-emerald-200",
+  DIFFERS: "border-rose-300 bg-tag-rose text-tag-rose-ink",
+  MISSING_IN_QUICKBOOKS: "border-amber-300 bg-tag-amber text-tag-amber-ink",
+  NEVER_SENT: "border-line-card bg-surface text-ink-label",
+  MATCHES: "border-emerald-300 bg-tag-green text-tag-green-ink",
 };
 
 const LABEL: Record<string, string> = {
@@ -73,18 +73,18 @@ export function QuickBooksReconcile() {
           type="button"
           onClick={check}
           disabled={isPending}
-          className="rounded-md border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-800 disabled:opacity-50"
+          className="rounded-md border border-line-card px-3 py-1.5 text-xs font-medium text-ink-label hover:bg-neutral-100 disabled:opacity-50"
         >
           {isPending ? "Checking QuickBooks…" : rows ? "Check again" : "Check against QuickBooks"}
         </button>
         {checkedAt && !isPending && (
-          <span className="text-xs text-slate-500">Checked at {checkedAt} UTC</span>
+          <span className="text-xs text-ink-muted">Checked at {checkedAt} UTC</span>
         )}
-        {error && <p className="text-xs text-rose-300">{error}</p>}
+        {error && <p className="text-xs text-tag-rose-ink">{error}</p>}
       </div>
 
       {rows && problems.length === 0 && (
-        <p className="text-sm text-emerald-300">
+        <p className="text-sm text-tag-green-ink">
           Every invoice sent to QuickBooks still matches what Prova holds.
           {quiet.some((r) => r.status === "NEVER_SENT") &&
             " Some invoices have never been sent — those are listed below."}
@@ -128,7 +128,7 @@ export function QuickBooksReconcile() {
           <button
             type="button"
             onClick={() => setShowAgreeing((open) => !open)}
-            className="text-xs text-slate-400 underline hover:text-slate-200"
+            className="text-xs text-ink-body underline hover:text-ink-label"
           >
             {showAgreeing ? "Hide" : "Show"} the other {quiet.length}{" "}
             {quiet.length === 1 ? "invoice" : "invoices"}
@@ -138,7 +138,7 @@ export function QuickBooksReconcile() {
               {quiet.map((row) => (
                 <li
                   key={row.invoiceId}
-                  className="flex flex-wrap items-baseline justify-between gap-2 rounded-md border border-slate-800 px-3 py-1.5 text-xs text-slate-400"
+                  className="flex flex-wrap items-baseline justify-between gap-2 rounded-md border border-line-row px-3 py-1.5 text-xs text-ink-body"
                 >
                   <span>
                     Invoice {row.number} — {row.jobName}

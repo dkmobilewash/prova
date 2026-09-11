@@ -37,67 +37,67 @@ export default async function PayApplicationPage({
   return (
     <div className="mx-auto max-w-4xl p-6 print:p-0">
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3 print:hidden">
-        <Link href={`/jobs/${job.id}`} className="text-sm text-blue-400 hover:underline">
+        <Link href={`/jobs/${job.id}`} className="text-sm text-link hover:underline">
           ← Back to job
         </Link>
         <PrintButton />
       </div>
 
-      <h1 className="text-xl font-semibold text-slate-100">
+      <h1 className="text-xl font-semibold text-ink">
         Application for payment #{invoice.number} — {job.name}
       </h1>
-      <p className="mt-1 text-sm text-slate-500">
+      <p className="mt-1 text-sm text-ink-muted">
         {job.contact.name} · {formatInstant(invoice.issuedAt, timeZone)}
         {invoice.description ? ` · ${invoice.description}` : ""}
       </p>
-      <p className="mt-3 max-w-2xl text-xs text-slate-500">
+      <p className="mt-3 max-w-2xl text-xs text-ink-muted">
         This is a G702/G703-style summary and continuation sheet built from this job&rsquo;s schedule of values — it is
         not formatted as the AIA G702/G703 forms themselves.
       </p>
 
       {!isPayApplication ? (
-        <p className="mt-8 text-sm text-slate-500">
+        <p className="mt-8 text-sm text-ink-muted">
           This invoice wasn&rsquo;t submitted as a pay application — it was created as a simple lump-sum bill, so
           there&rsquo;s no per-line-item breakdown to show. Submit a pay application from the job page to get a
           continuation sheet like this one.
         </p>
       ) : (
         <>
-          <div className="mt-6 grid grid-cols-2 gap-x-6 gap-y-3 rounded-lg border border-slate-800 bg-slate-900 p-4 text-sm sm:grid-cols-3">
+          <div className="mt-6 grid grid-cols-2 gap-x-6 gap-y-3 rounded-lg border border-line-card bg-surface p-4 text-sm sm:grid-cols-3">
             <div>
-              <p className="text-xs text-slate-500">Contract sum to date</p>
-              <p className="text-slate-100">{money(summary.contractSumToDate)}</p>
+              <p className="text-xs text-ink-muted">Contract sum to date</p>
+              <p className="text-ink">{money(summary.contractSumToDate)}</p>
             </div>
             <div>
-              <p className="text-xs text-slate-500">Total completed &amp; stored to date</p>
-              <p className="text-slate-100">{money(summary.totalCompletedAndStoredToDate)}</p>
+              <p className="text-xs text-ink-muted">Total completed &amp; stored to date</p>
+              <p className="text-ink">{money(summary.totalCompletedAndStoredToDate)}</p>
             </div>
             <div>
-              <p className="text-xs text-slate-500">Retainage to date</p>
-              <p className="text-slate-100">{money(summary.retainageToDate)}</p>
+              <p className="text-xs text-ink-muted">Retainage to date</p>
+              <p className="text-ink">{money(summary.retainageToDate)}</p>
             </div>
             <div>
-              <p className="text-xs text-slate-500">Total earned less retainage</p>
-              <p className="text-slate-100">{money(summary.totalEarnedLessRetainage)}</p>
+              <p className="text-xs text-ink-muted">Total earned less retainage</p>
+              <p className="text-ink">{money(summary.totalEarnedLessRetainage)}</p>
             </div>
             <div>
-              <p className="text-xs text-slate-500">Less previous certificates for payment</p>
-              <p className="text-slate-100">{money(summary.previousCertificatesForPayment)}</p>
+              <p className="text-xs text-ink-muted">Less previous certificates for payment</p>
+              <p className="text-ink">{money(summary.previousCertificatesForPayment)}</p>
             </div>
             <div>
-              <p className="text-xs text-slate-500">Current payment due</p>
-              <p className="font-medium text-green-400">{money(summary.currentPaymentDue)}</p>
+              <p className="text-xs text-ink-muted">Current payment due</p>
+              <p className="font-medium text-green-700">{money(summary.currentPaymentDue)}</p>
             </div>
             <div className="col-span-2 sm:col-span-3">
-              <p className="text-xs text-slate-500">Balance to finish, including retainage</p>
-              <p className="text-slate-100">{money(summary.balanceToFinishIncludingRetainage)}</p>
+              <p className="text-xs text-ink-muted">Balance to finish, including retainage</p>
+              <p className="text-ink">{money(summary.balanceToFinishIncludingRetainage)}</p>
             </div>
           </div>
 
           <div className="mt-6 overflow-x-auto">
             <table className="w-full min-w-[720px] text-left text-sm">
               <thead>
-                <tr className="text-xs text-slate-500">
+                <tr className="text-xs text-ink-muted">
                   <th className="pb-1 pr-3 font-normal">Line item</th>
                   <th className="pb-1 pr-3 text-right font-normal">Scheduled value</th>
                   <th className="pb-1 pr-3 text-right font-normal">Previous</th>
@@ -110,15 +110,15 @@ export default async function PayApplicationPage({
               </thead>
               <tbody>
                 {lineItemResults.map((row) => (
-                  <tr key={row.lineItemId} className="border-t border-slate-800">
-                    <td className="py-1 pr-3 text-slate-300">{row.description}</td>
-                    <td className="py-1 pr-3 text-right text-slate-400">{money(row.scheduledValue)}</td>
-                    <td className="py-1 pr-3 text-right text-slate-400">{money(row.previousBilled)}</td>
-                    <td className="py-1 pr-3 text-right text-slate-100">{money(row.thisPeriodBilled)}</td>
-                    <td className="py-1 pr-3 text-right text-slate-400">{money(row.materialsStoredToDate)}</td>
-                    <td className="py-1 pr-3 text-right text-slate-100">{money(row.totalCompletedAndStoredToDate)}</td>
-                    <td className="py-1 pr-3 text-right text-slate-400">{percent(row.percentOfScheduledValue)}</td>
-                    <td className="py-1 text-right text-slate-400">{money(row.balanceToFinish)}</td>
+                  <tr key={row.lineItemId} className="border-t border-line-row">
+                    <td className="py-1 pr-3 text-ink-label">{row.description}</td>
+                    <td className="py-1 pr-3 text-right text-ink-body">{money(row.scheduledValue)}</td>
+                    <td className="py-1 pr-3 text-right text-ink-body">{money(row.previousBilled)}</td>
+                    <td className="py-1 pr-3 text-right text-ink">{money(row.thisPeriodBilled)}</td>
+                    <td className="py-1 pr-3 text-right text-ink-body">{money(row.materialsStoredToDate)}</td>
+                    <td className="py-1 pr-3 text-right text-ink">{money(row.totalCompletedAndStoredToDate)}</td>
+                    <td className="py-1 pr-3 text-right text-ink-body">{percent(row.percentOfScheduledValue)}</td>
+                    <td className="py-1 text-right text-ink-body">{money(row.balanceToFinish)}</td>
                   </tr>
                 ))}
               </tbody>

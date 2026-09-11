@@ -31,8 +31,8 @@ export default async function CompliancePage() {
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-slate-100">Compliance</h1>
-      <p className="mb-6 text-sm text-slate-400">
+      <h1 className="mb-2 text-xl font-semibold text-ink">Compliance</h1>
+      <p className="mb-6 text-sm text-ink-body">
         Lien waivers, certificates of insurance, certified payroll, and union fringe/benefit filings. Upload a
         scanned document and Claude reads it into the fields below — review and fix anything before it&apos;s final.
       </p>
@@ -51,17 +51,17 @@ export default async function CompliancePage() {
         />
       </div>
 
-      <section className="mb-8 rounded-lg border border-slate-800 bg-slate-900 p-4">
-        <h2 className="mb-3 text-sm font-semibold text-slate-300">Upload a document</h2>
+      <section className="mb-8 rounded-lg border border-line-card bg-surface p-4">
+        <h2 className="mb-3 text-sm font-semibold text-ink-label">Upload a document</h2>
         <ComplianceUploadForm jobs={jobs.map((job) => ({ id: job.id, name: job.name }))} />
       </section>
 
       <section>
-        <h2 className="mb-3 text-sm font-semibold text-slate-300">Documents</h2>
+        <h2 className="mb-3 text-sm font-semibold text-ink-label">Documents</h2>
         {documents.length === 0 ? (
-          <p className="text-slate-400">No compliance documents yet.</p>
+          <p className="text-ink-body">No compliance documents yet.</p>
         ) : (
-          <ul className="divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900">
+          <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
             {documents.map((doc) => (
               <ComplianceDocumentRow
                 key={doc.id}

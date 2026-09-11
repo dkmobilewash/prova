@@ -98,16 +98,16 @@ export default async function CertificationsPage({
   const visible = showEverything ? roster : shortlist;
 
   const tile = (value: number, caption: string, tone: string) => (
-    <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-      <p className={`text-2xl font-semibold ${value > 0 ? tone : "text-slate-100"}`}>{value}</p>
-      <p className="text-xs text-slate-500">{caption}</p>
+    <div className="rounded-lg border border-line-card bg-surface p-4">
+      <p className={`text-2xl font-semibold ${value > 0 ? tone : "text-ink"}`}>{value}</p>
+      <p className="text-xs text-ink-muted">{caption}</p>
     </div>
   );
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-slate-100">Certifications</h1>
-      <p className="mb-6 text-sm text-slate-400">
+      <h1 className="mb-2 text-xl font-semibold text-ink">Certifications</h1>
+      <p className="mb-6 text-sm text-ink-body">
         The cards your crew has to be able to produce at the gate — OSHA 10, scaffold, lift, silica,
         fit tests. A man turned away on Monday morning doesn&apos;t stand there alone: the rest of
         the crew waits, the GC notices, and nobody pays you for the hour. This page answers the
@@ -119,15 +119,15 @@ export default async function CertificationsPage({
       </section>
 
       <div className="mb-6 grid gap-3 sm:grid-cols-4">
-        {tile(summary.missing, "Required, nothing on file", "text-red-300")}
-        {tile(summary.expired, "Expired", "text-red-300")}
-        {tile(summary.expiring, "Expiring soon", "text-amber-300")}
-        {tile(summary.undated, "No expiry recorded", "text-amber-300")}
+        {tile(summary.missing, "Required, nothing on file", "text-tag-rose-ink")}
+        {tile(summary.expired, "Expired", "text-tag-rose-ink")}
+        {tile(summary.expiring, "Expiring soon", "text-tag-amber-ink")}
+        {tile(summary.undated, "No expiry recorded", "text-tag-amber-ink")}
       </div>
 
       <section className="mb-10">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold text-slate-300">
+          <h2 className="text-sm font-semibold text-ink-label">
             {showEverything
               ? `${roster.length} ${roster.length === 1 ? "person" : "people"}`
               : `${summary.workersWithProblems} of ${summary.workers} ${
@@ -136,22 +136,22 @@ export default async function CertificationsPage({
           </h2>
           <Link
             href={showEverything ? "/certifications" : "/certifications?show=all"}
-            className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:border-slate-500"
+            className="rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-neutral-100"
           >
             {showEverything ? "Only what needs acting on" : "Show everyone, including current"}
           </Link>
         </div>
 
         {workers.length === 0 ? (
-          <p className="text-slate-400">
+          <p className="text-ink-body">
             Nobody is on the team yet, so there is nobody to hold a card.{" "}
-            <Link href="/team" className="text-blue-400 underline">
+            <Link href="/team" className="text-link underline">
               Invite the people you dispatch
             </Link>{" "}
             and they appear here.
           </p>
         ) : visible.length === 0 ? (
-          <p className="text-slate-400">
+          <p className="text-ink-body">
             {requirements.length === 0 ? (
               <>
                 Nothing to act on — but nothing is required of everyone yet either, so this page can
@@ -161,7 +161,7 @@ export default async function CertificationsPage({
             ) : (
               <>
                 Everyone is current on everything recorded and everything required. Switch to{" "}
-                <Link href="/certifications?show=all" className="text-blue-400 underline">
+                <Link href="/certifications?show=all" className="text-link underline">
                   show everyone
                 </Link>{" "}
                 to read the file itself.
@@ -169,7 +169,7 @@ export default async function CertificationsPage({
             )}
           </p>
         ) : (
-          <ul className="divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900">
+          <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
             {visible.map((standing) => (
               <WorkerCertificationRow
                 key={standing.worker.id}
@@ -183,33 +183,33 @@ export default async function CertificationsPage({
       </section>
 
       <section className="mb-10">
-        <h2 className="mb-2 text-sm font-semibold text-slate-300">By job</h2>
-        <p className="mb-3 text-sm text-slate-400">
+        <h2 className="mb-2 text-sm font-semibold text-ink-label">By job</h2>
+        <p className="mb-3 text-sm text-ink-body">
           The same finding, cut the way it gets asked: is this job&apos;s crew clear on Monday. Jobs
           with nobody assigned are left out — they have no answer, not a good one.
         </p>
         {crews.length === 0 ? (
-          <p className="text-slate-400">
+          <p className="text-ink-body">
             No contracted or in-progress job has assigned crew with anything outstanding. Crew is
             assigned on a job&apos;s own page; without an assignment this section has nothing to
             read.
           </p>
         ) : (
-          <ul className="divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900">
+          <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
             {crews.map((crew) => (
               <li key={crew.job.id} className="p-4">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Link href={`/jobs/${crew.job.id}`} className="text-slate-100 underline">
+                  <Link href={`/jobs/${crew.job.id}`} className="text-ink underline">
                     {crew.job.name}
                   </Link>
-                  <span className="rounded bg-red-500/15 px-1.5 py-0.5 text-xs text-red-300">
+                  <span className="rounded bg-tag-rose px-1.5 py-0.5 text-xs text-tag-rose-ink">
                     {crew.short.length} of {crew.crewSize} not clear
                   </span>
                 </div>
-                <ul className="mt-2 flex flex-col gap-1 border-l-2 border-slate-700 pl-3">
+                <ul className="mt-2 flex flex-col gap-1 border-l-2 border-line-card pl-3">
                   {crew.short.map((row) => (
-                    <li key={row.worker.id} className="text-xs text-slate-400">
-                      <span className="text-slate-300">
+                    <li key={row.worker.id} className="text-xs text-ink-body">
+                      <span className="text-ink-label">
                         {row.worker.name?.trim() || row.worker.email}
                       </span>
                       <span
@@ -232,7 +232,7 @@ export default async function CertificationsPage({
       </section>
 
       <section>
-        <h2 className="mb-2 text-sm font-semibold text-slate-300">What everyone here needs</h2>
+        <h2 className="mb-2 text-sm font-semibold text-ink-label">What everyone here needs</h2>
         <CertificationRequirements
           requirements={requirements}
           canRemove={currentUser.role === "OWNER"}

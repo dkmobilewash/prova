@@ -14,9 +14,9 @@ import {
 } from "@/lib/certifications";
 
 const btn =
-  "rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:border-slate-500 disabled:opacity-50";
+  "rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-neutral-100 disabled:opacity-50";
 const confirmBtn =
-  "rounded-md border border-red-500 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 disabled:opacity-50";
+  "rounded-md border border-red-500 px-3 py-1.5 text-xs text-red-600 hover:bg-tag-rose disabled:opacity-50";
 
 /**
  * What the company requires of everyone, and the only control that turns a
@@ -86,13 +86,13 @@ export function CertificationRequirements({
               },
             );
           }}
-          className="flex flex-col gap-3 rounded-lg border border-slate-800 bg-slate-900 p-4"
+          className="flex flex-col gap-3 rounded-lg border border-line-card bg-surface p-4"
         >
-          <h3 className="text-sm font-semibold text-slate-300">Require a certification</h3>
+          <h3 className="text-sm font-semibold text-ink-label">Require a certification</h3>
           <FormDraftNotice draft={draft} />
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-ink-muted">
             Everyone on the team is measured against this. A person with no record of it at all
-            reads as <span className="text-red-300">nothing on file</span> rather than disappearing,
+            reads as <span className="text-tag-rose-ink">nothing on file</span> rather than disappearing,
             which is the whole reason this control exists.
           </p>
 
@@ -139,13 +139,13 @@ export function CertificationRequirements({
             />
           </label>
 
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && <p className="text-sm text-red-600">{error}</p>}
 
           <div className="flex gap-2">
             <button
               type="submit"
               disabled={isPending}
-              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+              className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
             >
               {isPending ? "Saving…" : "Require it"}
             </button>
@@ -156,7 +156,7 @@ export function CertificationRequirements({
                 setIsOpen(false);
                 setError(null);
               }}
-              className="rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50"
+              className="rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-neutral-100 disabled:opacity-50"
             >
               Cancel
             </button>
@@ -167,7 +167,7 @@ export function CertificationRequirements({
           <button
             type="button"
             onClick={() => setIsOpen(true)}
-            className="rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:border-slate-500"
+            className="rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-neutral-100"
           >
             Require a certification
           </button>
@@ -175,24 +175,24 @@ export function CertificationRequirements({
       )}
 
       {requirements.length === 0 ? (
-        <p className="text-sm text-slate-400">
+        <p className="text-sm text-ink-body">
           Nothing is required of everyone yet, so this page can only report on cards somebody has
           already entered — and the dangerous case is the opposite one. Require OSHA 10 and a
           respirator fit test to start; anyone with no record of either will say so by name.
         </p>
       ) : (
-        <ul className="divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900">
+        <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
           {requirements.map((requirement) => (
             <li
               key={requirement.id}
               className="flex flex-wrap items-center justify-between gap-2 p-3"
             >
               <div className="min-w-0">
-                <p className="text-sm text-slate-100">
+                <p className="text-sm text-ink">
                   {certificationTitle(requirement.kind, requirement.otherLabel || null)}
                 </p>
                 {requirement.notes && (
-                  <p className="text-xs text-slate-500">{requirement.notes}</p>
+                  <p className="text-xs text-ink-muted">{requirement.notes}</p>
                 )}
               </div>
               {/* This row hand-rolled its own `confirmingId` because #88 was
@@ -240,7 +240,7 @@ export function CertificationRequirements({
         </ul>
       )}
 
-      {error && !isOpen && <p className="text-sm text-red-400">{error}</p>}
+      {error && !isOpen && <p className="text-sm text-red-600">{error}</p>}
     </div>
   );
 }

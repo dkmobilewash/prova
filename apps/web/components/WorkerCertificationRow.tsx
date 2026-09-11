@@ -16,17 +16,17 @@ import {
 } from "@/lib/certifications";
 
 const btn =
-  "rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50";
+  "rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-neutral-100 disabled:opacity-50";
 const primaryBtn =
-  "rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50";
+  "rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50";
 
 /* The record line's controls are text links inside a sentence, not pills.
    Named here so the armed pair keeps exactly the look the hand-rolled
    version had — the conversion is about WHERE the arming state lives, and
    is not licence to restyle the row. */
-const recordLink = "ml-2 text-slate-500 underline disabled:opacity-50";
-const recordLinkCancel = "ml-2 text-slate-400 underline disabled:opacity-50";
-const recordLinkConfirm = "ml-2 text-red-400 underline disabled:opacity-50";
+const recordLink = "ml-2 text-ink-muted underline disabled:opacity-50";
+const recordLinkCancel = "ml-2 text-ink-body underline disabled:opacity-50";
+const recordLinkConfirm = "ml-2 text-red-600 underline disabled:opacity-50";
 
 function workerLabel(worker: WorkerStanding["worker"]) {
   return worker.name?.trim() || worker.email;
@@ -61,12 +61,12 @@ function CertificationRecordEditForm({
         event.preventDefault();
         onSave(record.id, new FormData(event.currentTarget), draft.clear);
       }}
-      className="my-2 flex flex-col gap-3 rounded-md border border-slate-700 p-3"
+      className="my-2 flex flex-col gap-3 rounded-md border border-line-card p-3"
     >
-      <p className="text-sm font-semibold text-slate-300">{title}</p>
+      <p className="text-sm font-semibold text-ink-label">{title}</p>
       <FormDraftNotice draft={draft} />
       <CertificationFields defaults={record} lockedKind={record.kind} />
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {error && <p className="text-sm text-red-600">{error}</p>}
       <div className="flex gap-2">
         <button type="submit" disabled={isPending} className={primaryBtn}>
           {isPending ? "Saving…" : "Save changes"}
@@ -103,20 +103,20 @@ function HoldingBlock({
   onDelete: (id: string) => void;
 }) {
   return (
-    <li className="border-l-2 border-slate-700 pl-3">
+    <li className="border-l-2 border-line-card pl-3">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-sm text-slate-100">{holding.title}</span>
+        <span className="text-sm text-ink">{holding.title}</span>
         <span className={`rounded px-1.5 py-0.5 text-xs ${standingChipClass(holding.standing)}`}>
           {STANDING_LABELS[holding.standing]}
         </span>
-        <span className="text-xs text-slate-500">{standingTiming(holding)}</span>
+        <span className="text-xs text-ink-muted">{standingTiming(holding)}</span>
         {holding.required && (
-          <span className="rounded bg-slate-800 px-1.5 py-0.5 text-xs text-slate-400">required</span>
+          <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs text-ink-body">required</span>
         )}
       </div>
 
       {holding.history.length === 0 && (
-        <p className="mt-1 text-xs text-slate-500">
+        <p className="mt-1 text-xs text-ink-muted">
           Required of everyone here, and there is no record of it for this person at all. That is
           not the same as expired — nobody has ever entered one.
         </p>
@@ -141,15 +141,15 @@ function HoldingBlock({
           }
 
           return (
-            <li key={record.id} className="text-xs text-slate-400">
-              <span className={supersededBy ? "text-slate-500" : "text-slate-300"}>
+            <li key={record.id} className="text-xs text-ink-body">
+              <span className={supersededBy ? "text-ink-muted" : "text-ink-label"}>
                 {record.expiresOn ? `expires ${record.expiresOn}` : "no expiry recorded"}
               </span>
               {record.issuedOn && ` · issued ${record.issuedOn}`}
               {record.issuer && ` · ${record.issuer}`}
               {record.referenceNumber && ` · #${record.referenceNumber}`}
               {supersededBy && " · superseded"}
-              {record.notes && <span className="text-slate-500"> — {record.notes}</span>}
+              {record.notes && <span className="text-ink-muted"> — {record.notes}</span>}
               {/* Arming "Remove" empties this record line of everything else.
                   Both ordinary controls — the document link and "Edit" — are
                   children of RowActions, so neither survives beside the armed
@@ -202,7 +202,7 @@ function HoldingBlock({
                     href={record.documentUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="ml-2 text-blue-400 underline"
+                    className="ml-2 text-link underline"
                   >
                     {record.documentLabel || "open"}
                   </a>
@@ -258,11 +258,11 @@ export function WorkerCertificationRow({
   return (
     <li className="flex flex-col gap-3 p-4">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-slate-100">{workerLabel(standing.worker)}</span>
+        <span className="text-ink">{workerLabel(standing.worker)}</span>
         <span className={`rounded px-1.5 py-0.5 text-xs ${standingChipClass(standing.worst)}`}>
           {STANDING_LABELS[standing.worst]}
         </span>
-        <span className="text-xs text-slate-500">
+        <span className="text-xs text-ink-muted">
           {standing.problems.length === 0
             ? "nothing outstanding"
             : `${standing.problems.length} to sort out`}
@@ -270,7 +270,7 @@ export function WorkerCertificationRow({
       </div>
 
       {holdings.length === 0 ? (
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-ink-muted">
           Nothing recorded for this person, and nothing required of everyone yet. Requiring a
           certification below is what turns that from a blank into a finding.
         </p>
@@ -305,7 +305,7 @@ export function WorkerCertificationRow({
         </ul>
       )}
 
-      {error && !editingId && <p className="text-sm text-red-400">{error}</p>}
+      {error && !editingId && <p className="text-sm text-red-600">{error}</p>}
     </li>
   );
 }

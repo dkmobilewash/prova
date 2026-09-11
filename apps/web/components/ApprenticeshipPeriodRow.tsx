@@ -6,8 +6,8 @@ import { deleteApprenticeshipPeriod, updateApprenticeshipPeriod } from "@/lib/ac
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 
 const field =
-  "rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-600 focus:border-blue-500 focus:outline-none";
-const linkBtn = "text-xs text-slate-500 underline hover:text-slate-300 disabled:opacity-50";
+  "rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none";
+const linkBtn = "text-xs text-ink-muted underline hover:text-ink-label disabled:opacity-50";
 
 /** Correcting a recorded period.
  *
@@ -62,7 +62,7 @@ export function ApprenticeshipPeriodRow({
           className="flex flex-col gap-2"
         >
           <div className="flex flex-wrap items-end gap-2">
-            <label className="flex flex-col gap-1 text-xs text-slate-400">
+            <label className="flex flex-col gap-1 text-xs text-ink-body">
               Classroom hours
               <input
                 name="classroomHours"
@@ -71,7 +71,7 @@ export function ApprenticeshipPeriodRow({
                 className={`w-28 ${field}`}
               />
             </label>
-            <label className="flex flex-col gap-1 text-xs text-slate-400">
+            <label className="flex flex-col gap-1 text-xs text-ink-body">
               Signed off on
               <input
                 type="date"
@@ -80,7 +80,7 @@ export function ApprenticeshipPeriodRow({
                 className={field}
               />
             </label>
-            <label className="flex flex-col gap-1 text-xs text-slate-400">
+            <label className="flex flex-col gap-1 text-xs text-ink-body">
               Signed off by
               <input
                 name="signedOffBy"
@@ -92,7 +92,7 @@ export function ApprenticeshipPeriodRow({
           </div>
 
           {error && (
-            <p role="alert" className="text-sm text-red-400">
+            <p role="alert" className="text-sm text-red-600">
               {error}
             </p>
           )}
@@ -101,7 +101,7 @@ export function ApprenticeshipPeriodRow({
             <button
               type="submit"
               disabled={isPending}
-              className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+              className="rounded-md bg-brand px-3 py-1.5 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
             >
               {isPending ? "Saving…" : "Save"}
             </button>
@@ -112,7 +112,7 @@ export function ApprenticeshipPeriodRow({
                 setEditing(false);
                 setError(null);
               }}
-              className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:border-slate-500"
+              className="rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-neutral-100"
             >
               Cancel
             </button>
@@ -142,7 +142,7 @@ export function ApprenticeshipPeriodRow({
               onConfirm={() => run(() => deleteApprenticeshipPeriod(periodId))}
               deleteClassName={linkBtn}
               cancelClassName={linkBtn}
-              confirmClassName="text-xs text-red-400 underline hover:text-red-300 disabled:opacity-50"
+              confirmClassName="text-xs text-red-600 underline hover:text-tag-rose-ink disabled:opacity-50"
             />
           ) : null
         }
@@ -152,7 +152,7 @@ export function ApprenticeshipPeriodRow({
         </button>
       </RowActions>
       {error && (
-        <p role="alert" className="w-full text-sm text-red-400">
+        <p role="alert" className="w-full text-sm text-red-600">
           {error}
         </p>
       )}

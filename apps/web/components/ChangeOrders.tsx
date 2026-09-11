@@ -119,9 +119,9 @@ function formatEditValue(field: string, value: string) {
 
 const STATUS_STYLE: Record<ChangeOrderView["status"], string> = {
   DRAFT: "border-neutral-400 bg-neutral-100 text-ink-label",
-  SUBMITTED: "border-amber-600 bg-amber-950 text-tag-amber-ink",
-  APPROVED: "border-emerald-700 bg-emerald-950 text-tag-green-ink",
-  REJECTED: "border-rose-700 bg-rose-950 text-tag-rose-ink",
+  SUBMITTED: "border-amber-600 bg-tag-amber text-tag-amber-ink",
+  APPROVED: "border-emerald-700 bg-tag-green text-tag-green-ink",
+  REJECTED: "border-rose-700 bg-tag-rose text-tag-rose-ink",
   VOID: "border-line-card bg-surface text-ink-muted",
 };
 
@@ -317,7 +317,7 @@ function Decision({ changeOrder }: { changeOrder: ChangeOrderView }) {
           <button
             type="submit"
             disabled={reject.isPending}
-            className="rounded-md border border-rose-700 px-3 py-2 text-sm font-medium text-tag-rose-ink hover:bg-rose-950 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-md border border-rose-700 px-3 py-2 text-sm font-medium text-tag-rose-ink hover:bg-tag-rose disabled:cursor-not-allowed disabled:opacity-50"
           >
             {reject.isPending ? "Rejecting…" : "Reject"}
           </button>
@@ -380,7 +380,7 @@ function Correction({ changeOrder }: { changeOrder: ChangeOrderView }) {
           <button
             type="submit"
             disabled={reopen.isPending}
-            className="rounded-md border border-amber-700 px-3 py-2 text-sm font-medium text-tag-amber-ink hover:bg-amber-950 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-md border border-amber-300 px-3 py-2 text-sm font-medium text-tag-amber-ink hover:bg-tag-amber disabled:cursor-not-allowed disabled:opacity-50"
           >
             {reopen.isPending ? "Reopening…" : "Reopen"}
           </button>

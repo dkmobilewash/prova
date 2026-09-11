@@ -67,7 +67,7 @@ export default async function EsignPage({ params }: { params: Promise<{ token: s
     const timeZone = await viewerTimeZone();
     return (
       <main className="mx-auto max-w-2xl px-6 py-12">
-        <div className="mb-6 rounded-lg border border-green-500/30 bg-green-500/10 p-4 text-sm text-green-300">
+        <div className="mb-6 rounded-lg border border-green-300 bg-tag-green p-4 text-sm text-tag-green-ink">
           Signed by {request.signerName} on{" "}
           {request.signedAt && formatSignedDate(request.signedAt, timeZone)}
           . This reflects exactly what was agreed to at the time of signing.
@@ -123,28 +123,28 @@ export default async function EsignPage({ params }: { params: Promise<{ token: s
 
       <form
         action={signRequestWithToken}
-        className="mt-6 flex flex-col gap-4 rounded-lg border border-slate-800 bg-slate-900 p-6"
+        className="mt-6 flex flex-col gap-4 rounded-lg border border-line-card bg-surface p-6"
       >
-        <h2 className="text-lg font-semibold text-slate-100">Sign to accept</h2>
-        <label className="flex flex-col gap-1 text-sm text-slate-300">
+        <h2 className="text-lg font-semibold text-ink">Sign to accept</h2>
+        <label className="flex flex-col gap-1 text-sm text-ink-label">
           Your full name
           <input
             name="signerName"
             required
             defaultValue={job.contact.name}
-            className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
+            className="rounded-md border border-line-card bg-canvas px-3 py-2 text-ink focus:border-link focus:outline-none"
           />
         </label>
-        <label className="flex flex-col gap-1 text-sm text-slate-300">
+        <label className="flex flex-col gap-1 text-sm text-ink-label">
           Email (optional)
           <input
             name="signerEmail"
             type="email"
             defaultValue={job.contact.email ?? ""}
-            className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
+            className="rounded-md border border-line-card bg-canvas px-3 py-2 text-ink focus:border-link focus:outline-none"
           />
         </label>
-        <label className="flex items-start gap-2 text-sm text-slate-300">
+        <label className="flex items-start gap-2 text-sm text-ink-label">
           <input type="checkbox" name="agree" required className="mt-1" />
           <span>
             I have reviewed the scope and pricing above and agree that typing my name and submitting
@@ -159,7 +159,7 @@ export default async function EsignPage({ params }: { params: Promise<{ token: s
             same way every create button in this app already does. */}
         <SubmitButton
           type="submit"
-          className="inline-flex w-fit items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
+          className="inline-flex w-fit items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500"
         >
           Sign contract
         </SubmitButton>

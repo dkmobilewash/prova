@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { createApprenticeshipEnrollment } from "@/lib/actions";
 
 const field =
-  "rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-600 focus:border-blue-500 focus:outline-none";
+  "rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none";
 
 export type TeamMember = { id: string; name: string | null; email: string };
 export type CraftOption = { id: string; label: string };
@@ -34,7 +34,7 @@ export function ApprenticeshipForm({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:border-slate-500"
+        className="rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-neutral-100"
       >
         Register an apprenticeship
       </button>
@@ -60,10 +60,10 @@ export function ApprenticeshipForm({
         });
       }}
       onInput={() => setError(null)}
-      className="flex flex-col gap-3 rounded-lg border border-slate-800 bg-slate-900 p-4"
+      className="flex flex-col gap-3 rounded-lg border border-line-card bg-surface p-4"
     >
       <div className="flex flex-wrap gap-2">
-        <label className="flex flex-col gap-1 text-xs text-slate-400">
+        <label className="flex flex-col gap-1 text-xs text-ink-body">
           Apprentice
           <select name="apprenticeUserId" className={`w-56 ${field}`} defaultValue="">
             <option value="">Choose someone</option>
@@ -75,24 +75,24 @@ export function ApprenticeshipForm({
           </select>
         </label>
 
-        <label className="flex flex-col gap-1 text-xs text-slate-400">
+        <label className="flex flex-col gap-1 text-xs text-ink-body">
           Sponsor
           <input name="sponsorName" placeholder="e.g. Carpenters JATC" className={`w-56 ${field}`} />
         </label>
 
-        <label className="flex flex-col gap-1 text-xs text-slate-400">
+        <label className="flex flex-col gap-1 text-xs text-ink-body">
           Programme number
           <input name="programNumber" placeholder="optional" className={`w-40 ${field}`} />
         </label>
 
-        <label className="flex flex-col gap-1 text-xs text-slate-400">
+        <label className="flex flex-col gap-1 text-xs text-ink-body">
           Date on the indenture
           {/* Deliberately NOT defaulted to today: this is a date on a
               document, routinely weeks before anyone types it in. */}
           <input type="date" name="enrolledOn" className={field} />
         </label>
 
-        <label className="flex flex-col gap-1 text-xs text-slate-400">
+        <label className="flex flex-col gap-1 text-xs text-ink-body">
           Craft
           <select
             name="craftClassificationId"
@@ -110,7 +110,7 @@ export function ApprenticeshipForm({
           {/* A dropdown whose only option is "Not recorded" is a dead
               control, and this page explains every other empty state. */}
           {crafts.length === 0 && (
-            <span className="text-slate-500">
+            <span className="text-ink-muted">
               None yet — add a classification under a local below, then it can be chosen here.
             </span>
           )}
@@ -118,11 +118,11 @@ export function ApprenticeshipForm({
       </div>
 
       <div className="flex flex-wrap items-end gap-2">
-        <label className="flex flex-col gap-1 text-xs text-slate-400">
+        <label className="flex flex-col gap-1 text-xs text-ink-body">
           OJT hours per period
           <input name="requiredOjtHoursPerPeriod" placeholder="blank" className={`w-32 ${field}`} />
         </label>
-        <label className="flex flex-col gap-1 text-xs text-slate-400">
+        <label className="flex flex-col gap-1 text-xs text-ink-body">
           Classroom hours per period
           <input
             name="requiredClassroomHoursPerPeriod"
@@ -130,7 +130,7 @@ export function ApprenticeshipForm({
             className={`w-32 ${field}`}
           />
         </label>
-        <span className="pb-1 text-xs text-slate-500">
+        <span className="pb-1 text-xs text-ink-muted">
           Leave both blank unless the programme has told you. Blank reads as “not looked up”, and
           nothing is measured against it — a made-up target is worse than none.
         </span>
@@ -139,7 +139,7 @@ export function ApprenticeshipForm({
       <input name="note" placeholder="Note (optional)" className={field} />
 
       {error && (
-        <p role="alert" className="text-sm text-red-400">
+        <p role="alert" className="text-sm text-red-600">
           {error}
         </p>
       )}
@@ -148,7 +148,7 @@ export function ApprenticeshipForm({
         <button
           type="submit"
           disabled={isPending}
-          className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+          className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {isPending ? "Saving…" : "Register"}
         </button>
@@ -159,7 +159,7 @@ export function ApprenticeshipForm({
             setOpen(false);
             setError(null);
           }}
-          className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:border-slate-500"
+          className="rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-neutral-100"
         >
           Cancel
         </button>

@@ -94,13 +94,13 @@ export default async function BackchargesPage({
 
   const chip = (active: boolean) =>
     `rounded-md border px-3 py-1.5 text-sm ${
-      active ? "border-blue-500 text-blue-400" : "border-slate-700 text-slate-300 hover:border-slate-500"
+      active ? "border-brand text-link" : "border-line-card text-ink-label hover:bg-neutral-100"
     }`;
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-slate-100">Backcharges</h1>
-      <p className="mb-6 text-sm text-slate-400">
+      <h1 className="mb-2 text-xl font-semibold text-ink">Backcharges</h1>
+      <p className="mb-6 text-sm text-ink-body">
         Money the GC is taking off what they owe us — cleanup, damage to another trade, our scope
         finished by somebody else. A change order is us asking for more; this is the same
         conversation running the other way, and until now the only record of one was an unexplained
@@ -113,37 +113,37 @@ export default async function BackchargesPage({
       </section>
 
       <div className="mb-4 grid gap-3 sm:grid-cols-4">
-        <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-          <p className="font-mono text-xl font-semibold text-slate-100">{money(summary.openClaimed)}</p>
-          <p className="text-xs text-slate-500">
+        <div className="rounded-lg border border-line-card bg-surface p-4">
+          <p className="font-mono text-xl font-semibold text-ink">{money(summary.openClaimed)}</p>
+          <p className="text-xs text-ink-muted">
             Claimed and unresolved ({summary.openCount})
           </p>
         </div>
-        <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-          <p className={`text-2xl font-semibold ${overdueCount > 0 ? "text-red-300" : "text-slate-100"}`}>
+        <div className="rounded-lg border border-line-card bg-surface p-4">
+          <p className={`text-2xl font-semibold ${overdueCount > 0 ? "text-tag-rose-ink" : "text-ink"}`}>
             {overdueCount}
           </p>
-          <p className="text-xs text-slate-500">Past the deadline to object</p>
+          <p className="text-xs text-ink-muted">Past the deadline to object</p>
         </div>
-        <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-          <p className="font-mono text-xl font-semibold text-slate-100">{money(summary.concededTotal)}</p>
-          <p className="text-xs text-slate-500">
+        <div className="rounded-lg border border-line-card bg-surface p-4">
+          <p className="font-mono text-xl font-semibold text-ink">{money(summary.concededTotal)}</p>
+          <p className="text-xs text-ink-muted">
             What resolved ones cost us
             {summary.unknownConcededCount > 0 && (
-              <span className="text-amber-300">
+              <span className="text-tag-amber-ink">
                 {" "}
                 · {summary.unknownConcededCount} settled with no figure recorded, not counted
               </span>
             )}
           </p>
         </div>
-        <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-          <p className="font-mono text-xl font-semibold text-green-300">{money(summary.avoidedTotal)}</p>
-          <p className="text-xs text-slate-500">Argued off or withdrawn</p>
+        <div className="rounded-lg border border-line-card bg-surface p-4">
+          <p className="font-mono text-xl font-semibold text-tag-green-ink">{money(summary.avoidedTotal)}</p>
+          <p className="text-xs text-ink-muted">Argued off or withdrawn</p>
         </div>
       </div>
 
-      <p className="mb-4 text-xs text-slate-500">
+      <p className="mb-4 text-xs text-ink-muted">
         These figures are a log of what the GC has charged us, not a deduction from any pay
         application — nothing here changes an invoice, a contract value or a WIP number. Netting an
         accepted backcharge against billing is real work that hasn&apos;t been built.
@@ -163,22 +163,22 @@ export default async function BackchargesPage({
       )}
 
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-slate-300">
+        <h2 className="text-sm font-semibold text-ink-label">
           {rows.length} {showResolved ? "total" : "unresolved"}
         </h2>
-        <Link href={filterHref({ show: showResolved ? null : "all" })} className="text-sm text-blue-400">
+        <Link href={filterHref({ show: showResolved ? null : "all" })} className="text-sm text-link">
           {showResolved ? "Hide resolved" : "Show resolved"}
         </Link>
       </div>
 
       {rows.length === 0 ? (
-        <p className="text-slate-400">
+        <p className="text-ink-body">
           {showResolved
             ? "No backcharges logged. That is worth being sure of rather than assuming — a deduction sheet stapled to a pay application is still a backcharge."
             : "Nothing unresolved. Switch to “Show resolved” for the ones already closed out."}
         </p>
       ) : (
-        <ul className="divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900">
+        <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
           {rows.map((bc) => (
             <BackchargeRow
               key={bc.id}

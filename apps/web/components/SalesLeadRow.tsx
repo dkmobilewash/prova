@@ -8,12 +8,12 @@ import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { SALES_LEAD_SOURCE_OPTIONS } from "@/components/SalesLeadFields";
 
 const btn =
-  "rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:border-slate-500 disabled:opacity-50";
+  "rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-neutral-100 disabled:opacity-50";
 
 const FOLLOW_UP_STYLE = {
-  OVERDUE: "text-red-400",
-  DUE_TODAY: "text-amber-300",
-  UPCOMING: "text-slate-500",
+  OVERDUE: "text-red-600",
+  DUE_TODAY: "text-tag-amber-ink",
+  UPCOMING: "text-ink-muted",
 } as const;
 
 const FOLLOW_UP_LABEL = {
@@ -64,23 +64,23 @@ export function SalesLeadRow({
         <Link href={`/sales/${lead.id}`} className="flex min-w-0 flex-1 items-center gap-3">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <p className="font-medium text-slate-100">{lead.companyName}</p>
+              <p className="font-medium text-ink">{lead.companyName}</p>
               {lead.source && (
-                <span className="rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-400">
+                <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-ink-body">
                   {SALES_LEAD_SOURCE_OPTIONS.find((o) => o.value === lead.source)?.label ?? lead.source}
                 </span>
               )}
             </div>
-            <p className="text-sm text-slate-400">
+            <p className="text-sm text-ink-body">
               {[lead.contactName, lead.email, lead.phone].filter(Boolean).join(" · ") || "No contact info"}
             </p>
           </div>
         </Link>
-        <div className="shrink-0 text-right text-sm text-slate-400">
+        <div className="shrink-0 text-right text-sm text-ink-body">
           <p>
             {lead.opportunityCount} {lead.opportunityCount === 1 ? "opportunity" : "opportunities"}
           </p>
-          <p className="text-xs text-slate-500">{lastContactLabel(lead)}</p>
+          <p className="text-xs text-ink-muted">{lastContactLabel(lead)}</p>
           {lead.followUpStanding && (
             <p className={`text-xs ${FOLLOW_UP_STYLE[lead.followUpStanding]}`}>
               {FOLLOW_UP_LABEL[lead.followUpStanding]} {lead.followUpOn}
@@ -124,7 +124,7 @@ export function SalesLeadRow({
         }
       />
 
-      {error && <p className="text-xs text-red-400">{error}</p>}
+      {error && <p className="text-xs text-red-600">{error}</p>}
     </li>
   );
 }

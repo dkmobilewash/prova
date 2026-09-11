@@ -18,7 +18,7 @@ export type ContactPersonRowData = {
 };
 
 const btn =
-  "rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:border-slate-500 disabled:opacity-50";
+  "rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-neutral-100 disabled:opacity-50";
 
 export function ContactPersonRow({ person }: { person: ContactPersonRowData }) {
   const [mode, setMode] = useState<"view" | "edit">("view");
@@ -51,12 +51,12 @@ export function ContactPersonRow({ person }: { person: ContactPersonRowData }) {
           className="flex flex-col gap-3"
         >
           <ContactPersonFields defaults={person} />
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && <p className="text-sm text-red-600">{error}</p>}
           <div className="flex gap-2">
             <button
               type="submit"
               disabled={isPending}
-              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+              className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
             >
               {isPending ? "Saving…" : "Save changes"}
             </button>
@@ -74,16 +74,16 @@ export function ContactPersonRow({ person }: { person: ContactPersonRowData }) {
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <p className="font-medium text-slate-100">{person.name}</p>
-            {person.title && <span className="text-xs text-slate-500">{person.title}</span>}
+            <p className="font-medium text-ink">{person.name}</p>
+            {person.title && <span className="text-xs text-ink-muted">{person.title}</span>}
           </div>
-          <p className="mt-1 text-sm text-slate-400">
+          <p className="mt-1 text-sm text-ink-body">
             {[person.email, person.phone].filter(Boolean).join(" · ") || "No email or phone on file"}
           </p>
-          <p className="mt-1 text-xs text-slate-500">
+          <p className="mt-1 text-xs text-ink-muted">
             {person.lastContactOn ? `Last contact ${person.lastContactOn}` : "No interactions logged with them yet"}
           </p>
-          {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
+          {error && <p className="mt-1 text-sm text-red-600">{error}</p>}
         </div>
 
         {/* Arming the delete empties this row: "Edit" used to stay live next
@@ -114,7 +114,7 @@ export function ContactPersonRow({ person }: { person: ContactPersonRowData }) {
               }}
               deleteClassName={btn}
               cancelClassName={btn}
-              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-xs text-red-600 hover:bg-tag-rose disabled:opacity-50"
             />
           }
         >

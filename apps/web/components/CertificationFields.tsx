@@ -67,7 +67,7 @@ export function CertificationFields({
               </option>
             ))}
           </select>
-          <span className="text-xs text-slate-500">
+          <span className="text-xs text-ink-muted">
             Whoever gets dispatched. Somebody who isn&apos;t on the team yet has to be invited on
             /team first — a card with nobody attached can&apos;t answer whether a crew is clear.
           </span>
@@ -93,7 +93,7 @@ export function CertificationFields({
               </option>
             ))}
           </select>
-          <span className="text-xs text-slate-500">
+          <span className="text-xs text-ink-muted">
             Locked once saved. Recording the wrong thing means deleting the row and entering it
             again — this log is read to establish who was qualified on a past date.
           </span>
@@ -111,7 +111,7 @@ export function CertificationFields({
             placeholder="e.g. Turner site orientation, Hilti firestop training"
             className={inputClass}
           />
-          <span className="text-xs text-slate-500">
+          <span className="text-xs text-ink-muted">
             &ldquo;Other, expires in 12 days&rdquo; tells a foreman nothing he can act on.
           </span>
         </label>
@@ -149,7 +149,7 @@ export function CertificationFields({
             defaultValue={defaults.issuedOn ?? ""}
             className={inputClass}
           />
-          <span className="text-xs text-slate-500">
+          <span className="text-xs text-ink-muted">
             The date on the card, not today.
           </span>
         </label>
@@ -161,9 +161,9 @@ export function CertificationFields({
             defaultValue={defaults.expiresOn ?? ""}
             className={inputClass}
           />
-          <span className="text-xs text-slate-500">
+          <span className="text-xs text-ink-muted">
             Leave blank only if the card genuinely doesn&apos;t say. Blank is reported as{" "}
-            <span className="text-amber-300">no expiry recorded</span> — never as current, because
+            <span className="text-tag-amber-ink">no expiry recorded</span> — never as current, because
             nobody can tell the two apart from an empty box.
           </span>
         </label>
@@ -190,7 +190,7 @@ export function CertificationFields({
             placeholder="https://…"
             className={inputClass}
           />
-          <span className="text-xs text-slate-500">
+          <span className="text-xs text-ink-muted">
             Wherever it lives — a shared drive, Procore, the GC&apos;s portal. A link, not an
             upload: a photo of a card is bigger than a Server Action can carry.
           </span>

@@ -30,9 +30,9 @@ export type DrawingSetRowData = DrawingSetDefaults & {
 };
 
 const btn =
-  "rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50";
+  "rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-neutral-100 disabled:opacity-50";
 const primaryBtn =
-  "rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50";
+  "rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50";
 
 /** The received-date and link fields, shared by "record an issue" and the
  * per-revision edit so the two can't drift. */
@@ -47,7 +47,7 @@ function ReceiptFields({ defaults }: { defaults?: Partial<RevisionData> }) {
           defaultValue={defaults?.receivedOn ?? ""}
           className={inputClass}
         />
-        <span className="text-xs text-slate-500">
+        <span className="text-xs text-ink-muted">
           Leave blank if it hasn&apos;t. That&apos;s the state worth seeing — it means the crew is
           building from paper that&apos;s already superseded.
         </span>
@@ -74,7 +74,7 @@ function ReceiptFields({ defaults }: { defaults?: Partial<RevisionData> }) {
             placeholder="https://…"
             className={inputClass}
           />
-          <span className="text-xs text-slate-500">
+          <span className="text-xs text-ink-muted">
             Wherever it actually lives — Procore, Box, the GC&apos;s portal.
           </span>
         </label>
@@ -121,14 +121,14 @@ function RevisionEditForm({
         const formData = new FormData(event.currentTarget);
         onSave(formData, draft.clear);
       }}
-      className="my-2 flex flex-col gap-3 rounded-md border border-slate-700 p-3"
+      className="my-2 flex flex-col gap-3 rounded-md border border-line-card p-3"
     >
-      <p className="text-sm font-semibold text-slate-300">
+      <p className="text-sm font-semibold text-ink-label">
         {revision.label} · issued {revision.issuedOn}
       </p>
       <FormDraftNotice draft={draft} />
       <ReceiptFields defaults={revision} />
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {error && <p className="text-sm text-red-600">{error}</p>}
       <div className="flex gap-2">
         <button type="submit" disabled={isPending} className={primaryBtn}>
           {isPending ? "Saving…" : "Save"}
@@ -194,10 +194,10 @@ export function DrawingSetRow({
           }}
           className="flex flex-col gap-3"
         >
-          <p className="text-sm font-semibold text-slate-300">{set.jobName}</p>
+          <p className="text-sm font-semibold text-ink-label">{set.jobName}</p>
           <FormDraftNotice draft={editDraft} />
           <DrawingSetFields defaults={set} />
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && <p className="text-sm text-red-600">{error}</p>}
           <div className="flex gap-2">
             <button type="submit" disabled={isPending} className={primaryBtn}>
               {isPending ? "Saving…" : "Save changes"}
@@ -230,7 +230,7 @@ export function DrawingSetRow({
           }}
           className="flex flex-col gap-3"
         >
-          <p className="text-sm font-semibold text-slate-300">Record an issue of {set.name}</p>
+          <p className="text-sm font-semibold text-ink-label">Record an issue of {set.name}</p>
           <FormDraftNotice draft={issueDraft} />
 
           <div className="grid gap-3 sm:grid-cols-2">
@@ -243,7 +243,7 @@ export function DrawingSetRow({
                 placeholder="e.g. Rev 3, ASI-12, Bulletin 5"
                 className={inputClass}
               />
-              <span className="text-xs text-slate-500">
+              <span className="text-xs text-ink-muted">
                 Exactly as printed on the title block. It&apos;s the architect&apos;s label, not ours.
               </span>
             </label>
@@ -256,7 +256,7 @@ export function DrawingSetRow({
                 defaultValue={localToday()}
                 className={inputClass}
               />
-              <span className="text-xs text-slate-500">
+              <span className="text-xs text-ink-muted">
                 The date on the drawing itself, not today. This is what decides which one is current.
               </span>
             </label>
@@ -264,7 +264,7 @@ export function DrawingSetRow({
 
           <ReceiptFields />
 
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && <p className="text-sm text-red-600">{error}</p>}
 
           <div className="flex gap-2">
             <button type="submit" disabled={isPending} className={primaryBtn}>
@@ -281,33 +281,33 @@ export function DrawingSetRow({
 
   const stateChip =
     state === "BEHIND"
-      ? "bg-red-500/15 text-red-300"
+      ? "bg-tag-rose text-tag-rose-ink"
       : state === "CURRENT_IN_HAND"
-        ? "bg-green-500/15 text-green-300"
-        : "bg-slate-800 text-slate-400";
+        ? "bg-tag-green text-tag-green-ink"
+        : "bg-neutral-100 text-ink-body";
 
   return (
     <li className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start">
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-slate-100">{set.name}</span>
+          <span className="text-ink">{set.name}</span>
           <span className={`rounded px-1.5 py-0.5 text-xs ${stateChip}`}>{stateLabel(state)}</span>
           {current && (
-            <span className="rounded bg-slate-800 px-1.5 py-0.5 text-xs text-slate-400">
+            <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs text-ink-body">
               Build from {current.label}
             </span>
           )}
         </div>
 
-        {set.description && <p className="mt-1 text-sm text-slate-300">{set.description}</p>}
+        {set.description && <p className="mt-1 text-sm text-ink-label">{set.description}</p>}
 
         {ordered.length > 0 && (
-          <ul className="mt-2 flex flex-col gap-1 border-l-2 border-slate-700 pl-3">
+          <ul className="mt-2 flex flex-col gap-1 border-l-2 border-line-card pl-3">
             {ordered.map((rev) => {
               const days = daysToReachUs(rev, today);
               const isCurrent = current?.id === rev.id;
               return (
-                <li key={rev.id} className="text-xs text-slate-400">
+                <li key={rev.id} className="text-xs text-ink-body">
                   {editingRevisionId === rev.id ? (
                     <RevisionEditForm
                       revision={rev}
@@ -326,7 +326,7 @@ export function DrawingSetRow({
                     />
                   ) : (
                     <>
-                      <span className={isCurrent ? "font-mono text-slate-300" : "font-mono text-slate-500"}>
+                      <span className={isCurrent ? "font-mono text-ink-label" : "font-mono text-ink-muted"}>
                         {rev.label}
                       </span>
                       {` · issued ${rev.issuedOn}`}
@@ -334,7 +334,7 @@ export function DrawingSetRow({
                         ? ` · received ${rev.receivedOn}${days !== null ? ` · ${days} day${days === 1 ? "" : "s"} to reach us` : ""}`
                         : ` · NOT RECEIVED${days !== null ? ` · waiting ${days} day${days === 1 ? "" : "s"}` : ""}`}
                       {!isCurrent && " · superseded"}
-                      {rev.description && <span className="text-slate-500"> — {rev.description}</span>}
+                      {rev.description && <span className="text-ink-muted"> — {rev.description}</span>}
                       {/* Only the actions go inside RowActions — the
                           revision's own text above stays visible while a
                           delete is armed. The file link and "Mark received"
@@ -351,9 +351,9 @@ export function DrawingSetRow({
                               pendingLabel="Removing…"
                               pending={isPending}
                               onConfirm={() => run(() => deleteDrawingRevision(rev.id))}
-                              deleteClassName="ml-2 text-slate-500 underline disabled:opacity-50"
-                              cancelClassName="ml-2 text-slate-400 underline disabled:opacity-50"
-                              confirmClassName="ml-2 text-red-400 underline disabled:opacity-50"
+                              deleteClassName="ml-2 text-ink-muted underline disabled:opacity-50"
+                              cancelClassName="ml-2 text-ink-body underline disabled:opacity-50"
+                              confirmClassName="ml-2 text-red-600 underline disabled:opacity-50"
                             />
                           ) : null
                         }
@@ -363,7 +363,7 @@ export function DrawingSetRow({
                             href={rev.fileUrl}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="ml-2 text-blue-400 underline"
+                            className="ml-2 text-link underline"
                           >
                             {rev.fileName || "open"}
                           </a>
@@ -372,7 +372,7 @@ export function DrawingSetRow({
                           type="button"
                           disabled={isPending}
                           onClick={() => setEditingRevisionId(rev.id)}
-                          className="ml-2 text-slate-500 underline disabled:opacity-50"
+                          className="ml-2 text-ink-muted underline disabled:opacity-50"
                         >
                           {rev.receivedOn ? "Edit" : "Mark received"}
                         </button>
@@ -385,9 +385,9 @@ export function DrawingSetRow({
           </ul>
         )}
 
-        {showJob && <p className="mt-1 text-xs text-blue-400">{set.jobName}</p>}
+        {showJob && <p className="mt-1 text-xs text-link">{set.jobName}</p>}
 
-        {error && !editingRevisionId && <p className="mt-1 text-sm text-red-400">{error}</p>}
+        {error && !editingRevisionId && <p className="mt-1 text-sm text-red-600">{error}</p>}
       </div>
 
       {/* Arming the delete empties this cluster. "Record an issue" and
@@ -407,7 +407,7 @@ export function DrawingSetRow({
               onConfirm={() => run(() => deleteDrawingSet(set.id))}
               deleteClassName={btn}
               cancelClassName={btn}
-              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-600 hover:bg-tag-rose disabled:opacity-50"
             />
           ) : null
         }
@@ -416,7 +416,7 @@ export function DrawingSetRow({
           type="button"
           disabled={isPending}
           onClick={() => setMode("issue")}
-          className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+          className="rounded-md bg-brand px-3 py-1.5 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
         >
           Record an issue
         </button>

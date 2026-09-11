@@ -80,10 +80,10 @@ export function BackchargeFields({
         {locked ? (
           <div className={labelClass}>
             Amount claimed
-            <p className="rounded-md border border-slate-800 bg-slate-950/60 px-3 py-2 font-mono text-slate-300">
+            <p className="rounded-md border border-line-row bg-canvas/60 px-3 py-2 font-mono text-ink-label">
               ${defaults.claimedAmount}
             </p>
-            <span className="text-xs text-slate-500">
+            <span className="text-xs text-ink-muted">
               Locked — we&apos;ve answered this one, so this is what the GC claimed on the record.
             </span>
           </div>
@@ -108,7 +108,7 @@ export function BackchargeFields({
         {locked ? (
           <div className={labelClass}>
             Date the GC issued it
-            <p className="rounded-md border border-slate-800 bg-slate-950/60 px-3 py-2 text-slate-300">
+            <p className="rounded-md border border-line-row bg-canvas/60 px-3 py-2 text-ink-label">
               {defaults.issuedOn ?? "—"}
             </p>
           </div>
@@ -122,7 +122,7 @@ export function BackchargeFields({
               defaultValue={defaults.issuedOn ?? ""}
               className={inputClass}
             />
-            <span className="text-xs text-slate-500">
+            <span className="text-xs text-ink-muted">
               The date on their notice, not today — backdate one you&apos;re entering late.
             </span>
           </label>
@@ -136,7 +136,7 @@ export function BackchargeFields({
             defaultValue={defaults.receivedOn ?? ""}
             className={inputClass}
           />
-          <span className="text-xs text-slate-500">
+          <span className="text-xs text-ink-muted">
             Often weeks after they dated it, which is most of a response window gone.
           </span>
         </label>
@@ -149,7 +149,7 @@ export function BackchargeFields({
             defaultValue={defaults.respondByDate ?? ""}
             className={inputClass}
           />
-          <span className="text-xs text-slate-500">
+          <span className="text-xs text-ink-muted">
             What the subcontract allows. Blank means we haven&apos;t looked it up — not that there
             isn&apos;t one.
           </span>
@@ -159,7 +159,7 @@ export function BackchargeFields({
       {locked ? (
         <div className={labelClass}>
           The GC&apos;s reference
-          <p className="rounded-md border border-slate-800 bg-slate-950/60 px-3 py-2 text-slate-300">
+          <p className="rounded-md border border-line-row bg-canvas/60 px-3 py-2 text-ink-label">
             {defaults.gcReference || "—"}
           </p>
         </div>

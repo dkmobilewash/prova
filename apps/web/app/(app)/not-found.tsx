@@ -15,22 +15,22 @@ import Link from "next/link";
 export default function AppNotFound() {
   return (
     <div className="mx-auto max-w-2xl px-6 py-12">
-      <div className="rounded-lg border border-slate-800 bg-slate-900 p-5">
-        <h1 className="text-lg font-semibold text-slate-100">Not found</h1>
-        <p className="mt-2 text-sm text-slate-400">
+      <div className="rounded-lg border border-line-card bg-surface p-5">
+        <h1 className="text-lg font-semibold text-ink">Not found</h1>
+        <p className="mt-2 text-sm text-ink-body">
           This page doesn&apos;t exist, or the record it points at was deleted. If you followed a
           link from somewhere else, that link is probably out of date.
         </p>
         <div className="mt-5 flex flex-wrap gap-3">
           <Link
             href="/dashboard"
-            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
+            className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500"
           >
             Back to jobs
           </Link>
           <Link
             href="/catalog"
-            className="rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-200 hover:bg-slate-800"
+            className="rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-neutral-100"
           >
             Line item catalog
           </Link>

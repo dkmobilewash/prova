@@ -31,7 +31,7 @@ export type BackchargeRowData = BackchargeDefaults & {
 };
 
 const btn =
-  "rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50";
+  "rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-neutral-100 disabled:opacity-50";
 
 export function BackchargeRow({
   backcharge,
@@ -94,16 +94,16 @@ export function BackchargeRow({
           }}
           className="flex flex-col gap-3"
         >
-          <p className="text-sm font-semibold text-slate-300">
+          <p className="text-sm font-semibold text-ink-label">
             Backcharge {backcharge.number} · {backcharge.jobName}
           </p>
           <BackchargeFields defaults={backcharge} locked={backcharge.status !== "RECEIVED"} />
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && <p className="text-sm text-red-600">{error}</p>}
           <div className="flex gap-2">
             <button
               type="submit"
               disabled={isPending}
-              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+              className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
             >
               {isPending ? "Saving…" : "Save changes"}
             </button>
@@ -132,7 +132,7 @@ export function BackchargeRow({
           }}
           className="flex flex-col gap-3"
         >
-          <p className="text-sm font-semibold text-slate-300">
+          <p className="text-sm font-semibold text-ink-label">
             Object to backcharge {backcharge.number} — {money(claimed)}
           </p>
 
@@ -150,19 +150,19 @@ export function BackchargeRow({
           <label className={labelClass}>
             Date we objected in writing
             <input type="date" name="disputedOn" defaultValue={localToday()} className={inputClass} />
-            <span className="text-xs text-slate-500">
+            <span className="text-xs text-ink-muted">
               The date the letter or email went out. It&apos;s the only thing that proves we answered
               in time.
             </span>
           </label>
 
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && <p className="text-sm text-red-600">{error}</p>}
 
           <div className="flex gap-2">
             <button
               type="submit"
               disabled={isPending}
-              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+              className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
             >
               {isPending ? "Saving…" : "Record objection"}
             </button>
@@ -191,7 +191,7 @@ export function BackchargeRow({
           }}
           className="flex flex-col gap-3"
         >
-          <p className="text-sm font-semibold text-slate-300">
+          <p className="text-sm font-semibold text-ink-label">
             Close out backcharge {backcharge.number} — claimed {money(claimed)}
           </p>
 
@@ -228,7 +228,7 @@ export function BackchargeRow({
                 placeholder="0.00"
                 className={inputClass}
               />
-              <span className="text-xs text-slate-500">
+              <span className="text-xs text-ink-muted">
                 The negotiated figure. Accepting the full {money(claimed)} is &ldquo;Accept in
                 full&rdquo; — the two aren&apos;t the same record.
               </span>
@@ -250,13 +250,13 @@ export function BackchargeRow({
             />
           </label>
 
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && <p className="text-sm text-red-600">{error}</p>}
 
           <div className="flex gap-2">
             <button
               type="submit"
               disabled={isPending}
-              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+              className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
             >
               {isPending ? "Saving…" : "Record outcome"}
             </button>
@@ -281,49 +281,49 @@ export function BackchargeRow({
     <li className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start">
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="font-mono text-xs text-slate-500">BC {backcharge.number}</span>
-          <span className="font-mono text-slate-100">{money(claimed)}</span>
+          <span className="font-mono text-xs text-ink-muted">BC {backcharge.number}</span>
+          <span className="font-mono text-ink">{money(claimed)}</span>
           <span className={`rounded px-1.5 py-0.5 text-xs ${statusBadgeClass(backcharge.status)}`}>
             {statusLabel(backcharge.status)}
           </span>
           {overdue && (
-            <span className="rounded bg-red-500/15 px-1.5 py-0.5 text-xs text-red-300">
+            <span className="rounded bg-tag-rose px-1.5 py-0.5 text-xs text-tag-rose-ink">
               Past the deadline to object
             </span>
           )}
-          <span className="rounded bg-slate-800 px-1.5 py-0.5 text-xs text-slate-400">
+          <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs text-ink-body">
             {categoryLabel(backcharge.category)}
           </span>
         </div>
 
-        <p className="mt-1 text-sm text-slate-300">{backcharge.description}</p>
+        <p className="mt-1 text-sm text-ink-label">{backcharge.description}</p>
 
         {backcharge.disputeReason && (
-          <p className="mt-2 border-l-2 border-blue-800 pl-3 text-sm text-slate-400">
-            <span className="text-slate-500">We objected{backcharge.disputedOn ? ` ${backcharge.disputedOn}` : ""}: </span>
+          <p className="mt-2 border-l-2 border-neutral-400 pl-3 text-sm text-ink-body">
+            <span className="text-ink-muted">We objected{backcharge.disputedOn ? ` ${backcharge.disputedOn}` : ""}: </span>
             {backcharge.disputeReason}
           </p>
         )}
 
         {!unresolved && (
-          <p className="mt-2 border-l-2 border-slate-700 pl-3 text-sm text-slate-400">
+          <p className="mt-2 border-l-2 border-line-card pl-3 text-sm text-ink-body">
             {conceded === null ? (
-              <span className="text-amber-300">
+              <span className="text-tag-amber-ink">
                 Settled, but no figure was recorded — what this cost us is unknown, so it isn&apos;t in
                 the totals above.
               </span>
             ) : (
               <>
-                Cost us <span className="font-mono text-slate-200">{money(conceded)}</span>
+                Cost us <span className="font-mono text-ink-label">{money(conceded)}</span>
                 {conceded < claimed && <> · {money(claimed - conceded)} argued off</>}
               </>
             )}
-            {backcharge.resolutionNote && <span className="text-slate-500"> — {backcharge.resolutionNote}</span>}
+            {backcharge.resolutionNote && <span className="text-ink-muted"> — {backcharge.resolutionNote}</span>}
           </p>
         )}
 
-        <p className="mt-1 text-xs text-slate-500">
-          {showJob && <span className="text-blue-400">{backcharge.jobName} · </span>}
+        <p className="mt-1 text-xs text-ink-muted">
+          {showJob && <span className="text-link">{backcharge.jobName} · </span>}
           issued {backcharge.issuedOn ?? "—"}
           {backcharge.receivedOn && ` · received ${backcharge.receivedOn}`}
           {backcharge.respondByDate
@@ -333,13 +333,13 @@ export function BackchargeRow({
             : " · no deadline to object recorded"}
           {backcharge.resolvedOn && ` · resolved ${backcharge.resolvedOn}`}
         </p>
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-ink-muted">
           {backcharge.gcReference && `their ref ${backcharge.gcReference}`}
           {backcharge.loggedByName &&
             `${backcharge.gcReference ? " · " : ""}logged by ${backcharge.loggedByName}`}
         </p>
 
-        {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
+        {error && <p className="mt-1 text-sm text-red-600">{error}</p>}
       </div>
 
       {/* Two rules live in RowActions/ConfirmDelete now, so neither depends on
@@ -367,7 +367,7 @@ export function BackchargeRow({
               onConfirm={() => run(() => deleteBackcharge(backcharge.id), "Could not delete it")}
               deleteClassName={btn}
               cancelClassName={btn}
-              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-600 hover:bg-tag-rose disabled:opacity-50"
             />
           ) : null
         }
@@ -377,7 +377,7 @@ export function BackchargeRow({
             type="button"
             disabled={isPending}
             onClick={() => setMode("dispute")}
-            className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+            className="rounded-md bg-brand px-3 py-1.5 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
           >
             Object
           </button>

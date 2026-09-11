@@ -30,15 +30,15 @@ export type SalesActivityRowData = {
 };
 
 const TYPE_STYLE: Record<string, string> = {
-  CALL: "bg-slate-800 text-slate-300",
-  EMAIL: "bg-slate-800 text-slate-300",
-  DEMO: "bg-blue-500/15 text-blue-300",
-  MEETING: "bg-blue-500/15 text-blue-300",
-  NOTE: "bg-slate-800 text-slate-500",
+  CALL: "bg-neutral-100 text-ink-label",
+  EMAIL: "bg-neutral-100 text-ink-label",
+  DEMO: "bg-tag-blue text-tag-blue-ink",
+  MEETING: "bg-tag-blue text-tag-blue-ink",
+  NOTE: "bg-neutral-100 text-ink-muted",
 };
 
 const btn =
-  "rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:border-slate-500 disabled:opacity-50";
+  "rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-neutral-100 disabled:opacity-50";
 
 export function SalesActivityRow({
   activity,
@@ -83,12 +83,12 @@ export function SalesActivityRow({
           className="flex flex-col gap-3"
         >
           <SalesActivityFields defaults={activity} opportunityOptions={opportunityOptions} />
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && <p className="text-sm text-red-600">{error}</p>}
           <div className="flex gap-2">
             <button
               type="submit"
               disabled={isPending}
-              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+              className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
             >
               {isPending ? "Saving…" : "Save changes"}
             </button>
@@ -115,37 +115,37 @@ export function SalesActivityRow({
             <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${TYPE_STYLE[activity.type] ?? TYPE_STYLE.NOTE}`}>
               {typeLabel}
             </span>
-            <span className="text-sm text-slate-300">{activity.occurredOn}</span>
+            <span className="text-sm text-ink-label">{activity.occurredOn}</span>
             {dealLabel && (
-              <span className="rounded-full bg-slate-800 px-2 py-0.5 text-xs font-medium text-slate-400">
+              <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-ink-body">
                 Re: {dealLabel}
               </span>
             )}
             {!activity.hasOccurred && (
-              <span className="rounded-full bg-slate-800 px-2 py-0.5 text-xs font-medium text-slate-400">
+              <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-ink-body">
                 dated in the future — not counted yet
               </span>
             )}
             {activity.followUpOn &&
               (isLatest ? (
-                <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-300">
+                <span className="rounded-full bg-tag-amber px-2 py-0.5 text-xs font-medium text-tag-amber-ink">
                   Follow up {activity.followUpOn}
                 </span>
               ) : activity.hasOccurred ? (
-                <span className="text-xs text-slate-500">
+                <span className="text-xs text-ink-muted">
                   asked for a follow-up on {activity.followUpOn}, since superseded
                 </span>
               ) : (
-                <span className="text-xs text-slate-500">
+                <span className="text-xs text-ink-muted">
                   asks for a follow-up on {activity.followUpOn}
                 </span>
               ))}
           </div>
-          <p className="mt-1 text-sm text-slate-400">{activity.summary}</p>
+          <p className="mt-1 text-sm text-ink-body">{activity.summary}</p>
           {activity.loggedByName && (
-            <p className="mt-1 text-xs text-slate-600">Logged by {activity.loggedByName}</p>
+            <p className="mt-1 text-xs text-ink-muted">Logged by {activity.loggedByName}</p>
           )}
-          {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
+          {error && <p className="mt-1 text-sm text-red-600">{error}</p>}
         </div>
 
         {/* Issue #152, both rules, in the shared component rather than by

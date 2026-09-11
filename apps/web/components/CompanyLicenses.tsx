@@ -49,8 +49,8 @@ export type LicenceData = {
 export type ClassificationReference = { jurisdictionName: string; code: string; label: string };
 
 const inputClass =
-  "rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none";
-const labelClass = "flex flex-col gap-1 text-xs text-slate-400";
+  "rounded-md border border-line-card bg-canvas px-3 py-2 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none";
+const labelClass = "flex flex-col gap-1 text-xs text-ink-body";
 
 function statusLabel(value: string) {
   const known = STATUS_LABELS.find((s) => s.value === value);
@@ -249,7 +249,7 @@ function LicenceRow({
             <button
               type="submit"
               disabled={isPending}
-              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+              className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
             >
               {isPending ? "Saving…" : "Save"}
             </button>
@@ -260,11 +260,11 @@ function LicenceRow({
                 setIsEditing(false);
                 setError(null);
               }}
-              className="rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50"
+              className="rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-neutral-100 disabled:opacity-50"
             >
               Cancel
             </button>
-            {error && <p className="text-sm text-rose-300">{error}</p>}
+            {error && <p className="text-sm text-tag-rose-ink">{error}</p>}
           </div>
         </form>
       </li>
@@ -274,10 +274,10 @@ function LicenceRow({
   return (
     <li className="flex flex-wrap items-start justify-between gap-3 p-4">
       <div className="min-w-0 flex-1">
-        <p className="font-medium text-slate-100">
+        <p className="font-medium text-ink">
           {licence.jurisdictionName} — {licence.licenseNumber}
         </p>
-        <p className="text-sm text-slate-400">
+        <p className="text-sm text-ink-body">
           {statusLabel(licence.status)}
           {licence.classificationCode && <> · {licence.classificationCode}</>}
           {licence.classificationLabel && <> {licence.classificationLabel}</>}
@@ -289,17 +289,17 @@ function LicenceRow({
           )}
         </p>
         {renewal.urgency === "EXPIRED" && (
-          <p className="mt-0.5 text-xs font-medium text-red-400">{renewalTiming(renewal)}</p>
+          <p className="mt-0.5 text-xs font-medium text-red-600">{renewalTiming(renewal)}</p>
         )}
         {renewal.urgency === "DUE_SOON" && (
-          <p className="mt-0.5 text-xs font-medium text-amber-400">{renewalTiming(renewal)}</p>
+          <p className="mt-0.5 text-xs font-medium text-amber-700">{renewalTiming(renewal)}</p>
         )}
         {/* The one record here that stores a status AND a date, so the one
             that can contradict itself. Neither is corrected automatically. */}
         {renewal.disagreement && (
-          <p className="mt-0.5 text-xs text-amber-300">{renewal.disagreement} Check which is right.</p>
+          <p className="mt-0.5 text-xs text-tag-amber-ink">{renewal.disagreement} Check which is right.</p>
         )}
-        {error && !isEditing && <p className="mt-1 text-xs text-rose-300">{error}</p>}
+        {error && !isEditing && <p className="mt-1 text-xs text-tag-rose-ink">{error}</p>}
       </div>
 
       {canManage && (
@@ -320,9 +320,9 @@ function LicenceRow({
               pendingLabel="Removing…"
               pending={isPending}
               onConfirm={handleDelete}
-              deleteClassName="rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:border-red-500 hover:text-red-400 disabled:opacity-50"
-              cancelClassName="rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:border-slate-500 disabled:opacity-50"
-              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+              deleteClassName="rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:border-red-500 hover:text-red-600 disabled:opacity-50"
+              cancelClassName="rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-neutral-100 disabled:opacity-50"
+              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-xs text-red-600 hover:bg-tag-rose disabled:opacity-50"
             />
           }
         >
@@ -330,7 +330,7 @@ function LicenceRow({
             type="button"
             disabled={isPending}
             onClick={() => setIsEditing(true)}
-            className="rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:border-slate-500 disabled:opacity-50"
+            className="rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-neutral-100 disabled:opacity-50"
           >
             Edit
           </button>
@@ -367,12 +367,12 @@ export function CompanyLicenses({
   return (
     <div className="flex flex-col gap-4">
       {licences.length === 0 ? (
-        <p className="text-sm text-slate-400">
+        <p className="text-sm text-ink-body">
           No licences recorded. Add the ones you hold and they&apos;ll appear in the renewals list on{" "}
-          <span className="text-slate-300">Compliance</span> before they lapse.
+          <span className="text-ink-label">Compliance</span> before they lapse.
         </p>
       ) : (
-        <ul className="divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900">
+        <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
           {licences.map((licence) => (
             <LicenceRow
               key={licence.id}
@@ -387,13 +387,13 @@ export function CompanyLicenses({
 
       {canManage &&
         (isAdding ? (
-          <form action={handleCreate} className="flex flex-col gap-3 rounded-lg border border-slate-800 p-4">
+          <form action={handleCreate} className="flex flex-col gap-3 rounded-lg border border-line-row p-4">
             <LicenceFields classifications={classifications} />
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="submit"
                 disabled={isPending}
-                className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+                className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
               >
                 {isPending ? "Adding…" : "Add licence"}
               </button>
@@ -404,18 +404,18 @@ export function CompanyLicenses({
                   setIsAdding(false);
                   setError(null);
                 }}
-                className="rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50"
+                className="rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-neutral-100 disabled:opacity-50"
               >
                 Cancel
               </button>
-              {error && <p className="text-sm text-rose-300">{error}</p>}
+              {error && <p className="text-sm text-tag-rose-ink">{error}</p>}
             </div>
           </form>
         ) : (
           <button
             type="button"
             onClick={() => setIsAdding(true)}
-            className="self-start rounded-md border border-slate-700 px-4 py-2 text-sm font-medium text-slate-200 hover:bg-slate-800"
+            className="self-start rounded-md border border-line-card px-4 py-2 text-sm font-medium text-ink-label hover:bg-neutral-100"
           >
             Add a licence
           </button>

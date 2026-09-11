@@ -30,7 +30,7 @@ export function LinkContactToQuickBooks({
 
   if (linkedQboId && message === null) {
     return (
-      <p className="text-xs text-slate-400">
+      <p className="text-xs text-ink-body">
         Linked to QuickBooks customer {linkedQboId}.
       </p>
     );
@@ -52,12 +52,12 @@ export function LinkContactToQuickBooks({
             );
           });
         }}
-        className="self-start rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800 disabled:opacity-50"
+        className="self-start rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-neutral-100 disabled:opacity-50"
       >
         {isPending ? "Linking…" : "Link to QuickBooks"}
       </button>
       {message && (
-        <p className={`text-xs ${message.tone === "ok" ? "text-emerald-300" : "text-amber-300"}`}>
+        <p className={`text-xs ${message.tone === "ok" ? "text-tag-green-ink" : "text-tag-amber-ink"}`}>
           {message.text}
         </p>
       )}

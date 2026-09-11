@@ -34,9 +34,9 @@ export type CloseoutSubmissionData = {
 };
 
 const btn =
-  "rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50";
+  "rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-neutral-100 disabled:opacity-50";
 const primaryBtn =
-  "rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50";
+  "rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50";
 
 /**
  * Whose move it is on a job's closeout, and the package's trip to the GC.
@@ -100,7 +100,7 @@ export function CloseoutPackagePanel({
 
   return (
     <section>
-      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-muted">
         Closeout package
       </h3>
 
@@ -109,22 +109,22 @@ export function CloseoutPackagePanel({
           {stageLabel(readiness.stage)}
         </span>
         {readiness.daysWithGc !== null && withGc && (
-          <span className="rounded bg-slate-800 px-1.5 py-0.5 text-xs text-slate-400">
+          <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs text-ink-body">
             {readiness.daysWithGc} day{readiness.daysWithGc === 1 ? "" : "s"} with them
           </span>
         )}
         {readiness.retainageAtStake > 0 && (
-          <span className="rounded bg-slate-800 px-1.5 py-0.5 font-mono text-xs text-slate-300">
+          <span className="rounded bg-neutral-100 px-1.5 py-0.5 font-mono text-xs text-ink-label">
             {money(readiness.retainageAtStake)} retainage held
           </span>
         )}
       </div>
 
       {readiness.blockers.length > 0 && (
-        <p className="mt-2 text-sm text-slate-400">
+        <p className="mt-2 text-sm text-ink-body">
           Holding it up: {readiness.blockers.map(blockerLabel).join(", ")}.
           {readiness.stage === "AWAITING_GC" && (
-            <span className="text-amber-300">
+            <span className="text-tag-amber-ink">
               {" "}
               The package went anyway — worth knowing before they come back asking.
             </span>
@@ -133,7 +133,7 @@ export function CloseoutPackagePanel({
       )}
 
       {readiness.stage === "READY_TO_SUBMIT" && (
-        <p className="mt-2 text-sm text-slate-400">
+        <p className="mt-2 text-sm text-ink-body">
           Everything required is signed and nothing has gone to the GC.
           {readiness.retainageAtStake > 0 && (
             <> That is {money(readiness.retainageAtStake)} waiting on an email.</>
@@ -144,11 +144,11 @@ export function CloseoutPackagePanel({
       {submissions.length > 0 && (
         <ul className="mt-3 flex flex-col gap-2">
           {submissions.map((s) => (
-            <li key={s.id} className="rounded-md border border-slate-700 p-3">
+            <li key={s.id} className="rounded-md border border-line-card p-3">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="font-mono text-xs text-slate-500">Attempt {s.attempt}</span>
-                <span className="text-sm text-slate-200">{submissionStatusLabel(s.status)}</span>
-                <span className="text-xs text-slate-500">
+                <span className="font-mono text-xs text-ink-muted">Attempt {s.attempt}</span>
+                <span className="text-sm text-ink-label">{submissionStatusLabel(s.status)}</span>
+                <span className="text-xs text-ink-muted">
                   sent {s.submittedOn}
                   {s.method && ` · ${s.method}`}
                   {s.respondedOn && ` · answered ${s.respondedOn}`}
@@ -156,10 +156,10 @@ export function CloseoutPackagePanel({
                 </span>
               </div>
 
-              {s.note && <p className="mt-1 text-sm text-slate-400">{s.note}</p>}
+              {s.note && <p className="mt-1 text-sm text-ink-body">{s.note}</p>}
               {s.gcResponse && (
-                <p className="mt-1 border-l-2 border-slate-700 pl-3 text-sm text-slate-400">
-                  <span className="text-slate-500">They said: </span>
+                <p className="mt-1 border-l-2 border-line-card pl-3 text-sm text-ink-body">
+                  <span className="text-ink-muted">They said: </span>
                   {s.gcResponse}
                 </p>
               )}
@@ -206,7 +206,7 @@ export function CloseoutPackagePanel({
                       className={inputClass}
                     />
                   </label>
-                  {error && <p className="text-sm text-red-400">{error}</p>}
+                  {error && <p className="text-sm text-red-600">{error}</p>}
                   <div className="flex gap-2">
                     <button type="submit" disabled={isPending} className={primaryBtn}>
                       {isPending ? "Saving…" : "Record response"}
@@ -239,7 +239,7 @@ export function CloseoutPackagePanel({
                         onConfirm={() => run(() => deleteCloseoutSubmission(s.id))}
                         deleteClassName={btn}
                         cancelClassName={btn}
-                        confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+                        confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-600 hover:bg-tag-rose disabled:opacity-50"
                       />
                     ) : null
                   }
@@ -278,7 +278,7 @@ export function CloseoutPackagePanel({
       {openForm === "submit" ? (
         <form
           onSubmit={(e) => submit(e, submitCloseoutPackage, () => setOpenForm("none"))}
-          className="mt-3 flex flex-col gap-3 rounded-md border border-slate-700 p-3"
+          className="mt-3 flex flex-col gap-3 rounded-md border border-line-card p-3"
         >
           <input type="hidden" name="jobId" value={jobId} />
           <label className={labelClass}>
@@ -290,7 +290,7 @@ export function CloseoutPackagePanel({
               defaultValue={localToday()}
               className={inputClass}
             />
-            <span className="text-xs text-slate-500">
+            <span className="text-xs text-ink-muted">
               The date it actually left, not today — a package entered a fortnight late must not read
               as a fortnight of GC silence.
             </span>
@@ -313,7 +313,7 @@ export function CloseoutPackagePanel({
               className={inputClass}
             />
           </label>
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && <p className="text-sm text-red-600">{error}</p>}
           <div className="flex gap-2">
             <button type="submit" disabled={isPending} className={primaryBtn}>
               {isPending ? "Saving…" : "Record submission"}
@@ -342,7 +342,7 @@ export function CloseoutPackagePanel({
             {submissions.length === 0 ? "Record the package going out" : "Send another attempt"}
           </button>
           {error && respondingTo === null && openForm === "none" && (
-            <span className="text-sm text-red-400">{error}</span>
+            <span className="text-sm text-red-600">{error}</span>
           )}
         </div>
       )}

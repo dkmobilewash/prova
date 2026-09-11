@@ -104,13 +104,13 @@ export default async function VendorPricingPage() {
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-slate-100">Vendor pricing</h1>
-      <p className="mb-6 text-sm text-slate-400">
+      <h1 className="mb-2 text-xl font-semibold text-ink">Vendor pricing</h1>
+      <p className="mb-6 text-sm text-ink-body">
         What your suppliers have actually quoted, and when. Nothing here is stored as a
         &ldquo;current price&rdquo; — current, expired and cheapest are all worked out from the
         quotes every time this page loads, so a price you enter today changes the answer
         immediately.{" "}
-        <Link href="/vendors" className="text-blue-400 hover:text-blue-300">
+        <Link href="/vendors" className="text-link hover:text-link-hover">
           The vendor directory
         </Link>{" "}
         is where the suppliers themselves live.
@@ -121,9 +121,9 @@ export default async function VendorPricingPage() {
       </div>
 
       {items.length === 0 ? (
-        <div className="rounded-lg border border-slate-800 bg-slate-900 p-6">
-          <p className="text-slate-300">No prices recorded yet.</p>
-          <p className="mt-2 text-sm text-slate-400">
+        <div className="rounded-lg border border-line-card bg-surface p-6">
+          <p className="text-ink-label">No prices recorded yet.</p>
+          <p className="mt-2 text-sm text-ink-body">
             Record what a supplier last quoted you for the things you buy most — board, studs,
             joint compound. Two quotes for the same item is where this starts earning its keep:
             it will tell you which way the price moved and by how much, which is the number that
@@ -147,11 +147,11 @@ export default async function VendorPricingPage() {
             return (
               <section
                 key={item.key}
-                className="rounded-lg border border-slate-800 bg-slate-900"
+                className="rounded-lg border border-line-card bg-surface"
               >
-                <header className="border-b border-slate-800 p-4">
-                  <h2 className="font-semibold text-slate-100">{item.title}</h2>
-                  <p className="text-xs text-slate-500">
+                <header className="border-b border-line-row p-4">
+                  <h2 className="font-semibold text-ink">{item.title}</h2>
+                  <p className="text-xs text-ink-muted">
                     {item.catalogEntryId ? (
                       <>
                         Linked to a catalog item
@@ -169,17 +169,17 @@ export default async function VendorPricingPage() {
                 </header>
 
                 {gap && (
-                  <div className="border-b border-slate-800 bg-amber-500/5 p-4">
-                    <p className="text-sm text-amber-300">
+                  <div className="border-b border-line-row bg-amber-500/5 p-4">
+                    <p className="text-sm text-tag-amber-ink">
                       Your catalog default is {gap.shortfallPercent}% under what anyone will
                       actually sell this at.
                     </p>
-                    <p className="mt-1 text-xs text-slate-400">
+                    <p className="mt-1 text-xs text-ink-body">
                       Catalog says {money(gap.catalogCost)}; the cheapest live quote is{" "}
                       {money(gap.cheapest.unitPrice)} from {gap.cheapest.vendorName}, quoted{" "}
                       {gap.cheapest.quotedOn}. Nothing has been changed — updating the catalog is a
                       decision about your own pricing, and it belongs on{" "}
-                      <Link href="/catalog" className="text-blue-400 hover:text-blue-300">
+                      <Link href="/catalog" className="text-link hover:text-link-hover">
                         the catalog
                       </Link>
                       .
@@ -188,15 +188,15 @@ export default async function VendorPricingPage() {
                 )}
 
                 {comparisons.length > 0 && (
-                  <div className="border-b border-slate-800 p-4">
-                    <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <div className="border-b border-line-row p-4">
+                    <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-muted">
                       Live prices
                     </h3>
                     {comparisons.map((comparison) => (
                       <div key={unitLabel(comparison.unit)} className="mb-2 last:mb-0">
-                        <p className="text-sm text-slate-300">
+                        <p className="text-sm text-ink-label">
                           Per {unitLabel(comparison.unit)}:{" "}
-                          <span className="text-emerald-400">
+                          <span className="text-emerald-700">
                             {money(comparison.cheapest.unitPrice)} ({comparison.cheapest.vendorName})
                           </span>
                           {comparison.spreadPercent !== null ? (
@@ -204,18 +204,18 @@ export default async function VendorPricingPage() {
                               {" "}
                               up to {money(comparison.dearest.unitPrice)} (
                               {comparison.dearest.vendorName}) —{" "}
-                              <span className="text-slate-400">
+                              <span className="text-ink-body">
                                 {comparison.spreadPercent}% spread across{" "}
                                 {comparison.quotes.length} vendors
                               </span>
                             </>
                           ) : (
-                            <span className="text-slate-500"> — only one vendor has quoted this</span>
+                            <span className="text-ink-muted"> — only one vendor has quoted this</span>
                           )}
                         </p>
                       </div>
                     ))}
-                    <p className="mt-2 text-xs text-slate-500">
+                    <p className="mt-2 text-xs text-ink-muted">
                       Compared only within a unit. A price per MSF is never converted to a price
                       per SF — the factor is the vendor&apos;s to state, and guessing it would make
                       someone look a thousand times cheaper than they are.
@@ -224,20 +224,20 @@ export default async function VendorPricingPage() {
                 )}
 
                 {movements.length > 0 && (
-                  <div className="border-b border-slate-800 p-4">
-                    <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <div className="border-b border-line-row p-4">
+                    <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-muted">
                       Movement
                     </h3>
                     {movements.map((movement) => (
-                      <p key={movement.to.id} className="text-sm text-slate-300">
+                      <p key={movement.to.id} className="text-sm text-ink-label">
                         {movement.to.vendorName}:{" "}
                         <span
-                          className={movement.changePercent > 0 ? "text-red-400" : "text-emerald-400"}
+                          className={movement.changePercent > 0 ? "text-red-600" : "text-emerald-700"}
                         >
                           {movement.changePercent > 0 ? "up" : "down"}{" "}
                           {Math.abs(movement.changePercent)}%
                         </span>{" "}
-                        <span className="text-slate-500">
+                        <span className="text-ink-muted">
                           — {money(movement.from.unitPrice)} on {movement.from.quotedOn} to{" "}
                           {money(movement.to.unitPrice)} on {movement.to.quotedOn}
                         </span>
@@ -246,7 +246,7 @@ export default async function VendorPricingPage() {
                   </div>
                 )}
 
-                <ul className="divide-y divide-slate-800">
+                <ul className="divide-y divide-line-row">
                   {newestFirst(item.quotes).map((quote) => (
                     <VendorPriceQuoteRow
                       key={quote.id}

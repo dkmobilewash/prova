@@ -44,10 +44,10 @@ export type CloseoutJobData = {
 };
 
 const btn =
-  "rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50";
+  "rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-neutral-100 disabled:opacity-50";
 const primaryBtn =
-  "rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50";
-const linkBtn = "text-xs text-slate-500 underline disabled:opacity-50";
+  "rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50";
+const linkBtn = "text-xs text-ink-muted underline disabled:opacity-50";
 
 export function CloseoutJobCard({
   job,
@@ -134,10 +134,10 @@ export function CloseoutJobCard({
 
   const warrantyChip =
     wState === "ACTIVE"
-      ? "bg-blue-500/15 text-blue-300"
+      ? "bg-tag-blue text-tag-blue-ink"
       : wState === "EXPIRED"
-        ? "bg-slate-800 text-slate-400"
-        : "bg-slate-800 text-slate-400";
+        ? "bg-neutral-100 text-ink-body"
+        : "bg-neutral-100 text-ink-body";
 
   return (
     <li className="flex flex-col gap-4 p-5">
@@ -147,7 +147,7 @@ export function CloseoutJobCard({
             place you could only arrive at from the nav. */}
         <Link
           href={`/jobs/${job.id}`}
-          className="text-slate-100 hover:text-blue-300 hover:underline"
+          className="text-ink hover:text-link-hover hover:underline"
         >
           {job.name}
         </Link>
@@ -157,7 +157,7 @@ export function CloseoutJobCard({
           {daysLeft !== null && ` · ${daysLeft} day${daysLeft === 1 ? "" : "s"} left`}
         </span>
         {openRequests.length > 0 && (
-          <span className="rounded bg-red-500/15 px-1.5 py-0.5 text-xs text-red-300">
+          <span className="rounded bg-tag-rose px-1.5 py-0.5 text-xs text-tag-rose-ink">
             {openRequests.length} open callback{openRequests.length === 1 ? "" : "s"}
           </span>
         )}
@@ -167,13 +167,13 @@ export function CloseoutJobCard({
 
       {/* ------------------------------------------------------ checklist */}
       <section>
-        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-muted">
           Closeout checklist
         </h3>
 
         {job.items.length === 0 ? (
-          <div className="rounded-md border border-dashed border-slate-700 p-3">
-            <p className="text-sm text-slate-400">
+          <div className="rounded-md border border-dashed border-line-card p-3">
+            <p className="text-sm text-ink-body">
               Nothing listed. A checklist is what turns &ldquo;we&apos;re basically done&rdquo; into
               something you can hold the GC to when chasing final payment.
             </p>
@@ -190,7 +190,7 @@ export function CloseoutJobCard({
           <ul className="flex flex-col gap-1">
             {job.items.map((item) =>
               editingItemId === item.id ? (
-                <li key={item.id} className="rounded-md border border-slate-700 p-3">
+                <li key={item.id} className="rounded-md border border-line-card p-3">
                   <form
                     onSubmit={(e) =>
                       submit(e, (fd) => updateCloseoutItem(item.id, fd), () => setEditingItemId(null))
@@ -201,7 +201,7 @@ export function CloseoutJobCard({
                       Item
                       <input type="text" name="name" required defaultValue={item.name} className={inputClass} />
                     </label>
-                    <label className="flex items-center gap-2 text-sm text-slate-300">
+                    <label className="flex items-center gap-2 text-sm text-ink-label">
                       <input type="checkbox" name="isRequired" defaultChecked={item.isRequired} />
                       Required before closeout counts as done
                     </label>
@@ -213,7 +213,7 @@ export function CloseoutJobCard({
                         defaultValue={item.completedOn ?? ""}
                         className={inputClass}
                       />
-                      <span className="text-xs text-slate-500">
+                      <span className="text-xs text-ink-muted">
                         The date it was actually signed, not today. Leave blank if it isn&apos;t done.
                       </span>
                     </label>
@@ -242,7 +242,7 @@ export function CloseoutJobCard({
                       Note
                       <textarea name="note" rows={2} defaultValue={item.note ?? ""} className={inputClass} />
                     </label>
-                    {error && <p className="text-sm text-red-400">{error}</p>}
+                    {error && <p className="text-sm text-red-600">{error}</p>}
                     <div className="flex gap-2">
                       <button type="submit" disabled={isPending} className={primaryBtn}>
                         {isPending ? "Saving…" : "Save"}
@@ -259,14 +259,14 @@ export function CloseoutJobCard({
                   </form>
                 </li>
               ) : (
-                <li key={item.id} className="text-sm text-slate-400">
-                  <span className={item.completedOn ? "text-green-300" : "text-slate-500"}>
+                <li key={item.id} className="text-sm text-ink-body">
+                  <span className={item.completedOn ? "text-tag-green-ink" : "text-ink-muted"}>
                     {item.completedOn ? "✓" : "○"}
                   </span>{" "}
-                  <span className={item.completedOn ? "text-slate-400" : "text-slate-200"}>{item.name}</span>
-                  {!item.isRequired && <span className="text-slate-500"> · optional</span>}
-                  {item.completedOn && <span className="text-slate-500"> · {item.completedOn}</span>}
-                  {item.note && <span className="text-slate-500"> — {item.note}</span>}
+                  <span className={item.completedOn ? "text-ink-body" : "text-ink-label"}>{item.name}</span>
+                  {!item.isRequired && <span className="text-ink-muted"> · optional</span>}
+                  {item.completedOn && <span className="text-ink-muted"> · {item.completedOn}</span>}
+                  {item.note && <span className="text-ink-muted"> — {item.note}</span>}
                   {/* Arming the remove empties the rest of this row. The
                       document link and "Mark done…" both used to stay live
                       beside the armed confirm — issue #152 — so one click
@@ -284,7 +284,7 @@ export function CloseoutJobCard({
                           onConfirm={() => run(() => deleteCloseoutItem(item.id))}
                           deleteClassName={`${linkBtn} ml-2`}
                           cancelClassName={`${linkBtn} ml-2`}
-                          confirmClassName="ml-2 text-xs text-red-400 underline disabled:opacity-50"
+                          confirmClassName="ml-2 text-xs text-red-600 underline disabled:opacity-50"
                         />
                       ) : null
                     }
@@ -294,7 +294,7 @@ export function CloseoutJobCard({
                         href={item.documentUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="ml-2 text-xs text-blue-400 underline"
+                        className="ml-2 text-xs text-link underline"
                       >
                         {item.documentName || "open"}
                       </a>
@@ -323,14 +323,14 @@ export function CloseoutJobCard({
         {openForm === "item" ? (
           <form
             onSubmit={(e) => submit(e, addCloseoutItem, () => setOpenForm("none"))}
-            className="mt-3 flex flex-col gap-3 rounded-md border border-slate-700 p-3"
+            className="mt-3 flex flex-col gap-3 rounded-md border border-line-card p-3"
           >
             <input type="hidden" name="jobId" value={job.id} />
             <label className={labelClass}>
               Item
               <input type="text" name="name" required placeholder="e.g. Consent of surety" className={inputClass} />
             </label>
-            <label className="flex items-center gap-2 text-sm text-slate-300">
+            <label className="flex items-center gap-2 text-sm text-ink-label">
               <input type="checkbox" name="isRequired" defaultChecked />
               Required before closeout counts as done
             </label>
@@ -338,7 +338,7 @@ export function CloseoutJobCard({
               Note
               <textarea name="note" rows={2} className={inputClass} />
             </label>
-            {error && <p className="text-sm text-red-400">{error}</p>}
+            {error && <p className="text-sm text-red-600">{error}</p>}
             <div className="flex gap-2">
               <button type="submit" disabled={isPending} className={primaryBtn}>
                 {isPending ? "Adding…" : "Add item"}
@@ -357,20 +357,20 @@ export function CloseoutJobCard({
 
       {/* ------------------------------------------------------- warranty */}
       <section>
-        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Warranty</h3>
+        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-muted">Warranty</h3>
 
         {job.warranty && openForm !== "warranty" && (
-          <p className="text-sm text-slate-400">
+          <p className="text-sm text-ink-body">
             {job.warranty.months} months from {job.warranty.startsOn} · runs out{" "}
-            <span className="text-slate-200">{warrantyExpiry(job.warranty)}</span>
-            {job.warranty.note && <span className="text-slate-500"> — {job.warranty.note}</span>}
+            <span className="text-ink-label">{warrantyExpiry(job.warranty)}</span>
+            {job.warranty.note && <span className="text-ink-muted"> — {job.warranty.note}</span>}
           </p>
         )}
 
         {openForm === "warranty" ? (
           <form
             onSubmit={(e) => submit(e, setWarrantyPeriod, () => setOpenForm("none"))}
-            className="flex flex-col gap-3 rounded-md border border-slate-700 p-3"
+            className="flex flex-col gap-3 rounded-md border border-line-card p-3"
           >
             <input type="hidden" name="jobId" value={job.id} />
             <div className="grid gap-3 sm:grid-cols-2">
@@ -383,7 +383,7 @@ export function CloseoutJobCard({
                   defaultValue={job.warranty?.startsOn ?? localToday()}
                   className={inputClass}
                 />
-                <span className="text-xs text-slate-500">
+                <span className="text-xs text-ink-muted">
                   Usually substantial completion — but entered here, because the warranty clock and the
                   retainage clock aren&apos;t always the same date.
                 </span>
@@ -398,7 +398,7 @@ export function CloseoutJobCard({
                   defaultValue={job.warranty?.months ?? 12}
                   className={inputClass}
                 />
-                <span className="text-xs text-slate-500">
+                <span className="text-xs text-ink-muted">
                   Months, as the contract states it. The end date is worked out from this.
                 </span>
               </label>
@@ -407,7 +407,7 @@ export function CloseoutJobCard({
               Note
               <textarea name="note" rows={2} defaultValue={job.warranty?.note ?? ""} className={inputClass} />
             </label>
-            {error && <p className="text-sm text-red-400">{error}</p>}
+            {error && <p className="text-sm text-red-600">{error}</p>}
             <div className="flex gap-2">
               <button type="submit" disabled={isPending} className={primaryBtn}>
                 {isPending ? "Saving…" : "Save warranty"}
@@ -432,7 +432,7 @@ export function CloseoutJobCard({
                   onConfirm={() => run(() => deleteWarrantyPeriod(job.id))}
                   deleteClassName={btn}
                   cancelClassName={btn}
-                  confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+                  confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-600 hover:bg-tag-rose disabled:opacity-50"
                 />
               ) : null
             }
@@ -446,7 +446,7 @@ export function CloseoutJobCard({
 
       {/* ------------------------------------------------- service requests */}
       <section>
-        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-muted">
           Callbacks after completion
         </h3>
 
@@ -454,14 +454,14 @@ export function CloseoutJobCard({
           <ul className="mb-2 flex flex-col gap-1">
             {job.requests.map((r) =>
               editingRequestId === r.id ? (
-                <li key={r.id} className="rounded-md border border-slate-700 p-3">
+                <li key={r.id} className="rounded-md border border-line-card p-3">
                   <form
                     onSubmit={(e) =>
                       submit(e, (fd) => updateServiceRequest(r.id, fd), () => setEditingRequestId(null))
                     }
                     className="flex flex-col gap-3"
                   >
-                    <p className="text-sm font-semibold text-slate-300">Reported {r.reportedOn}</p>
+                    <p className="text-sm font-semibold text-ink-label">Reported {r.reportedOn}</p>
                     <label className={labelClass}>
                       What was reported
                       <textarea
@@ -494,7 +494,7 @@ export function CloseoutJobCard({
                         defaultValue={r.resolvedOn ?? ""}
                         className={inputClass}
                       />
-                      <span className="text-xs text-slate-500">
+                      <span className="text-xs text-ink-muted">
                         Leave blank while it&apos;s still open.
                       </span>
                     </label>
@@ -507,7 +507,7 @@ export function CloseoutJobCard({
                         className={inputClass}
                       />
                     </label>
-                    {error && <p className="text-sm text-red-400">{error}</p>}
+                    {error && <p className="text-sm text-red-600">{error}</p>}
                     <div className="flex gap-2">
                       <button type="submit" disabled={isPending} className={primaryBtn}>
                         {isPending ? "Saving…" : "Save"}
@@ -524,8 +524,8 @@ export function CloseoutJobCard({
                   </form>
                 </li>
               ) : (
-                <li key={r.id} className="text-sm text-slate-400">
-                  <span className={isOpen(r) ? "text-red-300" : "text-slate-500"}>
+                <li key={r.id} className="text-sm text-ink-body">
+                  <span className={isOpen(r) ? "text-tag-rose-ink" : "text-ink-muted"}>
                     {isOpen(r) ? "open" : "closed"}
                   </span>
                   {` · reported ${r.reportedOn}`}
@@ -537,7 +537,7 @@ export function CloseoutJobCard({
                       already says "No warranty recorded", which is the only
                       thing the data supports. */}
                   {outsideWarranty(r, job.warranty) && (
-                    <span className="text-amber-300"> · outside warranty</span>
+                    <span className="text-tag-amber-ink"> · outside warranty</span>
                   )}
                   {` · ${responsibilityLabel(r.responsibility).toLowerCase()}`}
                   {(() => {
@@ -547,9 +547,9 @@ export function CloseoutJobCard({
                       ? ` · open ${d} day${d === 1 ? "" : "s"}`
                       : ` · closed in ${d} day${d === 1 ? "" : "s"}`;
                   })()}
-                  <span className="block text-slate-300">{r.description}</span>
-                  {r.reportedBy && <span className="text-xs text-slate-500">reported by {r.reportedBy} · </span>}
-                  {r.resolutionNote && <span className="text-xs text-slate-500">{r.resolutionNote} · </span>}
+                  <span className="block text-ink-label">{r.description}</span>
+                  {r.reportedBy && <span className="text-xs text-ink-muted">reported by {r.reportedBy} · </span>}
+                  {r.resolutionNote && <span className="text-xs text-ink-muted">{r.resolutionNote} · </span>}
                   {/* Arming the remove hides "Resolve"/"Edit" — issue #152.
                       It stayed live beside the armed confirm, so a click
                       meant to cancel a delete opened the callback editor. */}
@@ -564,7 +564,7 @@ export function CloseoutJobCard({
                           onConfirm={() => run(() => deleteServiceRequest(r.id))}
                           deleteClassName={`${linkBtn} ml-2`}
                           cancelClassName={`${linkBtn} ml-2`}
-                          confirmClassName="ml-2 text-xs text-red-400 underline disabled:opacity-50"
+                          confirmClassName="ml-2 text-xs text-red-600 underline disabled:opacity-50"
                         />
                       ) : null
                     }
@@ -587,14 +587,14 @@ export function CloseoutJobCard({
         {openForm === "request" ? (
           <form
             onSubmit={(e) => submit(e, recordServiceRequest, () => setOpenForm("none"))}
-            className="flex flex-col gap-3 rounded-md border border-slate-700 p-3"
+            className="flex flex-col gap-3 rounded-md border border-line-card p-3"
           >
             <input type="hidden" name="jobId" value={job.id} />
             <div className="grid gap-3 sm:grid-cols-2">
               <label className={labelClass}>
                 Date reported
                 <input type="date" name="reportedOn" required defaultValue={localToday()} className={inputClass} />
-                <span className="text-xs text-slate-500">
+                <span className="text-xs text-ink-muted">
                   The day the call came in. This is what decides whether it was in warranty.
                 </span>
               </label>
@@ -613,7 +613,7 @@ export function CloseoutJobCard({
                 className={inputClass}
               />
             </label>
-            {error && <p className="text-sm text-red-400">{error}</p>}
+            {error && <p className="text-sm text-red-600">{error}</p>}
             <div className="flex gap-2">
               <button type="submit" disabled={isPending} className={primaryBtn}>
                 {isPending ? "Saving…" : "Record callback"}
@@ -631,7 +631,7 @@ export function CloseoutJobCard({
       </section>
 
       {error && openForm === "none" && !editingItemId && !editingRequestId && (
-        <p className="text-sm text-red-400">{error}</p>
+        <p className="text-sm text-red-600">{error}</p>
       )}
     </li>
   );

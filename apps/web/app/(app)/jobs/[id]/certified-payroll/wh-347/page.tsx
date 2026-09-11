@@ -156,8 +156,8 @@ export default async function Wh347Page({
         </Link>
         <div className="mt-3 flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-semibold text-slate-100">Form WH-347</h1>
-            <p className="mt-1 text-sm text-slate-400">
+            <h1 className="text-2xl font-semibold text-ink">Form WH-347</h1>
+            <p className="mt-1 text-sm text-ink-body">
               U.S. Department of Labor · Payroll · {job.name} · week ending{" "}
               {formatDate(form.header.weekEnding)}
             </p>
@@ -169,18 +169,18 @@ export default async function Wh347Page({
             first thing on the page and names every column that is not
             ready, because the alternative is an office manager signing a
             form with an empty box in it. */}
-        <div className="mt-5 rounded-lg border border-red-500/40 bg-red-500/10 p-4">
-          <p className="text-sm font-semibold text-red-300">
+        <div className="mt-5 rounded-lg border border-red-300 bg-tag-rose p-4">
+          <p className="text-sm font-semibold text-tag-rose-ink">
             This is not ready to file. {form.blocking.length}{" "}
             {form.blocking.length === 1 ? "thing is" : "things are"} missing.
           </p>
-          <p className="mt-1 text-xs text-red-200/80">
+          <p className="mt-1 text-xs text-tag-rose-ink/80">
             The grid below is real — your hours are in the right boxes for the right days. What
             follows is every field the form requires that cstream cannot fill in yet.
           </p>
           <ul className="mt-3 flex flex-col gap-1.5">
             {form.blocking.map((field) => (
-              <li key={field} className="text-xs leading-snug text-red-200">
+              <li key={field} className="text-xs leading-snug text-tag-rose-ink">
                 {WH347_BLOCKING_FIELD_REASON[field]}
               </li>
             ))}

@@ -110,7 +110,7 @@ export default async function PortalJobPage({
 
   return (
     <main className="mx-auto max-w-2xl px-6 py-12">
-      <Link href={`/portal/${token}`} className="mb-6 inline-block text-sm text-blue-400 hover:underline">
+      <Link href={`/portal/${token}`} className="mb-6 inline-block text-sm text-link hover:underline">
         ← Back to your jobs
       </Link>
 
@@ -133,7 +133,7 @@ export default async function PortalJobPage({
             pendingSignature ? (
               <Link
                 href={`/esign/${pendingSignature.token}`}
-                className="inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
+                className="inline-flex items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500"
               >
                 Review and sign contract
               </Link>
@@ -144,14 +144,14 @@ export default async function PortalJobPage({
 
       {job.changeOrders.length > 0 && (
         <section className="mb-10">
-          <h2 className="mb-3 text-lg font-semibold text-slate-100">Change orders</h2>
+          <h2 className="mb-3 text-lg font-semibold text-ink">Change orders</h2>
           <ul className="flex flex-col gap-2">
             {job.changeOrders.map((co) => (
-              <li key={co.id} className="rounded-md border border-slate-800 bg-slate-900 p-3 text-sm">
-                <p className="font-medium text-slate-100">
+              <li key={co.id} className="rounded-md border border-line-card bg-surface p-3 text-sm">
+                <p className="font-medium text-ink">
                   CO #{co.number}: {co.title}
                 </p>
-                {co.description && <p className="text-slate-400">{co.description}</p>}
+                {co.description && <p className="text-ink-body">{co.description}</p>}
               </li>
             ))}
           </ul>
@@ -167,23 +167,23 @@ export default async function PortalJobPage({
 
       {job.invoices.length > 0 && (
         <section>
-          <h2 className="mb-3 text-lg font-semibold text-slate-100">Invoices</h2>
+          <h2 className="mb-3 text-lg font-semibold text-ink">Invoices</h2>
           <ul className="flex flex-col gap-2">
             {job.invoices.map((invoice) => {
               const paid = invoice.payments.reduce((s, p) => s + Number(p.amount), 0);
               const balance = Number(invoice.amount) - paid;
               return (
-                <li key={invoice.id} className="rounded-md border border-slate-800 bg-slate-900 p-3 text-sm">
+                <li key={invoice.id} className="rounded-md border border-line-card bg-surface p-3 text-sm">
                   <div className="flex flex-wrap items-baseline justify-between gap-2">
-                    <p className="font-medium text-slate-100">
+                    <p className="font-medium text-ink">
                       Invoice #{invoice.number}
                       {invoice.description ? ` — ${invoice.description}` : ""}
                     </p>
-                    <span className={balance <= 0 ? "text-green-400" : "text-amber-400"}>
+                    <span className={balance <= 0 ? "text-green-700" : "text-amber-700"}>
                       {balance <= 0 ? "Paid in full" : `Balance ${money(balance)}`}
                     </span>
                   </div>
-                  <p className="text-slate-400">Amount {money(Number(invoice.amount))}</p>
+                  <p className="text-ink-body">Amount {money(Number(invoice.amount))}</p>
                 </li>
               );
             })}

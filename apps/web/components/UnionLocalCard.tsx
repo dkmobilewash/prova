@@ -18,7 +18,7 @@ import { ratioLabel } from "@/lib/apprentice-ratio";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 
 const btn =
-  "rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:border-slate-500 disabled:opacity-50";
+  "rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-neutral-100 disabled:opacity-50";
 
 /** One local: the agreement, its apprentice ratio, and its classifications
  * with their rates. Everything the two reports above read from. */
@@ -73,32 +73,32 @@ export function UnionLocalCard({
     <li className="flex flex-col gap-3 p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <div className="min-w-0">
-          <p className="text-slate-100">{local.label}</p>
-          <p className="text-xs text-slate-500">
+          <p className="text-ink">{local.label}</p>
+          <p className="text-xs text-ink-muted">
             {local.tradeJurisdiction && `${local.tradeJurisdiction} · `}
             agreement from {local.effectiveFrom}
             {local.effectiveTo ? ` to ${local.effectiveTo}` : ""}
           </p>
         </div>
         {current ? (
-          <span className="rounded bg-green-500/15 px-1.5 py-0.5 text-xs text-green-300">Current</span>
+          <span className="rounded bg-tag-green px-1.5 py-0.5 text-xs text-tag-green-ink">Current</span>
         ) : (
-          <span className="rounded bg-slate-800 px-1.5 py-0.5 text-xs text-slate-500">Ended</span>
+          <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs text-ink-muted">Ended</span>
         )}
       </div>
 
       {/* ---------------------------------------------------- ratio --- */}
       <div className="text-sm">
-        <span className="text-slate-400">Apprentice ratio: </span>
+        <span className="text-ink-body">Apprentice ratio: </span>
         {local.ratio ? (
           <>
-            <span className="text-slate-200">{ratioLabel(local.ratio)}</span>
+            <span className="text-ink-label">{ratioLabel(local.ratio)}</span>
             {local.ratio.programStandardReference && (
-              <span className="text-slate-500"> · {local.ratio.programStandardReference}</span>
+              <span className="text-ink-muted"> · {local.ratio.programStandardReference}</span>
             )}
           </>
         ) : (
-          <span className="text-amber-300">
+          <span className="text-tag-amber-ink">
             none recorded — days with apprentice hours read &ldquo;can&apos;t be judged&rdquo;
           </span>
         )}
@@ -109,7 +109,7 @@ export function UnionLocalCard({
             setOpen(open === "ratio" ? "none" : "ratio");
             setError(null);
           }}
-          className="ml-2 text-xs text-blue-400 underline disabled:opacity-50"
+          className="ml-2 text-xs text-link underline disabled:opacity-50"
         >
           {local.ratio ? "change" : "set it"}
         </button>
@@ -118,7 +118,7 @@ export function UnionLocalCard({
       {open === "ratio" && (
         <form
           onSubmit={(e) => submit(e, setApprenticeRatioRule, () => setOpen("none"))}
-          className="flex flex-wrap items-end gap-2 rounded-md border border-slate-700 p-3"
+          className="flex flex-wrap items-end gap-2 rounded-md border border-line-card p-3"
         >
           <input type="hidden" name="unionLocalId" value={local.unionLocalId} />
           <label className={labelClass}>
@@ -133,7 +133,7 @@ export function UnionLocalCard({
               className={`${inputClass} w-24 py-1 text-sm`}
             />
           </label>
-          <span className="pb-2 text-sm text-slate-500">per</span>
+          <span className="pb-2 text-sm text-ink-muted">per</span>
           <label className={labelClass}>
             <span className="text-xs">Journeymen</span>
             <input
@@ -167,21 +167,21 @@ export function UnionLocalCard({
 
       {/* ----------------------------------------------- classifications */}
       <div>
-        <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+        <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink-muted">
           Classifications
         </p>
         {local.crafts.length === 0 ? (
-          <p className="text-sm text-slate-400">
+          <p className="text-sm text-ink-body">
             None yet. Hours can only be tagged to a classification that exists here.
           </p>
         ) : (
           <ul className="flex flex-col gap-3">
             {local.crafts.map((craft) => (
-              <li key={craft.id} className="rounded-md border border-slate-800 p-3">
+              <li key={craft.id} className="rounded-md border border-line-row p-3">
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="text-sm text-slate-100">{craft.name}</p>
-                    <p className="text-xs text-slate-500">
+                    <p className="text-sm text-ink">{craft.name}</p>
+                    <p className="text-xs text-ink-muted">
                       {craft.usageCount > 0
                         ? `${craft.usageCount} record${craft.usageCount === 1 ? "" : "s"} tagged`
                         : "nothing tagged yet"}
@@ -211,9 +211,9 @@ export function UnionLocalCard({
                           armedClassName="flex gap-2"
                           pending={isPending}
                           onConfirm={() => run(() => deleteCraftClassification(craft.id))}
-                          deleteClassName="text-xs text-slate-500 underline disabled:opacity-50"
-                          cancelClassName="text-xs text-slate-400 underline disabled:opacity-50"
-                          confirmClassName="text-xs text-red-400 underline disabled:opacity-50"
+                          deleteClassName="text-xs text-ink-muted underline disabled:opacity-50"
+                          cancelClassName="text-xs text-ink-body underline disabled:opacity-50"
+                          confirmClassName="text-xs text-red-600 underline disabled:opacity-50"
                         />
                       ) : null
                     }
@@ -246,7 +246,7 @@ export function UnionLocalCard({
                 setTier("");
               })
             }
-            className="mt-2 flex flex-wrap items-end gap-2 rounded-md border border-slate-700 p-3"
+            className="mt-2 flex flex-wrap items-end gap-2 rounded-md border border-line-card p-3"
           >
             <input type="hidden" name="unionLocalId" value={local.unionLocalId} />
             <label className={`${labelClass} min-w-[14rem] flex-1`}>
@@ -300,7 +300,7 @@ export function UnionLocalCard({
               setOpen("craft");
               setError(null);
             }}
-            className="mt-2 text-xs text-blue-400 underline disabled:opacity-50"
+            className="mt-2 text-xs text-link underline disabled:opacity-50"
           >
             Add a classification
           </button>
@@ -342,18 +342,18 @@ export function UnionLocalCard({
                 setOpen("end");
                 setError(null);
               }}
-              className="text-xs text-slate-500 underline disabled:opacity-50"
+              className="text-xs text-ink-muted underline disabled:opacity-50"
             >
               End this agreement
             </button>
           )}
-          <p className="mt-1 text-xs text-slate-500">
+          <p className="mt-1 text-xs text-ink-muted">
             Ended, never deleted — payroll already filed under this CBA has to stay explainable.
           </p>
         </div>
       )}
 
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {error && <p className="text-sm text-red-600">{error}</p>}
     </li>
   );
 }

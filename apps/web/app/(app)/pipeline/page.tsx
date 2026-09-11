@@ -24,11 +24,11 @@ export default async function PipelinePage() {
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-slate-100">Bid pipeline</h1>
-      <p className="mb-6 text-sm text-slate-400">
+      <h1 className="mb-2 text-xl font-semibold text-ink">Bid pipeline</h1>
+      <p className="mb-6 text-sm text-ink-body">
         Who invites us to bid, and what comes of it. Everything here is worked out from the bid
         invitations listed on {""}
-        <Link href="/bids" className="text-blue-400 hover:underline">
+        <Link href="/bids" className="text-link hover:underline">
           Bids
         </Link>
         . Nothing here is stored separately, so correcting a bid moves these figures with it —
@@ -37,11 +37,11 @@ export default async function PipelinePage() {
       </p>
 
       {rows.length === 0 ? (
-        <div className="rounded-lg border border-slate-800 bg-slate-900 p-6">
-          <p className="text-slate-300">No bid invitations recorded yet.</p>
-          <p className="mt-2 text-sm text-slate-400">
+        <div className="rounded-lg border border-line-card bg-surface p-6">
+          <p className="text-ink-label">No bid invitations recorded yet.</p>
+          <p className="mt-2 text-sm text-ink-body">
             A GC appears here once they have invited you to bid at least once. Log one from{" "}
-            <Link href="/contacts" className="text-blue-400 hover:underline">
+            <Link href="/contacts" className="text-link hover:underline">
               a contact&apos;s page
             </Link>
             .
@@ -51,43 +51,43 @@ export default async function PipelinePage() {
         <>
           <section className="mb-8">
             <div className="mb-3 flex items-baseline gap-3">
-              <h2 className="text-sm font-medium text-slate-200">Waiting on us</h2>
+              <h2 className="text-sm font-medium text-ink-label">Waiting on us</h2>
               {overdueCount > 0 && (
-                <span className="rounded bg-red-500/15 px-1.5 py-0.5 text-xs text-red-300">
+                <span className="rounded bg-tag-rose px-1.5 py-0.5 text-xs text-tag-rose-ink">
                   {overdueCount} past the date they asked for
                 </span>
               )}
             </div>
 
             {live.length === 0 ? (
-              <p className="rounded-lg border border-slate-800 bg-slate-900 p-4 text-sm text-slate-400">
+              <p className="rounded-lg border border-line-card bg-surface p-4 text-sm text-ink-body">
                 Nothing outstanding — every invitation on file has been won, lost or declined.
               </p>
             ) : (
-              <ul className="divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900">
+              <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
                 {live.map((bidRow) => (
                   <li key={bidRow.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 p-4">
-                    <span className="text-slate-100">{bidRow.projectName}</span>
+                    <span className="text-ink">{bidRow.projectName}</span>
                     <Link
                       href={`/contacts/${bidRow.contactId}`}
-                      className="text-sm text-blue-400 hover:underline"
+                      className="text-sm text-link hover:underline"
                     >
                       {bidRow.contactName}
                     </Link>
                     <span
                       className={`rounded px-1.5 py-0.5 text-xs ${
                         bidRow.status === "SUBMITTED"
-                          ? "bg-blue-500/15 text-blue-300"
-                          : "bg-slate-800 text-slate-300"
+                          ? "bg-tag-blue text-tag-blue-ink"
+                          : "bg-neutral-100 text-ink-label"
                       }`}
                     >
                       {bidRow.status === "SUBMITTED" ? "Submitted" : "Invited"}
                     </span>
-                    <span className="ml-auto text-sm text-slate-400">
+                    <span className="ml-auto text-sm text-ink-body">
                       {bidRow.dueDate === null ? (
-                        <span className="text-slate-500">no date given</span>
+                        <span className="text-ink-muted">no date given</span>
                       ) : (
-                        <span className={bidRow.overdue ? "text-red-300" : undefined}>
+                        <span className={bidRow.overdue ? "text-tag-rose-ink" : undefined}>
                           due {bidRow.dueDate}
                         </span>
                       )}
@@ -99,30 +99,30 @@ export default async function PipelinePage() {
           </section>
 
           <section>
-            <h2 className="mb-3 text-sm font-medium text-slate-200">By general contractor</h2>
-            <ul className="divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900">
+            <h2 className="mb-3 text-sm font-medium text-ink-label">By general contractor</h2>
+            <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
               {rows.map((row) => (
                 <li key={row.contactId} className="p-4">
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                     <Link
                       href={`/contacts/${row.contactId}`}
-                      className="font-medium text-slate-100 hover:underline"
+                      className="font-medium text-ink hover:underline"
                     >
                       {row.contactName}
                     </Link>
                     {row.record.overdue > 0 && (
-                      <span className="rounded bg-red-500/15 px-1.5 py-0.5 text-xs text-red-300">
+                      <span className="rounded bg-tag-rose px-1.5 py-0.5 text-xs text-tag-rose-ink">
                         {row.record.overdue} overdue
                       </span>
                     )}
                     {row.record.outstanding > 0 && row.record.overdue === 0 && (
-                      <span className="rounded bg-blue-500/15 px-1.5 py-0.5 text-xs text-blue-300">
+                      <span className="rounded bg-tag-blue px-1.5 py-0.5 text-xs text-tag-blue-ink">
                         {row.record.outstanding} live
                       </span>
                     )}
                   </div>
 
-                  <p className="mt-1 text-sm text-slate-400">
+                  <p className="mt-1 text-sm text-ink-body">
                     Invited {row.record.invited}
                     {" · "}bid {row.record.bid}
                     {row.record.declined > 0 && ` · declined ${row.record.declined}`}
@@ -133,24 +133,24 @@ export default async function PipelinePage() {
                   </p>
 
                   <p className="mt-1 text-sm">
-                    <span className="text-slate-400">Win rate </span>
+                    <span className="text-ink-body">Win rate </span>
                     <span
                       className={
-                        row.record.winRate === null ? "text-slate-500" : "text-slate-200"
+                        row.record.winRate === null ? "text-ink-muted" : "text-ink-label"
                       }
                     >
                       {winRateLabel(row.record)}
                     </span>
                     {row.record.won > 0 && (
                       <>
-                        <span className="text-slate-400"> · won </span>
-                        <span className="text-slate-200">{money(row.record.valueWon)}</span>
+                        <span className="text-ink-body"> · won </span>
+                        <span className="text-ink-label">{money(row.record.valueWon)}</span>
                         {/* A sum that skipped rows must say so. /bids drops
                             unpriced won bids from its total silently, which
                             is the same shape as the $0.00 the browser test
                             found on the fringe report. */}
                         {valueIsPartial(row.record) && (
-                          <span className="text-amber-300">
+                          <span className="text-tag-amber-ink">
                             {" "}
                             at least — {row.record.valueWonUnpriced} won{" "}
                             {row.record.valueWonUnpriced === 1 ? "bid has" : "bids have"} no amount

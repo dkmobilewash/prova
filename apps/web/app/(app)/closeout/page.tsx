@@ -57,8 +57,8 @@ export default async function CloseoutPage() {
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-slate-100">Closeout &amp; warranty</h1>
-      <p className="mb-6 text-sm text-slate-400">
+      <h1 className="mb-2 text-xl font-semibold text-ink">Closeout &amp; warranty</h1>
+      <p className="mb-6 text-sm text-ink-body">
         What&apos;s still owed before final payment, and what you&apos;re still on the hook for after
         it. Retainage is usually released against a closeout package, so a missing lien waiver is
         money sitting with the GC — and a callback logged after the warranty ran out is the
@@ -66,66 +66,66 @@ export default async function CloseoutPage() {
       </p>
 
       <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-          <p className={`text-2xl font-semibold ${outstandingJobs > 0 ? "text-amber-300" : "text-slate-100"}`}>
+        <div className="rounded-lg border border-line-card bg-surface p-4">
+          <p className={`text-2xl font-semibold ${outstandingJobs > 0 ? "text-tag-amber-ink" : "text-ink"}`}>
             {outstandingJobs}
           </p>
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-ink-muted">
             Jobs with closeout outstanding
             {totalOutstandingItems > 0 && ` · ${plural(totalOutstandingItems, "item", "items")}`}
           </p>
         </div>
-        <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-          <p className="text-2xl font-semibold text-blue-300">{inWarranty}</p>
-          <p className="text-xs text-slate-500">Jobs still in warranty</p>
+        <div className="rounded-lg border border-line-card bg-surface p-4">
+          <p className="text-2xl font-semibold text-tag-blue-ink">{inWarranty}</p>
+          <p className="text-xs text-ink-muted">Jobs still in warranty</p>
         </div>
-        <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-          <p className={`text-2xl font-semibold ${openCallbacks > 0 ? "text-red-300" : "text-slate-100"}`}>
+        <div className="rounded-lg border border-line-card bg-surface p-4">
+          <p className={`text-2xl font-semibold ${openCallbacks > 0 ? "text-tag-rose-ink" : "text-ink"}`}>
             {openCallbacks}
           </p>
-          <p className="text-xs text-slate-500">Open callbacks</p>
+          <p className="text-xs text-ink-muted">Open callbacks</p>
         </div>
-        <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-          <p className="font-mono text-xl font-semibold text-slate-100">
+        <div className="rounded-lg border border-line-card bg-surface p-4">
+          <p className="font-mono text-xl font-semibold text-ink">
             {showsMoney
               ? money(retainageBehindCloseout)
               : plural(attention.length, "job", "jobs")}
           </p>
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-ink-muted">
             {showsMoney ? "Retainage behind an unfinished closeout" : "Waiting on something"}
             {readyToSubmit.length > 0 && (
-              <span className="text-amber-300"> · {readyToSubmit.length} ready to send today</span>
+              <span className="text-tag-amber-ink"> · {readyToSubmit.length} ready to send today</span>
             )}
           </p>
         </div>
       </div>
 
       {attention.length > 0 && (
-        <section className="mb-6 rounded-lg border border-slate-800 bg-slate-900 p-4">
-          <h2 className="mb-1 text-sm font-semibold text-slate-300">What to do next</h2>
-          <p className="mb-3 text-xs text-slate-500">
+        <section className="mb-6 rounded-lg border border-line-card bg-surface p-4">
+          <h2 className="mb-1 text-sm font-semibold text-ink-label">What to do next</h2>
+          <p className="mb-3 text-xs text-ink-muted">
             Most money first. A job is only off this list once the GC has accepted its package —
             &ldquo;the checklist is ticked&rdquo; and &ldquo;they took it&rdquo; are different
             claims, and only the second one releases retainage.
           </p>
           <ul className="flex flex-col gap-2">
             {attention.map((job) => (
-              <li key={job.id} className="text-sm text-slate-300">
-                <span className="text-slate-100">{job.name}</span>
-                <span className="text-slate-500"> — {stageLabel(job.readiness.stage).toLowerCase()}</span>
+              <li key={job.id} className="text-sm text-ink-label">
+                <span className="text-ink">{job.name}</span>
+                <span className="text-ink-muted"> — {stageLabel(job.readiness.stage).toLowerCase()}</span>
                 {job.readiness.blockers.length > 0 && (
-                  <span className="text-slate-400">
+                  <span className="text-ink-body">
                     : {job.readiness.blockers.map(blockerLabel).join(", ")}
                   </span>
                 )}
                 {showsMoney && job.readiness.retainageAtStake > 0 && (
-                  <span className="font-mono text-slate-400">
+                  <span className="font-mono text-ink-body">
                     {" "}
                     · {money(job.readiness.retainageAtStake)} held
                   </span>
                 )}
                 {job.readiness.stage === "AWAITING_GC" && job.readiness.daysWithGc !== null && (
-                  <span className="text-slate-500">
+                  <span className="text-ink-muted">
                     {" "}
                     · {plural(job.readiness.daysWithGc, "day", "days")} with them
                   </span>
@@ -137,11 +137,11 @@ export default async function CloseoutPage() {
       )}
 
       {rows.length === 0 ? (
-        <p className="text-slate-400">
+        <p className="text-ink-body">
           No jobs yet. Closeout and warranty both hang off a job — create one and it will appear here.
         </p>
       ) : (
-        <ul className="divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900">
+        <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
           {withReadiness.map((job) => (
             <CloseoutJobCard
               key={job.id}

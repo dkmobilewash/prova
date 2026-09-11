@@ -35,16 +35,16 @@ export type SalesOpportunityHistory = {
 };
 
 const STAGE_STYLE: Record<string, string> = {
-  NEW: "bg-slate-800 text-slate-300",
-  CONTACTED: "bg-slate-800 text-slate-300",
-  DEMO_SCHEDULED: "bg-blue-500/15 text-blue-300",
-  TRIAL: "bg-blue-500/15 text-blue-300",
-  WON: "bg-green-500/15 text-green-300",
-  LOST: "bg-red-950 text-red-400",
+  NEW: "bg-neutral-100 text-ink-label",
+  CONTACTED: "bg-neutral-100 text-ink-label",
+  DEMO_SCHEDULED: "bg-tag-blue text-tag-blue-ink",
+  TRIAL: "bg-tag-blue text-tag-blue-ink",
+  WON: "bg-tag-green text-tag-green-ink",
+  LOST: "bg-tag-rose text-red-600",
 };
 
 const btn =
-  "rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:border-slate-500 disabled:opacity-50";
+  "rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-neutral-100 disabled:opacity-50";
 
 export function SalesOpportunityRow({
   opportunity,
@@ -89,12 +89,12 @@ export function SalesOpportunityRow({
             // moved: this field records the move you are making now.
             defaults={{ ...opportunity, stageEffectiveOn: localToday() }}
           />
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && <p className="text-sm text-red-600">{error}</p>}
           <div className="flex gap-2">
             <button
               type="submit"
               disabled={isPending}
-              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+              className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
             >
               {isPending ? "Saving…" : "Save changes"}
             </button>
@@ -116,12 +116,12 @@ export function SalesOpportunityRow({
               {OPPORTUNITY_STAGE_OPTIONS.find((o) => o.value === opportunity.stage)?.label ?? opportunity.stage}
             </span>
             {opportunity.estimatedMrr && (
-              <span className="text-sm text-slate-300">{money(Number(opportunity.estimatedMrr))}/mo</span>
+              <span className="text-sm text-ink-label">{money(Number(opportunity.estimatedMrr))}/mo</span>
             )}
             {opportunity.expectedCloseDate && (
-              <span className="text-xs text-slate-500">expected {opportunity.expectedCloseDate}</span>
+              <span className="text-xs text-ink-muted">expected {opportunity.expectedCloseDate}</span>
             )}
-            <span className="text-xs text-slate-500">
+            <span className="text-xs text-ink-muted">
               {history.stageSince === null
                 ? "stage not recorded"
                 : history.futureDated
@@ -130,28 +130,28 @@ export function SalesOpportunityRow({
             </span>
           </div>
           {history.disagrees && (
-            <p className="mt-1 text-xs text-amber-300">
+            <p className="mt-1 text-xs text-tag-amber-ink">
               The recorded history leaves this deal somewhere else. Something changed the stage
               without recording the move — the two disagree and one of them is wrong.
             </p>
           )}
-          {opportunity.notes && <p className="mt-1 text-sm text-slate-400">{opportunity.notes}</p>}
-          {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
+          {opportunity.notes && <p className="mt-1 text-sm text-ink-body">{opportunity.notes}</p>}
+          {error && <p className="mt-1 text-sm text-red-600">{error}</p>}
 
           {history.spells.length > 0 && (
             <>
               <button
                 type="button"
                 onClick={() => setShowsHistory((open) => !open)}
-                className="mt-2 text-xs text-slate-500 underline underline-offset-2 hover:text-slate-300"
+                className="mt-2 text-xs text-ink-muted underline underline-offset-2 hover:text-ink-label"
               >
                 {showsHistory ? "Hide stage history" : `Stage history (${history.spells.length})`}
               </button>
               {showsHistory && (
-                <ol className="mt-2 space-y-1 border-l border-slate-800 pl-3">
+                <ol className="mt-2 space-y-1 border-l border-line-row pl-3">
                   {history.spells.map((spell, index) => (
-                    <li key={`${spell.enteredOn}-${index}`} className="text-xs text-slate-400">
-                      <span className="text-slate-300">
+                    <li key={`${spell.enteredOn}-${index}`} className="text-xs text-ink-body">
+                      <span className="text-ink-label">
                         {OPPORTUNITY_STAGE_OPTIONS.find((o) => o.value === spell.stage)?.label ?? spell.stage}
                       </span>{" "}
                       from {spell.enteredOn}
@@ -162,7 +162,7 @@ export function SalesOpportunityRow({
                           rendered it -- the history showed stage, dates and
                           days-in-stage and silently dropped the one field a
                           person actually typed. */}
-                      {spell.note && <p className="mt-0.5 text-slate-500">&ldquo;{spell.note}&rdquo;</p>}
+                      {spell.note && <p className="mt-0.5 text-ink-muted">&ldquo;{spell.note}&rdquo;</p>}
                     </li>
                   ))}
                 </ol>

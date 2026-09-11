@@ -14,7 +14,7 @@ export interface GcOption {
 }
 
 const field =
-  "rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none";
+  "rounded-md border border-line-card bg-surface px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none";
 
 /**
  * Starting a job used to mint a brand-new Contact every single time, off a
@@ -60,12 +60,12 @@ export function NewJobForm({ contacts }: { contacts: GcOption[] }) {
       onInput={() => setError(null)}
       className="flex flex-col gap-4"
     >
-      <label className="flex flex-col gap-1 text-sm text-slate-300">
+      <label className="flex flex-col gap-1 text-sm text-ink-label">
         Job name
         <input name="jobName" required className={field} placeholder="Building C — level 3 drywall" />
       </label>
 
-      <label className="flex flex-col gap-1 text-sm text-slate-300">
+      <label className="flex flex-col gap-1 text-sm text-ink-label">
         Scope
         <textarea
           name="scope"
@@ -74,11 +74,11 @@ export function NewJobForm({ contacts }: { contacts: GcOption[] }) {
         />
       </label>
 
-      <div className="flex flex-col gap-2 rounded-lg border border-slate-800 bg-slate-900/60 p-4">
-        <p className="text-sm font-medium text-slate-200">General contractor</p>
+      <div className="flex flex-col gap-2 rounded-lg border border-line-card bg-surface/60 p-4">
+        <p className="text-sm font-medium text-ink-label">General contractor</p>
 
         {contacts.length === 0 ? (
-          <p className="text-sm text-slate-400">
+          <p className="text-sm text-ink-body">
             No GCs on your account yet — this one will be the first.
           </p>
         ) : isNewContact ? (
@@ -88,7 +88,7 @@ export function NewJobForm({ contacts }: { contacts: GcOption[] }) {
               setIsNewContact(false);
               setError(null);
             }}
-            className="self-start text-sm text-blue-400 hover:underline"
+            className="self-start text-sm text-link hover:underline"
           >
             ← Pick one you already work with
           </button>
@@ -99,7 +99,7 @@ export function NewJobForm({ contacts }: { contacts: GcOption[] }) {
               setIsNewContact(true);
               setError(null);
             }}
-            className="self-start text-sm text-blue-400 hover:underline"
+            className="self-start text-sm text-link hover:underline"
           >
             + Add a new GC
           </button>
@@ -107,23 +107,23 @@ export function NewJobForm({ contacts }: { contacts: GcOption[] }) {
 
         {isNewContact ? (
           <>
-            <label className="flex flex-col gap-1 text-sm text-slate-300">
+            <label className="flex flex-col gap-1 text-sm text-ink-label">
               GC name
               <input name="contactName" required className={field} placeholder="Turner Construction" />
             </label>
-            <label className="flex flex-col gap-1 text-sm text-slate-300">
+            <label className="flex flex-col gap-1 text-sm text-ink-label">
               GC email (optional)
               <input name="contactEmail" type="email" className={field} placeholder="pm@turner.com" />
             </label>
             {contacts.length > 0 && (
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-ink-muted">
                 Only add a new one if they aren&apos;t in the list. A second row for the same GC
                 splits their payment history and their standing terms across two records.
               </p>
             )}
           </>
         ) : (
-          <label className="flex flex-col gap-1 text-sm text-slate-300">
+          <label className="flex flex-col gap-1 text-sm text-ink-label">
             Which GC is this job for?
             <select name="contactId" required defaultValue="" className={field}>
               <option value="" disabled>
@@ -146,13 +146,13 @@ export function NewJobForm({ contacts }: { contacts: GcOption[] }) {
       <button
         type="submit"
         disabled={isPending}
-        className="mt-2 inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+        className="mt-2 inline-flex items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-60"
       >
         {isPending ? "Creating…" : "Create job"}
       </button>
 
       {error && (
-        <p role="alert" className="text-sm text-red-300">
+        <p role="alert" className="text-sm text-tag-rose-ink">
           {error}
         </p>
       )}
