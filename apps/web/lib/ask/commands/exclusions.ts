@@ -28,7 +28,7 @@ export const notYetRegistered: Exclusion[] = [
   // card; a command that proposed confirming a card would be the model
   // confirming its own proposal, which is the one thing this design exists
   // to make impossible.
-  { action: "ask.*", reason: "The confirm and cancel actions are the write path a card resolves to; never a command." },
+  { action: "ask.*", reason: "The confirm and cancel actions are the write path a card resolves to, and the connection check is a diagnostic button on the settings page; never a command." },
 
   // Diego's lane, later phases.
   { action: "changeOrders.*", reason: "Change orders move contract value a sent pay application may depend on (T5 decisions, T3 drafts); a later phase." },

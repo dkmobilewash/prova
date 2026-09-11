@@ -4,8 +4,11 @@ import {
   streamToolConversation,
   type AskToolCallMeta,
   type AskToolOutcome,
+  type AskUsageTotals,
 } from "@prova/integrations";
 import { accessContext, refusalFor } from "./access";
+import { askAllowance, recordAskUsage, type AskUsageOutcome } from "./usage";
+import type { Principal } from "@/lib/permissions";
 import {
   canRunCommand,
   commandNamed,
@@ -365,6 +368,13 @@ function refusedContent(reason: string): AskToolOutcome<AskHalt> {
   return { content: JSON.stringify({ unavailable: reason }) };
 }
 
+/** Every tool and command this person is offered, in the order the model
+ * sees them. Exported so the routing eval hands the model exactly what the
+ * route does, and nothing else. */
+export function offeredTools(principal: Principal) {
+  return [...toolsFor(principal), ...commandsFor(principal).map(toToolDefinition)];
+}
+
 export async function* streamAnswer(
   ctx: CommandContext,
   request: AskRequest,
@@ -414,6 +424,14 @@ export async function* streamAnswer(
     return;
   }
 
+  // The bound on spend, checked BEFORE the model rather than after: a
+  // person or a company at its limit gets the sentence and no pass runs.
+  const allowance = await askAllowance(ctx.companyId, ctx.userId);
+  if (!allowance.ok) {
+    yield { type: "error", error: allowance.error };
+    return;
+  }
+
   const citations: AskCitation[] = [];
   const toolsUsed: ToolName[] = [];
   // Set synchronously, before the first await in a command's branch, so a
@@ -422,10 +440,7 @@ export async function* streamAnswer(
   let commandSeen = false;
   const alsoRequested: string[] = [];
 
-  const offered = [
-    ...toolsFor(ctx.principal),
-    ...commandsFor(ctx.principal).map(toToolDefinition),
-  ];
+  const offered = offeredTools(ctx.principal);
 
   const events = streamToolConversation<AskHalt>({
     system: SYSTEM_PROMPT,
@@ -495,6 +510,15 @@ export async function* streamAnswer(
     },
   });
 
+  // The loop reports what the question cost once, just before it ends;
+  // the row is written with the outcome the terminal event names, and it
+  // is written before that event is yielded so a closed tab cannot lose it.
+  let usage: AskUsageTotals | null = null;
+  const record = async (outcome: AskUsageOutcome) => {
+    if (!usage) return;
+    await recordAskUsage({ companyId: ctx.companyId, userId: ctx.userId, model: ASK_DEFAULT_MODEL, usage, outcome });
+  };
+
   for await (const event of events) {
     switch (event.type) {
       case "text":
@@ -505,13 +529,19 @@ export async function* streamAnswer(
       case "tools":
         yield { type: "tools", names: event.names, label: labelFor(event.names) };
         break;
+      case "usage":
+        usage = event.usage;
+        break;
       case "halt":
+        await record(event.halt.type);
         yield event.halt;
         return;
       case "error":
+        await record(`error:${event.reason}`);
         yield { type: "error", error: messageFor(event.reason) };
         return;
       case "done":
+        await record("answered");
         // Citations only where a tool actually ran. An answer built from
         // no data — a refusal to guess, a clarifying question — must not
         // carry links implying it was sourced from the rows.

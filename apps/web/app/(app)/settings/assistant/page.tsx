@@ -1,7 +1,10 @@
 import Link from "next/link";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
+import { anthropicIsConfigured, ASK_DEFAULT_MODEL } from "@prova/integrations";
 import { auditSummary, listAskProposals, OUTCOME_LABEL, type AuditOutcome } from "@/lib/ask/audit";
+import { ASK_LIMITS, usageSummary } from "@/lib/ask/usage";
+import { AssistantConnectionCheck } from "@/components/AssistantConnectionCheck";
 
 /**
  * Settings → Assistant: every card the Ask box has put in front of
@@ -47,8 +50,9 @@ export default async function AssistantAuditPage() {
   }
 
   const now = new Date();
-  const rows = await listAskProposals(company.id, now);
+  const [rows, usage] = await Promise.all([listAskProposals(company.id, now), usageSummary(company.id, now)]);
   const summary = auditSummary(rows, now);
+  const configured = anthropicIsConfigured();
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8">
@@ -64,6 +68,47 @@ export default async function AssistantAuditPage() {
         the right-hand label says what happened when they did. A tap that wrote nothing carries the
         app&apos;s own sentence for why; nothing here was decided by the model.
       </p>
+
+      {/* The screen half of the loop's failure log line: an owner can see
+          whether a key exists and press one button to learn whether it
+          works, instead of asking somebody to read runtime logs. */}
+      <section className="mb-6 rounded-lg border border-slate-800 bg-slate-900 p-4" data-ask="connection">
+        <h2 className="mb-1 text-sm font-semibold text-slate-100">Connection</h2>
+        <p className="mb-3 text-sm text-slate-400">
+          API key on this server:{" "}
+          {configured ? (
+            <span className="text-emerald-300">configured</span>
+          ) : (
+            <span className="text-red-300">not set — the box will say it isn&apos;t set up yet</span>
+          )}
+          . Model: <span className="text-slate-300">{ASK_DEFAULT_MODEL}</span>.
+        </p>
+        <AssistantConnectionCheck />
+      </section>
+
+      {/* Counted from AskUsage rows, the same rows the limits are counted
+          from, so the figures here and the refusal a person sees at the
+          limit cannot disagree. */}
+      <section className="mb-6 rounded-lg border border-slate-800 bg-slate-900 p-4" data-ask="usage">
+        <h2 className="mb-1 text-sm font-semibold text-slate-100">Usage, last 30 days</h2>
+        <p className="mb-3 text-sm text-slate-400">
+          {usage.questions} questions sent to the model · {usage.inputTokens.toLocaleString("en-US")} tokens in,{" "}
+          {usage.outputTokens.toLocaleString("en-US")} out. Limits: {ASK_LIMITS.perPersonPerHour} questions per person per hour,{" "}
+          {ASK_LIMITS.perCompanyPerDay} per company per day; past either, the box says so and sends nothing to the model.
+        </p>
+        {usage.byPerson.length > 0 && (
+          <ul className="divide-y divide-slate-800 text-sm">
+            {usage.byPerson.map((row) => (
+              <li key={row.who} className="flex justify-between gap-3 py-1">
+                <span className="text-slate-300">{row.who}</span>
+                <span className="text-slate-400">
+                  {row.questions} {row.questions === 1 ? "question" : "questions"} · {row.tokens.toLocaleString("en-US")} tokens
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
       <div className="mb-6 grid gap-3 sm:grid-cols-3">
         <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
