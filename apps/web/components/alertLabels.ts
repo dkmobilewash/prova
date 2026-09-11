@@ -37,10 +37,10 @@ export function severityLabel(severity: AlertSeverity) {
 export function severityBadgeClass(severity: AlertSeverity) {
   switch (severity) {
     case "OVERDUE":
-      return "bg-red-500/15 text-red-300";
+      return "bg-tag-rose text-tag-rose-ink";
     case "DUE_SOON":
-      return "bg-amber-500/15 text-amber-300";
+      return "bg-tag-amber text-tag-amber-ink";
     case "STANDING":
-      return "bg-slate-800 text-slate-400";
+      return "border border-line-card bg-tag-slate text-tag-slate-ink";
   }
 }

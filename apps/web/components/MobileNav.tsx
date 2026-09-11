@@ -74,22 +74,22 @@ export function MobileNav({
             type="button"
             aria-label="Close navigation"
             onClick={() => setOpen(false)}
-            className="fixed inset-0 z-40 bg-slate-950/70"
+            className="fixed inset-0 z-40 bg-neutral-950/70"
           />
           <div
             id="mobile-nav"
-            className="fixed inset-y-0 left-0 z-50 flex w-72 max-w-[85vw] flex-col border-r border-slate-800 bg-slate-900"
+            className="fixed inset-y-0 left-0 z-50 flex w-72 max-w-[85vw] flex-col border-r border-neutral-800 bg-rail"
           >
-            <div className="flex items-start justify-between gap-2 border-b border-slate-800 px-5 py-4">
+            <div className="flex items-start justify-between gap-2 border-b border-neutral-800 px-5 py-4">
               <div className="flex min-w-0 flex-col gap-0.5">
-                <span className="text-sm font-semibold tracking-tight text-slate-100">Prova</span>
-                <span className="truncate text-xs text-slate-400">{companyName}</span>
+                <span className="text-sm font-semibold tracking-tight text-white">Prova</span>
+                <span className="truncate text-xs text-neutral-400">{companyName}</span>
               </div>
               <button
                 type="button"
                 onClick={() => setOpen(false)}
                 aria-label="Close navigation"
-                className="-mr-3 -mt-2 rounded-md p-3 text-slate-400 hover:bg-slate-800 hover:text-slate-100"
+                className="-mr-3 -mt-2 rounded-md p-3 text-neutral-400 hover:bg-rail-hover hover:text-white"
               >
                 <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5" aria-hidden="true">
                   <path d="M5 5l10 10M15 5L5 15" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
@@ -106,10 +106,10 @@ export function MobileNav({
               {groups.flatMap((group) => [
                 <p
                   key={group.heading}
-                  // slate-400: slate-500 measures 3.83:1 on this ground, under
-                  // the 4.5 floor, and at 10px it is the first thing sunlight
+                  // neutral-400: neutral-500 measures under the 4.5 floor on
+                  // this ground, and at 10px it is the first thing sunlight
                   // takes away.
-                  className="px-3 pt-2 text-[10px] font-semibold uppercase tracking-wider text-slate-400"
+                  className="px-3 pt-2 text-[10px] font-semibold uppercase tracking-wider text-neutral-400"
                 >
                   {group.heading}
                 </p>,
@@ -126,7 +126,7 @@ export function MobileNav({
                       key={item.href}
                       title={`${item.label} — coming soon`}
                       aria-disabled="true"
-                      className="flex cursor-not-allowed items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-slate-600"
+                      className="flex cursor-not-allowed items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-neutral-600"
                     >
                       <span className="opacity-50">{item.icon}</span>
                       {item.label}

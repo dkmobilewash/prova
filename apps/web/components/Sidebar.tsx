@@ -78,7 +78,7 @@ export function Sidebar({
                       key={item.href}
                       title={`${item.label} — coming soon`}
                       aria-disabled="true"
-                      className="flex h-10 cursor-not-allowed items-center gap-3 px-4 text-sm font-medium text-slate-600"
+                      className="flex h-10 cursor-not-allowed items-center gap-3 px-4 text-sm font-medium text-neutral-600"
                     >
                       <span className="shrink-0 opacity-50">{item.icon}</span>
                       <span className="truncate whitespace-nowrap opacity-0 transition-opacity duration-150 group-hover/rail:opacity-100">

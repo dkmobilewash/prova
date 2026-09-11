@@ -40,12 +40,12 @@ export function statusBadgeClass(value: string) {
   const tone = BACKCHARGE_STATUS_LABELS.find((s) => s.value === value)?.tone ?? "slate";
   switch (tone) {
     case "amber":
-      return "bg-amber-500/15 text-amber-300";
+      return "bg-tag-amber text-tag-amber-ink";
     case "blue":
-      return "bg-blue-500/15 text-blue-300";
+      return "bg-tag-blue text-tag-blue-ink";
     case "green":
-      return "bg-green-500/15 text-green-300";
+      return "bg-tag-green text-tag-green-ink";
     default:
-      return "bg-slate-800 text-slate-400";
+      return "border border-line-card bg-tag-slate text-tag-slate-ink";
   }
 }
