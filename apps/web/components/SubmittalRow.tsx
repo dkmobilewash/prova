@@ -9,6 +9,7 @@ import {
 } from "@/lib/actions";
 import type { ActionResult } from "@/lib/actions/shared";
 import { inputClass, labelClass } from "@/components/RfiFields";
+import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
 import { SubmittalFields, type SubmittalDefaults } from "@/components/SubmittalFields";
 import {
   OUTCOMES,
@@ -50,6 +51,11 @@ export function SubmittalRow({
   const [mode, setMode] = useState<"view" | "edit" | "send" | "respond">("view");
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  // Keyed by the submittal id so two rows can never share a draft; the
+  // three modes are different forms with different fields, so three keys.
+  const editDraft = useFormDraft(`submittal:edit:${submittal.id}`);
+  const sendDraft = useFormDraft(`submittal:send:${submittal.id}`);
+  const respondDraft = useFormDraft(`submittal:respond:${submittal.id}`);
 
   // Actions in this feature return their failures instead of throwing —
   // production redacts thrown Server Action messages to a digest,
@@ -72,12 +78,17 @@ export function SubmittalRow({
     return (
       <li className="p-4">
         <form
+          ref={editDraft.formRef}
+          onChange={editDraft.save}
           onSubmit={(event) => {
             event.preventDefault();
             const formData = new FormData(event.currentTarget);
             run(
               () => updateSubmittal(submittal.id, formData),
-              () => setMode("view"),
+              () => {
+                editDraft.clear();
+                setMode("view");
+              },
             );
           }}
           className="flex flex-col gap-3"
@@ -85,6 +96,7 @@ export function SubmittalRow({
           <p className="text-sm font-semibold text-slate-300">
             Submittal {submittal.number} · {submittal.jobName}
           </p>
+          <FormDraftNotice draft={editDraft} />
           <SubmittalFields defaults={submittal} />
           {error && <p className="text-sm text-red-400">{error}</p>}
           <div className="flex gap-2">
@@ -104,12 +116,17 @@ export function SubmittalRow({
     return (
       <li className="p-4">
         <form
+          ref={sendDraft.formRef}
+          onChange={sendDraft.save}
           onSubmit={(event) => {
             event.preventDefault();
             const formData = new FormData(event.currentTarget);
             run(
               () => sendSubmittalRevision(submittal.id, formData),
-              () => setMode("view"),
+              () => {
+                sendDraft.clear();
+                setMode("view");
+              },
             );
           }}
           className="flex flex-col gap-3"
@@ -119,6 +136,7 @@ export function SubmittalRow({
               ? `Send submittal ${submittal.number}`
               : `Send revision ${nextRevisionNumber} of submittal ${submittal.number}`}
           </p>
+          <FormDraftNotice draft={sendDraft} />
 
           <div className="grid gap-3 sm:grid-cols-2">
             <label className={labelClass}>
@@ -153,12 +171,17 @@ export function SubmittalRow({
     return (
       <li className="p-4">
         <form
+          ref={respondDraft.formRef}
+          onChange={respondDraft.save}
           onSubmit={(event) => {
             event.preventDefault();
             const formData = new FormData(event.currentTarget);
             run(
               () => recordSubmittalResponse(submittal.id, formData),
-              () => setMode("view"),
+              () => {
+                respondDraft.clear();
+                setMode("view");
+              },
             );
           }}
           className="flex flex-col gap-3"
@@ -166,6 +189,7 @@ export function SubmittalRow({
           <p className="text-sm font-semibold text-slate-300">
             What came back on revision {latest?.revisionNumber} of submittal {submittal.number}?
           </p>
+          <FormDraftNotice draft={respondDraft} />
 
           <label className={labelClass}>
             The reviewer&apos;s stamp

@@ -1,8 +1,9 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { createVendor } from "@/lib/actions";
 import { VendorFields } from "@/components/VendorFields";
+import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
 
 /** Collapsed by default. Looking a vendor up is the common case; adding
  * one is occasional, and an always-open six-field form pushes the whole
@@ -11,7 +12,7 @@ export function VendorForm() {
   const [isOpen, setIsOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const formRef = useRef<HTMLFormElement>(null);
+  const draft = useFormDraft("vendor:create");
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -20,7 +21,8 @@ export function VendorForm() {
     startTransition(async () => {
       try {
         await createVendor(formData);
-        formRef.current?.reset();
+        draft.clear();
+        draft.resetForm();
         setIsOpen(false);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Could not save vendor");
@@ -43,7 +45,8 @@ export function VendorForm() {
   return (
     <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
       <h2 className="mb-3 text-sm font-semibold text-slate-300">Add a vendor</h2>
-      <form ref={formRef} onSubmit={handleSubmit} className="flex flex-col gap-3">
+      <form ref={draft.formRef} onSubmit={handleSubmit} onChange={draft.save} className="flex flex-col gap-3">
+        <FormDraftNotice draft={draft} />
         <VendorFields />
 
         {error && <p className="text-sm text-red-400">{error}</p>}

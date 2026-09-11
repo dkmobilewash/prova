@@ -16,6 +16,7 @@ import type { JobMediaKind } from "@/lib/job-media";
 import { JobMediaMarks, type JobMediaMark } from "@/components/JobMediaMarks";
 import { JobMediaAnnotator } from "@/components/JobMediaAnnotator";
 import { annotationSummary } from "@/lib/job-media-annotations";
+import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
 
 /** Everything the card needs, already formatted on the server.
  *
@@ -99,6 +100,10 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
   const [mode, setMode] = useState<"view" | "edit" | "tags" | "share" | "marks">("view");
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  // Keyed by the media id so two cards can never share a draft; caption
+  // and tags are different forms with different fields, so different keys.
+  const detailsDraft = useFormDraft(`job-media:edit:${media.id}`);
+  const tagsDraft = useFormDraft(`job-media:tags:${media.id}`);
   const router = useRouter();
   const full = media.tags.length >= JOB_MEDIA_TAGS_PER_PHOTO_MAX;
 
@@ -219,6 +224,8 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
 
         {mode === "edit" ? (
           <form
+            ref={detailsDraft.formRef}
+            onChange={detailsDraft.save}
             onSubmit={(event) => {
               event.preventDefault();
               setError(null);
@@ -245,6 +252,7 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
                     setError(result.error);
                     return;
                   }
+                  detailsDraft.clear();
                   router.refresh();
                   setMode("view");
                 } catch {
@@ -254,6 +262,7 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
             }}
             className="flex flex-col gap-2"
           >
+            <FormDraftNotice draft={detailsDraft} />
             <label className="flex flex-col gap-1 text-sm text-slate-300">
               Caption
               <input
@@ -293,6 +302,8 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
           </form>
         ) : mode === "tags" ? (
           <form
+            ref={tagsDraft.formRef}
+            onChange={tagsDraft.save}
             onSubmit={(event) => {
               event.preventDefault();
               setError(null);
@@ -305,6 +316,7 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
                     setError(result.error);
                     return;
                   }
+                  tagsDraft.clear();
                   router.refresh();
                   setMode("view");
                 } catch {
@@ -314,6 +326,7 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
             }}
             className="flex flex-col gap-2"
           >
+            <FormDraftNotice draft={tagsDraft} />
             <label className="flex flex-col gap-1 text-sm text-slate-300">
               Tags
               {/* `list` points at the ONE datalist the page renders

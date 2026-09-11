@@ -1,18 +1,19 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { createSafetyIncident } from "@/lib/actions";
 import {
   SafetyIncidentFields,
   type JobOption,
 } from "@/components/SafetyIncidentFields";
 import { localToday } from "@/components/localToday";
+import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
 
 export function SafetyIncidentForm({ jobs, today }: { jobs: JobOption[]; today: string }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const formRef = useRef<HTMLFormElement>(null);
+  const draft = useFormDraft("safety-incident:create");
 
   if (!isOpen) {
     return (
@@ -28,7 +29,8 @@ export function SafetyIncidentForm({ jobs, today }: { jobs: JobOption[]; today: 
 
   return (
     <form
-      ref={formRef}
+      ref={draft.formRef}
+      onChange={draft.save}
       onSubmit={(event) => {
         event.preventDefault();
         setError(null);
@@ -36,7 +38,8 @@ export function SafetyIncidentForm({ jobs, today }: { jobs: JobOption[]; today: 
         startTransition(async () => {
           try {
             await createSafetyIncident(formData);
-            formRef.current?.reset();
+            draft.clear();
+            draft.resetForm();
             setIsOpen(false);
           } catch (err) {
             setError(err instanceof Error ? err.message : "Could not record the incident");
@@ -46,6 +49,7 @@ export function SafetyIncidentForm({ jobs, today }: { jobs: JobOption[]; today: 
       className="flex flex-col gap-3 rounded-lg border border-slate-800 bg-slate-900 p-4"
     >
       <h2 className="text-sm font-semibold text-slate-300">Record an incident</h2>
+      <FormDraftNotice draft={draft} />
 
       <SafetyIncidentFields
         jobs={jobs}

@@ -1,17 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { useRef, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { createSubmittal } from "@/lib/actions";
 import { inputClass, labelClass, type JobOption } from "@/components/RfiFields";
 import { SubmittalFields } from "@/components/SubmittalFields";
 import { localToday } from "@/components/localToday";
+import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
 
 export function SubmittalForm({ jobs, defaultJobId }: { jobs: JobOption[]; defaultJobId?: string }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const formRef = useRef<HTMLFormElement>(null);
+  const draft = useFormDraft("submittal:create");
 
   if (jobs.length === 0) {
     return (
@@ -45,7 +46,8 @@ export function SubmittalForm({ jobs, defaultJobId }: { jobs: JobOption[]; defau
 
   return (
     <form
-      ref={formRef}
+      ref={draft.formRef}
+      onChange={draft.save}
       onSubmit={(event) => {
         event.preventDefault();
         setError(null);
@@ -56,7 +58,8 @@ export function SubmittalForm({ jobs, defaultJobId }: { jobs: JobOption[]; defau
           // production builds, verified 2026-08-27.
           const result = await createSubmittal(formData);
           if (result.ok) {
-            formRef.current?.reset();
+            draft.clear();
+            draft.resetForm();
             setIsOpen(false);
           } else {
             setError(result.error);
@@ -66,6 +69,7 @@ export function SubmittalForm({ jobs, defaultJobId }: { jobs: JobOption[]; defau
       className="flex flex-col gap-3 rounded-lg border border-slate-800 bg-slate-900 p-4"
     >
       <h2 className="text-sm font-semibold text-slate-300">Log a submittal</h2>
+      <FormDraftNotice draft={draft} />
 
       <SubmittalFields
         jobs={jobs}

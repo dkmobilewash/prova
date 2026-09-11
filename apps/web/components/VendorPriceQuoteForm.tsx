@@ -1,7 +1,8 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { createVendorPriceQuote } from "@/lib/actions";
+import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
 import { localToday } from "@/components/localToday";
 import type { VendorOption } from "@/components/MaterialOrderFields";
 import {
@@ -27,7 +28,7 @@ export function VendorPriceQuoteForm({
   const [isOpen, setIsOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const formRef = useRef<HTMLFormElement>(null);
+  const draft = useFormDraft("vendor-price-quote:create");
 
   if (vendors.length === 0) {
     return (
@@ -51,7 +52,8 @@ export function VendorPriceQuoteForm({
 
   return (
     <form
-      ref={formRef}
+      ref={draft.formRef}
+      onChange={draft.save}
       onSubmit={(event) => {
         event.preventDefault();
         setError(null);
@@ -59,7 +61,8 @@ export function VendorPriceQuoteForm({
         startTransition(async () => {
           const result = await createVendorPriceQuote(formData);
           if (result.ok) {
-            formRef.current?.reset();
+            draft.clear();
+            draft.resetForm();
             setIsOpen(false);
           } else {
             setError(result.error);
@@ -69,6 +72,7 @@ export function VendorPriceQuoteForm({
       className="flex flex-col gap-3 rounded-lg border border-slate-800 bg-slate-900 p-4"
     >
       <h2 className="text-sm font-semibold text-slate-300">Record a price</h2>
+      <FormDraftNotice draft={draft} />
 
       <VendorPriceQuoteFields
         vendors={vendors}
