@@ -40,7 +40,7 @@ export function MetricBar({ financials }: { financials: CompanyFinancials }) {
       : undefined;
 
   return (
-    <div className="print:hidden flex h-[52px] shrink-0 items-center gap-6 overflow-x-auto border-t border-slate-800 bg-slate-900 px-4 sm:px-6">
+    <div className="print:hidden flex h-[52px] shrink-0 items-center gap-6 overflow-x-auto border-t border-line-card bg-surface px-4 sm:px-6">
       <Metric label="Estimated revenue" value={money(financials.estimatedRevenue)} />
       <Metric
         label="Gross margin"
@@ -67,17 +67,17 @@ function Metric({
 }) {
   return (
     <div className="flex shrink-0 items-baseline gap-2">
-      <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+      <span className="text-[10px] font-semibold uppercase tracking-wider text-ink-muted">
         {label}
       </span>
       <span
         className={`text-sm font-semibold tabular-nums ${
-          tone === "good" ? "text-green-400" : "text-slate-100"
+          tone === "good" ? "text-green-700" : "text-ink"
         }`}
       >
         {value}
       </span>
-      {hint && <span className="text-[10px] text-slate-500">{hint}</span>}
+      {hint && <span className="text-[10px] text-ink-muted">{hint}</span>}
     </div>
   );
 }

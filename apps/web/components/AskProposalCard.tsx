@@ -7,7 +7,7 @@ import type { ProposalView } from "@/lib/ask/answer";
 export type ProposalOutcome = { message: string; created?: { label: string; href: string } };
 
 const PRIMARY =
-  "inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 py-2 text-base font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50";
+  "inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 py-2 text-base font-semibold text-ink-label hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-50";
 
 /**
  * The card a command puts in front of a person.
@@ -82,7 +82,7 @@ export function AskProposalCard({
 
       {proposal.existing && !settled && (
         <p className="mt-2 text-sm text-ink">
-          <Link href={proposal.existing.href} className="underline hover:text-brand">
+          <Link href={proposal.existing.href} className="underline hover:text-link">
             {proposal.existing.label}
           </Link>
           . Nothing was created.
@@ -105,7 +105,7 @@ export function AskProposalCard({
         <p className="mt-2 text-sm text-ink" data-ask="outcome">
           {outcome.created && (
             <>
-              <Link href={outcome.created.href} className="font-medium underline hover:text-brand">
+              <Link href={outcome.created.href} className="font-medium underline hover:text-link">
                 {outcome.created.label}
               </Link>{" "}
             </>
@@ -126,7 +126,7 @@ export function AskProposalCard({
             type="button"
             onClick={onCancel}
             disabled={pending}
-            className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-4 py-2 text-base text-ink-body hover:border-brand hover:text-brand disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-4 py-2 text-base text-ink-body hover:border-link hover:text-link disabled:cursor-not-allowed disabled:opacity-50"
           >
             {offersButton ? "Cancel" : "Dismiss"}
           </button>

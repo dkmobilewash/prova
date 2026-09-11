@@ -45,7 +45,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     // --shell-port, so anything that must fit inside the scroll port (the
     // side panel) is bounded by the same numbers the bars are laid out
     // with, rather than repeating them and drifting.
-    <div className="flex h-screen bg-slate-950 [--shell-metricbar:52px] [--shell-topbar:56px]">
+    <div className="flex h-screen bg-canvas [--shell-metricbar:52px] [--shell-topbar:56px]">
       {/* Renders nothing. Parks the browser's IANA zone in a cookie so
           the server can work out what day it is where the reader is. */}
       <TimeZoneCookie />

@@ -150,7 +150,7 @@ export default async function Wh347Page({
       <div className="print:hidden">
         <Link
           href={`/jobs/${job.id}/certified-payroll?weekStart=${isoDate(weekStart)}`}
-          className="text-sm text-brand hover:underline"
+          className="text-sm text-link hover:underline"
         >
           ← Certified payroll for this week
         </Link>

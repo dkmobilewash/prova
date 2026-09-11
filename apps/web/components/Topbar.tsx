@@ -3,9 +3,9 @@ import { UserButton } from "@clerk/nextjs";
 import { MobileNav } from "@/components/MobileNav";
 import type { Principal } from "@/lib/permissions";
 
-/** Chrome stays dark alongside the rail, so the frame is one thing and the
- * page inside it is another. Converts to the light tokens when the pages
- * it frames do. */
+/** Light chrome: white bar with the 2px brand-yellow rule under it, per
+ * the approved yellow/black/white mockups. The rail beside it stays dark
+ * — that contrast is the design, not a leftover. */
 export function Topbar({
   companyName,
   /** Alerts needing attention. Lives in the chrome rather than on the
@@ -26,7 +26,7 @@ export function Topbar({
   showsSalesCrm?: boolean;
 }) {
   return (
-    <div className="print:hidden flex h-14 shrink-0 items-center justify-between gap-3 border-b border-slate-800 bg-slate-900 px-4 sm:px-6">
+    <div className="print:hidden flex h-14 shrink-0 items-center justify-between gap-3 border-b-2 border-brand bg-surface px-4 sm:px-6">
       {/* Renders nothing above md — the desktop rail is always visible there. */}
       <MobileNav companyName={companyName} principal={principal} showsSalesCrm={showsSalesCrm} />
       <div className="ml-auto flex items-center gap-3">
@@ -37,7 +37,7 @@ export function Topbar({
               ? "Alerts — nothing needs attention"
               : `Alerts — ${alertCount} needing attention`
           }
-          className="relative rounded-md p-2 text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+          className="relative rounded-md p-2 text-ink-body hover:bg-neutral-100 hover:text-ink"
         >
           <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5" aria-hidden="true">
             <path

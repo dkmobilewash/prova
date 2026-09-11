@@ -343,7 +343,7 @@ export function AskPanel() {
           // button that looks live during a slow answer invites the click
           // that makes it slower.
           disabled={question.trim() === "" || (isAsking && question.trim() === asked)}
-          className="shrink-0 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+          className="shrink-0 rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {isAsking && question.trim() === asked ? "Looking…" : "Ask"}
         </button>
@@ -360,7 +360,7 @@ export function AskPanel() {
                   inputRef.current?.focus();
                   ask(example);
                 }}
-                className="rounded-full border border-line-card px-3 py-1 text-xs text-ink-body hover:border-brand hover:text-brand"
+                className="rounded-full border border-line-card px-3 py-1 text-xs text-ink-body hover:border-link hover:text-link"
               >
                 {example}
               </button>
@@ -424,7 +424,7 @@ export function AskPanel() {
                       type="button"
                       disabled={isAsking}
                       onClick={() => choose(clarify, option.value)}
-                      className="inline-flex min-h-11 flex-col items-start rounded-md border border-line-card px-3 py-1.5 text-left hover:border-brand disabled:opacity-50"
+                      className="inline-flex min-h-11 flex-col items-start rounded-md border border-line-card px-3 py-1.5 text-left hover:border-link disabled:opacity-50"
                     >
                       <span className="text-sm text-ink">{option.label}</span>
                       {option.detail && <span className="text-xs text-ink-body">{option.detail}</span>}
@@ -461,7 +461,7 @@ export function AskPanel() {
                 <Link
                   key={citation.href}
                   href={citation.href}
-                  className="underline hover:text-brand"
+                  className="underline hover:text-link"
                 >
                   {citation.label}
                 </Link>
@@ -479,7 +479,7 @@ export function AskPanel() {
                 setQuestion("");
                 inputRef.current?.focus();
               }}
-              className="mt-2 text-xs text-ink-body underline hover:text-brand"
+              className="mt-2 text-xs text-ink-body underline hover:text-link"
             >
               Ask something else
             </button>

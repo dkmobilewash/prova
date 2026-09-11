@@ -156,7 +156,7 @@ export function ReceivablesDetailPanel() {
           footer={
             <Link
               href={`/jobs/${open.jobId}`}
-              className="inline-flex w-full items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+              className="inline-flex w-full items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500"
             >
               Open the job
             </Link>

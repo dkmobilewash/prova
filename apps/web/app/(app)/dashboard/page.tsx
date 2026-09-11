@@ -385,14 +385,14 @@ export default async function TodayPage({
                 <div className="flex flex-wrap items-center gap-3">
                   <Link
                     href="/jobs/new"
-                    className="inline-flex items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                    className="inline-flex items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500"
                   >
                     New job
                   </Link>
-                  <Link href="/catalog" className="text-sm text-brand hover:underline">
+                  <Link href="/catalog" className="text-sm text-link hover:underline">
                     Line item catalog
                   </Link>
-                  <Link href="/bids" className="text-sm text-brand hover:underline">
+                  <Link href="/bids" className="text-sm text-link hover:underline">
                     Bid history
                   </Link>
                 </div>
@@ -440,7 +440,7 @@ export default async function TodayPage({
                   <p className="text-ink-label">No jobs yet.</p>
                   <p className="mt-1 text-sm text-ink-body">
                     Start one and you&apos;re estimating —{" "}
-                    <Link href="/jobs/new" className="text-brand hover:underline">
+                    <Link href="/jobs/new" className="text-link hover:underline">
                       create a job
                     </Link>{" "}
                     to price up your first scope.
@@ -454,7 +454,7 @@ export default async function TodayPage({
                       {activeStatus ? ` in ${GROUP_HEADING[activeStatus].toLowerCase()}` : ""}.{" "}
                       <Link
                         href={filterHref(activeStatus ?? "ALL")}
-                        className="text-brand hover:underline"
+                        className="text-link hover:underline"
                       >
                         Clear the search
                       </Link>
@@ -463,7 +463,7 @@ export default async function TodayPage({
                   ) : (
                     <>
                       Nothing {GROUP_HEADING[activeStatus as JobStatus].toLowerCase() === "estimating" ? "being estimated" : `marked ${GROUP_HEADING[activeStatus as JobStatus].toLowerCase()}`} right now.{" "}
-                      <Link href={filterHref("ALL", q)} className="text-brand hover:underline">
+                      <Link href={filterHref("ALL", q)} className="text-link hover:underline">
                         Show all jobs
                       </Link>
                       .

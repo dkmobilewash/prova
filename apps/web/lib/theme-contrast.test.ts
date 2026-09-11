@@ -26,11 +26,12 @@ const colors = (config.theme?.extend?.colors ?? {}) as Record<string, string>;
 
 /** The two grounds text sits on: the page canvas and a card.
  *
- * These were light and are now dark — the tokens were repointed so the
- * one converted page stops reading as a different application beside the
- * other 24. The assertions below are unchanged in intent and did not need
- * relaxing: every level clears the same floor it did before, with more
- * headroom than the light ramp had. */
+ * Light again (2026-09-11): the yellow/black/white palette from the
+ * approved mockups. Both grounds are white — cards separate from the
+ * page with 1px black outlines, not with a different fill — so the two
+ * loops below currently assert the same thing twice. They stay as two
+ * on purpose: the day surface stops being white, the card assertions
+ * are already here. */
 const GROUNDS = [
   ["canvas", colors.canvas],
   ["surface", colors.surface],
@@ -72,18 +73,24 @@ describe("theme contrast", () => {
   });
 
   it("fails on a value that does not clear the floor, so these can fail", () => {
-    // A mid grey is unreadable on this canvas exactly as it was on the
-    // light one. If this ever clears 3 the maths is wrong.
-    expect(contrastRatio("#3a4354", colors.canvas)).toBeLessThan(3);
+    // A light grey is unreadable on this canvas exactly as a mid grey
+    // was on the dark one. If this ever clears 3 the maths is wrong.
+    expect(contrastRatio("#cbd5e1", colors.canvas)).toBeLessThan(3);
   });
 
-  it("carries a readable white label on the brand fill", () => {
-    // A button label is text, not decoration, so it answers to 4.5:1 —
-    // and this is the assertion that would have caught me picking the
-    // bolder blue by eye. brand is a fill and clears the 3:1 component
-    // floor on the canvas; the label on top of it has to clear 4.5.
-    expect(contrastRatio("#ffffff", colors.brand)).toBeGreaterThanOrEqual(4.5);
-    expect(contrastRatio(colors.brand, colors.canvas)).toBeGreaterThanOrEqual(3);
+  it("carries a readable dark label on the brand fill, and readable links", () => {
+    // The brand yellow CANNOT carry white text (1.5:1) and does not
+    // itself clear the 3:1 component floor on the white canvas — that is
+    // the approved design: every brand fill carries a #171717 label at
+    // 600-700 weight, and the label is what answers to 4.5:1. If someone
+    // ever puts text-white back on bg-brand, the first assertion is the
+    // one that documents why it was wrong.
+    expect(contrastRatio("#ffffff", colors.brand)).toBeLessThan(3);
+    expect(contrastRatio("#171717", colors.brand)).toBeGreaterThanOrEqual(4.5);
+    // Links are the dark gold, not the brand yellow, precisely so they
+    // read as text on the white canvas.
+    expect(contrastRatio(colors.link, colors.canvas)).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(colors["link-hover"], colors.canvas)).toBeGreaterThanOrEqual(4.5);
   });
 
   it("keeps all four ink levels distinguishable from each other", () => {
