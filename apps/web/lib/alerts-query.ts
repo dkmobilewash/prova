@@ -188,6 +188,10 @@ export async function loadAlerts(
       closeoutAcceptedOn:
         latest?.status === "ACCEPTED" ? isoDate(latest.respondedOn) : null,
       substantialCompletionDate: isoDate(job.substantialCompletionDate),
+      // Issue #109 finding 5: ANY submission counts here, regardless of
+      // status -- `latest` already reads the newest attempt of any status,
+      // so "there is at least one row" is just "it is not null".
+      hasCloseoutSubmission: latest !== null,
     });
 
     // Both unfinished states, not just SUBMITTED. CloseoutSubmissionStatus

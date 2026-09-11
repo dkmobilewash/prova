@@ -142,6 +142,73 @@ describe("alerts assembled from real rows", () => {
     expect(visible.filter((a) => a.kind === "RETAINAGE_RELEASE")).toEqual([]);
   });
 
+  /**
+   * Issue #109 finding 5, proved against the real schema rather than a
+   * hand-built fixture: a job holding retainage with no closeout submission
+   * of any kind and no substantialCompletionDate raised nothing at all.
+   * A SEPARATE job, so it does not disturb the shared `jobId` fixture the
+   * surrounding tests build up sequentially -- and cleaned up by the same
+   * blanket `where: { companyId }` deletes in afterAll.
+   */
+  it("issue #109 finding 5: a job with retainage and no path to closeout raises something", async () => {
+    const contact = await prisma.contact.findFirstOrThrow({ where: { companyId: context.company.id } });
+    const stuckJob = await prisma.job.create({
+      data: {
+        companyId: context.company.id,
+        contactId: contact.id,
+        name: "Harbor Point",
+        status: "IN_PROGRESS",
+        retainagePercent: "10",
+        // Deliberately unset: no forecast completion date and (below) no
+        // closeout submission of any kind.
+      },
+    });
+    await prisma.invoice.create({
+      data: {
+        jobId: stuckJob.id,
+        number: 1,
+        amount: "50000",
+        retainageWithheld: "5000",
+        issuedAt: utc("2026-07-01"),
+      },
+    });
+
+    const { visible } = await loadAlerts(context.company.id, context.id, TODAY);
+    const alert = visible.find((a) => a.kind === "RETAINAGE_RELEASE" && a.href === "/closeout" && a.key.includes(stuckJob.id));
+    expect(alert).toBeDefined();
+    expect(alert?.severity).toBe("STANDING");
+    expect(alert?.amount).toBe(5000);
+    expect(alert?.detail).toContain("No closeout package has been submitted");
+
+    // Additive: once a closeout submission exists for it (even unaccepted),
+    // this alert stops -- CLOSEOUT_WITH_GC or the accepted-package branch
+    // takes over instead, exactly as it did before finding 5 existed.
+    await prisma.closeoutSubmission.create({
+      data: {
+        companyId: context.company.id,
+        jobId: stuckJob.id,
+        attempt: 1,
+        submittedOn: utc("2026-08-25"),
+        status: "SUBMITTED",
+      },
+    });
+    const after = await loadAlerts(context.company.id, context.id, TODAY);
+    expect(
+      after.visible.some(
+        (a) => a.kind === "RETAINAGE_RELEASE" && a.detail.includes("No closeout package has been submitted"),
+      ),
+    ).toBe(false);
+
+    // Cleaned up here rather than left to afterAll: afterAll's own
+    // invoice.deleteMany is scoped to the shared `jobId` fixture, not this
+    // test's own job, and an orphaned invoice would make the later
+    // `job.deleteMany({ companyId })` throw on the FK instead of the real
+    // failure this test is meant to report.
+    await prisma.closeoutSubmission.deleteMany({ where: { jobId: stuckJob.id } });
+    await prisma.invoice.deleteMany({ where: { jobId: stuckJob.id } });
+    await prisma.job.delete({ where: { id: stuckJob.id } });
+  });
+
   it("raises retainage as collectable once the GC accepts the closeout package", async () => {
     await prisma.invoice.create({
       data: {

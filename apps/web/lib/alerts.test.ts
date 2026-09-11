@@ -10,6 +10,8 @@ import {
   closeoutAlerts,
   contactFollowUpAlerts,
   factDigest,
+  moneyFact,
+  ALERT_AMOUNT_BUCKET,
   partitionAlerts,
   rankAlerts,
   renewalAlert,
@@ -133,7 +135,21 @@ describe("backchargeAlerts", () => {
     expect(alert.severity).toBe("OVERDUE");
     expect(alert.amount).toBe(4200);
     expect(alert.detail).toContain("7 days ago");
-    expect(alert.key).toBe("BACKCHARGE_RESPONSE:bc_1:2026-08-25");
+    // Issue #109 findings 1-3: keyed on the date AND the (bucketed,
+    // hashed) claimed amount now, not the date alone.
+    expect(alert.key).toBe(
+      alertKey("BACKCHARGE_RESPONSE", "bc_1", moneyFact("2026-08-25", 4200)),
+    );
+  });
+
+  it("issue #109: does not rekey over a routine small change, but does over a material one", () => {
+    const before = backchargeAlerts([bc], TODAY)[0];
+    // The issue's own example of noise that must not re-raise a dismissal.
+    const smallChange = backchargeAlerts([{ ...bc, claimedAmount: bc.claimedAmount + 12.4 }], TODAY)[0];
+    expect(smallChange.key).toBe(before.key);
+
+    const bigChange = backchargeAlerts([{ ...bc, claimedAmount: 42000 }], TODAY)[0];
+    expect(bigChange.key).not.toBe(before.key);
   });
 
   it("warns inside the horizon and stays quiet outside it", () => {
@@ -167,9 +183,10 @@ describe("retainageAlerts", () => {
     balance: 13420,
     closeoutAcceptedOn: null as string | null,
     substantialCompletionDate: null as string | null,
+    hasCloseoutSubmission: true,
   };
 
-  it("asserts money is collectable only on an accepted closeout package", () => {
+  it("asserts money is collectable only on an accepted closeout package, once the horizon has passed", () => {
     const [alert] = retainageAlerts([{ ...job, closeoutAcceptedOn: "2026-08-15" }], TODAY);
     expect(alert.severity).toBe("OVERDUE");
     expect(alert.amount).toBe(13420);
@@ -204,6 +221,106 @@ describe("retainageAlerts", () => {
       retainageAlerts([{ ...job, balance: 0, closeoutAcceptedOn: "2026-08-15" }], TODAY),
     ).toEqual([]);
   });
+
+  /* --------------------------------- issue #109 finding 4: the horizon */
+
+  describe("issue #109 finding 4: not overdue the instant acceptance is recorded", () => {
+    it("reads ALERT_HORIZON_DAYS.RETAINAGE_RELEASE rather than hardcoding OVERDUE", () => {
+      expect(ALERT_HORIZON_DAYS.RETAINAGE_RELEASE).toBe(14);
+    });
+
+    it("is the issue's own repro: zero days since acceptance is DUE_SOON, not OVERDUE", () => {
+      const [alert] = retainageAlerts([{ ...job, closeoutAcceptedOn: TODAY }], TODAY);
+      expect(alert.severity).toBe("DUE_SOON");
+      expect(alert.detail).not.toContain("0 days ago and this is still held");
+    });
+
+    it("stays DUE_SOON right at the horizon boundary", () => {
+      // Accepted 14 days before TODAY -- the horizon has just elapsed
+      // today, not before today, so this is not yet overdue.
+      const [alert] = retainageAlerts([{ ...job, closeoutAcceptedOn: "2026-08-18" }], TODAY);
+      expect(alert.severity).toBe("DUE_SOON");
+    });
+
+    it("becomes OVERDUE the day after the horizon elapses", () => {
+      const [alert] = retainageAlerts([{ ...job, closeoutAcceptedOn: "2026-08-17" }], TODAY);
+      expect(alert.severity).toBe("OVERDUE");
+    });
+
+    it("does not invert the ranking any more -- a genuinely blown deadline outranks a same-day acceptance", () => {
+      const freshlyAccepted = retainageAlerts(
+        [{ ...job, jobId: "job_fresh", closeoutAcceptedOn: TODAY, balance: 500_000 }],
+        TODAY,
+      )[0];
+      expect(freshlyAccepted.severity).toBe("DUE_SOON");
+      // A DUE_SOON alert never outranks an OVERDUE one regardless of
+      // amount -- see rankAlerts, tested separately. The fix here is that
+      // this alert no longer CLAIMS to be OVERDUE at all.
+    });
+  });
+
+  /* ------------------------ issue #109 findings 1-3: the dismissal key */
+
+  describe("issue #109 findings 1-3: the key is bucketed and hashed, not cent-exact or date-only", () => {
+    it("rekeys when the balance moves materially, not just when the date does", () => {
+      // Before the fix: dismissed at $500, stays dismissed at $42,000,
+      // because the key's only fact was the acceptance date.
+      const before = retainageAlerts([{ ...job, closeoutAcceptedOn: "2026-08-15", balance: 500 }], TODAY)[0];
+      const after = retainageAlerts([{ ...job, closeoutAcceptedOn: "2026-08-15", balance: 42000 }], TODAY)[0];
+      expect(after.key).not.toBe(before.key);
+    });
+
+    it("does not rekey over a routine small change in the balance", () => {
+      const before = retainageAlerts([{ ...job, closeoutAcceptedOn: "2026-08-15" }], TODAY)[0];
+      const after = retainageAlerts(
+        [{ ...job, closeoutAcceptedOn: "2026-08-15", balance: job.balance + 12.4 }],
+        TODAY,
+      )[0];
+      expect(after.key).toBe(before.key);
+    });
+
+    it("never puts the raw dollar figure into the key text", () => {
+      const [alert] = retainageAlerts([{ ...job, closeoutAcceptedOn: "2026-08-15", balance: 47231.88 }], TODAY);
+      expect(alert.key).not.toMatch(/47231|47,231/);
+    });
+  });
+
+  /* --------------------------- issue #109 finding 5: the missing alert */
+
+  describe("issue #109 finding 5: no closeout submission and no forecast date", () => {
+    const stuck = { ...job, closeoutAcceptedOn: null, hasCloseoutSubmission: false };
+
+    it("raises a standing alert instead of nothing at all", () => {
+      const [alert] = retainageAlerts([stuck], TODAY);
+      expect(alert).toBeDefined();
+      expect(alert.kind).toBe("RETAINAGE_RELEASE");
+      expect(alert.severity).toBe("STANDING");
+      expect(alert.amount).toBe(13420);
+      expect(alert.detail).toContain("No closeout package has been submitted");
+    });
+
+    it("is additive: a job with a closeout submission (even unaccepted) behaves exactly as before", () => {
+      expect(retainageAlerts([{ ...stuck, hasCloseoutSubmission: true }], TODAY)).toEqual([]);
+    });
+
+    it("is additive: a job with a forecast date, even a future one, behaves exactly as before", () => {
+      expect(
+        retainageAlerts([{ ...stuck, substantialCompletionDate: "2026-12-01" }], TODAY),
+      ).toEqual([]);
+    });
+
+    it("still raises nothing when there is no money held", () => {
+      expect(retainageAlerts([{ ...stuck, balance: 0 }], TODAY)).toEqual([]);
+    });
+
+    it("gets its own key, stable across a change in the balance", () => {
+      // Deliberately NOT amount-sensitive: the fact this alert is about is
+      // structural (no path to closeout exists yet), not a dollar figure.
+      const before = retainageAlerts([stuck], TODAY)[0];
+      const after = retainageAlerts([{ ...stuck, balance: 99000 }], TODAY)[0];
+      expect(after.key).toBe(before.key);
+    });
+  });
 });
 
 describe("closeoutAlerts", () => {
@@ -233,6 +350,20 @@ describe("closeoutAlerts", () => {
     expect(closeoutAlerts([{ ...job, retainageBalance: 0 }], TODAY)[0].amount).toBeNull();
   });
 
+  it("issue #109 findings 1-3: keys on the balance as well as the date", () => {
+    const before = closeoutAlerts([job], TODAY)[0];
+    const bigChange = closeoutAlerts([{ ...job, retainageBalance: 42000 }], TODAY)[0];
+    expect(bigChange.key).not.toBe(before.key);
+
+    const smallChange = closeoutAlerts(
+      [{ ...job, retainageBalance: job.retainageBalance + 12.4 }],
+      TODAY,
+    )[0];
+    expect(smallChange.key).toBe(before.key);
+
+    expect(before.key).not.toMatch(/13420/);
+  });
+
   /**
    * Issue #111 item 3. A package the GC REJECTED raised nothing at all:
    * alerts-query only fed through submissions whose status was SUBMITTED,
@@ -260,7 +391,11 @@ describe("closeoutAlerts", () => {
     it("hangs on the day they sent it back, not the day we sent it", () => {
       const [alert] = closeoutAlerts([rejected], TODAY);
       expect(alert.dueOn).toBe("2026-08-29");
-      expect(alert.key).toBe(alertKey("CLOSEOUT_REJECTED", "job_1", "2026-08-29"));
+      // Issue #109 findings 1-3: keyed on the response date AND the
+      // (bucketed, hashed) retainage balance now, not the date alone.
+      expect(alert.key).toBe(
+        alertKey("CLOSEOUT_REJECTED", "job_1", moneyFact("2026-08-29", 13420)),
+      );
     });
 
     it("does not wait out the 21-day chase threshold", () => {
@@ -364,6 +499,74 @@ describe("wipAlerts", () => {
   it("says nothing about a job forecast under its contract value", () => {
     expect(wipAlerts([{ jobId: "job_1", jobName: "Mercy Tower", overrun: -5000 }])).toEqual([]);
     expect(wipAlerts([{ jobId: "job_1", jobName: "Mercy Tower", overrun: 0 }])).toEqual([]);
+  });
+
+  describe("issue #109 findings 1-3: the key is bucketed and hashed, not cent-exact", () => {
+    it("does not rekey over a single small cost entry on a job with daily entries", () => {
+      // The issue's own repro: a job with daily cost entries could never
+      // stay dismissed because a $12.40 delivery ticket minted a new key.
+      const before = wipAlerts([{ jobId: "job_1", jobName: "Mercy Tower", overrun: 47231.88 }])[0];
+      const after = wipAlerts([{ jobId: "job_1", jobName: "Mercy Tower", overrun: 47244.28 }])[0];
+      expect(after.key).toBe(before.key);
+    });
+
+    it("does rekey once the overrun changes materially", () => {
+      const before = wipAlerts([{ jobId: "job_1", jobName: "Mercy Tower", overrun: 500 }])[0];
+      const after = wipAlerts([{ jobId: "job_1", jobName: "Mercy Tower", overrun: 42000 }])[0];
+      expect(after.key).not.toBe(before.key);
+    });
+
+    it("never puts the raw overrun into the key text", () => {
+      const [alert] = wipAlerts([{ jobId: "job_1", jobName: "Mercy Tower", overrun: 47231.88 }]);
+      expect(alert.key).not.toMatch(/47231|47,231/);
+      expect(alert.key).not.toContain(".");
+    });
+  });
+
+  describe("issue #109 finding 1: the amount is not recoverable once it's stripped", () => {
+    // The reproduction in the issue's own words: "the whole Alert is a
+    // prop to the client component AlertRow. The exact overrun is in the
+    // RSC flight payload and in view-source." JSON.stringify is the
+    // closest a unit test gets to that serialization boundary.
+    const jobCostsOnly = (capability: string) => capability === "VIEW_JOB_COSTS";
+
+    it("keeps the exact figure out of the object handed to the client when amount is stripped", () => {
+      const [alert] = wipAlerts([{ jobId: "job_1", jobName: "Mercy Tower", overrun: 47231.88 }]);
+      const [visible] = visibleToPrincipal([alert], jobCostsOnly);
+      expect(visible.amount).toBeNull();
+
+      const serialized = JSON.stringify(visible);
+      expect(serialized).not.toContain("47231");
+      expect(serialized).not.toContain("47,231");
+    });
+
+    it("still lets someone holding a money capability see the same figure", () => {
+      const [alert] = wipAlerts([{ jobId: "job_1", jobName: "Mercy Tower", overrun: 47231.88 }]);
+      const [visible] = visibleToPrincipal([alert], () => true);
+      expect(visible.amount).toBe(47231.88);
+    });
+  });
+});
+
+describe("moneyFact", () => {
+  it("does not put the raw dollar figure into the resulting fact", () => {
+    expect(moneyFact("2026-08-15", 47231.88)).not.toMatch(/47231|47,231/);
+  });
+
+  it("is stable across a change smaller than the bucket", () => {
+    expect(moneyFact("2026-08-15", 47231.88)).toBe(moneyFact("2026-08-15", 47244.28));
+  });
+
+  it("changes once the amount crosses a bucket boundary", () => {
+    expect(moneyFact("2026-08-15", 500)).not.toBe(moneyFact("2026-08-15", 42000));
+  });
+
+  it("changes when the non-money fact changes even at the same amount", () => {
+    expect(moneyFact("2026-08-15", 500)).not.toBe(moneyFact("2026-08-16", 500));
+  });
+
+  it("uses the documented bucket size", () => {
+    expect(ALERT_AMOUNT_BUCKET).toBe(1000);
   });
 });
 
