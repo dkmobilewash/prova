@@ -38,9 +38,28 @@ undo behind the guard's back.
 
 Issue #147 (the empty yard) needed no code here: PR #175 already landed it
 on `main` — the seed writes real `EquipmentAssignment` rows, never
-`assignedJobId` — and issue #180's own measurements against a real
-database confirm it. The issue is simply still open.
+`assignedJobId` — and the run below confirms it against a real database.
 
-Stated plainly: the seed was NOT executed against any database on this
-branch. The refusal path, the `--force` path and the re-run are exactly
-what the click-list has to settle, on `ep-icy-hat`.
+An earlier draft of this entry said the seed was NOT executed on this
+branch. No longer true: the full lifecycle ran on `ep-icy-hat-afqau56u`
+(2026-09-11, after rebasing onto the day's `main`), and every leg was
+verified by querying rather than by reading the script's own success
+message. In order: a seed run against existing demo data REFUSED with
+exit 1, naming all nine non-zero families and the exact `--undo` command,
+writing nothing; `--undo` removed the whole set with zero FAILED deletes —
+including 2 `InvoiceCounter` rows, the #227 RESTRICT-on-Job hazard, so
+today's counters are covered; a fresh seed then wrote 8 equipment,
+8 `EquipmentAssignment` rows, 5 of them open stays on jobs (the #147
+evidence — the yard is populated and the texture rig sits on finished
+Cedar); an immediate second run hit the refusal again, exit 1. The one
+non-demo job ("ZZ FIXTURE …") and contact survived the whole cycle,
+counted before and after. Three of the five mutations were re-run after
+the rebase (family dropped, gate inverted, blind create restored) — three
+red, baseline green.
+
+One correction to the plan this rode in on: `clean-scratch-data.mjs` is
+NOT the demo remover and refuses (by design) while `[demo]` jobs exist —
+demo removal is `seed-demo.mjs --undo`; clean-scratch removes rows a
+PERSON typed and would have deleted the fixture rows the cycle had to
+protect. It was exercised in list-only mode on both sides of the undo:
+refused while demo data was present, listed only the fixture rows after.
