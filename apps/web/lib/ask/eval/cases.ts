@@ -107,6 +107,13 @@ export const EVAL_CASES: EvalCase[] = [
   command("cmd-reschedule-end", "Riverside now finishes November 20", "reschedule_job", { jobName: "Riverside", endDate: "November 20" }),
   command("cmd-reschedule-back", "move the Main St start back a week", "reschedule_job", { jobName: "Main St", startDate: "back a week" }),
   command("cmd-reschedule-field", "Riverside starts next Monday now", "reschedule_job", { jobName: "Riverside", startDate: "next Monday" }, FIELD),
+  // Bid invitations (phase 4c). The contact is a NAME the app resolves,
+  // the trade is the person's word for it, and the due date is their
+  // words for lib/ask/dates.ts — a computed date or an enum value in the
+  // input is the model doing what the command forbids.
+  command("cmd-bid-invite", "invite Turner to bid on the Riverside drywall", "log_bid_invitation", { contactName: "Turner", projectName: "Riverside", trade: "drywall" }),
+  command("cmd-bid-log-due", "log a bid invitation from Skanska for the Main St ceilings, due October 3", "log_bid_invitation", { contactName: "Skanska", projectName: "Main St", dueDate: "October 3" }),
+  command("cmd-bid-estimator", "Turner asked us to bid the Riverside Plaza fireproofing, bids due 10/3", "log_bid_invitation", { contactName: "Turner", dueDate: "10/3" }, ESTIMATOR),
 
   // ------------------------------------ nothing offered, so no card
   noCommand("none-delete-job", "delete the Riverside job"),
@@ -117,6 +124,10 @@ export const EVAL_CASES: EvalCase[] = [
   // Likewise reschedule_job: accounting can move the dates by hand on the
   // job page, but is not offered the card.
   noCommand("none-accounting-reschedule", "push Riverside's start to October 6", ACCOUNTING),
+  // FIELD holds no MANAGE_ESTIMATING, so log_bid_invitation is not offered
+  // to them; and a won/lost decision is excluded for everyone.
+  noCommand("none-field-bid", "invite Turner to bid on the Riverside drywall", FIELD),
+  noCommand("none-bid-won", "mark the Riverside bid as won"),
   noCommand("none-change-order", "approve the change order on Riverside"),
   noCommand("none-poem", "write me a poem about drywall"),
   noCommand("none-advice", "how do I file a mechanics lien in California?"),

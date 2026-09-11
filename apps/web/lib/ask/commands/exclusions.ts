@@ -19,7 +19,9 @@ import type { Exclusion } from "../commands";
  * the person stated, DIRECT over a lifted core (commands/schedule.ts) —
  * it replaced a per-action line in
  * commands/estimating.ts rather than a wildcard here, since jobs.ts had
- * commands already.
+ * commands already. Phase 4c did the same for createBidInvitation
+ * (commands/bids.ts), once the contact resolver and the date parser the
+ * per-action line had been waiting for both existed.
  *
  * commands.coverage.test.ts fails the moment a new module appears with no
  * line here and no registration — so adding an action file is a decision

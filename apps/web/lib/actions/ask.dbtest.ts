@@ -95,6 +95,7 @@ describe("confirmAskProposal against a real database", () => {
     await prisma.dailyFieldReport.deleteMany({ where: { companyId } });
     await prisma.job.deleteMany({ where: { companyId } });
     await prisma.askProposal.deleteMany({ where: { companyId } });
+    await prisma.bidInvitation.deleteMany({ where: { companyId } });
     await prisma.contact.deleteMany({ where: { companyId } });
     await prisma.user.deleteMany({ where: { companyId } });
     await prisma.company.delete({ where: { id: companyId } });
@@ -451,5 +452,86 @@ describe("confirmAskProposal against a real database", () => {
     const unchanged = await prisma.job.findUniqueOrThrow({ where: { id: job.id } });
     expect(unchanged.startDate?.toISOString()).toBe("2026-10-06T00:00:00.000Z");
     expect(unchanged.endDate?.toISOString()).toBe("2026-11-20T00:00:00.000Z");
+  });
+
+  it("a bid invitation card logs the row through the lifted core with the form's own fields, links an open twin rather than doubling it, refuses a foreign contact, and refuses a member without MANAGE_ESTIMATING", async () => {
+    // Phase 4c. The payload holds what the contact page's form would have
+    // posted — contact, project, trade tag, due day, notes — and the core
+    // writes exactly those, with status INVITED and no amount.
+    const projectName = `ASK-DBTEST bid ${Date.now()}`;
+    const card = (over: Partial<Record<"contactId" | "projectName" | "tradeScope" | "dueDate" | "notes", string | null>> = {}) =>
+      cardFor("log_bid_invitation", {
+        contactId,
+        contactName: "ASK-DBTEST Turner",
+        projectName,
+        tradeScope: "METAL_FRAMING_DRYWALL",
+        dueDate: "2026-10-03",
+        notes: "walk-through Tuesday",
+        ...over,
+      });
+
+    // A MEMBER whose job function holds no MANAGE_ESTIMATING: refused by
+    // the confirm action itself, as a returned sentence, before any claim.
+    context.role = "MEMBER";
+    context.jobFunction = "FIELD";
+    const refusedId = await card();
+    const refused = await confirmAskProposal(refusedId);
+    context.role = "OWNER";
+    context.jobFunction = null;
+    expect(refused.ok).toBe(false);
+    if (!refused.ok) expect(refused.error).toMatch(/estimating access \(MANAGE_ESTIMATING\)/);
+    expect(await prisma.bidInvitation.count({ where: { companyId } })).toBe(0);
+
+    const firstId = await card();
+    const first = await confirmAskProposal(firstId);
+    expect(first.ok).toBe(true);
+    if (first.ok) {
+      expect(first.value.message).toBe(`Logged ASK-DBTEST Turner's invitation to bid on ${projectName}, due Oct 3, 2026 (Saturday).`);
+      expect(first.value.created).toEqual({ label: `${projectName} · ASK-DBTEST Turner`, href: "/bids" });
+    }
+    const bids = await prisma.bidInvitation.findMany({ where: { companyId } });
+    expect(bids).toHaveLength(1);
+    expect(bids[0].contactId).toBe(contactId);
+    expect(bids[0].projectName).toBe(projectName);
+    expect(bids[0].tradeScope).toBe("METAL_FRAMING_DRYWALL");
+    expect(bids[0].dueDate?.toISOString()).toBe("2026-10-03T00:00:00.000Z");
+    expect(bids[0].notes).toBe("walk-through Tuesday");
+    expect(bids[0].status).toBe("INVITED");
+    expect(bids[0].bidAmount).toBeNull();
+    const row = await prisma.askProposal.findUniqueOrThrow({ where: { id: firstId } });
+    expect(row.outcome).toBe("OK");
+    expect(row.targetType).toBe("BidInvitation");
+    expect(row.targetId).toBe(bids[0].id);
+
+    // A second card for the same contact and project, differently cased:
+    // the tap's own re-check links the open invitation instead of logging
+    // a twin.
+    const twin = await confirmAskProposal(await card({ projectName: projectName.toUpperCase(), dueDate: null, tradeScope: null }));
+    expect(twin.ok).toBe(true);
+    if (twin.ok) expect(twin.value.message).toMatch(/already has an open bid invitation/);
+    expect(await prisma.bidInvitation.count({ where: { companyId } })).toBe(1);
+
+    // Once that invitation is closed, the same project from the same GC is
+    // a new invitation — the form's behaviour, kept.
+    await prisma.bidInvitation.update({ where: { id: bids[0].id }, data: { status: "LOST" } });
+    const rebid = await confirmAskProposal(await card({ dueDate: null, notes: null }));
+    expect(rebid.ok).toBe(true);
+    if (rebid.ok) expect(rebid.value.message).toBe(`Logged ASK-DBTEST Turner's invitation to bid on ${projectName}.`);
+    expect(await prisma.bidInvitation.count({ where: { companyId } })).toBe(2);
+
+    // A contact that is not this company's: the core's own sentence, and
+    // nothing written.
+    const elsewhere = await prisma.company.create({ data: { name: "ASK-DBTEST Elsewhere" } });
+    const theirs = await prisma.contact.create({ data: { companyId: elsewhere.id, name: "ASK-DBTEST Theirs" } });
+    try {
+      const foreign = await confirmAskProposal(await card({ contactId: theirs.id, projectName: `${projectName} foreign` }));
+      expect(foreign.ok).toBe(false);
+      if (!foreign.ok) expect(foreign.error).toBe("Contact not found");
+      expect(await prisma.bidInvitation.count({ where: { companyId } })).toBe(2);
+      expect(await prisma.bidInvitation.count({ where: { companyId: elsewhere.id } })).toBe(0);
+    } finally {
+      await prisma.contact.delete({ where: { id: theirs.id } });
+      await prisma.company.delete({ where: { id: elsewhere.id } });
+    }
   });
 });

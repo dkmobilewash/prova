@@ -3,6 +3,7 @@ import { can, type Capability, type Principal } from "@/lib/permissions";
 import { equipmentCommands, equipmentExclusions } from "./commands/equipment";
 import { estimatingCommands, estimatingExclusions } from "./commands/estimating";
 import { notYetRegistered } from "./commands/exclusions";
+import { bidCommands } from "./commands/bids";
 import { billingCommands, billingExclusions } from "./commands/billing";
 import { fieldCommands, fieldExclusions } from "./commands/field";
 import { laborCommands, laborExclusions } from "./commands/labor";
@@ -56,7 +57,8 @@ export type CommandName =
   | "log_payment"
   | "log_time_entry"
   | "send_email"
-  | "reschedule_job";
+  | "reschedule_job"
+  | "log_bid_invitation";
 
 /** Risk tier. T5 (delete, void, contract, admin, outward send without a
  * composer) has no member on purpose: it cannot be registered. T4 is an
@@ -196,6 +198,7 @@ export const COMMANDS: CommandDefinition[] = [
   ...laborCommands,
   ...messageCommands,
   ...scheduleCommands,
+  ...bidCommands,
 ];
 
 export const EXCLUSIONS: Exclusion[] = [

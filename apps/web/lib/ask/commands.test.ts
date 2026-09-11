@@ -148,7 +148,7 @@ describe("who is offered what", () => {
     }
   });
 
-  it("offers an estimator the estimating commands, the RFI, the email and the schedule change — MANAGE_JOBS held, MANAGE_FIELD not", () => {
+  it("offers an estimator the estimating commands, the RFI, the email, the schedule change and the bid invitation — MANAGE_JOBS held, MANAGE_FIELD not", () => {
     expect(commandsFor(ESTIMATOR).map((c) => c.name)).toEqual([
       "create_estimate_job",
       "draft_estimate_lines",
@@ -156,8 +156,24 @@ describe("who is offered what", () => {
       "raise_rfi",
       "send_email",
       "reschedule_job",
+      "log_bid_invitation",
     ]);
     expect(commandsFor(ESTIMATOR).map((c) => c.name)).not.toContain("add_punch_item");
+  });
+
+  it("registers the bid invitation as a T1 draft, DIRECT over its lifted core, on the capability that guards /bids — and withholds it from the field and from accounting", () => {
+    const bid = COMMANDS.find((c) => c.name === "log_bid_invitation")!;
+    expect(bid.tier).toBe("T1_DRAFT");
+    expect(bid.mode).toBe("DIRECT");
+    expect(bid.core).toBe("createBidInvitationRecord");
+    expect(bid.action).toBe("createBidInvitation");
+    expect(bid.capability).toBe(ROUTE_CAPABILITY["/bids"]);
+    expect(bid.capability).toBe("MANAGE_ESTIMATING");
+    // No money on the card, so nothing beyond the page's own guard.
+    expect(bid.requiresAlso).toBeUndefined();
+    expect(commandsFor(FIELD).map((c) => c.name)).not.toContain("log_bid_invitation");
+    expect(commandsFor(ACCOUNTING).map((c) => c.name)).not.toContain("log_bid_invitation");
+    expect(commandsFor({ role: "MEMBER", jobFunction: "PROJECT_MANAGER" }).map((c) => c.name)).toContain("log_bid_invitation");
   });
 
   it("offers accounting exactly the two money commands, and nothing that touches the field or writes to a GC", () => {
