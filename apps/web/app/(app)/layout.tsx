@@ -3,6 +3,7 @@ import { Sidebar } from "@/components/Sidebar";
 import { Topbar } from "@/components/Topbar";
 import { MetricBar } from "@/components/MetricBar";
 import { loadCompanyFinancials } from "@/lib/company-financials-query";
+import { getMoneyRailStages } from "@/lib/moneyRail";
 import { countVisibleAlerts } from "@/lib/alerts-query";
 import { can, type Principal } from "@/lib/permissions";
 import { viewerToday } from "@/lib/viewerToday";
@@ -27,7 +28,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // not serialise them: it is a cookie read, not a round trip.
   const today = await viewerToday();
 
-  const [financials, alertCount] = await Promise.all([
+  const [financials, alertCount, moneyRailStages] = await Promise.all([
     loadCompanyFinancials(company.id),
     // In the layout, so the count is on every screen. Derived on each
     // render like everything else here — there is no stored unread count
@@ -35,6 +36,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     // person, and dated the same way /alerts is, so the badge and the list
     // cannot disagree about how many there are.
     countVisibleAlerts(company.id, currentUser.id, today, principal),
+    // The Money Rail's five figures — loaded here, server-side, because
+    // this is the component that already holds the company context. The
+    // Sidebar renders them verbatim; every number is computed in
+    // lib/moneyRail.ts and nowhere else.
+    getMoneyRailStages(company.id),
   ]);
   return (
     // h-screen with the content column scrolling inside it, so the metric
@@ -49,7 +55,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       {/* Renders nothing. Parks the browser's IANA zone in a cookie so
           the server can work out what day it is where the reader is. */}
       <TimeZoneCookie />
-      <Sidebar companyName={company.name} principal={principal} showsSalesCrm={showsSalesCrm} />
+      <Sidebar
+        companyName={company.name}
+        principal={principal}
+        showsSalesCrm={showsSalesCrm}
+        stages={moneyRailStages}
+      />
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar
           companyName={company.name}

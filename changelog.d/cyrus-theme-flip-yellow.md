@@ -26,3 +26,29 @@ anyway) and the deliberate white-paper print documents (WH-347, union
 remittance). Class values only — no markup moved, and the three fixed
 section slots in `jobs/[id]/page.tsx` were verified in order after the
 edit.
+
+### The sidebar becomes the Money Rail (Cyrus)
+`cyrus/theme-flip-yellow` (same branch, filmed demo)
+
+The rail is now a permanently expanded 240px column (no hover-to-expand
+overlay) whose group headings carry the five live pipeline figures from
+`lib/moneyRail.ts` — Bidding, Building, Proving, Staying legal, Getting
+paid — big, yellow (`text-brand`), on the charcoal `bg-rail` ground. The
+mapping is by meaning: Pre-construction ← Bidding, Operations ← Building,
+Compliance & safety ← Staying legal, Financials ← Getting paid; Logistics
+keeps a plain heading. Proving (open RFIs + submittals with the GC) has
+no group to sit on since the 3 Sep nav cut removed those routes from the
+rail, so it renders as its own linkless heading row after Operations,
+keeping pipeline order.
+
+The rule the component enforces rather than merely follows: NO money
+arithmetic in the UI. `app/(app)/layout.tsx` calls `getMoneyRailStages`
+server-side (inside the existing `Promise.all`, so it adds no waterfall)
+and `Sidebar` renders the stages verbatim, dollars through `lib/money.ts`.
+Every figure is the same derivation the page it points at already uses —
+that is `lib/moneyRail.ts`'s whole design, see its header.
+
+The specific check: the layout spacer and the fixed nav are both `w-60`
+(they were `w-16` + hover overlay; `grep -n w-16 components/Sidebar.tsx`
+must return nothing), and no `opacity-0` label tricks remain in the rail.
+Mobile untouched — `MobileNav` still owns everything below `md`.
