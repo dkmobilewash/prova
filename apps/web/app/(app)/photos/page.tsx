@@ -3,7 +3,7 @@ import { prisma } from "@prova/db";
 import { requireCapability } from "@/lib/authz";
 import { viewerTimeZone } from "@/lib/viewerToday";
 import { countJobMedia, loadJobMedia, loadJobMediaTags } from "@/lib/job-media-query";
-import { parseSharedFilter, photosFilterHref } from "@/lib/job-media-tags";
+import { parseLocatedFilter, parseSharedFilter, photosFilterHref } from "@/lib/job-media-tags";
 import { NoAccess } from "@/components/NoAccess";
 import { JobMediaCapture } from "@/components/JobMediaCapture";
 import { JobMediaCard } from "@/components/JobMediaCard";
@@ -30,13 +30,24 @@ import { JobMediaTagManager } from "@/components/JobMediaTagManager";
  * is honest about what is being withheld — the same shape and the same
  * wording as the job page's own section, which already did this.
  *
- * THE THREE FILTERS COMPOSE. Job AND tag AND client visibility, never one
- * replacing another: "the west wall on the Riverside job" is the question
- * this page exists to answer, and it is not answerable by either chip
- * alone. Every href on the page is built by `photosFilterHref`, which is
- * pure and tested — a chip that quietly drops another filter shows MORE
- * photos than were asked for while looking entirely healthy, which is the
- * kind of wrong nobody notices.
+ * THE FOUR FILTERS COMPOSE. Job AND tag AND client visibility AND whether
+ * the capture knows where it was taken, never one replacing another: "the
+ * west wall on the Riverside job" is the question this page exists to
+ * answer, and it is not answerable by either chip alone. Every href on the
+ * page is built by `photosFilterHref`, which is pure and tested — a chip
+ * that quietly drops another filter shows MORE photos than were asked for
+ * while looking entirely healthy, which is the kind of wrong nobody notices.
+ *
+ * THE LOCATION FILTER IS WHERE "WHERE WAS THIS TAKEN" GETS ANSWERED WITHOUT
+ * LEAVING THE GALLERY. Each card carries its own coordinate and a link out
+ * to a map; this pair of chips is what makes the gallery ITSELF answer the
+ * question — "Has a location" is every capture that recorded a position, in
+ * capture order, each with its own fix, which is a walk of the job. "No
+ * location" is its honest other half rather than an error list: everything
+ * from before this shipped, every desktop upload, every photo filed more
+ * than an hour after it was taken, and everybody who tapped "Don't allow".
+ * A crew wondering why a photo has no pin looks there and finds it
+ * alongside all the others in the same position, which is the answer.
  *
  * THE CLIENT-VISIBILITY FILTER IS THE SUB'S MIRROR OF THE PORTAL. A photo
  * is shown to the GC one at a time, from a card, by whoever was looking at
@@ -57,12 +68,17 @@ const PHOTO_LIMIT = 60;
 export default async function PhotosPage({
   searchParams,
 }: {
-  searchParams: Promise<{ job?: string; tag?: string; shared?: string }>;
+  searchParams: Promise<{ job?: string; tag?: string; shared?: string; located?: string }>;
 }) {
   const { context, allowed } = await requireCapability("MANAGE_FIELD");
   if (!allowed) return <NoAccess capability="MANAGE_FIELD" />;
   const { company } = context;
-  const { job: jobFilter, tag: tagFilter, shared: sharedFilter } = await searchParams;
+  const {
+    job: jobFilter,
+    tag: tagFilter,
+    shared: sharedFilter,
+    located: locatedFilter,
+  } = await searchParams;
 
   const [jobs, tags] = await Promise.all([
     prisma.job.findMany({
@@ -82,10 +98,15 @@ export default async function PhotosPage({
   // — see `parseSharedFilter`. An unrecognised `?shared=` is no filter, not
   // half of one.
   const activeShared = parseSharedFilter(sharedFilter);
+  const activeLocated = parseLocatedFilter(locatedFilter);
   // The one place the string turns into the three-valued query flag.
   // `undefined` is "both", and it has to be spelled out rather than left to
   // fall out of a truthiness test: `false` is a filter here.
   const sharedWhere = activeShared === null ? undefined : activeShared === "yes";
+  // Same three-valued conversion, same reason. `false` here means "only the
+  // ones with no location", which is a real question and not the absence of
+  // one — written the truthy way it would silently show everything.
+  const locatedWhere = activeLocated === null ? undefined : activeLocated === "yes";
 
   const timeZone = await viewerTimeZone();
   const [media, total] = await Promise.all([
@@ -95,6 +116,7 @@ export default async function PhotosPage({
         ...(activeJob ? { jobId: activeJob } : {}),
         ...(activeTag ? { tagId: activeTag } : {}),
         ...(sharedWhere === undefined ? {} : { shared: sharedWhere }),
+        ...(locatedWhere === undefined ? {} : { located: locatedWhere }),
         withJobName: true,
         take: PHOTO_LIMIT,
       },
@@ -109,6 +131,7 @@ export default async function PhotosPage({
       ...(activeJob ? { jobId: activeJob } : {}),
       ...(activeTag ? { tagId: activeTag } : {}),
       ...(sharedWhere === undefined ? {} : { shared: sharedWhere }),
+      ...(locatedWhere === undefined ? {} : { located: locatedWhere }),
     }),
   ]);
 
@@ -154,7 +177,7 @@ export default async function PhotosPage({
 
           <div className="mb-3 flex flex-wrap gap-2">
             <Link
-              href={photosFilterHref({ tag: activeTag, shared: activeShared })}
+              href={photosFilterHref({ tag: activeTag, shared: activeShared, located: activeLocated })}
               className={chip(!activeJob)}
             >
               All jobs
@@ -162,7 +185,12 @@ export default async function PhotosPage({
             {jobs.map((job) => (
               <Link
                 key={job.id}
-                href={photosFilterHref({ job: job.id, tag: activeTag, shared: activeShared })}
+                href={photosFilterHref({
+                  job: job.id,
+                  tag: activeTag,
+                  shared: activeShared,
+                  located: activeLocated,
+                })}
                 className={chip(activeJob === job.id)}
               >
                 {job.name}
@@ -176,7 +204,11 @@ export default async function PhotosPage({
           {filterableTags.length > 0 && (
             <div className="mb-3 flex flex-wrap gap-2">
               <Link
-                href={photosFilterHref({ job: activeJob, shared: activeShared })}
+                href={photosFilterHref({
+                  job: activeJob,
+                  shared: activeShared,
+                  located: activeLocated,
+                })}
                 className={chip(!activeTag)}
               >
                 All tags
@@ -184,7 +216,12 @@ export default async function PhotosPage({
               {filterableTags.map((tag) => (
                 <Link
                   key={tag.id}
-                  href={photosFilterHref({ job: activeJob, tag: tag.id, shared: activeShared })}
+                  href={photosFilterHref({
+                    job: activeJob,
+                    tag: tag.id,
+                    shared: activeShared,
+                    located: activeLocated,
+                  })}
                   className={chip(activeTag === tag.id)}
                 >
                   {tag.name}{" "}
@@ -221,22 +258,90 @@ export default async function PhotosPage({
               "showing N of M" line already states the filtered total. */}
           <div className="mb-3 flex flex-wrap gap-2">
             <Link
-              href={photosFilterHref({ job: activeJob, tag: activeTag })}
+              href={photosFilterHref({ job: activeJob, tag: activeTag, located: activeLocated })}
               className={chip(!activeShared)}
             >
               All photos
             </Link>
             <Link
-              href={photosFilterHref({ job: activeJob, tag: activeTag, shared: "yes" })}
+              href={photosFilterHref({
+                job: activeJob,
+                tag: activeTag,
+                shared: "yes",
+                located: activeLocated,
+              })}
               className={chip(activeShared === "yes")}
             >
               Shared with client
             </Link>
             <Link
-              href={photosFilterHref({ job: activeJob, tag: activeTag, shared: "no" })}
+              href={photosFilterHref({
+                job: activeJob,
+                tag: activeTag,
+                shared: "no",
+                located: activeLocated,
+              })}
               className={chip(activeShared === "no")}
             >
               Not shared
+            </Link>
+          </div>
+
+          {/* The location row, fourth and last, because it is the narrowing
+              you reach for once you know which job — and because it is the
+              only one of the four that some captures structurally cannot
+              satisfy.
+
+              ALWAYS RENDERED, like the visibility row above it and unlike
+              the tag row. "No location" on a company that has never
+              recorded one is the true and useful answer that nothing is
+              located yet, and a control that disappears when its answer is
+              "none" is a control you cannot use to CHECK that the answer is
+              none.
+
+              "ON SITE" IS NOT THE LABEL, and that is deliberate. This app
+              does not know whether a capture was on site: that would mean
+              comparing a coordinate to the job's address, which is derived
+              state this schema refuses to store and a comparison a ±40 m
+              fix cannot support. The chip says what the filter actually
+              tests — whether a position was recorded — because a label
+              claiming more than the query does is how somebody ends up
+              arguing about where a crew was standing.
+
+              NO COUNTS, matching the visibility chips and for the same
+              reason: a located count only means something relative to the
+              job you are standing on, so an honest one would change with
+              the job chip while the tag counts beside it did not. The
+              gallery's own "showing N of M" line already states the
+              filtered total. */}
+          <div className="mb-3 flex flex-wrap gap-2">
+            <Link
+              href={photosFilterHref({ job: activeJob, tag: activeTag, shared: activeShared })}
+              className={chip(!activeLocated)}
+            >
+              Anywhere
+            </Link>
+            <Link
+              href={photosFilterHref({
+                job: activeJob,
+                tag: activeTag,
+                shared: activeShared,
+                located: "yes",
+              })}
+              className={chip(activeLocated === "yes")}
+            >
+              Has a location
+            </Link>
+            <Link
+              href={photosFilterHref({
+                job: activeJob,
+                tag: activeTag,
+                shared: activeShared,
+                located: "no",
+              })}
+              className={chip(activeLocated === "no")}
+            >
+              No location
             </Link>
           </div>
 
@@ -277,37 +382,73 @@ export default async function PhotosPage({
                     : "Nothing here is shared with a client."
                   : activeShared === "no"
                     ? "Nothing here is being held back from the client."
-                    : activeTag && activeJob
-                      ? "No photos on this job carry that tag."
-                      : activeTag
-                        ? "No photos carry that tag."
-                        : activeJob
-                          ? "No photos on this job yet."
-                          : "No photos yet."}
+                    : /* Below the visibility filter and above the tag one,
+                         because an empty "Has a location" gallery is the
+                         likeliest of the remaining three to be surprising —
+                         somebody who just uploaded from a phone expects
+                         something here. Phrased about THIS PAGE, like the
+                         two above it: "no capture on this job recorded
+                         one" is checkable from the rows; "location is
+                         broken" would be a guess. */
+                      activeLocated === "yes"
+                      ? activeJob
+                        ? "No capture on this job recorded where it was taken."
+                        : "Nothing here recorded where it was taken."
+                      : activeLocated === "no"
+                        ? "Everything here recorded where it was taken."
+                        : activeTag && activeJob
+                          ? "No photos on this job carry that tag."
+                          : activeTag
+                            ? "No photos carry that tag."
+                            : activeJob
+                              ? "No photos on this job yet."
+                              : "No photos yet."}
               </p>
               {/* A way out of every filter that is on, not just the one the
-                  sentence above happened to name. With three filters
+                  sentence above happened to name. With four filters
                   composing, the old single-link version could leave somebody
                   looking at an empty page whose only offered escape was from
                   a filter that was not the one narrowing it. */}
               <p className="mt-1 flex flex-wrap gap-x-4 text-sm text-slate-400">
                 {activeShared && (
                   <Link
-                    href={photosFilterHref({ job: activeJob, tag: activeTag })}
+                    href={photosFilterHref({ job: activeJob, tag: activeTag, located: activeLocated })}
                     className="text-blue-400 hover:text-blue-300"
                   >
+                    {/* Keeps the location filter, and drops only the one it
+                        names. Each escape link clears exactly its own
+                        filter — a link that cleared everything would be a
+                        "start again" button wearing four different labels,
+                        and somebody two chips deep would lose the chip they
+                        meant to keep. */}
                     Show all photos
                   </Link>
                 )}
                 {activeTag && (
                   <Link
-                    href={photosFilterHref({ job: activeJob, shared: activeShared })}
+                    href={photosFilterHref({
+                      job: activeJob,
+                      shared: activeShared,
+                      located: activeLocated,
+                    })}
                     className="text-blue-400 hover:text-blue-300"
                   >
                     Clear the tag filter
                   </Link>
                 )}
-                {!activeShared && !activeTag && (
+                {activeLocated && (
+                  <Link
+                    href={photosFilterHref({
+                      job: activeJob,
+                      tag: activeTag,
+                      shared: activeShared,
+                    })}
+                    className="text-blue-400 hover:text-blue-300"
+                  >
+                    Show captures from anywhere
+                  </Link>
+                )}
+                {!activeShared && !activeTag && !activeLocated && (
                   <span>
                     {activeJob
                       ? "Add the first one above — a photo of the existing conditions before you start is the one people wish they had."
@@ -326,7 +467,7 @@ export default async function PhotosPage({
               {total > PHOTO_LIMIT && (
                 <p className="mt-3 text-sm text-slate-400">
                   Showing the {PHOTO_LIMIT} most recent of {total}.{" "}
-                  {activeJob || activeTag || activeShared
+                  {activeJob || activeTag || activeShared || activeLocated
                     ? "Older photos matching this filter are not on this page yet."
                     : "Pick a job or a tag above to narrow this down."}
                 </p>

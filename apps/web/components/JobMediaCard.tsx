@@ -13,6 +13,7 @@ import {
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { JOB_MEDIA_TAG_DATALIST_ID, JOB_MEDIA_TAGS_PER_PHOTO_MAX } from "@/lib/job-media-tags";
 import type { JobMediaKind } from "@/lib/job-media";
+import type { CapturedLocationSummary } from "@/lib/job-media-location";
 import { JobMediaMarks, type JobMediaMark } from "@/components/JobMediaMarks";
 import { JobMediaAnnotator } from "@/components/JobMediaAnnotator";
 import { annotationSummary } from "@/lib/job-media-annotations";
@@ -60,6 +61,12 @@ export type JobMediaCardData = {
   /** Non-null only when the row's own two timestamps disagree — see
    * jobMediaClockWarning. Derived at read time, stored nowhere. */
   clockWarning: string | null;
+  /** WHERE it was taken, or null — which is what most rows are and what an
+   * ordinary row looks like. Every field of it is derived from the stored
+   * coordinates at read time (`describeCapturedLocation`), including the
+   * map link: no coordinate arithmetic happens in this component and no
+   * mapping library is loaded anywhere in this app. */
+  location: CapturedLocationSummary | null;
   /** The labels on this photo, in name order, as they were typed. Display
    * names only: `normalizedName` exists to be the target of a unique index
    * and is never shown, so it never leaves the query module. */
@@ -495,6 +502,47 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
               {media.capturedByName ? ` · ${media.capturedByName}` : ""} · {media.sizeLabel}
             </p>
             {media.clockWarning && <p className="text-sm text-amber-400">{media.clockWarning}</p>}
+            {/* WHERE, on the line under WHEN and WHO, because that is the
+                order somebody reads a caption in and because a photo
+                without one must not leave a hole. Nothing at all is
+                rendered for an unlocated capture — no "no location", no
+                greyed-out pin. Most rows have none and a placeholder on
+                every one of them would turn the normal case into a
+                complaint.
+
+                THE MAP IS A LINK, NOT A MAP. This app loads no third-party
+                script into any page, and an embedded map would also hand a
+                crew member's position to a tile server on render, for every
+                card in a sixty-photo gallery, without anybody choosing to.
+                A link means the disclosure happens when a person decides it
+                should. `rel="noopener noreferrer"` for the same reason
+                every other outbound link here carries it.
+
+                slate-400 rather than slate-500, per #89 — slate-500 on
+                slate-900 measures 3.83:1, under the 4.5 floor. */}
+            {media.location && (
+              <p className="text-sm text-slate-400">
+                <span aria-hidden="true">📍 </span>
+                {media.location.coordinateLabel}
+                {media.location.accuracyLabel ? ` · ${media.location.accuracyLabel}` : ""}{" "}
+                <a
+                  href={media.location.mapHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-400 hover:text-blue-300"
+                >
+                  Map
+                </a>
+              </p>
+            )}
+            {/* Amber, like the clock warning above and for the same reason:
+                a caveat about the record rather than a failure of it. This
+                is the whole point of storing the accuracy radius — without
+                it a 2 km network fix and an 8 m GPS fix are the same
+                five-decimal number on the same line. */}
+            {media.location?.coarseNote && (
+              <p className="text-sm text-amber-400">{media.location.coarseNote}</p>
+            )}
             {/* Amber like the clock warning and for the same reason: it is
                 a caveat about the file rather than a failure, and the
                 person who needs it is the one about to show this to a GC. */}

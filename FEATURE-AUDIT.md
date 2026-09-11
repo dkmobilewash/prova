@@ -23,7 +23,13 @@ in flight. Left as-is here rather than guessed at from the outside; the next
 update to touch those sheets should come from whoever actually verified them
 against a fresh clone.
 
-**126 items audited — 100 built / 19 partial / 6 missing / 1 descoped**
+**127 items audited — 101 built / 19 partial / 6 missing / 1 descoped**
+
+(Sheet 17 gained one row on 2026-09-11 — GPS on site capture — taking it
+from 8 built to 9 and the total from 126 to 127. Re-counted with the same
+rule the paragraph below insists on: rows beneath a `## NN.` header only,
+which is 101 / 19 / 6 / 1 and sums to 127, and all 26 per-sheet headers
+still agree with their own rows.)
 
 (Recounted from the rows on merging `main` into this branch, which is the
 only thing that settles it — the fourth time this exact conflict shape has
@@ -45,7 +51,7 @@ header cannot.)
 
 | Status | Count |
 | --- | --- |
-| Built | 100 |
+| Built | 101 |
 | Partial | 19 |
 | Missing | 6 |
 | Descoped | 1 |
@@ -268,7 +274,7 @@ file's own Built rows already showed before this update touched anything.*
 | Built | RFI log per job | `Rfi` + `RfiCounter`, `/rfis` — number issued per job and never reissued, sent/due/answered dates, overdue derived, cost/schedule impact flags. Removed from nav 3 Sep 2026 — see `NAV-IA-AUDIT.md` |
 | Built | Current drawing set storage/versioning per job | `DrawingSet` + `DrawingRevision`, `/drawings` — one set per discipline per job, issues recorded under the ARCHITECT'S label (no counter: we don't issue these numbers), issued/received dates entered not stamped, current revision and "issued but never received" both derived per render. The set itself is linked, not uploaded — a Server Action body caps around 1MB and real sets are far larger. Removed from nav 3 Sep 2026 — see `NAV-IA-AUDIT.md` |
 
-## 17. Safety & Field Operations — 8 built · 0 partial · 0 missing
+## 17. Safety & Field Operations — 9 built · 0 partial · 0 missing
 
 *Updated 3 Sep 2026: `/safety` stays Built and unchanged — it's now
 rendered `disabled` ("coming soon") in the nav rather than removed, since
@@ -285,6 +291,7 @@ elsewhere in this pass. Reasoning in `NAV-IA-AUDIT.md`.*
 | Built | Photo tagging and retrieval | `JobMediaTag` + `JobMediaTagAssignment` — a per-company vocabulary, not an enum and not a string column, so a tag can be renamed across every photo at once and counted. Names are compared folded (NFKC, lower, whitespace collapsed) and shown as typed, which is what stops "West Wall" and "west wall" becoming two tags and splitting one wall's photos across them. `/photos` filters by job and tag together. Per-tag counts derived per read, stored nowhere |
 | Built | Show chosen site captures to the GC, through the portal link they already have | `JobMedia.sharedWithClientAt` — a timestamp, not a boolean, because showing a photo to a GC is a disclosure and "shared on the 4th" answers more than "shared". OPT-IN, one file at a time, off by default: a job's gallery also holds another trade's damage kept for a backcharge, the unsafe condition documented defensively, and the crew's own mistake before it was put right. The portal's exclusions are enforced by `PortalJobPhoto` NOT HAVING the fields rather than by remembering not to render them — no tags (our framing is not for the party it is about), no photographer, no file size, no edit. `/photos` mirrors it with a third filter (`shared=yes|no`) that composes with job and tag. Unsharing removes a file from the portal, not from the internet: blob URLs are public-but-unguessable, which is why the card asks before sharing and does not ask before withdrawing |
 | Built | Mark up a photo — arrows, highlight boxes, text labels, measurement lines | `JobMediaAnnotation`, drawn on the card and rendered by one `JobMediaMarks` component that BOTH the internal gallery and the GC's portal use, so what the client sees is what the sub saw when they chose to show it. THE PIXELS ARE NEVER MODIFIED: marks are rows beside the file, not flattened into a new JPEG, because a site photo is an evidence record and flattening either destroys the original or forks it into two files that disagree. Coordinates are fractions of the image (0..1), so a mark lands where it was drawn at any render size with no stored dimensions to go stale. The editor is SVG + pointer events, one code path for finger, stylus and mouse. Photos only — a static arrow on a moving picture points at whatever is in frame at second nought, so the affordance is not offered for video. **MEASURE does not measure**: there is no scale reference in a jobsite photograph and no perspective correction, so the line is what somebody drew and the figure is what they typed, on their authority. **Known gap, not faked**: the raw blob URL still serves an unmarked photo, so nothing calls a marked-up file "the photo" — the portal says opening it gives you the original without the markup, and the real fix is a flattened export, which is the same work as the PDF report |
+| Built | Where a site capture was taken — GPS recorded at upload | Three nullable columns on `JobMedia` (`capturedLatitude`, `capturedLongitude`, `capturedAccuracyMeters`), read from the browser's Geolocation API when the file is uploaded, shown on the card with a plain OpenStreetMap link and filterable on `/photos` as a fourth chip row that composes with job, tag and client visibility. **NULLABLE IS THE DESIGN**: every capture from before this shipped, every desktop upload and every denied permission has none, so a row without a location renders as a completely ordinary row and "No location" is a first-class half of the filter rather than a defect list. A location failure can never cost the photo — the request cannot reject and cannot hang, which needs TWO timers, because the API's own `timeout` excludes the time spent obtaining permission and a DISMISSED prompt therefore calls neither callback. Coordinates are rounded to five decimals (~1.1 m, finer than any fix a phone produces; seven is centimetres, a precision the measurement does not have) once on the way in, so the stored value is the displayed value. The accuracy radius is stored for the same reason `createdAt` sits beside `capturedAt`: a 2 km IP-derived fix and an 8 m GPS fix are the same shape of number once written down. Above 100 m the card says to read it as the area rather than the spot — derived per read, stored nowhere, like the distance from the job and the street address that are deliberately not stored at all. A position is attached only when the file is from within the hour, because the browser reads the fix at UPLOAD time and Friday's photos uploaded on Monday would otherwise all be recorded in the office car park. **THE GC DOES NOT GET COORDINATES**: a phone's fix is not the job's address, it is where a person was standing to a few metres at a stated minute, and the portal already withholds who held the phone — enforced by `PortalJobPhoto` not having the fields and the portal `select` not fetching them, with a dbtest asserting the digits appear nowhere in the serialised result. No mapping library and no third-party script |
 
 ## 18. Scheduling & Crew Dispatch — 3 built · 0 partial · 0 missing
 

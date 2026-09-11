@@ -4,6 +4,7 @@ import {
   JOB_MEDIA_TAG_MAX_LENGTH,
   displayTagName,
   normalizeTagName,
+  parseLocatedFilter,
   parseSharedFilter,
   parseTagInput,
   photosFilterHref,
@@ -260,7 +261,27 @@ group("parseSharedFilter admits exactly two values", () => {
   });
 });
 
-group("photosFilterHref composes the gallery's three filters", () => {
+group("parseLocatedFilter admits exactly two values", () => {
+  it("takes the two that mean something", () => {
+    expect(parseLocatedFilter("yes")).toBe("yes");
+    expect(parseLocatedFilter("no")).toBe("no");
+  });
+
+  it("falls back to no filter for anything else", () => {
+    // Same posture as every other filter on this page: an unrecognised
+    // value must not produce a gallery that is quietly withholding captures
+    // with nothing on the page to say so.
+    expect(parseLocatedFilter("true")).toBeNull();
+    expect(parseLocatedFilter("false")).toBeNull();
+    expect(parseLocatedFilter("gps")).toBeNull();
+    expect(parseLocatedFilter("YES")).toBeNull();
+    expect(parseLocatedFilter("")).toBeNull();
+    expect(parseLocatedFilter(undefined)).toBeNull();
+    expect(parseLocatedFilter(null)).toBeNull();
+  });
+});
+
+group("photosFilterHref composes the gallery's four filters", () => {
   it("is the bare gallery when nothing is filtered", () => {
     expect(photosFilterHref({})).toBe("/photos");
     expect(photosFilterHref({ job: null, tag: null })).toBe("/photos");
@@ -334,6 +355,52 @@ group("photosFilterHref composes the gallery's three filters", () => {
     const fromAnother = photosFilterHref({ job: "job_1", shared: "yes", tag: "tag_1" });
     expect(fromOneOrder).toBe(fromAnother);
     expect(fromOneOrder).toBe("/photos?job=job_1&tag=tag_1&shared=yes");
+  });
+
+  it("carries the location filter on its own, in both directions", () => {
+    expect(photosFilterHref({ located: "yes" })).toBe("/photos?located=yes");
+    // The same falsy-boolean trap as `shared` above. "No location" is a real
+    // question — it is half the gallery — and a boolean `false` written the
+    // idiomatic way here would be dropped, handing back every capture to
+    // somebody who asked which ones have no position.
+    expect(photosFilterHref({ located: "no" })).toBe("/photos?located=no");
+    expect(photosFilterHref({ located: null })).toBe("/photos");
+  });
+
+  it("carries all FOUR, which is the requirement now", () => {
+    // "Which of the west-wall photos on Riverside that we have shown Turner
+    // do we know the position of" is one question and it needs four chips.
+    // Any one of them silently dropped answers a different question with
+    // total confidence.
+    expect(
+      photosFilterHref({ job: "job_1", tag: "tag_1", shared: "yes", located: "yes" }),
+    ).toBe("/photos?job=job_1&tag=tag_1&shared=yes&located=yes");
+    expect(photosFilterHref({ job: "job_1", located: "no" })).toBe("/photos?job=job_1&located=no");
+    expect(photosFilterHref({ shared: "no", located: "yes" })).toBe(
+      "/photos?shared=no&located=yes",
+    );
+  });
+
+  it("clearing any one of the four keeps the other three", () => {
+    // Every chip on the page is one of these calls: the "Anywhere" chip
+    // passes no `located` and all three of the others, and so on round.
+    expect(photosFilterHref({ job: "job_1", tag: "tag_1", shared: "yes" })).toBe(
+      "/photos?job=job_1&tag=tag_1&shared=yes",
+    );
+    expect(photosFilterHref({ job: "job_1", tag: "tag_1", located: "no" })).toBe(
+      "/photos?job=job_1&tag=tag_1&located=no",
+    );
+    expect(photosFilterHref({ tag: "tag_1", shared: "yes", located: "yes" })).toBe(
+      "/photos?tag=tag_1&shared=yes&located=yes",
+    );
+  });
+
+  it("round-trips through parseLocatedFilter, which is how the page reads it back", () => {
+    for (const value of ["yes", "no"] as const) {
+      const href = photosFilterHref({ located: value });
+      const read = new URL(href, "https://example.test").searchParams.get("located");
+      expect(parseLocatedFilter(read)).toBe(value);
+    }
   });
 
   it("round-trips through parseSharedFilter, which is how the page reads it back", () => {
