@@ -39,11 +39,21 @@ note that says "X has not been done" is a claim with an expiry date on it.
 recurring merge-conflict shape, kept for the method. Its arithmetic ends at
 119 items because that is what the file held on the day of that merge; rows
 added since (#214's gallery row via #230 among them) moved the totals to
-the 125 / 99 the line above states. Re-derived 2026-09-10 by summing all 26
-per-sheet headers: 99 + 19 + 6 + 1 = 125, agreeing with the prose line and
+the 126 / 100 the line above states. Re-derived 2026-09-11 by summing all 26
+per-sheet headers: 100 + 19 + 6 + 1 = 126, agreeing with the prose line and
 the summary table. Until this note, the stale 119 sat forty lines under the
-current 125 with nothing marking which one to believe — the exact
+current 126 with nothing marking which one to believe — the exact
 two-numbers-on-main failure the recount itself was written to end.
+
+AND THEN IT HAPPENED TO THIS NOTE, which is why the date above moved. It was
+written 2026-09-10 saying 125 / 99, and it was RIGHT that day — 125 is what
+the 26 headers summed to. #236 added the photo-markup row to sheet 17 while
+this correction sat open, git auto-merged the two sides with no conflict
+because they touch different lines, and the paragraph reached `main` claiming
+the line above it said 125 when that line said 126. Nothing went red: no test
+asserts these totals and CI does not read prose. A re-derivation is a
+measurement with a date on it rather than a fact — carry the date, and take it
+again against `main` immediately before merging, not when you started.
 
 Recounted from the rows on merging `main` into this branch, which is the
 only thing that settles it — the fourth time this exact conflict shape has
