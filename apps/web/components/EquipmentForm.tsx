@@ -1,8 +1,9 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { createEquipment } from "@/lib/actions";
 import { EquipmentFields } from "@/components/EquipmentFields";
+import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
 
 /** Collapsed by default — same reasoning as VendorForm: the list is why
  * you came, adding is occasional.
@@ -15,7 +16,7 @@ export function EquipmentForm() {
   const [isOpen, setIsOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const formRef = useRef<HTMLFormElement>(null);
+  const draft = useFormDraft("equipment:create");
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -24,7 +25,8 @@ export function EquipmentForm() {
     startTransition(async () => {
       try {
         await createEquipment(formData);
-        formRef.current?.reset();
+        draft.clear();
+        draft.resetForm();
         setIsOpen(false);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Could not save equipment");
@@ -47,7 +49,8 @@ export function EquipmentForm() {
   return (
     <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
       <h2 className="mb-3 text-sm font-semibold text-slate-300">Add equipment</h2>
-      <form ref={formRef} onSubmit={handleSubmit} className="flex flex-col gap-3">
+      <form ref={draft.formRef} onSubmit={handleSubmit} onChange={draft.save} className="flex flex-col gap-3">
+        <FormDraftNotice draft={draft} />
         <EquipmentFields />
 
         {error && <p className="text-sm text-red-400">{error}</p>}

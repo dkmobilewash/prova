@@ -1,7 +1,8 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { addCertificationRequirement, removeCertificationRequirement } from "@/lib/actions";
+import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
 import type { ActionResult } from "@/lib/actions/shared";
 import { inputClass, labelClass } from "@/components/RfiFields";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
@@ -42,7 +43,20 @@ export function CertificationRequirements({
      the delete's `confirmingId` left — each row's <RowActions> arms itself. */
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const formRef = useRef<HTMLFormElement>(null);
+  // The kind select is controlled (it decides whether "Name it" renders),
+  // so onRestore/onDiscard keep the state in step with the DOM.
+  const draft = useFormDraft("certification-requirement:create", {
+    onRestore: (values) => {
+      const restoredKind = values.kind;
+      if (
+        typeof restoredKind === "string" &&
+        (CERTIFICATION_KINDS as readonly string[]).includes(restoredKind)
+      ) {
+        setKind(restoredKind);
+      }
+    },
+    onDiscard: () => setKind(""),
+  });
 
   function run(fn: () => Promise<ActionResult>, onOk?: () => void) {
     setError(null);
@@ -57,14 +71,16 @@ export function CertificationRequirements({
     <div className="flex flex-col gap-3">
       {isOpen ? (
         <form
-          ref={formRef}
+          ref={draft.formRef}
+          onChange={draft.save}
           onSubmit={(event) => {
             event.preventDefault();
             const formData = new FormData(event.currentTarget);
             run(
               () => addCertificationRequirement(formData),
               () => {
-                formRef.current?.reset();
+                draft.clear();
+                draft.resetForm();
                 setKind("");
                 setIsOpen(false);
               },
@@ -73,6 +89,7 @@ export function CertificationRequirements({
           className="flex flex-col gap-3 rounded-lg border border-slate-800 bg-slate-900 p-4"
         >
           <h3 className="text-sm font-semibold text-slate-300">Require a certification</h3>
+          <FormDraftNotice draft={draft} />
           <p className="text-xs text-slate-500">
             Everyone on the team is measured against this. A person with no record of it at all
             reads as <span className="text-red-300">nothing on file</span> rather than disappearing,

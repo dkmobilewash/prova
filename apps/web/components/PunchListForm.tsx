@@ -3,6 +3,7 @@
 import { useRef, useState, useTransition } from "react";
 import { createPunchListItem, settleAskDraft } from "@/lib/actions";
 import type { PunchDraft } from "@/lib/ask/drafts";
+import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
 
 // 16px, not the 14px inherited from the `text-sm` label: iOS Safari zooms the
 // whole page when a focused input is under 16px, and the foreman then has to
@@ -32,6 +33,17 @@ export function PunchListForm({
   const [error, setError] = useState<string | null>(null);
   const [jobId, setJobId] = useState(defaultJobId ?? jobs[0]?.id ?? "");
   const descriptionRef = useRef<HTMLInputElement>(null);
+  // The job select is controlled, so the hook alone can't restore it —
+  // onRestore/onDiscard keep the state in step with the DOM.
+  const formDraft = useFormDraft("punch-list:create", {
+    onRestore: (values) => {
+      const restoredJob = values.jobId;
+      if (typeof restoredJob === "string" && jobs.some((job) => job.id === restoredJob)) {
+        setJobId(restoredJob);
+      }
+    },
+    onDiscard: () => setJobId(defaultJobId ?? jobs[0]?.id ?? ""),
+  });
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -40,6 +52,7 @@ export function PunchListForm({
     startTransition(async () => {
       try {
         await createPunchListItem(formData);
+        formDraft.clear();
         if (draft) void settleAskDraft(draft.proposalId);
         if (descriptionRef.current) {
           descriptionRef.current.value = "";
@@ -60,7 +73,8 @@ export function PunchListForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+    <form ref={formDraft.formRef} onSubmit={handleSubmit} onChange={formDraft.save} className="flex flex-col gap-3">
+      <FormDraftNotice draft={formDraft} />
       <label className={labelClass}>
         Job
         <select

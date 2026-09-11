@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { deleteJobMediaTag, renameJobMediaTag } from "@/lib/actions";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { JOB_MEDIA_TAG_MAX_LENGTH } from "@/lib/job-media-tags";
+import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
 
 /** One tag in the company's vocabulary, with how many photos wear it.
  *
@@ -80,6 +81,8 @@ function JobMediaTagRow({ tag }: { tag: JobMediaTagSummary }) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
+  // Keyed by the tag id so two rows' rename forms can never share a draft.
+  const draft = useFormDraft(`job-media-tag:edit:${tag.id}`);
 
   const photos = `${tag.photoCount} ${tag.photoCount === 1 ? "photo" : "photos"}`;
 
@@ -87,6 +90,8 @@ function JobMediaTagRow({ tag }: { tag: JobMediaTagSummary }) {
     return (
       <li className="p-4">
         <form
+          ref={draft.formRef}
+          onChange={draft.save}
           onSubmit={(event) => {
             event.preventDefault();
             setError(null);
@@ -103,6 +108,7 @@ function JobMediaTagRow({ tag }: { tag: JobMediaTagSummary }) {
                   setError(result.error);
                   return;
                 }
+                draft.clear();
                 router.refresh();
                 setMode("view");
               } catch {
@@ -112,6 +118,7 @@ function JobMediaTagRow({ tag }: { tag: JobMediaTagSummary }) {
           }}
           className="flex flex-col gap-2"
         >
+          <FormDraftNotice draft={draft} />
           <label className="flex flex-col gap-1 text-sm text-slate-300">
             Tag name
             <input

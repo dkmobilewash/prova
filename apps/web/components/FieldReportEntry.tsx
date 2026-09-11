@@ -9,6 +9,7 @@ import {
 } from "@/components/DailyFieldReports";
 import { type ReportData, dayLabel } from "@/components/fieldReportWeeks";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
+import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
 
 // Defined once so the row's controls can't drift back under 44px a button at
 // a time. `inline-flex` + `items-center` is what makes min-h centre the label
@@ -36,6 +37,9 @@ export function FieldReportEntry({
   const [isEditing, setIsEditing] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  // Keyed by the report id, so it also follows the record to the job
+  // page's edit form for the same report — same identity, same draft.
+  const draft = useFormDraft(`field-report:edit:${report.id}`);
 
   const asFields: FieldReport = {
     id: report.id,
@@ -51,14 +55,18 @@ export function FieldReportEntry({
     return (
       <li className="rounded-md border border-slate-800 bg-slate-900 p-4">
         <form
+          ref={draft.formRef}
+          onChange={draft.save}
           onSubmit={(event) => {
             event.preventDefault();
             setError(null);
             const formData = new FormData(event.currentTarget);
             startTransition(async () => {
               const result = await updateDailyFieldReport(report.id, formData);
-              if (result.ok) setIsEditing(false);
-              else setError(result.error);
+              if (result.ok) {
+                draft.clear();
+                setIsEditing(false);
+              } else setError(result.error);
             });
           }}
           className="flex flex-col gap-3"
@@ -66,6 +74,7 @@ export function FieldReportEntry({
           <p className="text-sm font-medium text-slate-100">
             {dayLabel(report.reportDate)} · {report.jobName}
           </p>
+          <FormDraftNotice draft={draft} />
           <FieldReportFields report={asFields} />
           {error && <p className="text-sm text-red-400">{error}</p>}
           <div className="flex flex-wrap gap-2">

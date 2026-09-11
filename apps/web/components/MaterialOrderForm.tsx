@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useRef, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { createMaterialOrder } from "@/lib/actions";
+import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
 import { inputClass, labelClass, type JobOption } from "@/components/RfiFields";
 import {
   MaterialOrderFields,
@@ -43,7 +44,7 @@ export function MaterialOrderForm({
   const [isOpen, setIsOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const formRef = useRef<HTMLFormElement>(null);
+  const draft = useFormDraft("material-order:create");
 
   if (jobs.length === 0) {
     return (
@@ -81,7 +82,8 @@ export function MaterialOrderForm({
 
   return (
     <form
-      ref={formRef}
+      ref={draft.formRef}
+      onChange={draft.save}
       onSubmit={(event) => {
         event.preventDefault();
         setError(null);
@@ -92,7 +94,8 @@ export function MaterialOrderForm({
           // production builds, verified 2026-08-27.
           const result = await createMaterialOrder(formData);
           if (result.ok) {
-            formRef.current?.reset();
+            draft.clear();
+            draft.resetForm();
             setIsOpen(false);
           } else {
             setError(result.error);
@@ -102,6 +105,7 @@ export function MaterialOrderForm({
       className="flex flex-col gap-3 rounded-lg border border-slate-800 bg-slate-900 p-4"
     >
       <h2 className="text-sm font-semibold text-slate-300">Log a material order</h2>
+      <FormDraftNotice draft={draft} />
 
       <MaterialOrderFields
         jobs={jobs}

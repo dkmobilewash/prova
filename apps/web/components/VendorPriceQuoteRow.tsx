@@ -18,6 +18,7 @@ import {
   unitLabel,
 } from "@/components/vendorPricing";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
+import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
 
 /** One quote in an item's history: reading, editing, or confirming a
  * delete. Delete asks twice, because removing a quote silently changes what
@@ -46,6 +47,8 @@ export function VendorPriceQuoteRow({
   const [isEditing, setIsEditing] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  // Keyed by the quote id so two rows' edit forms can never share a draft.
+  const draft = useFormDraft(`vendor-price-quote:edit:${quote.id}`);
 
   const expired = isExpired(quote, today);
   const stale = isStale(quote, today);
@@ -55,18 +58,23 @@ export function VendorPriceQuoteRow({
     return (
       <li className="p-4">
         <form
+          ref={draft.formRef}
+          onChange={draft.save}
           onSubmit={(event) => {
             event.preventDefault();
             setError(null);
             const formData = new FormData(event.currentTarget);
             startTransition(async () => {
               const result = await updateVendorPriceQuote(quote.id, formData);
-              if (result.ok) setIsEditing(false);
-              else setError(result.error);
+              if (result.ok) {
+                draft.clear();
+                setIsEditing(false);
+              } else setError(result.error);
             });
           }}
           className="flex flex-col gap-3"
         >
+          <FormDraftNotice draft={draft} />
           <VendorPriceQuoteFields
             vendors={vendors}
             catalogEntries={catalogEntries}

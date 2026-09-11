@@ -9,6 +9,7 @@ import {
 } from "@/components/SafetyIncidentFields";
 import { classificationLabel, isRecordable, outcomeLabel } from "@/components/safetyLabels";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
+import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
 
 // Defined once so the row's controls can't drift back under 44px a button at
 // a time. `inline-flex` + `items-center` is what makes min-h centre the label
@@ -39,6 +40,8 @@ export function SafetyIncidentRow({
   const [isEditing, setIsEditing] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  // Keyed by the incident id so two rows' edit forms can never share a draft.
+  const draft = useFormDraft(`safety-incident:edit:${incident.id}`);
 
   function run(fn: () => Promise<void>, fallback: string) {
     setError(null);
@@ -55,17 +58,21 @@ export function SafetyIncidentRow({
     return (
       <li className="p-4">
         <form
+          ref={draft.formRef}
+          onChange={draft.save}
           onSubmit={(event) => {
             event.preventDefault();
             const formData = new FormData(event.currentTarget);
             run(async () => {
               await updateSafetyIncident(incident.id, formData);
+              draft.clear();
               setIsEditing(false);
             }, "Could not save changes");
           }}
           className="flex flex-col gap-3"
         >
           <p className="text-sm font-semibold text-slate-300">Case {incident.caseLabel}</p>
+          <FormDraftNotice draft={draft} />
 
           <SafetyIncidentFields jobs={jobs} defaults={incident} lockDate />
 

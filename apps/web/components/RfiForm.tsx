@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useRef, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { createRfi, settleAskDraft } from "@/lib/actions";
 import { RfiFields, type JobOption } from "@/components/RfiFields";
 import { localToday } from "@/components/localToday";
 import type { RfiDraft } from "@/lib/ask/drafts";
+import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
 
 export function RfiForm({
   jobs,
@@ -24,7 +25,7 @@ export function RfiForm({
   const [isOpen, setIsOpen] = useState(draft !== undefined);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const formRef = useRef<HTMLFormElement>(null);
+  const formDraft = useFormDraft("rfi:create");
 
   // A bare grey sentence where the button should be reads as a broken page
   // rather than as a reason nothing is actionable. Give it a real empty
@@ -61,7 +62,8 @@ export function RfiForm({
 
   return (
     <form
-      ref={formRef}
+      ref={formDraft.formRef}
+      onChange={formDraft.save}
       onSubmit={(event) => {
         event.preventDefault();
         setError(null);
@@ -69,8 +71,9 @@ export function RfiForm({
         startTransition(async () => {
           try {
             await createRfi(formData);
+            formDraft.clear();
             if (draft) void settleAskDraft(draft.proposalId);
-            formRef.current?.reset();
+            formDraft.resetForm();
             setIsOpen(false);
           } catch (err) {
             setError(err instanceof Error ? err.message : "Could not raise the RFI");
@@ -80,6 +83,7 @@ export function RfiForm({
       className="flex flex-col gap-3 rounded-lg border border-slate-800 bg-slate-900 p-4"
     >
       <h2 className="text-sm font-semibold text-slate-300">Raise an RFI</h2>
+      <FormDraftNotice draft={formDraft} />
 
       <RfiFields
         jobs={jobs}

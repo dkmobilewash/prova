@@ -5,6 +5,7 @@ import { deleteWorkerCertification, updateWorkerCertification } from "@/lib/acti
 import type { ActionResult } from "@/lib/actions/shared";
 import { CertificationFields } from "@/components/CertificationFields";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
+import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
 import {
   STANDING_LABELS,
   standingChipClass,
@@ -31,6 +32,53 @@ function workerLabel(worker: WorkerStanding["worker"]) {
   return worker.name?.trim() || worker.email;
 }
 
+/** The edit form for one certification record, extracted from the history
+ * map so it can hold its own draft hook (hooks can't live in a loop).
+ * Keyed by the record id, so two records' edits can never share a draft.
+ * `onSave` passes the draft's clear callback through, to run only when the
+ * update actually succeeded. */
+function CertificationRecordEditForm({
+  record,
+  title,
+  isPending,
+  error,
+  onSave,
+  onCancel,
+}: {
+  record: CertificationRecord;
+  title: string;
+  isPending: boolean;
+  error: string | null;
+  onSave: (id: string, formData: FormData, onSaved: () => void) => void;
+  onCancel: () => void;
+}) {
+  const draft = useFormDraft(`worker-certification:edit:${record.id}`);
+  return (
+    <form
+      ref={draft.formRef}
+      onChange={draft.save}
+      onSubmit={(event) => {
+        event.preventDefault();
+        onSave(record.id, new FormData(event.currentTarget), draft.clear);
+      }}
+      className="my-2 flex flex-col gap-3 rounded-md border border-slate-700 p-3"
+    >
+      <p className="text-sm font-semibold text-slate-300">{title}</p>
+      <FormDraftNotice draft={draft} />
+      <CertificationFields defaults={record} lockedKind={record.kind} />
+      {error && <p className="text-sm text-red-400">{error}</p>}
+      <div className="flex gap-2">
+        <button type="submit" disabled={isPending} className={primaryBtn}>
+          {isPending ? "Saving…" : "Save changes"}
+        </button>
+        <button type="button" disabled={isPending} onClick={onCancel} className={btn}>
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}
+
 function HoldingBlock({
   holding,
   holderLabel,
@@ -51,7 +99,7 @@ function HoldingBlock({
   error: string | null;
   onEdit: (id: string) => void;
   onCancelEdit: () => void;
-  onSave: (id: string, formData: FormData) => void;
+  onSave: (id: string, formData: FormData, onSaved: () => void) => void;
   onDelete: (id: string) => void;
 }) {
   return (
@@ -80,27 +128,14 @@ function HoldingBlock({
           if (editingId === record.id) {
             return (
               <li key={record.id}>
-                <form
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    onSave(record.id, new FormData(event.currentTarget));
-                  }}
-                  className="my-2 flex flex-col gap-3 rounded-md border border-slate-700 p-3"
-                >
-                  <p className="text-sm font-semibold text-slate-300">
-                    {holding.title} — {holderLabel}
-                  </p>
-                  <CertificationFields defaults={record} lockedKind={record.kind} />
-                  {error && <p className="text-sm text-red-400">{error}</p>}
-                  <div className="flex gap-2">
-                    <button type="submit" disabled={isPending} className={primaryBtn}>
-                      {isPending ? "Saving…" : "Save changes"}
-                    </button>
-                    <button type="button" disabled={isPending} onClick={onCancelEdit} className={btn}>
-                      Cancel
-                    </button>
-                  </div>
-                </form>
+                <CertificationRecordEditForm
+                  record={record}
+                  title={`${holding.title} — ${holderLabel}`}
+                  isPending={isPending}
+                  error={error}
+                  onSave={onSave}
+                  onCancel={onCancelEdit}
+                />
               </li>
             );
           }
@@ -255,10 +290,13 @@ export function WorkerCertificationRow({
                 setError(null);
               }}
               onCancelEdit={() => setEditingId(null)}
-              onSave={(id, formData) =>
+              onSave={(id, formData, onSaved) =>
                 run(
                   () => updateWorkerCertification(id, formData),
-                  () => setEditingId(null),
+                  () => {
+                    onSaved();
+                    setEditingId(null);
+                  },
                 )
               }
               onDelete={(id) => run(() => deleteWorkerCertification(id))}

@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { deleteEquipment, updateEquipment } from "@/lib/actions";
 import { EquipmentFields, type EquipmentFieldValues } from "@/components/EquipmentFields";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
+import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
 
 // One definition for the row's controls so they can't drift back under 44px a
 // button at a time. `inline-flex` + `items-center` is what makes min-h centre
@@ -35,6 +36,8 @@ export function EquipmentRow({ canDelete, item }: EquipmentRowProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  // Keyed by the item id so two rows' edit forms can never share a draft.
+  const draft = useFormDraft(`equipment:edit:${item.id}`);
 
   function handleSave(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -43,6 +46,7 @@ export function EquipmentRow({ canDelete, item }: EquipmentRowProps) {
     startTransition(async () => {
       try {
         await updateEquipment(item.id, formData);
+        draft.clear();
         setIsEditing(false);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Could not save changes");
@@ -64,7 +68,8 @@ export function EquipmentRow({ canDelete, item }: EquipmentRowProps) {
   if (isEditing) {
     return (
       <div>
-        <form onSubmit={handleSave} className="flex flex-col gap-3">
+        <form ref={draft.formRef} onSubmit={handleSave} onChange={draft.save} className="flex flex-col gap-3">
+          <FormDraftNotice draft={draft} />
           <EquipmentFields defaults={item} />
 
           {error && <p className="text-sm text-red-400">{error}</p>}

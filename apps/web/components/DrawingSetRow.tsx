@@ -21,6 +21,7 @@ import {
 } from "@/components/drawingLabels";
 import { localToday } from "@/components/localToday";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
+import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
 
 export type DrawingSetRowData = DrawingSetDefaults & {
   id: string;
@@ -92,6 +93,54 @@ function ReceiptFields({ defaults }: { defaults?: Partial<RevisionData> }) {
   );
 }
 
+/** The edit form for one revision, extracted from the list's map so it can
+ * hold its own draft hook (hooks can't live in a loop). Keyed by the
+ * revision id, so two revisions' edits can never share a draft. `onSave`
+ * receives the form's data plus a callback to run only when the update
+ * actually succeeded, which clears the draft. */
+function RevisionEditForm({
+  revision,
+  isPending,
+  error,
+  onSave,
+  onCancel,
+}: {
+  revision: RevisionData;
+  isPending: boolean;
+  error: string | null;
+  onSave: (formData: FormData, onSaved: () => void) => void;
+  onCancel: () => void;
+}) {
+  const draft = useFormDraft(`drawing-revision:edit:${revision.id}`);
+  return (
+    <form
+      ref={draft.formRef}
+      onChange={draft.save}
+      onSubmit={(event) => {
+        event.preventDefault();
+        const formData = new FormData(event.currentTarget);
+        onSave(formData, draft.clear);
+      }}
+      className="my-2 flex flex-col gap-3 rounded-md border border-slate-700 p-3"
+    >
+      <p className="text-sm font-semibold text-slate-300">
+        {revision.label} · issued {revision.issuedOn}
+      </p>
+      <FormDraftNotice draft={draft} />
+      <ReceiptFields defaults={revision} />
+      {error && <p className="text-sm text-red-400">{error}</p>}
+      <div className="flex gap-2">
+        <button type="submit" disabled={isPending} className={primaryBtn}>
+          {isPending ? "Saving…" : "Save"}
+        </button>
+        <button type="button" disabled={isPending} onClick={onCancel} className={btn}>
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}
+
 export function DrawingSetRow({
   set,
   today,
@@ -107,6 +156,11 @@ export function DrawingSetRow({
   const [editingRevisionId, setEditingRevisionId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  // Keyed by the set id so two rows can never share a draft; edit and
+  // issue are different forms with different fields, so different keys.
+  // The per-revision edit form has its own hook in RevisionEditForm below.
+  const editDraft = useFormDraft(`drawing-set:edit:${set.id}`);
+  const issueDraft = useFormDraft(`drawing-set:issue:${set.id}`);
 
   function run(fn: () => Promise<ActionResult>, onOk?: () => void) {
     setError(null);
@@ -125,17 +179,23 @@ export function DrawingSetRow({
     return (
       <li className="p-4">
         <form
+          ref={editDraft.formRef}
+          onChange={editDraft.save}
           onSubmit={(event) => {
             event.preventDefault();
             const formData = new FormData(event.currentTarget);
             run(
               () => updateDrawingSet(set.id, formData),
-              () => setMode("view"),
+              () => {
+                editDraft.clear();
+                setMode("view");
+              },
             );
           }}
           className="flex flex-col gap-3"
         >
           <p className="text-sm font-semibold text-slate-300">{set.jobName}</p>
+          <FormDraftNotice draft={editDraft} />
           <DrawingSetFields defaults={set} />
           {error && <p className="text-sm text-red-400">{error}</p>}
           <div className="flex gap-2">
@@ -155,17 +215,23 @@ export function DrawingSetRow({
     return (
       <li className="p-4">
         <form
+          ref={issueDraft.formRef}
+          onChange={issueDraft.save}
           onSubmit={(event) => {
             event.preventDefault();
             const formData = new FormData(event.currentTarget);
             run(
               () => recordDrawingRevision(set.id, formData),
-              () => setMode("view"),
+              () => {
+                issueDraft.clear();
+                setMode("view");
+              },
             );
           }}
           className="flex flex-col gap-3"
         >
           <p className="text-sm font-semibold text-slate-300">Record an issue of {set.name}</p>
+          <FormDraftNotice draft={issueDraft} />
 
           <div className="grid gap-3 sm:grid-cols-2">
             <label className={labelClass}>
@@ -243,36 +309,21 @@ export function DrawingSetRow({
               return (
                 <li key={rev.id} className="text-xs text-slate-400">
                   {editingRevisionId === rev.id ? (
-                    <form
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        const formData = new FormData(event.currentTarget);
+                    <RevisionEditForm
+                      revision={rev}
+                      isPending={isPending}
+                      error={error}
+                      onSave={(formData, onSaved) => {
                         run(
                           () => updateDrawingRevision(rev.id, formData),
-                          () => setEditingRevisionId(null),
+                          () => {
+                            onSaved();
+                            setEditingRevisionId(null);
+                          },
                         );
                       }}
-                      className="my-2 flex flex-col gap-3 rounded-md border border-slate-700 p-3"
-                    >
-                      <p className="text-sm font-semibold text-slate-300">
-                        {rev.label} · issued {rev.issuedOn}
-                      </p>
-                      <ReceiptFields defaults={rev} />
-                      {error && <p className="text-sm text-red-400">{error}</p>}
-                      <div className="flex gap-2">
-                        <button type="submit" disabled={isPending} className={primaryBtn}>
-                          {isPending ? "Saving…" : "Save"}
-                        </button>
-                        <button
-                          type="button"
-                          disabled={isPending}
-                          onClick={() => setEditingRevisionId(null)}
-                          className={btn}
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </form>
+                      onCancel={() => setEditingRevisionId(null)}
+                    />
                   ) : (
                     <>
                       <span className={isCurrent ? "font-mono text-slate-300" : "font-mono text-slate-500"}>

@@ -1,16 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { useRef, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { createDrawingSet } from "@/lib/actions";
 import { type JobOption } from "@/components/RfiFields";
 import { DrawingSetFields } from "@/components/DrawingSetFields";
+import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
 
 export function DrawingSetForm({ jobs, defaultJobId }: { jobs: JobOption[]; defaultJobId?: string }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const formRef = useRef<HTMLFormElement>(null);
+  const draft = useFormDraft("drawing-set:create");
 
   if (jobs.length === 0) {
     return (
@@ -44,7 +45,8 @@ export function DrawingSetForm({ jobs, defaultJobId }: { jobs: JobOption[]; defa
 
   return (
     <form
-      ref={formRef}
+      ref={draft.formRef}
+      onChange={draft.save}
       onSubmit={(event) => {
         event.preventDefault();
         setError(null);
@@ -52,7 +54,8 @@ export function DrawingSetForm({ jobs, defaultJobId }: { jobs: JobOption[]; defa
         startTransition(async () => {
           const result = await createDrawingSet(formData);
           if (result.ok) {
-            formRef.current?.reset();
+            draft.clear();
+            draft.resetForm();
             setIsOpen(false);
           } else {
             setError(result.error);
@@ -62,6 +65,7 @@ export function DrawingSetForm({ jobs, defaultJobId }: { jobs: JobOption[]; defa
       className="flex flex-col gap-3 rounded-lg border border-slate-800 bg-slate-900 p-4"
     >
       <h2 className="text-sm font-semibold text-slate-300">Add a drawing set</h2>
+      <FormDraftNotice draft={draft} />
 
       <DrawingSetFields jobs={jobs} defaultJobId={defaultJobId} defaults={{ name: "", description: null }} />
 
