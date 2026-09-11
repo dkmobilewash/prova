@@ -6,7 +6,7 @@ import { submitPayApplication, updateInvoiceStatus } from "@/lib/actions";
 import { formatInstant } from "@/lib/render-date";
 
 const inputClass =
-  "w-28 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-right text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none";
+  "w-28 rounded-md border border-line-card bg-canvas px-2 py-1 text-right text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none";
 
 const STATUS_OPTIONS = [
   { value: "SUBMITTED", label: "Submitted" },
@@ -53,7 +53,7 @@ export function StatusForm({ jobId, invoiceId, status }: { jobId: string; invoic
         name="status"
         defaultValue={status}
         disabled={isPending}
-        className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-100 focus:border-blue-500 focus:outline-none disabled:opacity-50"
+        className="rounded-md border border-line-card bg-canvas px-2 py-1 text-xs text-ink focus:border-link focus:outline-none disabled:opacity-50"
       >
         {STATUS_OPTIONS.map((opt) => (
           <option key={opt.value} value={opt.value}>
@@ -87,26 +87,26 @@ export function PayApplications({
   return (
     <section>
       <div className="mb-1 flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-slate-100">Pay applications</h2>
+        <h2 className="text-lg font-semibold text-ink">Pay applications</h2>
         {!isOpen && (
           <button
             type="button"
             onClick={() => setIsOpen(true)}
-            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
+            className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500"
           >
             Submit pay application
           </button>
         )}
       </div>
-      <p className="mb-3 text-sm text-slate-500">
+      <p className="mb-3 text-sm text-ink-muted">
         A pay application bills against specific schedule-of-values lines — this period&rsquo;s completed work plus
         any materials stored, per line — rather than a single lump-sum amount. New materials stored carries forward
         automatically on later applications; leave it blank if nothing new was stored this period. See the full
         G702/G703-style report for each one below.
       </p>
-      <p className="mb-3 max-w-2xl text-sm text-slate-500">
-        <span className="text-slate-400">Once stored material gets installed,</span> enter it twice on the same
-        line: the amount as a <strong className="text-slate-300">negative</strong> under New materials stored, and
+      <p className="mb-3 max-w-2xl text-sm text-ink-muted">
+        <span className="text-ink-body">Once stored material gets installed,</span> enter it twice on the same
+        line: the amount as a <strong className="text-ink-label">negative</strong> under New materials stored, and
         the same amount as a positive under This period. That moves the value from stored to completed. Skip the
         negative and you bill the same material twice — the running &ldquo;stored to date&rdquo; figure under each
         box is what is still sitting there.
@@ -139,23 +139,23 @@ export function PayApplications({
               }
             });
           }}
-          className="mb-4 flex flex-col gap-3 rounded-lg border border-slate-800 bg-slate-900 p-4"
+          className="mb-4 flex flex-col gap-3 rounded-lg border border-line-card bg-surface p-4"
         >
           <div className="flex flex-wrap gap-3">
-            <label className="flex flex-col gap-1 text-sm text-slate-300">
+            <label className="flex flex-col gap-1 text-sm text-ink-label">
               Description
               <input
                 name="description"
                 placeholder="Application for payment #3"
-                className="w-56 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+                className="w-56 rounded-md border border-line-card bg-canvas px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
               />
             </label>
-            <label className="flex flex-col gap-1 text-sm text-slate-300">
+            <label className="flex flex-col gap-1 text-sm text-ink-label">
               Due date
               <input
                 type="date"
                 name="dueAt"
-                className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
+                className="rounded-md border border-line-card bg-canvas px-3 py-2 text-ink focus:border-link focus:outline-none"
               />
             </label>
           </div>
@@ -163,7 +163,7 @@ export function PayApplications({
           <div className="overflow-x-auto">
             <table className="w-full min-w-[520px] text-left text-sm">
               <thead>
-                <tr className="text-xs text-slate-500">
+                <tr className="text-xs text-ink-muted">
                   <th className="pb-1 pr-3 font-normal">Line item</th>
                   <th className="pb-1 pr-3 text-right font-normal">Scheduled value</th>
                   <th className="pb-1 pr-3 text-right font-normal">This period</th>
@@ -172,9 +172,9 @@ export function PayApplications({
               </thead>
               <tbody>
                 {lineItems.map((item) => (
-                  <tr key={item.id} className="border-t border-slate-800">
-                    <td className="py-1 pr-3 text-slate-300">{item.description}</td>
-                    <td className="py-1 pr-3 text-right text-slate-500">
+                  <tr key={item.id} className="border-t border-line-row">
+                    <td className="py-1 pr-3 text-ink-label">{item.description}</td>
+                    <td className="py-1 pr-3 text-right text-ink-muted">
                       {item.scheduledValue.toLocaleString("en-US", { style: "currency", currency: "USD" })}
                     </td>
                     <td className="py-1 pr-3 text-right">
@@ -202,7 +202,7 @@ export function PayApplications({
                         placeholder="0.00"
                         className={inputClass}
                       />
-                      <p className="mt-1 text-xs text-slate-500">
+                      <p className="mt-1 text-xs text-ink-muted">
                         {item.materialsStoredToDate !== 0
                           ? `${item.materialsStoredToDate.toLocaleString("en-US", {
                               style: "currency",
@@ -217,12 +217,12 @@ export function PayApplications({
             </table>
           </div>
 
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && <p className="text-sm text-red-600">{error}</p>}
           <div className="flex gap-2">
             <button
               type="submit"
               disabled={isPending}
-              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+              className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
             >
               {isPending ? "Submitting…" : "Submit pay application"}
             </button>
@@ -233,7 +233,7 @@ export function PayApplications({
                 setIsOpen(false);
                 setError(null);
               }}
-              className="rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50"
+              className="rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-neutral-100 disabled:opacity-50"
             >
               Cancel
             </button>
@@ -242,19 +242,19 @@ export function PayApplications({
       )}
 
       {payApplications.length === 0 ? (
-        <p className="text-sm text-slate-400">No pay applications submitted yet.</p>
+        <p className="text-sm text-ink-body">No pay applications submitted yet.</p>
       ) : (
         <ul className="flex flex-col gap-2">
           {payApplications.map((app) => (
             <li
               key={app.id}
-              className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-slate-800 bg-slate-900 p-3 text-sm"
+              className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-line-card bg-surface p-3 text-sm"
             >
               <div>
-                <Link href={`/jobs/${jobId}/pay-applications/${app.id}`} className="text-blue-400 hover:underline">
+                <Link href={`/jobs/${jobId}/pay-applications/${app.id}`} className="text-link hover:underline">
                   Application #{app.number}
                 </Link>
-                <span className="ml-2 text-slate-500">
+                <span className="ml-2 text-ink-muted">
                   {formatInstant(new Date(app.issuedAt), timeZone)}
                   {" · "}
                   {app.amount.toLocaleString("en-US", { style: "currency", currency: "USD" })}

@@ -1,8 +1,8 @@
 "use client";
 
 export const inputClass =
-  "rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none";
-export const labelClass = "flex flex-col gap-1 text-sm text-slate-300";
+  "rounded-md border border-line-card bg-canvas px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none";
+export const labelClass = "flex flex-col gap-1 text-sm text-ink-label";
 
 /**
  * The same input, sized for a phone.
@@ -88,7 +88,7 @@ export function RfiFields({
         <label className={labelClass}>
           Date sent
           <input type="date" name="sentOn" defaultValue={defaults.sentOn ?? ""} className={fieldInputClass} />
-          <span className="text-xs text-slate-400">
+          <span className="text-xs text-ink-body">
             Blank keeps it a draft. Backdate it when you&apos;re entering an RFI you already sent.
           </span>
         </label>

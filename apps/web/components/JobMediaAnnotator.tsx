@@ -211,7 +211,7 @@ export function JobMediaAnnotator({
         <JobMediaMarks marks={preview} aspect={aspect()} />
       </div>
 
-      <p className="text-sm text-slate-400">{TOOL_HINT[tool]}</p>
+      <p className="text-sm text-ink-body">{TOOL_HINT[tool]}</p>
 
       <div className="flex flex-wrap gap-2">
         {JOB_MEDIA_ANNOTATION_KINDS.map((kind) => (
@@ -225,8 +225,8 @@ export function JobMediaAnnotator({
             aria-pressed={tool === kind}
             className={`min-h-11 rounded-md border px-3 text-sm ${
               tool === kind
-                ? "border-blue-500 text-blue-400"
-                : "border-slate-700 text-slate-300 hover:border-slate-500"
+                ? "border-brand text-link"
+                : "border-line-card text-ink-label hover:bg-neutral-100"
             }`}
           >
             {TOOL_LABEL[kind]}
@@ -235,8 +235,8 @@ export function JobMediaAnnotator({
       </div>
 
       {pendingLabel && (
-        <div className="flex flex-col gap-2 rounded-md border border-slate-700 p-3">
-          <label className="text-sm text-slate-300" htmlFor={`label-${mediaId}`}>
+        <div className="flex flex-col gap-2 rounded-md border border-line-card p-3">
+          <label className="text-sm text-ink-label" htmlFor={`label-${mediaId}`}>
             {pendingLabel.kind === "MEASURE"
               ? "What does it measure? Type it as you would write it — the app does not measure anything itself."
               : "What does it say?"}
@@ -254,13 +254,13 @@ export function JobMediaAnnotator({
               }
             }}
             placeholder={pendingLabel.kind === "MEASURE" ? "3 ft 6 in" : "Rework this joint"}
-            className="min-h-11 rounded-md border border-slate-700 bg-slate-950 px-3 text-base text-slate-100"
+            className="min-h-11 rounded-md border border-line-card bg-canvas px-3 text-base text-ink"
           />
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
               onClick={commitLabel}
-              className="min-h-11 rounded-md bg-blue-600 px-4 text-sm font-medium text-white hover:bg-blue-500"
+              className="min-h-11 rounded-md bg-brand px-4 text-sm font-semibold text-ink-label hover:bg-yellow-500"
             >
               Add it
             </button>
@@ -271,7 +271,7 @@ export function JobMediaAnnotator({
                 setLabelText("");
                 setError(null);
               }}
-              className="min-h-11 rounded-md border border-slate-700 px-3 text-sm text-slate-300"
+              className="min-h-11 rounded-md border border-line-card px-3 text-sm text-ink-label"
             >
               Cancel
             </button>
@@ -279,9 +279,9 @@ export function JobMediaAnnotator({
         </div>
       )}
 
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {error && <p className="text-sm text-red-600">{error}</p>}
 
-      <p className="text-sm text-slate-400">
+      <p className="text-sm text-ink-body">
         {drafts.length} of {JOB_MEDIA_ANNOTATIONS_MAX} marks.{" "}
         {drafts.length > 0 && "Undo removes the last one."}
       </p>
@@ -309,7 +309,7 @@ export function JobMediaAnnotator({
               }
             });
           }}
-          className="min-h-11 rounded-md bg-blue-600 px-4 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+          className="min-h-11 rounded-md bg-brand px-4 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
         >
           {isPending ? "Saving…" : "Save marks"}
         </button>
@@ -320,7 +320,7 @@ export function JobMediaAnnotator({
             setDrafts((current) => current.slice(0, -1));
             setError(null);
           }}
-          className="min-h-11 rounded-md border border-slate-700 px-3 text-sm text-slate-300 disabled:opacity-50"
+          className="min-h-11 rounded-md border border-line-card px-3 text-sm text-ink-label disabled:opacity-50"
         >
           Undo
         </button>
@@ -331,7 +331,7 @@ export function JobMediaAnnotator({
             setDrafts([]);
             setError(null);
           }}
-          className="min-h-11 rounded-md border border-slate-700 px-3 text-sm text-slate-300 disabled:opacity-50"
+          className="min-h-11 rounded-md border border-line-card px-3 text-sm text-ink-label disabled:opacity-50"
         >
           Clear all
         </button>
@@ -339,7 +339,7 @@ export function JobMediaAnnotator({
           type="button"
           disabled={isPending}
           onClick={onDone}
-          className="min-h-11 rounded-md border border-slate-700 px-3 text-sm text-slate-300 disabled:opacity-50"
+          className="min-h-11 rounded-md border border-line-card px-3 text-sm text-ink-label disabled:opacity-50"
         >
           Cancel
         </button>
@@ -347,7 +347,7 @@ export function JobMediaAnnotator({
 
       {/* Said here, at the moment somebody is deciding to draw, rather than
           only in a schema comment nobody on a roof will read. */}
-      <p className="text-sm text-slate-400">
+      <p className="text-sm text-ink-body">
         Marks are saved beside the photo, not burned into it — the original file is never changed,
         and anyone who downloads it gets the picture without the markup.
       </p>

@@ -75,7 +75,7 @@ export function EquipmentDeploymentControls({
           <button
             type="button"
             onClick={() => setMode("send")}
-            className="rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:border-slate-500"
+            className="rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-neutral-100"
           >
             Send out to a job
           </button>
@@ -84,7 +84,7 @@ export function EquipmentDeploymentControls({
           <button
             type="button"
             onClick={() => setMode("return")}
-            className="rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:border-slate-500"
+            className="rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-neutral-100"
           >
             Bring it back
           </button>
@@ -93,7 +93,7 @@ export function EquipmentDeploymentControls({
           <button
             type="button"
             onClick={() => setShowHistory((v) => !v)}
-            className="rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:border-slate-500"
+            className="rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-neutral-100"
           >
             {showHistory ? "Hide history" : `History (${history.length})`}
           </button>
@@ -115,7 +115,7 @@ export function EquipmentDeploymentControls({
               } else setError(result.error);
             });
           }}
-          className="mt-2 flex flex-col gap-3 rounded-md border border-slate-800 bg-slate-950 p-3"
+          className="mt-2 flex flex-col gap-3 rounded-md border border-line-row bg-canvas p-3"
         >
           <div className="grid gap-3 sm:grid-cols-2">
             <label className={labelClass}>
@@ -140,7 +140,7 @@ export function EquipmentDeploymentControls({
                 defaultValue={localToday()}
                 className={inputClass}
               />
-              <span className="text-xs text-slate-500">
+              <span className="text-xs text-ink-muted">
                 The day it actually left, not the day you recorded it.
               </span>
             </label>
@@ -149,12 +149,12 @@ export function EquipmentDeploymentControls({
             Note
             <input type="text" name="notes" placeholder="optional" className={inputClass} />
           </label>
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && <p className="text-sm text-red-600">{error}</p>}
           <div className="flex gap-2">
             <button
               type="submit"
               disabled={isPending}
-              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+              className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
             >
               {isPending ? "Saving…" : "Send out"}
             </button>
@@ -165,7 +165,7 @@ export function EquipmentDeploymentControls({
                 setMode("idle");
                 setError(null);
               }}
-              className="rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-300 disabled:opacity-50"
+              className="rounded-md border border-line-card px-4 py-2 text-sm text-ink-label disabled:opacity-50"
             >
               Cancel
             </button>
@@ -187,7 +187,7 @@ export function EquipmentDeploymentControls({
               } else setError(result.error);
             });
           }}
-          className="mt-2 flex flex-col gap-3 rounded-md border border-slate-800 bg-slate-950 p-3"
+          className="mt-2 flex flex-col gap-3 rounded-md border border-line-row bg-canvas p-3"
         >
           <label className={labelClass}>
             Came back on
@@ -198,16 +198,16 @@ export function EquipmentDeploymentControls({
               defaultValue={localToday()}
               className={inputClass}
             />
-            <span className="text-xs text-slate-500">
+            <span className="text-xs text-ink-muted">
               It went out to {open.jobName} on {dayLabel(open.sentOutOn)}.
             </span>
           </label>
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && <p className="text-sm text-red-600">{error}</p>}
           <div className="flex gap-2">
             <button
               type="submit"
               disabled={isPending}
-              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+              className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
             >
               {isPending ? "Saving…" : "Bring it back"}
             </button>
@@ -218,7 +218,7 @@ export function EquipmentDeploymentControls({
                 setMode("idle");
                 setError(null);
               }}
-              className="rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-300 disabled:opacity-50"
+              className="rounded-md border border-line-card px-4 py-2 text-sm text-ink-label disabled:opacity-50"
             >
               Cancel
             </button>
@@ -226,17 +226,17 @@ export function EquipmentDeploymentControls({
         </form>
       )}
 
-      {error && mode === "idle" && <p className="mt-2 text-sm text-red-400">{error}</p>}
+      {error && mode === "idle" && <p className="mt-2 text-sm text-red-600">{error}</p>}
 
       {showHistory && (
-        <ul className="mt-2 flex flex-col gap-1 rounded-md border border-slate-800 bg-slate-950 p-3">
+        <ul className="mt-2 flex flex-col gap-1 rounded-md border border-line-row bg-canvas p-3">
           {history.map((stay) =>
             editingId === stay.id ? (
               /* Correcting a stay. The dates ARE editable — unlike sent
                  correspondence this is a note about where a machine was, and
                  the common repair is a mistyped date. The overlap rule still
                  applies, ignoring this row so it can't collide with itself. */
-              <li key={stay.id} className="rounded border border-slate-800 p-2">
+              <li key={stay.id} className="rounded border border-line-row p-2">
                 <form
                   onSubmit={(event) => {
                     event.preventDefault();
@@ -292,12 +292,12 @@ export function EquipmentDeploymentControls({
                       className={inputClass}
                     />
                   </label>
-                  {error && <p className="text-sm text-red-400">{error}</p>}
+                  {error && <p className="text-sm text-red-600">{error}</p>}
                   <div className="flex gap-2">
                     <button
                       type="submit"
                       disabled={isPending}
-                      className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+                      className="rounded-md bg-brand px-3 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
                     >
                       {isPending ? "Saving…" : "Save"}
                     </button>
@@ -308,7 +308,7 @@ export function EquipmentDeploymentControls({
                         setEditingId(null);
                         setError(null);
                       }}
-                      className="rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-300 disabled:opacity-50"
+                      className="rounded-md border border-line-card px-3 py-2 text-sm text-ink-label disabled:opacity-50"
                     >
                       Cancel
                     </button>
@@ -318,13 +318,13 @@ export function EquipmentDeploymentControls({
             ) : (
             <li key={stay.id} className="flex items-start justify-between gap-3 text-sm">
               <div className="min-w-0">
-                <span className="text-slate-300">{stay.jobName}</span>{" "}
-                <span className="text-slate-500">
+                <span className="text-ink-label">{stay.jobName}</span>{" "}
+                <span className="text-ink-muted">
                   {dayLabel(stay.sentOutOn)}
                   {stay.returnedOn ? ` → ${dayLabel(stay.returnedOn)}` : " → still out"} ·{" "}
                   {stayLength(stay, today)}
                 </span>
-                {stay.notes && <p className="text-xs text-slate-600">{stay.notes}</p>}
+                {stay.notes && <p className="text-xs text-ink-muted">{stay.notes}</p>}
               </div>
               {/* Arming "Remove" empties this row of its other actions:
                   "Edit" is a CHILD of RowActions, so it is not rendered at
@@ -349,9 +349,9 @@ export function EquipmentDeploymentControls({
                           else router.refresh();
                         });
                       }}
-                      deleteClassName="shrink-0 rounded border border-slate-700 px-2 py-1 text-xs text-slate-400 hover:border-red-500 hover:text-red-400"
-                      cancelClassName="rounded border border-slate-700 px-2 py-1 text-xs text-slate-300"
-                      confirmClassName="rounded border border-red-500 px-2 py-1 text-xs text-red-400"
+                      deleteClassName="shrink-0 rounded border border-line-card px-2 py-1 text-xs text-ink-body hover:border-red-500 hover:text-red-600"
+                      cancelClassName="rounded border border-line-card px-2 py-1 text-xs text-ink-label"
+                      confirmClassName="rounded border border-red-500 px-2 py-1 text-xs text-red-600"
                     />
                   ) : null
                 }
@@ -363,7 +363,7 @@ export function EquipmentDeploymentControls({
                     setEditingId(stay.id);
                     setError(null);
                   }}
-                  className="rounded border border-slate-700 px-2 py-1 text-xs text-slate-400 hover:border-slate-500"
+                  className="rounded border border-line-card px-2 py-1 text-xs text-ink-body hover:bg-neutral-100"
                 >
                   Edit
                 </button>

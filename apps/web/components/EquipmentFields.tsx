@@ -4,8 +4,8 @@
 // whole page when a focused input is under 16px, which leaves the page zoomed
 // and scrolled sideways after every tap. `min-h-11` is a 44px tap target.
 const inputClass =
-  "min-h-11 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-base text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none";
-const labelClass = "flex flex-col gap-1 text-sm text-slate-300";
+  "min-h-11 rounded-md border border-line-card bg-canvas px-3 py-2 text-base text-ink placeholder:text-ink-muted focus:border-link focus:outline-none";
+const labelClass = "flex flex-col gap-1 text-sm text-ink-label";
 
 export type EquipmentFieldValues = {
   name: string;

@@ -27,24 +27,24 @@ export function DraftLineItemsForm({ jobId, initialScope }: { jobId: string; ini
 
   return (
     <form ref={formRef} onSubmit={handleSubmit} className="mb-4 flex flex-col gap-2">
-      <label className="flex flex-col gap-1 text-sm text-slate-300">
+      <label className="flex flex-col gap-1 text-sm text-ink-label">
         Draft line items from scope of work
         <textarea
           name="scopeText"
           defaultValue={initialScope}
           rows={3}
           placeholder="Paste or describe the scope of work — Claude will break it into draft line items below."
-          className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+          className="rounded-md border border-line-card bg-canvas px-3 py-2 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
         />
       </label>
       <button
         type="submit"
         disabled={isPending}
-        className="inline-flex w-fit items-center justify-center rounded-md border border-slate-700 px-4 py-2 text-sm font-medium text-slate-200 hover:bg-slate-800 disabled:opacity-50"
+        className="inline-flex w-fit items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm font-medium text-ink-label hover:bg-neutral-100 disabled:opacity-50"
       >
         {isPending ? "Drafting…" : "Draft line items"}
       </button>
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {error && <p className="text-sm text-red-600">{error}</p>}
     </form>
   );
 }

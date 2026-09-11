@@ -88,12 +88,12 @@ export function ContractSummary({
     <section className="rounded-lg border border-line-card bg-surface p-6 text-ink print:border-0 print:bg-white print:text-slate-900 print:shadow-none">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-sm font-medium text-ink-body print:text-slate-500">{companyName}</p>
+          <p className="text-sm font-medium text-ink-body print:text-ink-muted">{companyName}</p>
           <h1 className="text-2xl font-semibold">{jobName}</h1>
         </div>
         <StatusBadge status={status} />
       </div>
-      <p className="mt-1 text-ink-body print:text-slate-600">Client: {clientName}</p>
+      <p className="mt-1 text-ink-body print:text-ink-muted">Client: {clientName}</p>
       {scope && <p className="mt-3 text-sm text-ink-label print:text-slate-700">{scope}</p>}
 
       {/* The client signs this on a phone as often as a desktop. Without a
@@ -102,7 +102,7 @@ export function ContractSummary({
       <div className="mt-6 overflow-x-auto">
       <table className="w-full min-w-[420px] text-sm">
         <thead>
-          <tr className="border-b border-line-card text-left text-ink-body print:border-slate-200 print:text-slate-500">
+          <tr className="border-b border-line-card text-left text-ink-body print:border-slate-200 print:text-ink-muted">
             <th className="py-2">Description</th>
             <th className="py-2">Qty</th>
             <th className="py-2">Unit</th>
@@ -135,7 +135,7 @@ export function ContractSummary({
 
       <p className="mt-4 text-right text-lg font-semibold">Total: {money(total)}</p>
 
-      <p className="mt-6 text-xs text-ink-body print:mt-16 print:text-slate-500">
+      <p className="mt-6 text-xs text-ink-body print:mt-16 print:text-ink-muted">
         {contractSummaryFooterCopy(frozen)}
       </p>
 

@@ -94,7 +94,7 @@ export function PushPaymentToQuickBooks({
         type="button"
         onClick={push}
         disabled={isPending || blocked}
-        className="rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:border-slate-500 disabled:opacity-50"
+        className="rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-neutral-100 disabled:opacity-50"
       >
         {isPending ? "Sending…" : linkedQboId ? "Re-send payment" : "Send payment to QuickBooks"}
       </button>
@@ -103,11 +103,11 @@ export function PushPaymentToQuickBooks({
           reason beside it is the same unanswered question as an enabled
           one that refuses. */}
       {blocked && message === null && (
-        <p className="max-w-[18rem] text-right text-xs text-slate-500">{blockers.join(" ")}</p>
+        <p className="max-w-[18rem] text-right text-xs text-ink-muted">{blockers.join(" ")}</p>
       )}
 
       {message === null && linkedQboId && (
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-ink-muted">
           QuickBooks payment {linkedQboId}
           {lastVerifiedAt ? ` · verified ${lastVerifiedAt}` : " · not verified"}
         </p>
@@ -116,7 +116,7 @@ export function PushPaymentToQuickBooks({
       {message && (
         <p
           className={`max-w-[18rem] text-right text-xs ${
-            message.tone === "ok" ? "text-emerald-300" : "text-amber-300"
+            message.tone === "ok" ? "text-tag-green-ink" : "text-tag-amber-ink"
           }`}
         >
           {message.text}

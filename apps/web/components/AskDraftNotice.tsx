@@ -12,7 +12,7 @@
 export function AskDraftNotice({ what }: { what: string }) {
   return (
     <p
-      className="mb-4 rounded-md border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-400"
+      className="mb-4 rounded-md border border-line-card bg-surface px-3 py-2 text-sm text-ink-body"
       data-ask="draft-missing"
     >
       The {what} you started from the Ask box isn&apos;t available any more. A card lasts half an hour,

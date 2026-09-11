@@ -24,15 +24,15 @@ const AREA: Record<Capability, string> = {
 export function NoAccess({ capability }: { capability: Capability }) {
   return (
     <div className="mx-auto max-w-2xl px-6 py-16">
-      <h1 className="mb-2 text-xl font-semibold text-slate-100">Not part of your access</h1>
-      <p className="mb-4 text-sm text-slate-400">
+      <h1 className="mb-2 text-xl font-semibold text-ink">Not part of your access</h1>
+      <p className="mb-4 text-sm text-ink-body">
         This page covers {AREA[capability]}, which isn&apos;t included in your job function. Nothing
         is broken and you haven&apos;t done anything wrong — the account owner sets who sees what,
         on the Team page.
       </p>
       <Link
         href="/dashboard"
-        className="inline-block rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
+        className="inline-block rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500"
       >
         Back to jobs
       </Link>

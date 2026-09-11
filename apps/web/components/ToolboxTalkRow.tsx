@@ -23,21 +23,21 @@ export function ToolboxTalkRow({ talk, canDelete }: { talk: ToolboxTalkRowData; 
     <li className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start">
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-slate-100">{talk.topic}</span>
-          <span className="text-xs text-slate-400">{talk.heldOn}</span>
+          <span className="text-ink">{talk.topic}</span>
+          <span className="text-xs text-ink-body">{talk.heldOn}</span>
         </div>
-        <p className="mt-1 text-xs text-slate-400">
+        <p className="mt-1 text-xs text-ink-body">
           {talk.jobName ? (
-            <span className="text-blue-400">{talk.jobName}</span>
+            <span className="text-link">{talk.jobName}</span>
           ) : (
             <span>Not job-specific</span>
           )}
           {talk.presenter && ` · led by ${talk.presenter}`}
           {talk.recordedByName && ` · logged by ${talk.recordedByName}`}
         </p>
-        {talk.attendees && <p className="mt-1 text-sm text-slate-300">Attended: {talk.attendees}</p>}
-        {talk.notes && <p className="mt-1 text-sm text-slate-400">{talk.notes}</p>}
-        {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
+        {talk.attendees && <p className="mt-1 text-sm text-ink-label">Attended: {talk.attendees}</p>}
+        {talk.notes && <p className="mt-1 text-sm text-ink-body">{talk.notes}</p>}
+        {error && <p className="mt-1 text-sm text-red-600">{error}</p>}
       </div>
 
       {/* No ordinary actions at all in this cluster, which used to mean the
@@ -67,9 +67,9 @@ export function ToolboxTalkRow({ talk, canDelete }: { talk: ToolboxTalkRowData; 
                   }
                 });
               }}
-              deleteClassName="inline-flex min-h-11 items-center justify-center rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:border-red-500 hover:text-red-400 disabled:opacity-50"
-              cancelClassName="inline-flex min-h-11 items-center justify-center rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50"
-              confirmClassName="inline-flex min-h-11 items-center justify-center rounded-md border border-red-500 px-3 py-2 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+              deleteClassName="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:border-red-500 hover:text-red-600 disabled:opacity-50"
+              cancelClassName="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-neutral-100 disabled:opacity-50"
+              confirmClassName="inline-flex min-h-11 items-center justify-center rounded-md border border-red-500 px-3 py-2 text-sm text-red-600 hover:bg-tag-rose disabled:opacity-50"
             />
           }
         />

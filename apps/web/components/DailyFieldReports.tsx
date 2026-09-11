@@ -17,18 +17,18 @@ import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
 // phone ends up zoomed in and scrolled sideways after every single tap.
 // `min-h-11` is 44px, the tap-target floor.
 export const inputClass =
-  "min-h-11 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-base text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none";
-export const labelClass = "flex flex-col gap-1 text-sm text-slate-300";
+  "min-h-11 rounded-md border border-line-card bg-canvas px-3 py-2 text-base text-ink placeholder:text-ink-muted focus:border-link focus:outline-none";
+export const labelClass = "flex flex-col gap-1 text-sm text-ink-label";
 
 // The row's controls, defined once so they can't drift back under 44px a
 // button at a time. These were `py-1.5 text-xs` — 30px tall, the smallest
 // buttons anywhere in the field screens.
 const rowBtn =
-  "inline-flex min-h-11 items-center justify-center rounded-md border border-slate-700 px-3 py-2 text-xs text-slate-300 hover:border-slate-500 disabled:opacity-50";
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-xs text-ink-label hover:bg-neutral-100 disabled:opacity-50";
 const rowBtnDanger =
-  "inline-flex min-h-11 items-center justify-center rounded-md border border-slate-700 px-3 py-2 text-xs text-slate-300 hover:border-red-500 hover:text-red-400 disabled:opacity-50";
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-xs text-ink-label hover:border-red-500 hover:text-red-600 disabled:opacity-50";
 const rowBtnConfirm =
-  "inline-flex min-h-11 items-center justify-center rounded-md border border-red-500 px-3 py-2 text-xs text-red-400 hover:bg-red-500/10 disabled:opacity-50";
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-red-500 px-3 py-2 text-xs text-red-600 hover:bg-tag-rose disabled:opacity-50";
 
 export type FieldReport = {
   id: string;
@@ -136,15 +136,15 @@ function FieldReportEditForm({
       }}
       className="flex flex-col gap-3"
     >
-      <p className="text-sm font-medium text-slate-100">{formatDate(report.reportDate)}</p>
+      <p className="text-sm font-medium text-ink">{formatDate(report.reportDate)}</p>
       <FormDraftNotice draft={draft} />
       <FieldReportFields report={report} />
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {error && <p className="text-sm text-red-600">{error}</p>}
       <div className="flex gap-2">
         <button
           type="submit"
           disabled={isPending}
-          className="inline-flex min-h-11 items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+          className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
         >
           {isPending ? "Saving…" : "Save changes"}
         </button>
@@ -152,7 +152,7 @@ function FieldReportEditForm({
           type="button"
           disabled={isPending}
           onClick={onCancel}
-          className="inline-flex min-h-11 items-center justify-center rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50"
+          className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-neutral-100 disabled:opacity-50"
         >
           Cancel
         </button>
@@ -199,12 +199,12 @@ export function DailyFieldReports({
   return (
     <section>
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-slate-100">Daily field reports</h2>
+        <h2 className="text-lg font-semibold text-ink">Daily field reports</h2>
         {!isOpen && (
           <button
             type="button"
             onClick={() => setIsOpen(true)}
-            className="inline-flex min-h-11 items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
+            className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500"
           >
             Log a day
           </button>
@@ -224,7 +224,7 @@ export function DailyFieldReports({
               setIsOpen(false);
             });
           }}
-          className="mb-4 flex flex-col gap-3 rounded-lg border border-slate-800 bg-slate-900 p-4"
+          className="mb-4 flex flex-col gap-3 rounded-lg border border-line-card bg-surface p-4"
         >
           <FormDraftNotice draft={draft} />
           <label className={labelClass}>
@@ -232,12 +232,12 @@ export function DailyFieldReports({
             <input type="date" name="reportDate" required defaultValue={localToday()} className={inputClass} />
           </label>
           <FieldReportFields />
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && <p className="text-sm text-red-600">{error}</p>}
           <div className="flex gap-2">
             <button
               type="submit"
               disabled={isPending}
-              className="inline-flex min-h-11 items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+              className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
             >
               {isPending ? "Saving…" : "Save report"}
             </button>
@@ -248,7 +248,7 @@ export function DailyFieldReports({
                 setIsOpen(false);
                 setError(null);
               }}
-              className="inline-flex min-h-11 items-center justify-center rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50"
+              className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-neutral-100 disabled:opacity-50"
             >
               Cancel
             </button>
@@ -257,7 +257,7 @@ export function DailyFieldReports({
       )}
 
       {reports.length === 0 ? (
-        <p className="text-sm text-slate-400">
+        <p className="text-sm text-ink-body">
           No reports yet. One entry a day — crew, what got done, weather, delays. The weather and delay
           fields are what a schedule dispute gets argued from later.
         </p>
@@ -265,7 +265,7 @@ export function DailyFieldReports({
         <ul className="flex flex-col gap-2">
           {reports.map((report) =>
             editingId === report.id ? (
-              <li key={report.id} className="rounded-md border border-slate-800 bg-slate-900 p-3">
+              <li key={report.id} className="rounded-md border border-line-card bg-surface p-3">
                 <FieldReportEditForm
                   report={report}
                   isPending={isPending}
@@ -283,20 +283,20 @@ export function DailyFieldReports({
                 />
               </li>
             ) : (
-              <li key={report.id} className="rounded-md border border-slate-800 bg-slate-900 p-3 text-sm">
+              <li key={report.id} className="rounded-md border border-line-card bg-surface p-3 text-sm">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0">
-                    <p className="font-medium text-slate-100">{formatDate(report.reportDate)}</p>
-                    {report.crewPresent && <p className="text-slate-400">{report.crewPresent}</p>}
-                    <p className="mt-1 text-slate-300">{report.workPerformed}</p>
-                    {/* slate-400, not slate-500 — measured 3.83:1 on this card,
-                        under the 4.5 floor for text. Weather is the field a
-                        delay claim is argued from months later; it does not
-                        get to be the faintest thing on the row. */}
-                    {report.weather && <p className="mt-1 text-slate-400">Weather: {report.weather}</p>}
-                    {report.delays && <p className="text-amber-400">Delays: {report.delays}</p>}
+                    <p className="font-medium text-ink">{formatDate(report.reportDate)}</p>
+                    {report.crewPresent && <p className="text-ink-body">{report.crewPresent}</p>}
+                    <p className="mt-1 text-ink-label">{report.workPerformed}</p>
+                    {/* ink-body, not ink-muted — the muted level is under the
+                        4.5 floor for text. Weather is the field a delay claim
+                        is argued from months later; it does not get to be the
+                        faintest thing on the row. */}
+                    {report.weather && <p className="mt-1 text-ink-body">Weather: {report.weather}</p>}
+                    {report.delays && <p className="text-amber-700">Delays: {report.delays}</p>}
                     {report.filedByName && (
-                      <p className="mt-1 text-xs text-slate-400">filed by {report.filedByName}</p>
+                      <p className="mt-1 text-xs text-ink-body">filed by {report.filedByName}</p>
                     )}
                   </div>
                   {/* Each report row arms its own remove — the arming used to
@@ -344,7 +344,7 @@ export function DailyFieldReports({
                   </RowActions>
                 </div>
                 {error && deleteErrorId === report.id && (
-                  <p className="mt-1 text-sm text-red-400">{error}</p>
+                  <p className="mt-1 text-sm text-red-600">{error}</p>
                 )}
               </li>
             ),

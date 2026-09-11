@@ -64,8 +64,8 @@ export default async function SafetyPage({
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-slate-100">Safety</h1>
-      <p className="mb-6 text-sm text-slate-400">
+      <h1 className="mb-2 text-xl font-semibold text-ink">Safety</h1>
+      <p className="mb-6 text-sm text-ink-body">
         The incident log and the toolbox talk record. These are the two things a GC or an OSHA inspector asks
         for by name, and the two things that usually live in a binder in someone&apos;s truck.
       </p>
@@ -79,7 +79,7 @@ export default async function SafetyPage({
 
       <section className="mb-10">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold text-slate-300">Incident log — {activeYear}</h2>
+          <h2 className="text-sm font-semibold text-ink-label">Incident log — {activeYear}</h2>
           <div className="flex flex-wrap gap-2">
             {knownYears.map((y) => (
               <Link
@@ -89,8 +89,8 @@ export default async function SafetyPage({
                 // to each other, which is a mis-tap into the wrong year's log.
                 className={`inline-flex min-h-11 items-center rounded-md border px-3 py-2 text-sm ${
                   y === activeYear
-                    ? "border-blue-500 text-blue-400"
-                    : "border-slate-700 text-slate-300 hover:border-slate-500"
+                    ? "border-brand text-link"
+                    : "border-line-card text-ink-label hover:bg-neutral-100"
                 }`}
               >
                 {y}
@@ -100,28 +100,28 @@ export default async function SafetyPage({
         </div>
 
         <div className="mb-4 grid gap-3 sm:grid-cols-3">
-          <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-            <p className="text-2xl font-semibold text-slate-100">{incidents.length}</p>
-            <p className="text-xs text-slate-400">Cases logged</p>
+          <div className="rounded-lg border border-line-card bg-surface p-4">
+            <p className="text-2xl font-semibold text-ink">{incidents.length}</p>
+            <p className="text-xs text-ink-body">Cases logged</p>
           </div>
-          <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-            <p className="text-2xl font-semibold text-amber-300">{recordableCount}</p>
-            <p className="text-xs text-slate-400">Recordable on the 300 log</p>
+          <div className="rounded-lg border border-line-card bg-surface p-4">
+            <p className="text-2xl font-semibold text-tag-amber-ink">{recordableCount}</p>
+            <p className="text-xs text-ink-body">Recordable on the 300 log</p>
           </div>
-          <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-            <p className="text-2xl font-semibold text-slate-100">{daysAwayCases}</p>
-            <p className="text-xs text-slate-400">Cases with days away</p>
+          <div className="rounded-lg border border-line-card bg-surface p-4">
+            <p className="text-2xl font-semibold text-ink">{daysAwayCases}</p>
+            <p className="text-xs text-ink-body">Cases with days away</p>
           </div>
         </div>
 
         {incidents.length === 0 ? (
-          <p className="text-slate-400">
+          <p className="text-ink-body">
             No cases logged for {activeYear}. That is the good outcome — but log the first aid ones too. A
             first-aid case that later turns into lost time is only defensible if it was written down the day it
             happened.
           </p>
         ) : (
-          <ul className="divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900">
+          <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
             {incidents.map((incident) => (
               <SafetyIncidentRow
                 key={incident.id}
@@ -150,14 +150,14 @@ export default async function SafetyPage({
       </section>
 
       <section>
-        <h2 className="mb-3 text-sm font-semibold text-slate-300">Toolbox talks</h2>
+        <h2 className="mb-3 text-sm font-semibold text-ink-label">Toolbox talks</h2>
         {talks.length === 0 ? (
-          <p className="text-slate-400">
+          <p className="text-ink-body">
             Nothing logged yet. Most GC contracts and union agreements require these weekly — the meeting
             happening isn&apos;t the deliverable, the record of it is.
           </p>
         ) : (
-          <ul className="divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900">
+          <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
             {talks.map((talk) => (
               <ToolboxTalkRow
                 key={talk.id}

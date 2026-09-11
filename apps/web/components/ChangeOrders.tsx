@@ -18,10 +18,10 @@ import {
 import { TRADE_SCOPES, type ActionResult } from "@/lib/actions/shared";
 
 const inputClass =
-  "rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none";
-const labelClass = "flex flex-col gap-1 text-sm text-slate-300";
+  "rounded-md border border-line-card bg-canvas px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none";
+const labelClass = "flex flex-col gap-1 text-sm text-ink-label";
 const primaryBtn =
-  "rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50";
+  "rounded-md bg-brand px-3 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-50";
 
 /**
  * Runs a Server Action that returns `{ ok, error }`, and renders the error.
@@ -118,11 +118,11 @@ function formatEditValue(field: string, value: string) {
 }
 
 const STATUS_STYLE: Record<ChangeOrderView["status"], string> = {
-  DRAFT: "border-slate-600 bg-slate-800 text-slate-300",
-  SUBMITTED: "border-amber-600 bg-amber-950 text-amber-300",
-  APPROVED: "border-emerald-700 bg-emerald-950 text-emerald-300",
-  REJECTED: "border-rose-700 bg-rose-950 text-rose-300",
-  VOID: "border-slate-700 bg-slate-900 text-slate-500",
+  DRAFT: "border-neutral-400 bg-neutral-100 text-ink-label",
+  SUBMITTED: "border-amber-600 bg-amber-950 text-tag-amber-ink",
+  APPROVED: "border-emerald-700 bg-emerald-950 text-tag-green-ink",
+  REJECTED: "border-rose-700 bg-rose-950 text-tag-rose-ink",
+  VOID: "border-line-card bg-surface text-ink-muted",
 };
 
 const STATUS_LABEL: Record<ChangeOrderView["status"], string> = {
@@ -152,7 +152,7 @@ function ProposalForms({ changeOrder, lineItems }: { changeOrder: ChangeOrderVie
   }
 
   return (
-    <div className="mt-3 rounded-md border border-slate-800 bg-slate-950 p-3">
+    <div className="mt-3 rounded-md border border-line-row bg-canvas p-3">
       <div className="mb-3 flex flex-wrap gap-2">
         {(["ADD", "EDIT", "REMOVE"] as const).map((k) => (
           <button
@@ -161,8 +161,8 @@ function ProposalForms({ changeOrder, lineItems }: { changeOrder: ChangeOrderVie
             onClick={() => setKind(k)}
             className={`rounded-md border px-3 py-1 text-xs ${
               kind === k
-                ? "border-blue-500 bg-blue-950 text-blue-200"
-                : "border-slate-700 bg-slate-900 text-slate-400 hover:text-slate-200"
+                ? "border-brand bg-tag-brand-soft text-tag-brand-soft-ink"
+                : "border-line-card bg-surface text-ink-body hover:text-ink-label"
             }`}
           >
             {k === "ADD" ? "Add scope" : k === "EDIT" ? "Change a line" : "Remove a line"}
@@ -209,7 +209,7 @@ function ProposalForms({ changeOrder, lineItems }: { changeOrder: ChangeOrderVie
           <button type="submit" disabled={isPending} className={primaryBtn}>
             {isPending ? "Adding…" : "Add to CO"}
           </button>
-          {error && <p className="w-full text-xs text-rose-300">{error}</p>}
+          {error && <p className="w-full text-xs text-tag-rose-ink">{error}</p>}
         </form>
       )}
 
@@ -239,8 +239,8 @@ function ProposalForms({ changeOrder, lineItems }: { changeOrder: ChangeOrderVie
           <button type="submit" disabled={isPending} className={primaryBtn}>
             {isPending ? "Adding…" : "Add to CO"}
           </button>
-          <p className="w-full text-xs text-slate-500">Leave a field blank to leave it unchanged.</p>
-          {error && <p className="w-full text-xs text-rose-300">{error}</p>}
+          <p className="w-full text-xs text-ink-muted">Leave a field blank to leave it unchanged.</p>
+          {error && <p className="w-full text-xs text-tag-rose-ink">{error}</p>}
         </form>
       )}
 
@@ -262,7 +262,7 @@ function ProposalForms({ changeOrder, lineItems }: { changeOrder: ChangeOrderVie
           <button type="submit" disabled={isPending} className={primaryBtn}>
             {isPending ? "Adding…" : "Add to CO"}
           </button>
-          {error && <p className="w-full text-xs text-rose-300">{error}</p>}
+          {error && <p className="w-full text-xs text-tag-rose-ink">{error}</p>}
         </form>
       )}
     </div>
@@ -275,8 +275,8 @@ function Decision({ changeOrder }: { changeOrder: ChangeOrderView }) {
   const void_ = useActionRunner();
 
   return (
-    <div className="mt-3 flex flex-col gap-2 rounded-md border border-slate-800 bg-slate-950 p-3">
-      <p className="text-xs text-slate-500">
+    <div className="mt-3 flex flex-col gap-2 rounded-md border border-line-row bg-canvas p-3">
+      <p className="text-xs text-ink-muted">
         Sent to the GC {formatDate(changeOrder.submittedOn)}. Approving writes this scope into the
         budget; rejecting keeps the record without touching it.
       </p>
@@ -300,7 +300,7 @@ function Decision({ changeOrder }: { changeOrder: ChangeOrderView }) {
           <button
             type="submit"
             disabled={approve.isPending}
-            className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-md bg-emerald-700 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {approve.isPending ? "Approving…" : "Approve"}
           </button>
@@ -317,7 +317,7 @@ function Decision({ changeOrder }: { changeOrder: ChangeOrderView }) {
           <button
             type="submit"
             disabled={reject.isPending}
-            className="rounded-md border border-rose-700 px-3 py-2 text-sm font-medium text-rose-300 hover:bg-rose-950 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-md border border-rose-700 px-3 py-2 text-sm font-medium text-tag-rose-ink hover:bg-rose-950 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {reject.isPending ? "Rejecting…" : "Reject"}
           </button>
@@ -334,14 +334,14 @@ function Decision({ changeOrder }: { changeOrder: ChangeOrderView }) {
           <button
             type="submit"
             disabled={void_.isPending}
-            className="rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-400 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-md border border-line-card px-3 py-2 text-sm text-ink-body hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {void_.isPending ? "Withdrawing…" : "Withdraw"}
           </button>
         </form>
       </div>
       {(approve.error || reject.error || void_.error) && (
-        <p className="text-xs text-rose-300">{approve.error || reject.error || void_.error}</p>
+        <p className="text-xs text-tag-rose-ink">{approve.error || reject.error || void_.error}</p>
       )}
     </div>
   );
@@ -363,7 +363,7 @@ function Correction({ changeOrder }: { changeOrder: ChangeOrderView }) {
   const revise = useActionRunner();
 
   return (
-    <div className="mt-3 flex flex-col gap-2 rounded-md border border-slate-800 bg-slate-950 p-3">
+    <div className="mt-3 flex flex-col gap-2 rounded-md border border-line-row bg-canvas p-3">
       {canReopen ? (
         <form
           onSubmit={(event) => {
@@ -380,20 +380,20 @@ function Correction({ changeOrder }: { changeOrder: ChangeOrderView }) {
           <button
             type="submit"
             disabled={reopen.isPending}
-            className="rounded-md border border-amber-700 px-3 py-2 text-sm font-medium text-amber-300 hover:bg-amber-950 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-md border border-amber-700 px-3 py-2 text-sm font-medium text-tag-amber-ink hover:bg-amber-950 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {reopen.isPending ? "Reopening…" : "Reopen"}
           </button>
-          <p className="w-full text-xs text-slate-500">
+          <p className="w-full text-xs text-ink-muted">
             Takes this change order back to a draft and undoes its effect on the contract value. Nothing
             depends on what it changed, so there is nothing to break — reversing an edit restores the
             previous values and leaves any costs or hours on that line untouched.
           </p>
-          {reopen.error && <p className="w-full text-xs text-rose-300">{reopen.error}</p>}
+          {reopen.error && <p className="w-full text-xs text-tag-rose-ink">{reopen.error}</p>}
         </form>
       ) : (
         <div className="flex flex-col gap-2">
-          <p className="text-xs text-amber-300">
+          <p className="text-xs text-tag-amber-ink">
             This change order can no longer be reopened: {changeOrder.reopenBlockers.join("; ")}. Revising it
             corrects the scope without contradicting what has already been costed or billed.
           </p>
@@ -416,7 +416,7 @@ function Correction({ changeOrder }: { changeOrder: ChangeOrderView }) {
             <button type="submit" disabled={revise.isPending} className={primaryBtn}>
               {revise.isPending ? "Raising…" : "Revise"}
             </button>
-            {revise.error && <p className="w-full text-xs text-rose-300">{revise.error}</p>}
+            {revise.error && <p className="w-full text-xs text-tag-rose-ink">{revise.error}</p>}
           </form>
         </div>
       )}
@@ -429,22 +429,22 @@ function ProposalRow({ proposal, canRemove }: { proposal: ProposalView; canRemov
 
   return (
     <li className="flex flex-col gap-0.5">
-      <div className="flex items-center justify-between gap-2 text-sm text-slate-400">
+      <div className="flex items-center justify-between gap-2 text-sm text-ink-body">
         <span>
-          <span className="text-slate-500">{proposal.changeType.toLowerCase()}</span> {proposal.summary}
+          <span className="text-ink-muted">{proposal.changeType.toLowerCase()}</span> {proposal.summary}
         </span>
         {canRemove && (
           <button
             type="button"
             disabled={isPending}
             onClick={() => run(() => removeProposal(proposal.id))}
-            className="text-xs text-slate-500 hover:text-rose-400 disabled:opacity-50"
+            className="text-xs text-ink-muted hover:text-rose-600 disabled:opacity-50"
           >
             {isPending ? "removing…" : "remove"}
           </button>
         )}
       </div>
-      {error && <p className="text-xs text-rose-300">{error}</p>}
+      {error && <p className="text-xs text-tag-rose-ink">{error}</p>}
     </li>
   );
 }
@@ -474,7 +474,7 @@ function DraftActions({ changeOrder }: { changeOrder: ChangeOrderView }) {
         >
           {submit.isPending ? "Sending…" : "Send to GC"}
         </button>
-        {submit.error && <p className="w-full text-xs text-rose-300">{submit.error}</p>}
+        {submit.error && <p className="w-full text-xs text-tag-rose-ink">{submit.error}</p>}
       </form>
       <form
         onSubmit={(event) => {
@@ -485,11 +485,11 @@ function DraftActions({ changeOrder }: { changeOrder: ChangeOrderView }) {
         <button
           type="submit"
           disabled={discard.isPending}
-          className="rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-400 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded-md border border-line-card px-3 py-2 text-sm text-ink-body hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {discard.isPending ? "Discarding…" : "Discard draft"}
         </button>
-        {discard.error && <p className="mt-1 text-xs text-rose-300">{discard.error}</p>}
+        {discard.error && <p className="mt-1 text-xs text-tag-rose-ink">{discard.error}</p>}
       </form>
     </div>
   );
@@ -518,12 +518,12 @@ export function ChangeOrders({
   return (
     <section className="mb-10">
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-lg font-semibold text-slate-100">Change orders</h2>
+        <h2 className="text-lg font-semibold text-ink">Change orders</h2>
         {pendingCount > 0 && (
-          <p className="text-sm text-amber-300">
+          <p className="text-sm text-tag-amber-ink">
             {pendingCount} pending with the GC · {pendingExposure} not in the contract value
             {!!pendingUnbookable && pendingUnbookable > 0 && (
-              <span className="text-slate-500">
+              <span className="text-ink-muted">
                 {" "}
                 ({pendingUnbookable} of the pending {pendingUnbookable === 1 ? "change targets" : "changes target"}{" "}
                 scope already removed elsewhere and can&apos;t be booked)
@@ -540,7 +540,7 @@ export function ChangeOrders({
           const formData = new FormData(form);
           create.run(() => createChangeOrder(jobId, formData), () => form.reset());
         }}
-        className="mb-4 flex flex-wrap items-end gap-3 rounded-md border border-slate-800 bg-slate-900 p-3"
+        className="mb-4 flex flex-wrap items-end gap-3 rounded-md border border-line-card bg-surface p-3"
       >
         <label className={labelClass}>
           New change order
@@ -553,50 +553,50 @@ export function ChangeOrders({
         <button type="submit" disabled={create.isPending} className={primaryBtn}>
           {create.isPending ? "Starting…" : "Start draft"}
         </button>
-        <p className="w-full text-xs text-slate-500">
+        <p className="w-full text-xs text-ink-muted">
           A draft changes nothing until the GC approves it — the contract value only moves on approval.
         </p>
-        {create.error && <p className="w-full text-xs text-rose-300">{create.error}</p>}
+        {create.error && <p className="w-full text-xs text-tag-rose-ink">{create.error}</p>}
       </form>
 
       {changeOrders.length === 0 ? (
-        <div className="rounded-md border border-slate-800 bg-slate-900 p-4 text-sm text-slate-400">
+        <div className="rounded-md border border-line-card bg-surface p-4 text-sm text-ink-body">
           No change orders on this job yet.
         </div>
       ) : (
         <ul className="flex flex-col gap-3">
           {changeOrders.map((co) => (
-            <li key={co.id} className="rounded-md border border-slate-800 bg-slate-900 p-3">
+            <li key={co.id} className="rounded-md border border-line-card bg-surface p-3">
               <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <p className="font-medium text-slate-100">
+                <p className="font-medium text-ink">
                   CO #{co.number}: {co.title}
                 </p>
                 <div className="flex items-center gap-2">
-                  <span className="text-sm tabular-nums text-slate-300">{co.valueDelta}</span>
+                  <span className="text-sm tabular-nums text-ink-label">{co.valueDelta}</span>
                   <span className={`rounded-full border px-2 py-0.5 text-xs ${STATUS_STYLE[co.status]}`}>
                     {STATUS_LABEL[co.status]}
                   </span>
                 </div>
               </div>
-              {co.description && <p className="mt-1 text-sm text-slate-400">{co.description}</p>}
+              {co.description && <p className="mt-1 text-sm text-ink-body">{co.description}</p>}
 
               {co.supersedesLabel && (
-                <p className="mt-1 text-xs text-blue-300">Raised to correct {co.supersedesLabel}.</p>
+                <p className="mt-1 text-xs text-tag-blue-ink">Raised to correct {co.supersedesLabel}.</p>
               )}
               {co.revisedByLabels.length > 0 && (
-                <p className="mt-1 text-xs text-blue-300">
+                <p className="mt-1 text-xs text-tag-blue-ink">
                   Corrected by {co.revisedByLabels.join(", ")}. This one stayed approved — it did move the
                   contract value at the time.
                 </p>
               )}
               {co.reopenedAt && (
-                <p className="mt-1 text-xs text-amber-300">
+                <p className="mt-1 text-xs text-tag-amber-ink">
                   Approved, then reopened on {formatDate(co.reopenedAt)}
                   {co.reopenNote ? `: "${co.reopenNote}"` : ""}.
                 </p>
               )}
 
-              <p className="mt-1 text-xs text-slate-500">
+              <p className="mt-1 text-xs text-ink-muted">
                 {co.status === "DRAFT"
                   ? "Not sent yet."
                   : `Sent ${formatDate(co.submittedOn)}${
@@ -617,7 +617,7 @@ export function ChangeOrders({
               {co.edits.length > 0 && (
                 <ul className="mt-2 flex flex-col gap-0.5">
                   {co.edits.map((edit) => (
-                    <li key={edit.id} className="text-xs text-slate-500">
+                    <li key={edit.id} className="text-xs text-ink-muted">
                       {EDIT_FIELD_LABEL[edit.field] ?? edit.field}:{" "}
                       {formatEditValue(edit.field, edit.oldValue)} →{" "}
                       {formatEditValue(edit.field, edit.newValue)}

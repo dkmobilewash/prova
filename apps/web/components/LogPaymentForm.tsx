@@ -37,34 +37,34 @@ export function LogPaymentForm({ jobId, invoiceId }: { jobId: string; invoiceId:
           }
         });
       }}
-      className="mt-3 flex flex-col gap-2 border-t border-slate-800 pt-3"
+      className="mt-3 flex flex-col gap-2 border-t border-line-row pt-3"
     >
       <div className="flex flex-wrap items-end gap-2">
         <input
           name="amount"
           placeholder="Amount"
           required
-          className="w-24 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+          className="w-24 rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
         />
         <input
           name="method"
           placeholder="Method (check, cash...)"
-          className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+          className="rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
         />
         <input
           name="note"
           placeholder="Note (optional)"
-          className="flex-1 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+          className="flex-1 rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
         />
         <button
           type="submit"
           disabled={isPending}
-          className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-100 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+          className="rounded-md bg-neutral-100 px-3 py-1.5 text-sm font-medium text-ink hover:bg-neutral-200 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {isPending ? "Logging…" : "Log payment"}
         </button>
       </div>
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {error && <p className="text-sm text-red-600">{error}</p>}
     </form>
   );
 }

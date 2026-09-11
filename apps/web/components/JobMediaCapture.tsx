@@ -208,7 +208,7 @@ export function JobMediaCapture({ jobId }: { jobId: string }) {
 
   return (
     <div className="flex flex-col gap-3">
-      <label className="flex flex-col gap-1 text-base text-slate-300">
+      <label className="flex flex-col gap-1 text-base text-ink-label">
         <span className="text-sm">
           Photos, video or a voice note — up to {formatByteSize(JOB_MEDIA_PHOTO_MAX_BYTES)} a photo,{" "}
           {formatByteSize(JOB_MEDIA_VIDEO_MAX_BYTES)} a video. On a phone this opens the camera or the
@@ -224,12 +224,12 @@ export function JobMediaCapture({ jobId }: { jobId: string }) {
             const files = Array.from(event.target.files ?? []);
             if (files.length) void handleFiles(files);
           }}
-          className="min-h-11 text-base text-slate-300 file:mr-3 file:min-h-11 file:rounded-md file:border-0 file:bg-slate-800 file:px-4 file:text-base file:font-medium file:text-slate-100 hover:file:bg-slate-700 disabled:opacity-50"
+          className="min-h-11 text-base text-ink-label file:mr-3 file:min-h-11 file:rounded-md file:border-0 file:bg-neutral-100 file:px-4 file:text-base file:font-medium file:text-ink hover:file:bg-neutral-200 disabled:opacity-50"
         />
       </label>
 
       {progress && (
-        <p aria-live="polite" className="text-sm text-slate-400">
+        <p aria-live="polite" className="text-sm text-ink-body">
           Uploading {progress.index} of {progress.total} — {Math.round(progress.percent)}%
         </p>
       )}
@@ -237,12 +237,12 @@ export function JobMediaCapture({ jobId }: { jobId: string }) {
       {outcomes.length > 0 && (
         <div aria-live="polite" className="flex flex-col gap-1 text-sm">
           {succeeded > 0 && (
-            <p className="text-slate-400">
+            <p className="text-ink-body">
               Added {succeeded} file{succeeded === 1 ? "" : "s"}.
             </p>
           )}
           {failures.map((failure) => (
-            <p key={failure.name} className="text-red-400">
+            <p key={failure.name} className="text-red-600">
               {failure.name}: {failure.message}
             </p>
           ))}

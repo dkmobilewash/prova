@@ -46,7 +46,7 @@ export function ConfirmDeleteButton({
           confirmLabel={confirmLabel}
           hint={hint}
           armedClassName="flex flex-wrap items-center justify-end gap-2"
-          deleteClassName="shrink-0 rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:border-red-500 hover:text-red-400"
+          deleteClassName="shrink-0 rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:border-red-500 hover:text-red-600"
         />
       }
     />

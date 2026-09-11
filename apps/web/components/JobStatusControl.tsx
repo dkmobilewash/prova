@@ -39,9 +39,9 @@ export function JobStatusControl({
   const moves = allowedJobStatusTransitions(status);
 
   return (
-    <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
+    <div className="rounded-lg border border-line-card bg-surface p-4">
       <div className="flex flex-wrap items-center gap-3">
-        <span className="text-sm text-slate-400">Status</span>
+        <span className="text-sm text-ink-body">Status</span>
         <StatusBadge status={status} />
 
         {moves.map((next) => (
@@ -60,7 +60,7 @@ export function JobStatusControl({
                 }
               });
             }}
-            className="rounded-md border border-slate-700 px-3 py-1.5 text-sm font-medium text-slate-200 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+            className="rounded-md border border-line-card px-3 py-1.5 text-sm font-medium text-ink-label hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isPending ? "Saving…" : JOB_STATUS_ACTION_LABELS[next]}
           </button>
@@ -68,20 +68,20 @@ export function JobStatusControl({
       </div>
 
       {status === "ESTIMATE" ? (
-        <p className="mt-2 text-sm text-slate-500">
+        <p className="mt-2 text-sm text-ink-muted">
           An estimate becomes a contracted job further down this page, once the contract is
           executed — either the GC signs it in Prova or you record the executed subcontract they
           sent.
         </p>
       ) : (
-        <p className="mt-2 text-sm text-slate-500">
+        <p className="mt-2 text-sm text-ink-muted">
           Status is set by hand, never guessed from time entries or dates. Currently{" "}
           {JOB_STATUS_LABELS[status].toLowerCase()}.
         </p>
       )}
 
       {error && (
-        <p role="alert" className="mt-2 text-sm text-red-300">
+        <p role="alert" className="mt-2 text-sm text-tag-rose-ink">
           {error}
         </p>
       )}

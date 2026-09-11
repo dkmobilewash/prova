@@ -11,17 +11,17 @@ import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
 // a focused field is under 16px. On a phone that leaves the foreman zoomed
 // in and scrolled sideways after every tap. `min-h-11` is 44px.
 const inputClass =
-  "min-h-11 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-base text-slate-100 focus:border-blue-500 focus:outline-none";
+  "min-h-11 rounded-md border border-line-card bg-canvas px-3 py-2 text-base text-ink focus:border-link focus:outline-none";
 
 // One definition for the row's controls, so they can't drift back under 44px
 // a button at a time. `inline-flex` + `items-center` is what makes min-h
 // actually centre the label instead of pinning it to the top.
 const rowBtn =
-  "inline-flex min-h-11 items-center justify-center rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50";
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-neutral-100 disabled:opacity-50";
 const rowBtnDanger =
-  "inline-flex min-h-11 items-center justify-center rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:border-red-500 hover:text-red-400 disabled:opacity-50";
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:border-red-500 hover:text-red-600 disabled:opacity-50";
 const rowBtnConfirm =
-  "inline-flex min-h-11 items-center justify-center rounded-md border border-red-500 px-3 py-2 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50";
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-red-500 px-3 py-2 text-sm text-red-600 hover:bg-tag-rose disabled:opacity-50";
 
 type PunchListRowProps = {
   canDelete: boolean;
@@ -82,13 +82,13 @@ export function PunchListRow({ canDelete, jobs, item, showJob }: PunchListRowPro
           </select>
           <input type="text" name="description" required defaultValue={item.description} className={inputClass} />
 
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && <p className="text-sm text-red-600">{error}</p>}
 
           <div className="flex flex-wrap gap-2">
             <button
               type="submit"
               disabled={isPending}
-              className="inline-flex min-h-11 items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+              className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
             >
               {isPending ? "Saving…" : "Save changes"}
             </button>
@@ -99,7 +99,7 @@ export function PunchListRow({ canDelete, jobs, item, showJob }: PunchListRowPro
                 setIsEditing(false);
                 setError(null);
               }}
-              className="inline-flex min-h-11 items-center justify-center rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50"
+              className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-neutral-100 disabled:opacity-50"
             >
               Cancel
             </button>
@@ -129,23 +129,20 @@ export function PunchListRow({ canDelete, jobs, item, showJob }: PunchListRowPro
             onChange={(event) =>
               run(() => setPunchListItemDone(item.id, event.target.checked), "Could not update item")
             }
-            className="h-6 w-6 accent-blue-500"
+            className="h-6 w-6 accent-yellow-500"
             aria-label={item.isDone ? "Mark as not done" : "Mark as done"}
           />
         </label>
 
         <div className="min-w-0 flex-1">
-          <p className={item.isDone ? "text-slate-500 line-through" : "text-slate-100"}>{item.description}</p>
-          {/* slate-400, not slate-500: measured 3.83:1 against the slate-900
-              card, under the 4.5 floor. tailwind.config.ts says as much of
-              this exact value — "optional text only". The job and who raised
-              it are not optional. */}
-          <p className="text-xs text-slate-400">
-            {showJob && <span className="text-blue-400">{item.jobName}</span>}
+          <p className={item.isDone ? "text-ink-muted line-through" : "text-ink"}>{item.description}</p>
+          {/* ink-body, not ink-muted: the muted level is under the 4.5 text floor. */}
+          <p className="text-xs text-ink-body">
+            {showJob && <span className="text-link">{item.jobName}</span>}
             {showJob && item.raisedByName && " · "}
             {item.raisedByName && `raised by ${item.raisedByName}`}
           </p>
-          {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
+          {error && <p className="mt-1 text-sm text-red-600">{error}</p>}
         </div>
       </div>
 

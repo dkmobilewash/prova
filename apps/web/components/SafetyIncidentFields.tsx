@@ -9,8 +9,8 @@ import { INCIDENT_CLASSIFICATIONS, INCIDENT_OUTCOMES } from "@/components/safety
 // an incident zoomed in and scrolled sideways after every tap. `min-h-11` is
 // 44px, the tap-target floor.
 export const inputClass =
-  "min-h-11 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-base text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none";
-export const labelClass = "flex flex-col gap-1 text-sm text-slate-300";
+  "min-h-11 rounded-md border border-line-card bg-canvas px-3 py-2 text-base text-ink placeholder:text-ink-muted focus:border-link focus:outline-none";
+export const labelClass = "flex flex-col gap-1 text-sm text-ink-label";
 
 export type JobOption = { id: string; name: string };
 
@@ -51,7 +51,7 @@ export function SafetyIncidentFields({
         <label className={labelClass}>
           Date of incident
           {lockDate ? (
-            <span className="rounded-md border border-slate-800 bg-slate-950 px-3 py-2 text-slate-400">
+            <span className="rounded-md border border-line-row bg-canvas px-3 py-2 text-ink-body">
               {defaults.occurredAt} · not editable
             </span>
           ) : (

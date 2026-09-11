@@ -39,7 +39,7 @@ export function EquipmentForm() {
       <button
         type="button"
         onClick={() => setIsOpen(true)}
-        className="inline-flex min-h-11 items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
+        className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500"
       >
         Add equipment
       </button>
@@ -47,19 +47,19 @@ export function EquipmentForm() {
   }
 
   return (
-    <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-      <h2 className="mb-3 text-sm font-semibold text-slate-300">Add equipment</h2>
+    <div className="rounded-lg border border-line-card bg-surface p-4">
+      <h2 className="mb-3 text-sm font-semibold text-ink-label">Add equipment</h2>
       <form ref={draft.formRef} onSubmit={handleSubmit} onChange={draft.save} className="flex flex-col gap-3">
         <FormDraftNotice draft={draft} />
         <EquipmentFields />
 
-        {error && <p className="text-sm text-red-400">{error}</p>}
+        {error && <p className="text-sm text-red-600">{error}</p>}
 
         <div className="flex gap-2">
           <button
             type="submit"
             disabled={isPending}
-            className="inline-flex min-h-11 items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+            className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
           >
             {isPending ? "Saving…" : "Add equipment"}
           </button>
@@ -70,7 +70,7 @@ export function EquipmentForm() {
               setIsOpen(false);
               setError(null);
             }}
-            className="inline-flex min-h-11 items-center justify-center rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50"
+            className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-neutral-100 disabled:opacity-50"
           >
             Cancel
           </button>

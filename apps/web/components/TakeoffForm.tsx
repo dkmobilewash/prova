@@ -77,7 +77,7 @@ export function TakeoffForm({ jobId }: { jobId: string }) {
       <button
         type="button"
         onClick={() => setIsOpen(true)}
-        className="mb-4 rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:border-slate-500"
+        className="mb-4 rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-neutral-100"
       >
         Add from a takeoff
       </button>
@@ -85,8 +85,8 @@ export function TakeoffForm({ jobId }: { jobId: string }) {
   }
 
   const field =
-    "rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none";
-  const labelClass = "flex flex-col gap-1 text-sm text-slate-300";
+    "rounded-md border border-line-card bg-canvas px-3 py-2 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none";
+  const labelClass = "flex flex-col gap-1 text-sm text-ink-label";
 
   return (
     <form
@@ -119,11 +119,11 @@ export function TakeoffForm({ jobId }: { jobId: string }) {
           }
         });
       }}
-      className="mb-4 flex flex-col gap-3 rounded-lg border border-slate-800 bg-slate-900 p-4"
+      className="mb-4 flex flex-col gap-3 rounded-lg border border-line-card bg-surface p-4"
     >
       <div>
-        <h3 className="text-sm font-semibold text-slate-300">Add from a takeoff</h3>
-        <p className="mt-1 text-xs text-slate-500">
+        <h3 className="text-sm font-semibold text-ink-label">Add from a takeoff</h3>
+        <p className="mt-1 text-xs text-ink-muted">
           Enter dimensions you have already measured — on paper, with a wheel, or in your takeoff
           software. This does the arithmetic; it does not measure drawings.
         </p>
@@ -225,7 +225,7 @@ export function TakeoffForm({ jobId }: { jobId: string }) {
             inputMode="decimal"
             className={field}
           />
-          <span className="text-xs text-slate-500">
+          <span className="text-xs text-ink-muted">
             Applies to board only. Track carries none — the offcut is usable.
           </span>
         </label>
@@ -233,9 +233,9 @@ export function TakeoffForm({ jobId }: { jobId: string }) {
 
       {surface === "wall" && (
         <div className="flex flex-col gap-2">
-          <p className="text-sm text-slate-300">
+          <p className="text-sm text-ink-label">
             Openings{" "}
-            <span className="text-xs text-slate-500">
+            <span className="text-xs text-ink-muted">
               — anything under 32 sq ft is not deducted, because it still costs labour to cut and
               finish around.
             </span>
@@ -254,7 +254,7 @@ export function TakeoffForm({ jobId }: { jobId: string }) {
                 inputMode="decimal"
                 className={`${field} w-28`}
               />
-              <span className="text-slate-500">×</span>
+              <span className="text-ink-muted">×</span>
               <input
                 name="openingHeight"
                 value={opening.h}
@@ -270,7 +270,7 @@ export function TakeoffForm({ jobId }: { jobId: string }) {
               <button
                 type="button"
                 onClick={() => setOpenings((prev) => prev.filter((_, i) => i !== index))}
-                className="text-xs text-red-400 hover:underline"
+                className="text-xs text-red-600 hover:underline"
               >
                 Remove
               </button>
@@ -279,7 +279,7 @@ export function TakeoffForm({ jobId }: { jobId: string }) {
           <button
             type="button"
             onClick={() => setOpenings((prev) => [...prev, { w: "", h: "" }])}
-            className="self-start text-xs text-blue-400 hover:underline"
+            className="self-start text-xs text-link hover:underline"
           >
             + Add an opening
           </button>
@@ -289,8 +289,8 @@ export function TakeoffForm({ jobId }: { jobId: string }) {
       {/* Shown before anything is saved. An estimator will not trust a
           quantity that appeared in a bid without having seen it, and a
           takeoff whose arithmetic nobody checks is one nobody should use. */}
-      <div className="rounded-md border border-slate-800 bg-slate-950 p-3">
-        <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+      <div className="rounded-md border border-line-row bg-canvas p-3">
+        <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">
           What will be added
         </p>
         {hasQuantities ? (
@@ -299,40 +299,40 @@ export function TakeoffForm({ jobId }: { jobId: string }) {
               .filter((line) => line.quantity > 0)
               .map((line) => (
                 <li key={line.label} className="flex justify-between text-sm">
-                  <span className="text-slate-300">
+                  <span className="text-ink-label">
                     {label ? `${label} — ${line.label}` : line.label}
                   </span>
-                  <span className="tabular-nums text-slate-100">
+                  <span className="tabular-nums text-ink">
                     {line.quantity} {line.unit}
                   </span>
                 </li>
               ))}
           </ul>
         ) : (
-          <p className="mt-2 text-sm text-slate-500">
+          <p className="mt-2 text-sm text-ink-muted">
             Enter dimensions above and the quantities appear here.
           </p>
         )}
-        <p className="mt-3 text-xs text-slate-500">
+        <p className="mt-3 text-xs text-ink-muted">
           Added without a price. A takeoff gives quantities, not rates — price them below or pull
           one across from the catalog.
         </p>
       </div>
 
-      {error && <p className="text-sm text-amber-300">{error}</p>}
+      {error && <p className="text-sm text-tag-amber-ink">{error}</p>}
 
       <div className="flex gap-2">
         <button
           type="submit"
           disabled={isPending || !hasQuantities}
-          className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {isPending ? "Adding…" : "Add these line items"}
         </button>
         <button
           type="button"
           onClick={() => setIsOpen(false)}
-          className="rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:border-slate-500"
+          className="rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-neutral-100"
         >
           Cancel
         </button>

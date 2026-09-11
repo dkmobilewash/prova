@@ -32,15 +32,15 @@ export function RfiForm({
   // state with the way out in it.
   if (jobs.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed border-slate-700 bg-slate-900/50 p-5">
-        <p className="text-sm font-medium text-slate-200">No jobs yet</p>
-        <p className="mt-1 text-sm text-slate-400">
+      <div className="rounded-lg border border-dashed border-line-card bg-surface/50 p-5">
+        <p className="text-sm font-medium text-ink-label">No jobs yet</p>
+        <p className="mt-1 text-sm text-ink-body">
           An RFI is always a question about a specific set of drawings, so it has to belong to a job.
           Create one and the form will appear here.
         </p>
         <Link
           href="/dashboard"
-          className="mt-3 inline-flex min-h-11 items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
+          className="mt-3 inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500"
         >
           Go to Jobs
         </Link>
@@ -53,7 +53,7 @@ export function RfiForm({
       <button
         type="button"
         onClick={() => setIsOpen(true)}
-        className="inline-flex min-h-11 items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
+        className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500"
       >
         Raise an RFI
       </button>
@@ -80,9 +80,9 @@ export function RfiForm({
           }
         });
       }}
-      className="flex flex-col gap-3 rounded-lg border border-slate-800 bg-slate-900 p-4"
+      className="flex flex-col gap-3 rounded-lg border border-line-card bg-surface p-4"
     >
-      <h2 className="text-sm font-semibold text-slate-300">Raise an RFI</h2>
+      <h2 className="text-sm font-semibold text-ink-label">Raise an RFI</h2>
       <FormDraftNotice draft={formDraft} />
 
       <RfiFields
@@ -98,13 +98,13 @@ export function RfiForm({
         }}
       />
 
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {error && <p className="text-sm text-red-600">{error}</p>}
 
       <div className="flex flex-wrap gap-2">
         <button
           type="submit"
           disabled={isPending}
-          className="inline-flex min-h-11 items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+          className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
         >
           {isPending ? "Saving…" : "Save RFI"}
         </button>
@@ -115,7 +115,7 @@ export function RfiForm({
             setIsOpen(false);
             setError(null);
           }}
-          className="inline-flex min-h-11 items-center justify-center rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50"
+          className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-neutral-100 disabled:opacity-50"
         >
           Cancel
         </button>

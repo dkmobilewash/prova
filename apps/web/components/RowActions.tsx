@@ -91,11 +91,11 @@ export function RowActions({
 }
 
 const defaultDeleteClass =
-  "rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:border-red-500 hover:text-red-400 disabled:opacity-50";
+  "rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:border-red-500 hover:text-red-600 disabled:opacity-50";
 const defaultCancelClass =
-  "rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:border-slate-500 disabled:opacity-50";
+  "rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-neutral-100 disabled:opacity-50";
 const defaultConfirmClass =
-  "rounded-md border border-red-500 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 disabled:opacity-50";
+  "rounded-md border border-red-500 px-3 py-1.5 text-xs text-red-600 hover:bg-tag-rose disabled:opacity-50";
 
 /**
  * THE PHONE HALF OF RULE 2 (issue #184). `pinned` is the desktop half.
@@ -318,7 +318,7 @@ export function ConfirmDelete({
 
   const controls = (
     <>
-      {prompt && <span className="text-xs text-slate-400">{prompt}</span>}
+      {prompt && <span className="text-xs text-ink-body">{prompt}</span>}
       <span className={pinned === "end" ? armedPairColumnEnd : armedPairColumnStart}>
         {pinned === "end" ? (
           <>
@@ -341,7 +341,7 @@ export function ConfirmDelete({
   return (
     <>
       {armedClassName ? <span className={armedClassName}>{controls}</span> : controls}
-      {hint && <span className="text-xs text-slate-500">{hint}</span>}
+      {hint && <span className="text-xs text-ink-muted">{hint}</span>}
     </>
   );
 }

@@ -10,11 +10,11 @@ import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
 // button at a time. `inline-flex` + `items-center` is what makes min-h centre
 // the label rather than pin it to the top.
 const rowBtn =
-  "inline-flex min-h-11 items-center justify-center rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50";
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-neutral-100 disabled:opacity-50";
 const rowBtnDanger =
-  "inline-flex min-h-11 items-center justify-center rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:border-red-500 hover:text-red-400 disabled:opacity-50";
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:border-red-500 hover:text-red-600 disabled:opacity-50";
 const rowBtnConfirm =
-  "inline-flex min-h-11 items-center justify-center rounded-md border border-red-500 px-3 py-2 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50";
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-red-500 px-3 py-2 text-sm text-red-600 hover:bg-tag-rose disabled:opacity-50";
 
 type EquipmentRowProps = {
   canDelete: boolean;
@@ -72,13 +72,13 @@ export function EquipmentRow({ canDelete, item }: EquipmentRowProps) {
           <FormDraftNotice draft={draft} />
           <EquipmentFields defaults={item} />
 
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && <p className="text-sm text-red-600">{error}</p>}
 
           <div className="flex flex-wrap gap-2">
             <button
               type="submit"
               disabled={isPending}
-              className="inline-flex min-h-11 items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+              className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
             >
               {isPending ? "Saving…" : "Save changes"}
             </button>
@@ -89,7 +89,7 @@ export function EquipmentRow({ canDelete, item }: EquipmentRowProps) {
                 setIsEditing(false);
                 setError(null);
               }}
-              className="inline-flex min-h-11 items-center justify-center rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50"
+              className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-neutral-100 disabled:opacity-50"
             >
               Cancel
             </button>
@@ -111,12 +111,11 @@ export function EquipmentRow({ canDelete, item }: EquipmentRowProps) {
     // right-pinned from sm up, which is where justify-between still applies.
     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
       <div className="min-w-0">
-        <p className="font-medium text-slate-100">{item.name}</p>
-        {detail && <p className="text-sm text-slate-400">{detail}</p>}
-        {/* slate-400 rather than slate-500: slate-500 measures 3.83:1 on the
-            slate-900 card, under the 4.5 text floor. */}
-        {item.notes && <p className="mt-1 text-sm text-slate-400">{item.notes}</p>}
-        {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
+        <p className="font-medium text-ink">{item.name}</p>
+        {detail && <p className="text-sm text-ink-body">{detail}</p>}
+        {/* ink-body rather than ink-muted: the muted level is under the 4.5 text floor. */}
+        {item.notes && <p className="mt-1 text-sm text-ink-body">{item.notes}</p>}
+        {error && <p className="mt-1 text-sm text-red-600">{error}</p>}
       </div>
 
       {/* Arming "Remove" empties this row: "Edit" is a child of RowActions

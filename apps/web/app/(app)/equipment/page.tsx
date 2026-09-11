@@ -83,8 +83,8 @@ export default async function EquipmentPage() {
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-slate-100">Equipment</h1>
-      <p className="mb-6 text-sm text-slate-400">
+      <h1 className="mb-2 text-xl font-semibold text-ink">Equipment</h1>
+      <p className="mb-6 text-sm text-ink-body">
         Company-owned equipment, where each piece is, and how hard it has been working. Where
         something is now is worked out from its assignment history rather than stored, so a lift
         can never be recorded in two places at once.
@@ -95,23 +95,23 @@ export default async function EquipmentPage() {
       </div>
 
       <section>
-        <h2 className="mb-3 text-sm font-semibold text-slate-300">
+        <h2 className="mb-3 text-sm font-semibold text-ink-label">
           Inventory
-          {/* slate-400 rather than slate-500: slate-500 measures 3.83:1 on the
-              slate-900 card, under the 4.5 floor. */}
+          {/* ink-body rather than ink-muted: the muted level is under the
+               4.5 floor. */}
           {items.length > 0 && (
-            <span className="ml-2 font-normal text-slate-400">
+            <span className="ml-2 font-normal text-ink-body">
               {items.length} item{items.length === 1 ? "" : "s"}, {inYard} in the yard
             </span>
           )}
         </h2>
         {items.length === 0 ? (
-          <p className="text-slate-400">
+          <p className="text-ink-body">
             No equipment yet. Add the gear that moves between jobs — lifts, scaffolding, mixers —
             so you can tell where something is without calling the foreman.
           </p>
         ) : (
-          <ul className="divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900">
+          <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
             {items.map(({ item, history, where, use }) => (
               <li key={item.id} className="p-4">
                 <EquipmentRow
@@ -129,10 +129,10 @@ export default async function EquipmentPage() {
                     printed it too, from the same value, so the card read as if
                     it were stating two separate facts.
 
-                    slate-400, not slate-500: slate-500 measures 3.83:1 on this
-                    card, under the 4.5 floor, and where a thing is is the
+                    ink-body, not ink-muted: the muted level is under the 4.5
+                     floor, and where a thing is is the
                     reason this page exists. */}
-                <p className="mt-1 text-xs text-slate-400">
+                <p className="mt-1 text-xs text-ink-body">
                   {where.kind === "out"
                     ? `${stayLength(where.stay, today)} on ${where.stay.jobName}`
                     : where.kind === "planned"

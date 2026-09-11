@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { uploadPrevailingWageDetermination } from "@/lib/actions";
 
 const field =
-  "rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-600 focus:border-blue-500 focus:outline-none";
+  "rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none";
 
 /** Attaches a wage determination -- a document, or a link to one.
  *
@@ -48,10 +48,10 @@ export function PrevailingWageDeterminationForm({ jobId }: { jobId: string }) {
       // a red sentence sitting under a field that no longer says what it
       // was complaining about.
       onInput={() => setError(null)}
-      className="flex flex-col gap-2 rounded-lg border border-slate-800 bg-slate-900 p-3"
+      className="flex flex-col gap-2 rounded-lg border border-line-card bg-surface p-3"
     >
       <div className="flex flex-wrap items-end gap-2">
-        <label className="flex flex-col gap-1 text-xs text-slate-400">
+        <label className="flex flex-col gap-1 text-xs text-ink-body">
           Jurisdiction
           <input
             name="jurisdiction"
@@ -59,16 +59,16 @@ export function PrevailingWageDeterminationForm({ jobId }: { jobId: string }) {
             className={`w-56 ${field}`}
           />
         </label>
-        <label className="flex flex-col gap-1 text-xs text-slate-400">
+        <label className="flex flex-col gap-1 text-xs text-ink-body">
           Document
           <input
             type="file"
             name="file"
             accept="application/pdf,image/png,image/jpeg,image/webp"
-            className={`${field} file:mr-2 file:rounded file:border-0 file:bg-slate-800 file:px-2 file:py-1 file:text-slate-200`}
+            className={`${field} file:mr-2 file:rounded file:border-0 file:bg-neutral-100 file:px-2 file:py-1 file:text-ink-label`}
           />
         </label>
-        <label className="flex flex-col gap-1 text-xs text-slate-400">
+        <label className="flex flex-col gap-1 text-xs text-ink-body">
           Or source link
           <input name="sourceUrl" placeholder="https://sam.gov/..." className={`w-48 ${field}`} />
         </label>
@@ -76,18 +76,18 @@ export function PrevailingWageDeterminationForm({ jobId }: { jobId: string }) {
         <button
           type="submit"
           disabled={isPending}
-          className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+          className="rounded-md bg-brand px-3 py-1.5 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {isPending ? "Attaching…" : "Attach"}
         </button>
       </div>
 
-      <p className="text-xs text-slate-500">
+      <p className="text-xs text-ink-muted">
         A document or a link — either one is enough, but one of them is needed.
       </p>
 
       {error && (
-        <p role="alert" className="text-xs text-red-300">
+        <p role="alert" className="text-xs text-tag-rose-ink">
           {error}
         </p>
       )}
