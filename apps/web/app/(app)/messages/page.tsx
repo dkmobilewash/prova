@@ -5,6 +5,8 @@ import { emailSetupProblem } from "@prova/integrations";
 import { MessageRow } from "@/components/MessageRow";
 import { MessageComposer } from "@/components/MessageComposer";
 import { deliveryRate, needsAttention, stale } from "@/components/messageLabels";
+import { StatusLine } from "@/components/StatusLine";
+import { messagesStatus } from "@/lib/status-sentences";
 
 /** Stored at UTC midnight, rendered in UTC — same rule as every other date
  * in this app. */
@@ -77,9 +79,12 @@ export default async function MessagesPage({
   // moment a company sent its 201st: the counters silently became "of the
   // most recent 200" and nothing on the page said so. The scope is now
   // rendered next to the numbers when it matters — see `truncated`.
-  const problems = rows.filter((r) => needsAttention(r.events)).length;
+  const failed = rows
+    .filter((r) => needsAttention(r.events))
+    .map((r) => ({ to: r.toName ?? r.toAddress, subject: r.subject ?? "no subject" }));
   const unconfirmed = rows.filter((r) => stale(r, today)).length;
   const rate = deliveryRate(rows);
+  const status = messagesStatus({ failed, unconfirmed, sent: rows.length, rate });
 
   const visible = onlyProblems
     ? rows.filter((r) => needsAttention(r.events) || stale(r, today))
@@ -120,31 +125,12 @@ export default async function MessagesPage({
 
       {truncated && (
         <p className="mb-2 text-xs text-slate-500">
-          Showing the most recent {MESSAGE_LIMIT} messages. The three figures below are counted
-          over those {MESSAGE_LIMIT}, not over everything ever sent.
+          Showing the most recent {MESSAGE_LIMIT} messages. The line below is counted over those{" "}
+          {MESSAGE_LIMIT}, not over everything ever sent.
         </p>
       )}
 
-      <div className="mb-4 grid gap-3 sm:grid-cols-3">
-        <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-          <p className={`text-2xl font-semibold ${problems > 0 ? "text-red-300" : "text-slate-100"}`}>
-            {problems}
-          </p>
-          <p className="text-xs text-slate-500">Bounced, refused or spam-flagged</p>
-        </div>
-        <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-          <p className={`text-2xl font-semibold ${unconfirmed > 0 ? "text-amber-300" : "text-slate-100"}`}>
-            {unconfirmed}
-          </p>
-          <p className="text-xs text-slate-500">Sent, never confirmed</p>
-        </div>
-        <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-          <p className="text-2xl font-semibold text-green-300">{rate === null ? "—" : `${rate}%`}</p>
-          <p className="text-xs text-slate-500">
-            {rate === null ? "Nothing confirmed yet" : "Reached the far end"}
-          </p>
-        </div>
-      </div>
+      <StatusLine report={status} />
 
       <div className="mb-4 flex flex-wrap gap-2">
         <Link href="/messages" className={chip(!onlyProblems)}>

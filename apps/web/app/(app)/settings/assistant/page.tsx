@@ -5,6 +5,8 @@ import { anthropicIsConfigured, ASK_DEFAULT_MODEL } from "@prova/integrations";
 import { auditSummary, listAskProposals, OUTCOME_LABEL, type AuditOutcome } from "@/lib/ask/audit";
 import { ASK_LIMITS, usageSummary } from "@/lib/ask/usage";
 import { AssistantConnectionCheck } from "@/components/AssistantConnectionCheck";
+import { StatusLine } from "@/components/StatusLine";
+import { assistantStatus } from "@/lib/status-sentences";
 
 /**
  * Settings → Assistant: every card the Ask box has put in front of
@@ -110,20 +112,7 @@ export default async function AssistantAuditPage() {
         )}
       </section>
 
-      <div className="mb-6 grid gap-3 sm:grid-cols-3">
-        <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-          <p className="text-2xl font-semibold text-slate-100">{summary.proposed}</p>
-          <p className="text-xs text-slate-400">Cards in the last 30 days</p>
-        </div>
-        <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-          <p className="text-2xl font-semibold text-emerald-300">{summary.done}</p>
-          <p className="text-xs text-slate-400">Tapped and done</p>
-        </div>
-        <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-          <p className="text-2xl font-semibold text-amber-300">{summary.notDone}</p>
-          <p className="text-xs text-slate-400">Tapped, and the app said no</p>
-        </div>
-      </div>
+      <StatusLine report={assistantStatus({ proposed: summary.proposed, done: summary.done, notDone: summary.notDone })} />
 
       {rows.length === 0 ? (
         <p className="text-slate-400">
