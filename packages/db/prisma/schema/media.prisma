@@ -128,6 +128,10 @@ model JobMedia {
   /// a join to a vocabulary table rather than a string column here.
   tags JobMediaTagAssignment[]
 
+  /// What somebody drew on it. See media-annotations.prisma for why the
+  /// marks are rows beside the file rather than pixels burned into it.
+  annotations JobMediaAnnotation[]
+
   /// The two galleries, and one index each. Both order by `capturedAt`
   /// descending, so the sort column belongs in the index rather than in a
   /// sort the database does afterwards.

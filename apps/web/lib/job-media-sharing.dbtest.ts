@@ -360,12 +360,19 @@ describe("client sharing for site photos", () => {
     // this today; this is what fails on the day somebody widens the type or
     // the select, which is the day it matters.
     //
-    // IT DID FAIL, ON PURPOSE, when video and voice notes shipped: the
-    // portal has to know whether to render a picture, a player or a
-    // recording, so `kind` was added and this assertion went red naming the
-    // extra key. That is the check working, not the check being in the way,
-    // and the key list below is widened by exactly one field rather than
-    // relaxed into something that would not notice the next one.
+    // IT HAS NOW FAILED TWICE, ON PURPOSE, WHICH IS THE POINT OF IT.
+    // Video and voice notes added `kind`, because the portal has to know
+    // whether to render a picture, a player or a recording. Annotations
+    // added `marks`, because an arrow drawn to show the GC where the damage
+    // is, is worthless if the GC cannot see it. Both times this assertion
+    // went red naming the extra key; both times the list was widened by
+    // exactly one field rather than relaxed into something that would not
+    // notice the next one.
+    //
+    // What has NOT changed either time is what the test is for: no tags, no
+    // photographer. `marks` carries geometry and words and nothing about
+    // who drew them — asserted separately, on the marks themselves, in
+    // job-media-annotations.dbtest.ts.
     //
     // `contentType` is now SELECTED but deliberately absent below: it is
     // fetched only so `kind` can be derived from it, and the raw type never
@@ -385,6 +392,7 @@ describe("client sharing for site photos", () => {
       "capturedAtLabel",
       "id",
       "kind",
+      "marks",
     ]);
     // And the widening carries what it was widened for: a real value the
     // portal can branch on, derived from the stored content type.

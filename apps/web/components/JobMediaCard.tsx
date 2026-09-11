@@ -13,6 +13,9 @@ import {
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { JOB_MEDIA_TAG_DATALIST_ID, JOB_MEDIA_TAGS_PER_PHOTO_MAX } from "@/lib/job-media-tags";
 import type { JobMediaKind } from "@/lib/job-media";
+import { JobMediaMarks, type JobMediaMark } from "@/components/JobMediaMarks";
+import { JobMediaAnnotator } from "@/components/JobMediaAnnotator";
+import { annotationSummary } from "@/lib/job-media-annotations";
 
 /** Everything the card needs, already formatted on the server.
  *
@@ -43,6 +46,10 @@ export type JobMediaCardData = {
   kind: JobMediaKind;
   /** Non-null when a common browser cannot play this file. */
   playbackWarning: string | null;
+  /** What somebody drew on it, in image fractions. Empty for most photos
+   *  and always empty for video and voice notes — you cannot usefully put
+   *  a static arrow on a moving picture, and nothing offers to. */
+  marks: JobMediaMark[];
   caption: string | null;
   capturedAtLabel: string;
   /** The same instant as a datetime-local input value, in the viewer's
@@ -85,11 +92,29 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
      which is the precise shape #152 exists to remove. Switching mode
      replaces the whole body instead, so while the share question is on
      screen there is nothing else on the card to mis-tap. */
-  const [mode, setMode] = useState<"view" | "edit" | "tags" | "share">("view");
+  /* "marks" is a FIFTH value of the same state, for the reason the fourth
+     one is: the drawing surface replaces the card's body while it is open.
+     A photo being marked up needs the whole card — a 250px preview with an
+     edit form beside it is not a surface anybody can draw an arrow on. */
+  const [mode, setMode] = useState<"view" | "edit" | "tags" | "share" | "marks">("view");
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
   const full = media.tags.length >= JOB_MEDIA_TAGS_PER_PHOTO_MAX;
+
+  if (mode === "marks") {
+    return (
+      <li className="flex flex-col overflow-hidden rounded-lg border border-slate-800 bg-slate-900 p-3">
+        <JobMediaAnnotator
+          mediaId={media.id}
+          blobUrl={media.blobUrl}
+          alt={media.caption ?? "Site photo"}
+          initialMarks={media.marks}
+          onDone={() => setMode("view")}
+        />
+      </li>
+    );
+  }
 
   return (
     <li className="flex flex-col overflow-hidden rounded-lg border border-slate-800 bg-slate-900">
@@ -177,6 +202,11 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
             White on blue-600 rather than a translucent overlay: the
             background is an arbitrary photograph, so any contrast a
             see-through chip has is whatever the picture happened to be. */}
+        {/* The marks over the thumbnail, so "which of these is marked up"
+            is answerable while scrolling rather than only after opening
+            one. `aspect` is 4/3 here because that is the box the thumbnail
+            is cropped to — the editor measures the real photo instead. */}
+        <JobMediaMarks marks={media.marks} aspect={4 / 3} />
         {media.sharedWithClientLabel && (
           <span className="absolute left-2 top-2 rounded-md bg-blue-600 px-2 py-1 text-xs font-medium text-white">
             Client can see this
@@ -354,9 +384,9 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
           <div className="flex flex-col gap-2">
             <p className="text-sm font-medium text-slate-200">Show this photo to the client?</p>
             <p className="text-sm text-slate-400">
-              Anyone holding this job&apos;s portal link will see the file, its caption and when it
-              was taken. Tags and who took it are never shown. You can stop sharing it later, but you
-              cannot un-show it.
+              Anyone holding this job&apos;s portal link will see the file, any marks drawn on it,
+              its caption and when it was taken. Tags and who took it are never shown. You can stop
+              sharing it later, but you cannot un-show it.
             </p>
             {/* HERE, not only on the card, because this is the moment the
                 decision is made. A .mov shown to a GC on a Windows laptop
@@ -364,6 +394,9 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
                 than finding it out from this sentence. */}
             {media.playbackWarning && (
               <p className="text-sm text-amber-400">{media.playbackWarning}</p>
+            )}
+            {annotationSummary(media.marks.length) && (
+              <p className="text-sm text-slate-400">{annotationSummary(media.marks.length)}</p>
             )}
             {error && <p className="text-sm text-red-400">{error}</p>}
             <div className="flex flex-wrap gap-2">
@@ -574,6 +607,23 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
                   not — and one button that sometimes opens a confirm and
                   sometimes acts immediately is a worse thing to explain
                   than two buttons. */}
+              {/* PHOTOS ONLY. A static arrow on a moving picture points at
+                  whatever happens to be in frame at second nought, which
+                  is worse than no arrow, so the affordance is simply not
+                  offered rather than offered and then explained. */}
+              {media.kind === "photo" && (
+                <button
+                  type="button"
+                  disabled={isPending}
+                  onClick={() => {
+                    setError(null);
+                    setMode("marks");
+                  }}
+                  className={btn}
+                >
+                  {media.marks.length > 0 ? "Edit marks" : "Mark up"}
+                </button>
+              )}
               {media.sharedWithClientLabel ? (
                 <button
                   type="button"

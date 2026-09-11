@@ -1,4 +1,5 @@
 import Image from "next/image";
+import { JobMediaMarks } from "@/components/JobMediaMarks";
 import type { PortalJobPhoto } from "@/lib/job-media-query";
 
 /**
@@ -112,6 +113,12 @@ export function PortalJobPhotos({
                   <audio src={photo.blobUrl} controls preload="metadata" className="w-full" />
                 </div>
               )}
+              {/* The same overlay the sub sees, from the same component and
+                  the same projection. That is deliberate rather than
+                  convenient: an arrow drawn to show the GC where the damage
+                  is has to land in the same place on their screen as it did
+                  on the screen where somebody decided to show it. */}
+              <JobMediaMarks marks={photo.marks} aspect={4 / 3} />
             </div>
             <div className="flex flex-col gap-1 p-3">
               <p className="text-sm text-slate-200">
@@ -122,6 +129,17 @@ export function PortalJobPhotos({
                   phone in a site trailer is the same eye in the same light
                   as the crew reading the internal gallery. */}
               <p className="text-sm text-slate-400">{photo.capturedAtLabel}</p>
+              {/* SAID PLAINLY, because the alternative is a GC opening the
+                  file, seeing no arrows, and reasonably concluding the
+                  markup was added to a copy. The marks live beside the
+                  photo rather than in it (media-annotations.prisma), so the
+                  original genuinely is unmarked — that is a property of the
+                  photograph being left alone, not a trick. */}
+              {photo.marks.length > 0 && (
+                <p className="text-sm text-slate-400">
+                  Opening the image gives you the original, without the markup.
+                </p>
+              )}
             </div>
           </li>
         ))}
