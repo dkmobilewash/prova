@@ -57,14 +57,22 @@ model JobMedia {
 
   /// What the browser said it uploaded, and how big it was.
   ///
-  /// `contentType` is stored and NOT currently branched on: only photos can
-  /// be uploaded, so the gallery renders an image unconditionally. There
-  /// was a `jobMediaKind()` helper here that mapped it to PHOTO/VIDEO/OTHER
-  /// and no production code ever called it — written, documented, and never
-  /// called, which is the shape CLAUDE.md names. It is gone; the column
-  /// stays, because it is the ONE value a video branch would be derived
-  /// from on the day video ships, and a stored `kind` beside it would be a
-  /// second source of truth that could disagree with it.
+  /// `contentType` IS BRANCHED ON, and this comment said the opposite until
+  /// 2026-09-11. It read: "only photos can be uploaded, so the gallery
+  /// renders an image unconditionally", and that the `jobMediaKind()` helper
+  /// which mapped this column to a kind "is gone" for want of a caller. Both
+  /// sentences were true when written and stopped being true on 2026-09-10,
+  /// when #230 shipped video and voice notes: `jobMediaKind()` is back in
+  /// apps/web/lib/job-media.ts, it has five callers (the token route, the
+  /// recording action, both galleries and the portal projection), and every
+  /// surface renders an `<img>`, a `<video>` or an `<audio>` from what it
+  /// returns.
+  ///
+  /// What has NOT changed is the reason the column is the only stored fact
+  /// here: the kind is DERIVED from it on every read and stored nowhere,
+  /// because a `kind` column beside the content type is a second source of
+  /// truth that can disagree with it. The helper coming back is what made
+  /// that rule load-bearing rather than theoretical.
   contentType String
   byteSize    Int
 
@@ -93,6 +101,89 @@ model JobMedia {
 
   capturedByUserId String?
   capturedBy       User?   @relation("JobMediaCapturedBy", fields: [capturedByUserId], references: [id])
+
+  /// WHERE THE PHONE WAS WHEN THE FILE WAS CAPTURED, and null — the value
+  /// on almost every row — when nobody knows.
+  ///
+  /// NULL IS AN ORDINARY ROW, NOT A DEGRADED ONE, and that has to be true
+  /// before anything else here makes sense. Every capture taken before
+  /// 2026-09-11 has no location and none can ever be recovered. A desktop
+  /// upload has none. A crew that taps "Don't allow" has none, and that is
+  /// a decision the product respects rather than nags about. So nothing
+  /// anywhere may treat a missing coordinate as a problem to be fixed: the
+  /// card simply does not draw the line, and the gallery's filter offers
+  /// "No location" as a first-class half rather than as an exception list.
+  ///
+  /// THREE COLUMNS, NOT ONE POINT TYPE. PostGIS is not installed and Prisma
+  /// cannot express `point` anyway; two floats and a radius are what the
+  /// Geolocation API hands over and what every reader here needs. Nothing
+  /// in this app does geometry — see the read-time note below on why it
+  /// deliberately does not.
+  ///
+  /// FIVE DECIMAL PLACES, ROUNDED ON THE WAY IN. That is about 1.1 m at the
+  /// equator, and it is a ceiling nothing real reaches: a phone's own best
+  /// fix is 3-5 m in the open and tens of metres inside a steel building.
+  /// A raw fix arrives with 7 decimals — centimetres — which is a precision
+  /// the measurement does not have and which reads to anyone looking at it
+  /// as though it does. Rounding is done ONCE, by the pure module both
+  /// writers share (apps/web/lib/job-media-location.ts), so the stored value
+  /// is the displayed value and there is no second rounding at read time to
+  /// disagree with the first.
+  ///
+  /// It is also the only privacy hedge that survives storage: this is not
+  /// the job's address, it is where a named crew member was standing, to
+  /// the metre, at a stated minute.
+  ///
+  /// ONLY WHEN THE FIX IS CONTEMPORARY WITH THE CAPTURE. The browser reads
+  /// the position at UPLOAD time, and `capturedAt` can be days earlier — a
+  /// crew uploading Friday's photos from the office on Monday would
+  /// otherwise have every one of them located in the office car park, which
+  /// is worse than no location at all because it is confidently wrong. The
+  /// client attaches a position only when the file is fresh enough for
+  /// "where the phone is now" and "where this was taken" to be the same
+  /// sentence (`JOB_MEDIA_LOCATION_FRESHNESS_MS`), and says on screen when
+  /// it did not. That rule is CLIENT-SIDE and therefore not a guarantee —
+  /// stated plainly rather than implied, because the database cannot check
+  /// it: nothing records when the fix was taken, and adding a fourth column
+  /// for that would be storing the app's own upload time twice.
+  capturedLatitude  Float?
+  capturedLongitude Float?
+
+  /// THE ERROR BAR, in metres, and it is stored for the same reason
+  /// `createdAt` is stored beside `capturedAt`: without it, two completely
+  /// different facts look identical once written down.
+  ///
+  /// `GeolocationCoordinates.accuracy` is a 95%-confidence radius. A GPS
+  /// fix outdoors reports 5; a fix derived from the network or from an IP
+  /// address reports 2000 or more, and the second one means "somewhere in
+  /// this town" while looking exactly like the first. A coordinate with no
+  /// accuracy figure is a claim with no error bar, and this app would then
+  /// be printing a 5-decimal number next to a photo on the strength of a
+  /// guess about which city the phone was in.
+  ///
+  /// NOT ROUNDED and not bucketed: it is already an estimate, and rounding
+  /// an estimate is how "±2000 m" becomes "±2 km" becomes "roughly here".
+  /// Whether a fix is too coarse to mean anything is DERIVED at read time
+  /// from this number, never stored — see `job-media-location.ts`.
+  ///
+  /// Null exactly when the coordinates are null; the database enforces the
+  /// pairing, since neither of the two writers can be trusted to remember
+  /// it forever (`JobMedia_captured_location_pairing`).
+  capturedAccuracyMeters Float?
+
+  /// WHAT IS DELIBERATELY NOT STORED, listed because each one is the
+  /// obvious next commit and each one is derived state (CLAUDE.md):
+  /// distance from the job's address, an on-site/off-site flag, a
+  /// reverse-geocoded street. All three change the moment the job's address
+  /// is corrected, and a stored answer would not. There is also no
+  /// reverse-geocoding here at all — it would mean sending a crew member's
+  /// position to a third party, which this app does not do for anything.
+  ///
+  /// AND NO INDEX. The only query is `/photos`'s "has a location / has
+  /// none", which runs inside a company already narrowed and ordered by
+  /// `[companyId, capturedAt]`. A null test on a column that is set on
+  /// roughly half of a company's rows has no selectivity worth an index
+  /// write on every insert.
 
   /// WHEN THIS PHOTO WAS SHOWN TO THE CLIENT, and null — the default —
   /// when it never has been. This is the whole of what the GC can see.

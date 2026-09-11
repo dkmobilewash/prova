@@ -167,34 +167,65 @@ export function parseSharedFilter(raw: string | null | undefined): SharedFilter 
 }
 
 /**
- * The gallery's three filters, composed into one URL.
+ * Which captures a gallery is showing by whether they know where they were
+ * taken.
  *
- * `/photos` filters by job AND by tag AND by whether the client can see it,
- * and all three have to survive each other: clicking a tag while a job is
- * chosen must narrow, not replace. That is the entire content of this
- * function, and it is a function rather than a template string at each chip
- * because the failure mode of getting it wrong — one filter silently
- * dropped when another is clicked — looks exactly like a page that is
- * working, just with more photos on it than you expected. A pure function
- * is a thing a test can hold still.
+ * A STRING UNION FOR THE SAME REASON `SharedFilter` IS, and that reason is
+ * worth restating rather than cross-referencing: every filter on this page
+ * is composed with `if (filter.x) params.set(...)`, and a boolean `false`
+ * is falsy — so "show me the ones with NO location" would be silently
+ * dropped and the gallery would answer a different question while looking
+ * entirely healthy. Both members here are truthy.
+ *
+ * `"yes"` — the capture recorded a position.
+ * `"no"`  — it did not. THIS IS NOT A DEFECT LIST. Every capture taken
+ *           before 2026-09-11 is in it, as is every desktop upload, every
+ *           photo older than an hour at upload time, and every crew member
+ *           who tapped "Don't allow". It is half of the gallery, not the
+ *           broken half.
+ */
+export type LocatedFilter = "yes" | "no";
+
+/** A `?located=` query value, or null for "not filtered by that". Anything
+ * else falls back to no filter, the same posture this page takes with a job
+ * or tag id it does not recognise. */
+export function parseLocatedFilter(raw: string | null | undefined): LocatedFilter | null {
+  return raw === "yes" || raw === "no" ? raw : null;
+}
+
+/**
+ * The gallery's four filters, composed into one URL.
+ *
+ * `/photos` filters by job AND by tag AND by whether the client can see it
+ * AND by whether it knows where it was taken, and all four have to survive
+ * each other: clicking a tag while a job is chosen must narrow, not replace.
+ * That is the entire content of this function, and it is a function rather
+ * than a template string at each chip because the failure mode of getting it
+ * wrong — one filter silently dropped when another is clicked — looks
+ * exactly like a page that is working, just with more photos on it than you
+ * expected. A pure function is a thing a test can hold still.
  *
  * The client-visibility filter joined the other two rather than replacing
  * them because the question the sub actually asks is compound: "what have
  * we shown THIS GC" is the job chip and the shared chip together, and
- * neither answers it alone.
+ * neither answers it alone. The location filter joined for the same reason
+ * one step on: "where on the Riverside job were the west-wall photos taken"
+ * is three chips, and dropping any of them answers a different question.
  *
- * `null` for any of the three means "not filtered by that", which is what
- * the "All jobs", "All tags" and "All photos" chips pass.
+ * `null` for any of the four means "not filtered by that", which is what
+ * the "All jobs", "All tags", "All photos" and "Anywhere" chips pass.
  */
 export function photosFilterHref(filter: {
   job?: string | null;
   tag?: string | null;
   shared?: SharedFilter | null;
+  located?: LocatedFilter | null;
 }): string {
   const params = new URLSearchParams();
   if (filter.job) params.set("job", filter.job);
   if (filter.tag) params.set("tag", filter.tag);
   if (filter.shared) params.set("shared", filter.shared);
+  if (filter.located) params.set("located", filter.located);
   const query = params.toString();
   return query ? `/photos?${query}` : "/photos";
 }

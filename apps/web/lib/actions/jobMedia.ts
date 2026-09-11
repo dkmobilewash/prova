@@ -13,6 +13,10 @@ import {
   jobMediaMaxBytes,
 } from "@/lib/job-media";
 import {
+  locationProblemMessage,
+  parseCapturedLocation,
+} from "@/lib/job-media-location";
+import {
   annotationProblem,
   annotationProblemMessage,
   annotationSetProblemMessage,
@@ -156,6 +160,30 @@ export async function recordJobMedia(jobId: string, formData: FormData): Promise
 
   const caption = text(formData, "caption");
 
+  // WHERE, and the three fields are absent on most uploads.
+  //
+  // A REFUSAL, NOT A SHRUG, when they are present and wrong — and the
+  // distinction matters because the browser is built so this can never fire
+  // on an honest upload. `JobMediaCapture` runs the SAME parser before it
+  // sends anything, and drops the location (telling the person why) if it
+  // objects, so a coordinate arriving here that is not on Earth means a
+  // caller that is not the form. Recording the photo and silently discarding
+  // the location would hide that forever; failing the record makes it
+  // visible in the one place somebody is looking.
+  //
+  // The empty case is NOT a refusal. `parseCapturedLocation` returns
+  // `{ ok: true, location: null }` for three blank fields, which is a
+  // desktop upload, a denied permission, and every capture older than an
+  // hour. Those must record exactly like any other photo — the photo is the
+  // point and the coordinate is a bonus.
+  const parsedLocation = parseCapturedLocation({
+    latitude: text(formData, "latitude"),
+    longitude: text(formData, "longitude"),
+    accuracyMeters: text(formData, "accuracyMeters"),
+  });
+  if (!parsedLocation.ok) return fail(locationProblemMessage(parsedLocation.problem));
+  const location = parsedLocation.location;
+
   await prisma.jobMedia.create({
     data: {
       companyId: context.companyId,
@@ -166,6 +194,13 @@ export async function recordJobMedia(jobId: string, formData: FormData): Promise
       caption: caption || null,
       capturedAt,
       capturedByUserId: context.id,
+      // Written as a group or not at all, which is what the database's
+      // `JobMedia_captured_location_pairing` CHECK requires. Rounded to five
+      // decimals by the parser above, once, so the stored value is the
+      // displayed value.
+      capturedLatitude: location?.latitude ?? null,
+      capturedLongitude: location?.longitude ?? null,
+      capturedAccuracyMeters: location?.accuracyMeters ?? null,
     },
   });
 
@@ -192,6 +227,18 @@ export async function recordJobMedia(jobId: string, formData: FormData): Promise
  * clock produces the same wrong time. So the rule this actually follows is
  * the other one — dates that matter are ENTERED, not stamped — with the
  * device's guess as the default rather than the last word.
+ *
+ * WHERE IT WAS TAKEN IS NOT EDITABLE, and that is the opposite call to
+ * `capturedAt` on purpose. A capture time is a value a person can genuinely
+ * know better than the device did — they remember Friday. A coordinate is
+ * not: nobody can type five decimals of latitude from memory, so an editable
+ * one would only ever be a guess entered by hand, stored in the same three
+ * columns as a measurement and indistinguishable from one afterwards. The
+ * error bar stored beside it (`capturedAccuracyMeters`) is what a wrong-
+ * looking fix is answered with instead, and the remedy for a location that
+ * should not be there at all is deleting the capture. That is a real gap —
+ * there is no "remove just the location" — and it is named in the changelog
+ * rather than papered over.
  */
 export async function updateJobMediaDetails(
   mediaId: string,
