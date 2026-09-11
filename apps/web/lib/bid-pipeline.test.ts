@@ -147,6 +147,39 @@ describe("ranking", () => {
     expect(rankGcs([two, one])[0]).toBe(two);
   });
 
+  it("falls to outstanding SPECIFICALLY, not to invited standing in for it", () => {
+    // The test above still leaves the `outstanding` rule deletable: both
+    // fixtures also differ on `invited` in the same direction (more bids
+    // means more of both), since every bid in them is live. Deleting the
+    // `outstanding` comparison entirely and falling straight through to the
+    // `invited` tie-break produces the identical order -- the exact same
+    // shape of confound issue #108 found between `overdue` and `outstanding`
+    // one rung up, just one rung further down the chain (found re-deriving
+    // the mutation count for #108: the issue's own "ten" survivors named
+    // only nine explicitly, once catalog-import's cost/hours arms are
+    // counted as the two mutants they are -- this is the tenth).
+    //
+    // Held equal on purpose here: both GCs have three invitations, but one
+    // has two decided already (WON, LOST) and only one still live, while the
+    // other has only one decided and two still live. `invited` ties at 3;
+    // `outstanding` does not.
+    const busier = {
+      record: summariseGc([bid({ status: "WON" }), bid({ status: "LOST" }), bid()], TODAY),
+    };
+    const moreLive = {
+      record: summariseGc([bid(), bid(), bid({ status: "LOST" })], TODAY),
+    };
+
+    expect(busier.record.overdue).toBe(0);
+    expect(moreLive.record.overdue).toBe(0);
+    expect(busier.record.invited).toBe(moreLive.record.invited);
+    expect(busier.record.outstanding).toBe(1);
+    expect(moreLive.record.outstanding).toBe(2);
+
+    expect(rankGcs([busier, moreLive])[0]).toBe(moreLive);
+    expect(rankGcs([moreLive, busier])[0]).toBe(moreLive);
+  });
+
   it("does not mutate the array it was given", () => {
     const rows = [
       { record: summariseGc([bid({ status: "WON" })], TODAY) },
