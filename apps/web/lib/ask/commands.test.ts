@@ -119,9 +119,10 @@ describe("who is offered what", () => {
       "bring_equipment_back",
       "raise_rfi",
       "add_punch_item",
+      "log_time_entry",
     ]);
     // FIELD holds MANAGE_FIELD and MANAGE_JOBS (lib/permissions.ts: "an
-    // RFI when the drawings are wrong"), and nothing else.
+    // RFI when the drawings are wrong"), and nothing else — so no money.
     for (const command of commandsFor(FIELD)) {
       expect(["MANAGE_FIELD", "MANAGE_JOBS"], command.name).toContain(command.capability);
     }
@@ -137,8 +138,12 @@ describe("who is offered what", () => {
     expect(commandsFor(ESTIMATOR).map((c) => c.name)).not.toContain("add_punch_item");
   });
 
-  it("offers accounting no command at all — nothing here is billing", () => {
-    expect(commandsFor(ACCOUNTING)).toEqual([]);
+  it("offers accounting exactly the two money commands, and nothing that touches the field", () => {
+    expect(commandsFor(ACCOUNTING).map((c) => c.name)).toEqual(["draft_invoice", "log_payment"]);
+    for (const command of commandsFor(ACCOUNTING)) {
+      expect(command.capability, command.name).toBe("MANAGE_BILLING");
+      expect(command.tier, command.name).toBe("T3_MONEY_EVIDENCE");
+    }
   });
 
   it("withholds create_estimate_job from accounting, who could not open the estimate it made", () => {

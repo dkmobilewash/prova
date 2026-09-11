@@ -3,7 +3,9 @@ import { can, type Capability, type Principal } from "@/lib/permissions";
 import { equipmentCommands, equipmentExclusions } from "./commands/equipment";
 import { estimatingCommands, estimatingExclusions } from "./commands/estimating";
 import { notYetRegistered } from "./commands/exclusions";
+import { billingCommands, billingExclusions } from "./commands/billing";
 import { fieldCommands, fieldExclusions } from "./commands/field";
+import { laborCommands, laborExclusions } from "./commands/labor";
 import { punchListCommands, punchListExclusions } from "./commands/punchLists";
 import { rfiCommands, rfiExclusions } from "./commands/rfis";
 
@@ -47,7 +49,10 @@ export type CommandName =
   | "send_equipment_to_job"
   | "bring_equipment_back"
   | "raise_rfi"
-  | "add_punch_item";
+  | "add_punch_item"
+  | "draft_invoice"
+  | "log_payment"
+  | "log_time_entry";
 
 /** Risk tier. T5 (delete, void, contract, admin, outward send without a
  * composer) has no member on purpose: it cannot be registered. */
@@ -171,6 +176,8 @@ export const COMMANDS: CommandDefinition[] = [
   ...equipmentCommands,
   ...rfiCommands,
   ...punchListCommands,
+  ...billingCommands,
+  ...laborCommands,
 ];
 
 export const EXCLUSIONS: Exclusion[] = [
@@ -179,6 +186,8 @@ export const EXCLUSIONS: Exclusion[] = [
   ...equipmentExclusions,
   ...rfiExclusions,
   ...punchListExclusions,
+  ...billingExclusions,
+  ...laborExclusions,
   ...notYetRegistered,
 ];
 

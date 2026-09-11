@@ -321,3 +321,103 @@ export async function resolveOpenMaterialOrder(
     })),
   };
 }
+
+// ------------------------------------------------------------- invoices
+
+export type ResolvedInvoice = {
+  id: string;
+  number: number;
+  amountCents: number;
+  paidCents: number;
+  remainingCents: number;
+};
+
+/** Like Resolved, plus the one answer a payment needs that a name lookup
+ * never does: the invoice the person named exists and is already paid. */
+export type InvoiceResolution = Resolved<ResolvedInvoice> | { kind: "settled"; invoice: ResolvedInvoice };
+
+const cents = (value: unknown) => Math.round(Number(value) * 100);
+
+/** The invoices on a job with a balance still owing, or the one the person
+ * named by number. Balances are computed here exactly as logPayment's
+ * guard computes them — cents, amount minus the sum of payments — so a
+ * card never disagrees with the refusal it is trying to spare the person. */
+export async function resolveOpenInvoice(
+  companyId: string,
+  jobId: string,
+  text?: string,
+): Promise<InvoiceResolution> {
+  const rows = await prisma.invoice.findMany({
+    where: { jobId, job: { companyId } },
+    select: { id: true, number: true, amount: true, payments: { select: { amount: true } } },
+    orderBy: { number: "desc" },
+    take: MAX_CANDIDATES,
+  });
+  const invoices: ResolvedInvoice[] = rows.map((row) => {
+    const amountCents = cents(row.amount);
+    const paidCents = row.payments.reduce((sum, p) => sum + cents(p.amount), 0);
+    return { id: row.id, number: row.number, amountCents, paidCents, remainingCents: amountCents - paidCents };
+  });
+
+  const wanted = text?.match(/\d+/)?.[0];
+  if (wanted) {
+    const hit = invoices.find((invoice) => invoice.number === Number(wanted));
+    if (!hit) return { kind: "none" };
+    if (hit.remainingCents <= 0) return { kind: "settled", invoice: hit };
+    return { kind: "one", match: hit };
+  }
+
+  const open = invoices.filter((invoice) => invoice.remainingCents > 0);
+  if (open.length === 0) return { kind: "none" };
+  if (open.length === 1) return { kind: "one", match: open[0] };
+  return {
+    kind: "many",
+    options: open.map((invoice) => ({
+      value: invoice.id,
+      label: `Invoice #${invoice.number}`,
+      detail: `${money(invoice.amountCents / 100)} · ${money(invoice.remainingCents / 100)} owing`,
+    })),
+  };
+}
+
+// --------------------------------------------------------------- people
+
+export type ResolvedEmployee = { id: string; name: string; email: string; jobFunction: string | null };
+
+/** Somebody on the team, by name or email. Time is logged against a User
+ * (TimeEntry.employeeUserId is required), so a crew member with no login
+ * is "none" here and the command says where to add them. */
+export async function resolveEmployee(companyId: string, text: string): Promise<Resolved<ResolvedEmployee>> {
+  const wanted = text.trim();
+  if (!wanted) return { kind: "none" };
+  const rows = await prisma.user.findMany({
+    where: {
+      companyId,
+      OR: [
+        { name: { contains: wanted, mode: "insensitive" } },
+        { email: { contains: wanted, mode: "insensitive" } },
+      ],
+    },
+    select: { id: true, name: true, email: true, jobFunction: true },
+    orderBy: { createdAt: "asc" },
+    take: MAX_CANDIDATES,
+  });
+  const people: ResolvedEmployee[] = rows.map((row) => ({
+    id: row.id,
+    name: row.name ?? row.email,
+    email: row.email,
+    jobFunction: row.jobFunction,
+  }));
+  const ranked = rankByName(people, wanted);
+  const candidates = ranked.length > 0 ? ranked : people;
+  if (candidates.length === 0) return { kind: "none" };
+  if (candidates.length === 1) return { kind: "one", match: candidates[0] };
+  return {
+    kind: "many",
+    options: candidates.map((person) => ({
+      value: person.id,
+      label: person.name,
+      detail: [person.jobFunction?.toLowerCase().replace(/_/g, " "), person.email].filter(Boolean).join(" · "),
+    })),
+  };
+}

@@ -189,6 +189,15 @@ export default async function SettingsPage({
         — connect and disconnect third-party services.
       </p>
 
+      {/* Every card the Ask box has ever put in front of somebody, with
+          what became of it. Owner-only, like this page's integrations. */}
+      <p className="mb-6 text-sm text-slate-400">
+        <Link href="/settings/assistant" className="text-blue-400 hover:text-blue-300">
+          Assistant
+        </Link>{" "}
+        — what the Ask box has proposed, and what became of it.
+      </p>
+
       {/* Findable without asking anyone, which is most of the point: the
           research found four vendors where getting your history out meant a
           support ticket, a sales call, or nothing at all. */}

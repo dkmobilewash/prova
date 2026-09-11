@@ -99,6 +99,15 @@ export function anthropicIsConfigured(): boolean {
   return Boolean(process.env.ANTHROPIC_API_KEY?.trim());
 }
 
+/** The `type` inside the API's error body ("authentication_error",
+ * "not_found_error", "overloaded_error"...), which is the field that says
+ * what to fix. Read defensively: the SDK types `error` as unknown. */
+function apiErrorType(err: { error?: unknown }): string | null {
+  const body = err.error as { error?: { type?: unknown } } | undefined;
+  const type = body?.error?.type;
+  return typeof type === "string" ? type : null;
+}
+
 export async function* streamToolConversation<H = never>(
   options: AskConversationOptions<H>,
 ): AsyncGenerator<AskEvent<H>> {
@@ -261,8 +270,21 @@ export async function* streamToolConversation<H = never>(
       err instanceof Anthropic.AuthenticationError ||
       err instanceof Anthropic.APIError
     ) {
-      // Deliberately not err.message — it can carry request details, and
-      // the caller puts this on screen.
+      // The person sees one sentence; the server log carries the reason.
+      // Before this line existed, a preview whose key was rejected and a
+      // preview whose org lacked the model produced the same screen and
+      // the same (empty) log, and the difference took a person an hour to
+      // guess. Status, the API's own error type, the request id and the
+      // model are enough to tell those apart; the key and the prompt are
+      // never here.
+      console.error("[ask] Anthropic API call failed", {
+        status: err.status,
+        type: apiErrorType(err),
+        requestId: err.requestID ?? null,
+        model: options.model ?? DEFAULT_MODEL,
+      });
+      // Deliberately not err.message on screen — it can carry request
+      // details, and the caller puts this in front of the person.
       yield { type: "error", reason: "api" };
       return;
     }

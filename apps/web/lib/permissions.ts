@@ -182,6 +182,10 @@ export const ROUTE_CAPABILITY: Record<string, Capability> = {
   // to it is incoherent, and if integrations belong to billing then
   // `/settings` itself has to move — a separate decision, not this one.
   "/settings/integrations": "MANAGE_COMPLIANCE",
+  // Same reasoning: a child of /settings takes its parent's capability.
+  // The page itself additionally refuses anyone who is not OWNER, since
+  // it lists every person's proposals, amounts included.
+  "/settings/assistant": "MANAGE_COMPLIANCE",
   "/prevailing-wage": "MANAGE_COMPLIANCE",
   "/union-compliance": "MANAGE_COMPLIANCE",
 
