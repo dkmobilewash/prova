@@ -146,7 +146,7 @@ export function NewJobForm({ contacts }: { contacts: GcOption[] }) {
       <button
         type="submit"
         disabled={isPending}
-        className="mt-2 inline-flex items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-60"
+        className="mt-2 inline-flex items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-60"
       >
         {isPending ? "Creating…" : "Create job"}
       </button>

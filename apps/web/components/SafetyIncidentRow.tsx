@@ -15,11 +15,11 @@ import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
 // a time. `inline-flex` + `items-center` is what makes min-h centre the label
 // instead of pinning it to the top.
 const rowBtn =
-  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-neutral-100 disabled:opacity-50";
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50";
 const rowBtnDanger =
-  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:border-red-500 hover:text-red-600 disabled:opacity-50";
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:border-red-500 hover:text-red-400 disabled:opacity-50";
 const rowBtnConfirm =
-  "inline-flex min-h-11 items-center justify-center rounded-md border border-red-500 px-3 py-2 text-sm text-red-600 hover:bg-tag-rose disabled:opacity-50";
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-red-500 px-3 py-2 text-sm text-red-400 hover:bg-tag-rose disabled:opacity-50";
 
 export type IncidentRowData = IncidentDefaults & {
   id: string;
@@ -76,13 +76,13 @@ export function SafetyIncidentRow({
 
           <SafetyIncidentFields jobs={jobs} defaults={incident} lockDate />
 
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && <p className="text-sm text-red-400">{error}</p>}
 
           <div className="flex flex-wrap gap-2">
             <button
               type="submit"
               disabled={isPending}
-              className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
+              className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
             >
               {isPending ? "Saving…" : "Save changes"}
             </button>
@@ -93,7 +93,7 @@ export function SafetyIncidentRow({
                 setIsEditing(false);
                 setError(null);
               }}
-              className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-neutral-100 disabled:opacity-50"
+              className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50"
             >
               Cancel
             </button>
@@ -114,7 +114,7 @@ export function SafetyIncidentRow({
           {incident.jobTitle && <span className="text-xs text-ink-body">{incident.jobTitle}</span>}
           <span
             className={`rounded px-1.5 py-0.5 text-xs ${
-              recordable ? "bg-tag-amber text-tag-amber-ink" : "bg-neutral-100 text-ink-body"
+              recordable ? "bg-tag-amber text-tag-amber-ink" : "bg-neutral-800 text-ink-body"
             }`}
           >
             {recordable ? "Recordable" : "First aid"}
@@ -140,7 +140,7 @@ export function SafetyIncidentRow({
           {incident.reportedByName && ` · logged by ${incident.reportedByName}`}
         </p>
 
-        {error && <p className="mt-1 text-sm text-red-600">{error}</p>}
+        {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
       </div>
 
       {/* Arming "Remove" empties this cluster. A safety case is evidence,

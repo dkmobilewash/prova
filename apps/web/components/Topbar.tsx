@@ -3,9 +3,10 @@ import { UserButton } from "@clerk/nextjs";
 import { MobileNav } from "@/components/MobileNav";
 import type { Principal } from "@/lib/permissions";
 
-/** Light chrome: white bar with the 2px brand-yellow rule under it, per
- * the approved yellow/black/white mockups. The rail beside it stays dark
- * — that contrast is the design, not a leftover. */
+/** Dark chrome: the charcoal bar (#171717, same surface as the rail)
+ * with the 2px brand-yellow rule under it, per the approved dark
+ * mockups. Chrome and rail read as one continuous frame around the
+ * #0f0f0f canvas — that seamlessness is the design, not a leftover. */
 export function Topbar({
   companyName,
   /** Alerts needing attention. Lives in the chrome rather than on the
@@ -26,7 +27,7 @@ export function Topbar({
   showsSalesCrm?: boolean;
 }) {
   return (
-    <div className="print:hidden flex h-14 shrink-0 items-center justify-between gap-3 border-b-2 border-brand bg-surface px-4 sm:px-6">
+    <div className="print:hidden flex h-14 shrink-0 items-center justify-between gap-3 border-b-2 border-brand bg-rail px-4 sm:px-6">
       {/* Renders nothing above md — the desktop rail is always visible there. */}
       <MobileNav companyName={companyName} principal={principal} showsSalesCrm={showsSalesCrm} />
       <div className="ml-auto flex items-center gap-3">
@@ -37,7 +38,7 @@ export function Topbar({
               ? "Alerts — nothing needs attention"
               : `Alerts — ${alertCount} needing attention`
           }
-          className="relative rounded-md p-2 text-ink-body hover:bg-neutral-100 hover:text-ink"
+          className="relative rounded-md p-2 text-ink-body hover:bg-rail-hover hover:text-ink"
         >
           <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5" aria-hidden="true">
             <path

@@ -116,7 +116,7 @@ export default async function PhotosPage({
   // on site taps to get to their own job.
   const chip = (active: boolean) =>
     `inline-flex min-h-11 items-center rounded-md border px-3 py-2 text-sm ${
-      active ? "border-brand text-link" : "border-line-card text-ink-label hover:bg-neutral-100"
+      active ? "border-brand text-link" : "border-line-card text-ink-label hover:bg-neutral-800"
     }`;
 
   // A tag with no photos on it is a dead chip: tapping it empties the
@@ -141,7 +141,7 @@ export default async function PhotosPage({
           </p>
           <Link
             href="/jobs/new"
-            className="mt-3 inline-flex min-h-11 items-center rounded-md bg-brand px-4 text-sm font-semibold text-ink-label hover:bg-yellow-500"
+            className="mt-3 inline-flex min-h-11 items-center rounded-md bg-brand px-4 text-sm font-semibold text-neutral-900 hover:bg-yellow-500"
           >
             Create a job
           </Link>

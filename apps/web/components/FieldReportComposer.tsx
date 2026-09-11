@@ -63,7 +63,7 @@ export function FieldReportComposer({
       <button
         type="button"
         onClick={() => setIsOpen(true)}
-        className="rounded-md bg-brand px-5 py-3 text-base font-semibold text-ink-label hover:bg-yellow-500"
+        className="rounded-md bg-brand px-5 py-3 text-base font-semibold text-neutral-900 hover:bg-yellow-500"
       >
         Log a day
       </button>
@@ -132,7 +132,7 @@ export function FieldReportComposer({
 
       <FieldReportFields />
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-red-400">{error}</p>}
 
       <div className="flex gap-2">
         {/* Disabled in flight: this create is not idempotent, and a second
@@ -141,7 +141,7 @@ export function FieldReportComposer({
         <button
           type="submit"
           disabled={isPending}
-          className="rounded-md bg-brand px-5 py-3 text-base font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
+          className="rounded-md bg-brand px-5 py-3 text-base font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
         >
           {isPending ? "Saving…" : "Save report"}
         </button>
@@ -152,7 +152,7 @@ export function FieldReportComposer({
             setIsOpen(false);
             setError(null);
           }}
-          className="rounded-md border border-line-card px-5 py-3 text-base text-ink-label hover:bg-neutral-100 disabled:opacity-50"
+          className="rounded-md border border-line-card px-5 py-3 text-base text-ink-label hover:bg-neutral-800 disabled:opacity-50"
         >
           Cancel
         </button>

@@ -88,8 +88,8 @@ export function ReceivablesList() {
                   setOpenId(isOpen ? null : row.id);
                 }}
                 aria-expanded={isOpen}
-                className={`flex w-full items-center justify-between gap-3 px-1 py-2.5 text-left transition-colors hover:bg-neutral-100 ${
-                  isOpen ? "bg-neutral-100" : ""
+                className={`flex w-full items-center justify-between gap-3 px-1 py-2.5 text-left transition-colors hover:bg-neutral-800 ${
+                  isOpen ? "bg-neutral-800" : ""
                 }`}
               >
                 <span className="min-w-0">
@@ -156,7 +156,7 @@ export function ReceivablesDetailPanel() {
           footer={
             <Link
               href={`/jobs/${open.jobId}`}
-              className="inline-flex w-full items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500"
+              className="inline-flex w-full items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500"
             >
               Open the job
             </Link>

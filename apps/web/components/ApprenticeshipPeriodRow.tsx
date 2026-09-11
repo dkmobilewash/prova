@@ -92,7 +92,7 @@ export function ApprenticeshipPeriodRow({
           </div>
 
           {error && (
-            <p role="alert" className="text-sm text-red-600">
+            <p role="alert" className="text-sm text-red-400">
               {error}
             </p>
           )}
@@ -101,7 +101,7 @@ export function ApprenticeshipPeriodRow({
             <button
               type="submit"
               disabled={isPending}
-              className="rounded-md bg-brand px-3 py-1.5 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
+              className="rounded-md bg-brand px-3 py-1.5 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
             >
               {isPending ? "Saving…" : "Save"}
             </button>
@@ -112,7 +112,7 @@ export function ApprenticeshipPeriodRow({
                 setEditing(false);
                 setError(null);
               }}
-              className="rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-neutral-100"
+              className="rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-neutral-800"
             >
               Cancel
             </button>
@@ -142,7 +142,7 @@ export function ApprenticeshipPeriodRow({
               onConfirm={() => run(() => deleteApprenticeshipPeriod(periodId))}
               deleteClassName={linkBtn}
               cancelClassName={linkBtn}
-              confirmClassName="text-xs text-red-600 underline hover:text-tag-rose-ink disabled:opacity-50"
+              confirmClassName="text-xs text-red-400 underline hover:text-tag-rose-ink disabled:opacity-50"
             />
           ) : null
         }
@@ -152,7 +152,7 @@ export function ApprenticeshipPeriodRow({
         </button>
       </RowActions>
       {error && (
-        <p role="alert" className="w-full text-sm text-red-600">
+        <p role="alert" className="w-full text-sm text-red-400">
           {error}
         </p>
       )}

@@ -25,7 +25,7 @@ export type ContactInteractionRowData = {
 };
 
 const btn =
-  "rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-neutral-100 disabled:opacity-50";
+  "rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-neutral-800 disabled:opacity-50";
 
 export function ContactInteractionRow({
   interaction,
@@ -66,12 +66,12 @@ export function ContactInteractionRow({
           className="flex flex-col gap-3"
         >
           <ContactInteractionFields members={members} people={people} defaults={interaction} />
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && <p className="text-sm text-red-400">{error}</p>}
           <div className="flex gap-2">
             <button
               type="submit"
               disabled={isPending}
-              className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
+              className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
             >
               {isPending ? "Saving…" : "Save changes"}
             </button>
@@ -89,7 +89,7 @@ export function ContactInteractionRow({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs text-ink-body">
+            <span className="rounded bg-neutral-800 px-1.5 py-0.5 text-xs text-ink-body">
               {INTERACTION_TYPE_OPTIONS.find((o) => o.value === interaction.type)?.label ?? interaction.type}
             </span>
             <span className="text-xs text-ink-muted">{interaction.occurredOn}</span>
@@ -107,7 +107,7 @@ export function ContactInteractionRow({
           {interaction.loggedByUserName && (
             <p className="mt-1 text-xs text-ink-muted">logged by {interaction.loggedByUserName}</p>
           )}
-          {error && <p className="mt-1 text-sm text-red-600">{error}</p>}
+          {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
         </div>
 
         {/* Arming the delete empties this row: "Edit" used to stay live next
@@ -138,7 +138,7 @@ export function ContactInteractionRow({
               }}
               deleteClassName={btn}
               cancelClassName={btn}
-              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-xs text-red-600 hover:bg-tag-rose disabled:opacity-50"
+              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-xs text-red-400 hover:bg-tag-rose disabled:opacity-50"
             />
           }
         >

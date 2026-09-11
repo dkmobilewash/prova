@@ -12,13 +12,13 @@ export default function HomePage() {
         <div className="flex gap-3">
           <Link
             href="/sign-up"
-            className="inline-flex items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500"
+            className="inline-flex items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500"
           >
             Sign up
           </Link>
           <Link
             href="/sign-in"
-            className="inline-flex items-center justify-center rounded-md bg-neutral-100 px-4 py-2 text-sm font-medium text-ink hover:bg-neutral-200"
+            className="inline-flex items-center justify-center rounded-md bg-neutral-800 px-4 py-2 text-sm font-medium text-ink hover:bg-neutral-700"
           >
             Sign in
           </Link>
@@ -27,7 +27,7 @@ export default function HomePage() {
       <SignedIn>
         <Link
           href="/dashboard"
-          className="inline-flex items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500"
+          className="inline-flex items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500"
         >
           Go to dashboard
         </Link>

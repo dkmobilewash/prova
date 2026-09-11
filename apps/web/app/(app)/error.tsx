@@ -90,7 +90,7 @@ export default function AppError({
           )}
           <a
             href="/dashboard"
-            className="rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-neutral-100"
+            className="rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-neutral-800"
           >
             Back to jobs
           </a>
@@ -101,7 +101,7 @@ export default function AppError({
             applies migrations on merge — so saying it there would be noise
             pointing at the wrong thing. */}
         {process.env.NEXT_PUBLIC_DEPLOY_ENV === "preview" && (
-          <div className="mt-5 rounded-md border border-amber-300 bg-tag-amber p-3">
+          <div className="mt-5 rounded-md border border-amber-700 bg-tag-amber p-3">
             <p className="text-sm font-medium text-tag-amber-ink">
               On a preview, this is usually the database, not the code.
             </p>

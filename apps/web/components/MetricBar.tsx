@@ -72,7 +72,7 @@ function Metric({
       </span>
       <span
         className={`text-sm font-semibold tabular-nums ${
-          tone === "good" ? "text-green-700" : "text-ink"
+          tone === "good" ? "text-green-400" : "text-ink"
         }`}
       >
         {value}

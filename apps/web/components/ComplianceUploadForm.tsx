@@ -39,7 +39,7 @@ export function ComplianceUploadForm({ jobs }: { jobs: { id: string; name: strin
           name="file"
           required
           accept=".pdf,.png,.jpg,.jpeg,.webp"
-          className="text-sm text-ink-label file:mr-3 file:rounded-md file:border-0 file:bg-neutral-100 file:px-3 file:py-2 file:text-sm file:font-medium file:text-ink hover:file:bg-neutral-200"
+          className="text-sm text-ink-label file:mr-3 file:rounded-md file:border-0 file:bg-neutral-800 file:px-3 file:py-2 file:text-sm file:font-medium file:text-ink hover:file:bg-neutral-700"
         />
       </label>
       <label className={labelClass}>
@@ -56,11 +56,11 @@ export function ComplianceUploadForm({ jobs }: { jobs: { id: string; name: strin
       <button
         type="submit"
         disabled={isPending}
-        className="inline-flex w-fit items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
+        className="inline-flex w-fit items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
       >
         {isPending ? "Uploading & extracting…" : "Upload & extract"}
       </button>
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-red-400">{error}</p>}
     </form>
   );
 }

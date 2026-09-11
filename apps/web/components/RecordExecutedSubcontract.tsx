@@ -37,7 +37,7 @@ export function RecordExecutedSubcontract({ jobId }: { jobId: string }) {
       <button
         type="button"
         onClick={() => setIsOpen(true)}
-        className="rounded-md border border-line-card px-3 py-2 text-sm font-medium text-ink-label hover:bg-neutral-100"
+        className="rounded-md border border-line-card px-3 py-2 text-sm font-medium text-ink-label hover:bg-neutral-800"
       >
         The GC already sent the executed subcontract
       </button>
@@ -81,7 +81,7 @@ export function RecordExecutedSubcontract({ jobId }: { jobId: string }) {
             name="file"
             required
             accept=".pdf,.png,.jpg,.jpeg,.webp"
-            className={`${field} file:mr-2 file:rounded file:border-0 file:bg-neutral-100 file:px-2 file:py-1 file:text-ink-label`}
+            className={`${field} file:mr-2 file:rounded file:border-0 file:bg-neutral-800 file:px-2 file:py-1 file:text-ink-label`}
           />
         </label>
         <label className="flex flex-col gap-1 text-xs text-ink-body">
@@ -103,7 +103,7 @@ export function RecordExecutedSubcontract({ jobId }: { jobId: string }) {
         <button
           type="submit"
           disabled={isPending}
-          className="rounded-md bg-brand px-3 py-1.5 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-60"
+          className="rounded-md bg-brand px-3 py-1.5 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {isPending ? "Recording…" : "Record executed subcontract"}
         </button>

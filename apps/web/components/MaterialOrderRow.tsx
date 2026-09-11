@@ -40,9 +40,9 @@ export type MaterialOrderRowData = MaterialOrderDefaults & {
 };
 
 const btn =
-  "rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-neutral-100 disabled:opacity-50";
+  "rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50";
 const primaryBtn =
-  "rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50";
+  "rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50";
 
 export function MaterialOrderRow({
   order,
@@ -107,7 +107,7 @@ export function MaterialOrderRow({
           </p>
           <FormDraftNotice draft={editDraft} />
           <MaterialOrderFields defaults={order} vendors={vendors} lineItems={lineItems} fixedJobId={order.jobId} />
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && <p className="text-sm text-red-400">{error}</p>}
           <div className="flex gap-2">
             <button type="submit" disabled={isPending} className={primaryBtn}>
               {isPending ? "Saving…" : "Save changes"}
@@ -180,7 +180,7 @@ export function MaterialOrderRow({
             />
           </label>
 
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && <p className="text-sm text-red-400">{error}</p>}
 
           <div className="flex gap-2">
             <button type="submit" disabled={isPending} className={primaryBtn}>
@@ -200,7 +200,7 @@ export function MaterialOrderRow({
       ? "bg-tag-green text-tag-green-ink"
       : state === "PARTIAL"
         ? "bg-tag-amber text-tag-amber-ink"
-        : "bg-neutral-100 text-ink-body";
+        : "bg-neutral-800 text-ink-body";
 
   return (
     <li className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start">
@@ -254,7 +254,7 @@ export function MaterialOrderRow({
                     onConfirm={() => run(() => deleteMaterialDelivery(delivery.id))}
                     deleteClassName="ml-2 text-ink-muted underline disabled:opacity-50"
                     cancelClassName="ml-2 text-ink-body underline disabled:opacity-50"
-                    confirmClassName="ml-2 text-red-600 underline disabled:opacity-50"
+                    confirmClassName="ml-2 text-red-400 underline disabled:opacity-50"
                   />
                 }
               />
@@ -274,7 +274,7 @@ export function MaterialOrderRow({
 
         {order.notes && <p className="mt-1 text-xs text-ink-muted">{order.notes}</p>}
 
-        {error && <p className="mt-1 text-sm text-red-600">{error}</p>}
+        {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
       </div>
 
       {/* Arming "Delete" empties this row: "Record delivery" and "Edit" are
@@ -295,7 +295,7 @@ export function MaterialOrderRow({
               onConfirm={() => run(() => deleteMaterialOrder(order.id))}
               deleteClassName={btn}
               cancelClassName={btn}
-              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-600 hover:bg-tag-rose disabled:opacity-50"
+              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-400 hover:bg-tag-rose disabled:opacity-50"
             />
           ) : null
         }
@@ -305,7 +305,7 @@ export function MaterialOrderRow({
             type="button"
             disabled={isPending}
             onClick={() => setMode("receive")}
-            className="rounded-md bg-brand px-3 py-1.5 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
+            className="rounded-md bg-brand px-3 py-1.5 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
           >
             Record delivery
           </button>

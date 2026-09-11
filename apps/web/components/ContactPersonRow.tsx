@@ -18,7 +18,7 @@ export type ContactPersonRowData = {
 };
 
 const btn =
-  "rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-neutral-100 disabled:opacity-50";
+  "rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-neutral-800 disabled:opacity-50";
 
 export function ContactPersonRow({ person }: { person: ContactPersonRowData }) {
   const [mode, setMode] = useState<"view" | "edit">("view");
@@ -51,12 +51,12 @@ export function ContactPersonRow({ person }: { person: ContactPersonRowData }) {
           className="flex flex-col gap-3"
         >
           <ContactPersonFields defaults={person} />
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && <p className="text-sm text-red-400">{error}</p>}
           <div className="flex gap-2">
             <button
               type="submit"
               disabled={isPending}
-              className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
+              className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
             >
               {isPending ? "Saving…" : "Save changes"}
             </button>
@@ -83,7 +83,7 @@ export function ContactPersonRow({ person }: { person: ContactPersonRowData }) {
           <p className="mt-1 text-xs text-ink-muted">
             {person.lastContactOn ? `Last contact ${person.lastContactOn}` : "No interactions logged with them yet"}
           </p>
-          {error && <p className="mt-1 text-sm text-red-600">{error}</p>}
+          {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
         </div>
 
         {/* Arming the delete empties this row: "Edit" used to stay live next
@@ -114,7 +114,7 @@ export function ContactPersonRow({ person }: { person: ContactPersonRowData }) {
               }}
               deleteClassName={btn}
               cancelClassName={btn}
-              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-xs text-red-600 hover:bg-tag-rose disabled:opacity-50"
+              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-xs text-red-400 hover:bg-tag-rose disabled:opacity-50"
             />
           }
         >

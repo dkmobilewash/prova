@@ -82,16 +82,16 @@ export function IntegrationControls({
               // Matches @prova/ui's <Button variant="secondary">, which this
               // used to be. ConfirmDelete renders a plain button so that one
               // component can serve both the pill rows and the text-link rows.
-              deleteClassName="inline-flex items-center justify-center rounded-md border border-line-card bg-surface px-3 py-1.5 text-xs font-medium text-ink-label hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-60"
+              deleteClassName="inline-flex items-center justify-center rounded-md border border-line-card bg-surface px-3 py-1.5 text-xs font-medium text-ink-label hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-60"
               cancelClassName="rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-body hover:text-ink disabled:opacity-60"
-              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-xs text-red-600 hover:bg-tag-rose disabled:cursor-not-allowed disabled:opacity-60"
+              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-xs text-red-400 hover:bg-tag-rose disabled:cursor-not-allowed disabled:opacity-60"
             />
           }
         />
       )}
 
       {error && (
-        <p role="alert" className="max-w-[18rem] text-right text-xs text-red-600">
+        <p role="alert" className="max-w-[18rem] text-right text-xs text-red-400">
           {error}
         </p>
       )}

@@ -86,7 +86,7 @@ export default async function PayApplicationPage({
             </div>
             <div>
               <p className="text-xs text-ink-muted">Current payment due</p>
-              <p className="font-medium text-green-700">{money(summary.currentPaymentDue)}</p>
+              <p className="font-medium text-green-400">{money(summary.currentPaymentDue)}</p>
             </div>
             <div className="col-span-2 sm:col-span-3">
               <p className="text-xs text-ink-muted">Balance to finish, including retainage</p>

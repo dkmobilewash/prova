@@ -91,13 +91,13 @@ export function VendorPriceQuoteRow({
             }}
           />
 
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && <p className="text-sm text-red-400">{error}</p>}
 
           <div className="flex gap-2">
             <button
               type="submit"
               disabled={isPending}
-              className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
+              className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
             >
               {isPending ? "Saving…" : "Save changes"}
             </button>
@@ -108,7 +108,7 @@ export function VendorPriceQuoteRow({
                 setIsEditing(false);
                 setError(null);
               }}
-              className="rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-neutral-100 disabled:opacity-50"
+              className="rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50"
             >
               Cancel
             </button>
@@ -125,17 +125,17 @@ export function VendorPriceQuoteRow({
           <span className="font-medium text-ink">{money(quote.unitPrice)}</span>
           <span className="text-sm text-ink-body">per {unitLabel(quote.unit)}</span>
           {isCheapest && !expired && (
-            <span className="rounded bg-tag-green px-1.5 py-0.5 text-xs text-emerald-700">
+            <span className="rounded bg-tag-green px-1.5 py-0.5 text-xs text-emerald-400">
               {cheapestBadge(quote.unit)}
             </span>
           )}
           {expired && (
-            <span className="rounded bg-neutral-200 px-1.5 py-0.5 text-xs text-ink-body">
+            <span className="rounded bg-neutral-700 px-1.5 py-0.5 text-xs text-ink-body">
               expired {quote.validUntil}
             </span>
           )}
           {stale && (
-            <span className="rounded bg-tag-amber px-1.5 py-0.5 text-xs text-amber-700">
+            <span className="rounded bg-tag-amber px-1.5 py-0.5 text-xs text-amber-400">
               worth re-checking
             </span>
           )}
@@ -151,7 +151,7 @@ export function VendorPriceQuoteRow({
         </p>
 
         {quote.notes && <p className="mt-1 text-sm text-ink-muted">{quote.notes}</p>}
-        {error && <p className="mt-1 text-sm text-red-600">{error}</p>}
+        {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
       </div>
 
       <RowActions
@@ -171,9 +171,9 @@ export function VendorPriceQuoteRow({
                   if (!result.ok) setError(result.error);
                 });
               }}
-              deleteClassName="rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:border-red-500 hover:text-red-600 disabled:opacity-50"
-              cancelClassName="rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-neutral-100 disabled:opacity-50"
-              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-600 hover:bg-tag-rose disabled:opacity-50"
+              deleteClassName="rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:border-red-500 hover:text-red-400 disabled:opacity-50"
+              cancelClassName="rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50"
+              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-400 hover:bg-tag-rose disabled:opacity-50"
             />
           ) : null
         }
@@ -182,7 +182,7 @@ export function VendorPriceQuoteRow({
           type="button"
           disabled={isPending}
           onClick={() => setIsEditing(true)}
-          className="rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-neutral-100 disabled:opacity-50"
+          className="rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50"
         >
           Edit
         </button>

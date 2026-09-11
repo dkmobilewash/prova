@@ -8,13 +8,13 @@ import { CONTACT_STATUS_OPTIONS, CONTACT_TYPE_OPTIONS } from "@/components/Conta
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 
 const STATUS_STYLE: Record<string, string> = {
-  PROSPECT: "bg-neutral-100 text-ink-label",
+  PROSPECT: "bg-neutral-800 text-ink-label",
   ACTIVE: "bg-tag-green text-tag-green-ink",
-  INACTIVE: "bg-neutral-100 text-ink-muted",
+  INACTIVE: "bg-neutral-800 text-ink-muted",
 };
 
 const btn =
-  "rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-neutral-100 disabled:opacity-50";
+  "rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-neutral-800 disabled:opacity-50";
 
 export function ContactRow({
   contact,
@@ -47,7 +47,7 @@ export function ContactRow({
                 {CONTACT_STATUS_OPTIONS.find((o) => o.value === contact.status)?.label ?? contact.status}
               </span>
               {contact.accountType && (
-                <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-ink-body">
+                <span className="rounded-full bg-neutral-800 px-2 py-0.5 text-xs text-ink-body">
                   {CONTACT_TYPE_OPTIONS.find((o) => o.value === contact.accountType)?.label ?? contact.accountType}
                 </span>
               )}
@@ -92,13 +92,13 @@ export function ContactRow({
               }}
               deleteClassName={btn}
               cancelClassName={btn}
-              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-xs text-red-600 hover:bg-tag-rose disabled:opacity-50"
+              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-xs text-red-400 hover:bg-tag-rose disabled:opacity-50"
             />
           }
         />
       )}
 
-      {error && <p className="text-xs text-red-600">{error}</p>}
+      {error && <p className="text-xs text-red-400">{error}</p>}
     </li>
   );
 }

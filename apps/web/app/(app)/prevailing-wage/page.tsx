@@ -78,7 +78,7 @@ export default async function PrevailingWagePage({
                     className={`rounded-md border px-3 py-1.5 text-sm ${
                       active
                         ? "border-brand text-link"
-                        : "border-line-card text-ink-label hover:bg-neutral-100"
+                        : "border-line-card text-ink-label hover:bg-neutral-800"
                     }`}
                   >
                     {week.jobName} · week of {week.weekStart}

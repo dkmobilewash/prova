@@ -136,7 +136,7 @@ function PriceBasisBadge({ basis }: { basis: "COMPANY_CATALOG" | "HISTORICAL_BID
   // Drafted, but no price was suggested. Nothing to be confident or unsure
   // about; the row still needs reviewing as a drafted row.
   return (
-    <span className="inline-flex items-center rounded-full bg-neutral-200 px-2 py-0.5 text-xs font-medium text-ink-label">
+    <span className="inline-flex items-center rounded-full bg-neutral-700 px-2 py-0.5 text-xs font-medium text-ink-label">
       AI-drafted, unpriced — verify
     </span>
   );
@@ -711,7 +711,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
               </label>
               <SubmitButton
                 type="submit"
-                className="rounded-md bg-neutral-100 px-3 py-2 text-sm font-medium text-ink hover:bg-neutral-200"
+                className="rounded-md bg-neutral-800 px-3 py-2 text-sm font-medium text-ink hover:bg-neutral-700"
               >
                 Save dates
               </SubmitButton>
@@ -729,7 +729,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                         {assignment.user.name ?? assignment.user.email}
                       </span>
                       <form action={unassignCrewWithId(assignment.userId)}>
-                        <SubmitButton type="submit" className="text-xs text-red-600 hover:underline">
+                        <SubmitButton type="submit" className="text-xs text-red-400 hover:underline">
                           Remove
                         </SubmitButton>
                       </form>
@@ -756,7 +756,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                   </label>
                   <SubmitButton
                     type="submit"
-                    className="rounded-md bg-neutral-100 px-3 py-2 text-sm font-medium text-ink hover:bg-neutral-200"
+                    className="rounded-md bg-neutral-800 px-3 py-2 text-sm font-medium text-ink hover:bg-neutral-700"
                   >
                     Assign
                   </SubmitButton>
@@ -779,7 +779,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
           <div
             className={`mb-3 rounded-lg border p-4 ${
               isContractExecuted
-                ? "border-green-300 bg-tag-green"
+                ? "border-green-700 bg-tag-green"
                 : "border-line-card bg-surface"
             }`}
           >
@@ -812,7 +812,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
 
           <div className="rounded-lg border border-line-card bg-surface p-4">
             {signedSignature ? (
-              <p className="text-sm text-green-700">
+              <p className="text-sm text-green-400">
                 Signed by {signedSignature.signerName} on{" "}
                 {signedSignature.signedAt && formatSignedDate(signedSignature.signedAt, timeZone)}
                 .
@@ -825,13 +825,13 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
               // one, so a revoked request has to fall through to the
               // "create a new one" branch, not stay stuck here.
               <div className="text-sm">
-                <p className="mb-3 text-amber-700">
+                <p className="mb-3 text-amber-400">
                   This signing link was revoked and no longer works.
                 </p>
                 <form action={createSignatureRequestWithId}>
                   <SubmitButton
                     type="submit"
-                    className="rounded-md bg-neutral-100 px-3 py-2 text-sm font-medium text-ink hover:bg-neutral-200"
+                    className="rounded-md bg-neutral-800 px-3 py-2 text-sm font-medium text-ink hover:bg-neutral-700"
                   >
                     Create a new signing link
                   </SubmitButton>
@@ -867,7 +867,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                 <form action={createSignatureRequestWithId}>
                   <SubmitButton
                     type="submit"
-                    className="rounded-md bg-neutral-100 px-3 py-2 text-sm font-medium text-ink hover:bg-neutral-200"
+                    className="rounded-md bg-neutral-800 px-3 py-2 text-sm font-medium text-ink hover:bg-neutral-700"
                   >
                     Create signing link
                   </SubmitButton>
@@ -924,7 +924,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                   </div>
                   {currentUser.role === "OWNER" && (
                     <form action={deleteContractDocument.bind(null, doc.id)}>
-                      <SubmitButton type="submit" className="text-xs text-red-600 hover:underline">
+                      <SubmitButton type="submit" className="text-xs text-red-400 hover:underline">
                         Delete
                       </SubmitButton>
                     </form>
@@ -944,7 +944,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                 name="file"
                 required
                 accept=".pdf,.png,.jpg,.jpeg,.webp"
-                className="text-sm text-ink-label file:mr-3 file:rounded-md file:border-0 file:bg-neutral-100 file:px-3 file:py-2 file:text-sm file:font-medium file:text-ink hover:file:bg-neutral-200"
+                className="text-sm text-ink-label file:mr-3 file:rounded-md file:border-0 file:bg-neutral-800 file:px-3 file:py-2 file:text-sm file:font-medium file:text-ink hover:file:bg-neutral-700"
               />
             </label>
             <label className="flex flex-1 min-w-[180px] flex-col gap-1 text-sm text-ink-label">
@@ -957,7 +957,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             </label>
             <SubmitButton
               type="submit"
-              className="inline-flex items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm font-medium text-ink-label hover:bg-neutral-100"
+              className="inline-flex items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm font-medium text-ink-label hover:bg-neutral-800"
             >
               Upload
             </SubmitButton>
@@ -997,7 +997,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                   wrong. */}
               {jobWip.percentComplete != null &&
                 (jobWip.estimatedCoverage < 1 || jobWip.costCoverage < 1) && (
-                  <p className="mt-1 text-xs text-amber-700">
+                  <p className="mt-1 text-xs text-amber-400">
                     Over the {formatCoveragePercent(jobWip.estimatedCoverage)} of contract value that
                     carries a cost forecast
                     {jobWip.costCoverage < 1
@@ -1030,7 +1030,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                   to see where it lands.
                 </p>
               ) : (
-                <p className={billingPosition > 0 ? "text-amber-700" : "text-green-700"}>
+                <p className={billingPosition > 0 ? "text-amber-400" : "text-green-400"}>
                   {billingPosition > 0
                     ? `Overbilled ${money(billingPosition)}`
                     : billingPosition < 0
@@ -1052,7 +1052,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                     <p className="font-medium text-ink">
                       {item.description}
                       {tradeLabel && (
-                        <span className="ml-2 rounded bg-neutral-100 px-1.5 py-0.5 text-xs text-ink-body">
+                        <span className="ml-2 rounded bg-neutral-800 px-1.5 py-0.5 text-xs text-ink-body">
                           {tradeLabel}
                         </span>
                       )}
@@ -1089,7 +1089,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                               <SubmitButton
                                 type="submit"
                                 title="Remove"
-                                className="text-xs text-red-600 hover:underline"
+                                className="text-xs text-red-400 hover:underline"
                               >
                                 Remove
                               </SubmitButton>
@@ -1127,7 +1127,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                     </label>
                     <SubmitButton
                       type="submit"
-                      className="rounded-md bg-neutral-100 px-3 py-1.5 text-sm font-medium text-ink hover:bg-neutral-200"
+                      className="rounded-md bg-neutral-800 px-3 py-1.5 text-sm font-medium text-ink hover:bg-neutral-700"
                     >
                       Save forecast
                     </SubmitButton>
@@ -1165,7 +1165,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                     </span>
                     <span className="text-ink-label">{entry.employeeUser.name ?? entry.employeeUser.email}</span>
                     <span className="text-ink-body">{Number(entry.hours)}h</span>
-                    <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs text-ink-body">
+                    <span className="rounded bg-neutral-800 px-1.5 py-0.5 text-xs text-ink-body">
                       {TIME_ENTRY_PAY_TYPE_OPTIONS.find((p) => p.value === entry.payType)?.label ?? entry.payType}
                     </span>
                     {entry.craftClassification && (
@@ -1186,7 +1186,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                     {entry.note && <span className="text-xs text-ink-muted">— {entry.note}</span>}
                   </div>
                   <form action={deleteTimeEntryWithId(entry.id)}>
-                    <SubmitButton type="submit" title="Remove" className="text-xs text-red-600 hover:underline">
+                    <SubmitButton type="submit" title="Remove" className="text-xs text-red-400 hover:underline">
                       Remove
                     </SubmitButton>
                   </form>
@@ -1229,7 +1229,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                       <span className="text-xs text-ink-muted">{slip.craftClassification.name}</span>
                     )}
                     {slip.dispatchNumber && (
-                      <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs text-ink-body">
+                      <span className="rounded bg-neutral-800 px-1.5 py-0.5 text-xs text-ink-body">
                         #{slip.dispatchNumber}
                       </span>
                     )}
@@ -1246,7 +1246,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                     {slip.note && <span className="text-xs text-ink-muted">— {slip.note}</span>}
                   </div>
                   <form action={deleteDispatchSlipWithId(slip.id)}>
-                    <SubmitButton type="submit" title="Remove" className="text-xs text-red-600 hover:underline">
+                    <SubmitButton type="submit" title="Remove" className="text-xs text-red-400 hover:underline">
                       Remove
                     </SubmitButton>
                   </form>
@@ -1312,7 +1312,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                 type="file"
                 name="file"
                 accept="application/pdf,image/png,image/jpeg,image/webp"
-                className="rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink file:mr-2 file:rounded file:border-0 file:bg-neutral-100 file:px-2 file:py-1 file:text-ink-label focus:border-link focus:outline-none"
+                className="rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink file:mr-2 file:rounded file:border-0 file:bg-neutral-800 file:px-2 file:py-1 file:text-ink-label focus:border-link focus:outline-none"
               />
             </label>
             <input
@@ -1322,7 +1322,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             />
             <SubmitButton
               type="submit"
-              className="rounded-md bg-neutral-100 px-3 py-1.5 text-sm font-medium text-ink hover:bg-neutral-200"
+              className="rounded-md bg-neutral-800 px-3 py-1.5 text-sm font-medium text-ink hover:bg-neutral-700"
             >
               Log dispatch
             </SubmitButton>
@@ -1369,7 +1369,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                     {determination.note && <span className="text-xs text-ink-muted">— {determination.note}</span>}
                   </div>
                   <form action={deletePrevailingWageDeterminationWithId(determination.id)}>
-                    <SubmitButton type="submit" title="Remove" className="text-xs text-red-600 hover:underline">
+                    <SubmitButton type="submit" title="Remove" className="text-xs text-red-400 hover:underline">
                       Remove
                     </SubmitButton>
                   </form>
@@ -1398,7 +1398,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                       <div className="flex items-center gap-4 text-sm">
                         <span className="text-ink-body">Amount {money(Number(invoice.amount))}</span>
                         <span className="text-ink-body">Paid {money(paid)}</span>
-                        <span className={balance <= 0 ? "text-green-700" : "text-amber-700"}>
+                        <span className={balance <= 0 ? "text-green-400" : "text-amber-400"}>
                           {balance <= 0 ? "Paid in full" : `Balance ${money(balance)}`}
                         </span>
                         <StatusForm jobId={job.id} invoiceId={invoice.id} status={invoice.status} />
@@ -1469,7 +1469,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                                 <SubmitButton
                                   type="submit"
                                   title="Remove"
-                                  className="text-xs text-red-600 hover:underline"
+                                  className="text-xs text-red-400 hover:underline"
                                 >
                                   Remove
                                 </SubmitButton>
@@ -1516,7 +1516,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
               </label>
               <SubmitButton
                 type="submit"
-                className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500"
+                className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500"
               >
                 Create invoice
               </SubmitButton>
@@ -1556,7 +1556,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
               </label>
               <SubmitButton
                 type="submit"
-                className="rounded-md bg-neutral-100 px-3 py-1.5 text-sm font-medium text-ink hover:bg-neutral-200"
+                className="rounded-md bg-neutral-800 px-3 py-1.5 text-sm font-medium text-ink hover:bg-neutral-700"
               >
                 Save
               </SubmitButton>
@@ -1573,7 +1573,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
               </div>
               <div>
                 <p className="text-xs text-ink-muted">Outstanding balance</p>
-                <p className={retainageSummary.balance > 0 ? "text-amber-700" : "text-green-700"}>
+                <p className={retainageSummary.balance > 0 ? "text-amber-400" : "text-green-400"}>
                   {money(retainageSummary.balance)}
                 </p>
               </div>
@@ -1603,7 +1603,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                       {release.note && <span className="text-xs text-ink-muted">— {release.note}</span>}
                     </div>
                     <form action={deleteRetainageReleaseWithId(release.id)}>
-                      <SubmitButton type="submit" title="Remove" className="text-xs text-red-600 hover:underline">
+                      <SubmitButton type="submit" title="Remove" className="text-xs text-red-400 hover:underline">
                         Remove
                       </SubmitButton>
                     </form>
@@ -1640,7 +1640,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
               />
               <SubmitButton
                 type="submit"
-                className="rounded-md bg-neutral-100 px-3 py-1.5 text-sm font-medium text-ink hover:bg-neutral-200"
+                className="rounded-md bg-neutral-800 px-3 py-1.5 text-sm font-medium text-ink hover:bg-neutral-700"
               >
                 Log release
               </SubmitButton>
@@ -1755,7 +1755,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                       <SubmitButton
                         type="submit"
                         title="Save"
-                        className="rounded-md bg-neutral-100 px-2 py-1 text-xs font-medium text-ink hover:bg-neutral-200"
+                        className="rounded-md bg-neutral-800 px-2 py-1 text-xs font-medium text-ink hover:bg-neutral-700"
                       >
                         Save
                       </SubmitButton>
@@ -1763,7 +1763,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                         type="submit"
                         formAction={deleteLineItemWithId(item.id)}
                         title="Remove"
-                        className="rounded-md bg-tag-rose px-2 py-1 text-xs font-medium text-red-600 hover:bg-tag-rose"
+                        className="rounded-md bg-tag-rose px-2 py-1 text-xs font-medium text-red-400 hover:bg-tag-rose"
                       >
                         Remove
                       </SubmitButton>
@@ -1842,7 +1842,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                 <LaborHoursField crafts={craftOptions} />
                 <SubmitButton
                   type="submit"
-                  className="inline-flex items-center justify-center rounded-md bg-neutral-100 px-4 py-2 text-sm font-medium text-ink hover:bg-neutral-200"
+                  className="inline-flex items-center justify-center rounded-md bg-neutral-800 px-4 py-2 text-sm font-medium text-ink hover:bg-neutral-700"
                 >
                   Add line item
                 </SubmitButton>
@@ -1875,7 +1875,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                   </label>
                   <SubmitButton
                     type="submit"
-                    className="inline-flex items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm font-medium text-ink-label hover:bg-neutral-100"
+                    className="inline-flex items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm font-medium text-ink-label hover:bg-neutral-800"
                   >
                     Add from catalog
                   </SubmitButton>
@@ -1931,7 +1931,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                 </label>
                 <SubmitButton
                   type="submit"
-                  className="inline-flex items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm font-medium text-ink-label hover:bg-neutral-100"
+                  className="inline-flex items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm font-medium text-ink-label hover:bg-neutral-800"
                 >
                   Save version
                 </SubmitButton>
@@ -1947,7 +1947,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
               {isContractExecuted ? (
                 <MarkContractedButton markContracted={markContractedWithId} />
               ) : (
-                <p className="text-sm text-amber-700">
+                <p className="text-sm text-amber-400">
                   This job has no executed contract yet. Either send the GC a signing link above and
                   wait for them to sign it in Prova, or — if they already sent you the executed
                   subcontract — record it above under Contract signature.

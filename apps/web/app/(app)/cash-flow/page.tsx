@@ -95,7 +95,7 @@ export default async function CashFlowPage() {
           {(Object.keys(AGING_BUCKET_LABELS) as ArAgingBucket[]).map((bucket) => (
             <div key={bucket}>
               <p className="text-xs text-ink-muted">{AGING_BUCKET_LABELS[bucket]}</p>
-              <p className={bucket === "CURRENT" ? "text-ink" : "text-amber-700"}>
+              <p className={bucket === "CURRENT" ? "text-ink" : "text-amber-400"}>
                 {money(agingSummary.byBucket[bucket])}
               </p>
             </div>
@@ -127,7 +127,7 @@ export default async function CashFlowPage() {
                       {row.effectiveDueDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })}
                     </td>
                     <td className="py-1 text-right">
-                      <span className={row.bucket === "CURRENT" ? "text-ink-body" : "text-amber-700"}>
+                      <span className={row.bucket === "CURRENT" ? "text-ink-body" : "text-amber-400"}>
                         {row.bucket === "CURRENT" ? "Current" : `${row.daysPastDue}d overdue`}
                       </span>
                     </td>
@@ -189,7 +189,7 @@ export default async function CashFlowPage() {
             <tbody>
               {forecast.months.map((month) => (
                 <tr key={month.key} className="border-t border-line-row">
-                  <td className={`py-1 pr-3 ${month.key === "OVERDUE" ? "text-amber-700" : "text-ink-label"}`}>
+                  <td className={`py-1 pr-3 ${month.key === "OVERDUE" ? "text-amber-400" : "text-ink-label"}`}>
                     {month.label}
                   </td>
                   <td className="py-1 pr-3 text-right text-ink-body">{money(month.arExpected)}</td>

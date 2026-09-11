@@ -67,7 +67,7 @@ export default async function EsignPage({ params }: { params: Promise<{ token: s
     const timeZone = await viewerTimeZone();
     return (
       <main className="mx-auto max-w-2xl px-6 py-12">
-        <div className="mb-6 rounded-lg border border-green-300 bg-tag-green p-4 text-sm text-tag-green-ink">
+        <div className="mb-6 rounded-lg border border-green-700 bg-tag-green p-4 text-sm text-tag-green-ink">
           Signed by {request.signerName} on{" "}
           {request.signedAt && formatSignedDate(request.signedAt, timeZone)}
           . This reflects exactly what was agreed to at the time of signing.
@@ -159,7 +159,7 @@ export default async function EsignPage({ params }: { params: Promise<{ token: s
             same way every create button in this app already does. */}
         <SubmitButton
           type="submit"
-          className="inline-flex w-fit items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500"
+          className="inline-flex w-fit items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500"
         >
           Sign contract
         </SubmitButton>

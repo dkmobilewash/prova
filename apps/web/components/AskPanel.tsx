@@ -343,7 +343,7 @@ export function AskPanel() {
           // button that looks live during a slow answer invites the click
           // that makes it slower.
           disabled={question.trim() === "" || (isAsking && question.trim() === asked)}
-          className="shrink-0 rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-50"
+          className="shrink-0 rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {isAsking && question.trim() === asked ? "Looking…" : "Ask"}
         </button>

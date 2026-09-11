@@ -7,7 +7,7 @@ import type { ProposalView } from "@/lib/ask/answer";
 export type ProposalOutcome = { message: string; created?: { label: string; href: string } };
 
 const PRIMARY =
-  "inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 py-2 text-base font-semibold text-ink-label hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-50";
+  "inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 py-2 text-base font-semibold text-neutral-900 hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-50";
 
 /**
  * The card a command puts in front of a person.

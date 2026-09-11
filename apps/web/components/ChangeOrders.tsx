@@ -21,7 +21,7 @@ const inputClass =
   "rounded-md border border-line-card bg-canvas px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none";
 const labelClass = "flex flex-col gap-1 text-sm text-ink-label";
 const primaryBtn =
-  "rounded-md bg-brand px-3 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-50";
+  "rounded-md bg-brand px-3 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-50";
 
 /**
  * Runs a Server Action that returns `{ ok, error }`, and renders the error.
@@ -118,7 +118,7 @@ function formatEditValue(field: string, value: string) {
 }
 
 const STATUS_STYLE: Record<ChangeOrderView["status"], string> = {
-  DRAFT: "border-neutral-400 bg-neutral-100 text-ink-label",
+  DRAFT: "border-neutral-400 bg-neutral-800 text-ink-label",
   SUBMITTED: "border-amber-600 bg-tag-amber text-tag-amber-ink",
   APPROVED: "border-emerald-700 bg-tag-green text-tag-green-ink",
   REJECTED: "border-rose-700 bg-tag-rose text-tag-rose-ink",
@@ -334,7 +334,7 @@ function Decision({ changeOrder }: { changeOrder: ChangeOrderView }) {
           <button
             type="submit"
             disabled={void_.isPending}
-            className="rounded-md border border-line-card px-3 py-2 text-sm text-ink-body hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-md border border-line-card px-3 py-2 text-sm text-ink-body hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {void_.isPending ? "Withdrawing…" : "Withdraw"}
           </button>
@@ -380,7 +380,7 @@ function Correction({ changeOrder }: { changeOrder: ChangeOrderView }) {
           <button
             type="submit"
             disabled={reopen.isPending}
-            className="rounded-md border border-amber-300 px-3 py-2 text-sm font-medium text-tag-amber-ink hover:bg-tag-amber disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-md border border-amber-700 px-3 py-2 text-sm font-medium text-tag-amber-ink hover:bg-tag-amber disabled:cursor-not-allowed disabled:opacity-50"
           >
             {reopen.isPending ? "Reopening…" : "Reopen"}
           </button>
@@ -485,7 +485,7 @@ function DraftActions({ changeOrder }: { changeOrder: ChangeOrderView }) {
         <button
           type="submit"
           disabled={discard.isPending}
-          className="rounded-md border border-line-card px-3 py-2 text-sm text-ink-body hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded-md border border-line-card px-3 py-2 text-sm text-ink-body hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {discard.isPending ? "Discarding…" : "Discard draft"}
         </button>

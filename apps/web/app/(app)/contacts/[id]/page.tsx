@@ -43,11 +43,11 @@ const BID_STATUS_OPTIONS = [
 ] as const;
 
 const BID_STATUS_STYLE: Record<string, string> = {
-  INVITED: "bg-neutral-100 text-ink-label",
+  INVITED: "bg-neutral-800 text-ink-label",
   SUBMITTED: "bg-tag-blue text-tag-blue-ink",
   WON: "bg-tag-green text-tag-green-ink",
-  LOST: "bg-tag-rose text-red-600",
-  DECLINED: "bg-neutral-100 text-ink-muted",
+  LOST: "bg-tag-rose text-red-400",
+  DECLINED: "bg-neutral-800 text-ink-muted",
 };
 
 function formatDate(date: Date | null) {
@@ -262,9 +262,9 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
                     <ConfirmDelete
                       pinned="end"
                       action={deleteBidInvitation.bind(null, bid.id)}
-                      deleteClassName="text-xs text-ink-body hover:text-red-600 hover:underline"
-                      cancelClassName="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-100"
-                      confirmClassName="rounded-md border border-red-500 px-2 py-1 text-xs text-red-600 hover:bg-tag-rose"
+                      deleteClassName="text-xs text-ink-body hover:text-red-400 hover:underline"
+                      cancelClassName="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800"
+                      confirmClassName="rounded-md border border-red-500 px-2 py-1 text-xs text-red-400 hover:bg-tag-rose"
                       hint={
                         bid.status === "WON" ? (
                           <span className="max-w-[14rem] text-right text-tag-amber-ink">
@@ -303,7 +303,7 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
                     />
                     <SubmitButton
                       type="submit"
-                      className="rounded-md bg-neutral-100 px-2 py-1 text-xs font-medium text-ink hover:bg-neutral-200"
+                      className="rounded-md bg-neutral-800 px-2 py-1 text-xs font-medium text-ink hover:bg-neutral-700"
                     >
                       Update
                     </SubmitButton>
@@ -356,7 +356,7 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
           </label>
           <SubmitButton
             type="submit"
-            className="inline-flex items-center justify-center rounded-md bg-neutral-100 px-4 py-2 text-sm font-medium text-ink hover:bg-neutral-200"
+            className="inline-flex items-center justify-center rounded-md bg-neutral-800 px-4 py-2 text-sm font-medium text-ink hover:bg-neutral-700"
           >
             Log invitation
           </SubmitButton>
@@ -466,7 +466,7 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
             <form action={enablePortalWithId}>
               <SubmitButton
                 type="submit"
-                className="rounded-md bg-neutral-100 px-3 py-2 text-sm font-medium text-ink hover:bg-neutral-200"
+                className="rounded-md bg-neutral-800 px-3 py-2 text-sm font-medium text-ink hover:bg-neutral-700"
               >
                 Re-enable client portal
               </SubmitButton>
@@ -498,7 +498,7 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
             <form action={enablePortalWithId}>
               <SubmitButton
                 type="submit"
-                className="rounded-md bg-neutral-100 px-3 py-2 text-sm font-medium text-ink hover:bg-neutral-200"
+                className="rounded-md bg-neutral-800 px-3 py-2 text-sm font-medium text-ink hover:bg-neutral-700"
               >
                 Enable client portal
               </SubmitButton>

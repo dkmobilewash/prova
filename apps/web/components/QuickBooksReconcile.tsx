@@ -31,9 +31,9 @@ type Row = {
 
 const TONE: Record<string, string> = {
   DIFFERS: "border-rose-300 bg-tag-rose text-tag-rose-ink",
-  MISSING_IN_QUICKBOOKS: "border-amber-300 bg-tag-amber text-tag-amber-ink",
+  MISSING_IN_QUICKBOOKS: "border-amber-700 bg-tag-amber text-tag-amber-ink",
   NEVER_SENT: "border-line-card bg-surface text-ink-label",
-  MATCHES: "border-emerald-300 bg-tag-green text-tag-green-ink",
+  MATCHES: "border-emerald-700 bg-tag-green text-tag-green-ink",
 };
 
 const LABEL: Record<string, string> = {
@@ -73,7 +73,7 @@ export function QuickBooksReconcile() {
           type="button"
           onClick={check}
           disabled={isPending}
-          className="rounded-md border border-line-card px-3 py-1.5 text-xs font-medium text-ink-label hover:bg-neutral-100 disabled:opacity-50"
+          className="rounded-md border border-line-card px-3 py-1.5 text-xs font-medium text-ink-label hover:bg-neutral-800 disabled:opacity-50"
         >
           {isPending ? "Checking QuickBooks…" : rows ? "Check again" : "Check against QuickBooks"}
         </button>

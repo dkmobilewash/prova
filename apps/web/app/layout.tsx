@@ -28,17 +28,22 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       signUpUrl="/sign-up"
       appearance={{
         variables: {
-          // The yellow/black/white light palette (2026-09-11). Yellow
-          // cannot carry white text, so the on-primary colour is set
-          // explicitly instead of letting Clerk assume light-on-primary.
+          // The dark palette (2026-09-11, the approved dark mockups) —
+          // same values as tailwind.config.ts: surface card, canvas
+          // inputs, the four-step ink ramp. Yellow still cannot carry
+          // white text, so the on-primary colour is set explicitly
+          // instead of letting Clerk assume light-on-primary.
           colorPrimary: "#facc15",
           colorTextOnPrimaryBackground: "#171717",
-          colorBackground: "#ffffff",
-          colorInputBackground: "#ffffff",
-          colorInputText: "#0a0a0a",
-          colorText: "#0a0a0a",
-          colorTextSecondary: "#404040",
-          colorNeutral: "#404040",
+          colorBackground: "#1a1a1a",
+          colorInputBackground: "#0f0f0f",
+          colorInputText: "#fafafa",
+          colorText: "#fafafa",
+          colorTextSecondary: "#d4d4d4",
+          // Clerk derives its grey ramp (borders, secondary buttons)
+          // from this; on a dark background it has to be the LIGHT
+          // anchor or every derived grey sinks into the card.
+          colorNeutral: "#fafafa",
           borderRadius: "0.5rem",
         },
       }}

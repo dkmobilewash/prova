@@ -38,7 +38,7 @@ export function WipNarrativeButton({ jobId }: { jobId: string }) {
         type="button"
         onClick={handleClick}
         disabled={isPending}
-        className="inline-flex w-fit items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm font-medium text-ink-label hover:bg-neutral-100 disabled:opacity-50"
+        className="inline-flex w-fit items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm font-medium text-ink-label hover:bg-neutral-800 disabled:opacity-50"
       >
         {isPending ? "Analyzing…" : narrative ? "Regenerate analysis" : "Explain this WIP"}
       </button>
@@ -47,7 +47,7 @@ export function WipNarrativeButton({ jobId }: { jobId: string }) {
           {narrative}
         </p>
       )}
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-red-400">{error}</p>}
     </div>
   );
 }

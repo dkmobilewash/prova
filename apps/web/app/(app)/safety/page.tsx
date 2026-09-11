@@ -90,7 +90,7 @@ export default async function SafetyPage({
                 className={`inline-flex min-h-11 items-center rounded-md border px-3 py-2 text-sm ${
                   y === activeYear
                     ? "border-brand text-link"
-                    : "border-line-card text-ink-label hover:bg-neutral-100"
+                    : "border-line-card text-ink-label hover:bg-neutral-800"
                 }`}
               >
                 {y}

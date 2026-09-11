@@ -27,8 +27,8 @@ function expiryNote(dateIso: string | null, kind: "MSA" | "PREQUALIFICATION", to
     { id: "", kind, title: "", detail: null, date: dateIso, expectsDate: true, href: "" },
     today,
   );
-  if (renewal.urgency === "EXPIRED") return { text: "Expired", className: "text-red-600" };
-  if (renewal.urgency === "DUE_SOON") return { text: renewalTiming(renewal), className: "text-amber-700" };
+  if (renewal.urgency === "EXPIRED") return { text: "Expired", className: "text-red-400" };
+  if (renewal.urgency === "DUE_SOON") return { text: renewalTiming(renewal), className: "text-amber-400" };
   return { text: renewalTiming(renewal), className: "text-ink-muted" };
 }
 
@@ -136,12 +136,12 @@ export function ContactEditForm({
         </label>
       </div>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-red-400">{error}</p>}
 
       <SubmitButton
         type="submit"
         disabled={isPending}
-        className="mt-2 inline-flex w-fit items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
+        className="mt-2 inline-flex w-fit items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
       >
         {isPending ? "Saving…" : "Save"}
       </SubmitButton>

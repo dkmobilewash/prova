@@ -30,7 +30,7 @@ const KIND_LABELS: Record<Renewal["kind"], string> = {
 
 function toneFor(renewal: Renewal) {
   if (renewal.urgency === "EXPIRED") return "border-rose-300 bg-tag-rose text-tag-rose-ink";
-  if (renewal.urgency === "DUE_SOON") return "border-amber-300 bg-tag-amber text-tag-amber-ink";
+  if (renewal.urgency === "DUE_SOON") return "border-amber-700 bg-tag-amber text-tag-amber-ink";
   return "border-line-card bg-surface text-ink-label";
 }
 
@@ -92,12 +92,12 @@ export function RenewalAlerts({
             </span>
           )}
           {counts.dueSoon > 0 && (
-            <span className="rounded-full border border-amber-300 bg-tag-amber px-2 py-0.5 text-tag-amber-ink">
+            <span className="rounded-full border border-amber-700 bg-tag-amber px-2 py-0.5 text-tag-amber-ink">
               {counts.dueSoon} due soon
             </span>
           )}
           {counts.undated > 0 && (
-            <span className="rounded-full border border-neutral-400 bg-neutral-100 px-2 py-0.5 text-ink-label">
+            <span className="rounded-full border border-neutral-400 bg-neutral-800 px-2 py-0.5 text-ink-label">
               {counts.undated} with no date
             </span>
           )}

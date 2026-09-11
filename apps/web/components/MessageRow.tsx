@@ -58,7 +58,7 @@ export function MessageRow({
         ? "bg-tag-rose text-tag-rose-ink"
         : isStale
           ? "bg-tag-amber text-tag-amber-ink"
-          : "bg-neutral-100 text-ink-body";
+          : "bg-neutral-800 text-ink-body";
 
   // The reason a bounce is actionable at all. Surfaced on the row rather
   // than hidden behind the expander, because a bounce nobody reads is the
@@ -119,7 +119,7 @@ export function MessageRow({
                 onConfirm={() => run(() => deleteOutboundMessage(message.id))}
                 deleteClassName={`${linkBtn} ml-2`}
                 cancelClassName={`${linkBtn} ml-2`}
-                confirmClassName="ml-2 text-xs text-red-600 underline disabled:opacity-50"
+                confirmClassName="ml-2 text-xs text-red-400 underline disabled:opacity-50"
               />
             ) : null
           }
@@ -161,7 +161,7 @@ export function MessageRow({
         </div>
       )}
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-red-400">{error}</p>}
     </li>
   );
 }

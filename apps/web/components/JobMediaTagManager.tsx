@@ -21,7 +21,7 @@ export type JobMediaTagSummary = {
 };
 
 const btn =
-  "min-h-11 inline-flex items-center rounded-md border border-line-card px-3 text-sm text-ink-label hover:bg-neutral-100 disabled:opacity-50";
+  "min-h-11 inline-flex items-center rounded-md border border-line-card px-3 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50";
 
 /**
  * Renaming and deleting the company's photo tags.
@@ -130,12 +130,12 @@ function JobMediaTagRow({ tag }: { tag: JobMediaTagSummary }) {
             />
           </label>
           <p className="text-sm text-ink-body">Renaming it changes it on all {photos}.</p>
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && <p className="text-sm text-red-400">{error}</p>}
           <div className="flex flex-wrap gap-2">
             <button
               type="submit"
               disabled={isPending}
-              className="min-h-11 inline-flex items-center rounded-md bg-brand px-4 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
+              className="min-h-11 inline-flex items-center rounded-md bg-brand px-4 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
             >
               {isPending ? "Saving…" : "Save"}
             </button>
@@ -155,7 +155,7 @@ function JobMediaTagRow({ tag }: { tag: JobMediaTagSummary }) {
         {/* ink-body, not ink-muted: #89 measured the muted level at
             3.83:1, under the 4.5 contrast floor. */}
         <p className="text-sm text-ink-body">On {photos}</p>
-        {error && <p className="mt-1 text-sm text-red-600">{error}</p>}
+        {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
       </div>
 
       {/* Arming the delete empties this row of everything else — "Rename"
@@ -192,7 +192,7 @@ function JobMediaTagRow({ tag }: { tag: JobMediaTagSummary }) {
             }}
             deleteClassName={btn}
             cancelClassName={btn}
-            confirmClassName="min-h-11 inline-flex items-center rounded-md border border-red-500 px-3 text-sm text-red-600 hover:bg-tag-rose disabled:opacity-50"
+            confirmClassName="min-h-11 inline-flex items-center rounded-md border border-red-500 px-3 text-sm text-red-400 hover:bg-tag-rose disabled:opacity-50"
           />
         }
       >

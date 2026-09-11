@@ -27,7 +27,7 @@ export function SalesActivityForm({
       <button
         type="button"
         onClick={() => setIsOpen(true)}
-        className="rounded-md bg-neutral-100 px-3 py-2 text-sm font-medium text-ink hover:bg-neutral-200"
+        className="rounded-md bg-neutral-800 px-3 py-2 text-sm font-medium text-ink hover:bg-neutral-700"
       >
         Log an activity
       </button>
@@ -75,13 +75,13 @@ export function SalesActivityForm({
         opportunityOptions={opportunityOptions}
       />
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-red-400">{error}</p>}
 
       <div className="flex gap-2">
         <button
           type="submit"
           disabled={isPending}
-          className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
+          className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
         >
           {isPending ? "Saving…" : "Save"}
         </button>
@@ -92,7 +92,7 @@ export function SalesActivityForm({
             setIsOpen(false);
             setError(null);
           }}
-          className="rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-neutral-100 disabled:opacity-50"
+          className="rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50"
         >
           Cancel
         </button>

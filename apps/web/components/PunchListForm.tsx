@@ -104,12 +104,12 @@ export function PunchListForm({
         />
       </label>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-red-400">{error}</p>}
 
       <button
         type="submit"
         disabled={isPending}
-        className="inline-flex min-h-11 items-center justify-center self-start rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
+        className="inline-flex min-h-11 items-center justify-center self-start rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
       >
         {isPending ? "Adding…" : "Add item"}
       </button>

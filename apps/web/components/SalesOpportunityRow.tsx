@@ -35,16 +35,16 @@ export type SalesOpportunityHistory = {
 };
 
 const STAGE_STYLE: Record<string, string> = {
-  NEW: "bg-neutral-100 text-ink-label",
-  CONTACTED: "bg-neutral-100 text-ink-label",
+  NEW: "bg-neutral-800 text-ink-label",
+  CONTACTED: "bg-neutral-800 text-ink-label",
   DEMO_SCHEDULED: "bg-tag-blue text-tag-blue-ink",
   TRIAL: "bg-tag-blue text-tag-blue-ink",
   WON: "bg-tag-green text-tag-green-ink",
-  LOST: "bg-tag-rose text-red-600",
+  LOST: "bg-tag-rose text-red-400",
 };
 
 const btn =
-  "rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-neutral-100 disabled:opacity-50";
+  "rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-neutral-800 disabled:opacity-50";
 
 export function SalesOpportunityRow({
   opportunity,
@@ -89,12 +89,12 @@ export function SalesOpportunityRow({
             // moved: this field records the move you are making now.
             defaults={{ ...opportunity, stageEffectiveOn: localToday() }}
           />
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && <p className="text-sm text-red-400">{error}</p>}
           <div className="flex gap-2">
             <button
               type="submit"
               disabled={isPending}
-              className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
+              className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
             >
               {isPending ? "Saving…" : "Save changes"}
             </button>
@@ -136,7 +136,7 @@ export function SalesOpportunityRow({
             </p>
           )}
           {opportunity.notes && <p className="mt-1 text-sm text-ink-body">{opportunity.notes}</p>}
-          {error && <p className="mt-1 text-sm text-red-600">{error}</p>}
+          {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
 
           {history.spells.length > 0 && (
             <>

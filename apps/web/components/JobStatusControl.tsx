@@ -60,7 +60,7 @@ export function JobStatusControl({
                 }
               });
             }}
-            className="rounded-md border border-line-card px-3 py-1.5 text-sm font-medium text-ink-label hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-60"
+            className="rounded-md border border-line-card px-3 py-1.5 text-sm font-medium text-ink-label hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isPending ? "Saving…" : JOB_STATUS_ACTION_LABELS[next]}
           </button>

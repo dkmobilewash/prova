@@ -224,7 +224,7 @@ export function JobMediaCapture({ jobId }: { jobId: string }) {
             const files = Array.from(event.target.files ?? []);
             if (files.length) void handleFiles(files);
           }}
-          className="min-h-11 text-base text-ink-label file:mr-3 file:min-h-11 file:rounded-md file:border-0 file:bg-neutral-100 file:px-4 file:text-base file:font-medium file:text-ink hover:file:bg-neutral-200 disabled:opacity-50"
+          className="min-h-11 text-base text-ink-label file:mr-3 file:min-h-11 file:rounded-md file:border-0 file:bg-neutral-800 file:px-4 file:text-base file:font-medium file:text-ink hover:file:bg-neutral-700 disabled:opacity-50"
         />
       </label>
 
@@ -242,7 +242,7 @@ export function JobMediaCapture({ jobId }: { jobId: string }) {
             </p>
           )}
           {failures.map((failure) => (
-            <p key={failure.name} className="text-red-600">
+            <p key={failure.name} className="text-red-400">
               {failure.name}: {failure.message}
             </p>
           ))}

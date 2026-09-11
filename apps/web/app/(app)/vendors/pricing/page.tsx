@@ -196,7 +196,7 @@ export default async function VendorPricingPage() {
                       <div key={unitLabel(comparison.unit)} className="mb-2 last:mb-0">
                         <p className="text-sm text-ink-label">
                           Per {unitLabel(comparison.unit)}:{" "}
-                          <span className="text-emerald-700">
+                          <span className="text-emerald-400">
                             {money(comparison.cheapest.unitPrice)} ({comparison.cheapest.vendorName})
                           </span>
                           {comparison.spreadPercent !== null ? (
@@ -232,7 +232,7 @@ export default async function VendorPricingPage() {
                       <p key={movement.to.id} className="text-sm text-ink-label">
                         {movement.to.vendorName}:{" "}
                         <span
-                          className={movement.changePercent > 0 ? "text-red-600" : "text-emerald-700"}
+                          className={movement.changePercent > 0 ? "text-red-400" : "text-emerald-400"}
                         >
                           {movement.changePercent > 0 ? "up" : "down"}{" "}
                           {Math.abs(movement.changePercent)}%

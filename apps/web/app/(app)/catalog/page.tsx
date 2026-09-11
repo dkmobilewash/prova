@@ -94,7 +94,7 @@ function ActualsLine({ entry }: { entry: CatalogEntryWithLines }) {
           </label>
           <SubmitButton
             type="submit"
-            className="rounded-md border border-amber-300 px-2 py-1 text-xs text-tag-amber-ink hover:bg-tag-amber"
+            className="rounded-md border border-amber-700 px-2 py-1 text-xs text-tag-amber-ink hover:bg-tag-amber"
           >
             Update default from actuals
           </SubmitButton>
@@ -261,7 +261,7 @@ export default async function CatalogPage() {
           )}
           <SubmitButton
             type="submit"
-            className="inline-flex items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500"
+            className="inline-flex items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500"
           >
             Add entry
           </SubmitButton>

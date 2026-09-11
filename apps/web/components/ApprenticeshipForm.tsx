@@ -34,7 +34,7 @@ export function ApprenticeshipForm({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-neutral-100"
+        className="rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-neutral-800"
       >
         Register an apprenticeship
       </button>
@@ -139,7 +139,7 @@ export function ApprenticeshipForm({
       <input name="note" placeholder="Note (optional)" className={field} />
 
       {error && (
-        <p role="alert" className="text-sm text-red-600">
+        <p role="alert" className="text-sm text-red-400">
           {error}
         </p>
       )}
@@ -148,7 +148,7 @@ export function ApprenticeshipForm({
         <button
           type="submit"
           disabled={isPending}
-          className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-60"
+          className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {isPending ? "Saving…" : "Register"}
         </button>
@@ -159,7 +159,7 @@ export function ApprenticeshipForm({
             setOpen(false);
             setError(null);
           }}
-          className="rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-neutral-100"
+          className="rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-neutral-800"
         >
           Cancel
         </button>

@@ -16,9 +16,9 @@ import {
 } from "@/lib/certifications";
 
 const btn =
-  "rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-neutral-100 disabled:opacity-50";
+  "rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50";
 const primaryBtn =
-  "rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50";
+  "rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50";
 
 /* The record line's controls are text links inside a sentence, not pills.
    Named here so the armed pair keeps exactly the look the hand-rolled
@@ -26,7 +26,7 @@ const primaryBtn =
    is not licence to restyle the row. */
 const recordLink = "ml-2 text-ink-muted underline disabled:opacity-50";
 const recordLinkCancel = "ml-2 text-ink-body underline disabled:opacity-50";
-const recordLinkConfirm = "ml-2 text-red-600 underline disabled:opacity-50";
+const recordLinkConfirm = "ml-2 text-red-400 underline disabled:opacity-50";
 
 function workerLabel(worker: WorkerStanding["worker"]) {
   return worker.name?.trim() || worker.email;
@@ -66,7 +66,7 @@ function CertificationRecordEditForm({
       <p className="text-sm font-semibold text-ink-label">{title}</p>
       <FormDraftNotice draft={draft} />
       <CertificationFields defaults={record} lockedKind={record.kind} />
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-red-400">{error}</p>}
       <div className="flex gap-2">
         <button type="submit" disabled={isPending} className={primaryBtn}>
           {isPending ? "Saving…" : "Save changes"}
@@ -111,7 +111,7 @@ function HoldingBlock({
         </span>
         <span className="text-xs text-ink-muted">{standingTiming(holding)}</span>
         {holding.required && (
-          <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs text-ink-body">required</span>
+          <span className="rounded bg-neutral-800 px-1.5 py-0.5 text-xs text-ink-body">required</span>
         )}
       </div>
 
@@ -305,7 +305,7 @@ export function WorkerCertificationRow({
         </ul>
       )}
 
-      {error && !editingId && <p className="text-sm text-red-600">{error}</p>}
+      {error && !editingId && <p className="text-sm text-red-400">{error}</p>}
     </li>
   );
 }

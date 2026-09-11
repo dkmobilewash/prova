@@ -65,7 +65,7 @@ export default async function ExportPage() {
         </p>
         <a
           href="/api/export"
-          className="inline-flex items-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500"
+          className="inline-flex items-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500"
         >
           Download everything ({total.toLocaleString()} rows)
         </a>
@@ -104,7 +104,7 @@ export default async function ExportPage() {
             ) : (
               <a
                 href={`/api/export?dataset=${dataset.key}`}
-                className="shrink-0 rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-neutral-100"
+                className="shrink-0 rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-neutral-800"
               >
                 CSV
               </a>

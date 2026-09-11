@@ -161,12 +161,12 @@ export function LogTimeEntryForm({
         <button
           type="submit"
           disabled={isPending}
-          className="rounded-md bg-neutral-100 px-3 py-1.5 text-sm font-medium text-ink hover:bg-neutral-200 disabled:cursor-not-allowed disabled:opacity-60"
+          className="rounded-md bg-neutral-800 px-3 py-1.5 text-sm font-medium text-ink hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {isPending ? "Logging…" : "Log time"}
         </button>
       </div>
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-red-400">{error}</p>}
     </form>
   );
 }

@@ -65,7 +65,7 @@ export function PrevailingWageDeterminationForm({ jobId }: { jobId: string }) {
             type="file"
             name="file"
             accept="application/pdf,image/png,image/jpeg,image/webp"
-            className={`${field} file:mr-2 file:rounded file:border-0 file:bg-neutral-100 file:px-2 file:py-1 file:text-ink-label`}
+            className={`${field} file:mr-2 file:rounded file:border-0 file:bg-neutral-800 file:px-2 file:py-1 file:text-ink-label`}
           />
         </label>
         <label className="flex flex-col gap-1 text-xs text-ink-body">
@@ -76,7 +76,7 @@ export function PrevailingWageDeterminationForm({ jobId }: { jobId: string }) {
         <button
           type="submit"
           disabled={isPending}
-          className="rounded-md bg-brand px-3 py-1.5 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-60"
+          className="rounded-md bg-brand px-3 py-1.5 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {isPending ? "Attaching…" : "Attach"}
         </button>

@@ -37,7 +37,7 @@ export function ToolboxTalkRow({ talk, canDelete }: { talk: ToolboxTalkRowData; 
         </p>
         {talk.attendees && <p className="mt-1 text-sm text-ink-label">Attended: {talk.attendees}</p>}
         {talk.notes && <p className="mt-1 text-sm text-ink-body">{talk.notes}</p>}
-        {error && <p className="mt-1 text-sm text-red-600">{error}</p>}
+        {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
       </div>
 
       {/* No ordinary actions at all in this cluster, which used to mean the
@@ -67,9 +67,9 @@ export function ToolboxTalkRow({ talk, canDelete }: { talk: ToolboxTalkRowData; 
                   }
                 });
               }}
-              deleteClassName="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:border-red-500 hover:text-red-600 disabled:opacity-50"
-              cancelClassName="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-neutral-100 disabled:opacity-50"
-              confirmClassName="inline-flex min-h-11 items-center justify-center rounded-md border border-red-500 px-3 py-2 text-sm text-red-600 hover:bg-tag-rose disabled:opacity-50"
+              deleteClassName="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:border-red-500 hover:text-red-400 disabled:opacity-50"
+              cancelClassName="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50"
+              confirmClassName="inline-flex min-h-11 items-center justify-center rounded-md border border-red-500 px-3 py-2 text-sm text-red-400 hover:bg-tag-rose disabled:opacity-50"
             />
           }
         />

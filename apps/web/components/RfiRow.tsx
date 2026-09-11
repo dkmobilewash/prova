@@ -24,7 +24,7 @@ export type RfiRowData = RfiDefaults & {
 // 44px, from 34px.  +  is what makes min-h centre
 // the label rather than pin it to the top.
 const btn =
-  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-neutral-100 disabled:opacity-50";
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50";
 
 export function RfiRow({
   rfi,
@@ -78,12 +78,12 @@ export function RfiRow({
           </p>
           <FormDraftNotice draft={editDraft} />
           <RfiFields defaults={rfi} />
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && <p className="text-sm text-red-400">{error}</p>}
           <div className="flex flex-wrap gap-2">
             <button
               type="submit"
               disabled={isPending}
-              className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
+              className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
             >
               {isPending ? "Saving…" : "Save changes"}
             </button>
@@ -174,13 +174,13 @@ export function RfiRow({
             one.
           </p>
 
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && <p className="text-sm text-red-400">{error}</p>}
 
           <div className="flex flex-wrap gap-2">
             <button
               type="submit"
               disabled={isPending}
-              className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
+              className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
             >
               {isPending ? "Saving…" : "Record answer"}
             </button>
@@ -212,7 +212,7 @@ export function RfiRow({
               Overdue
             </span>
           ) : (
-            <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs text-ink-body">
+            <span className="rounded bg-neutral-800 px-1.5 py-0.5 text-xs text-ink-body">
               {statusLabel(rfi.status)}
             </span>
           )}
@@ -243,7 +243,7 @@ export function RfiRow({
           {rfi.askedByName && `${rfi.drawingReference || rfi.specSection ? " · " : ""}raised by ${rfi.askedByName}`}
         </p>
 
-        {error && <p className="mt-1 text-sm text-red-600">{error}</p>}
+        {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
       </div>
 
       {/* The widest action cluster in the app, and the sharpest instance of
@@ -277,7 +277,7 @@ export function RfiRow({
               onConfirm={() => run(() => deleteRfi(rfi.id), "Could not delete the draft")}
               deleteClassName={btn}
               cancelClassName={btn}
-              confirmClassName="inline-flex min-h-11 items-center justify-center rounded-md border border-red-500 px-3 py-2 text-sm text-red-600 hover:bg-tag-rose disabled:opacity-50"
+              confirmClassName="inline-flex min-h-11 items-center justify-center rounded-md border border-red-500 px-3 py-2 text-sm text-red-400 hover:bg-tag-rose disabled:opacity-50"
             />
           ) : null
         }
@@ -287,7 +287,7 @@ export function RfiRow({
             type="button"
             disabled={isPending}
             onClick={() => run(() => markRfiSent(rfi.id), "Could not mark it sent")}
-            className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-3 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
+            className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-3 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
           >
             Mark sent
           </button>

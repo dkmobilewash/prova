@@ -191,7 +191,7 @@ export default async function CertifiedPayrollPage({
               whether the week can be filed at all, and a note under the last
               table is the thing nobody reads before printing. */}
           {missingName.size > 0 && (
-            <div className="rounded-lg border border-amber-300 bg-amber-500/5 p-4 text-sm">
+            <div className="rounded-lg border border-amber-700 bg-amber-500/5 p-4 text-sm">
               <p className="font-medium text-tag-amber-ink">
                 {missingName.size === 1
                   ? "One person on this week has no name on their account."
@@ -214,7 +214,7 @@ export default async function CertifiedPayrollPage({
               <p className="font-medium text-ink">
                 {employee.employeeName}
                 {missingName.has(employee.employeeUserId) && (
-                  <span className="ml-2 text-xs font-normal text-amber-700">
+                  <span className="ml-2 text-xs font-normal text-amber-400">
                     — no name on {missingName.get(employee.employeeUserId)}
                   </span>
                 )}
@@ -245,7 +245,7 @@ export default async function CertifiedPayrollPage({
                         <td className="py-1 pr-3 text-right text-ink">{row.totalHours}</td>
                         <td className="py-1 text-right text-ink">
                           {row.wageCost != null ? money(row.wageCost) : "—"}
-                          {row.hasUncomputedHours && <span className="ml-1 text-amber-700">*</span>}
+                          {row.hasUncomputedHours && <span className="ml-1 text-amber-400">*</span>}
                         </td>
                       </tr>
                     ))}
@@ -272,7 +272,7 @@ export default async function CertifiedPayrollPage({
               ))}
             </div>
             {anyUncomputed && (
-              <p className="mt-1 text-xs text-amber-700">
+              <p className="mt-1 text-xs text-amber-400">
                 * Some hours have no craft tag or no effective fringe rate schedule and aren&rsquo;t priced above.
               </p>
             )}

@@ -12,7 +12,7 @@ import { ConfirmDelete, RowActions } from "@/components/RowActions";
 const field =
   "rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none";
 const btn =
-  "rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-neutral-100 disabled:opacity-50";
+  "rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50";
 
 export function ApprenticeshipRowActions({
   enrollmentId,
@@ -153,7 +153,7 @@ export function ApprenticeshipRowActions({
         </p>
 
         {error && (
-          <p role="alert" className="text-sm text-red-600">
+          <p role="alert" className="text-sm text-red-400">
             {error}
           </p>
         )}
@@ -162,7 +162,7 @@ export function ApprenticeshipRowActions({
           <button
             type="submit"
             disabled={isPending}
-            className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
+            className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
           >
             {isPending ? "Saving…" : "Save enrolment"}
           </button>
@@ -228,7 +228,7 @@ export function ApprenticeshipRowActions({
         </p>
 
         {error && (
-          <p role="alert" className="text-sm text-red-600">
+          <p role="alert" className="text-sm text-red-400">
             {error}
           </p>
         )}
@@ -237,7 +237,7 @@ export function ApprenticeshipRowActions({
           <button
             type="submit"
             disabled={isPending}
-            className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
+            className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
           >
             {isPending ? "Saving…" : "Record period"}
           </button>
@@ -287,7 +287,7 @@ export function ApprenticeshipRowActions({
               hint="Removes the registration and its periods. No timesheet is touched."
               deleteClassName={btn}
               cancelClassName={btn}
-              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-600 hover:bg-tag-rose disabled:opacity-50"
+              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-400 hover:bg-tag-rose disabled:opacity-50"
             />
           ) : null
         }
@@ -314,7 +314,7 @@ export function ApprenticeshipRowActions({
       {/* Outside RowActions on purpose: an error hidden by arming a delete
           would be a new bug. */}
       {error && (
-        <p role="alert" className="mt-2 text-sm text-red-600">
+        <p role="alert" className="mt-2 text-sm text-red-400">
           {error}
         </p>
       )}

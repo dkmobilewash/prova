@@ -97,9 +97,9 @@ function dateStatus(date: Date | null, kind: RenewalKind) {
     },
     serverToday(),
   );
-  if (renewal.urgency === "EXPIRED") return { text: "Expired", className: "text-red-600" };
+  if (renewal.urgency === "EXPIRED") return { text: "Expired", className: "text-red-400" };
   if (renewal.urgency === "DUE_SOON") {
-    return { text: renewalTiming(renewal), className: "text-amber-700" };
+    return { text: renewalTiming(renewal), className: "text-amber-400" };
   }
   return null;
 }
@@ -108,7 +108,7 @@ const inputClass =
   "rounded-md border border-line-card bg-canvas px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none";
 const labelClass = "flex flex-col gap-1 text-sm text-ink-label";
 const addButtonClass =
-  "inline-flex items-center justify-center rounded-md bg-neutral-100 px-4 py-2 text-sm font-medium text-ink hover:bg-neutral-200";
+  "inline-flex items-center justify-center rounded-md bg-neutral-800 px-4 py-2 text-sm font-medium text-ink hover:bg-neutral-700";
 
 export default async function SettingsPage({
   searchParams,
@@ -214,12 +214,12 @@ export default async function SettingsPage({
       </p>
 
       {qb === "connected" && (
-        <p className="mb-6 rounded-md border border-green-300 bg-tag-green px-4 py-3 text-sm text-green-700">
+        <p className="mb-6 rounded-md border border-green-700 bg-tag-green px-4 py-3 text-sm text-green-400">
           QuickBooks connected successfully.
         </p>
       )}
       {qb === "error" && (
-        <p className="mb-6 rounded-md border border-red-300 bg-tag-rose px-4 py-3 text-sm text-red-600">
+        <p className="mb-6 rounded-md border border-red-700 bg-tag-rose px-4 py-3 text-sm text-red-400">
           {(qb_detail && QB_ERROR_MESSAGES[qb_detail]) ?? "Couldn't connect to QuickBooks — please try again."}
         </p>
       )}
@@ -247,7 +247,7 @@ export default async function SettingsPage({
             <div className="flex flex-wrap items-center gap-3">
               <QuickBooksTestConnectionButton />
               <form action={disconnectQuickBooks}>
-                <SubmitButton type="submit" className="text-sm text-red-600 hover:underline">
+                <SubmitButton type="submit" className="text-sm text-red-400 hover:underline">
                   Disconnect
                 </SubmitButton>
               </form>
@@ -293,7 +293,7 @@ export default async function SettingsPage({
           // for why this needs to be a real GET navigation).
           <a
             href="/api/quickbooks/start"
-            className="inline-flex items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500"
+            className="inline-flex items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500"
           >
             Connect QuickBooks
           </a>

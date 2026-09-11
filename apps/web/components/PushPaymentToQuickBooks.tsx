@@ -94,7 +94,7 @@ export function PushPaymentToQuickBooks({
         type="button"
         onClick={push}
         disabled={isPending || blocked}
-        className="rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-neutral-100 disabled:opacity-50"
+        className="rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-neutral-800 disabled:opacity-50"
       >
         {isPending ? "Sending…" : linkedQboId ? "Re-send payment" : "Send payment to QuickBooks"}
       </button>

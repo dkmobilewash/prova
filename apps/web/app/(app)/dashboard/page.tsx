@@ -385,7 +385,7 @@ export default async function TodayPage({
                 <div className="flex flex-wrap items-center gap-3">
                   <Link
                     href="/jobs/new"
-                    className="inline-flex items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500"
+                    className="inline-flex items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500"
                   >
                     New job
                   </Link>
@@ -408,7 +408,7 @@ export default async function TodayPage({
                   />
                   <button
                     type="submit"
-                    className="rounded-md border border-line-card bg-surface px-3 py-2 text-sm font-medium text-ink-label hover:bg-neutral-100"
+                    className="rounded-md border border-line-card bg-surface px-3 py-2 text-sm font-medium text-ink-label hover:bg-neutral-800"
                   >
                     Search
                   </button>

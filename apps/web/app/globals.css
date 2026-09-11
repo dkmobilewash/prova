@@ -2,12 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
-/* The body is light: the yellow/black/white theme chosen 2026-09-11.
-   The stalled half-migration this comment used to document is over — the
-   tokens in tailwind.config.ts now hold the light values, and pages are
-   being converted from raw slate classes to tokens page by page. An
-   unconverted page renders its old dark card colours on this light body
-   until its own conversion lands; that is the visible seam, not a bug. */
+/* The body is dark: the founder chose the dark "MainVision / Money Rail"
+   mockups for filming (2026-09-11, the same day the light palette
+   landed). Nothing here changed for the flip — the body reads its colours
+   from the tokens in tailwind.config.ts, which is the whole point of the
+   token pass: this re-skin was the config file plus a sweep of hardcoded
+   utilities, not a rewrite of this file. */
 body {
   background-color: theme("colors.canvas");
   color: theme("colors.ink");

@@ -54,7 +54,7 @@ export function JobFunctionPicker({
       <p className="max-w-[18rem] text-right text-xs text-ink-muted">
         {jobFunctionSummary(value || null)}
       </p>
-      {error && <p className="max-w-[18rem] text-right text-xs text-red-600">{error}</p>}
+      {error && <p className="max-w-[18rem] text-right text-xs text-red-400">{error}</p>}
     </div>
   );
 }

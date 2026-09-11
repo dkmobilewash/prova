@@ -86,7 +86,7 @@ export default async function DeploymentPage() {
       </p>
 
       {clashes.length > 0 && (
-        <div className="mb-6 rounded-lg border border-red-300 bg-tag-rose p-4">
+        <div className="mb-6 rounded-lg border border-red-700 bg-tag-rose p-4">
           <p className="text-sm font-medium text-tag-rose-ink">
             {clashes.length} {clashes.length === 1 ? "record puts" : "records put"} a machine in two
             places at once
@@ -129,7 +129,7 @@ export default async function DeploymentPage() {
                         </span>
                       ))}
                       {on.length > 1 && (
-                        <span className="ml-2 text-xs text-amber-700">
+                        <span className="ml-2 text-xs text-amber-400">
                           split across {on.length} jobs
                         </span>
                       )}
@@ -216,7 +216,7 @@ export default async function DeploymentPage() {
             finished, or never started. Usually it means nobody logged the return. Worth chasing
             before somebody drives across town looking for it.
           </p>
-          <ul className="divide-y divide-line-row rounded-lg border border-amber-300 bg-surface">
+          <ul className="divide-y divide-line-row rounded-lg border border-amber-700 bg-surface">
             {out
               .filter((s) => !activeJobIds.has(s.jobId))
               .map((s) => (

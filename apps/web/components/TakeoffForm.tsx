@@ -77,7 +77,7 @@ export function TakeoffForm({ jobId }: { jobId: string }) {
       <button
         type="button"
         onClick={() => setIsOpen(true)}
-        className="mb-4 rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-neutral-100"
+        className="mb-4 rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-neutral-800"
       >
         Add from a takeoff
       </button>
@@ -270,7 +270,7 @@ export function TakeoffForm({ jobId }: { jobId: string }) {
               <button
                 type="button"
                 onClick={() => setOpenings((prev) => prev.filter((_, i) => i !== index))}
-                className="text-xs text-red-600 hover:underline"
+                className="text-xs text-red-400 hover:underline"
               >
                 Remove
               </button>
@@ -325,14 +325,14 @@ export function TakeoffForm({ jobId }: { jobId: string }) {
         <button
           type="submit"
           disabled={isPending || !hasQuantities}
-          className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {isPending ? "Adding…" : "Add these line items"}
         </button>
         <button
           type="button"
           onClick={() => setIsOpen(false)}
-          className="rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-neutral-100"
+          className="rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-neutral-800"
         >
           Cancel
         </button>

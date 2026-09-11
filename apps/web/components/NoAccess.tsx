@@ -32,7 +32,7 @@ export function NoAccess({ capability }: { capability: Capability }) {
       </p>
       <Link
         href="/dashboard"
-        className="inline-block rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500"
+        className="inline-block rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500"
       >
         Back to jobs
       </Link>

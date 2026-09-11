@@ -31,7 +31,7 @@ export type BackchargeRowData = BackchargeDefaults & {
 };
 
 const btn =
-  "rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-neutral-100 disabled:opacity-50";
+  "rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50";
 
 export function BackchargeRow({
   backcharge,
@@ -98,12 +98,12 @@ export function BackchargeRow({
             Backcharge {backcharge.number} · {backcharge.jobName}
           </p>
           <BackchargeFields defaults={backcharge} locked={backcharge.status !== "RECEIVED"} />
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && <p className="text-sm text-red-400">{error}</p>}
           <div className="flex gap-2">
             <button
               type="submit"
               disabled={isPending}
-              className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
+              className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
             >
               {isPending ? "Saving…" : "Save changes"}
             </button>
@@ -156,13 +156,13 @@ export function BackchargeRow({
             </span>
           </label>
 
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && <p className="text-sm text-red-400">{error}</p>}
 
           <div className="flex gap-2">
             <button
               type="submit"
               disabled={isPending}
-              className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
+              className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
             >
               {isPending ? "Saving…" : "Record objection"}
             </button>
@@ -250,13 +250,13 @@ export function BackchargeRow({
             />
           </label>
 
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && <p className="text-sm text-red-400">{error}</p>}
 
           <div className="flex gap-2">
             <button
               type="submit"
               disabled={isPending}
-              className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
+              className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
             >
               {isPending ? "Saving…" : "Record outcome"}
             </button>
@@ -291,7 +291,7 @@ export function BackchargeRow({
               Past the deadline to object
             </span>
           )}
-          <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs text-ink-body">
+          <span className="rounded bg-neutral-800 px-1.5 py-0.5 text-xs text-ink-body">
             {categoryLabel(backcharge.category)}
           </span>
         </div>
@@ -339,7 +339,7 @@ export function BackchargeRow({
             `${backcharge.gcReference ? " · " : ""}logged by ${backcharge.loggedByName}`}
         </p>
 
-        {error && <p className="mt-1 text-sm text-red-600">{error}</p>}
+        {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
       </div>
 
       {/* Two rules live in RowActions/ConfirmDelete now, so neither depends on
@@ -367,7 +367,7 @@ export function BackchargeRow({
               onConfirm={() => run(() => deleteBackcharge(backcharge.id), "Could not delete it")}
               deleteClassName={btn}
               cancelClassName={btn}
-              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-600 hover:bg-tag-rose disabled:opacity-50"
+              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-400 hover:bg-tag-rose disabled:opacity-50"
             />
           ) : null
         }
@@ -377,7 +377,7 @@ export function BackchargeRow({
             type="button"
             disabled={isPending}
             onClick={() => setMode("dispute")}
-            className="rounded-md bg-brand px-3 py-1.5 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
+            className="rounded-md bg-brand px-3 py-1.5 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
           >
             Object
           </button>

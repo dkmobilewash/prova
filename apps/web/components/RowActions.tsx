@@ -91,11 +91,11 @@ export function RowActions({
 }
 
 const defaultDeleteClass =
-  "rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:border-red-500 hover:text-red-600 disabled:opacity-50";
+  "rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:border-red-500 hover:text-red-400 disabled:opacity-50";
 const defaultCancelClass =
-  "rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-neutral-100 disabled:opacity-50";
+  "rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-neutral-800 disabled:opacity-50";
 const defaultConfirmClass =
-  "rounded-md border border-red-500 px-3 py-1.5 text-xs text-red-600 hover:bg-tag-rose disabled:opacity-50";
+  "rounded-md border border-red-500 px-3 py-1.5 text-xs text-red-400 hover:bg-tag-rose disabled:opacity-50";
 
 /**
  * THE PHONE HALF OF RULE 2 (issue #184). `pinned` is the desktop half.

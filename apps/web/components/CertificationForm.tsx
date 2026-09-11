@@ -48,7 +48,7 @@ export function CertificationForm({
         </p>
         <Link
           href="/team"
-          className="mt-3 inline-block rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500"
+          className="mt-3 inline-block rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500"
         >
           Go to Team
         </Link>
@@ -61,7 +61,7 @@ export function CertificationForm({
       <button
         type="button"
         onClick={() => setIsOpen(true)}
-        className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500"
+        className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500"
       >
         Record a certification
       </button>
@@ -98,13 +98,13 @@ export function CertificationForm({
 
       <CertificationFields defaults={EMPTY} workers={workers} defaultWorkerId={defaultWorkerId} />
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-red-400">{error}</p>}
 
       <div className="flex gap-2">
         <button
           type="submit"
           disabled={isPending}
-          className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
+          className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
         >
           {isPending ? "Saving…" : "Save certification"}
         </button>
@@ -115,7 +115,7 @@ export function CertificationForm({
             setIsOpen(false);
             setError(null);
           }}
-          className="rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-neutral-100 disabled:opacity-50"
+          className="rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50"
         >
           Cancel
         </button>

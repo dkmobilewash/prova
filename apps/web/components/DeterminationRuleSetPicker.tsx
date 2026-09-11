@@ -62,7 +62,7 @@ export function DeterminationRuleSetPicker({
           </option>
         ))}
       </select>
-      {error && <p className="max-w-[16rem] text-right text-xs text-red-600">{error}</p>}
+      {error && <p className="max-w-[16rem] text-right text-xs text-red-400">{error}</p>}
     </div>
   );
 }

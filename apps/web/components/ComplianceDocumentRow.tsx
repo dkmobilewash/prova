@@ -50,8 +50,8 @@ function expirationStatus(date: Date | null, todayIso: string) {
   const iso = toIsoDate(date);
   if (!iso) return null;
   const days = daysUntil(iso, todayIso);
-  if (days < 0) return { text: "Expired", className: "text-red-600" };
-  if (days <= 30) return { text: `Expires in ${days}d`, className: "text-amber-700" };
+  if (days < 0) return { text: "Expired", className: "text-red-400" };
+  if (days <= 30) return { text: `Expires in ${days}d`, className: "text-amber-400" };
   return null;
 }
 
@@ -171,7 +171,7 @@ export function ComplianceDocumentRow({
             <button
               type="submit"
               disabled={isPending}
-              className="rounded-md bg-brand px-3 py-1.5 text-xs font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
+              className="rounded-md bg-brand px-3 py-1.5 text-xs font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
             >
               {isPending ? "Saving…" : "Save"}
             </button>
@@ -182,7 +182,7 @@ export function ComplianceDocumentRow({
             >
               Cancel
             </button>
-            {error && <p className="text-xs text-red-600">{error}</p>}
+            {error && <p className="text-xs text-red-400">{error}</p>}
           </div>
         </form>
       </li>
@@ -203,7 +203,7 @@ export function ComplianceDocumentRow({
             <p className="font-medium text-ink">{TYPE_LABELS[doc.type] ?? doc.type}</p>
             <span
               className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                doc.status === "RECEIVED" ? "bg-tag-green text-tag-green-ink" : "bg-neutral-100 text-ink-label"
+                doc.status === "RECEIVED" ? "bg-tag-green text-tag-green-ink" : "bg-neutral-800 text-ink-label"
               }`}
             >
               {doc.status === "RECEIVED" ? "Received" : "Pending"}
@@ -263,7 +263,7 @@ export function ComplianceDocumentRow({
           <button
             type="button"
             onClick={() => setIsEditing(true)}
-            className="rounded-md border border-line-card px-3 py-1.5 text-xs font-medium text-ink-label hover:bg-neutral-100"
+            className="rounded-md border border-line-card px-3 py-1.5 text-xs font-medium text-ink-label hover:bg-neutral-800"
           >
             Edit
           </button>
@@ -271,7 +271,7 @@ export function ComplianceDocumentRow({
             <form action={markComplianceDocumentReceived.bind(null, doc.id)}>
               <button
                 type="submit"
-                className="rounded-md border border-line-card px-3 py-1.5 text-xs font-medium text-ink-label hover:bg-neutral-100"
+                className="rounded-md border border-line-card px-3 py-1.5 text-xs font-medium text-ink-label hover:bg-neutral-800"
               >
                 Mark received
               </button>

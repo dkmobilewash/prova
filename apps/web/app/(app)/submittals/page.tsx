@@ -91,7 +91,7 @@ export default async function SubmittalsPage({
 
   const chip = (active: boolean) =>
     `rounded-md border px-3 py-1.5 text-sm ${
-      active ? "border-brand text-link" : "border-line-card text-ink-label hover:bg-neutral-100"
+      active ? "border-brand text-link" : "border-line-card text-ink-label hover:bg-neutral-800"
     }`;
 
   return (

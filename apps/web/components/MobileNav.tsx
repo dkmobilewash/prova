@@ -60,8 +60,10 @@ export function MobileNav({
         // 44px, from 36px. This is the gateway to every field screen on a
         // phone, and it was the smallest control in the chrome. The icon still
         // draws at 20px; only the hit area grew, and `-ml-3` keeps its left
-        // edge where it was against the topbar's px-4.
-        className="-ml-3 rounded-md p-3 text-neutral-900 hover:bg-neutral-100"
+        // edge where it was against the topbar's px-4. Light icon: the
+        // topbar is the dark chrome (#171717) now, so the hamburger
+        // inverted back from the text-neutral-900 the white bar needed.
+        className="-ml-3 rounded-md p-3 text-neutral-100 hover:bg-rail-hover"
       >
         <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5" aria-hidden="true">
           <path d="M3 5.5h14M3 10h14M3 14.5h14" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />

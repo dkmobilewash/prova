@@ -36,7 +36,7 @@ export function WeekSummary({ text, label }: { text: string; label: string }) {
         <button
           type="button"
           onClick={() => setIsOpen((v) => !v)}
-          className="rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-neutral-100"
+          className="rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-neutral-800"
         >
           {isOpen ? "Hide summary" : `Summary for ${label}`}
         </button>
@@ -44,7 +44,7 @@ export function WeekSummary({ text, label }: { text: string; label: string }) {
           <button
             type="button"
             onClick={copy}
-            className="rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-neutral-100"
+            className="rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-neutral-800"
           >
             {copied ? "Copied" : "Copy"}
           </button>

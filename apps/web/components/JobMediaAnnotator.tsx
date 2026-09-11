@@ -226,7 +226,7 @@ export function JobMediaAnnotator({
             className={`min-h-11 rounded-md border px-3 text-sm ${
               tool === kind
                 ? "border-brand text-link"
-                : "border-line-card text-ink-label hover:bg-neutral-100"
+                : "border-line-card text-ink-label hover:bg-neutral-800"
             }`}
           >
             {TOOL_LABEL[kind]}
@@ -260,7 +260,7 @@ export function JobMediaAnnotator({
             <button
               type="button"
               onClick={commitLabel}
-              className="min-h-11 rounded-md bg-brand px-4 text-sm font-semibold text-ink-label hover:bg-yellow-500"
+              className="min-h-11 rounded-md bg-brand px-4 text-sm font-semibold text-neutral-900 hover:bg-yellow-500"
             >
               Add it
             </button>
@@ -279,7 +279,7 @@ export function JobMediaAnnotator({
         </div>
       )}
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-red-400">{error}</p>}
 
       <p className="text-sm text-ink-body">
         {drafts.length} of {JOB_MEDIA_ANNOTATIONS_MAX} marks.{" "}
@@ -309,7 +309,7 @@ export function JobMediaAnnotator({
               }
             });
           }}
-          className="min-h-11 rounded-md bg-brand px-4 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
+          className="min-h-11 rounded-md bg-brand px-4 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
         >
           {isPending ? "Saving…" : "Save marks"}
         </button>

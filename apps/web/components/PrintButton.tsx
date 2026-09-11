@@ -10,7 +10,7 @@ export function PrintButton() {
       // sheet it belongs to, so it read as a stray control rather than a
       // deliberate one. It is an action, so it takes the brand fill every
       // other primary action uses.
-      className="print:hidden inline-flex items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500"
+      className="print:hidden inline-flex items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500"
     >
       Print / Save as PDF
     </button>

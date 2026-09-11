@@ -87,7 +87,7 @@ export default async function MessagesPage({
 
   const chip = (active: boolean) =>
     `rounded-md border px-3 py-1.5 text-sm ${
-      active ? "border-brand text-link" : "border-line-card text-ink-label hover:bg-neutral-100"
+      active ? "border-brand text-link" : "border-line-card text-ink-label hover:bg-neutral-800"
     }`;
 
   return (
@@ -100,7 +100,7 @@ export default async function MessagesPage({
       </p>
 
       {setupProblem && (
-        <div className="mb-6 rounded-lg border border-amber-300 bg-tag-amber p-4">
+        <div className="mb-6 rounded-lg border border-amber-700 bg-tag-amber p-4">
           <p className="text-sm font-medium text-tag-amber-ink">Sending isn&apos;t set up yet</p>
           <p className="mt-1 text-sm text-tag-amber-ink/80">{setupProblem}</p>
           <p className="mt-2 text-xs text-tag-amber-ink/60">

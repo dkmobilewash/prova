@@ -35,7 +35,7 @@ export function StaleDeployBanner() {
   return (
     <div
       role="alert"
-      className="fixed inset-x-0 top-0 z-50 border-b border-amber-300 bg-tag-amber px-4 py-3 text-center text-sm text-tag-amber-ink"
+      className="fixed inset-x-0 top-0 z-50 border-b border-amber-700 bg-tag-amber px-4 py-3 text-center text-sm text-tag-amber-ink"
     >
       A new version of Prova was published while this page was open.{" "}
       <span className="font-medium">Finish anything you&apos;re typing first</span> — reloading

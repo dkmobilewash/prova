@@ -95,7 +95,7 @@ export function CraftTierPicker({
       {value === "" && (
         <p className="text-xs text-tag-amber-ink">Hours on this craft can&apos;t be counted either way</p>
       )}
-      {error && <p className="max-w-[16rem] text-right text-xs text-red-600">{error}</p>}
+      {error && <p className="max-w-[16rem] text-right text-xs text-red-400">{error}</p>}
     </div>
   );
 }

@@ -63,7 +63,7 @@ export function QuickBooksMapping({ mappings }: { mappings: MappingRow[] }) {
           type="button"
           onClick={load}
           disabled={isPending}
-          className="rounded-md border border-line-card px-3 py-1.5 text-xs font-medium text-ink-label hover:bg-neutral-100 disabled:opacity-50"
+          className="rounded-md border border-line-card px-3 py-1.5 text-xs font-medium text-ink-label hover:bg-neutral-800 disabled:opacity-50"
         >
           {isPending ? "Loading…" : accounts ? "Reload accounts" : "Load accounts from QuickBooks"}
         </button>
@@ -118,7 +118,7 @@ export function QuickBooksMapping({ mappings }: { mappings: MappingRow[] }) {
                   <button
                     type="submit"
                     disabled={isPending}
-                    className="rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-neutral-100 disabled:opacity-50"
+                    className="rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-neutral-800 disabled:opacity-50"
                   >
                     Save
                   </button>
@@ -156,8 +156,8 @@ export type SyncAttemptRow = {
 };
 
 const OUTCOME_TONE: Record<string, string> = {
-  SUCCEEDED: "border-emerald-300 bg-tag-green text-tag-green-ink",
-  VERIFY_MISMATCH: "border-amber-300 bg-tag-amber text-tag-amber-ink",
+  SUCCEEDED: "border-emerald-700 bg-tag-green text-tag-green-ink",
+  VERIFY_MISMATCH: "border-amber-700 bg-tag-amber text-tag-amber-ink",
   FAILED: "border-rose-300 bg-tag-rose text-tag-rose-ink",
   SKIPPED: "border-line-card bg-surface text-ink-label",
 };

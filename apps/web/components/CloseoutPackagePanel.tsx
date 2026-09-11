@@ -34,9 +34,9 @@ export type CloseoutSubmissionData = {
 };
 
 const btn =
-  "rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-neutral-100 disabled:opacity-50";
+  "rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50";
 const primaryBtn =
-  "rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50";
+  "rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50";
 
 /**
  * Whose move it is on a job's closeout, and the package's trip to the GC.
@@ -109,12 +109,12 @@ export function CloseoutPackagePanel({
           {stageLabel(readiness.stage)}
         </span>
         {readiness.daysWithGc !== null && withGc && (
-          <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs text-ink-body">
+          <span className="rounded bg-neutral-800 px-1.5 py-0.5 text-xs text-ink-body">
             {readiness.daysWithGc} day{readiness.daysWithGc === 1 ? "" : "s"} with them
           </span>
         )}
         {readiness.retainageAtStake > 0 && (
-          <span className="rounded bg-neutral-100 px-1.5 py-0.5 font-mono text-xs text-ink-label">
+          <span className="rounded bg-neutral-800 px-1.5 py-0.5 font-mono text-xs text-ink-label">
             {money(readiness.retainageAtStake)} retainage held
           </span>
         )}
@@ -206,7 +206,7 @@ export function CloseoutPackagePanel({
                       className={inputClass}
                     />
                   </label>
-                  {error && <p className="text-sm text-red-600">{error}</p>}
+                  {error && <p className="text-sm text-red-400">{error}</p>}
                   <div className="flex gap-2">
                     <button type="submit" disabled={isPending} className={primaryBtn}>
                       {isPending ? "Saving…" : "Record response"}
@@ -239,7 +239,7 @@ export function CloseoutPackagePanel({
                         onConfirm={() => run(() => deleteCloseoutSubmission(s.id))}
                         deleteClassName={btn}
                         cancelClassName={btn}
-                        confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-600 hover:bg-tag-rose disabled:opacity-50"
+                        confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-400 hover:bg-tag-rose disabled:opacity-50"
                       />
                     ) : null
                   }
@@ -313,7 +313,7 @@ export function CloseoutPackagePanel({
               className={inputClass}
             />
           </label>
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && <p className="text-sm text-red-400">{error}</p>}
           <div className="flex gap-2">
             <button type="submit" disabled={isPending} className={primaryBtn}>
               {isPending ? "Saving…" : "Record submission"}
@@ -342,7 +342,7 @@ export function CloseoutPackagePanel({
             {submissions.length === 0 ? "Record the package going out" : "Send another attempt"}
           </button>
           {error && respondingTo === null && openForm === "none" && (
-            <span className="text-sm text-red-600">{error}</span>
+            <span className="text-sm text-red-400">{error}</span>
           )}
         </div>
       )}

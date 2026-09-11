@@ -24,11 +24,11 @@ export const labelClass = "flex flex-col gap-1 text-sm text-ink-label";
 // button at a time. These were `py-1.5 text-xs` — 30px tall, the smallest
 // buttons anywhere in the field screens.
 const rowBtn =
-  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-xs text-ink-label hover:bg-neutral-100 disabled:opacity-50";
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-xs text-ink-label hover:bg-neutral-800 disabled:opacity-50";
 const rowBtnDanger =
-  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-xs text-ink-label hover:border-red-500 hover:text-red-600 disabled:opacity-50";
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-xs text-ink-label hover:border-red-500 hover:text-red-400 disabled:opacity-50";
 const rowBtnConfirm =
-  "inline-flex min-h-11 items-center justify-center rounded-md border border-red-500 px-3 py-2 text-xs text-red-600 hover:bg-tag-rose disabled:opacity-50";
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-red-500 px-3 py-2 text-xs text-red-400 hover:bg-tag-rose disabled:opacity-50";
 
 export type FieldReport = {
   id: string;
@@ -139,12 +139,12 @@ function FieldReportEditForm({
       <p className="text-sm font-medium text-ink">{formatDate(report.reportDate)}</p>
       <FormDraftNotice draft={draft} />
       <FieldReportFields report={report} />
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-red-400">{error}</p>}
       <div className="flex gap-2">
         <button
           type="submit"
           disabled={isPending}
-          className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
+          className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
         >
           {isPending ? "Saving…" : "Save changes"}
         </button>
@@ -152,7 +152,7 @@ function FieldReportEditForm({
           type="button"
           disabled={isPending}
           onClick={onCancel}
-          className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-neutral-100 disabled:opacity-50"
+          className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50"
         >
           Cancel
         </button>
@@ -204,7 +204,7 @@ export function DailyFieldReports({
           <button
             type="button"
             onClick={() => setIsOpen(true)}
-            className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500"
+            className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500"
           >
             Log a day
           </button>
@@ -232,12 +232,12 @@ export function DailyFieldReports({
             <input type="date" name="reportDate" required defaultValue={localToday()} className={inputClass} />
           </label>
           <FieldReportFields />
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && <p className="text-sm text-red-400">{error}</p>}
           <div className="flex gap-2">
             <button
               type="submit"
               disabled={isPending}
-              className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
+              className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
             >
               {isPending ? "Saving…" : "Save report"}
             </button>
@@ -248,7 +248,7 @@ export function DailyFieldReports({
                 setIsOpen(false);
                 setError(null);
               }}
-              className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-neutral-100 disabled:opacity-50"
+              className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50"
             >
               Cancel
             </button>
@@ -294,7 +294,7 @@ export function DailyFieldReports({
                         is argued from months later; it does not get to be the
                         faintest thing on the row. */}
                     {report.weather && <p className="mt-1 text-ink-body">Weather: {report.weather}</p>}
-                    {report.delays && <p className="text-amber-700">Delays: {report.delays}</p>}
+                    {report.delays && <p className="text-amber-400">Delays: {report.delays}</p>}
                     {report.filedByName && (
                       <p className="mt-1 text-xs text-ink-body">filed by {report.filedByName}</p>
                     )}
@@ -344,7 +344,7 @@ export function DailyFieldReports({
                   </RowActions>
                 </div>
                 {error && deleteErrorId === report.id && (
-                  <p className="mt-1 text-sm text-red-600">{error}</p>
+                  <p className="mt-1 text-sm text-red-400">{error}</p>
                 )}
               </li>
             ),

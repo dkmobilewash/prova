@@ -59,7 +59,7 @@ export function CatalogImport({ existingDescriptions }: { existingDescriptions: 
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="rounded-md border border-line-card px-4 py-2 text-sm font-medium text-ink-label hover:bg-neutral-100"
+        className="rounded-md border border-line-card px-4 py-2 text-sm font-medium text-ink-label hover:bg-neutral-800"
       >
         Import a price list
       </button>
@@ -95,7 +95,7 @@ export function CatalogImport({ existingDescriptions }: { existingDescriptions: 
           type="file"
           accept=".csv,.tsv,.txt,text/csv,text/plain"
           onChange={(event) => onFile(event.target.files?.[0])}
-          className="text-xs text-ink-body file:mr-3 file:rounded-md file:border file:border-line-card file:bg-neutral-100 file:px-3 file:py-1.5 file:text-xs file:text-ink-label"
+          className="text-xs text-ink-body file:mr-3 file:rounded-md file:border file:border-line-card file:bg-neutral-800 file:px-3 file:py-1.5 file:text-xs file:text-ink-label"
         />
         <button
           type="button"
@@ -124,17 +124,17 @@ export function CatalogImport({ existingDescriptions }: { existingDescriptions: 
               {split.fresh.length} to add
             </span>
             {split.duplicatesOfExisting.length > 0 && (
-              <span className="rounded-full border border-neutral-400 bg-neutral-100 px-2 py-0.5 text-ink-label">
+              <span className="rounded-full border border-neutral-400 bg-neutral-800 px-2 py-0.5 text-ink-label">
                 {split.duplicatesOfExisting.length} already in the catalog — skipped
               </span>
             )}
             {split.duplicatesWithinFile.length > 0 && (
-              <span className="rounded-full border border-neutral-400 bg-neutral-100 px-2 py-0.5 text-ink-label">
+              <span className="rounded-full border border-neutral-400 bg-neutral-800 px-2 py-0.5 text-ink-label">
                 {split.duplicatesWithinFile.length} repeated in the file — skipped
               </span>
             )}
             {parsed.problems.length > 0 && (
-              <span className="rounded-full border border-amber-300 bg-tag-amber px-2 py-0.5 text-tag-amber-ink">
+              <span className="rounded-full border border-amber-700 bg-tag-amber px-2 py-0.5 text-tag-amber-ink">
                 {parsed.problems.length} couldn&apos;t be read
               </span>
             )}
@@ -209,7 +209,7 @@ export function CatalogImport({ existingDescriptions }: { existingDescriptions: 
             <SubmitButton
               type="submit"
               disabled={split.fresh.length === 0}
-              className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500"
+              className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500"
             >
               {split.fresh.length === 1 ? "Add 1 entry" : `Add ${split.fresh.length} entries`}
             </SubmitButton>

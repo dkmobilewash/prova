@@ -17,11 +17,11 @@ const inputClass =
 // a button at a time. `inline-flex` + `items-center` is what makes min-h
 // actually centre the label instead of pinning it to the top.
 const rowBtn =
-  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-neutral-100 disabled:opacity-50";
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50";
 const rowBtnDanger =
-  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:border-red-500 hover:text-red-600 disabled:opacity-50";
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:border-red-500 hover:text-red-400 disabled:opacity-50";
 const rowBtnConfirm =
-  "inline-flex min-h-11 items-center justify-center rounded-md border border-red-500 px-3 py-2 text-sm text-red-600 hover:bg-tag-rose disabled:opacity-50";
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-red-500 px-3 py-2 text-sm text-red-400 hover:bg-tag-rose disabled:opacity-50";
 
 type PunchListRowProps = {
   canDelete: boolean;
@@ -82,13 +82,13 @@ export function PunchListRow({ canDelete, jobs, item, showJob }: PunchListRowPro
           </select>
           <input type="text" name="description" required defaultValue={item.description} className={inputClass} />
 
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && <p className="text-sm text-red-400">{error}</p>}
 
           <div className="flex flex-wrap gap-2">
             <button
               type="submit"
               disabled={isPending}
-              className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
+              className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
             >
               {isPending ? "Saving…" : "Save changes"}
             </button>
@@ -99,7 +99,7 @@ export function PunchListRow({ canDelete, jobs, item, showJob }: PunchListRowPro
                 setIsEditing(false);
                 setError(null);
               }}
-              className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-neutral-100 disabled:opacity-50"
+              className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50"
             >
               Cancel
             </button>
@@ -142,7 +142,7 @@ export function PunchListRow({ canDelete, jobs, item, showJob }: PunchListRowPro
             {showJob && item.raisedByName && " · "}
             {item.raisedByName && `raised by ${item.raisedByName}`}
           </p>
-          {error && <p className="mt-1 text-sm text-red-600">{error}</p>}
+          {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
         </div>
       </div>
 

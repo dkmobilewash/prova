@@ -77,7 +77,7 @@ export type JobMediaCardData = {
 };
 
 const btn =
-  "min-h-11 inline-flex items-center rounded-md border border-line-card px-3 text-sm text-ink-label hover:bg-neutral-100 disabled:opacity-50";
+  "min-h-11 inline-flex items-center rounded-md border border-line-card px-3 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50";
 
 export function JobMediaCard({ media }: { media: JobMediaCardData }) {
   /* One mode for the card, with the tag form as a third value rather than
@@ -214,7 +214,7 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
             is cropped to — the editor measures the real photo instead. */}
         <JobMediaMarks marks={media.marks} aspect={4 / 3} />
         {media.sharedWithClientLabel && (
-          <span className="absolute left-2 top-2 rounded-md bg-brand px-2 py-1 text-xs font-semibold text-ink-label">
+          <span className="absolute left-2 top-2 rounded-md bg-brand px-2 py-1 text-xs font-semibold text-neutral-900">
             Client can see this
           </span>
         )}
@@ -287,12 +287,12 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
                 className="min-h-11 rounded-md border border-line-card bg-canvas px-3 text-base text-ink focus:border-link focus:outline-none"
               />
             </label>
-            {error && <p className="text-sm text-red-600">{error}</p>}
+            {error && <p className="text-sm text-red-400">{error}</p>}
             <div className="flex flex-wrap gap-2">
               <button
                 type="submit"
                 disabled={isPending}
-                className="min-h-11 inline-flex items-center rounded-md bg-brand px-4 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
+                className="min-h-11 inline-flex items-center rounded-md bg-brand px-4 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
               >
                 {isPending ? "Saving…" : "Save"}
               </button>
@@ -354,12 +354,12 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
             <p className="text-sm text-ink-body">
               Separate several with commas. {media.tags.length} of {JOB_MEDIA_TAGS_PER_PHOTO_MAX} used.
             </p>
-            {error && <p className="text-sm text-red-600">{error}</p>}
+            {error && <p className="text-sm text-red-400">{error}</p>}
             <div className="flex flex-wrap gap-2">
               <button
                 type="submit"
                 disabled={isPending}
-                className="min-h-11 inline-flex items-center rounded-md bg-brand px-4 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
+                className="min-h-11 inline-flex items-center rounded-md bg-brand px-4 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
               >
                 {isPending ? "Adding…" : "Add"}
               </button>
@@ -407,12 +407,12 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
                 is a blank box, and finding that out from the GC is worse
                 than finding it out from this sentence. */}
             {media.playbackWarning && (
-              <p className="text-sm text-amber-700">{media.playbackWarning}</p>
+              <p className="text-sm text-amber-400">{media.playbackWarning}</p>
             )}
             {annotationSummary(media.marks.length) && (
               <p className="text-sm text-ink-body">{annotationSummary(media.marks.length)}</p>
             )}
-            {error && <p className="text-sm text-red-600">{error}</p>}
+            {error && <p className="text-sm text-red-400">{error}</p>}
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
@@ -433,7 +433,7 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
                     }
                   });
                 }}
-                className="min-h-11 inline-flex items-center rounded-md bg-brand px-4 text-sm font-semibold text-ink-label hover:bg-yellow-500 disabled:opacity-50"
+                className="min-h-11 inline-flex items-center rounded-md bg-brand px-4 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
               >
                 {isPending ? "Sharing…" : "Share with client"}
               </button>
@@ -489,7 +489,7 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
                           }
                         });
                       }}
-                      className="ml-1 inline-flex min-h-11 min-w-11 items-center justify-center text-ink-body hover:text-red-600 disabled:opacity-50"
+                      className="ml-1 inline-flex min-h-11 min-w-11 items-center justify-center text-ink-body hover:text-red-400 disabled:opacity-50"
                     >
                       <span aria-hidden="true">×</span>
                     </button>
@@ -508,12 +508,12 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
               {media.capturedAtLabel}
               {media.capturedByName ? ` · ${media.capturedByName}` : ""} · {media.sizeLabel}
             </p>
-            {media.clockWarning && <p className="text-sm text-amber-700">{media.clockWarning}</p>}
+            {media.clockWarning && <p className="text-sm text-amber-400">{media.clockWarning}</p>}
             {/* Amber like the clock warning and for the same reason: it is
                 a caveat about the file rather than a failure, and the
                 person who needs it is the one about to show this to a GC. */}
             {media.playbackWarning && (
-              <p className="text-sm text-amber-700">{media.playbackWarning}</p>
+              <p className="text-sm text-amber-400">{media.playbackWarning}</p>
             )}
             {/* The photo IS its own link (the whole image opens the file).
                 A video and a voice note are not — wrapping a player in an
@@ -547,7 +547,7 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
                 Shared with client, {media.sharedWithClientLabel}
               </p>
             )}
-            {error && <p className="text-sm text-red-600">{error}</p>}
+            {error && <p className="text-sm text-red-400">{error}</p>}
 
             {/* Left-aligned cluster, so the default pinned="start" is
                 correct here: Cancel takes the first slot, which is the one
@@ -578,7 +578,7 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
                   hint="The file is removed from storage too."
                   deleteClassName={btn}
                   cancelClassName={btn}
-                  confirmClassName="min-h-11 inline-flex items-center rounded-md border border-red-500 px-3 text-sm text-red-600 hover:bg-tag-rose disabled:opacity-50"
+                  confirmClassName="min-h-11 inline-flex items-center rounded-md border border-red-500 px-3 text-sm text-red-400 hover:bg-tag-rose disabled:opacity-50"
                 />
               }
             >
