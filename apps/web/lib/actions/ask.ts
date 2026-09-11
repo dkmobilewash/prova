@@ -124,6 +124,9 @@ export async function confirmAskProposal(
   revalidatePath("/contacts");
   revalidatePath("/jobs");
   if (executed.created) revalidatePath(executed.created.href);
+  // What the action this command stands in for would have revalidated
+  // itself — /schedule for a job's dates.
+  for (const path of executed.revalidate ?? []) revalidatePath(path);
 
   return {
     ok: true,

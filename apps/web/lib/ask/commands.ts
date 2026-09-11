@@ -9,6 +9,7 @@ import { laborCommands, laborExclusions } from "./commands/labor";
 import { messageCommands, messageExclusions } from "./commands/messages";
 import { punchListCommands, punchListExclusions } from "./commands/punchLists";
 import { rfiCommands, rfiExclusions } from "./commands/rfis";
+import { scheduleCommands } from "./commands/schedule";
 
 /**
  * The commands: what Ask can DO, as distinct from what it can answer.
@@ -54,7 +55,8 @@ export type CommandName =
   | "draft_invoice"
   | "log_payment"
   | "log_time_entry"
-  | "send_email";
+  | "send_email"
+  | "reschedule_job";
 
 /** Risk tier. T5 (delete, void, contract, admin, outward send without a
  * composer) has no member on purpose: it cannot be registered. T4 is an
@@ -109,7 +111,17 @@ export type Resolution =
   | { kind: "refuse"; reason: string; href?: string };
 
 export type Executed =
-  | { ok: true; message: string; created?: Link & { targetType: string; targetId: string } }
+  | {
+      ok: true;
+      message: string;
+      /** The record the card was about — made by a create command,
+       * changed by a modify — for the audit row and the card's link. */
+      created?: Link & { targetType: string; targetId: string };
+      /** Paths beyond the dashboard, /jobs, /contacts and `created.href`
+       * that the confirm action must revalidate: whatever the action this
+       * command stands in for would have revalidated itself. */
+      revalidate?: string[];
+    }
   | { ok: false; error: string };
 
 type CommandBase = {
@@ -183,6 +195,7 @@ export const COMMANDS: CommandDefinition[] = [
   ...billingCommands,
   ...laborCommands,
   ...messageCommands,
+  ...scheduleCommands,
 ];
 
 export const EXCLUSIONS: Exclusion[] = [

@@ -98,6 +98,15 @@ export const EVAL_CASES: EvalCase[] = [
   command("cmd-email-contact", "email Turner that the studs are three weeks late", "send_email", { recipientName: "Turner" }),
   command("cmd-email-job", "send the GC on Riverside a note that pay app 3 went out Tuesday", "send_email", { jobName: "Riverside" }),
   command("cmd-email-field", "email Turner that the lift is off the Riverside site as of today", "send_email", { recipientName: "Turner" }, FIELD),
+  // Schedule dates (phase 4b), the first modify. The dates are the
+  // person's WORDS, passed through for lib/ask/dates.ts to read against
+  // their own today. A computed ISO date in the input is the model doing
+  // the one thing the command forbids, and is a routing fault even
+  // though the parser would accept it.
+  command("cmd-reschedule-start", "push Riverside's start to October 6", "reschedule_job", { jobName: "Riverside", startDate: "October 6" }),
+  command("cmd-reschedule-end", "Riverside now finishes November 20", "reschedule_job", { jobName: "Riverside", endDate: "November 20" }),
+  command("cmd-reschedule-back", "move the Main St start back a week", "reschedule_job", { jobName: "Main St", startDate: "back a week" }),
+  command("cmd-reschedule-field", "Riverside starts next Monday now", "reschedule_job", { jobName: "Riverside", startDate: "next Monday" }, FIELD),
 
   // ------------------------------------ nothing offered, so no card
   noCommand("none-delete-job", "delete the Riverside job"),
@@ -105,6 +114,9 @@ export const EVAL_CASES: EvalCase[] = [
   // Accounting holds no MANAGE_JOBS, so send_email is not offered to them
   // and the model must say so rather than draft anything.
   noCommand("none-accounting-email", "email Turner that pay app 3 went out Tuesday", ACCOUNTING),
+  // Likewise reschedule_job: accounting can move the dates by hand on the
+  // job page, but is not offered the card.
+  noCommand("none-accounting-reschedule", "push Riverside's start to October 6", ACCOUNTING),
   noCommand("none-change-order", "approve the change order on Riverside"),
   noCommand("none-poem", "write me a poem about drywall"),
   noCommand("none-advice", "how do I file a mechanics lien in California?"),

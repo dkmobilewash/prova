@@ -363,4 +363,93 @@ describe("confirmAskProposal against a real database", () => {
     expect(row.targetType).toBe("TimeEntry");
     expect(row.targetId).toBe(entries[0].id);
   });
+
+  it("a reschedule card moves the job's dates through the lifted core, refuses a member without MANAGE_JOBS in a sentence, and refuses once the row moved under it", async () => {
+    // Phase 4b: the first MODIFY. The payload carries the dates the card
+    // was made from, and the core's compare-and-set — one UPDATE whose
+    // WHERE names them — is what makes the tap safe against an edit made
+    // on the job page between card and tap. Only a real database can
+    // prove that statement matches nothing once the row has moved.
+    const job = await prisma.job.create({
+      data: {
+        companyId,
+        contactId,
+        name: `ASK-DBTEST schedule ${Date.now()}`,
+        status: "IN_PROGRESS",
+        startDate: new Date("2026-10-01T00:00:00.000Z"),
+      },
+    });
+    const card = (over: Partial<Record<"startDate" | "endDate" | "wasStartDate" | "wasEndDate", string | null>> = {}) =>
+      cardFor("reschedule_job", {
+        jobId: job.id,
+        jobName: job.name,
+        startDate: "2026-10-06",
+        endDate: "2026-11-20",
+        wasStartDate: "2026-10-01",
+        wasEndDate: null,
+        ...over,
+      });
+
+    // A MEMBER whose job function holds no MANAGE_JOBS: refused by the
+    // confirm action itself, as a returned sentence, before any claim.
+    context.role = "MEMBER";
+    context.jobFunction = "ACCOUNTING";
+    const refusedId = await card();
+    const refused = await confirmAskProposal(refusedId);
+    context.role = "OWNER";
+    context.jobFunction = null;
+    expect(refused.ok).toBe(false);
+    if (!refused.ok) expect(refused.error).toMatch(/job correspondence access \(MANAGE_JOBS\)/);
+    const refusedRow = await prisma.askProposal.findUniqueOrThrow({ where: { id: refusedId } });
+    expect(refusedRow.outcome).toBe("REFUSED");
+    expect(refusedRow.claimedAt).toBeNull();
+    const untouched = await prisma.job.findUniqueOrThrow({ where: { id: job.id } });
+    expect(untouched.startDate?.toISOString()).toBe("2026-10-01T00:00:00.000Z");
+    expect(untouched.endDate).toBeNull();
+
+    // The owner's tap: both dates move, and nothing else on the row.
+    const firstId = await card();
+    const first = await confirmAskProposal(firstId);
+    expect(first.ok).toBe(true);
+    if (first.ok) {
+      expect(first.value.message).toBe(`${job.name} now starts Oct 6, 2026 (Tuesday) and ends Nov 20, 2026 (Friday).`);
+      expect(first.value.created).toEqual({ label: job.name, href: `/jobs/${job.id}` });
+    }
+    const moved = await prisma.job.findUniqueOrThrow({ where: { id: job.id } });
+    expect(moved.startDate?.toISOString()).toBe("2026-10-06T00:00:00.000Z");
+    expect(moved.endDate?.toISOString()).toBe("2026-11-20T00:00:00.000Z");
+    expect(moved.status).toBe("IN_PROGRESS");
+    const row = await prisma.askProposal.findUniqueOrThrow({ where: { id: firstId } });
+    expect(row.outcome).toBe("OK");
+    expect(row.targetType).toBe("Job");
+    expect(row.targetId).toBe(job.id);
+
+    // A second card made from the OLD dates — somebody edited the job
+    // between card and tap. Refused in a sentence naming what the row
+    // holds now; nothing written.
+    const staleId = await card({ startDate: "2026-10-13" });
+    const stale = await confirmAskProposal(staleId);
+    expect(stale.ok).toBe(false);
+    if (!stale.ok) {
+      expect(stale.error).toBe(
+        `${job.name}'s dates have changed since you last saw them — it now runs Oct 6, 2026 to Nov 20, 2026. Ask again to see the current dates before moving them.`,
+      );
+    }
+    const still = await prisma.job.findUniqueOrThrow({ where: { id: job.id } });
+    expect(still.startDate?.toISOString()).toBe("2026-10-06T00:00:00.000Z");
+    expect(still.endDate?.toISOString()).toBe("2026-11-20T00:00:00.000Z");
+    const staleRow = await prisma.askProposal.findUniqueOrThrow({ where: { id: staleId } });
+    expect(staleRow.outcome).toBe("FAILED");
+    expect(staleRow.outcomeNote).toMatch(/dates have changed since you last saw them/);
+
+    // An end before the start: the action's own words, before any write.
+    const backwards = await confirmAskProposal(
+      await card({ startDate: "2026-12-01", endDate: "2026-11-20", wasStartDate: "2026-10-06", wasEndDate: "2026-11-20" }),
+    );
+    expect(backwards.ok).toBe(false);
+    if (!backwards.ok) expect(backwards.error).toBe("End date can't be before the start date");
+    const unchanged = await prisma.job.findUniqueOrThrow({ where: { id: job.id } });
+    expect(unchanged.startDate?.toISOString()).toBe("2026-10-06T00:00:00.000Z");
+    expect(unchanged.endDate?.toISOString()).toBe("2026-11-20T00:00:00.000Z");
+  });
 });

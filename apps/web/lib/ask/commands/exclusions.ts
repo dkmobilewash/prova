@@ -14,7 +14,12 @@ import type { Exclusion } from "../commands";
  * (Diego's lane) replaced billing and labor once the invoice counter
  * (#224) and the #102 guards (#213) existed — commands/billing.ts and
  * commands/labor.ts. Phase 4a replaced messages as HANDOFF into the
- * /messages composer, the first T4 command (commands/messages.ts).
+ * /messages composer, the first T4 command (commands/messages.ts). Phase
+ * 4b registered reschedule_job, the first T2 that rewrites a row to values
+ * the person stated, DIRECT over a lifted core (commands/schedule.ts) —
+ * it replaced a per-action line in
+ * commands/estimating.ts rather than a wildcard here, since jobs.ts had
+ * commands already.
  *
  * commands.coverage.test.ts fails the moment a new module appears with no
  * line here and no registration — so adding an action file is a decision

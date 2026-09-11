@@ -139,6 +139,7 @@ describe("who is offered what", () => {
       "add_punch_item",
       "log_time_entry",
       "send_email",
+      "reschedule_job",
     ]);
     // FIELD holds MANAGE_FIELD and MANAGE_JOBS (lib/permissions.ts: "an
     // RFI when the drawings are wrong"), and nothing else — so no money.
@@ -147,13 +148,14 @@ describe("who is offered what", () => {
     }
   });
 
-  it("offers an estimator the estimating commands, the RFI and the email — MANAGE_JOBS held, MANAGE_FIELD not", () => {
+  it("offers an estimator the estimating commands, the RFI, the email and the schedule change — MANAGE_JOBS held, MANAGE_FIELD not", () => {
     expect(commandsFor(ESTIMATOR).map((c) => c.name)).toEqual([
       "create_estimate_job",
       "draft_estimate_lines",
       "add_catalog_line",
       "raise_rfi",
       "send_email",
+      "reschedule_job",
     ]);
     expect(commandsFor(ESTIMATOR).map((c) => c.name)).not.toContain("add_punch_item");
   });
@@ -173,6 +175,28 @@ describe("who is offered what", () => {
       expect(command.mode, command.name).toBe("HANDOFF");
       expect(command.execute, command.name).toBeUndefined();
     }
+  });
+
+  it("registers the schedule change as a T2 modify beside the three that stamp today — DIRECT over a lifted core, on the capability whose doc comment says 'jobs themselves'", () => {
+    // The whole tier, pinned: the phase-2a three stamp today on a stay or
+    // close an order; reschedule_job is the first to rewrite a row to
+    // values the person stated, which is why it alone carries the dates
+    // the card was made from and compares before it sets.
+    const modifies = COMMANDS.filter((c) => c.tier === "T2_MODIFY");
+    expect(modifies.map((c) => c.name)).toEqual([
+      "record_material_delivery",
+      "send_equipment_to_job",
+      "bring_equipment_back",
+      "reschedule_job",
+    ]);
+    const reschedule = COMMANDS.find((c) => c.name === "reschedule_job")!;
+    expect(reschedule.mode).toBe("DIRECT");
+    expect(reschedule.core).toBe("setJobScheduleDates");
+    expect(reschedule.capability).toBe("MANAGE_JOBS");
+    // Not offered to the two functions that hold no MANAGE_JOBS, who can
+    // still edit the dates by hand on the open job page.
+    expect(commandsFor(ACCOUNTING).map((c) => c.name)).not.toContain("reschedule_job");
+    expect(commandsFor({ role: "MEMBER", jobFunction: "PAYROLL_COMPLIANCE" }).map((c) => c.name)).not.toContain("reschedule_job");
   });
 
   it("withholds create_estimate_job from accounting, who could not open the estimate it made", () => {
