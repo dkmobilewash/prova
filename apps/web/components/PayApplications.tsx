@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRef, useState, useTransition } from "react";
 import { submitPayApplication, updateInvoiceStatus } from "@/lib/actions";
+import { formatInstant } from "@/lib/render-date";
 
 const inputClass =
   "w-28 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-right text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none";
@@ -68,10 +69,15 @@ export function PayApplications({
   jobId,
   lineItems,
   payApplications,
+  timeZone,
 }: {
   jobId: string;
   lineItems: PayAppLineItemOption[];
   payApplications: PayAppInvoice[];
+  // Resolved on the server by viewerTimeZone() and handed down, rather
+  // than read from Intl here: this is a client component, and computing a
+  // zone during render makes the markup disagree with the server's.
+  timeZone: string;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -249,7 +255,7 @@ export function PayApplications({
                   Application #{app.number}
                 </Link>
                 <span className="ml-2 text-slate-500">
-                  {new Date(app.issuedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                  {formatInstant(new Date(app.issuedAt), timeZone)}
                   {" · "}
                   {app.amount.toLocaleString("en-US", { style: "currency", currency: "USD" })}
                 </span>

@@ -7,6 +7,8 @@ import {
   updateComplianceDocument,
 } from "@/lib/actions";
 import { money } from "@/lib/money";
+import { formatCalendarDate } from "@/lib/render-date";
+import { daysUntil, toIsoDate } from "@/lib/compliance-expiry";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 
 const TYPE_LABELS: Record<string, string> = {
@@ -24,18 +26,32 @@ const inputClass =
 const labelClass = "flex flex-col gap-1 text-xs text-slate-400";
 
 function formatDate(date: Date | null) {
-  return date ? date.toLocaleDateString() : "—";
+  return date ? formatCalendarDate(date, "numeric") : "—";
 }
 
 function toDateInputValue(date: Date | null) {
   return date ? date.toISOString().slice(0, 10) : "";
 }
 
-function expirationStatus(date: Date | null) {
-  if (!date) return null;
-  const daysUntil = Math.floor((date.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-  if (daysUntil < 0) return { text: "Expired", className: "text-red-400" };
-  if (daysUntil <= 30) return { text: `Expires in ${daysUntil}d`, className: "text-amber-400" };
+/** Issue #101's last item. This measured a UTC-MIDNIGHT COLUMN against
+ * `Date.now()`, which is an instant -- so the gap between "expires
+ * tomorrow" and "now" went negative during the evening of the day before,
+ * and a certificate with a day of cover left rendered "Expired" in red.
+ * Worked example: expiry Sep 12 00:00 UTC read at 18:00 on Sep 11 in Los
+ * Angeles is Sep 12 01:00 UTC, a gap of -1 hour, floored to -1 day.
+ *
+ * Both sides are calendar days, so both sides are compared as calendar
+ * days -- `daysUntil` from lib/compliance-expiry.ts, which is what the
+ * renewal alerts on this same page already use. `todayIso` is handed down
+ * from the page rather than computed here: this is a client component, and
+ * a `Date.now()` read during render disagrees with the server's markup.
+ */
+function expirationStatus(date: Date | null, todayIso: string) {
+  const iso = toIsoDate(date);
+  if (!iso) return null;
+  const days = daysUntil(iso, todayIso);
+  if (days < 0) return { text: "Expired", className: "text-red-400" };
+  if (days <= 30) return { text: `Expires in ${days}d`, className: "text-amber-400" };
   return null;
 }
 
@@ -59,7 +75,16 @@ export interface ComplianceDocumentRowData {
 /** A document's whole row, including its own edit-mode toggle — the fix
  * path for a bad AI extraction (aiExtracted just flags "please verify",
  * it isn't a lock) as well as for editing a manually-entered record. */
-export function ComplianceDocumentRow({ doc, canDelete }: { doc: ComplianceDocumentRowData; canDelete: boolean }) {
+export function ComplianceDocumentRow({
+  doc,
+  canDelete,
+  todayIso,
+}: {
+  doc: ComplianceDocumentRowData;
+  canDelete: boolean;
+  /** The page's single today -- see expirationStatus above. */
+  todayIso: string;
+}) {
   const [isEditing, setIsEditing] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -164,7 +189,7 @@ export function ComplianceDocumentRow({ doc, canDelete }: { doc: ComplianceDocum
     );
   }
 
-  const expiration = expirationStatus(doc.expiresAt);
+  const expiration = expirationStatus(doc.expiresAt, todayIso);
 
   return (
     <li className="flex flex-col gap-2 p-4">

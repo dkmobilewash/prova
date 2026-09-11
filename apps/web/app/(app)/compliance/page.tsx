@@ -23,7 +23,11 @@ export default async function CompliancePage() {
     renewalSourcesForCompany(company.id),
   ]);
 
-  const renewals = renewalAlerts(renewalSources, serverToday());
+  // ONE today for this page. The rows below decide "Expired" against the
+  // same day the alerts above are computed from -- two answers for the
+  // same fact is worse than either being wrong (settings/page.tsx:66).
+  const today = serverToday();
+  const renewals = renewalAlerts(renewalSources, today);
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-8">
@@ -62,6 +66,7 @@ export default async function CompliancePage() {
               <ComplianceDocumentRow
                 key={doc.id}
                 canDelete={currentUser.role === "OWNER"}
+                todayIso={today}
                 doc={{
                   id: doc.id,
                   type: doc.type,

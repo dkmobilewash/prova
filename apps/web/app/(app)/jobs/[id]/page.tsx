@@ -40,6 +40,7 @@ import {
 import { can } from "@/lib/permissions";
 import { countJobMedia, loadJobMedia, loadJobMediaTags } from "@/lib/job-media-query";
 import { viewerTimeZone } from "@/lib/viewerToday";
+import { formatCalendarDate, formatInstant } from "@/lib/render-date";
 import { money } from "@/lib/money";
 import {
   calculateLineItemWip,
@@ -906,7 +907,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                     </p>
                     <p className="text-sm text-slate-400">
                       {doc.executedSignedDate ? "Recorded " : ""}
-                      {doc.createdAt.toLocaleDateString()}
+                      {formatInstant(doc.createdAt, timeZone, "numeric")}
                       {doc.uploadedByUser?.name || doc.uploadedByUser?.email
                         ? ` · ${doc.uploadedByUser.name ?? doc.uploadedByUser.email}`
                         : ""}
@@ -1160,7 +1161,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                 >
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                     <span className="text-slate-100">
-                      {entry.date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                      {formatCalendarDate(entry.date)}
                     </span>
                     <span className="text-slate-300">{entry.employeeUser.name ?? entry.employeeUser.email}</span>
                     <span className="text-slate-400">{Number(entry.hours)}h</span>
@@ -1221,7 +1222,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                 >
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                     <span className="text-slate-100">
-                      {slip.dispatchDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                      {formatCalendarDate(slip.dispatchDate)}
                     </span>
                     <span className="text-slate-300">{slip.employeeUser.name ?? slip.employeeUser.email}</span>
                     {slip.craftClassification && (
@@ -1426,7 +1427,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                     )}
                     {invoice.dueAt && (
                       <p className="mt-1 text-xs text-slate-500">
-                        Due {invoice.dueAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                        Due {formatCalendarDate(invoice.dueAt)}
                       </p>
                     )}
                     {invoice.retainageWithheld != null && (
@@ -1440,7 +1441,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                         {invoice.payments.map((payment) => (
                           <li key={payment.id} className="flex items-center justify-between text-sm">
                             <span className="text-slate-300">
-                              {payment.receivedAt.toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                              {formatInstant(payment.receivedAt, timeZone, "dayMonth")}
                               {payment.method ? ` · ${payment.method}` : ""}
                               {payment.note ? ` · ${payment.note}` : ""}
                             </span>
@@ -1581,11 +1582,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             {retainageSummary.balance > 0 && retainageSummary.substantialCompletionDate && (
               <p className="mb-4 text-sm text-slate-400">
                 Expected release: {money(retainageSummary.balance)} around{" "}
-                {retainageSummary.substantialCompletionDate.toLocaleDateString("en-US", {
-                  month: "short",
-                  day: "numeric",
-                  year: "numeric",
-                })}{" "}
+                {formatCalendarDate(retainageSummary.substantialCompletionDate)}{" "}
                 (this job&rsquo;s expected substantial completion date) — a forecast based on the date set above, not
                 a guarantee of when the GC will actually release it.
               </p>
@@ -1600,7 +1597,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                   >
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                       <span className="text-slate-100">
-                        {release.releasedAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                        {formatCalendarDate(release.releasedAt)}
                       </span>
                       <span className="text-slate-300">{money(Number(release.amount))}</span>
                       {release.note && <span className="text-xs text-slate-500">— {release.note}</span>}
@@ -1907,7 +1904,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                         <p className="font-medium text-slate-100">
                           v{version.versionNumber}
                           <span className="ml-2 font-normal text-slate-500">
-                            {version.createdAt.toLocaleDateString()}
+                            {formatInstant(version.createdAt, timeZone, "numeric")}
                             {version.createdByUser?.name || version.createdByUser?.email
                               ? ` · ${version.createdByUser.name ?? version.createdByUser.email}`
                               : ""}
@@ -1998,6 +1995,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             jobId={job.id}
             lineItems={payApplicationLineItemOptions}
             payApplications={payApplications}
+            timeZone={timeZone}
           />
         )}
       </div>
