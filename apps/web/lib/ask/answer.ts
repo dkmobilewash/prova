@@ -3,8 +3,10 @@ import {
   ASK_DEFAULT_MODEL,
   streamToolConversation,
   type AskToolCallMeta,
+  type AskToolDefinition,
   type AskToolOutcome,
 } from "@prova/integrations";
+import type { Principal } from "@/lib/permissions";
 import { accessContext, refusalFor } from "./access";
 import {
   canRunCommand,
@@ -24,7 +26,14 @@ import {
 import { runTool } from "./handlers";
 import { recordProposal } from "./proposals";
 import { readingLabel } from "./toolLabels";
-import { KNOWN_GAPS, toolsFor, TOOLS, type Citation, type ToolName } from "./tools";
+import {
+  KNOWN_GAPS,
+  toAskToolDefinition,
+  toolsFor,
+  TOOLS,
+  type Citation,
+  type ToolName,
+} from "./tools";
 
 /**
  * The model call behind Ask.
@@ -365,6 +374,28 @@ function refusedContent(reason: string): AskToolOutcome<AskHalt> {
   return { content: JSON.stringify({ unavailable: reason }) };
 }
 
+/**
+ * Every tool the model may be offered — read tools, then commands — each
+ * projected to exactly the fields the API accepts.
+ *
+ * Both registries carry fields that are for THIS side of the boundary
+ * (`capability` on a read tool; a command's whole definition), and the API
+ * rejects the entire request over one field it does not recognise on one
+ * tool. That is issue #251: the read tools went into `options.tools` raw,
+ * `tools.0.custom.capability: Extra inputs are not permitted` came back on
+ * every question, and the assistant was down with every check green —
+ * ToolDefinition is structurally assignable to AskToolDefinition, so no
+ * typecheck can catch an extra field here. answer.test.ts counts this
+ * list against both registries and asserts every entry carries only the
+ * three API fields.
+ */
+export function offeredTools(principal: Principal): AskToolDefinition[] {
+  return [
+    ...toolsFor(principal).map(toAskToolDefinition),
+    ...commandsFor(principal).map(toToolDefinition),
+  ];
+}
+
 export async function* streamAnswer(
   ctx: CommandContext,
   request: AskRequest,
@@ -422,10 +453,7 @@ export async function* streamAnswer(
   let commandSeen = false;
   const alsoRequested: string[] = [];
 
-  const offered = [
-    ...toolsFor(ctx.principal),
-    ...commandsFor(ctx.principal).map(toToolDefinition),
-  ];
+  const offered = offeredTools(ctx.principal);
 
   const events = streamToolConversation<AskHalt>({
     system: SYSTEM_PROMPT,

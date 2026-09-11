@@ -41,6 +41,7 @@
  *    could ask the box beside those tiles and be answered.
  */
 
+import type { AskToolDefinition } from "@prova/integrations";
 import { can, type Capability, type Principal } from "@/lib/permissions";
 
 /** A place in the app a figure came from. Rendered as a link under the
@@ -317,4 +318,24 @@ export function toolsAcceptNoTenantInput(
  * page guard is the boundary" rule lib/permissions.ts states for routes. */
 export function toolsFor(principal: Principal): ToolDefinition[] {
   return TOOLS.filter((tool) => tool.capability === null || can(principal, tool.capability));
+}
+
+/**
+ * Projects a registry entry to exactly the fields the API accepts — the
+ * read-tool twin of commands.ts's `toToolDefinition`.
+ *
+ * `capability` is for this side of the boundary (`toolsFor` filters on it,
+ * `runTool` re-checks it) and the API rejects the WHOLE request over any
+ * field it does not know on a tool object — issue #251, where
+ * "tools.0.custom.capability: Extra inputs are not permitted" took every
+ * Ask question down. An explicit pick rather than a strip of the fields
+ * known today, so the next internal field added to ToolDefinition never
+ * reaches the request either.
+ */
+export function toAskToolDefinition(tool: ToolDefinition): AskToolDefinition {
+  return {
+    name: tool.name,
+    description: tool.description,
+    input_schema: tool.input_schema,
+  };
 }
