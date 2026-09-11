@@ -61,7 +61,7 @@ export function MobileNav({
         // phone, and it was the smallest control in the chrome. The icon still
         // draws at 20px; only the hit area grew, and `-ml-3` keeps its left
         // edge where it was against the topbar's px-4.
-        className="-ml-3 rounded-md p-3 text-slate-300 hover:bg-slate-800 hover:text-slate-100"
+        className="-ml-3 rounded-md p-3 text-neutral-900 hover:bg-neutral-100"
       >
         <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5" aria-hidden="true">
           <path d="M3 5.5h14M3 10h14M3 14.5h14" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
@@ -144,8 +144,8 @@ export function MobileNav({
                     // is exactly where a gloved thumb lands on the wrong one.
                     className={`flex min-h-11 items-center gap-3 rounded-md px-3 py-3 text-sm font-medium transition-colors ${
                       isActive
-                        ? "bg-blue-500/15 text-blue-300"
-                        : "text-slate-400 hover:bg-slate-800 hover:text-slate-100"
+                        ? "bg-brand/15 text-brand"
+                        : "text-neutral-300 hover:bg-rail-hover hover:text-white"
                     }`}
                   >
                     {item.icon}

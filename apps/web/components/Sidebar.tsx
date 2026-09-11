@@ -44,7 +44,7 @@ export function Sidebar({
         className="group/rail fixed inset-y-0 left-0 z-40 flex w-16 flex-col overflow-hidden bg-rail transition-[width] duration-150 ease-out hover:w-60"
       >
         <div className="flex h-14 shrink-0 items-center gap-3 px-4">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-brand text-sm font-semibold text-white">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-brand text-sm font-semibold text-neutral-900">
             P
           </span>
           {/* Whitespace-nowrap so the label never wraps mid-transition. */}
@@ -57,7 +57,7 @@ export function Sidebar({
           {groups.map((group) => (
             <div key={group.heading} className="flex flex-col gap-0.5">
               <p
-                className="h-4 truncate whitespace-nowrap px-4 text-[10px] font-semibold uppercase tracking-wider text-slate-500 opacity-0 transition-opacity duration-150 group-hover/rail:opacity-100"
+                className="h-4 truncate whitespace-nowrap px-4 text-[10px] font-semibold uppercase tracking-wider text-neutral-400 opacity-0 transition-opacity duration-150 group-hover/rail:opacity-100"
                 aria-hidden="true"
               >
                 {group.heading}
@@ -96,8 +96,8 @@ export function Sidebar({
                     title={item.label}
                     className={`flex h-10 items-center gap-3 px-4 text-sm font-medium transition-colors ${
                       isActive
-                        ? "bg-rail-hover text-white"
-                        : "text-slate-400 hover:bg-rail-hover hover:text-white"
+                        ? "bg-rail-hover text-brand shadow-[inset_3px_0_0_#facc15]"
+                        : "text-neutral-300 hover:bg-rail-hover hover:text-white"
                     }`}
                   >
                     <span className="shrink-0">{item.icon}</span>
