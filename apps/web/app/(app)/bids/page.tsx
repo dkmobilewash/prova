@@ -3,6 +3,7 @@ import { BidInvitationStatus, prisma, TradeScope } from "@prova/db";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { money } from "@/lib/money";
+import { formatCalendarDate } from "@/lib/render-date";
 
 const TRADE_SCOPE_OPTIONS = [
   { value: "METAL_FRAMING_DRYWALL", label: "Metal framing / drywall" },
@@ -137,7 +138,7 @@ export default async function BidsPage({
                   <p className="text-sm text-slate-400">
                     {bid.contact.name}
                     {bid.tradeScope && <> · {labelFor(TRADE_SCOPE_OPTIONS, bid.tradeScope)}</>}
-                    {bid.dueDate && <> · Due {bid.dueDate.toLocaleDateString()}</>}
+                    {bid.dueDate && <> · Due {formatCalendarDate(bid.dueDate, "numeric")}</>}
                   </p>
                 </div>
                 {bid.bidAmount != null && (

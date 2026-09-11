@@ -13,6 +13,8 @@ import {
 } from "@/lib/actions";
 import { QuickBooksTestConnectionButton } from "@/components/QuickBooksTestConnectionButton";
 import { money } from "@/lib/money";
+import { formatCalendarDate, formatInstant } from "@/lib/render-date";
+import { viewerTimeZone } from "@/lib/viewerToday";
 import { SubmitButton } from "@/components/SubmitButton";
 import { ConfirmDeleteButton } from "@/components/ConfirmDeleteButton";
 import { CompanyLicenses } from "@/components/CompanyLicenses";
@@ -63,7 +65,7 @@ function labelFor(options: readonly { value: string; label: string }[], value: s
 }
 
 function formatDate(date: Date | null) {
-  return date ? date.toLocaleDateString() : "—";
+  return date ? formatCalendarDate(date, "numeric") : "—";
 }
 
 /**
@@ -117,6 +119,9 @@ export default async function SettingsPage({
   if (!allowed) return <NoAccess capability="MANAGE_COMPLIANCE" />;
   const { company, ...currentUser } = context;
   const { qb, qb_detail } = await searchParams;
+  // The QuickBooks "connected <date>" line below is a real moment, not a
+  // calendar day, so it is read on the reader's calendar rather than UTC.
+  const timeZone = await viewerTimeZone();
 
   if (currentUser.role !== "OWNER") {
     return (
@@ -237,7 +242,7 @@ export default async function SettingsPage({
             </p>
             <p className="mb-4 text-xs text-slate-500">
               QuickBooks company ID: {connection.realmId} · connected{" "}
-              {connection.createdAt.toLocaleDateString()}
+              {formatInstant(connection.createdAt, timeZone, "numeric")}
             </p>
             <div className="flex flex-wrap items-center gap-3">
               <QuickBooksTestConnectionButton />
