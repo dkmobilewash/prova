@@ -10,6 +10,7 @@ import {
   SALES_LEAD_SOURCES,
   actionFail as fail,
   actionOk as ok,
+  joinWithConjunction,
   type ActionResult,
 } from "./shared";
 
@@ -222,8 +223,11 @@ export async function deleteSalesLead(leadId: string): Promise<ActionResult> {
       );
     }
     if (held.length > 0) {
+      // #218: `held.join(" and ")` only ever saw two possible entries here
+      // (opportunities, activities), so it never had to be "a, b, and c" —
+      // joinWithConjunction is the shared style, same as deleteContact.
       return fail(
-        `${lead.companyName} has ${held.join(" and ")} on file, so its record stays. Only a lead with no history can be deleted.`,
+        `${lead.companyName} has ${joinWithConjunction(held)} on file, so its record stays. Only a lead with no history can be deleted.`,
       );
     }
 

@@ -3,7 +3,7 @@
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createContact } from "@/lib/actions";
-import { ContactFields } from "@/components/ContactFields";
+import { ContactFields, ContactStandingTermsFields } from "@/components/ContactFields";
 
 export function ContactForm() {
   const [isOpen, setIsOpen] = useState(false);
@@ -51,6 +51,19 @@ export function ContactForm() {
       <h2 className="text-sm font-semibold text-slate-300">Add a contact</h2>
 
       <ContactFields defaults={{ name: "", email: null, phone: null, address: null, status: "PROSPECT", accountType: null }} />
+
+      {/* #218: standing terms are reachable at creation now — a sub often
+          already knows a GC's retainage %, payment terms and preferred
+          subcontract form before the first job, from having worked with
+          (or bid to) them before. MSA/prequalification expiry dates are
+          deliberately NOT here; see the comment beside them in
+          ContactEditForm.tsx. */}
+      <p className="mt-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+        Standing terms with this GC (optional)
+      </p>
+      <ContactStandingTermsFields
+        defaults={{ defaultRetainagePercent: null, paymentTermsDays: null, standardFormsUsed: null }}
+      />
 
       {error && <p className="text-sm text-red-400">{error}</p>}
 
