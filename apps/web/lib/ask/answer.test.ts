@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { SYSTEM_PROMPT, forModel } from "./answer";
+import type { Principal } from "@/lib/permissions";
+import { SYSTEM_PROMPT, forModel, offeredTools } from "./answer";
+import { COMMANDS } from "./commands";
 import { KNOWN_GAPS, TOOLS } from "./tools";
 
 /** The model call itself needs an API key and is not tested here. What is
@@ -97,6 +99,61 @@ describe("what the model is told", () => {
     expect(TOOLS.length).toBeGreaterThan(0);
     for (const tool of TOOLS) {
       expect(tool.description.length, `${tool.name} needs a real description`).toBeGreaterThan(40);
+    }
+  });
+});
+
+describe("what the API is handed (issue #251)", () => {
+  // The API rejects the WHOLE request over one field it does not recognise
+  // on one tool object — "tools.0.custom.capability: Extra inputs are not
+  // permitted" took every Ask question down, with typecheck green, because
+  // a registry entry is structurally ASSIGNABLE to the API shape. Extra
+  // fields are invisible to the compiler here, so this census is the only
+  // thing standing between the next internal registry field and a dead
+  // assistant.
+  const OWNER: Principal = { role: "OWNER", jobFunction: null };
+  const API_FIELDS = ["description", "input_schema", "name"];
+
+  it("offers every tool with ONLY the three API fields — no capability, nothing else", () => {
+    for (const tool of offeredTools(OWNER)) {
+      expect(
+        Object.keys(tool).sort(),
+        `${tool.name} carries a field the API will 400 the whole request over`,
+      ).toEqual(API_FIELDS);
+    }
+  });
+
+  it("censuses the FULL registries, so the check cannot pass on a short or empty list", () => {
+    // The derived-input rule: a loop over a filtered list proves nothing
+    // unless the list's size is pinned to a source that cannot drift with
+    // it. An OWNER holds every capability, so nothing may be filtered out:
+    // read tools and commands must BOTH be present, in full.
+    expect(TOOLS.length).toBeGreaterThan(0);
+    expect(COMMANDS.length).toBeGreaterThan(0);
+    expect(offeredTools(OWNER)).toHaveLength(TOOLS.length + COMMANDS.length);
+  });
+
+  it("projects a filtered principal's tools the same way", () => {
+    // The filter and the projection are independent; a regression that
+    // re-spreads the raw registry for one branch of toolsFor must not hide
+    // behind the OWNER-only census above.
+    const FIELD: Principal = { role: "MEMBER", jobFunction: "FIELD" };
+    const offered = offeredTools(FIELD);
+    expect(offered.length).toBeGreaterThan(0);
+    for (const tool of offered) {
+      expect(Object.keys(tool).sort(), `${tool.name} leaks an internal field`).toEqual(API_FIELDS);
+    }
+  });
+
+  it("passes each tool's name, description and schema through unchanged", () => {
+    // A projection that picks the right keys but mangles the values would
+    // pass the key census and still break the model's tool choice.
+    const offered = offeredTools(OWNER);
+    for (const tool of TOOLS) {
+      const sent = offered.find((entry) => entry.name === tool.name);
+      expect(sent, `${tool.name} was not offered to an OWNER`).toBeDefined();
+      expect(sent?.description).toBe(tool.description);
+      expect(sent?.input_schema).toEqual(tool.input_schema);
     }
   });
 });
