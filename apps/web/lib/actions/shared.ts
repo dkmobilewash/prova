@@ -217,6 +217,52 @@ export function actionFail(error: string): ActionResult {
   return { ok: false, error };
 }
 
+/**
+ * The owner check for an action that promises `ActionResult` — returns the
+ * refusal to hand back, or null when the caller is the owner.
+ *
+ *     const refusal = ownerRefusal(context, "Only the account owner can …");
+ *     if (refusal) return refusal;
+ *
+ * WHY THIS EXISTS ALONGSIDE `assertOwner` RATHER THAN REPLACING IT.
+ * Production REDACTS a thrown Server Action message to a digest. An action
+ * whose declared type is `Promise<ActionResult>` has promised the opposite —
+ * that its refusals are legible — so it must not refuse by throwing. Nine
+ * actions did exactly that (#166), including both QuickBooks push paths,
+ * where a non-owner got a digest instead of a sentence naming the reason.
+ *
+ * `assertOwner` is still correct in the twenty actions that make no such
+ * promise and throw anyway; changing it would have altered their behaviour
+ * for no reason, so it is untouched.
+ *
+ * THE SHAPE IS "RETURN THE REFUSAL", not a boolean, and that is deliberate.
+ * A boolean leaves every caller to write the message, which is how fifteen
+ * of them ended up hand-wrapping `assertOwner` in a local try/catch to get
+ * the same effect — the same five lines, fifteen times, which is the signal
+ * that the helper was the wrong shape rather than that fifteen authors were
+ * being thorough.
+ *
+ * THE RETURN IS NARROWED TO THE FAILURE BRANCH, and that is load-bearing
+ * rather than pedantic. Two of the eleven exposed actions declare the same
+ * contract INLINE with a payload —
+ * `Promise<{ ok: true; accounts: … } | { ok: false; error: string }>` — so a
+ * helper returning the full `ActionResult` could not be returned from them
+ * at all: `{ ok: true }` is not assignable to `{ ok: true; accounts }`. The
+ * failure branch alone fits every union that has one.
+ *
+ * `ownerRefusalCensus.test.ts` fails the build if an action promising a
+ * readable refusal goes back to throwing one. It matches on the CONTRACT
+ * rather than the type NAME, because matching the name is exactly how the
+ * two inline ones were missed when #166 was counted.
+ */
+export function ownerRefusal(
+  user: { role: string },
+  message?: string,
+): Extract<ActionResult, { ok: false }> | null {
+  if (user.role === "OWNER") return null;
+  return { ok: false, error: message ?? "Only the account owner can do that" };
+}
+
 /** ActionResult for an action that returns something on success — the same
  * contract, with a payload. Here for the same reason ActionResult is: two
  * feature modules exporting the same type name is a TS2308 build break,

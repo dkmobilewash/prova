@@ -1,45 +1,47 @@
-### The counter roll-call became a test, because the number rotted in a day (Diego)
+### An owner refusal the person cannot read is not a refusal — #166 (Diego)
 `claude/prova-vercel-direct-url-hg1acx`
 
-CLAUDE.md's sequence-number rule carried a count — "EIGHT counters exist
-and all eight do this" — plus two shell commands to re-derive it rather
-than be trusted, and a note that a bare count is the kind this file
-deletes elsewhere for rotting faster than the claim it decorates. That was
-written on 9 Sep. #228 added `ContractDocumentVersionCounter` the next
-morning. Both commands printed 9; the prose still said 8.
+Production redacts a thrown Server Action message to a digest. An action
+whose declared return type is `{ ok: false; error: string }` — however it
+is spelled — has promised the caller a sentence it can render, and
+`assertOwner` throws. So a non-owner clicking *push to QuickBooks* got a
+digest, while every other refusal in the same function gave them a reason.
 
-**The commands were right to be there.** They are what caught it, in one
-line, rather than anyone noticing. But a re-derivation nobody runs is
-still a claim with an expiry date, so it is now
-`apps/web/lib/counterCensus.test.ts` and fails the build instead.
+**#166 counted nine. It is eleven.** `loadQuickBooksAccounts` and
+`reconcileQuickBooksInvoices` declare the same contract inline with a
+payload — `Promise<{ ok: true; accounts: … } | { ok: false; error: string }>`
+— and both already returned `{ ok: false, error: "QuickBooks isn't
+connected." }` for the not-connected case while throwing for the owner
+case. The issue's classifier and my first one both missed them because
+they matched the type NAME rather than the contract.
 
-It asserts three things, each a defect this repo has actually shipped:
-every counter model is bumped through a **transaction** client; none is
-bumped on the bare `prisma` client (that is #224's `max(n)+1` wearing a
-counter's clothes, and it is not atomic with the insert it numbers); and
-no counter model exists that nothing increments — the "written,
-documented, and never called" shape wearing a schema.
+`ownerRefusal(context, message)` returns the refusal or null.
+`assertOwner` is untouched: it is still correct in the twenty actions that
+make no legibility promise and throw anyway, and changing it would have
+altered their behaviour for nothing. The return is narrowed to the failure
+branch, which is load-bearing rather than pedantic — `{ ok: true }` is not
+assignable to `{ ok: true; accounts }`, so a helper returning the whole
+`ActionResult` could not be returned from the two inline ones at all.
 
-**It counts what it parses against a literal that cannot drift with the
-pattern**, which is the lesson `scratch-cleanup-order.test.ts` paid for:
-that guard passed all thirteen of its assertions while parsing 180 of 181
-foreign keys, because a pattern matching nothing is never missing
-anything.
+The fifteen actions that already hand-wrap `assertOwner` in a local
+`try`/`catch` are left alone. Their refusals do reach the person, so they
+are not defects — and they sit in three other lanes.
 
-Four mutations, each reddening its named test: bump a counter on the bare
-client (3 red), add a counter model nothing bumps (1 red), make the model
-pattern match nothing (1 red), and make it miss exactly one counter — the
-180-of-181 shape (1 red). Every file restored byte-identical.
+**`ownerRefusalCensus.test.ts` matches on the contract, not the name**, so
+the blind spot that hid those two cannot hide a twelfth.
 
-**One of those mutations initially failed to redden, and that was the
-mutation's fault rather than the guard's.** Narrowing the pattern's `\s+`
-to a single space changed nothing, because the schema is formatted with
-single spaces — so it still matched all nine. A mutation that does not
-actually break the thing it is aimed at reports the same green as a guard
-that works, which is the whole family of defect this file keeps
-recording. Replaced with two that genuinely empty the set.
+**And the census shipped with that blind spot first.** It parses each
+action's return type; `indexOf("{")` was used to find the body brace, but
+a return type contains braces, so for exactly the two inline-typed actions
+it landed inside the TYPE, truncated it before the `ok: false`, and pointed
+the body at the wrong block. The guard reproduced the miss it was written
+to catch. Its own size check caught it — 35 parsed `assertOwner` against 36
+in the sources — and that number was nearly read as incidental. It scans by
+angle-bracket depth now.
 
-Also checked while in here, and clean: all eight per-job counters are
-registered in `HANDLED_MODELS`, `clean-scratch-data.mjs` and
-`seed-demo.mjs`, and company-scoped `SafetyCaseCounter` correctly is not.
-No third instance of the #224/#228 cleanup miss.
+Four mutations, all re-run after that fix: revert a named-`ActionResult`
+action (red), revert an inline-typed one (red), narrow the matcher to the
+type name with the inline one reverted (**all green — #166's blind spot
+demonstrated deliberately**), and break the function parser so it sees
+nothing (2 red, both vacuity guards, while the main assertion passes
+happily on an empty list).
