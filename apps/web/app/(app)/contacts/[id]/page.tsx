@@ -12,6 +12,7 @@ import {
   updateBidInvitationStatus,
 } from "@/lib/actions";
 import { money } from "@/lib/money";
+import { formatCalendarDate } from "@/lib/render-date";
 import { can } from "@/lib/permissions";
 import { calculatePaymentReliability } from "@/lib/gc-reliability";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -50,7 +51,7 @@ const BID_STATUS_STYLE: Record<string, string> = {
 };
 
 function formatDate(date: Date | null) {
-  return date ? date.toLocaleDateString() : "—";
+  return date ? formatCalendarDate(date, "numeric") : "—";
 }
 
 function percent(value: number) {

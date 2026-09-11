@@ -7,6 +7,8 @@
  * date the same way, and so the fix is testable without a request or a
  * timezone-aware DOM.
  */
+import { formatInstant } from "@/lib/render-date";
+
 export function formatSignedDate(date: Date, timeZone: string): string {
-  return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone });
+  return formatInstant(date, timeZone);
 }

@@ -1,8 +1,9 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { createDailyFieldReport } from "@/lib/actions";
 import { localToday } from "@/components/localToday";
+import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
 import {
   FieldReportFields,
   inputClass,
@@ -36,7 +37,17 @@ export function FieldReportComposer({
   const [jobId, setJobId] = useState(defaultJobId ?? jobs[0]?.id ?? "");
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const formRef = useRef<HTMLFormElement>(null);
+  // The job select is controlled, so the hook alone can't restore it —
+  // onRestore/onDiscard keep the state in step with the DOM.
+  const draft = useFormDraft("field-report:create", {
+    onRestore: (values) => {
+      const restoredJob = values.jobId;
+      if (typeof restoredJob === "string" && jobs.some((job) => job.id === restoredJob)) {
+        setJobId(restoredJob);
+      }
+    },
+    onDiscard: () => setJobId(defaultJobId ?? jobs[0]?.id ?? ""),
+  });
 
   if (jobs.length === 0) {
     return (
@@ -61,7 +72,8 @@ export function FieldReportComposer({
 
   return (
     <form
-      ref={formRef}
+      ref={draft.formRef}
+      onChange={draft.save}
       onSubmit={(event) => {
         event.preventDefault();
         setError(null);
@@ -69,7 +81,8 @@ export function FieldReportComposer({
         startTransition(async () => {
           const result = await createDailyFieldReport(jobId, formData);
           if (result.ok) {
-            formRef.current?.reset();
+            draft.clear();
+            draft.resetForm();
             setIsOpen(false);
           } else {
             setError(result.error);
@@ -79,6 +92,7 @@ export function FieldReportComposer({
       className="flex flex-col gap-3 rounded-lg border border-slate-800 bg-slate-900 p-4"
     >
       <h2 className="text-sm font-semibold text-slate-300">Log a day</h2>
+      <FormDraftNotice draft={draft} />
 
       <div className="grid gap-3 sm:grid-cols-2">
         <label className={labelClass}>

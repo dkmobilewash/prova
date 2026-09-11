@@ -7,8 +7,28 @@
 #
 # WHY THIS EXISTS AT ALL, rather than "run the script locally":
 #
-#   - It needs no checkout, no Node, no pnpm. Diego runs and clicks; this
-#     is a button.
+#   - NOBODY'S LAPTOP needs a checkout, Node or pnpm. Diego runs and
+#     clicks; this is a button.
+#
+#     Corrected 2026-09-11: this said "It needs no checkout, no Node, no
+#     pnpm", and "it" reads as the workflow, which needs all three. The
+#     job below runs actions/checkout@v4, sets up Node and pnpm, and runs
+#     `pnpm install --frozen-lockfile` before it can call `migrate:deploy`
+#     -- it has to, because the migrations and the script that applies
+#     them are both files in this repository. Only the OPERATOR is spared
+#     the toolchain, which is what the bullet meant.
+#
+#     The correction earns its space because "no checkout" hides the one
+#     surprising thing about this button: it applies the migrations
+#     present on the ref you pick in "Use workflow from", NOT the ones on
+#     main. From a feature branch that is a deliberate tool -- run 16 was
+#     dispatched from claude/prova-company-cam-feature-6170v6 to get
+#     #214's migration onto the demo project before it merged, so the
+#     preview could be clicked. From a stale ref it is a run that reports
+#     success having applied less than whoever pressed it assumed. Either
+#     way, read `Apply and verify` for the migration NAMES; the tick does
+#     not distinguish the two.
+#
 #   - The demo URLs go into GitHub's secret store rather than being read
 #     out to a second person over Signal so they can put them in a file.
 #     Fewer copies of a credential is the whole game.

@@ -1,15 +1,16 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { createToolboxTalk } from "@/lib/actions";
 import { inputClass, labelClass, type JobOption } from "@/components/SafetyIncidentFields";
 import { localToday } from "@/components/localToday";
+import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
 
 export function ToolboxTalkForm({ jobs, today }: { jobs: JobOption[]; today: string }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const formRef = useRef<HTMLFormElement>(null);
+  const draft = useFormDraft("toolbox-talk:create");
 
   if (!isOpen) {
     return (
@@ -25,7 +26,8 @@ export function ToolboxTalkForm({ jobs, today }: { jobs: JobOption[]; today: str
 
   return (
     <form
-      ref={formRef}
+      ref={draft.formRef}
+      onChange={draft.save}
       onSubmit={(event) => {
         event.preventDefault();
         setError(null);
@@ -33,7 +35,8 @@ export function ToolboxTalkForm({ jobs, today }: { jobs: JobOption[]; today: str
         startTransition(async () => {
           try {
             await createToolboxTalk(formData);
-            formRef.current?.reset();
+            draft.clear();
+            draft.resetForm();
             setIsOpen(false);
           } catch (err) {
             setError(err instanceof Error ? err.message : "Could not log the toolbox talk");
@@ -43,6 +46,7 @@ export function ToolboxTalkForm({ jobs, today }: { jobs: JobOption[]; today: str
       className="flex flex-col gap-3 rounded-lg border border-slate-800 bg-slate-900 p-4"
     >
       <h2 className="text-sm font-semibold text-slate-300">Log a toolbox talk</h2>
+      <FormDraftNotice draft={draft} />
 
       <div className="grid gap-3 sm:grid-cols-2">
         <label className={labelClass}>

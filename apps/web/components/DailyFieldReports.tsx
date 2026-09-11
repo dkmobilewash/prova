@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import {
   createDailyFieldReport,
   deleteDailyFieldReport,
@@ -9,6 +9,7 @@ import {
 import { localToday } from "@/components/localToday";
 import type { ActionResult } from "@/lib/actions/shared";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
+import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
 
 // `text-base` is load-bearing, not decoration. These inputs sit inside a
 // `text-sm` label and INHERIT 14px, and iOS Safari zooms the whole page
@@ -104,6 +105,62 @@ export function FieldReportFields({ report }: { report?: FieldReport }) {
   );
 }
 
+/** The edit form for one report, extracted from the list's map so it can
+ * hold its own draft hook (hooks can't live in a loop). The draft is keyed
+ * by the report id — the same key FieldReportEntry uses on the company-wide
+ * log, since both edit the same record. `onSave` receives the form's data
+ * plus a callback to run only when the update actually succeeded, which
+ * clears the draft. */
+function FieldReportEditForm({
+  report,
+  isPending,
+  error,
+  onSave,
+  onCancel,
+}: {
+  report: FieldReport;
+  isPending: boolean;
+  error: string | null;
+  onSave: (formData: FormData, onSaved: () => void) => void;
+  onCancel: () => void;
+}) {
+  const draft = useFormDraft(`field-report:edit:${report.id}`);
+  return (
+    <form
+      ref={draft.formRef}
+      onChange={draft.save}
+      onSubmit={(event) => {
+        event.preventDefault();
+        const formData = new FormData(event.currentTarget);
+        onSave(formData, draft.clear);
+      }}
+      className="flex flex-col gap-3"
+    >
+      <p className="text-sm font-medium text-slate-100">{formatDate(report.reportDate)}</p>
+      <FormDraftNotice draft={draft} />
+      <FieldReportFields report={report} />
+      {error && <p className="text-sm text-red-400">{error}</p>}
+      <div className="flex gap-2">
+        <button
+          type="submit"
+          disabled={isPending}
+          className="inline-flex min-h-11 items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+        >
+          {isPending ? "Saving…" : "Save changes"}
+        </button>
+        <button
+          type="button"
+          disabled={isPending}
+          onClick={onCancel}
+          className="inline-flex min-h-11 items-center justify-center rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50"
+        >
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}
+
 export function DailyFieldReports({
   jobId,
   reports,
@@ -122,7 +179,9 @@ export function DailyFieldReports({
   const [deleteErrorId, setDeleteErrorId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const formRef = useRef<HTMLFormElement>(null);
+  // Keyed by the job: this section renders on every job page, and a report
+  // half-typed for one job must not surface on another's.
+  const draft = useFormDraft(`field-report:create:${jobId}`);
 
   /** These actions RETURN their failures — production redacts a thrown
    * Server Action message, and "a report already exists for that date" is
@@ -154,17 +213,20 @@ export function DailyFieldReports({
 
       {isOpen && (
         <form
-          ref={formRef}
+          ref={draft.formRef}
+          onChange={draft.save}
           onSubmit={(event) => {
             event.preventDefault();
             const formData = new FormData(event.currentTarget);
             run(() => createDailyFieldReport(jobId, formData), "Could not save the report", () => {
-              formRef.current?.reset();
+              draft.clear();
+              draft.resetForm();
               setIsOpen(false);
             });
           }}
           className="mb-4 flex flex-col gap-3 rounded-lg border border-slate-800 bg-slate-900 p-4"
         >
+          <FormDraftNotice draft={draft} />
           <label className={labelClass}>
             Date
             <input type="date" name="reportDate" required defaultValue={localToday()} className={inputClass} />
@@ -204,40 +266,21 @@ export function DailyFieldReports({
           {reports.map((report) =>
             editingId === report.id ? (
               <li key={report.id} className="rounded-md border border-slate-800 bg-slate-900 p-3">
-                <form
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    const formData = new FormData(event.currentTarget);
-                    run(() => updateDailyFieldReport(report.id, formData), "Could not save changes", () =>
-                      setEditingId(null),
-                    );
+                <FieldReportEditForm
+                  report={report}
+                  isPending={isPending}
+                  error={error}
+                  onSave={(formData, onSaved) => {
+                    run(() => updateDailyFieldReport(report.id, formData), "Could not save changes", () => {
+                      onSaved();
+                      setEditingId(null);
+                    });
                   }}
-                  className="flex flex-col gap-3"
-                >
-                  <p className="text-sm font-medium text-slate-100">{formatDate(report.reportDate)}</p>
-                  <FieldReportFields report={report} />
-                  {error && <p className="text-sm text-red-400">{error}</p>}
-                  <div className="flex gap-2">
-                    <button
-                      type="submit"
-                      disabled={isPending}
-                      className="inline-flex min-h-11 items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
-                    >
-                      {isPending ? "Saving…" : "Save changes"}
-                    </button>
-                    <button
-                      type="button"
-                      disabled={isPending}
-                      onClick={() => {
-                        setEditingId(null);
-                        setError(null);
-                      }}
-                      className="inline-flex min-h-11 items-center justify-center rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </form>
+                  onCancel={() => {
+                    setEditingId(null);
+                    setError(null);
+                  }}
+                />
               </li>
             ) : (
               <li key={report.id} className="rounded-md border border-slate-800 bg-slate-900 p-3 text-sm">

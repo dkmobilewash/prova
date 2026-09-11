@@ -5,6 +5,7 @@ import { deleteVendor, updateVendor } from "@/lib/actions";
 import { tradeScopeLabel } from "@/components/tradeScopeLabels";
 import { VendorFields, type VendorFieldValues } from "@/components/VendorFields";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
+import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
 
 type VendorRowProps = {
   canDelete: boolean;
@@ -24,6 +25,8 @@ export function VendorRow({ canDelete, vendor }: VendorRowProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  // Keyed by the vendor id so two rows' edit forms can never share a draft.
+  const draft = useFormDraft(`vendor:edit:${vendor.id}`);
 
   const trade = tradeScopeLabel(vendor.tradeScope);
   const contactLine = [vendor.contactName, vendor.phone, vendor.email].filter(Boolean).join(" · ");
@@ -35,6 +38,7 @@ export function VendorRow({ canDelete, vendor }: VendorRowProps) {
     startTransition(async () => {
       try {
         await updateVendor(vendor.id, formData);
+        draft.clear();
         setIsEditing(false);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Could not save changes");
@@ -56,7 +60,8 @@ export function VendorRow({ canDelete, vendor }: VendorRowProps) {
   if (isEditing) {
     return (
       <li className="p-4">
-        <form onSubmit={handleSave} className="flex flex-col gap-3">
+        <form ref={draft.formRef} onSubmit={handleSave} onChange={draft.save} className="flex flex-col gap-3">
+          <FormDraftNotice draft={draft} />
           <VendorFields defaults={vendor} />
 
           {error && <p className="text-sm text-red-400">{error}</p>}

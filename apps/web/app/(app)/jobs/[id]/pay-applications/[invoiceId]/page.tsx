@@ -4,6 +4,8 @@ import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { PrintButton } from "@/components/PrintButton";
 import { money } from "@/lib/money";
+import { formatInstant } from "@/lib/render-date";
+import { viewerTimeZone } from "@/lib/viewerToday";
 import { loadPayApplication } from "@/lib/pay-application-query";
 
 function percent(value: number | null) {
@@ -28,6 +30,9 @@ export default async function PayApplicationPage({
     notFound();
   }
   const { job, invoice, isPayApplication, lineItems: lineItemResults, summary } = view;
+  // `issuedAt` is when the invoice was actually issued, not a date someone
+  // typed, so it renders where the reader is standing.
+  const timeZone = await viewerTimeZone();
 
   return (
     <div className="mx-auto max-w-4xl p-6 print:p-0">
@@ -42,7 +47,7 @@ export default async function PayApplicationPage({
         Application for payment #{invoice.number} — {job.name}
       </h1>
       <p className="mt-1 text-sm text-slate-500">
-        {job.contact.name} · {invoice.issuedAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+        {job.contact.name} · {formatInstant(invoice.issuedAt, timeZone)}
         {invoice.description ? ` · ${invoice.description}` : ""}
       </p>
       <p className="mt-3 max-w-2xl text-xs text-slate-500">

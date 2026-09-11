@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { deletePunchListItem, setPunchListItemDone, updatePunchListItem } from "@/lib/actions";
 import type { JobOption } from "@/components/PunchListForm";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
+import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
 
 // `text-base` is load-bearing, not decoration: these inputs sit inside a
 // `text-sm` label and INHERIT 14px, and iOS Safari zooms the page whenever
@@ -40,6 +41,8 @@ export function PunchListRow({ canDelete, jobs, item, showJob }: PunchListRowPro
   const [isEditing, setIsEditing] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  // Keyed by the item id so two rows' edit forms can never share a draft.
+  const draft = useFormDraft(`punch-list:edit:${item.id}`);
 
   function run(fn: () => Promise<void>, fallback: string) {
     setError(null);
@@ -56,16 +59,20 @@ export function PunchListRow({ canDelete, jobs, item, showJob }: PunchListRowPro
     return (
       <li className="p-4">
         <form
+          ref={draft.formRef}
+          onChange={draft.save}
           onSubmit={(event) => {
             event.preventDefault();
             const formData = new FormData(event.currentTarget);
             run(async () => {
               await updatePunchListItem(item.id, formData);
+              draft.clear();
               setIsEditing(false);
             }, "Could not save changes");
           }}
           className="flex flex-col gap-3"
         >
+          <FormDraftNotice draft={draft} />
           <select name="jobId" defaultValue={item.jobId} className={inputClass}>
             {jobs.map((job) => (
               <option key={job.id} value={job.id}>

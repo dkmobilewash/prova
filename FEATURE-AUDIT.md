@@ -16,16 +16,36 @@ and check it against [`ONBOARDING.md`](./ONBOARDING.md) section 7 (they
 should always tell the same story — section 7 is the prose version, this is
 the itemized one).
 
-Sheets 17, 19, 20 and 22 are known stale as of this update — vendors,
+~~Sheets 17, 19, 20 and 22 are known stale as of this update — vendors,
 equipment, punch lists, and daily field reports have all shipped on `main`
 since these were last written, plus a safety incident/toolbox talk feature
 in flight. Left as-is here rather than guessed at from the outside; the next
 update to touch those sheets should come from whoever actually verified them
-against a fresh clone.
+against a fresh clone.~~
+
+**STRUCK 2026-09-10: the warning above outlived its truth by a week.** All
+four sheets it names were rewritten on or before 3 Sep — each now carries
+its own dated update note and rows for the shipped work (vendors and
+pricing history in 19, equipment and utilisation in 20, punch lists and
+warranty in 22, safety/field reports/photos in 17). A reader arriving here
+was being told four current sheets were unreliable, which is this file's
+drift failure pointing in the unusual direction: the warning was stale, not
+the data. Same lesson as CLAUDE.md's `MIGRATE_EXPECT_HOST` deletion — a doc
+note that says "X has not been done" is a claim with an expiry date on it.
 
 **126 items audited — 100 built / 19 partial / 6 missing / 1 descoped**
 
-(Recounted from the rows on merging `main` into this branch, which is the
+(The recount below is HISTORY — a worked example of resolving this file's
+recurring merge-conflict shape, kept for the method. Its arithmetic ends at
+119 items because that is what the file held on the day of that merge; rows
+added since (#214's gallery row via #230 among them) moved the totals to
+the 125 / 99 the line above states. Re-derived 2026-09-10 by summing all 26
+per-sheet headers: 99 + 19 + 6 + 1 = 125, agreeing with the prose line and
+the summary table. Until this note, the stale 119 sat forty lines under the
+current 125 with nothing marking which one to believe — the exact
+two-numbers-on-main failure the recount itself was written to end.
+
+Recounted from the rows on merging `main` into this branch, which is the
 only thing that settles it — the fourth time this exact conflict shape has
 hit this file. Both sides were internally correct and neither number
 survived the other's: this branch had 117 / 90 / 19 / 7 / 1 against ITS
@@ -34,7 +54,7 @@ merge base of 117 / 87 / 21 / 8 / 1, this branch moved Sheets 18 and 20 to
 fully Built (+3 built, -2 partial, -1 missing) and `main` moved Sheet 15's
 cash flow forecast Missing -> Built, added two rows and a Partial to
 Sheet 26. Both apply: 87+3+3 = 93 built, 21-2 = 19 partial, 8-1-1 = 6
-missing, 1 descoped, and 93 + 19 + 6 + 1 = 119.
+missing, 1 descoped, and 93 + 19 + 6 + 1 = 119 — as of that merge.
 
 Count only rows beneath a `## NN.` sheet header — a naive grep for
 `^| Built |` also matches this summary table's own four rows and

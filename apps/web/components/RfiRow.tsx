@@ -6,6 +6,7 @@ import { RfiFields, fieldInputClass, labelClass, type RfiDefaults } from "@/comp
 import { daysBetween, isOverdue, statusLabel } from "@/components/rfiLabels";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { localToday } from "@/components/localToday";
+import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
 
 export type RfiRowData = RfiDefaults & {
   id: string;
@@ -39,6 +40,10 @@ export function RfiRow({
   const [mode, setMode] = useState<"view" | "edit" | "answer">("view");
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  // Keyed by the RFI id so two rows can never share a draft; edit and
+  // answer are different forms with different fields, so different keys.
+  const editDraft = useFormDraft(`rfi:edit:${rfi.id}`);
+  const answerDraft = useFormDraft(`rfi:answer:${rfi.id}`);
 
   function run(fn: () => Promise<void>, fallback: string) {
     setError(null);
@@ -55,11 +60,14 @@ export function RfiRow({
     return (
       <li className="p-4">
         <form
+          ref={editDraft.formRef}
+          onChange={editDraft.save}
           onSubmit={(event) => {
             event.preventDefault();
             const formData = new FormData(event.currentTarget);
             run(async () => {
               await updateRfi(rfi.id, formData);
+              editDraft.clear();
               setMode("view");
             }, "Could not save changes");
           }}
@@ -68,6 +76,7 @@ export function RfiRow({
           <p className="text-sm font-semibold text-slate-300">
             RFI {rfi.number} · {rfi.jobName}
           </p>
+          <FormDraftNotice draft={editDraft} />
           <RfiFields defaults={rfi} />
           {error && <p className="text-sm text-red-400">{error}</p>}
           <div className="flex flex-wrap gap-2">
@@ -91,11 +100,14 @@ export function RfiRow({
     return (
       <li className="p-4">
         <form
+          ref={answerDraft.formRef}
+          onChange={answerDraft.save}
           onSubmit={(event) => {
             event.preventDefault();
             const formData = new FormData(event.currentTarget);
             run(async () => {
               await answerRfi(rfi.id, formData);
+              answerDraft.clear();
               setMode("view");
             }, "Could not record the answer");
           }}
@@ -104,6 +116,7 @@ export function RfiRow({
           <p className="text-sm font-semibold text-slate-300">
             Record the answer to RFI {rfi.number}
           </p>
+          <FormDraftNotice draft={answerDraft} />
 
           <label className={labelClass}>
             Answer as given

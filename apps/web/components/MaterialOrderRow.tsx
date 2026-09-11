@@ -25,6 +25,7 @@ import {
 } from "@/components/materialOrderLabels";
 import { localToday } from "@/components/localToday";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
+import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
 
 export type MaterialOrderRowData = MaterialOrderDefaults & {
   id: string;
@@ -61,6 +62,10 @@ export function MaterialOrderRow({
   const [mode, setMode] = useState<"view" | "edit" | "receive">("view");
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  // Keyed by the order id so two rows can never share a draft; edit and
+  // receive are different forms with different fields, so different keys.
+  const editDraft = useFormDraft(`material-order:edit:${order.id}`);
+  const receiveDraft = useFormDraft(`material-order:receive:${order.id}`);
 
   // Actions in this feature return their failures instead of throwing —
   // production redacts thrown Server Action messages to a digest,
@@ -82,12 +87,17 @@ export function MaterialOrderRow({
     return (
       <li className="p-4">
         <form
+          ref={editDraft.formRef}
+          onChange={editDraft.save}
           onSubmit={(event) => {
             event.preventDefault();
             const formData = new FormData(event.currentTarget);
             run(
               () => updateMaterialOrder(order.id, formData),
-              () => setMode("view"),
+              () => {
+                editDraft.clear();
+                setMode("view");
+              },
             );
           }}
           className="flex flex-col gap-3"
@@ -95,6 +105,7 @@ export function MaterialOrderRow({
           <p className="text-sm font-semibold text-slate-300">
             Order {order.number} · {order.jobName} · ordered {order.orderedOn}
           </p>
+          <FormDraftNotice draft={editDraft} />
           <MaterialOrderFields defaults={order} vendors={vendors} lineItems={lineItems} fixedJobId={order.jobId} />
           {error && <p className="text-sm text-red-400">{error}</p>}
           <div className="flex gap-2">
@@ -114,12 +125,17 @@ export function MaterialOrderRow({
     return (
       <li className="p-4">
         <form
+          ref={receiveDraft.formRef}
+          onChange={receiveDraft.save}
           onSubmit={(event) => {
             event.preventDefault();
             const formData = new FormData(event.currentTarget);
             run(
               () => recordMaterialDelivery(order.id, formData),
-              () => setMode("view"),
+              () => {
+                receiveDraft.clear();
+                setMode("view");
+              },
             );
           }}
           className="flex flex-col gap-3"
@@ -127,6 +143,7 @@ export function MaterialOrderRow({
           <p className="text-sm font-semibold text-slate-300">
             What showed up against order {order.number}?
           </p>
+          <FormDraftNotice draft={receiveDraft} />
 
           <label className={labelClass}>
             Date delivered
