@@ -206,10 +206,6 @@ export function JobMediaCapture({ jobId }: { jobId: string }) {
       // morning's walk with a photo picked out of the camera roll from last
       // week, and the second one's location is genuinely unknown.
       const locate = attempt.ok && locationIsContemporary(capturedAt, fixedAt);
-      if (attempt.ok) {
-        if (locate) usedOn += 1;
-        else skippedStale += 1;
-      }
 
       const pathname = jobMediaUploadPathname(jobId, file.name);
       if (!pathname) {
@@ -263,6 +259,15 @@ export function JobMediaCapture({ jobId }: { jobId: string }) {
             ? { name: file.name, ok: true }
             : { name: file.name, ok: false, message: result.error },
         );
+        // COUNTED ONLY ONCE A ROW EXISTS, which is a correctness point
+        // rather than bookkeeping. Counted at the decision instead, the
+        // line below reads "location recorded on 3 of 2 files" the moment
+        // one upload fails — a number about rows, taken from a population
+        // of attempts.
+        if (result.ok && attempt.ok) {
+          if (locate) usedOn += 1;
+          else skippedStale += 1;
+        }
       } catch (err) {
         // Not `err.message` directly: for anything the token route refuses,
         // that message is the SDK's own "Failed to  retrieve the client
@@ -344,8 +349,8 @@ export function JobMediaCapture({ jobId }: { jobId: string }) {
               <>
                 {locationOutcome.usedOn > 0 && (
                   <p className="text-slate-400">
-                    Location recorded on {locationOutcome.usedOn} of {outcomes.length} file
-                    {outcomes.length === 1 ? "" : "s"}.
+                    Location recorded on {locationOutcome.usedOn} of {succeeded} file
+                    {succeeded === 1 ? "" : "s"}.
                   </p>
                 )}
                 {locationOutcome.skippedStale > 0 && (
