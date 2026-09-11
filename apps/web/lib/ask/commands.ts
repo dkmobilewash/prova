@@ -9,6 +9,7 @@ import { fieldCommands, fieldExclusions } from "./commands/field";
 import { laborCommands, laborExclusions } from "./commands/labor";
 import { messageCommands, messageExclusions } from "./commands/messages";
 import { punchListCommands, punchListExclusions } from "./commands/punchLists";
+import { retainageCommands } from "./commands/retainage";
 import { rfiCommands, rfiExclusions } from "./commands/rfis";
 import { scheduleCommands } from "./commands/schedule";
 
@@ -55,6 +56,7 @@ export type CommandName =
   | "add_punch_item"
   | "draft_invoice"
   | "log_payment"
+  | "release_retainage"
   | "log_time_entry"
   | "send_email"
   | "reschedule_job"
@@ -195,6 +197,7 @@ export const COMMANDS: CommandDefinition[] = [
   ...rfiCommands,
   ...punchListCommands,
   ...billingCommands,
+  ...retainageCommands,
   ...laborCommands,
   ...messageCommands,
   ...scheduleCommands,

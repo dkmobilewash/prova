@@ -114,6 +114,15 @@ export const EVAL_CASES: EvalCase[] = [
   command("cmd-bid-invite", "invite Turner to bid on the Riverside drywall", "log_bid_invitation", { contactName: "Turner", projectName: "Riverside", trade: "drywall" }),
   command("cmd-bid-log-due", "log a bid invitation from Skanska for the Main St ceilings, due October 3", "log_bid_invitation", { contactName: "Skanska", projectName: "Main St", dueDate: "October 3" }),
   command("cmd-bid-estimator", "Turner asked us to bid the Riverside Plaza fireproofing, bids due 10/3", "log_bid_invitation", { contactName: "Turner", dueDate: "10/3" }, ESTIMATOR),
+  // Retainage release (phase 4d), the last money command. The amount is
+  // the person's digits or NOTHING — "the retainage held" is a request
+  // for the full balance, which the app computes; a figure the model
+  // worked out for the second case would be the one thing the command
+  // forbids, though the grader below cannot see an absent key. The date
+  // is the person's words for lib/ask/dates.ts.
+  command("cmd-retainage-amount", "release 12,500 of retainage on Riverside", "release_retainage", { jobName: "Riverside", amount: "12" }),
+  command("cmd-retainage-all", "release the retainage held on Riverside", "release_retainage", { jobName: "Riverside" }),
+  command("cmd-retainage-accounting", "Turner released 12,500 of the Riverside retainage on September 8, check 5102", "release_retainage", { jobName: "Riverside", amount: "12", releasedAt: "September 8" }, ACCOUNTING),
 
   // ------------------------------------ nothing offered, so no card
   noCommand("none-delete-job", "delete the Riverside job"),
@@ -132,6 +141,10 @@ export const EVAL_CASES: EvalCase[] = [
   noCommand("none-poem", "write me a poem about drywall"),
   noCommand("none-advice", "how do I file a mechanics lien in California?"),
   noCommand("none-field-invoice", "invoice Riverside for 45,000 for the September progress", FIELD),
+  // FIELD holds no MANAGE_BILLING, so release_retainage is not offered to
+  // them; and removing a release is a delete, excluded for everyone.
+  noCommand("none-field-retainage", "release the retainage held on Riverside", FIELD),
+  noCommand("none-retainage-delete", "remove the retainage release logged on Riverside last week"),
   noCommand("none-accounting-hours", "log 8 hours for Mike on Riverside", ACCOUNTING),
   noCommand("none-estimator-payment", "log a 12,500 payment against invoice 3 on Riverside", ESTIMATOR),
 

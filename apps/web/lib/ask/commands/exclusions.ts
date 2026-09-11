@@ -21,7 +21,10 @@ import type { Exclusion } from "../commands";
  * commands/estimating.ts rather than a wildcard here, since jobs.ts had
  * commands already. Phase 4c did the same for createBidInvitation
  * (commands/bids.ts), once the contact resolver and the date parser the
- * per-action line had been waiting for both existed.
+ * per-action line had been waiting for both existed. Phase 4d did it for
+ * createRetainageRelease (commands/retainage.ts), the per-action line in
+ * commands/billing.ts that had been waiting for "a card that can show the
+ * balance it draws down" — phase 3's money cards were that card.
  *
  * commands.coverage.test.ts fails the moment a new module appears with no
  * line here and no registration — so adding an action file is a decision

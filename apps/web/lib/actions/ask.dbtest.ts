@@ -89,6 +89,7 @@ describe("confirmAskProposal against a real database", () => {
 
   afterAll(async () => {
     await prisma.timeEntry.deleteMany({ where: { job: { companyId } } });
+    await prisma.retainageRelease.deleteMany({ where: { job: { companyId } } });
     await prisma.payment.deleteMany({ where: { invoice: { job: { companyId } } } });
     await prisma.invoice.deleteMany({ where: { job: { companyId } } });
     await prisma.invoiceCounter.deleteMany({ where: { job: { companyId } } });
@@ -452,6 +453,111 @@ describe("confirmAskProposal against a real database", () => {
     const unchanged = await prisma.job.findUniqueOrThrow({ where: { id: job.id } });
     expect(unchanged.startDate?.toISOString()).toBe("2026-10-06T00:00:00.000Z");
     expect(unchanged.endDate?.toISOString()).toBe("2026-11-20T00:00:00.000Z");
+  });
+
+  it("a retainage release card lands through the lifted core with the form's own fields, refuses a member without MANAGE_BILLING, refuses a stale card naming the balance now, and refuses more than the balance held by the core's own ceiling", async () => {
+    // Phase 4d: the last money command. The card carries the balance it
+    // was made from; the core re-reads the job's rows inside a
+    // serializable transaction and compares before it inserts. Only a
+    // real database can prove the re-read sees the release that landed
+    // in between.
+    const job = await prisma.job.create({
+      data: { companyId, contactId, name: `ASK-DBTEST retainage ${Date.now()}`, status: "IN_PROGRESS", retainagePercent: "10" },
+    });
+    // Two invoices with snapshots, one without: $7,500.00 withheld, the
+    // job page's own population (every invoice on the job).
+    await prisma.invoice.createMany({
+      data: [
+        { jobId: job.id, number: 1, amount: "45000.00", retainageWithheld: "4500.00" },
+        { jobId: job.id, number: 2, amount: "30000.00", retainageWithheld: "3000.00" },
+        { jobId: job.id, number: 3, amount: "1000.00", retainageWithheld: null },
+      ],
+    });
+    const card = (over: Partial<Record<"amount" | "releasedAt" | "note" | "expectedBalance", string | null>> = {}) =>
+      cardFor("release_retainage", {
+        jobId: job.id,
+        jobName: job.name,
+        amount: "2500.00",
+        fullBalance: false,
+        releasedAt: "2026-09-08",
+        note: "check 5102",
+        expectedBalance: "7500.00",
+        ...over,
+      });
+
+    // A MEMBER whose job function holds no MANAGE_BILLING: refused by the
+    // confirm action itself, as a returned sentence, before any claim.
+    context.role = "MEMBER";
+    context.jobFunction = "FIELD";
+    const refusedId = await card();
+    const refused = await confirmAskProposal(refusedId);
+    context.role = "OWNER";
+    context.jobFunction = null;
+    expect(refused.ok).toBe(false);
+    if (!refused.ok) expect(refused.error).toMatch(/billing access \(MANAGE_BILLING\)/);
+    expect((await prisma.askProposal.findUniqueOrThrow({ where: { id: refusedId } })).claimedAt).toBeNull();
+    expect(await prisma.retainageRelease.count({ where: { jobId: job.id } })).toBe(0);
+
+    // The owner's tap: the row lands with exactly what the form would
+    // have posted, dated the calendar day on the card.
+    const firstId = await card();
+    const first = await confirmAskProposal(firstId);
+    expect(first.ok).toBe(true);
+    if (first.ok) {
+      expect(first.value.message).toBe(`Released $2,500.00 of retainage on ${job.name}; $5,000.00 is still held.`);
+      expect(first.value.created).toEqual({ label: `Retainage release, ${job.name}`, href: `/jobs/${job.id}` });
+    }
+    const releases = await prisma.retainageRelease.findMany({ where: { jobId: job.id } });
+    expect(releases).toHaveLength(1);
+    expect(Number(releases[0].amount)).toBe(2500);
+    expect(releases[0].releasedAt.toISOString()).toBe("2026-09-08T00:00:00.000Z");
+    expect(releases[0].note).toBe("check 5102");
+    expect(releases[0].createdByUserId).toBe(ownerId);
+    const row = await prisma.askProposal.findUniqueOrThrow({ where: { id: firstId } });
+    expect(row.outcome).toBe("OK");
+    expect(row.targetType).toBe("RetainageRelease");
+    expect(row.targetId).toBe(releases[0].id);
+
+    // A second card made from the OLD balance — the release above landed
+    // between card and tap. Refused naming what the job holds now;
+    // nothing written.
+    const staleId = await card({ amount: "1000.00" });
+    const stale = await confirmAskProposal(staleId);
+    expect(stale.ok).toBe(false);
+    if (!stale.ok) {
+      expect(stale.error).toBe(
+        `${job.name}'s retainage has changed since you last saw it — $7,500.00 withheld, $2,500.00 released, $5,000.00 still held. Ask again to see the balance before releasing against it.`,
+      );
+    }
+    expect(await prisma.retainageRelease.count({ where: { jobId: job.id } })).toBe(1);
+    const staleRow = await prisma.askProposal.findUniqueOrThrow({ where: { id: staleId } });
+    expect(staleRow.outcome).toBe("FAILED");
+    expect(staleRow.outcomeNote).toMatch(/retainage has changed since you last saw it/);
+
+    // $6,000 against $5,000 held, on a card made from the CURRENT balance:
+    // the core's ceiling, not the resolver's (the resolver never saw this
+    // card). Nothing written.
+    const over = await confirmAskProposal(await card({ amount: "6000.00", expectedBalance: "5000.00" }));
+    expect(over.ok).toBe(false);
+    if (!over.ok) {
+      expect(over.error).toBe(
+        `That would bring total released to $8,500.00, more than the $7,500.00 withheld on ${job.name}. Only $5,000.00 is still held.`,
+      );
+    }
+    expect(await prisma.retainageRelease.count({ where: { jobId: job.id } })).toBe(1);
+
+    // The full balance, from a current card: clears it, and says so.
+    const cleared = await confirmAskProposal(await card({ amount: "5000.00", expectedBalance: "5000.00", note: null }));
+    expect(cleared.ok).toBe(true);
+    if (cleared.ok) expect(cleared.value.message).toBe(`Released $5,000.00 of retainage on ${job.name}; nothing is still held.`);
+    const all = await prisma.retainageRelease.findMany({ where: { jobId: job.id }, orderBy: { createdAt: "asc" } });
+    expect(all.map((r) => Number(r.amount))).toEqual([2500, 5000]);
+    expect(all[1].note).toBeNull();
+
+    // And the job page's own arithmetic over the same rows agrees with
+    // every figure the sentences above named.
+    const { loadJobRetainage } = await import("@/lib/billing/retainage-release");
+    expect(await loadJobRetainage(prisma, job.id)).toMatchObject({ withheldCents: 750_000, releasedCents: 750_000, balanceCents: 0, invoicesWithRetainage: 2, releases: 2 });
   });
 
   it("a bid invitation card logs the row through the lifted core with the form's own fields, links an open twin rather than doubling it, refuses a foreign contact, and refuses a member without MANAGE_ESTIMATING", async () => {

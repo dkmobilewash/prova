@@ -176,12 +176,31 @@ describe("who is offered what", () => {
     expect(commandsFor({ role: "MEMBER", jobFunction: "PROJECT_MANAGER" }).map((c) => c.name)).toContain("log_bid_invitation");
   });
 
-  it("offers accounting exactly the two money commands, and nothing that touches the field or writes to a GC", () => {
-    expect(commandsFor(ACCOUNTING).map((c) => c.name)).toEqual(["draft_invoice", "log_payment"]);
+  it("offers accounting exactly the three money commands, and nothing that touches the field or writes to a GC", () => {
+    expect(commandsFor(ACCOUNTING).map((c) => c.name)).toEqual(["draft_invoice", "log_payment", "release_retainage"]);
     for (const command of commandsFor(ACCOUNTING)) {
       expect(command.capability, command.name).toBe("MANAGE_BILLING");
       expect(command.tier, command.name).toBe("T3_MONEY_EVIDENCE");
     }
+  });
+
+  it("registers the retainage release as T3, DIRECT over its lifted core, on the capability the job page's Retainage section demands — and withholds it from the field and from estimating", () => {
+    // Phase 4d: the last per-action money exclusion in commands/billing.ts,
+    // registered from its own file. `showsBilling` on jobs/[id]/page.tsx is
+    // `can(principal, "MANAGE_BILLING")`, and that is the whole gate.
+    const release = COMMANDS.find((c) => c.name === "release_retainage")!;
+    expect(release.tier).toBe("T3_MONEY_EVIDENCE");
+    expect(release.mode).toBe("DIRECT");
+    expect(release.core).toBe("createRetainageReleaseRecord");
+    expect(release.action).toBe("createRetainageRelease");
+    expect(release.capability).toBe("MANAGE_BILLING");
+    expect(release.requiresAlso).toBeUndefined();
+    expect(commandsFor(FIELD).map((c) => c.name)).not.toContain("release_retainage");
+    expect(commandsFor(ESTIMATOR).map((c) => c.name)).not.toContain("release_retainage");
+    expect(commandsFor({ role: "MEMBER", jobFunction: "PROJECT_MANAGER" }).map((c) => c.name)).toContain("release_retainage");
+    // And the delete beside it stays excluded: T5, never a command.
+    expect(EXCLUSIONS.map((e) => e.action)).toContain("deleteRetainageRelease");
+    expect(EXCLUSIONS.map((e) => e.action)).not.toContain("createRetainageRelease");
   });
 
   it("registers the outward send as T4 and HANDOFF only — a tap never sends", () => {
