@@ -213,7 +213,9 @@ export default async function Wh347Page({
           <div>
             <span className="font-semibold">Address: </span>
             {form.header.contractorAddress ?? (
-              <Missing>No address on the company record. Settings → Company.</Missing>
+              <Missing>
+                No address on the company record. An owner records it at Settings → Company.
+              </Missing>
             )}
           </div>
           <div>

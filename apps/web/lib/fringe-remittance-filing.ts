@@ -78,10 +78,17 @@ export const REMITTANCE_FIELD_ORDER: RemittanceBlockingField[] = [
  * lib/worker-name.ts makes with "Name not recorded".
  */
 export const REMITTANCE_BLOCKING_FIELD_REASON: Record<RemittanceBlockingField, string> = {
+  // These two name the OWNER, and the other six do not, because these two
+  // are the only ones this product can actually fix — and the section they
+  // point at is owner-only. Until 2026-09-12 they ended "Settings →
+  // Company." and no such section existed: the sheet was telling an office
+  // manager to go and fill in a field the product had no way to capture.
+  // `companyPointer.test.ts` now fails the build if the pointer and the
+  // heading it names stop agreeing.
   employerAddress:
-    "No address is recorded on the company record. A fund matches a report to an employer by name and address, and an unaddressed report is one somebody has to phone about. Settings → Company.",
+    "No address is recorded on the company record. A fund matches a report to an employer by name and address, and an unaddressed report is one somebody has to phone about. An owner records it at Settings → Company.",
   employerEin:
-    "No EIN is recorded on the company record. Most funds key the employer's account to it, and it is what a delinquency notice quotes back at you. Settings → Company.",
+    "No EIN is recorded on the company record. Most funds key the employer's account to it, and it is what a delinquency notice quotes back at you. An owner records it at Settings → Company.",
   fundEmployerNumber:
     "Each trust fund issues this employer its own account number and prints it at the top of that fund's report. cstream records no fund account numbers, so every fund line below is unnumbered — copy them from last month's report before sending.",
   fundRemitAddress:

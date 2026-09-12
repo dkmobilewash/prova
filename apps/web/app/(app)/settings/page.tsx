@@ -18,6 +18,8 @@ import { viewerTimeZone } from "@/lib/viewerToday";
 import { SubmitButton } from "@/components/SubmitButton";
 import { ConfirmDeleteButton } from "@/components/ConfirmDeleteButton";
 import { CompanyLicenses } from "@/components/CompanyLicenses";
+import { CompanyProfileForm } from "@/components/CompanyProfileForm";
+import { companyProfileGaps, type CompanyProfile } from "@/lib/company-profile";
 import { QuickBooksMapping, QuickBooksSyncLog } from "@/components/QuickBooksMapping";
 import { QuickBooksReconcile } from "@/components/QuickBooksReconcile";
 import {
@@ -165,6 +167,22 @@ export default async function SettingsPage({
     }),
   ]);
 
+  // Picked field by field rather than spread: this crosses into a client
+  // component, and the row also carries `isProvaOperator` and the timestamps,
+  // none of which this form has any business seeing.
+  const companyProfile: CompanyProfile = {
+    name: company.name,
+    dbaName: company.dbaName,
+    ein: company.ein,
+    hqAddressLine1: company.hqAddressLine1,
+    hqAddressLine2: company.hqAddressLine2,
+    hqCity: company.hqCity,
+    hqState: company.hqState,
+    hqZip: company.hqZip,
+    phone: company.phone,
+    website: company.website,
+  };
+
   const syncAttempts = rawSyncAttempts.map((attempt) => ({
     id: attempt.id,
     entityType: attempt.entityType,
@@ -223,6 +241,22 @@ export default async function SettingsPage({
           {(qb_detail && QB_ERROR_MESSAGES[qb_detail]) ?? "Couldn't connect to QuickBooks — please try again."}
         </p>
       )}
+
+      {/* FIRST section on the page, and the heading is exactly "Company"
+          because four places in the codebase tell a reader to go to
+          "Settings → Company" — two of them in red on a document a trust
+          fund receives. `companyPointer.test.ts` fails the build if that
+          instruction and this heading ever stop agreeing. */}
+      <section id="company" className="mb-10">
+        <h2 className="mb-3 text-sm font-semibold text-slate-300">Company</h2>
+        <p className="mb-4 text-sm text-slate-400">
+          Your own company record. This is where the WH-347 certified payroll form, a union
+          trust-fund remittance report, the signature block a GC signs and the sidebar all get the
+          company name and address from — so a blank here is a blank on a document somebody outside
+          this company reads.
+        </p>
+        <CompanyProfileForm company={companyProfile} gaps={companyProfileGaps(companyProfile)} />
+      </section>
 
       <section className="mb-10">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">QuickBooks Online</h2>
