@@ -161,7 +161,9 @@ export default async function FringeRemittanceDocumentPage({
             {company.ein?.trim() ? (
               company.ein
             ) : (
-              <Missing>Not recorded on the company record. Settings → Company.</Missing>
+              <Missing>
+                Not recorded on the company record. An owner records it at Settings → Company.
+              </Missing>
             )}
           </div>
           <div>
@@ -171,7 +173,7 @@ export default async function FringeRemittanceDocumentPage({
             ) : (
               <Missing>
                 No complete address on the company record — a fund matches a report to an employer
-                by name and address. Settings → Company.
+                by name and address. An owner records it at Settings → Company.
               </Missing>
             )}
           </div>

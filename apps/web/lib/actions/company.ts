@@ -14,8 +14,20 @@ import {
   enumFromForm,
   nullableDecimalFromForm,
   optionalEnumFromForm,
+  ownerRefusal,
   plural,
 } from "./shared";
+import { normalizeEin, normalizeWebsite } from "@/lib/company-profile";
+import { can } from "@/lib/permissions";
+
+/** The job-function refusal for the company record, worded the way
+ * `closeoutSubmissions.ts` words its own: the person reading it has done
+ * nothing wrong and needs to know who can change it.
+ *
+ * RETURNED, not thrown — production redacts a thrown Server Action message
+ * to a digest, so a thrown version of this sentence never arrives. */
+const COMPLIANCE_ONLY =
+  "The company record isn't part of your job function. The account owner sets who sees what, on the Team page.";
 
 /** Thrown by the form parsers below, caught at each action's boundary and
  * converted to a returned failure — same shape as submittals.ts, the
@@ -48,6 +60,102 @@ async function runAction(fn: () => Promise<ActionResult>): Promise<ActionResult>
     if (err instanceof InputError) return fail(err.message);
     throw err;
   }
+}
+
+/**
+ * Edits the company's OWN record — the first and only writer of it.
+ *
+ * `Company.name` was written once, by `requireCompanyContext` on first
+ * sign-in, as `${name}'s Company`; `dbaName`, `ein`, `hqAddress*`, `phone`
+ * and `website` have existed on the model with nothing writing them at all.
+ * That generated string prints as the contractor on the WH-347 certified
+ * payroll form, as the employer on a union trust-fund remittance report, in
+ * the sidebar, and above the signature block a GC signs — and until this
+ * action there was no way to change any of it.
+ *
+ * TWO GUARDS, IN THIS ORDER, and the order is the decision.
+ *
+ * `/settings` demands MANAGE_COMPLIANCE, and a page guard stops a page
+ * rendering — it does nothing about the action behind it, which is a
+ * separate endpoint with a stable id that answers whoever posts to it.
+ * `lib/action-capability-guards.test.ts` derives that requirement from the
+ * page's own guard and fails the build without it; it found this action the
+ * moment it existed. So the capability is checked FIRST, because it is the
+ * broader fact about the person (their job function is not this), and the
+ * owner check second, because it is about this record specifically. A member
+ * who holds MANAGE_COMPLIANCE gets the owner sentence, which is the true
+ * reason they are being refused.
+ *
+ * OWNER-ONLY, via `ownerRefusal` rather than `assertOwner`. Both are in
+ * shared.ts and the difference is not stylistic: this action's declared
+ * return type PROMISES the caller a sentence it can render, and
+ * `assertOwner` throws, which production redacts to a digest. The
+ * owner-refusal census (`lib/ownerRefusalCensus.test.ts`) fails the build
+ * for exactly that combination. The message names the consequence rather
+ * than the rule, because "renaming this changes a federal form" is the
+ * reason a member is being refused.
+ *
+ * Validation is deliberately narrow: a blank legal name is refused because
+ * every one of those documents has to name somebody, and the EIN and
+ * website are normalised on the way in (see lib/company-profile.ts for
+ * which stored form and why). `phone` stays free text — extensions, a
+ * second number and "ask for Dave" are all real, and a format rule here
+ * would refuse a contractor's actual phone number for no gain. `hqState` is
+ * upper-cased because a state code prints on a federal form; it is not
+ * otherwise checked, since refusing a two-letter code nobody recognises is
+ * worse than printing it.
+ */
+export async function updateCompanyProfile(formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  return runAction(async () => {
+    if (!can(context, "MANAGE_COMPLIANCE")) return fail(COMPLIANCE_ONLY);
+
+    const refusal = ownerRefusal(
+      context,
+      "Only the account owner can change the company record. The legal name and address here print on the WH-347 certified payroll form, on union remittance reports, and above the signature block a GC signs.",
+    );
+    if (refusal) return refusal;
+
+    const name = required(formData, "name", "Legal company name");
+
+    const ein = normalizeEin(text(formData, "ein"));
+    if (!ein.ok) return fail(ein.error);
+
+    const website = normalizeWebsite(text(formData, "website"));
+    if (!website.ok) return fail(website.error);
+
+    const dbaName = text(formData, "dbaName");
+    const hqAddressLine1 = text(formData, "hqAddressLine1");
+    const hqAddressLine2 = text(formData, "hqAddressLine2");
+    const hqCity = text(formData, "hqCity");
+    const hqState = text(formData, "hqState").toUpperCase();
+    const hqZip = text(formData, "hqZip");
+    const phone = text(formData, "phone");
+
+    await prisma.company.update({
+      where: { id: context.company.id },
+      data: {
+        name,
+        dbaName: dbaName || null,
+        ein: ein.value,
+        hqAddressLine1: hqAddressLine1 || null,
+        hqAddressLine2: hqAddressLine2 || null,
+        hqCity: hqCity || null,
+        hqState: hqState || null,
+        hqZip: hqZip || null,
+        phone: phone || null,
+        website: website.value,
+      },
+    });
+
+    // The three surfaces this record is READ on, named rather than left to
+    // a single /settings revalidation: the remittance sheet and the WH-347
+    // print it, and both are routes somebody may already have open.
+    revalidatePath("/settings");
+    revalidatePath("/union-compliance/remittance");
+    revalidatePath("/jobs");
+    return ok;
+  });
 }
 
 /** Invites a teammate by email. They join the OWNER's Company as a MEMBER

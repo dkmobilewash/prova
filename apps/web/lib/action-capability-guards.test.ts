@@ -642,6 +642,12 @@ describe("every write behind a guarded page answers to the same capability", () 
  * the hand-written enumeration the whole file exists to avoid.
  */
 const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
+  // Only `updateCompanyProfile` — the rest of this module is either
+  // reachable from ungated pages (/team, /contacts) or recorded in
+  // KNOWN_OPEN. It is the first writer of `Company` this app has ever had,
+  // and this suite found it by the walk on the day it was added, which is
+  // the behaviour the file is for.
+  company: () => import("./actions/company"),
   safety: () => import("./actions/safety"),
   certifications: () => import("./actions/certifications"),
   punchLists: () => import("./actions/punchLists"),
