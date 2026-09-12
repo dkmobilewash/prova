@@ -1195,10 +1195,18 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             </ul>
           )}
 
+          {/* lineItems is explicitly picked, never the whole row: a
+              JobLineItem carries six Decimal columns and a costEntries
+              relation, none of which survive the trip to a client component.
+              Same shape as the ContractSummary and pay-application
+              projections above. */}
           <LogTimeEntryForm
             jobId={job.id}
             employees={companyMembers}
-            lineItems={job.lineItems}
+            lineItems={job.lineItems.map((item) => ({
+              id: item.id,
+              description: item.description,
+            }))}
             craftOptions={craftClassifications.map((craft) => ({
               id: craft.id,
               label: `${craft.unionLocal.parentInternational} ${craft.unionLocal.localNumber} — ${craft.name}`,

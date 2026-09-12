@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
+import type { JobLineItem } from "@prova/db";
 import { logTimeEntry } from "@/lib/actions";
 
 const TIME_ENTRY_PAY_TYPE_OPTIONS = [
@@ -11,7 +12,35 @@ const TIME_ENTRY_PAY_TYPE_OPTIONS = [
 ] as const;
 
 export type TimeEntryEmployeeOption = { id: string; name: string | null; email: string };
-export type TimeEntryLineItemOption = { id: string; description: string };
+
+/**
+ * All the cost-code picker reads: a value for the `<option>` and a label to
+ * show. No quantity, no price, no cost — nothing numeric at all.
+ *
+ * The second half is a boundary guard, not decoration. This type was already
+ * `{ id, description }` and the page still passed whole `job.lineItems` rows
+ * to it for weeks, because TypeScript is structural: a JobLineItem HAS an id
+ * and a description, so a wider object satisfies a narrower type and the
+ * compiler says nothing. What it carried besides was six Prisma `Decimal`
+ * columns plus a nested `costEntries` relation, and Next 15 cannot serialize
+ * a Decimal across the server/client boundary — so every render of
+ * /jobs/[id] logged "Decimal objects are not supported" once per field and
+ * put a dev-overlay issue count on screen.
+ *
+ * Banning the rest of the row makes that pass a compile error instead. The
+ * banned keys are derived from `JobLineItem` rather than listed, so a Decimal
+ * column added to the model tomorrow is covered without anyone remembering
+ * this file — a hand-written list is the drift this guard exists to stop.
+ * Type-only import: erased at compile time, so the db package stays out of
+ * the client bundle.
+ */
+export type TimeEntryLineItemOption = {
+  id: string;
+  description: string;
+} & {
+  [K in Exclude<keyof JobLineItem, "id" | "description">]?: never;
+};
+
 export type TimeEntryCraftOption = { id: string; label: string };
 
 /**

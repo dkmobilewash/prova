@@ -117,3 +117,47 @@ to end against `ep-icy-hat`, resolve then execute, which put 4 rows on
 "Riverside Medical Office Building [demo]" from a 7-line paste containing
 two blanks and one repeat, then refused the identical list a second time
 with the job still at 9 items.
+
+### The time-entry picker stops shipping Decimals to the browser (Cyrus)
+`cyrus/theme-flip-yellow` (same branch, filmed demo)
+
+Every render of `/jobs/[id]` logged "Only plain objects can be passed to
+Client Components from Server Components. Decimal objects are not
+supported" five times and put a **5 Issues** count on the dev overlay,
+which is what a demo films. One prop caused all five:
+`<LogTimeEntryForm lineItems={job.lineItems} />` handed whole
+`JobLineItem` rows to a client component.
+
+**The type was already right and that is the whole lesson.**
+`TimeEntryLineItemOption` has said `{ id, description }` for weeks, and
+the raw pass typechecked anyway, because TypeScript is structural — a
+`JobLineItem` HAS an id and a description, so a wider object satisfies a
+narrower type and the compiler says nothing. What rode along was four
+populated Decimal columns (`quantity`, `unitPrice`, `budgetedUnitCost`,
+`currentEstimatedUnitCost`) plus a nested `costEntries` relation whose
+`amount` is a fifth. Exactly the five the badge counted.
+
+So the projection is not the fix; the fix is that the same mistake is now
+a compile error. The option type intersects a mapped
+`[K in Exclude<keyof JobLineItem, "id" | "description">]?: never`, which
+bans the rest of the row — derived from the model rather than listed, so a
+Decimal column added tomorrow is covered without anyone remembering this
+file. Mutation-proved: with the guard in and the old prop still in place,
+`tsc` fails at `page.tsx(1201,13)` naming the real defect; a hand-written
+list of today's column names would have been the drift the guard exists to
+stop. The call site then projects `{ id, description }` explicitly — never
+a spread — matching the `ContractSummary` and pay-application projections
+already in that file. The picker reads nothing numeric, so no Decimal is
+converted; they are all simply dropped.
+
+The specific checks: `typecheck` and `lint` exit 0; the 6 guard tests that
+parse this page's source pass (150 assertions); and the runtime claim is
+from the dev server's own log rather than the diff — the warning appears
+once per pre-fix render, the last at log line 619, and **five** authenticated
+`200` renders after the fix added none, with the browser console (tracking
+started before navigation, so page load was captured) showing no Decimal
+error. The picker still lists the real line items — metal stud framing, ACT
+ceiling, insulation, gypsum board — which is the check that matters more
+than the warning, since an empty or mislabelled picker would be the worse
+bug. Two files, props only: the three fixed section slots in
+`jobs/[id]/page.tsx` are untouched.
