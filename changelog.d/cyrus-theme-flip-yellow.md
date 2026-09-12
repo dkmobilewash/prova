@@ -30,8 +30,8 @@ edit.
 ### The sidebar becomes the Money Rail (Cyrus)
 `cyrus/theme-flip-yellow` (same branch, filmed demo)
 
-The rail is now a permanently expanded 240px column (no hover-to-expand
-overlay) whose group headings carry the five live pipeline figures from
+The rail is now a 240px column, readable at rest (no hover-to-expand
+overlay), whose group headings carry the five live pipeline figures from
 `lib/moneyRail.ts` — Bidding, Building, Proving, Staying legal, Getting
 paid — big, yellow (`text-brand`), on the charcoal `bg-rail` ground. The
 mapping is by meaning: Pre-construction ← Bidding, Operations ← Building,
@@ -161,3 +161,56 @@ ceiling, insulation, gypsum board — which is the check that matters more
 than the warning, since an empty or mislabelled picker would be the worse
 bug. Two files, props only: the three fixed section slots in
 `jobs/[id]/page.tsx` are untouched.
+
+### The Money Rail's groups collapse again (Cyrus)
+`cyrus/theme-flip-yellow` (same branch, filmed demo)
+
+The section above said "permanently expanded", and that word was the
+regression: the rewrite that put the figures on the headings dropped the
+collapse behaviour the rail used to have, so every item of every group
+rendered at once — about 1400px of nav in an 800px window. The column
+scrolled and **"Getting paid" sat below the fold**, which is the one figure
+the product is named after. That sentence is corrected in place above
+rather than left to read as a decision.
+
+A heading is now a real `<button>` (`aria-expanded`, `aria-controls`, a
+visible focus ring, a chevron that rotates) carrying its figure inside the
+target, and it toggles its own items only: `open[key] = !open[key]`,
+several groups open at once. NOT an accordion — that is a different product
+decision wearing the same chevron, and the prototype the founder clicked
+had these semantics. The group holding the current page starts open (and a
+group is opened if you arrive at its page from elsewhere, so the
+highlighted item is never hidden); every other group's links are NOT
+RENDERED, so nothing invisible is tabbable. Headings and figures live
+outside the collapsible panel, including Proving — which is now a SIBLING
+of Operations rather than a child, since nested it would have collapsed
+with Operations' items and it is one of the five.
+
+`MobileNav` is deliberately left flat. The drawer carries no figures, so it
+has no fold to protect, and a phone drawer that scrolls is what a phone
+drawer does.
+
+The specific check is a MEASUREMENT, in Chromium at 1280x800, because
+"above the fold" is not a thing a happy-dom test can see (no layout, so
+every rect is zeros — the same limit `rowActions.test.ts` documents):
+collapsed, the whole rail is 463px and the last figure's bottom is y=443;
+with the active group open, no scroll and the same y=443; with all five
+groups open, still no column scroll, last figure y=745, every item still
+reachable inside its group's own scroll.
+
+`min-h-16` on an open group is what makes that true, and the first attempt
+at this fix was wrong about the mechanism — worth recording, because it
+looked right. A flex item's automatic minimum size is its min-content
+height, and a group's min-content INCLUDES its item list's full height even
+though the list is `overflow-y-auto`, so with no explicit floor nothing
+shrank at all: column scrollHeight 1469 against 744 of room, the last two
+figures at y=838 and y=1367. The floor is the measured height of a heading
+plus its figure, so a squeezed group gives up item height instead of figure
+height. Reasoning said otherwise and a browser settled it.
+
+`Sidebar.test.ts` mounts the rail in a real DOM and clicks it — 13 tests
+covering independent toggling, the active group starting open, a closed
+group's links being absent, and all five figures rendering in every state.
+Mutation-proved both ways: making the toggle exclusive turns the two
+independence tests red, and moving a figure inside the collapsible panel
+(the shape of the original regression) turns the three figure tests red.
