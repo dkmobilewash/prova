@@ -20,7 +20,7 @@ const context = {
 vi.mock("@/lib/auth", () => ({ requireCompanyContext: async () => context }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 
-const { loadRfiDraft, loadPunchDraft } = await import("./drafts");
+const { loadRfiDraft } = await import("./drafts");
 const { confirmAskProposal, loadAskProposal, settleAskDraft } = await import("@/lib/actions/ask");
 const { linkToken } = await import("@/lib/tokens");
 
@@ -29,15 +29,21 @@ let ownerId = "";
 let otherUserId = "";
 let jobId = "";
 
+/** `raise_rfi` is the only HANDOFF command left — punch items became DIRECT
+ * when `createPunchListItem`'s body was lifted into a core that returns its
+ * refusals — so `add_punch_items` appears here only as a card for SOME OTHER
+ * command, which is the guard being tested (a card for one page must not
+ * prefill another's form). Nothing taps it; a DIRECT command's row would
+ * execute. */
 async function card(
-  command: "raise_rfi" | "add_punch_item",
+  command: "raise_rfi" | "add_punch_items",
   overrides: { createdByUserId?: string; expiresAt?: Date; mode?: string } = {},
 ) {
   const id = linkToken();
   const resolved =
     command === "raise_rfi"
       ? { jobId, jobName: "ASK-DRAFT job", subject: "Head-of-wall", question: "Which governs?", drawingReference: "A-501 / 3", specSection: null }
-      : { jobId, jobName: "ASK-DRAFT job", description: "grid out of level" };
+      : { jobId, jobName: "ASK-DRAFT job", descriptions: ["grid out of level"] };
   await prisma.askProposal.create({
     data: {
       id,
@@ -116,12 +122,11 @@ describe("a HANDOFF card against a real database", () => {
     expect(await loadRfiDraft(viewer(), theirs)).toEqual({ kind: "gone" });
     expect((await prisma.askProposal.findUniqueOrThrow({ where: { id: theirs } })).openedAt).toBeNull();
 
-    const punch = await card("add_punch_item");
+    const punch = await card("add_punch_items");
     expect(await loadRfiDraft(viewer(), punch)).toEqual({ kind: "gone" });
-    expect(await loadPunchDraft(viewer(), punch)).toEqual({
-      kind: "draft",
-      draft: { proposalId: punch, jobId, description: "grid out of level" },
-    });
+    // Refused for being another command's card, not for being unreadable:
+    // its payload is intact and its openedAt is untouched.
+    expect((await prisma.askProposal.findUniqueOrThrow({ where: { id: punch } })).openedAt).toBeNull();
 
     const direct = await card("raise_rfi", { mode: "DIRECT" });
     expect(await loadRfiDraft(viewer(), direct)).toEqual({ kind: "gone" });
@@ -135,14 +140,14 @@ describe("a HANDOFF card against a real database", () => {
   });
 
   it("cannot be executed by the tap, and the tap leaves it for the page", async () => {
-    const id = await card("add_punch_item");
+    const id = await card("raise_rfi");
     const result = await confirmAskProposal(id);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(/opens a form/);
     const row = await prisma.askProposal.findUniqueOrThrow({ where: { id } });
     expect(row.claimedAt).toBeNull();
     expect(row.outcome).toBeNull();
-    expect((await loadPunchDraft(viewer(), id)).kind).toBe("draft");
+    expect((await loadRfiDraft(viewer(), id)).kind).toBe("draft");
   });
 
   it("is settled by the form once; the page then sees its own card as settled, not gone, and the dashboard drops it", async () => {
@@ -168,7 +173,7 @@ describe("a HANDOFF card against a real database", () => {
   });
 
   it("settles only the asking person's own HANDOFF card", async () => {
-    const theirs = await card("add_punch_item", { createdByUserId: otherUserId });
+    const theirs = await card("raise_rfi", { createdByUserId: otherUserId });
     expect((await settleAskDraft(theirs)).ok).toBe(true);
     expect((await prisma.askProposal.findUniqueOrThrow({ where: { id: theirs } })).outcome).toBeNull();
 

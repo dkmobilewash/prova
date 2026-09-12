@@ -395,6 +395,24 @@ const OPEN_BEHIND_A_NEWLY_CLOSED_PAGE: Record<string, Capability> = {
  * sweep. The value of writing them down is that the number is now known
  * and can only go down. */
 const OPEN_BEHIND_AN_ALREADY_GUARDED_PAGE: Record<string, Capability> = {
+  // Surfaced 2026-09-12 by a change that did not touch it: `settleAskDraft`
+  // used to be reached from /punch-lists (MANAGE_FIELD) AND /rfis
+  // (MANAGE_JOBS), so its doors disagreed and the rule above could not
+  // decide it. Punch items became a DIRECT command that writes the whole
+  // list itself, PunchListForm stopped calling this, and the second door
+  // closed — leaving one door and therefore this list.
+  //
+  // What actually guards it is not a capability: it settles the asking
+  // person's OWN card and nothing else (`createdByUserId` and `companyId`
+  // both in its `updateMany` where-clause, mode HANDOFF, unclaimed,
+  // unsettled), and the only thing it writes is that card's outcome. A
+  // capability assertion is still the right answer, and the shape of it is a
+  // judgement about the ask machinery — whether the card's own command is
+  // one this person could run (`canRunCommand`) rather than one hardcoded
+  // capability, since the next HANDOFF command may want a different one.
+  // That is lib/actions/ask.ts, Diego's lane (WORK-SPLIT.md), so it is
+  // recorded here rather than guessed at from the punch list lane.
+  "ask.settleAskDraft": "MANAGE_JOBS",
   "backcharges.createBackcharge": "MANAGE_BILLING",
   "backcharges.updateBackcharge": "MANAGE_BILLING",
   "backcharges.disputeBackcharge": "MANAGE_BILLING",

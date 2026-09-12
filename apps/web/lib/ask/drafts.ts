@@ -47,8 +47,6 @@ export type RfiDraft = {
   specSection: string | null;
 };
 
-export type PunchDraft = { proposalId: string; jobId: string; description: string };
-
 export type DraftLookup<D> =
   | { kind: "none" }
   | { kind: "draft"; draft: D }
@@ -117,16 +115,14 @@ export async function loadRfiDraft(viewer: Viewer, proposalId: string | undefine
   };
 }
 
-/** The punch list form's prefill. */
-export async function loadPunchDraft(
-  viewer: Viewer,
-  proposalId: string | undefined,
-): Promise<DraftLookup<PunchDraft>> {
-  const found = await loadDraftRow(viewer, proposalId, "add_punch_item");
-  if (found.kind !== "draft" || !proposalId) return found as DraftLookup<PunchDraft>;
-  const payload = found.draft;
-  const jobId = str(payload, "jobId");
-  const description = str(payload, "description");
-  if (!jobId || !description) return { kind: "gone" };
-  return { kind: "draft", draft: { proposalId, jobId, description } };
-}
+/* There was a `loadPunchDraft` here, for the punch list page, and it went
+ * with `add_punch_item` itself: that command was HANDOFF because
+ * `createPunchListItem` threw its refusals, and now the action's body is a
+ * core that returns them (lib/field/punch-list-items.ts), so the replacement
+ * command `add_punch_items` is DIRECT and writes the whole list on the tap.
+ * A prefilled form is a step it no longer has. Deleted rather than left
+ * behind, because nothing can ever propose an `add_punch_item` card again
+ * and a loader for one would be exactly the "written, documented and never
+ * called" shape CLAUDE.md keeps finding. `raise_rfi` is still HANDOFF and
+ * still the reason everything above exists.
+ */

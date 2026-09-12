@@ -1,8 +1,7 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
-import { createPunchListItem, settleAskDraft } from "@/lib/actions";
-import type { PunchDraft } from "@/lib/ask/drafts";
+import { createPunchListItem } from "@/lib/actions";
 import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
 
 // 16px, not the 14px inherited from the `text-sm` label: iOS Safari zooms the
@@ -21,13 +20,9 @@ export type JobOption = { id: string; name: string };
 export function PunchListForm({
   jobs,
   defaultJobId,
-  draft,
 }: {
   jobs: JobOption[];
   defaultJobId?: string;
-  /** A card from the Ask box: one item, prefilled, and the card is told
-   * it saved. The job comes through `defaultJobId` like any other. */
-  draft?: PunchDraft;
 }) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -53,7 +48,6 @@ export function PunchListForm({
       try {
         await createPunchListItem(formData);
         formDraft.clear();
-        if (draft) void settleAskDraft(draft.proposalId);
         if (descriptionRef.current) {
           descriptionRef.current.value = "";
           descriptionRef.current.focus();
@@ -98,7 +92,6 @@ export function PunchListForm({
           type="text"
           name="description"
           required
-          defaultValue={draft?.description}
           placeholder="e.g. Ceiling grid out of level, east corridor"
           className={inputClass}
         />

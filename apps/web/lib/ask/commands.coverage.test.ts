@@ -90,12 +90,12 @@ describe("command coverage of lib/actions", () => {
   it("lets a DIRECT command execute only through a lifted core or an action that RETURNS its failures", () => {
     // Production redacts a thrown Server Action message, so a command over
     // a throwing action would put a digest on the card. A DIRECT command's
-    // core is therefore either a lifted core in lib/estimating or
-    // lib/billing (plain result) or an action whose signature promises
-    // ActionResult. A throwing action is HANDOFF until its owner converts
-    // it.
+    // core is therefore either a lifted core in lib/estimating,
+    // lib/billing or lib/field (plain result) or an action whose signature
+    // promises ActionResult. A throwing action is HANDOFF until its owner
+    // converts it.
     const libDir = fileURLToPath(new URL("../", import.meta.url));
-    const coreSource = ["estimating", "billing"]
+    const coreSource = ["estimating", "billing", "field"]
       .map((dir) => join(libDir, dir))
       .flatMap((dir) => readdirSync(dir).map((file) => readFileSync(join(dir, file), "utf8")))
       .join("\n");

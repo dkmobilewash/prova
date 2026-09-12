@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireCapabilityForAction } from "@/lib/authz";
 import { prisma } from "@prova/db";
+import { createPunchListItems } from "@/lib/field/punch-list-items";
 import { assertOwner } from "./shared";
 
 /** Every entry point to these records is a page guarded by MANAGE_FIELD,
@@ -19,23 +20,27 @@ async function requireOwnJobForPunchList(jobId: string, companyId: string) {
   return job;
 }
 
+/**
+ * One item, from the page's form.
+ *
+ * The body of this is `createPunchListItems` in lib/field/punch-list-items.ts
+ * — lifted so the Ask command `add_punch_items` writes through the SAME
+ * validations, the same in-company assertion and the same transaction rather
+ * than its own copy of them. This still throws, because that is what the
+ * form renders (`PunchListForm` catches and shows the message) and the
+ * sentences are unchanged; the core returns them instead of throwing so a
+ * card can show one, which production would otherwise redact.
+ */
 export async function createPunchListItem(formData: FormData) {
   const { company, ...user } = await requireCapabilityForAction("MANAGE_FIELD", FIELD_ONLY);
 
-  const description = String(formData.get("description") ?? "").trim();
-  if (!description) {
-    throw new Error("Description is required");
-  }
-
-  const jobId = String(formData.get("jobId") ?? "").trim();
-  if (!jobId) {
-    throw new Error("Pick a job");
-  }
-  await requireOwnJobForPunchList(jobId, company.id);
-
-  await prisma.punchListItem.create({
-    data: { companyId: company.id, jobId, description, raisedByUserId: user.id },
+  const result = await createPunchListItems(company.id, String(formData.get("jobId") ?? "").trim(), {
+    descriptions: [String(formData.get("description") ?? "")],
+    raisedByUserId: user.id,
   });
+  if (!result.ok) {
+    throw new Error(result.error);
+  }
 
   revalidatePath("/punch-lists");
 }

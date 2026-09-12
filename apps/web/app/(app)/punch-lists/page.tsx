@@ -2,26 +2,23 @@ import Link from "next/link";
 import { prisma } from "@prova/db";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
-import { AskDraftNotice } from "@/components/AskDraftNotice";
-import { loadPunchDraft } from "@/lib/ask/drafts";
 import { PunchListForm } from "@/components/PunchListForm";
 import { PunchListRow } from "@/components/PunchListRow";
 
 export default async function PunchListsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ job?: string; show?: string; draft?: string }>;
+  searchParams: Promise<{ job?: string; show?: string }>;
 }) {
   const { context, allowed } = await requireCapability("MANAGE_FIELD");
   if (!allowed) return <NoAccess capability="MANAGE_FIELD" />;
   const { company, ...currentUser } = context;
-  const { job: jobFilter, show, draft } = await searchParams;
+  const { job: jobFilter, show } = await searchParams;
   const showDone = show === "all";
 
-  // A card from the Ask box (lib/ask/drafts.ts): the form opens prefilled
-  // from the server-held row, and its own Add is the write.
-  const askDraft = await loadPunchDraft(context, draft);
-  const punchDraft = askDraft.kind === "draft" ? askDraft.draft : undefined;
+  // No ?draft= here any more: the Ask box's punch command is DIRECT and
+  // writes every item itself (lib/ask/commands/punchLists.ts), so there is
+  // no card left for this page to open a prefilled form from.
 
   const jobs = await prisma.job.findMany({
     where: { companyId: company.id },
@@ -71,14 +68,9 @@ export default async function PunchListsPage({
         memory.
       </p>
 
-      {askDraft.kind === "gone" && <AskDraftNotice what="punch item" />}
       <section className="mb-8 rounded-lg border border-line-card bg-surface p-4">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Add an item</h2>
-        <PunchListForm
-          jobs={jobOptions}
-          defaultJobId={punchDraft?.jobId ?? activeJob ?? undefined}
-          draft={punchDraft}
-        />
+        <PunchListForm jobs={jobOptions} defaultJobId={activeJob ?? undefined} />
       </section>
 
       {jobOptions.length > 0 && (

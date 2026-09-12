@@ -118,7 +118,7 @@ describe("who is offered what", () => {
       "send_equipment_to_job",
       "bring_equipment_back",
       "raise_rfi",
-      "add_punch_item",
+      "add_punch_items",
       "log_time_entry",
     ]);
     // FIELD holds MANAGE_FIELD and MANAGE_JOBS (lib/permissions.ts: "an
@@ -135,7 +135,7 @@ describe("who is offered what", () => {
       "add_catalog_line",
       "raise_rfi",
     ]);
-    expect(commandsFor(ESTIMATOR).map((c) => c.name)).not.toContain("add_punch_item");
+    expect(commandsFor(ESTIMATOR).map((c) => c.name)).not.toContain("add_punch_items");
   });
 
   it("offers accounting exactly the two money commands, and nothing that touches the field", () => {
