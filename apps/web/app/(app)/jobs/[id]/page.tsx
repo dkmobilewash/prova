@@ -4,6 +4,7 @@ import Link from "next/link";
 import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { PrintButton } from "@/components/PrintButton";
+import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { PrevailingWageDeterminationForm } from "@/components/PrevailingWageDeterminationForm";
 import { ContractSummary } from "@/components/ContractSummary";
 import { WipNarrativeButton } from "@/components/WipNarrativeButton";
@@ -155,6 +156,35 @@ function LaborCostHint({ cost }: { cost: number | null }) {
     </span>
   );
 }
+
+/**
+ * THE NINE TWO-STEP DELETES ON THIS PAGE, and why they all look the same.
+ *
+ * Until 2026-09-12 every destructive control here was a bare
+ * `<form action={deleteX}><SubmitButton>Remove</SubmitButton></form>`: one
+ * click and the row was gone — a crew assignment, a cost entry, a logged day's
+ * hours, a dispatch slip, a wage determination, a RECEIVED PAYMENT, a
+ * retainage release, an executed contract document, an estimate line item.
+ * CLAUDE.md's list-page conventions have said "two-step delete, never
+ * window.confirm" the whole time, and roughly forty row components across the
+ * app honour it; this page was the hole, and nothing tested for it.
+ * `rowActionsCensus.test.ts` does now.
+ *
+ * GEOMETRY, which is a real decision and not a style: every one of these
+ * clusters is the LAST child of a `justify-between` row, so it hangs off the
+ * right edge, so the LAST control is the one that keeps its position when the
+ * row empties — `pinned="end"`, which puts Cancel on the pixel the delete
+ * vacated. `RowActions.tsx` carries the measurements; the phone case is the
+ * component's own business, not this file's.
+ *
+ * The three class names are shared so the rows stay identical to each other,
+ * and match the pills `/contacts/[id]` already uses for the same job.
+ */
+const rowDeleteClass = "text-xs text-red-400 hover:underline";
+const rowCancelClass =
+  "rounded-md border border-slate-700 px-2 py-1 text-xs text-slate-300 hover:border-slate-500";
+const rowConfirmClass =
+  "rounded-md border border-red-500 px-2 py-1 text-xs text-red-400 hover:bg-red-500/10";
 
 export default async function JobPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -728,11 +758,20 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                       <span className="text-slate-100">
                         {assignment.user.name ?? assignment.user.email}
                       </span>
-                      <form action={unassignCrewWithId(assignment.userId)}>
-                        <SubmitButton type="submit" className="text-xs text-red-400 hover:underline">
-                          Remove
-                        </SubmitButton>
-                      </form>
+                      <RowActions
+                        className="flex shrink-0 items-center justify-end gap-2"
+                        destructive={
+                          <ConfirmDelete
+                            pinned="end"
+                            action={unassignCrewWithId(assignment.userId)}
+                            label="Remove"
+                            confirmLabel="Confirm remove"
+                            deleteClassName={rowDeleteClass}
+                            cancelClassName={rowCancelClass}
+                            confirmClassName={rowConfirmClass}
+                          />
+                        }
+                      />
                     </li>
                   ))}
                 </ul>
@@ -923,11 +962,32 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                     </a>
                   </div>
                   {currentUser.role === "OWNER" && (
-                    <form action={deleteContractDocument.bind(null, doc.id)}>
-                      <SubmitButton type="submit" className="text-xs text-red-400 hover:underline">
-                        Delete
-                      </SubmitButton>
-                    </form>
+                    <RowActions
+                      className="flex shrink-0 flex-col items-end gap-1"
+                      destructive={
+                        <ConfirmDelete
+                          pinned="end"
+                          action={deleteContractDocument.bind(null, doc.id)}
+                          confirmLabel="Confirm delete"
+                          armedClassName="flex flex-wrap items-center justify-end gap-2"
+                          deleteClassName={rowDeleteClass}
+                          cancelClassName={rowCancelClass}
+                          confirmClassName={rowConfirmClass}
+                          hint={
+                            doc.executedSignedDate ? (
+                              <span className="max-w-[16rem] text-right text-amber-300">
+                                This is the EXECUTED subcontract — the evidence that made this job
+                                billable. Deleting it removes the file and the signed date.
+                              </span>
+                            ) : (
+                              <span className="max-w-[16rem] text-right text-slate-500">
+                                The file goes with it.
+                              </span>
+                            )
+                          }
+                        />
+                      }
+                    />
                   )}
                 </li>
               ))}
@@ -1085,15 +1145,21 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                           </span>
                           <span className="flex items-center gap-2">
                             <span className="text-slate-100">{money(Number(entry.amount))}</span>
-                            <form action={deleteCostEntryWithId(entry.id)}>
-                              <SubmitButton
-                                type="submit"
-                                title="Remove"
-                                className="text-xs text-red-400 hover:underline"
-                              >
-                                Remove
-                              </SubmitButton>
-                            </form>
+                            <RowActions
+                              as="span"
+                              className="flex shrink-0 items-center justify-end gap-2"
+                              destructive={
+                                <ConfirmDelete
+                                  pinned="end"
+                                  action={deleteCostEntryWithId(entry.id)}
+                                  label="Remove"
+                                  confirmLabel="Confirm remove"
+                                  deleteClassName={rowDeleteClass}
+                                  cancelClassName={rowCancelClass}
+                                  confirmClassName={rowConfirmClass}
+                                />
+                              }
+                            />
                           </span>
                         </li>
                       ))}
@@ -1185,11 +1251,26 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                     )}
                     {entry.note && <span className="text-xs text-slate-500">— {entry.note}</span>}
                   </div>
-                  <form action={deleteTimeEntryWithId(entry.id)}>
-                    <SubmitButton type="submit" title="Remove" className="text-xs text-red-400 hover:underline">
-                      Remove
-                    </SubmitButton>
-                  </form>
+                  <RowActions
+                    className="flex shrink-0 flex-col items-end gap-1"
+                    destructive={
+                      <ConfirmDelete
+                        pinned="end"
+                        action={deleteTimeEntryWithId(entry.id)}
+                        label="Remove"
+                        confirmLabel="Confirm remove"
+                        armedClassName="flex flex-wrap items-center justify-end gap-2"
+                        deleteClassName={rowDeleteClass}
+                        cancelClassName={rowCancelClass}
+                        confirmClassName={rowConfirmClass}
+                        hint={
+                          <span className="max-w-[16rem] text-right text-slate-500">
+                            These hours come off certified payroll for that week.
+                          </span>
+                        }
+                      />
+                    }
+                  />
                 </li>
               ))}
             </ul>
@@ -1245,11 +1326,29 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                     )}
                     {slip.note && <span className="text-xs text-slate-500">— {slip.note}</span>}
                   </div>
-                  <form action={deleteDispatchSlipWithId(slip.id)}>
-                    <SubmitButton type="submit" title="Remove" className="text-xs text-red-400 hover:underline">
-                      Remove
-                    </SubmitButton>
-                  </form>
+                  <RowActions
+                    className="flex shrink-0 flex-col items-end gap-1"
+                    destructive={
+                      <ConfirmDelete
+                        pinned="end"
+                        action={deleteDispatchSlipWithId(slip.id)}
+                        label="Remove"
+                        confirmLabel="Confirm remove"
+                        armedClassName="flex flex-wrap items-center justify-end gap-2"
+                        deleteClassName={rowDeleteClass}
+                        cancelClassName={rowCancelClass}
+                        confirmClassName={rowConfirmClass}
+                        hint={
+                          slip.fileUrl ? (
+                            <span className="max-w-[16rem] text-right text-slate-500">
+                              The hall&rsquo;s referral for this worker goes, and the uploaded slip
+                              stops being reachable from this job.
+                            </span>
+                          ) : undefined
+                        }
+                      />
+                    }
+                  />
                 </li>
               ))}
             </ul>
@@ -1368,11 +1467,27 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                     )}
                     {determination.note && <span className="text-xs text-slate-500">— {determination.note}</span>}
                   </div>
-                  <form action={deletePrevailingWageDeterminationWithId(determination.id)}>
-                    <SubmitButton type="submit" title="Remove" className="text-xs text-red-400 hover:underline">
-                      Remove
-                    </SubmitButton>
-                  </form>
+                  <RowActions
+                    className="flex shrink-0 flex-col items-end gap-1"
+                    destructive={
+                      <ConfirmDelete
+                        pinned="end"
+                        action={deletePrevailingWageDeterminationWithId(determination.id)}
+                        label="Remove"
+                        confirmLabel="Confirm remove"
+                        armedClassName="flex flex-wrap items-center justify-end gap-2"
+                        deleteClassName={rowDeleteClass}
+                        cancelClassName={rowCancelClass}
+                        confirmClassName={rowConfirmClass}
+                        hint={
+                          <span className="max-w-[16rem] text-right text-slate-500">
+                            The wage determination this job&rsquo;s certified payroll is checked
+                            against.
+                          </span>
+                        }
+                      />
+                    }
+                  />
                 </li>
               ))}
             </ul>
@@ -1447,33 +1562,51 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                             </span>
                             <span className="flex items-center gap-2">
                               <span className="text-slate-100">{money(Number(payment.amount))}</span>
-                              <PushPaymentToQuickBooks
-                                paymentId={payment.id}
-                                linkedQboId={quickBooksPaymentLinks.get(payment.id)?.qboId ?? null}
-                                lastVerifiedAt={
-                                  quickBooksPaymentLinks.get(payment.id)?.lastVerifiedAt ?? null
+                              {/* The QuickBooks push is `children`, not a
+                                  sibling: this is money received, the worst
+                                  row on the page to lose to a stray click, and
+                                  while the delete is armed the only other
+                                  button in the row must not still be live. */}
+                              <RowActions
+                                as="span"
+                                className="flex shrink-0 items-center justify-end gap-2"
+                                destructive={
+                                  <ConfirmDelete
+                                    pinned="end"
+                                    action={deletePayment.bind(null, job.id, payment.id)}
+                                    label="Remove"
+                                    confirmLabel="Confirm remove"
+                                    deleteClassName={rowDeleteClass}
+                                    cancelClassName={rowCancelClass}
+                                    confirmClassName={rowConfirmClass}
+                                    hint={
+                                      <span className="max-w-[16rem] text-right text-amber-300">
+                                        {money(Number(payment.amount))} received comes off this
+                                        invoice, and the balance goes back up.
+                                      </span>
+                                    }
+                                  />
                                 }
-                                blockers={paymentPushBlockers({
-                                  hasConnection: quickBooksUsable,
-                                  customerQboId: jobCustomerLink?.qboId ?? null,
-                                  // The ordering constraint, and the one the
-                                  // browser test found unguarded: a payment is
-                                  // APPLIED to an invoice, so the invoice has to
-                                  // be there first.
-                                  invoiceQboId:
-                                    quickBooksInvoiceLinks.get(invoice.id)?.qboId ?? null,
-                                  amountCents: Math.round(Number(payment.amount) * 100),
-                                })}
-                              />
-                              <form action={deletePayment.bind(null, job.id, payment.id)}>
-                                <SubmitButton
-                                  type="submit"
-                                  title="Remove"
-                                  className="text-xs text-red-400 hover:underline"
-                                >
-                                  Remove
-                                </SubmitButton>
-                              </form>
+                              >
+                                <PushPaymentToQuickBooks
+                                  paymentId={payment.id}
+                                  linkedQboId={quickBooksPaymentLinks.get(payment.id)?.qboId ?? null}
+                                  lastVerifiedAt={
+                                    quickBooksPaymentLinks.get(payment.id)?.lastVerifiedAt ?? null
+                                  }
+                                  blockers={paymentPushBlockers({
+                                    hasConnection: quickBooksUsable,
+                                    customerQboId: jobCustomerLink?.qboId ?? null,
+                                    // The ordering constraint, and the one the
+                                    // browser test found unguarded: a payment is
+                                    // APPLIED to an invoice, so the invoice has
+                                    // to be there first.
+                                    invoiceQboId:
+                                      quickBooksInvoiceLinks.get(invoice.id)?.qboId ?? null,
+                                    amountCents: Math.round(Number(payment.amount) * 100),
+                                  })}
+                                />
+                              </RowActions>
                             </span>
                           </li>
                         ))}
@@ -1602,11 +1735,27 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                       <span className="text-slate-300">{money(Number(release.amount))}</span>
                       {release.note && <span className="text-xs text-slate-500">— {release.note}</span>}
                     </div>
-                    <form action={deleteRetainageReleaseWithId(release.id)}>
-                      <SubmitButton type="submit" title="Remove" className="text-xs text-red-400 hover:underline">
-                        Remove
-                      </SubmitButton>
-                    </form>
+                    <RowActions
+                      className="flex shrink-0 flex-col items-end gap-1"
+                      destructive={
+                        <ConfirmDelete
+                          pinned="end"
+                          action={deleteRetainageReleaseWithId(release.id)}
+                          label="Remove"
+                          confirmLabel="Confirm remove"
+                          armedClassName="flex flex-wrap items-center justify-end gap-2"
+                          deleteClassName={rowDeleteClass}
+                          cancelClassName={rowCancelClass}
+                          confirmClassName={rowConfirmClass}
+                          hint={
+                            <span className="max-w-[16rem] text-right text-amber-300">
+                              {money(Number(release.amount))} goes back into the outstanding
+                              retainage balance.
+                            </span>
+                          }
+                        />
+                      }
+                    />
                   </li>
                 ))}
               </ul>
@@ -1759,21 +1908,50 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                       >
                         Save
                       </SubmitButton>
-                      <SubmitButton
-                        type="submit"
-                        formAction={deleteLineItemWithId(item.id)}
-                        title="Remove"
-                        className="rounded-md bg-red-950 px-2 py-1 text-xs font-medium text-red-400 hover:bg-red-900"
-                      >
-                        Remove
-                      </SubmitButton>
                     </div>
                   </form>
-                  <form action={saveLineItemAsCatalogEntry.bind(null, item.id)} className="mt-1">
-                    <SubmitButton type="submit" className="text-xs text-slate-500 hover:text-slate-300 hover:underline">
-                      Save as catalog item
-                    </SubmitButton>
-                  </form>
+                  {/* THE REMOVE USED TO BE THE BUTTON AFTER SAVE, INSIDE THAT
+                      FORM — `<SubmitButton formAction={deleteLineItem…}>`,
+                      touching the Save it looked exactly like. One mis-click
+                      deleted the line you meant to save, with no confirm, and
+                      a nested <form> is not legal markup, so the two-step
+                      delete could not go where the button was. It moves out of
+                      the form instead, which removes the adjacency as well as
+                      adding the confirm.
+                      The cluster is deliberately `justify-end`: a right-pinned
+                      cluster's right edge does not move when the row empties,
+                      so `pinned="end"` puts Cancel exactly where Remove was —
+                      the geometry with 0% measured overlap in #176. "Save as
+                      catalog item" is `children`, so arming Remove hides it
+                      rather than leaving it live next to a confirm. It costs
+                      that link moving from the left of this line to the right
+                      of it. */}
+                  <RowActions
+                    className="mt-1 flex flex-wrap items-center justify-end gap-3"
+                    destructive={
+                      <ConfirmDelete
+                        pinned="end"
+                        action={deleteLineItemWithId(item.id)}
+                        label="Remove"
+                        confirmLabel="Confirm remove"
+                        deleteClassName="rounded-md bg-red-950 px-2 py-1 text-xs font-medium text-red-400 hover:bg-red-900"
+                        cancelClassName={rowCancelClass}
+                        confirmClassName={rowConfirmClass}
+                        hint={
+                          <span className="max-w-[18rem] text-right text-slate-500">
+                            The line comes off the estimate and its price out of the total. It is
+                            marked deleted rather than erased, so change-order history keeps it.
+                          </span>
+                        }
+                      />
+                    }
+                  >
+                    <form action={saveLineItemAsCatalogEntry.bind(null, item.id)}>
+                      <SubmitButton type="submit" className="text-xs text-slate-500 hover:text-slate-300 hover:underline">
+                        Save as catalog item
+                      </SubmitButton>
+                    </form>
+                  </RowActions>
                   </div>
                 ))}
               </div>

@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
-import { Prisma, prisma } from "@prova/db";
+import { prisma } from "@prova/db";
 import {
   CONTACT_STATUSES,
   CONTACT_TYPES,
@@ -12,8 +12,10 @@ import {
   actionOk as ok,
   assertOwner,
   enumFromForm,
+  isUniqueConstraintError,
   nullableDecimalFromForm,
   optionalEnumFromForm,
+  ownerRefusal,
   plural,
 } from "./shared";
 
@@ -41,6 +43,15 @@ function optionalDate(formData: FormData, key: string): Date | null {
   return date;
 }
 
+/** A write refused by a foreign key (Prisma P2003, or P2014 for a required
+ * relation). Reads `code` rather than using `instanceof`, which is FALSE at
+ * runtime here — see `isUniqueConstraintError` in ./shared for the
+ * measurement. */
+function isForeignKeyViolation(err: unknown): boolean {
+  const code = (err as { code?: unknown } | null)?.code;
+  return code === "P2003" || code === "P2014";
+}
+
 async function runAction(fn: () => Promise<ActionResult>): Promise<ActionResult> {
   try {
     return await fn();
@@ -50,67 +61,111 @@ async function runAction(fn: () => Promise<ActionResult>): Promise<ActionResult>
   }
 }
 
+/* THE THREE /team ACTIONS RETURN THEIR REFUSALS, and until 2026-09-12 all
+   three threw them.
+
+   Every guard in them is an EXPECTED outcome a person needs to read — the
+   email is already invited, the person already has an account, someone else
+   removed the member a second ago, you are not the owner — and production
+   redacts a thrown Server Action message to a digest (CLAUDE.md, verified on
+   a real production build). So the page showed nothing at all: the invite
+   form appeared to do nothing on a duplicate email, and a failed removal left
+   the teammate on the list with no explanation anywhere.
+   `lib/actions/submittals.ts` is the reference for the shape; the
+   `InputError`/`runAction`/`fail()` machinery above already existed here for
+   the contact actions and is reused rather than duplicated.
+
+   The owner check is `ownerRefusal`, not `assertOwner`: an action whose type
+   promises `{ ok: false, error }` must not refuse by throwing, which is
+   #166's rule and what `ownerRefusalCensus.test.ts` enforces. */
+
 /** Invites a teammate by email. They join the OWNER's Company as a MEMBER
  * the next time they sign up with that email — see requireCompanyContext(). */
-export async function inviteTeamMember(formData: FormData) {
+export async function inviteTeamMember(formData: FormData): Promise<ActionResult> {
   const { company, ...user } = await requireCompanyContext();
-  assertOwner(user);
+  const refusal = ownerRefusal(user, "Only the account owner can invite a teammate");
+  if (refusal) return refusal;
 
-  const email = String(formData.get("email") ?? "")
-    .trim()
-    .toLowerCase();
-  if (!email) {
-    throw new Error("Email is required");
-  }
+  return runAction(async () => {
+    const email = required(formData, "email", "Email").toLowerCase();
 
-  const existingUser = await prisma.user.findUnique({ where: { email } });
-  if (existingUser) {
-    throw new Error("Someone with that email already has an account");
-  }
-
-  try {
-    await prisma.invite.create({ data: { companyId: company.id, email } });
-  } catch (error) {
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-      throw new Error("That email has already been invited (here or elsewhere)");
+    const existingUser = await prisma.user.findUnique({ where: { email } });
+    if (existingUser) {
+      return fail("Someone with that email already has an account");
     }
-    throw error;
-  }
 
-  revalidatePath("/team");
+    try {
+      await prisma.invite.create({ data: { companyId: company.id, email } });
+    } catch (error) {
+      /* isUniqueConstraintError, not `instanceof
+         Prisma.PrismaClientKnownRequestError`: that instanceof is FALSE at
+         runtime under this bundling (CLAUDE.md, measured 2026-08-28), so the
+         guard written here never fired and a second invite to the same
+         address 500'd instead of saying so. */
+      if (isUniqueConstraintError(error)) {
+        return fail("That email has already been invited (here or elsewhere)");
+      }
+      throw error;
+    }
+
+    revalidatePath("/team");
+    return ok;
+  });
 }
 
 /** Cancels a pending invite (e.g. to fix a typo). */
-export async function cancelInvite(inviteId: string) {
+export async function cancelInvite(inviteId: string): Promise<ActionResult> {
   const { company, ...user } = await requireCompanyContext();
-  assertOwner(user);
+  const refusal = ownerRefusal(user, "Only the account owner can cancel an invite");
+  if (refusal) return refusal;
 
   const invite = await prisma.invite.findUnique({ where: { id: inviteId } });
   if (!invite || invite.companyId !== company.id) {
-    throw new Error("Invite not found");
+    return fail("That invite is no longer there — someone may have cancelled it already.");
   }
 
   await prisma.invite.delete({ where: { id: inviteId } });
 
   revalidatePath("/team");
+  return ok;
 }
 
 /** Removes a MEMBER from the company. Owners can't be removed this way. */
-export async function removeTeamMember(memberUserId: string) {
+export async function removeTeamMember(memberUserId: string): Promise<ActionResult> {
   const { company, ...user } = await requireCompanyContext();
-  assertOwner(user);
+  const refusal = ownerRefusal(user, "Only the account owner can remove a teammate");
+  if (refusal) return refusal;
 
   const member = await prisma.user.findUnique({ where: { id: memberUserId } });
   if (!member || member.companyId !== company.id) {
-    throw new Error("Team member not found");
+    return fail("That teammate is no longer on this company.");
   }
   if (member.role === "OWNER") {
-    throw new Error("Owners can't be removed");
+    return fail("Owners can't be removed here — change the role first.");
   }
 
-  await prisma.user.delete({ where: { id: memberUserId } });
+  try {
+    await prisma.user.delete({ where: { id: memberUserId } });
+  } catch (error) {
+    /* A teammate with work recorded against them cannot be deleted at all:
+       TimeEntry.employeeUser, DispatchSlip.employeeUser and the certification
+       holder are REQUIRED relations, which Prisma defaults to RESTRICT. That
+       refusal comes from the database, and before this it reached the person
+       as a redacted digest on a page that then looked broken. Checked by
+       `code` rather than `instanceof`, for the reason isUniqueConstraintError
+       documents. */
+    if (isForeignKeyViolation(error)) {
+      return fail(
+        "This teammate has work recorded against them — hours, a dispatch slip or a " +
+          "certification — so their account can't be deleted. Clear their job function instead " +
+          "to take away access while keeping the record.",
+      );
+    }
+    throw error;
+  }
 
   revalidatePath("/team");
+  return ok;
 }
 
 /** Adds a new GC/developer/vendor contact directly — not tied to opening a
