@@ -1,8 +1,9 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
-import { sendOutboundEmail } from "@/lib/actions";
+import { sendOutboundEmail, settleAskDraft } from "@/lib/actions";
 import { inputClass, labelClass, type JobOption } from "@/components/RfiFields";
+import type { MessageDraft } from "@/lib/ask/drafts";
 
 /** The entry point this feature shipped without.
  *
@@ -12,15 +13,23 @@ import { inputClass, labelClass, type JobOption } from "@/components/RfiFields";
  * The page rendered perfectly the whole time, which is exactly why clicking
  * through it proved nothing. `lib/actions/reachable.test.ts` now fails if
  * any action ends up in that state again.
+ *
+ * A `draft` is a card from the Ask box (lib/ask/drafts.ts): the composer
+ * opens with the recipient, job, subject and message filled in, every
+ * field still editable, and Send is this same button running this same
+ * action — the card never sends. After a successful send the card is told
+ * it was acted on, so it does not sit on the dashboard until it expires.
  */
 export function MessageComposer({
   jobs,
   canSend,
+  draft,
 }: {
   jobs: JobOption[];
   canSend: boolean;
+  draft?: MessageDraft;
 }) {
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(draft !== undefined);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
@@ -30,6 +39,13 @@ export function MessageComposer({
       <p className="text-sm text-slate-500">
         Sending is switched off until the three settings above are in place. Nothing here can
         send in the meantime — a compose box that always fails would be worse than none.
+        {draft && (
+          <>
+            {" "}
+            The email you started from the Ask box is not lost, but it cannot be sent until that
+            is fixed; ask again afterwards.
+          </>
+        )}
       </p>
     );
   }
@@ -56,6 +72,7 @@ export function MessageComposer({
         startTransition(async () => {
           const result = await sendOutboundEmail(formData);
           if (result.ok) {
+            if (draft) void settleAskDraft(draft.proposalId);
             formRef.current?.reset();
             setIsOpen(false);
           } else {
@@ -75,18 +92,25 @@ export function MessageComposer({
             name="toAddress"
             required
             placeholder="super@gc.example"
+            defaultValue={draft?.toAddress ?? ""}
             className={inputClass}
           />
         </label>
         <label className={labelClass}>
           Their name
-          <input type="text" name="toName" placeholder="optional" className={inputClass} />
+          <input
+            type="text"
+            name="toName"
+            placeholder="optional"
+            defaultValue={draft?.toName ?? ""}
+            className={inputClass}
+          />
         </label>
       </div>
 
       <label className={labelClass}>
         About which job
-        <select name="jobId" defaultValue="" className={inputClass}>
+        <select name="jobId" defaultValue={draft?.jobId ?? ""} className={inputClass}>
           <option value="">Not tied to a job</option>
           {jobs.map((job) => (
             <option key={job.id} value={job.id}>
@@ -98,12 +122,24 @@ export function MessageComposer({
 
       <label className={labelClass}>
         Subject
-        <input type="text" name="subject" required className={inputClass} />
+        <input
+          type="text"
+          name="subject"
+          required
+          defaultValue={draft?.subject ?? ""}
+          className={inputClass}
+        />
       </label>
 
       <label className={labelClass}>
         Message
-        <textarea name="body" required rows={6} className={inputClass} />
+        <textarea
+          name="body"
+          required
+          rows={6}
+          defaultValue={draft?.body ?? ""}
+          className={inputClass}
+        />
         <span className="text-xs text-slate-500">
           Plain text. It goes out from your own domain, not ours — which is the whole reason this
           exists, and what keeps it out of a GC&apos;s spam folder.
