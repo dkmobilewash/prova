@@ -33,17 +33,41 @@ drift failure pointing in the unusual direction: the warning was stale, not
 the data. Same lesson as CLAUDE.md's `MIGRATE_EXPECT_HOST` deletion — a doc
 note that says "X has not been done" is a claim with an expiry date on it.
 
-**126 items audited — 100 built / 19 partial / 6 missing / 1 descoped**
+**126 items audited — 102 built / 18 partial / 5 missing / 1 descoped**
 
 (The recount below is HISTORY — a worked example of resolving this file's
 recurring merge-conflict shape, kept for the method. Its arithmetic ends at
 119 items because that is what the file held on the day of that merge; rows
-added since (#214's gallery row via #230 among them) moved the totals to
-the 125 / 99 the line above states. Re-derived 2026-09-10 by summing all 26
-per-sheet headers: 99 + 19 + 6 + 1 = 125, agreeing with the prose line and
-the summary table. Until this note, the stale 119 sat forty lines under the
-current 125 with nothing marking which one to believe — the exact
-two-numbers-on-main failure the recount itself was written to end.
+added since (#214's gallery row via #230 among them) moved the totals past
+it. Until 2026-09-10 the stale 119 sat forty lines under the current total
+with nothing marking which one to believe — the exact two-numbers-on-main
+failure the recount itself was written to end.
+
+**THE NOTE THAT CLOSED THAT GAP OPENED ANOTHER ONE, AND THE SHAPE OF IT IS
+WORTH MORE THAN THE NUMBER.** Where this paragraph now stands, #233 added:
+"Re-derived 2026-09-10 by summing all 26 per-sheet headers: 99 + 19 + 6 + 1
+= 125, agreeing with the prose line and the summary table." **That
+re-derivation was never run.** At `4c8fe18` — the commit immediately before
+#233 — the bold line above already read **126 items / 100 built** and the 26
+per-sheet headers already summed to 126; #233 never touched the bold line.
+So the sentence did not agree with the prose line twelve lines above it, it
+CONTRADICTED it, and it shipped that way and sat on `main` for two days
+while reading like the more trustworthy of the two, because it showed its
+working.
+
+Actually re-derived 2026-09-12, before this PR edited anything: 26 sheets,
+100 + 19 + 6 + 1 = 126 — matching the bold line and the summary table as
+they already stood, and disagreeing only with the sentence that claimed to
+have checked. This PR then moves Sheet 15's two WIP rows (see that sheet's
+note), which takes the totals to **102 / 18 / 5 / 1, still 126 items**, and
+the same command was re-run afterwards to confirm the sheet header, the bold
+line and the summary table all agree:
+
+    grep -oE '^## [0-9]+\..*' FEATURE-AUDIT.md
+
+The lesson is the one this file keeps paying for from a new direction: a
+claim to have re-derived something is not a re-derivation, and it is HARDER
+to doubt than a bare number. Run the command.
 
 Recounted from the rows on merging `main` into this branch, which is the
 only thing that settles it — the fourth time this exact conflict shape has
@@ -65,9 +89,9 @@ header cannot.)
 
 | Status | Count |
 | --- | --- |
-| Built | 100 |
-| Partial | 19 |
-| Missing | 6 |
+| Built | 102 |
+| Partial | 18 |
+| Missing | 5 |
 | Descoped | 1 |
 
 
@@ -80,7 +104,7 @@ header cannot.)
 | Built | Union affiliation records: CBA(s) by state/local | `UnionLocal`, `CraftClassification`, `CompanyUnionAgreement`, `FringeRateSchedule`, `ApprenticeRatioRule` — with create/edit on `/union-compliance` since 2 Sep. **It was marked Built on the models alone from 24 Aug until then, during which not one of those five rows could be created through the app** — the same defect this sheet already records against the licence row, found the same way: by writing the click-list and discovering the first step was impossible |
 | Built | Company's own insurance and bonding records (COI, bond capacity) | `CompanyInsurancePolicy`, `CompanyBond` — UI on `/settings` |
 | Built | Multi-location/multi-office support (CA/NV/AZ/CO/UT) | `CompanyLocation`, free-text state — any state works, not just the five listed |
-| Built | Self-service export of every company record (data portability) | `lib/export.ts` + `/settings/export` + `/api/export` — 18 tables as CSV each, or all of them as one JSON, owner-only, with row counts shown before download. Column lists are an **allowlist**, so a newly added credential column is absent rather than leaked; `export.test.ts` reads the .prisma files and fails if any field matching a credential pattern reaches a column list. Verified in a browser on 2 Sep: files downloaded, and all six credential field names return zero matches in the JSON. Does NOT cover formatted report exports — the WIP-schedule and AIA-format rows in sheet 15 and sheet 10 are separate and still stand |
+| Built | Self-service export of every company record (data portability) | `lib/export.ts` + `/settings/export` + `/api/export` — 18 tables as CSV each, or all of them as one JSON, owner-only, with row counts shown before download. Column lists are an **allowlist**, so a newly added credential column is absent rather than leaked; `export.test.ts` reads the .prisma files and fails if any field matching a credential pattern reaches a column list. Verified in a browser on 2 Sep: files downloaded, and all six credential field names return zero matches in the JSON. Does NOT cover formatted report exports — those are separate rows. **Half of that sentence expired on 12 Sep 2026**: the WIP-schedule row in sheet 15 is now Built, as a derived report at `/api/export/wip-schedule` that reuses this subsystem's CSV writer and filename helper without joining its dataset registry (a registry entry is a Prisma delegate plus a column allowlist; a WIP schedule has no delegate). `/settings/export` links to it, and `/api/export` itself is still owner-only while that sibling is capability-gated — read each handler's own gate rather than the path's. The sheet 10 AIA-format row stands |
 
 ## 02. Customer (GC) Relationship Mgmt — 7 built · 0 partial · 0 missing
 
@@ -251,7 +275,7 @@ forecasting shipped 26 Aug 2026.*
 | Built | License/registration records per state | `CompanyLicense`, with create/edit/delete on `/settings` — it was marked Built on the model alone from 25 Aug until 29 Aug, during which no licence could be created at all |
 | Built | Expiration/renewal alerts across all of the above | `lib/compliance-expiry.ts` ranks COIs, licences, policies and bonds together; surfaced on `/compliance` in full and on the dashboard as the worst three. Still computed at read time, never stored — delivery (email/SMS) is Sheet 26 |
 
-## 15. WIP & Financial Reporting — 4 built · 1 partial · 1 missing
+## 15. WIP & Financial Reporting — 6 built · 0 partial · 0 missing
 
 *Updated 3 Sep 2026: the Cash flow forecast row below was still marked
 Missing while `lib/cash-flow.ts`'s `calculateCashFlowForecast` had already
@@ -260,12 +284,23 @@ drifted behind the code. Found while auditing the nav for NAV-IA-AUDIT.md,
 which was looking for exactly this kind of stale entry on Diego's
 instruction to check before assuming anything needed building.*
 
+*Updated 12 Sep 2026: the last two non-Built rows on this sheet both close
+with one change — `lib/wip-schedule.ts` + `/api/export/wip-schedule`,
+rendered on `/cash-flow` and downloadable as CSV. They are listed as two
+rows because they were asked for as two, and they are honestly one report:
+the profitability columns (budgeted cost, cost to date, cost at completion,
+forecast gross profit and margin) are columns OF the WIP schedule rather
+than a second document. Said here rather than left to be inferred from two
+Built rows pointing at the same file. That takes this sheet to 6/0/0 and the
+file to 102 built — see the preamble, where the same edit also corrects a
+count claim that had been false since #233.*
+
 | Status | Feature | Note |
 | --- | --- | --- |
 | Built | Percent-complete (cost-to-cost method) per line item and per job | `lib/wip.ts` |
 | Built | Revenue earned vs. billed (over/under-billing) report | plus an AI narrative layer over it — `generateWipNarrative` |
-| Missing | WIP schedule export in surety/CPA-expected format | shown on-screen only, no export |
-| Partial | Job profitability report (budget vs. actual vs. forecast margin) | visible per job on `/jobs/[id]`, and every active job's forecast-vs-contract variance now reads as a sentence in the dashboard's Job health section — still no dedicated exportable report |
+| Built | WIP schedule export in surety/CPA-expected format | `lib/wip-schedule.ts` (pure) + `lib/wip-schedule-query.ts` + `/api/export/wip-schedule`, on screen under "WIP schedule" on `/cash-flow` and as CSV. Percentage-of-completion, cost-to-cost: original contract + approved change orders = revised contract, cost to date, cost to complete, cost at completion, percent complete, earned revenue, billed to date, and the over/under-billing pair as two never-negative columns. **It composes `calculateJobWip`, `jobEarnedRevenue`, `jobOverUnderBilling`, `jobCostVariance` and `changeOrderValueDelta` rather than re-deriving any of them**, so a row here and that job's own `/jobs/[id]` screen cannot print two different numbers. Original contract value is arithmetic (revised − approved COs), which is exact because `assertEditableDirectly` makes a change order the only thing that can move contract value after ESTIMATE — and is BLANK, both halves, when an approved change order predates the proposal snapshot columns and its delta cannot be valued. Every refused figure is blank with a derived sentence saying which threshold it missed, never a plausible number. Population is CONTRACTED + IN_PROGRESS, the same jobs the backlog figure is summed over, so the two contract-value totals agree; jobs completed during a period are a stated gap. Reuses `lib/export.ts`'s CSV writer, escaping and filename helper — not a second export system — but is NOT in `EXPORT_DATASETS`, which is a table-dump registry keyed on a Prisma delegate. Gated on `VIEW_COMPANY_FINANCIALS` **and** `VIEW_JOB_COSTS`, not owner-only, so ACCOUNTING can pull the document it exists to produce. 40 unit tests, six mutants killed |
+| Built | Job profitability report (budget vs. actual vs. forecast margin) | the exportable report the Partial was waiting on is the WIP schedule above, which carries budgeted cost (the frozen estimate-approval baseline), cost to date, estimated cost at completion, forecast gross profit and forecast gross margin per job plus a blended total — budget, actual and forecast margin in one downloadable row per job. Still also visible per job on `/jobs/[id]` and as a sentence in the dashboard's Job health section. **Marked Built as columns of that report rather than as a second document**, deliberately: a separate profitability export would re-derive the same margin from the same functions and become the second number that disagrees. Budgeted cost is blank, not $0, on a job no line of which carries a baseline, and the forecast margin is blank below `MIN_ESTIMATE_COVERAGE` — the same refusal `jobHealthSentence` already makes on screen |
 | Built | Cash flow forecast (AR aging, retainage receivable, pay app cycles) | `lib/cash-flow.ts`'s `calculateCashFlowForecast`, rendered on `/cash-flow` under "Forecast, next N months" — AR aging plus retainage expected by month, reading the retainage data from Sheet 11. Was marked Missing here until this update; the code and the nav entry were both already live |
 | Built | Company-wide backlog report across active jobs | `lib/company-financials.ts` sums contract value, blended gross margin, cash collected and retainage held across contracted and in-progress jobs; shown on the metric bar at the bottom of every screen. Derived on read, never stored |
 

@@ -26,6 +26,14 @@ import { EXPORT_DATASETS, datasetByKey, exportFilename, toCsv } from "@/lib/expo
  * Building CSV to be safe in a spreadsheet and JSON to be faithful is the
  * only way both jobs get done; one behaviour for both would quietly do one
  * of them wrong.
+ *
+ * THE OWNER-ONLY CHECK BELOW IS THIS HANDLER'S, NOT THE PATH'S. There is a
+ * sibling at /api/export/wip-schedule — a derived REPORT rather than a table
+ * dump — and it is gated on capabilities (VIEW_COMPANY_FINANCIALS plus
+ * VIEW_JOB_COSTS) rather than on ownership, because it carries no hours, no
+ * rates and no contact details, and because ACCOUNTING is the job function
+ * that exists to produce it. Its own header argues that in full. Do not read
+ * "everything under /api/export is owner-only" off this file.
  */
 
 export const dynamic = "force-dynamic";

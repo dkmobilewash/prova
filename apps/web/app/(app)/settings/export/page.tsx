@@ -71,6 +71,34 @@ export default async function ExportPage() {
         </a>
       </section>
 
+      {/* A REPORT, not a table dump, and said so plainly — everything else on
+          this page is one model's rows exactly as stored. It is linked from
+          here because this is where a person looks for "get my data out", and
+          it lives on /cash-flow because that is where the company's money is
+          read. Its gate is capability-based rather than owner-only (see
+          app/api/export/wip-schedule/route.ts); an owner holds both
+          capabilities, so this button always works for whoever is reading
+          this page. */}
+      <section className="mb-8 rounded-lg border border-slate-800 bg-slate-900 p-4">
+        <h2 className="mb-1 text-sm font-semibold text-slate-300">WIP schedule</h2>
+        <p className="mb-3 text-xs text-slate-500">
+          Not a table — a report. One row per contracted and in-progress job in the
+          percentage-of-completion format a surety underwriter and a CPA ask for: contract value
+          with its approved change orders, cost to date, cost to complete, percent complete, earned
+          revenue, and the over/under-billing pair. Readable on screen first on{" "}
+          <Link href="/cash-flow" className="text-blue-400 hover:text-blue-300">
+            Cash flow
+          </Link>
+          , with the same numbers.
+        </p>
+        <a
+          href="/api/export/wip-schedule"
+          className="inline-flex items-center rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:border-slate-500"
+        >
+          Download WIP schedule CSV
+        </a>
+      </section>
+
       <h2 className="mb-1 text-sm font-semibold text-slate-300">Or one table at a time</h2>
       <p className="mb-3 text-xs text-slate-500">
         CSV, opens in Excel or Sheets. A value starting with <code>=</code>, <code>+</code>,{" "}
