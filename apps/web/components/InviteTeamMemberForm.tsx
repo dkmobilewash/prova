@@ -45,20 +45,20 @@ export function InviteTeamMemberForm() {
       }}
       className="flex flex-wrap items-end gap-3"
     >
-      <label className="flex flex-col gap-1 text-sm text-slate-300">
+      <label className="flex flex-col gap-1 text-sm text-ink-label">
         Email
         <input
           name="email"
           type="email"
           required
           placeholder="teammate@example.com"
-          className="w-64 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+          className="w-64 rounded-md border border-line-card bg-surface px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
         />
       </label>
       <button
         type="submit"
         disabled={isPending}
-        className="inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+        className="inline-flex items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-medium text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
       >
         {isPending ? "Inviting…" : "Invite"}
       </button>

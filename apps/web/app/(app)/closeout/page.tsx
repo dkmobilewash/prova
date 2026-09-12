@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { CloseoutJobCard } from "@/components/CloseoutJobCard";
@@ -114,9 +115,23 @@ export default async function CloseoutPage() {
       )}
 
       {rows.length === 0 ? (
-        <p className="text-ink-body">
-          No jobs yet. Closeout and warranty both hang off a job — create one and it will appear here.
-        </p>
+        <div className="rounded-lg border border-line-card bg-surface p-6">
+          <p className="text-ink-label">
+            No jobs yet. Closeout and warranty both hang off a job.
+          </p>
+          <p className="mt-2 max-w-2xl text-sm text-ink-body">
+            Each job gets a checklist of what the GC wants before final payment — lien waivers, as-built
+            drawings, O&amp;M manuals, warranty letters — and this page ranks the jobs by what is holding
+            the most retainage. After the package is accepted the warranty clock starts here too, so a
+            callback that arrives eleven months later can be checked against it instead of guessed at.
+          </p>
+          <Link
+            href="/jobs/new"
+            className="mt-4 inline-flex min-h-11 items-center rounded-md bg-brand px-4 text-sm font-medium text-neutral-900 hover:bg-yellow-500"
+          >
+            Create a job
+          </Link>
+        </div>
       ) : (
         <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
           {withReadiness.map((job) => (

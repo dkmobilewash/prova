@@ -24,6 +24,31 @@ export default async function SchedulePage() {
     }),
   ]);
 
+  // Nothing at all, rather than nothing scheduled. The page's only previous
+  // empty state said "No jobs scheduled yet", which on a new account reads
+  // as though the scheduling is the missing step when the job is.
+  if (scheduled.length === 0 && unscheduled.length === 0) {
+    return (
+      <div className="mx-auto max-w-3xl px-6 py-8">
+        <h1 className="mb-6 text-xl font-semibold text-ink">Schedule</h1>
+        <div className="rounded-lg border border-line-card bg-surface p-6">
+          <p className="text-ink-label">No jobs yet, so there is nothing to lay out.</p>
+          <p className="mt-2 max-w-xl text-sm text-ink-body">
+            This page puts every job on one list in start-date order, with the crew assigned to each —
+            so you can see the week a second job wants the same three hangers as the first. A job
+            starts here without a date and moves up once you set one; nothing is scheduled for you.
+          </p>
+          <Link
+            href="/jobs/new"
+            className="mt-4 inline-flex min-h-11 items-center rounded-md bg-brand px-4 text-sm font-medium text-neutral-900 hover:bg-yellow-500"
+          >
+            Create a job
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-3xl px-6 py-8">
       <h1 className="mb-6 text-xl font-semibold text-ink">Schedule</h1>
@@ -31,7 +56,10 @@ export default async function SchedulePage() {
       <section className="mb-10">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Scheduled</h2>
         {scheduled.length === 0 ? (
-          <p className="text-ink-body">No jobs scheduled yet.</p>
+          <p className="text-ink-body">
+            Nothing has a start date yet. Open a job below and set one in its Schedule section — until
+            then it stays under Unscheduled and appears on no week.
+          </p>
         ) : (
           <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
             {scheduled.map((job) => (
@@ -60,10 +88,16 @@ export default async function SchedulePage() {
         )}
       </section>
 
-      {unscheduled.length > 0 && (
-        <section>
-          <h2 className="mb-3 text-sm font-semibold text-ink-label">Unscheduled</h2>
-          <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
+      {/* ALWAYS RENDERED once there is a job, where it used to disappear
+          when empty. "Every job has a start date" is the thing you came to
+          check, and a section that vanishes when its answer is "none" is
+          one you cannot use to confirm it. */}
+      <section>
+        <h2 className="mb-3 text-sm font-semibold text-ink-label">Unscheduled</h2>
+        {unscheduled.length === 0 ? (
+          <p className="text-ink-body">Every job has a start date.</p>
+        ) : (
+          <ul className="divide-y divide-slate-800 rounded-lg border border-line-card bg-surface">
             {unscheduled.map((job) => (
               <li key={job.id} className="p-4">
                 <Link href={`/jobs/${job.id}`} className="flex items-center justify-between gap-3">
@@ -76,8 +110,8 @@ export default async function SchedulePage() {
               </li>
             ))}
           </ul>
-        </section>
-      )}
+        )}
+      </section>
     </div>
   );
 }

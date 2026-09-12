@@ -19,6 +19,8 @@ import type { OverdueInvoice } from "@/lib/today-dashboard";
  */
 type ReceivablesContext = {
   rows: OverdueInvoice[];
+  /** Invoices raised, ever — see the empty branch of ReceivablesList. */
+  invoicesRaised: number;
   openId: string | null;
   setOpenId: (id: string | null) => void;
 };
@@ -33,13 +35,18 @@ function useReceivables(): ReceivablesContext {
 
 export function ReceivablesProvider({
   rows,
+  invoicesRaised,
   children,
 }: {
   rows: OverdueInvoice[];
+  invoicesRaised: number;
   children: ReactNode;
 }) {
   const [openId, setOpenId] = useState<string | null>(null);
-  const value = useMemo(() => ({ rows, openId, setOpenId }), [rows, openId]);
+  const value = useMemo(
+    () => ({ rows, invoicesRaised, openId, setOpenId }),
+    [rows, invoicesRaised, openId],
+  );
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }
 
@@ -58,11 +65,19 @@ export function ReceivablesProvider({
  * goes to the page where a payment can actually be recorded.
  */
 export function ReceivablesList() {
-  const { rows, openId, setOpenId } = useReceivables();
+  const { rows, invoicesRaised, openId, setOpenId } = useReceivables();
   const router = useRouter();
 
   if (rows.length === 0) {
-    return (
+    // "Every invoice raised has been paid in full" is true of an account
+    // that has raised none — and absurd to read on your first morning. The
+    // count distinguishes them; the list cannot.
+    return invoicesRaised === 0 ? (
+      <p className="text-sm text-ink-body">
+        No invoices raised yet. Once you bill a job, what each GC still owes shows up here, longest
+        overdue first.
+      </p>
+    ) : (
       <p className="text-sm text-ink-body">
         Nothing outstanding. Every invoice raised has been paid in full.
       </p>

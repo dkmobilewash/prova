@@ -66,7 +66,7 @@ export function TeamMemberActions({
             armedClassName="flex flex-wrap items-center justify-end gap-2"
             deleteClassName="text-sm text-red-400 hover:underline disabled:opacity-50"
             hint={
-              <span className="max-w-[16rem] text-right text-slate-500">
+              <span className="max-w-[16rem] text-right text-ink-muted">
                 Their account goes, and with it their sign-in. A teammate with hours or a dispatch
                 slip recorded cannot be deleted at all — clear their job function instead.
               </span>

@@ -249,8 +249,8 @@ export default async function SettingsPage({
           fund receives. `companyPointer.test.ts` fails the build if that
           instruction and this heading ever stop agreeing. */}
       <section id="company" className="mb-10">
-        <h2 className="mb-3 text-sm font-semibold text-slate-300">Company</h2>
-        <p className="mb-4 text-sm text-slate-400">
+        <h2 className="mb-3 text-sm font-semibold text-ink-label">Company</h2>
+        <p className="mb-4 text-sm text-ink-body">
           Your own company record. This is where the WH-347 certified payroll form, a union
           trust-fund remittance report, the signature block a GC signs and the sidebar all get the
           company name and address from — so a blank here is a blank on a document somebody outside
@@ -298,7 +298,7 @@ export default async function SettingsPage({
                   confirmLabel="Confirm disconnect"
                   deleteClassName="text-sm text-red-400 hover:underline"
                   hint={
-                    <span className="max-w-[20rem] text-slate-500">
+                    <span className="max-w-[20rem] text-ink-muted">
                       Reconnecting is a fresh sign-in through Intuit. Your account mapping is kept.
                     </span>
                   }
@@ -361,6 +361,18 @@ export default async function SettingsPage({
           Offices, yards, and warehouses this company operates out of. Jobs can be tagged with the
           location running them from the job&apos;s Schedule section.
         </p>
+
+        {/* Without this the whole section was a heading and a closed
+            triangle: the list is hidden when empty and the form is inside
+            `<details>`, so a new account saw no text at all. Worded like
+            the Licences section, which was the only one of the four that
+            said anything. */}
+        {locations.length === 0 && (
+          <p className="mb-4 text-sm text-ink-body">
+            No locations recorded. Add the office or yard you run work out of and a job can be tagged
+            with the one running it.
+          </p>
+        )}
 
         {locations.length > 0 && (
           <ul className="mb-4 divide-y divide-line-row rounded-lg border border-line-card bg-surface">
@@ -480,6 +492,15 @@ export default async function SettingsPage({
           eventually be generated from.
         </p>
 
+        {insurancePolicies.length === 0 && (
+          <p className="mb-4 text-sm text-ink-body">
+            No policies recorded. Add your general liability, workers&apos; comp and auto cover and
+            they&apos;ll appear in the renewals list on{" "}
+            <span className="text-ink-label">Compliance</span> before any of them lapse — cover that
+            expired last week is what stops a crew at the gate.
+          </p>
+        )}
+
         {insurancePolicies.length > 0 && (
           <ul className="mb-4 divide-y divide-line-row rounded-lg border border-line-card bg-surface">
             {insurancePolicies.map((policy) => {
@@ -560,6 +581,14 @@ export default async function SettingsPage({
           License bonds and overall performance/payment bonding capacity, and who to contact to
           increase it or pull a bond for a specific job.
         </p>
+
+        {bonds.length === 0 && (
+          <p className="mb-4 text-sm text-ink-body">
+            No bonding recorded. Add a licence bond or your total performance and payment capacity and
+            its renewal date joins the list on <span className="text-ink-label">Compliance</span> —
+            and the contact saved with it is who to ring when a GC wants a bond on a specific job.
+          </p>
+        )}
 
         {bonds.length > 0 && (
           <ul className="mb-4 divide-y divide-line-row rounded-lg border border-line-card bg-surface">

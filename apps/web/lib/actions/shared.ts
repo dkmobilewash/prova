@@ -118,7 +118,24 @@ export const INSURANCE_POLICY_TYPES = ["GENERAL_LIABILITY", "WORKERS_COMP", "AUT
 
 export const BOND_TYPES = ["LICENSE_BOND", "PERFORMANCE_PAYMENT_CAPACITY"] as const;
 
-export const LOCATION_TYPES = ["HQ", "BRANCH_YARD", "WAREHOUSE"] as const;
+/**
+ * Every member of the Prisma `LocationType` enum, and it has to STAY every
+ * member — see `lib/company-location-types.test.ts`, which reads the enum
+ * out of the schema and fails when this list disagrees with it.
+ *
+ * TRAILER was missing here for a fortnight while the settings dropdown
+ * offered it and the database accepted it (migration
+ * `20260826043651_add_trailer_location_type` was written for exactly that
+ * value). Choosing it threw out of `enumFromForm`, and because that throw
+ * happens before the insert, the whole typed address went with it — a
+ * jobsite trailer is the one location a contractor is most likely to add
+ * and the form silently refused it.
+ *
+ * This file's own comments elsewhere cite `LOCATION_TYPES` as the example
+ * of a second copy of an enum drifting from its Prisma original. It was
+ * still drifting.
+ */
+export const LOCATION_TYPES = ["HQ", "BRANCH_YARD", "WAREHOUSE", "TRAILER"] as const;
 
 export const JURISDICTION_TYPES = ["STATE", "COUNTY", "CITY"] as const;
 

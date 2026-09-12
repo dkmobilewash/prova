@@ -36,8 +36,8 @@ import type { CompanyProfile, CompanyProfileGap } from "@/lib/company-profile";
  */
 
 const inputClass =
-  "rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none";
-const labelClass = "flex flex-col gap-1 text-xs text-slate-400";
+  "rounded-md border border-line-card bg-canvas px-3 py-2 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none";
+const labelClass = "flex flex-col gap-1 text-xs text-ink-body";
 
 /** The sentence a document prints when this field is blank, shown under the
  * input that fixes it. */
@@ -69,7 +69,7 @@ export function CompanyProfileForm({
   }
 
   return (
-    <form action={handleSubmit} className="flex flex-col gap-4 rounded-lg border border-slate-800 bg-slate-900 p-4">
+    <form action={handleSubmit} className="flex flex-col gap-4 rounded-lg border border-line-card bg-surface p-4">
       {gaps.length > 0 && (
         <div className="rounded-md border border-amber-900 bg-amber-950/40 p-3">
           <p className="text-xs font-semibold text-amber-300">
@@ -89,7 +89,7 @@ export function CompanyProfileForm({
 
       <label className={labelClass}>
         Legal company name
-        <span className="font-normal text-slate-500">
+        <span className="font-normal text-ink-muted">
           As it appears on your contracts. Prints as the contractor on the WH-347 and above the
           signature block a GC signs.
         </span>
@@ -105,7 +105,7 @@ export function CompanyProfileForm({
 
       <label className={labelClass}>
         DBA name
-        <span className="font-normal text-slate-500">
+        <span className="font-normal text-ink-muted">
           Optional. When set, THIS is what the WH-347 prints as the contractor name instead of the
           legal name above.
         </span>
@@ -119,7 +119,7 @@ export function CompanyProfileForm({
 
       <label className={labelClass}>
         EIN
-        <span className="font-normal text-slate-500">
+        <span className="font-normal text-ink-muted">
           Nine digits. Type it either way — 12-3456789 or 123456789 — and it is stored hyphenated,
           so every print of it matches.
         </span>
@@ -132,9 +132,9 @@ export function CompanyProfileForm({
         <GapNote gaps={gaps} field="ein" />
       </label>
 
-      <fieldset className="flex flex-col gap-3 border-t border-slate-800 pt-4">
-        <legend className="text-xs font-semibold text-slate-300">HQ address</legend>
-        <p className="text-[11px] text-slate-500">
+      <fieldset className="flex flex-col gap-3 border-t border-line-card pt-4">
+        <legend className="text-xs font-semibold text-ink-label">HQ address</legend>
+        <p className="text-[11px] text-ink-muted">
           Street, city, state and ZIP are needed together — a partial address counts as none on both
           documents. Suite/unit is genuinely optional.
         </p>
@@ -189,7 +189,7 @@ export function CompanyProfileForm({
         </div>
       </fieldset>
 
-      <div className="flex flex-wrap gap-3 border-t border-slate-800 pt-4">
+      <div className="flex flex-wrap gap-3 border-t border-line-card pt-4">
         <label className={labelClass}>
           Phone
           <input
@@ -209,7 +209,7 @@ export function CompanyProfileForm({
           />
         </label>
       </div>
-      <p className="text-[11px] text-slate-500">
+      <p className="text-[11px] text-ink-muted">
         Phone and website are on the record for your own reference — no document prints them today.
       </p>
 
@@ -217,7 +217,7 @@ export function CompanyProfileForm({
         <button
           type="submit"
           disabled={isPending}
-          className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+          className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
         >
           {isPending ? "Saving…" : "Save company record"}
         </button>

@@ -150,7 +150,13 @@ export default async function TodayPage({
     // handed to it reaches the browser whether or not a list renders it —
     // hiding the panel while still shipping the receivables would be the
     // exact "looks enforced, isn't" failure this work exists to avoid.
-    <ReceivablesProvider rows={showsBilling ? today.receivables : []}>
+    // Gated the same way as the rows above it, for the same reason: a count
+    // of this company's invoices is a billing fact, so it reaches the
+    // browser only for a viewer who can see billing.
+    <ReceivablesProvider
+      rows={showsBilling ? today.receivables : []}
+      invoicesRaised={showsBilling ? today.invoicesRaised : 0}
+    >
       {/* The panel is a sibling of this column, not a child of it — that is
           what lets it push rather than cover. */}
       {/* The one light surface in the app so far. Scoped here rather than

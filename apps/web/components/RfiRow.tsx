@@ -318,7 +318,7 @@ export function RfiRow({
             type="button"
             disabled={isPending}
             onClick={() => run(() => markRfiSent(rfi.id))}
-            className="inline-flex min-h-11 items-center justify-center rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+            className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-3 py-2 text-sm font-medium text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
           >
             Mark sent
           </button>

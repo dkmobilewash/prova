@@ -22,7 +22,7 @@ export const dynamic = "force-dynamic";
 export default async function DeploymentPage() {
   const { company } = await requireCompanyContext();
 
-  const [jobs, crew, openAssignments] = await Promise.all([
+  const [jobs, crew, openAssignments, totalJobs] = await Promise.all([
     prisma.job.findMany({
       where: { companyId: company.id, status: { in: ["CONTRACTED", "IN_PROGRESS"] } },
       select: { id: true, name: true, status: true, startDate: true, endDate: true },
@@ -46,6 +46,11 @@ export default async function DeploymentPage() {
       },
       orderBy: { sentOutOn: "desc" },
     }),
+    // Only to tell two empty states apart: no jobs at all, versus jobs that
+    // are all estimates or finished. The existing copy said "an estimate has
+    // nobody on it yet" to accounts that had no estimates either, which
+    // points at the wrong missing step.
+    prisma.job.count({ where: { companyId: company.id } }),
   ]);
 
   const today = new Date().toISOString().slice(0, 10);
@@ -145,10 +150,36 @@ export default async function DeploymentPage() {
       <section>
         <h2 className="mb-3 text-sm font-semibold text-ink-label">By job</h2>
         {jobs.length === 0 ? (
-          <p className="text-ink-body">
-            No contracted or in-progress jobs. Deployment only covers work that is actually running
-            — an estimate has nobody on it yet.
-          </p>
+          totalJobs === 0 ? (
+            <div className="rounded-lg border border-line-card bg-surface p-6">
+              <p className="text-ink-label">No jobs yet, so there is nowhere to be deployed.</p>
+              <p className="mt-2 max-w-xl text-sm text-ink-body">
+                Once a job is contracted or in progress it appears here with whoever is assigned to it
+                and whatever equipment is signed out to it — the Monday-morning question of where
+                everybody is, answered without ringing round. Crew is assigned on the job itself;
+                equipment is signed out from{" "}
+                <Link href="/equipment" className="text-link hover:text-brand">
+                  the equipment list
+                </Link>
+                .
+              </p>
+              <Link
+                href="/jobs/new"
+                className="mt-4 inline-flex min-h-11 items-center rounded-md bg-brand px-4 text-sm font-medium text-neutral-900 hover:bg-yellow-500"
+              >
+                Create a job
+              </Link>
+            </div>
+          ) : (
+            <p className="text-ink-body">
+              No contracted or in-progress jobs. Deployment only covers work that is actually running
+              — an estimate has nobody on it yet.{" "}
+              <Link href="/jobs" className="text-link hover:text-brand">
+                See every job
+              </Link>
+              .
+            </p>
+          )
         ) : (
           <ul className="flex flex-col gap-3">
             {jobs.map((job) => {

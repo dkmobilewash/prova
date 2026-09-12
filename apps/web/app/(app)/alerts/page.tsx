@@ -47,6 +47,14 @@ export default async function AlertsPage({
 
   const rows = showSilenced ? silenced : visible;
 
+  // Nothing derived at all, in either list. Four tiles reading 0, 0, 0 and
+  // $0.00 are a summary of nothing, and this page's own point is that it
+  // stores nothing — so on a new account they describe an engine that has
+  // not been given anything to watch yet. Kept the moment a single alert
+  // exists anywhere, because then the zeros are load-bearing: "0 past due"
+  // beside "3 coming up" is the reassuring half of the answer.
+  const nothingDerived = visible.length === 0 && silenced.length === 0;
+
   return (
     <div className="mx-auto max-w-4xl px-6 py-8">
       <h1 className="mb-2 text-xl font-semibold text-ink">Alerts</h1>
@@ -92,11 +100,33 @@ export default async function AlertsPage({
       </div>
 
       {rows.length === 0 ? (
-        <p className="text-ink-body">
-          {showSilenced
-            ? "Nothing silenced. Anything you mark as seen shows up here so you can put it back."
-            : "Nothing needs attention. Worth knowing this list only sees what has been recorded — a licence with no expiry date entered, or a backcharge with no deadline looked up, raises nothing rather than raising a guess."}
-        </p>
+        showSilenced ? (
+          <p className="text-ink-body">
+            Nothing silenced. Anything you mark as seen shows up here so you can put it back.
+          </p>
+        ) : (
+          <div className="rounded-lg border border-line-card bg-surface p-6">
+            <p className="text-ink-label">Nothing needs attention.</p>
+            <p className="mt-2 max-w-2xl text-sm text-ink-body">
+              This list only sees what has been recorded — a licence with no expiry date entered, or a
+              backcharge with no deadline looked up, raises nothing rather than raising a guess. So on a
+              quiet day this page is right, and on day one it is empty because there are no dates in yet.
+            </p>
+            {/* A way out, which this branch never had. These are the two
+                places a brand-new account can put a date that this page will
+                watch: cover and licences need no job, and everything else —
+                retainage, closeout, backcharges, certified payroll — hangs
+                off one. */}
+            <p className="mt-3 flex flex-wrap gap-x-4 text-sm">
+              <Link href="/settings" className="text-link hover:text-brand">
+                Record your cover and licence dates
+              </Link>
+              <Link href="/jobs" className="text-link hover:text-brand">
+                Go to your jobs
+              </Link>
+            </p>
+          </div>
+        )
       ) : (
         <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
           {rows.map((alert) => (
