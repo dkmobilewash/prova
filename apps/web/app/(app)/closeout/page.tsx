@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { CloseoutJobCard } from "@/components/CloseoutJobCard";
@@ -65,6 +66,10 @@ export default async function CloseoutPage() {
         difference between a favour and work you should be paid for.
       </p>
 
+      {/* `loadCloseoutJobs` is company-wide with no status filter, so no rows
+          means no jobs — and four tiles of zeros are a summary of a set that
+          does not exist yet. They return with the first job. */}
+      {rows.length > 0 && (
       <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
           <p className={`text-2xl font-semibold ${outstandingJobs > 0 ? "text-amber-300" : "text-slate-100"}`}>
@@ -99,6 +104,7 @@ export default async function CloseoutPage() {
           </p>
         </div>
       </div>
+      )}
 
       {attention.length > 0 && (
         <section className="mb-6 rounded-lg border border-slate-800 bg-slate-900 p-4">
@@ -137,9 +143,23 @@ export default async function CloseoutPage() {
       )}
 
       {rows.length === 0 ? (
-        <p className="text-slate-400">
-          No jobs yet. Closeout and warranty both hang off a job — create one and it will appear here.
-        </p>
+        <div className="rounded-lg border border-slate-800 bg-slate-900 p-6">
+          <p className="text-slate-300">
+            No jobs yet. Closeout and warranty both hang off a job.
+          </p>
+          <p className="mt-2 max-w-2xl text-sm text-slate-400">
+            Each job gets a checklist of what the GC wants before final payment — lien waivers, as-built
+            drawings, O&amp;M manuals, warranty letters — and this page ranks the jobs by what is holding
+            the most retainage. After the package is accepted the warranty clock starts here too, so a
+            callback that arrives eleven months later can be checked against it instead of guessed at.
+          </p>
+          <Link
+            href="/jobs/new"
+            className="mt-4 inline-flex min-h-11 items-center rounded-md bg-blue-600 px-4 text-sm font-medium text-white hover:bg-blue-500"
+          >
+            Create a job
+          </Link>
+        </div>
       ) : (
         <ul className="divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900">
           {withReadiness.map((job) => (

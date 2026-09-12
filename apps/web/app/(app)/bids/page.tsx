@@ -59,6 +59,15 @@ export default async function BidsPage({
   const wonBids = bids.filter((b) => b.status === "WON" && b.bidAmount != null);
   const totalWonValue = wonBids.reduce((sum, b) => sum + Number(b.bidAmount), 0);
 
+  // "No bids match this filter" was shown on a brand-new account, where no
+  // filter is set and nothing could match anything. The two states need
+  // different sentences and only one of them is a dead end.
+  //
+  // NO EXTRA QUERY IS NEEDED to tell them apart: with neither filter
+  // applied the query above is already unfiltered, so zero rows IS zero
+  // bids. A count would be a second read that could only agree.
+  const isFiltered = tradeFilter != null || statusFilter != null;
+
   return (
     <div className="mx-auto max-w-3xl px-6 py-8">
       <h1 className="mb-2 text-xl font-semibold text-slate-100">Bid history</h1>
@@ -111,13 +120,42 @@ export default async function BidsPage({
         )}
       </form>
 
-      <p className="mb-4 text-sm text-slate-400">
-        {bids.length} bid{bids.length === 1 ? "" : "s"}
-        {wonBids.length > 0 && <> · {money(totalWonValue)} in won bids with a recorded amount</>}
-      </p>
+      {/* "0 bids" above a box that already explains there are none is one
+          number doing nothing. It stays for every other case. */}
+      {(bids.length > 0 || isFiltered) && (
+        <p className="mb-4 text-sm text-slate-400">
+          {bids.length} bid{bids.length === 1 ? "" : "s"}
+          {wonBids.length > 0 && <> · {money(totalWonValue)} in won bids with a recorded amount</>}
+        </p>
+      )}
 
       {bids.length === 0 ? (
-        <p className="text-slate-400">No bids match this filter.</p>
+        isFiltered ? (
+          <p className="text-slate-400">
+            No bids match this filter.{" "}
+            <Link href="/bids" className="text-blue-400 hover:text-blue-300">
+              Show them all
+            </Link>
+            .
+          </p>
+        ) : (
+          <div className="rounded-lg border border-slate-800 bg-slate-900 p-6">
+            <p className="text-slate-300">No bids logged yet.</p>
+            <p className="mt-2 max-w-xl text-sm text-slate-400">
+              A bid invitation is logged against the GC who sent it, so this page is the history of
+              what you have been asked to price and what it went for. Once a few are in, filtering by
+              trade tells you what similar work priced at last time — which is the number you actually
+              want when a GC asks for a budget figure on the phone.
+            </p>
+            <p className="mt-3 text-sm text-slate-400">
+              Bids are added from the GC&apos;s own page, under Bid invitations.{" "}
+              <Link href="/contacts" className="text-blue-400 hover:text-blue-300">
+                Open your contacts
+              </Link>{" "}
+              and pick the GC, or add them there first.
+            </p>
+          </div>
+        )
       ) : (
         <ul className="divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900">
           {bids.map((bid) => (

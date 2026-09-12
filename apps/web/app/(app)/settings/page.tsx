@@ -307,6 +307,18 @@ export default async function SettingsPage({
           location running them from the job&apos;s Schedule section.
         </p>
 
+        {/* Without this the whole section was a heading and a closed
+            triangle: the list is hidden when empty and the form is inside
+            `<details>`, so a new account saw no text at all. Worded like
+            the Licences section, which was the only one of the four that
+            said anything. */}
+        {locations.length === 0 && (
+          <p className="mb-4 text-sm text-slate-400">
+            No locations recorded. Add the office or yard you run work out of and a job can be tagged
+            with the one running it.
+          </p>
+        )}
+
         {locations.length > 0 && (
           <ul className="mb-4 divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900">
             {locations.map((location) => (
@@ -425,6 +437,15 @@ export default async function SettingsPage({
           eventually be generated from.
         </p>
 
+        {insurancePolicies.length === 0 && (
+          <p className="mb-4 text-sm text-slate-400">
+            No policies recorded. Add your general liability, workers&apos; comp and auto cover and
+            they&apos;ll appear in the renewals list on{" "}
+            <span className="text-slate-300">Compliance</span> before any of them lapse — cover that
+            expired last week is what stops a crew at the gate.
+          </p>
+        )}
+
         {insurancePolicies.length > 0 && (
           <ul className="mb-4 divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900">
             {insurancePolicies.map((policy) => {
@@ -505,6 +526,14 @@ export default async function SettingsPage({
           License bonds and overall performance/payment bonding capacity, and who to contact to
           increase it or pull a bond for a specific job.
         </p>
+
+        {bonds.length === 0 && (
+          <p className="mb-4 text-sm text-slate-400">
+            No bonding recorded. Add a licence bond or your total performance and payment capacity and
+            its renewal date joins the list on <span className="text-slate-300">Compliance</span> —
+            and the contact saved with it is who to ring when a GC wants a bond on a specific job.
+          </p>
+        )}
 
         {bonds.length > 0 && (
           <ul className="mb-4 divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900">

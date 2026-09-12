@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { createDailyFieldReport } from "@/lib/actions";
 import { localToday } from "@/components/localToday";
 import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
@@ -49,12 +50,23 @@ export function FieldReportComposer({
     onDiscard: () => setJobId(defaultJobId ?? jobs[0]?.id ?? ""),
   });
 
+  // The same case /photos handles with a real link — refusing with a bare
+  // sentence leaves the one thing to do next as something you have to go
+  // and find.
   if (jobs.length === 0) {
     return (
-      <p className="rounded-lg border border-slate-800 bg-slate-900 p-4 text-sm text-slate-400">
-        No jobs yet. A field report records what happened on a job, so there has to be one to
-        file against.
-      </p>
+      <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
+        <p className="text-sm text-slate-400">
+          No jobs yet. A field report records what happened on a job, so there has to be one to
+          file against.
+        </p>
+        <Link
+          href="/jobs/new"
+          className="mt-3 inline-flex min-h-11 items-center rounded-md bg-blue-600 px-4 text-sm font-medium text-white hover:bg-blue-500"
+        >
+          Create a job
+        </Link>
+      </div>
     );
   }
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
+import Link from "next/link";
 import { createPunchListItem, settleAskDraft } from "@/lib/actions";
 import type { PunchDraft } from "@/lib/ask/drafts";
 import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
@@ -64,11 +65,22 @@ export function PunchListForm({
     });
   }
 
+  // The same case /photos handles with a real link — refusing with a bare
+  // sentence leaves the one thing to do next as something you have to go
+  // and find.
   if (jobs.length === 0) {
     return (
-      <p className="text-sm text-slate-400">
-        Punch list items attach to a job, and there aren&apos;t any yet. Create a job first.
-      </p>
+      <div>
+        <p className="text-sm text-slate-400">
+          Punch list items attach to a job, and there aren&apos;t any yet.
+        </p>
+        <Link
+          href="/jobs/new"
+          className="mt-3 inline-flex min-h-11 items-center rounded-md bg-blue-600 px-4 text-sm font-medium text-white hover:bg-blue-500"
+        >
+          Create a job
+        </Link>
+      </div>
     );
   }
 

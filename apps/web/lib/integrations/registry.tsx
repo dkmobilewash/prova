@@ -42,7 +42,34 @@ export type ProviderEntry = {
   description: string;
   icon: ReactNode;
   implementation: ProviderImplementation;
+  /** A test fixture rather than a service anyone connects. Hidden outside
+   * development — see `isProviderVisible`. */
+  devOnly?: true;
 };
+
+/**
+ * Whether a card belongs on a given company's Integrations page.
+ *
+ * The Sandbox connector is a test connection to nothing, and it held the
+ * only working Connect button on the page — so the first thing a new
+ * contractor was offered was the one integration that does nothing. It
+ * stays in the registry because the sync log and the connect/disconnect
+ * path still have to be exercisable; it just stops being shown to people
+ * with real work to do.
+ *
+ * A company that HAS a connection row for it keeps seeing the card
+ * whatever the environment: hiding a card whose Disconnect button is the
+ * only way to undo it would strand the row instead of tidying it away.
+ *
+ * Takes the environment as an argument rather than reading NODE_ENV, so
+ * this is a pure function with a test.
+ */
+export function isProviderVisible(
+  entry: ProviderEntry,
+  where: { isDevelopment: boolean; hasConnection: boolean },
+): boolean {
+  return !entry.devOnly || where.isDevelopment || where.hasConnection;
+}
 
 const iconClass = "h-5 w-5";
 
@@ -53,6 +80,7 @@ export const PROVIDERS: ProviderEntry[] = [
     description:
       "A test connection to nothing. It exists so this page and its sync log can be exercised end to end without a real provider — connect and disconnect it freely.",
     implementation: { kind: "builtin" },
+    devOnly: true,
     icon: (
       <svg viewBox="0 0 20 20" fill="none" className={iconClass} aria-hidden="true">
         <path

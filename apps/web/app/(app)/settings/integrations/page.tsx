@@ -5,7 +5,7 @@ import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { connectSandboxIntegration, disconnectSandboxIntegration } from "@/lib/actions";
 import { IntegrationControls } from "@/components/IntegrationControls";
-import { PROVIDERS, type ProviderEntry } from "@/lib/integrations/registry";
+import { PROVIDERS, isProviderVisible, type ProviderEntry } from "@/lib/integrations/registry";
 import { relativeTime } from "@/lib/integrations/relativeTime";
 import { CONNECTION_CARD_SELECT } from "@/lib/integrations/selects";
 
@@ -82,6 +82,16 @@ export default async function IntegrationsPage() {
 
   const byProvider = new Map(connections.map((connection) => [connection.provider, connection]));
   const now = new Date();
+
+  // The page still knows nothing about any particular provider — the
+  // registry says which entries are fixtures and the predicate lives with
+  // it. This is the whole of the environment decision, in one place.
+  const visibleProviders = PROVIDERS.filter((entry) =>
+    isProviderVisible(entry, {
+      isDevelopment: process.env.NODE_ENV === "development",
+      hasConnection: byProvider.has(entry.provider),
+    }),
+  );
 
   function renderCard(entry: ProviderEntry) {
     const impl = entry.implementation;
@@ -227,7 +237,7 @@ export default async function IntegrationsPage() {
         </p>
       </div>
 
-      <div className="flex flex-col gap-4">{PROVIDERS.map(renderCard)}</div>
+      <div className="flex flex-col gap-4">{visibleProviders.map(renderCard)}</div>
     </div>
   );
 }
