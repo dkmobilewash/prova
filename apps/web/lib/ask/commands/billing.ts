@@ -32,8 +32,11 @@ import type {
  * the card cannot disagree with the job page beneath it.
  *
  * What is deliberately NOT here: pay applications (a per-line AIA document
- * with its own composer), invoice status, retainage releases, and anything
- * that deletes. Each has its reason in `billingExclusions`.
+ * with its own composer), invoice status, and anything that deletes. Each
+ * has its reason in `billingExclusions`. Retainage releases WERE on that
+ * list until phase 4d, waiting for "a card that can show the balance it
+ * draws down"; they are commands/retainage.ts now, over the same three
+ * figures the job page's panel shows.
  */
 
 const str = (payload: ResolvedPayload, key: string): string | null =>
@@ -326,7 +329,7 @@ export const billingExclusions: Exclusion[] = [
   { action: "updateJobRetainageTerms", reason: "Contract terms that every later invoice snapshots; edited on the job, deliberately not by prompt." },
   { action: "updateInvoiceStatus", reason: "Where a pay application stands with the GC is evidence set from the row, not proposed." },
   { action: "deletePayment", reason: "T5: deletes are never commands." },
-  { action: "createRetainageRelease", reason: "Money released against the whole job's withheld balance, with an entered date; a later phase once a card can show the balance it draws down." },
+  // createRetainageRelease left this list in phase 4d: commands/retainage.ts.
   { action: "deleteRetainageRelease", reason: "T5: deletes are never commands." },
   { action: "disconnectQuickBooks", reason: "Owner administration (T5): a connection an assistant could sever is not a connection." },
   { action: "testQuickBooksConnection", reason: "A diagnostic button on the settings page; returns company info, writes nothing worth a card." },

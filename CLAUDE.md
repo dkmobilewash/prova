@@ -566,6 +566,31 @@ scrollback gets broken by whoever didn't scroll far enough.
   status` and prints `db: <n>s — still pending` each time, guarded by
   `pending && isProduction`. Previews skip the loop entirely. The prose
   above and the code now agree.
+- **A VERCEL ENVIRONMENT VARIABLE REACHES ONLY DEPLOYMENTS CREATED AFTER IT
+  WAS SAVED, and a running build does not count.** 2026-09-10:
+  `ANTHROPIC_API_KEY` was added to Preview while the branch's build was
+  already running. Every ask on that alias said "The assistant is
+  unavailable right now" for an hour, the runtime log had nothing — the
+  loop swallowed the SDK error — and the push that should have produced a
+  fresh build produced no Vercel deployment at all (cause not established;
+  the next push did). Read the deployment's `createdAt` against the moment
+  the variable was saved before reasoning about the key's value. After
+  changing a variable: push a commit or click Redeploy, then wait for the
+  alias to flip to a READY build created after the save.
+
+  Two things came out of it. The loop now logs status, error type and
+  request id on an API failure (`packages/integrations/src/ask.ts`), and
+  `/settings/assistant` has a **Check connection** button that asks the
+  Models endpoint for the model the box runs on — the screen half of that
+  log line, so an owner does not need an agent to read Vercel for them.
+
+  And the companion, established the same evening: a browser-agent run
+  that reports "finished" with ZERO requests in Vercel's runtime logs for
+  the deployment never touched the app. Two such reports arrived; both
+  described sessions that made no request. Group the runtime log by
+  `deploymentId` for the window of the run before reading a single
+  verdict, and treat "the paste came through empty" as a separate problem
+  from "the run happened".
 - **Do not promote a preview to production.** Merge to `main` instead, so
   the build actually runs. Previews are public (no deployment protection),
   carry the branch's latest commit at a stable alias, and are what browser

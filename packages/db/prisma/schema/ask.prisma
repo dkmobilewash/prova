@@ -92,3 +92,47 @@ model AskProposal {
   @@index([companyId, createdAt])
   @@index([createdByUserId])
 }
+
+/// What one question cost, recorded after every model pass has run.
+///
+/// One row per question the Ask box sent to the model — answered, halted
+/// on a card, or failed — carrying the token totals the SDK reported for
+/// every pass. Two readers: `/settings/assistant`, so an owner can see what
+/// the box costs and who is asking without opening a dashboard; and
+/// `askAllowance()` (apps/web/lib/ask/usage.ts), which counts rows in a
+/// rolling window and refuses the next question when a person or a company
+/// has asked more than the limits allow. The limit counts ROWS rather than
+/// tokens on purpose: a row is written whether or not the model answered,
+/// so a loop that fails every time is bounded exactly like one that works.
+///
+/// A chip answer (a continuation) runs no model pass and writes no row.
+///
+/// `userId` is nullable ON DELETE SET NULL, the actor convention here
+/// (`AskProposal.createdByUserId`): removing a team member must not delete
+/// the record of what their questions cost. Append-only; nothing edits or
+/// deletes a row.
+model AskUsage {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+  userId    String?
+  user      User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  /// The model id the passes ran on, so a row can be priced later.
+  model            String
+  /// Model calls this question took: one for a plain answer, one per tool
+  /// round plus one for the answer otherwise.
+  passes           Int
+  inputTokens      Int
+  outputTokens     Int
+  cacheReadTokens  Int
+  cacheWriteTokens Int
+  /// "answered", "proposal" (a card was shown), "clarify" (chips were
+  /// shown), or "error:<reason>" with the loop's own reason.
+  outcome          String
+
+  createdAt DateTime @default(now())
+
+  @@index([companyId, createdAt])
+  @@index([userId, createdAt])
+}

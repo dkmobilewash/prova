@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { navGroupsFor } from "@/components/navItems";
+import { useNavAccordion } from "@/components/useNavAccordion";
 import type { Principal } from "@/lib/permissions";
 
 /**
@@ -16,7 +17,8 @@ import type { Principal } from "@/lib/permissions";
  *
  * The rail is now desktop-only and these are the same links in a drawer.
  * One shared NAV_ITEMS list, so the two can never disagree about what pages
- * exist.
+ * exist — and since #240 one shared open-group rule (useNavAccordion), so
+ * they cannot disagree about which group is open either.
  */
 export function MobileNav({
   companyName,
@@ -33,6 +35,7 @@ export function MobileNav({
   const groups = navGroupsFor(principal, { showsSalesCrm });
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
+  const accordion = useNavAccordion(groups, pathname);
 
   // Navigating closes it. Without this the drawer stays over the page you
   // just asked for, which reads as the tap not having worked.
@@ -97,63 +100,87 @@ export function MobileNav({
               </button>
             </div>
 
-            {/* The list is longer than a phone screen, so it scrolls on its
-                own rather than pushing the close button out of reach. */}
-            {/* Grouped exactly like the desktop rail. It was a flat list
-                in a different order, which is the same drift this file's
-                shared NAV list exists to prevent — one nav, two shapes. */}
-            <nav className="flex flex-1 flex-col gap-4 overflow-y-auto px-3 py-4">
-              {groups.flatMap((group) => [
-                <p
-                  key={group.heading}
-                  // slate-400: slate-500 measures 3.83:1 on this ground, under
-                  // the 4.5 floor, and at 10px it is the first thing sunlight
-                  // takes away.
-                  className="px-3 pt-2 text-[10px] font-semibold uppercase tracking-wider text-slate-400"
-                >
-                  {group.heading}
-                </p>,
-                ...group.items.map((item) => {
-                const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
-
-                // Same rule as the desktop rail (Sidebar.tsx) -- a disabled
-                // item is not a link. Without this branch a phone could
-                // reach a page the rail calls "coming soon", which is
-                // exactly the drift this shared list exists to prevent.
-                if (item.disabled) {
-                  return (
-                    <span
-                      key={item.href}
-                      title={`${item.label} — coming soon`}
-                      aria-disabled="true"
-                      className="flex cursor-not-allowed items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-slate-600"
-                    >
-                      <span className="opacity-50">{item.icon}</span>
-                      {item.label}
-                    </span>
-                  );
-                }
+            {/* Still scrolls on its own so the close button stays in reach
+                on a short screen, though with one group open at a time
+                it rarely needs to. Grouped exactly like the desktop rail,
+                with the same group open — one nav, two shapes. */}
+            <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-3 py-4">
+              {groups.map((group) => {
+                const isOpen = accordion.open === group.heading;
+                const holdsPage = accordion.active === group.heading;
+                const panelId = `drawer-${group.heading.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`;
 
                 return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    aria-current={isActive ? "page" : undefined}
-                    // py-3, not py-2.5: 44px instead of 40px. These sit
-                    // directly on top of each other in a scrolling list, which
-                    // is exactly where a gloved thumb lands on the wrong one.
-                    className={`flex min-h-11 items-center gap-3 rounded-md px-3 py-3 text-sm font-medium transition-colors ${
-                      isActive
-                        ? "bg-blue-500/15 text-blue-300"
-                        : "text-slate-400 hover:bg-slate-800 hover:text-slate-100"
-                    }`}
-                  >
-                    {item.icon}
-                    {item.label}
-                  </Link>
-                  );
-                }),
-              ])}
+                  <div key={group.heading} className="flex flex-col gap-0.5">
+                    <button
+                      type="button"
+                      onClick={() => accordion.toggle(group.heading)}
+                      aria-expanded={isOpen}
+                      aria-controls={panelId}
+                      data-nav-group={group.heading}
+                      // 44px: a header is now a tap target, and it sits in
+                      // the same stack a gloved thumb works down.
+                      className={`flex min-h-11 w-full items-center gap-3 rounded-md px-3 py-3 text-left text-[11px] font-semibold uppercase tracking-wider ${
+                        isOpen || holdsPage ? "text-slate-100" : "text-slate-400 hover:bg-slate-800 hover:text-slate-100"
+                      }`}
+                    >
+                      <span className="shrink-0">{group.icon}</span>
+                      <span className="flex-1">{group.heading}</span>
+                      <svg
+                        viewBox="0 0 20 20"
+                        fill="none"
+                        aria-hidden="true"
+                        className={`h-4 w-4 shrink-0 transition-transform duration-150 ${isOpen ? "rotate-180" : ""}`}
+                      >
+                        <path d="m6 8 4 4 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </button>
+
+                    <div id={panelId} hidden={!isOpen} className="flex flex-col gap-0.5 pb-1 pl-2">
+                      {group.items.map((item) => {
+                        const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
+
+                        // Same rule as the desktop rail (Sidebar.tsx) -- a disabled
+                        // item is not a link. Without this branch a phone could
+                        // reach a page the rail calls "coming soon", which is
+                        // exactly the drift this shared list exists to prevent.
+                        if (item.disabled) {
+                          return (
+                            <span
+                              key={item.href}
+                              title={`${item.label} — coming soon`}
+                              aria-disabled="true"
+                              className="flex cursor-not-allowed items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-slate-600"
+                            >
+                              <span className="opacity-50">{item.icon}</span>
+                              {item.label}
+                            </span>
+                          );
+                        }
+
+                        return (
+                          <Link
+                            key={item.href}
+                            href={item.href}
+                            aria-current={isActive ? "page" : undefined}
+                            // py-3, not py-2.5: 44px instead of 40px. These sit
+                            // directly on top of each other in a scrolling list, which
+                            // is exactly where a gloved thumb lands on the wrong one.
+                            className={`flex min-h-11 items-center gap-3 rounded-md px-3 py-3 text-sm font-medium transition-colors ${
+                              isActive
+                                ? "bg-blue-500/15 text-blue-300"
+                                : "text-slate-400 hover:bg-slate-800 hover:text-slate-100"
+                            }`}
+                          >
+                            {item.icon}
+                            {item.label}
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
             </nav>
           </div>
         </>

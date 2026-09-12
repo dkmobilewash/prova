@@ -14,7 +14,10 @@ import {
   type ResolvedPayload,
 } from "@/lib/ask/commands";
 import type { ProposalView } from "@/lib/ask/answer";
-import { actionOk, type ActionResult, type ActionResultWith } from "./shared";
+import { actionOk, ownerRefusal, type ActionResult, type ActionResultWith } from "./shared";
+import { ASK_DEFAULT_MODEL, checkAnthropicConnection } from "@prova/integrations";
+import { connectionProblem } from "@/lib/ask/connection";
+import { can } from "@/lib/permissions";
 
 /**
  * The tap.
@@ -121,6 +124,9 @@ export async function confirmAskProposal(
   revalidatePath("/contacts");
   revalidatePath("/jobs");
   if (executed.created) revalidatePath(executed.created.href);
+  // What the action this command stands in for would have revalidated
+  // itself — /schedule for a job's dates.
+  for (const path of executed.revalidate ?? []) revalidatePath(path);
 
   return {
     ok: true,
@@ -228,4 +234,29 @@ async function stamp(
 
 function fail(error: string): { ok: false; error: string } {
   return { ok: false, error };
+}
+
+/**
+ * Settings → Assistant's "Check connection" button. Owner-only, like the
+ * page, since it spends a request against the key. Asks Anthropic for the
+ * model the box runs on, which validates both the key and the
+ * organization's access to that model without a token billed, and turns
+ * the API's answer into a sentence that says what to fix. The screen half
+ * of the log line the loop writes when a real question fails.
+ */
+/** Named rather than inline: the census in lib/action-capability-guards.test.ts
+ * brace-matches an action's body from its first `{`, and an inline object
+ * type in the return annotation would end the "body" before the guard. */
+type AssistantConnectionResult = ActionResultWith<{ model: string }>;
+
+export async function checkAssistantConnection(): Promise<AssistantConnectionResult> {
+  const context = await requireCompanyContext();
+  // The page's own capability first (lib/action-capability-guards.test.ts
+  // executes this refusal), then the owner rule the page adds on top.
+  if (!can(context, "MANAGE_COMPLIANCE")) return { ok: false, error: "Checking the assistant's connection isn't part of your job function." };
+  const refused = ownerRefusal(context, "Only the account owner can check the assistant's connection");
+  if (refused) return refused;
+  const result = await checkAnthropicConnection(ASK_DEFAULT_MODEL);
+  if (result.ok) return { ok: true, value: { model: result.model } };
+  return { ok: false, error: connectionProblem(result, ASK_DEFAULT_MODEL) };
 }

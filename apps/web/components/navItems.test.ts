@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { NAV_GROUPS, NAV_ITEMS, navGroupsFor } from "./navItems";
+import { activeGroupHeading, NAV_GROUPS, NAV_ITEMS, navGroupsFor } from "./navItems";
 import { JOB_FUNCTIONS } from "@/lib/permissions";
 
 /**
@@ -101,5 +101,53 @@ describe("the deployment link", () => {
         "/deployment",
       );
     }
+  });
+});
+
+describe("the collapsible rail (#240)", () => {
+  it("orders the groups as the money pipeline, six of them", () => {
+    expect(NAV_GROUPS.map((g) => g.heading)).toEqual([
+      "Pre-construction",
+      "Operations",
+      "Paper trail",
+      "Logistics",
+      "Financials",
+      "Compliance & safety",
+    ]);
+  });
+
+  it("gives every group an icon, since at 64px the rail shows nothing else for it", () => {
+    const owner = { role: "OWNER" as const, jobFunction: null };
+    for (const group of navGroupsFor(owner, { showsSalesCrm: true })) {
+      expect(group.icon, `${group.heading} has no icon`).toBeTruthy();
+    }
+  });
+
+  it("brings RFIs, Submittals, Drawings and Closeout back under Paper trail, in the order the paper arrives", () => {
+    const paperTrail = NAV_GROUPS.find((g) => g.heading === "Paper trail");
+    expect(paperTrail?.items.map((i) => i.href)).toEqual(["/rfis", "/submittals", "/drawings", "/closeout"]);
+    // Findable means clickable: none of the four is disabled.
+    expect(paperTrail?.items.filter((i) => i.disabled)).toEqual([]);
+  });
+
+  it("opens the group of the current page, by the longest matching href", () => {
+    expect(activeGroupHeading(NAV_GROUPS, "/rfis")).toBe("Paper trail");
+    expect(activeGroupHeading(NAV_GROUPS, "/jobs/abc")).toBe(null);
+    // /vendors and /vendors/pricing are both in Logistics, so either prefix
+    // lands there; /settings/assistant hangs off /settings and must land in
+    // the group that holds it, not on whichever prefix came first.
+    expect(activeGroupHeading(NAV_GROUPS, "/vendors/pricing")).toBe("Logistics");
+    expect(activeGroupHeading(NAV_GROUPS, "/settings/assistant")).toBe("Financials");
+    // A prefix that is not a path segment is not a match: /teams would be
+    // a different page from /team.
+    expect(activeGroupHeading(NAV_GROUPS, "/teamwork")).toBe(null);
+    expect(activeGroupHeading(NAV_GROUPS, "/sign-in")).toBe(null);
+  });
+
+  it("keeps the internal sales group last, outside every tenant's pipeline", () => {
+    const owner = { role: "OWNER" as const, jobFunction: null };
+    const headings = navGroupsFor(owner, { showsSalesCrm: true }).map((g) => g.heading);
+    expect(headings.at(-1)).toBe("Internal");
+    expect(headings).toHaveLength(7);
   });
 });

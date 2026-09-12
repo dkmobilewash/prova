@@ -7,16 +7,17 @@ import { catalogKey, parseCatalogImport, splitAgainstExisting } from "@/lib/cata
 import { ActionResult, actionFail, actionOk, BID_INVITATION_STATUSES, assertEditableDirectly, assertJobInCompany, assertOwner, craftClassificationIdFromForm, enumFromForm, nullableDecimalFromForm, tradeScopeFromForm } from "./shared";
 import { catalogActuals, repriceDecision, type JobStatusForActuals } from "@/lib/catalog-actuals";
 import { addCatalogLine } from "@/lib/estimating/catalog-line";
+import { createBidInvitationRecord } from "@/lib/estimating/bid-invitation";
 
 /** Logs a GC inviting this company to bid — tracked independent of Job,
- * since most invitations are declined or lost and never become one. */
+ * since most invitations are declined or lost and never become one.
+ *
+ * The body is lib/estimating/bid-invitation.ts, shared with the Ask
+ * command `log_bid_invitation`; this keeps its throw for the form, and
+ * throws the core's own sentences, so the page and the card refuse a
+ * missing name or a foreign contact in one voice. */
 export async function createBidInvitation(contactId: string, formData: FormData) {
   const { company } = await requireCompanyContext();
-
-  const contact = await prisma.contact.findUnique({ where: { id: contactId } });
-  if (!contact || contact.companyId !== company.id) {
-    throw new Error("Contact not found");
-  }
 
   const projectName = String(formData.get("projectName") ?? "").trim();
   const dueDateRaw = String(formData.get("dueDate") ?? "").trim();
@@ -24,21 +25,15 @@ export async function createBidInvitation(contactId: string, formData: FormData)
   const tradeScope = tradeScopeFromForm(formData);
   const bidAmount = nullableDecimalFromForm(formData, "bidAmount");
 
-  if (!projectName) {
-    throw new Error("Project name is required");
-  }
-
-  await prisma.bidInvitation.create({
-    data: {
-      companyId: company.id,
-      contactId,
-      projectName,
-      dueDate: dueDateRaw ? new Date(dueDateRaw) : null,
-      notes: notes || null,
-      tradeScope,
-      bidAmount,
-    },
+  const result = await createBidInvitationRecord(company.id, {
+    contactId,
+    projectName,
+    dueDate: dueDateRaw ? new Date(dueDateRaw) : null,
+    notes: notes || null,
+    tradeScope,
+    bidAmount,
   });
+  if (!result.ok) throw new Error(result.error);
 
   revalidatePath(`/contacts/${contactId}`);
   revalidatePath("/bids");

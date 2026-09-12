@@ -197,6 +197,69 @@ export const NAV_ITEMS: NavItem[] = [
       </svg>
     ),
   },
+  // Back on the rail 11 Sep 2026 (#240), under "Paper trail" — see the
+  // NAV_GROUPS comment for why the 3 Sep cut no longer applies.
+  {
+    href: "/rfis",
+    label: "RFIs",
+    icon: (
+      <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5">
+        <path
+          d="M4 5.5A1.5 1.5 0 0 1 5.5 4h9A1.5 1.5 0 0 1 16 5.5v6A1.5 1.5 0 0 1 14.5 13H8l-4 3V5.5Z"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinejoin="round"
+        />
+        <path d="M8.5 7.4a1.6 1.6 0 1 1 1.9 1.9v.9" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      </svg>
+    ),
+  },
+  {
+    href: "/submittals",
+    label: "Submittals",
+    icon: (
+      <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5">
+        <path
+          d="M6 3.5h6.5L16 7v9.5A1.5 1.5 0 0 1 14.5 18h-8A1.5 1.5 0 0 1 5 16.5v-11A1.5 1.5 0 0 1 6.5 3.5H6Z"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinejoin="round"
+        />
+        <path d="M12.5 3.5V7H16" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+        <path d="m7.75 12.25 1.5 1.5 3-3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+  },
+  {
+    href: "/drawings",
+    label: "Drawings",
+    icon: (
+      <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5">
+        <path
+          d="M3 5.5 7.5 4l5 1.5L17 4v10.5L12.5 16l-5-1.5L3 16V5.5Z"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinejoin="round"
+        />
+        <path d="M7.5 4v10.5M12.5 5.5V16" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+      </svg>
+    ),
+  },
+  {
+    href: "/closeout",
+    label: "Closeout",
+    icon: (
+      <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5">
+        <path
+          d="M5 3.5h10a1.5 1.5 0 0 1 1.5 1.5v11a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 16V5A1.5 1.5 0 0 1 5 3.5Z"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinejoin="round"
+        />
+        <path d="m7 10 2 2 4-4.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+  },
   {
     href: "/union-compliance",
     label: "Union & fringe",
@@ -388,38 +451,44 @@ export const NAV_ITEMS: NavItem[] = [
 
 
 /**
- * The rail's five buckets.
+ * The rail's six buckets, in the order money moves through a sub's year.
  *
  * The grouping is by when in a job's life you reach for the thing, not by
  * which table it lives in — a foreman looking for punch lists is thinking
- * "we're finishing", not "operations".
+ * "we're finishing", not "operations". The ORDER is the pipeline: win the
+ * work, build it, keep the paper straight, buy and move what it needs, get
+ * paid, stay compliant. Settings sits with the money because that is
+ * where the owner lives.
  *
- * Every item here has a live route, same as when this comment first said
- * so. It is worth restating because of what changed 3 Sep 2026 below, which
- * could easily be misread as a repeat of the mistake this comment used to
- * warn about — it is a different decision, made with the same facts in
- * hand, not a rediscovery of them.
+ * **11 Sep 2026 — the rail collapses, and the four cut on 3 Sep are back
+ * (#240).** The rail rendered every group open: 27 labels to read to find
+ * anything, which is the "way too many menus" complaint the category's
+ * one-star reviews are made of. Each group is now a header that toggles,
+ * only the group holding the current page is open, and the six headers
+ * fit a laptop screen without scrolling. Sidebar.tsx and MobileNav.tsx
+ * share the rule through useNavAccordion so the two cannot disagree about
+ * which group is open. Every group carries an `icon` because at 64px the
+ * rail shows nothing else for it.
  *
- * **3 Sep 2026 — RFIs, Submittals, Drawings, Closeout removed entirely
- * (not disabled).** All four were built, tested and live, exactly like
- * everything else on this rail — that was verified again before this
- * change, not assumed. They were cut anyway, on product-scope grounds
- * argued in NAV-IA-AUDIT.md at the repo root: a specialty sub receives
- * RFIs and submits submittals TO a GC and doesn't run either workflow
- * itself, and a full drawings/markup module is exactly the crowded
- * category (Procore/Fieldwire/Bluebeam) this product should not try to
- * out-build. Nothing about the code changed — `/rfis`, `/submittals`,
- * `/drawings`, `/closeout` and everything behind them still exist and
- * still work, reachable by a direct link; they are just no longer
- * advertised as a workflow this app's own nav thinks a sub should run.
- * `/safety` and `/material-orders` are `disabled: true` for a related but
- * distinct reason — not a different company's job, just not validated yet
- * as a daily need for this persona — see the same audit doc for both.
- * If a genuinely unbuilt item is ever added, give it `disabled: true` and
- * the rail already renders it muted and unclickable.
+ * RFIs, Submittals, Drawings and Closeout return under "Paper trail". The
+ * 3 Sep cut (NAV-IA-AUDIT.md) had two grounds: a sub does not RUN those
+ * workflows, and a flat rail could not afford four more labels. The
+ * second ground is gone — a collapsed group costs one header whether it
+ * holds one item or five — and the first was always an argument about
+ * what to build, not about whether a sub needs to find the RFI it sent
+ * last Tuesday. Cyrus asked for them findable. Nothing behind the routes
+ * changed then or now.
+ *
+ * `/safety` and `/material-orders` stay `disabled: true` for the reason
+ * the audit gives: not validated yet as a daily need for this persona. A
+ * genuinely unbuilt item gets `disabled: true` too, and both surfaces
+ * already render it muted and unclickable.
  */
 export type NavGroup = {
   heading: string;
+  /** Shown at 64px, where the heading text is not — the only thing a
+   * collapsed rail says about a group. */
+  icon: ReactNode;
   items: (NavItem & { disabled?: boolean })[];
 };
 
@@ -432,9 +501,17 @@ const item = (href: string): NavItem => {
   return found;
 };
 
+const groupIcon = (d: string) => (
+  <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5">
+    <path d={d} stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
 export const NAV_GROUPS: NavGroup[] = [
   {
     heading: "Pre-construction",
+    // A flag: the work you are chasing.
+    icon: groupIcon("M5 16.5v-13M5 4h9.5l-2.5 3.25 2.5 3.25H5"),
     items: [
       item("/dashboard"),
       item("/alerts"),
@@ -447,6 +524,8 @@ export const NAV_GROUPS: NavGroup[] = [
   },
   {
     heading: "Operations",
+    // A hard hat: the work under way.
+    icon: groupIcon("M3.5 14h13M5 14v-1.5a5 5 0 0 1 10 0V14M10 7.5V4M8 4h4"),
     items: [
       item("/schedule"),
       // Next to the schedule on purpose. The schedule answers WHEN jobs
@@ -468,18 +547,16 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    heading: "Compliance & safety",
-    items: [
-      item("/compliance"),
-      item("/prevailing-wage"),
-      item("/union-compliance"),
-      { ...item("/safety"), disabled: true },
-      item("/certifications"),
-      item("/team"),
-    ],
+    heading: "Paper trail",
+    // A document with a corner fold: what went to the GC, and when.
+    icon: groupIcon("M6 3.5h6l3 3v9a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-11a1 1 0 0 1 1-1ZM12 3.5v3h3M7.5 10h5M7.5 13h5"),
+    // Question, answer, drawing, sign-off: the order the paper arrives in.
+    items: [item("/rfis"), item("/submittals"), item("/drawings"), item("/closeout")],
   },
   {
     heading: "Logistics",
+    // A truck.
+    icon: groupIcon("M3.5 6.5h8v7h-8zM11.5 9.5h2.8l2.2 2.2v1.8h-5zM6 15.5a1 1 0 1 0 0-2 1 1 0 0 0 0 2ZM14 15.5a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z"),
     items: [
       { ...item("/material-orders"), disabled: true },
       item("/vendors"),
@@ -489,15 +566,52 @@ export const NAV_GROUPS: NavGroup[] = [
   },
   {
     heading: "Financials",
+    // A bank note.
+    icon: groupIcon("M3.5 6.5h13v7h-13zM10 12a2 2 0 1 0 0-4 2 2 0 0 0 0 4ZM6 10h.01M14 10h.01"),
     items: [item("/cash-flow"), item("/backcharges"), item("/settings")],
   },
+  {
+    heading: "Compliance & safety",
+    // A clipboard with a tick.
+    icon: groupIcon("M7 4.5h6a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1v-10a1 1 0 0 1 1-1ZM8 4.5v-1h4v1M8 10.5l1.5 1.5 2.5-3"),
+    items: [
+      item("/compliance"),
+      item("/prevailing-wage"),
+      item("/union-compliance"),
+      { ...item("/safety"), disabled: true },
+      item("/certifications"),
+      item("/team"),
+    ],
+  },
 ];
+
+/**
+ * The heading of the group that holds the current page, or null when no
+ * group does (the sign-in pages, a portal). Longest matching href wins, so
+ * `/vendors/pricing` and `/settings/assistant` land in the group of the
+ * page they hang off rather than the first prefix that happens to match.
+ * Pure, so navItems.test.ts can pin it; both nav surfaces read it through
+ * useNavAccordion.
+ */
+export function activeGroupHeading(groups: NavGroup[], pathname: string): string | null {
+  let best: { heading: string; length: number } | null = null;
+  for (const group of groups) {
+    for (const entry of group.items) {
+      const matches = pathname === entry.href || pathname.startsWith(`${entry.href}/`);
+      if (matches && (!best || entry.href.length > best.length)) {
+        best = { heading: group.heading, length: entry.href.length };
+      }
+    }
+  }
+  return best?.heading ?? null;
+}
 
 /** Prova's own sales pipeline for selling Prova itself -- deliberately
  * outside NAV_GROUPS above, which every tenant's nav is built from. Only
  * ever appended by navGroupsFor, and only when the caller says so. */
 const SALES_NAV_GROUP: NavGroup = {
   heading: "Internal",
+  icon: item("/sales").icon,
   items: [item("/sales")],
 };
 
