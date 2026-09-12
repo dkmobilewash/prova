@@ -269,6 +269,50 @@ export function ownerRefusal(
  * because the barrel `export *`s all of them. */
 export type ActionResultWith<T> = { ok: true; value: T } | { ok: false; error: string };
 
+/**
+ * Thrown by a form parser, caught at the action's boundary by `runAction`
+ * and converted to a returned failure — parsing stays terse, the wire stays
+ * honest. Anything that is NOT an InputError is a genuine bug and is
+ * rethrown, so it keeps being redacted in production, which is what should
+ * happen to a bug.
+ *
+ * Lives here rather than in a feature module for the reason `ActionResult`
+ * does: `submittals.ts` wrote it locally first, and four more modules
+ * converting to the same contract (#251) would have been five structurally
+ * identical copies free to drift. The original in `submittals.ts` is
+ * deliberately left where it is — it is the documented reference
+ * implementation and rewriting it is not this change.
+ *
+ * WHY A CLASS AND NOT A FLAG. The throw has to survive being raised deep
+ * inside a `prisma.$transaction` callback, where returning is not an option
+ * because a returned value COMMITS the transaction. A guard that reads the
+ * latest row inside the transaction — the only place it can be read without
+ * a race — must abort by throwing, and this is the type that says "abort,
+ * but this one is the user's to read".
+ */
+export class InputError extends Error {}
+
+/**
+ * The boundary that turns an `InputError` into a returned failure.
+ *
+ *     export async function createThing(formData: FormData): Promise<ActionResult> {
+ *       const context = await requireCompanyContext();
+ *       return runAction(async () => { … return ok; });
+ *     }
+ *
+ * `requireCompanyContext()` is deliberately OUTSIDE the callback: it
+ * redirects an unauthenticated caller, and a redirect is a thrown control
+ * signal, not a failure to render in a form.
+ */
+export async function runAction(fn: () => Promise<ActionResult>): Promise<ActionResult> {
+  try {
+    return await fn();
+  } catch (err) {
+    if (err instanceof InputError) return actionFail(err.message);
+    throw err;
+  }
+}
+
 /** True when a write failed a unique constraint (Prisma P2002).
  *
  * Checks the `code` property rather than `instanceof

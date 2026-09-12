@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { deleteVendor, updateVendor } from "@/lib/actions";
+import type { ActionResult } from "@/lib/actions/shared";
 import { tradeScopeLabel } from "@/components/tradeScopeLabels";
 import { VendorFields, type VendorFieldValues } from "@/components/VendorFields";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
@@ -31,30 +32,40 @@ export function VendorRow({ canDelete, vendor }: VendorRowProps) {
   const trade = tradeScopeLabel(vendor.tradeScope);
   const contactLine = [vendor.contactName, vendor.phone, vendor.email].filter(Boolean).join(" · ");
 
-  function handleSave(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  /** Runs an action and renders the sentence it refuses with.
+   *
+   * Was two try/catch blocks over `err.message`, which in production is
+   * React's "the specific message is omitted in production builds"
+   * paragraph rather than anything this app wrote. These actions return
+   * their refusals now — including the one that matters most here: a vendor
+   * with material orders against it CANNOT be deleted (the foreign key is
+   * RESTRICT), and until now the Remove button simply appeared to do
+   * nothing. Same shape as `SubmittalRow`. */
+  function run(fn: () => Promise<ActionResult>, onOk?: () => void) {
     setError(null);
-    const formData = new FormData(event.currentTarget);
     startTransition(async () => {
-      try {
-        await updateVendor(vendor.id, formData);
-        draft.clear();
-        setIsEditing(false);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Could not save changes");
-      }
+      const result = await fn();
+      if (result.ok) onOk?.();
+      else setError(result.error);
     });
   }
 
+  function handleSave(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    // Draft cleared and form closed on the OK branch only, so a refused
+    // save leaves every field exactly as typed.
+    run(
+      () => updateVendor(vendor.id, formData),
+      () => {
+        draft.clear();
+        setIsEditing(false);
+      },
+    );
+  }
+
   function handleDelete() {
-    setError(null);
-    startTransition(async () => {
-      try {
-        await deleteVendor(vendor.id);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Could not delete vendor");
-      }
-    });
+    run(() => deleteVendor(vendor.id));
   }
 
   if (isEditing) {
@@ -64,7 +75,11 @@ export function VendorRow({ canDelete, vendor }: VendorRowProps) {
           <FormDraftNotice draft={draft} />
           <VendorFields defaults={vendor} />
 
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && (
+            <p role="alert" className="text-sm text-red-400">
+              {error}
+            </p>
+          )}
 
           <div className="flex gap-2">
             <button
@@ -98,7 +113,11 @@ export function VendorRow({ canDelete, vendor }: VendorRowProps) {
         {trade && <p className="text-xs text-link">{trade}</p>}
         <p className="text-sm text-ink-body">{contactLine || "No contact info"}</p>
         {vendor.notes && <p className="mt-1 text-sm text-ink-muted">{vendor.notes}</p>}
-        {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
+        {error && (
+          <p role="alert" className="mt-1 text-sm text-red-400">
+            {error}
+          </p>
+        )}
       </div>
 
       <RowActions

@@ -19,14 +19,19 @@ export function VendorForm() {
     setError(null);
     const formData = new FormData(event.currentTarget);
     startTransition(async () => {
-      try {
-        await createVendor(formData);
-        draft.clear();
-        draft.resetForm();
-        setIsOpen(false);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Could not save vendor");
+      const result = await createVendor(formData);
+      // Returned, not thrown: production replaces a thrown Server Action
+      // message with React's own "omitted in production builds" paragraph,
+      // so "Vendor name is required" never reached anyone. The form is reset
+      // and closed only on the OK branch, so a refusal leaves the six fields
+      // as typed.
+      if (!result.ok) {
+        setError(result.error);
+        return;
       }
+      draft.clear();
+      draft.resetForm();
+      setIsOpen(false);
     });
   }
 
@@ -49,7 +54,11 @@ export function VendorForm() {
         <FormDraftNotice draft={draft} />
         <VendorFields />
 
-        {error && <p className="text-sm text-red-400">{error}</p>}
+        {error && (
+          <p role="alert" className="text-sm text-red-400">
+            {error}
+          </p>
+        )}
 
         <div className="flex gap-2">
           <button

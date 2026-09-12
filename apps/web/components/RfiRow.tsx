@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { answerRfi, deleteRfi, markRfiSent, setRfiClosed, updateRfi } from "@/lib/actions";
+import type { ActionResult } from "@/lib/actions/shared";
 import { RfiFields, fieldInputClass, labelClass, type RfiDefaults } from "@/components/RfiFields";
 import { daysBetween, isOverdue, statusLabel } from "@/components/rfiLabels";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
@@ -45,14 +46,23 @@ export function RfiRow({
   const editDraft = useFormDraft(`rfi:edit:${rfi.id}`);
   const answerDraft = useFormDraft(`rfi:answer:${rfi.id}`);
 
-  function run(fn: () => Promise<void>, fallback: string) {
+  /** Runs an action and renders the sentence it refuses with.
+   *
+   * THE REASON THIS COMPONENT CHANGED. `rfis.ts` holds the best-written
+   * refusals in the app — "Send this RFI before recording an answer", "The
+   * answer can't have come back before the RFI was sent" — and threw every
+   * one of them. Production replaces a thrown Server Action message with
+   * React's own "the specific message is omitted in production builds"
+   * paragraph, so `err.message` here was never an RFI sentence and the
+   * per-call fallbacks ("Could not mark it sent") were the whole of what
+   * anyone read. The actions return their refusals now, so there is nothing
+   * left to fall back to. Same shape as `SubmittalRow`. */
+  function run(fn: () => Promise<ActionResult>, onOk?: () => void) {
     setError(null);
     startTransition(async () => {
-      try {
-        await fn();
-      } catch (err) {
-        setError(err instanceof Error ? err.message : fallback);
-      }
+      const result = await fn();
+      if (result.ok) onOk?.();
+      else setError(result.error);
     });
   }
 
@@ -65,11 +75,15 @@ export function RfiRow({
           onSubmit={(event) => {
             event.preventDefault();
             const formData = new FormData(event.currentTarget);
-            run(async () => {
-              await updateRfi(rfi.id, formData);
-              editDraft.clear();
-              setMode("view");
-            }, "Could not save changes");
+            // Draft cleared and form closed on the OK branch only, so a
+            // refused save leaves the whole edit exactly as typed.
+            run(
+              () => updateRfi(rfi.id, formData),
+              () => {
+                editDraft.clear();
+                setMode("view");
+              },
+            );
           }}
           className="flex flex-col gap-3"
         >
@@ -78,7 +92,11 @@ export function RfiRow({
           </p>
           <FormDraftNotice draft={editDraft} />
           <RfiFields defaults={rfi} />
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && (
+            <p role="alert" className="text-sm text-red-400">
+              {error}
+            </p>
+          )}
           <div className="flex flex-wrap gap-2">
             <button
               type="submit"
@@ -105,11 +123,16 @@ export function RfiRow({
           onSubmit={(event) => {
             event.preventDefault();
             const formData = new FormData(event.currentTarget);
-            run(async () => {
-              await answerRfi(rfi.id, formData);
-              answerDraft.clear();
-              setMode("view");
-            }, "Could not record the answer");
+            // The chronology guards live behind this call — a refusal here
+            // must leave the typed answer on screen, not discard it along
+            // with the reason.
+            run(
+              () => answerRfi(rfi.id, formData),
+              () => {
+                answerDraft.clear();
+                setMode("view");
+              },
+            );
           }}
           className="flex flex-col gap-3"
         >
@@ -174,7 +197,11 @@ export function RfiRow({
             one.
           </p>
 
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && (
+            <p role="alert" className="text-sm text-red-400">
+              {error}
+            </p>
+          )}
 
           <div className="flex flex-wrap gap-2">
             <button
@@ -243,7 +270,11 @@ export function RfiRow({
           {rfi.askedByName && `${rfi.drawingReference || rfi.specSection ? " · " : ""}raised by ${rfi.askedByName}`}
         </p>
 
-        {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
+        {error && (
+          <p role="alert" className="mt-1 text-sm text-red-400">
+            {error}
+          </p>
+        )}
       </div>
 
       {/* The widest action cluster in the app, and the sharpest instance of
@@ -274,7 +305,7 @@ export function RfiRow({
               confirmLabel="Confirm delete"
               pendingLabel="Deleting…"
               pending={isPending}
-              onConfirm={() => run(() => deleteRfi(rfi.id), "Could not delete the draft")}
+              onConfirm={() => run(() => deleteRfi(rfi.id))}
               deleteClassName={btn}
               cancelClassName={btn}
               confirmClassName="inline-flex min-h-11 items-center justify-center rounded-md border border-red-500 px-3 py-2 text-sm text-red-400 hover:bg-tag-rose disabled:opacity-50"
@@ -286,8 +317,8 @@ export function RfiRow({
           <button
             type="button"
             disabled={isPending}
-            onClick={() => run(() => markRfiSent(rfi.id), "Could not mark it sent")}
-            className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-3 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
+            onClick={() => run(() => markRfiSent(rfi.id))}
+            className="inline-flex min-h-11 items-center justify-center rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
           >
             Mark sent
           </button>
@@ -303,7 +334,7 @@ export function RfiRow({
           <button
             type="button"
             disabled={isPending}
-            onClick={() => run(() => setRfiClosed(rfi.id, true), "Could not close it")}
+            onClick={() => run(() => setRfiClosed(rfi.id, true))}
             className={btn}
           >
             Close
@@ -314,7 +345,7 @@ export function RfiRow({
           <button
             type="button"
             disabled={isPending}
-            onClick={() => run(() => setRfiClosed(rfi.id, false), "Could not reopen it")}
+            onClick={() => run(() => setRfiClosed(rfi.id, false))}
             className={btn}
           >
             Reopen
