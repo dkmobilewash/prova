@@ -50,16 +50,21 @@ export function PunchListForm({
     setError(null);
     const formData = new FormData(event.currentTarget);
     startTransition(async () => {
-      try {
-        await createPunchListItem(formData);
-        formDraft.clear();
-        if (draft) void settleAskDraft(draft.proposalId);
-        if (descriptionRef.current) {
-          descriptionRef.current.value = "";
-          descriptionRef.current.focus();
-        }
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Could not add item");
+      const result = await createPunchListItem(formData);
+      // The refusal is RETURNED now, not thrown: a thrown Server Action
+      // message is replaced in production by React's own "omitted in
+      // production builds" paragraph, so the `err.message` this used to
+      // render was never "Description is required". Nothing is cleared on
+      // the failure branch, so what was typed is still in the fields.
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      formDraft.clear();
+      if (draft) void settleAskDraft(draft.proposalId);
+      if (descriptionRef.current) {
+        descriptionRef.current.value = "";
+        descriptionRef.current.focus();
       }
     });
   }
@@ -104,7 +109,14 @@ export function PunchListForm({
         />
       </label>
 
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {/* role="alert" so the reason is announced rather than only drawn —
+          the person who just submitted is usually still looking at the
+          field they think is wrong, not at this line. */}
+      {error && (
+        <p role="alert" className="text-sm text-red-400">
+          {error}
+        </p>
+      )}
 
       <button
         type="submit"

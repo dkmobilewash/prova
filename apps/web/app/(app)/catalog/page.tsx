@@ -203,10 +203,35 @@ export default async function CatalogPage() {
               className="w-28 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
             />
           </label>
+          {/* THESE THREE HAD NO `type` AT ALL, so they defaulted to text and
+              fed `nullableDecimalFromForm`, which refuses anything
+              `Number()` cannot read. Type "1,200" or "$2.85" — the two ways
+              a person actually writes a price — and the action THREW, which
+              on this form is the worst case in the app: it is a plain
+              `<form action={…}>` with no client error handling, so the throw
+              reaches the error boundary, the page is replaced, and every
+              field typed alongside it is gone. The message would have been
+              redacted anyway.
+
+              `type="number"` makes the browser refuse the comma and the
+              dollar sign before anything is submitted; `step="0.01"` is what
+              stops it ALSO rejecting 2.85 (the default step is 1);
+              `inputMode="decimal"` opens a phone straight on a keypad with a
+              decimal point, which `type="number"` alone does not guarantee
+              on Android — the same pairing SafetyIncidentFields documents.
+
+              Browser validation is not the server check, and the server
+              check here is still a throw: `createLineItemCatalogEntry` lives
+              in `lib/actions/estimating.ts`, which is the other lane. Its
+              conversion is reported, not done here. */}
           <label className="flex flex-col gap-1 text-sm text-slate-300">
             Default unit price
             <input
               name="defaultUnitPrice"
+              type="number"
+              inputMode="decimal"
+              step="0.01"
+              min="0"
               placeholder="optional"
               className="w-32 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
             />
@@ -215,6 +240,10 @@ export default async function CatalogPage() {
             Default budgeted cost
             <input
               name="defaultBudgetedUnitCost"
+              type="number"
+              inputMode="decimal"
+              step="0.01"
+              min="0"
               placeholder="optional"
               className="w-32 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
             />
@@ -223,6 +252,10 @@ export default async function CatalogPage() {
             Default labor hrs
             <input
               name="defaultLaborHours"
+              type="number"
+              inputMode="decimal"
+              step="0.01"
+              min="0"
               placeholder="optional"
               className="w-28 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
             />

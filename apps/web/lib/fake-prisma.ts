@@ -264,6 +264,18 @@ export class FakeDb {
         op(() =>
           where ? this.rows(name).filter((row) => matches(row, where)) : this.rows(name),
         ),
+
+      /** Here for `deleteVendor`, which refuses while any material order
+       * still names the vendor. A guard that counts has to be testable
+       * against a count of ZERO as well as a positive one — "the delete
+       * went through" and "the guard never ran" are the same observation
+       * otherwise, which is the vacuous shape this repo keeps paying for. */
+      count: ({ where }: { where?: Record<string, unknown> } = {}) =>
+        op(() =>
+          where
+            ? this.rows(name).filter((row) => matches(row, where)).length
+            : this.rows(name).length,
+        ),
     };
   }
 

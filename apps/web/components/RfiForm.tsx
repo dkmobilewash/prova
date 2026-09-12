@@ -69,15 +69,21 @@ export function RfiForm({
         setError(null);
         const formData = new FormData(event.currentTarget);
         startTransition(async () => {
-          try {
-            await createRfi(formData);
-            formDraft.clear();
-            if (draft) void settleAskDraft(draft.proposalId);
-            formDraft.resetForm();
-            setIsOpen(false);
-          } catch (err) {
-            setError(err instanceof Error ? err.message : "Could not raise the RFI");
+          const result = await createRfi(formData);
+          // Returned, not thrown. `createRfi`'s guards are sentences written
+          // for somebody in a dispute, and production replaces a thrown
+          // Server Action message with React's own "omitted in production
+          // builds" paragraph — so the `err.message` this used to render was
+          // that paragraph, every time. The form is reset and closed only on
+          // the OK branch, so a refusal leaves the question as typed.
+          if (!result.ok) {
+            setError(result.error);
+            return;
           }
+          formDraft.clear();
+          if (draft) void settleAskDraft(draft.proposalId);
+          formDraft.resetForm();
+          setIsOpen(false);
         });
       }}
       className="flex flex-col gap-3 rounded-lg border border-slate-800 bg-slate-900 p-4"
@@ -98,7 +104,11 @@ export function RfiForm({
         }}
       />
 
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {error && (
+        <p role="alert" className="text-sm text-red-400">
+          {error}
+        </p>
+      )}
 
       <div className="flex flex-wrap gap-2">
         <button

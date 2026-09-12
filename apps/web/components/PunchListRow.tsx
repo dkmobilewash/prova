@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { deletePunchListItem, setPunchListItemDone, updatePunchListItem } from "@/lib/actions";
+import type { ActionResult } from "@/lib/actions/shared";
 import type { JobOption } from "@/components/PunchListForm";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
@@ -44,14 +45,21 @@ export function PunchListRow({ canDelete, jobs, item, showJob }: PunchListRowPro
   // Keyed by the item id so two rows' edit forms can never share a draft.
   const draft = useFormDraft(`punch-list:edit:${item.id}`);
 
-  function run(fn: () => Promise<void>, fallback: string) {
+  /** Runs an action and renders the sentence it refuses with.
+   *
+   * Was a try/catch over `err.message`, which in production is React's
+   * "the specific message is omitted in production builds" paragraph rather
+   * than anything this app wrote — so the per-call fallback strings it took
+   * ("Could not save changes") were the only text ever shown, and the
+   * reasons never arrived. These actions return their refusals now, so
+   * there is a real sentence and nothing to fall back to. Same shape as
+   * `SubmittalRow`. */
+  function run(fn: () => Promise<ActionResult>, onOk?: () => void) {
     setError(null);
     startTransition(async () => {
-      try {
-        await fn();
-      } catch (err) {
-        setError(err instanceof Error ? err.message : fallback);
-      }
+      const result = await fn();
+      if (result.ok) onOk?.();
+      else setError(result.error);
     });
   }
 
@@ -64,11 +72,15 @@ export function PunchListRow({ canDelete, jobs, item, showJob }: PunchListRowPro
           onSubmit={(event) => {
             event.preventDefault();
             const formData = new FormData(event.currentTarget);
-            run(async () => {
-              await updatePunchListItem(item.id, formData);
-              draft.clear();
-              setIsEditing(false);
-            }, "Could not save changes");
+            // The draft is cleared and the form closed only on the OK
+            // branch — a refused save leaves every field exactly as typed.
+            run(
+              () => updatePunchListItem(item.id, formData),
+              () => {
+                draft.clear();
+                setIsEditing(false);
+              },
+            );
           }}
           className="flex flex-col gap-3"
         >
@@ -82,7 +94,11 @@ export function PunchListRow({ canDelete, jobs, item, showJob }: PunchListRowPro
           </select>
           <input type="text" name="description" required defaultValue={item.description} className={inputClass} />
 
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && (
+            <p role="alert" className="text-sm text-red-400">
+              {error}
+            </p>
+          )}
 
           <div className="flex flex-wrap gap-2">
             <button
@@ -126,9 +142,7 @@ export function PunchListRow({ canDelete, jobs, item, showJob }: PunchListRowPro
             type="checkbox"
             checked={item.isDone}
             disabled={isPending}
-            onChange={(event) =>
-              run(() => setPunchListItemDone(item.id, event.target.checked), "Could not update item")
-            }
+            onChange={(event) => run(() => setPunchListItemDone(item.id, event.target.checked))}
             className="h-6 w-6 accent-blue-500"
             aria-label={item.isDone ? "Mark as not done" : "Mark as done"}
           />
@@ -145,7 +159,11 @@ export function PunchListRow({ canDelete, jobs, item, showJob }: PunchListRowPro
             {showJob && item.raisedByName && " · "}
             {item.raisedByName && `raised by ${item.raisedByName}`}
           </p>
-          {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
+          {error && (
+            <p role="alert" className="mt-1 text-sm text-red-400">
+              {error}
+            </p>
+          )}
         </div>
       </div>
 
@@ -169,7 +187,7 @@ export function PunchListRow({ canDelete, jobs, item, showJob }: PunchListRowPro
               confirmLabel="Confirm remove"
               pendingLabel="Removing…"
               pending={isPending}
-              onConfirm={() => run(() => deletePunchListItem(item.id), "Could not delete item")}
+              onConfirm={() => run(() => deletePunchListItem(item.id))}
               deleteClassName={rowBtnDanger}
               cancelClassName={rowBtn}
               confirmClassName={rowBtnConfirm}
