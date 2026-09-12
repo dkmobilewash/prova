@@ -8,6 +8,7 @@ import { IntegrationControls } from "@/components/IntegrationControls";
 import { PROVIDERS, isProviderVisible, type ProviderEntry } from "@/lib/integrations/registry";
 import { relativeTime } from "@/lib/integrations/relativeTime";
 import { CONNECTION_CARD_SELECT } from "@/lib/integrations/selects";
+import { blobStoreId } from "@/lib/job-media";
 
 /**
  * Settings → Integrations.
@@ -81,6 +82,11 @@ export default async function IntegrationsPage() {
   ]);
 
   const byProvider = new Map(connections.map((connection) => [connection.provider, connection]));
+  const blob = {
+    environment: process.env.VERCEL_ENV ?? "local",
+    present: Boolean(process.env.BLOB_READ_WRITE_TOKEN?.trim()),
+    storeId: blobStoreId(process.env),
+  };
   const now = new Date();
 
   // The page still knows nothing about any particular provider — the
@@ -238,6 +244,31 @@ export default async function IntegrationsPage() {
       </div>
 
       <div className="flex flex-col gap-4">{visibleProviders.map(renderCard)}</div>
+
+      {/* Not a provider card: photo storage is infrastructure this deployment
+          holds, not something a company connects. It is here because the
+          question it answers — "does THIS environment have its own store" —
+          has no other screen, and the alternative is reading a build log.
+          The store id is not a secret: it is the first label of every photo
+          URL the app already renders. The token is never shown. */}
+      <section className="mt-8" data-storage="photos">
+        <Card>
+          <h2 className="text-sm font-semibold text-ink">Photo storage</h2>
+          <p className="mt-1 max-w-2xl text-sm text-ink-body">
+            Site photos upload to a Vercel Blob store. A preview must not upload beside real photos, so
+            open this page on a preview and on the live app and compare the store id: different means
+            each has its own store, the same means they share one.
+          </p>
+          <dl className="mt-4 grid gap-4 border-t border-line-card pt-4 sm:grid-cols-3">
+            <DetailRow label="This deployment" value={blob.environment} />
+            <DetailRow
+              label="Credential"
+              value={blob.present ? "present" : "not set — uploads fail until a store is connected to this environment in Vercel"}
+            />
+            <DetailRow label="Store id" value={blob.storeId ?? "—"} />
+          </dl>
+        </Card>
+      </section>
     </div>
   );
 }

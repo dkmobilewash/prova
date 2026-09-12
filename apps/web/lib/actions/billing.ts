@@ -12,6 +12,7 @@ import { revokeToken, refreshTokens, getCompanyInfo, generateWipNarrative, type 
 import { calculateLineItemWip, calculateJobWip } from "@/lib/wip";
 import { createInvoiceRecord } from "@/lib/billing/create-invoice";
 import { issueInvoiceNumber } from "@/lib/billing/invoice-number";
+import { createRetainageReleaseRecord } from "@/lib/billing/retainage-release";
 import { MIN_EARNED_COVERAGE } from "@/lib/company-financials";
 import { payAppEntryError } from "@/lib/pay-application";
 import {
@@ -610,19 +611,30 @@ export async function deletePayment(jobId: string, paymentId: string) {
 
 /** Records retainage actually paid back to the sub -- a lump sum against
  * the job's accumulated withheld balance, not against any one invoice.
- * See RetainageRelease in schema.prisma. */
+ * See RetainageRelease in schema.prisma.
+ *
+ * The body is lib/billing/retainage-release.ts, shared with the Ask
+ * command `release_retainage`. This wrapper keeps the form's contract: it
+ * throws its one refusal ("Job not found"), as it always did, because the
+ * job page posts to it as a plain form action with no place to render a
+ * returned sentence — and it sets NEITHER of the core's two options, so
+ * the form still accepts a release above the balance held (the core says
+ * why that is deliberate) and never compares against a balance it showed. */
 export async function createRetainageRelease(jobId: string, formData: FormData) {
   const { company, ...user } = await requireCompanyContext();
-  await assertJobInCompany(jobId, company.id);
 
   const amount = decimalFromForm(formData, "amount");
   const releasedRaw = String(formData.get("releasedAt") ?? "").trim();
   const releasedAt = releasedRaw ? new Date(releasedRaw) : new Date();
   const note = String(formData.get("note") ?? "").trim();
 
-  await prisma.retainageRelease.create({
-    data: { jobId, amount, releasedAt, note: note || null, createdByUserId: user.id },
+  const result = await createRetainageReleaseRecord(company.id, jobId, {
+    amount,
+    releasedAt,
+    note: note || null,
+    createdByUserId: user.id,
   });
+  if (!result.ok) throw new Error(result.error);
 
   revalidatePath(`/jobs/${jobId}`);
 }
