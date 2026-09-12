@@ -56,7 +56,7 @@ vi.mock("next/link", async () => {
   };
 });
 
-const { Sidebar, activeGroupHeading, navGroupPanelId } = await import("@/components/Sidebar");
+const { Sidebar, navGroupPanelId, STAGE_KEY_FOR_HEADING } = await import("@/components/Sidebar");
 const { navGroupsFor } = await import("@/components/navItems");
 
 declare global {
@@ -171,9 +171,10 @@ const HEADINGS = navGroupsFor(principal).map((group) => group.heading);
 describe("the Money Rail's groups collapse", () => {
   it("renders a toggle for every group, and nothing but groups is a toggle", () => {
     renderRail();
-    // Five on an OWNER's rail: Pre-construction, Operations, Compliance &
-    // safety, Logistics, Financials. Read from navGroupsFor rather than
-    // written down, so adding a group cannot leave this asserting about four.
+    // Six on an OWNER's rail since #240: Pre-construction, Operations,
+    // Paper trail, Logistics, Financials, Compliance & safety. Read from
+    // navGroupsFor rather than written down, which is why #240 adding a
+    // sixth group did not leave this asserting about five.
     expect(HEADINGS.length).toBeGreaterThan(1);
     expect(headingButtons()).toHaveLength(HEADINGS.length);
     for (const heading of HEADINGS) {
@@ -262,8 +263,11 @@ describe("the five figures are never what collapses", () => {
 
     const text = container.textContent ?? "";
     for (const heading of HEADINGS) expect(text).toContain(heading);
-    // "Proving" has no group of its own — it is a linkless heading beside
-    // Operations, and the collapse must not take it with Operations' items.
+    // "Proving" is a linkless heading beside Operations rather than a
+    // group's figure, and the collapse must not take it with Operations'
+    // items. #240 gave its routes a group ("Paper trail" holds /rfis and
+    // /submittals), so this is now a deliberate arrangement rather than the
+    // only one available — see the note in Sidebar.tsx.
     expect(text).toContain("Proving");
     for (const figure of FIGURE_TEXTS) expect(text).toContain(figure);
   });
@@ -299,20 +303,45 @@ describe("the five figures are never what collapses", () => {
   });
 });
 
-describe("activeGroupHeading", () => {
-  const groups = navGroupsFor(principal);
+/* This file used to carry its own `activeGroupHeading` cases, because the
+ * rail used to carry its own copy of the function. It now uses the one in
+ * navItems.tsx, whose longest-href match is strictly better — /vendors/pricing
+ * lands in Logistics and /settings/assistant in Financials, which the old
+ * first-prefix-wins version got wrong — and which navItems.test.ts pins,
+ * including those two cases and the null for a route in no group. The
+ * behaviour those deleted cases asserted is still asserted; it is asserted
+ * once, next to the function. */
 
-  it("finds the group for an exact route and for a child route", () => {
-    expect(activeGroupHeading(groups, "/cash-flow")).toBe("Financials");
-    expect(activeGroupHeading(groups, "/bids/42")).toBe("Pre-construction");
+describe("the stage map cannot silently miss", () => {
+  const headings = navGroupsFor(principal).map((group) => group.heading);
+
+  it("keys the stage map on headings that actually exist", () => {
+    // The one thing this merge made newly breakable: the four keys are
+    // heading TEXT from navItems.tsx, so a rename there matches nothing here
+    // and drops four figures with every other test still passing. An empty
+    // question, not a wrong answer — CLAUDE.md's parser rule, in a Record.
+    expect(Object.keys(STAGE_KEY_FOR_HEADING).length).toBe(4);
+    for (const heading of Object.keys(STAGE_KEY_FOR_HEADING)) {
+      expect(headings, `"${heading}" is not a nav group heading`).toContain(heading);
+    }
   });
 
-  it("returns undefined for a route in no group", () => {
-    expect(activeGroupHeading(groups, "/jobs/abc123")).toBeUndefined();
+  it("places all five stages — four on headings, Proving beside Operations", () => {
+    const placed = new Set(Object.values(STAGE_KEY_FOR_HEADING));
+    expect(placed.size).toBe(4);
+    // Proving is the fifth and is drawn by the component, not the map.
+    renderRail();
+    for (const figure of FIGURE_TEXTS) expect(container.textContent ?? "").toContain(figure);
+    expect(placed.has("proving")).toBe(false);
   });
 
+});
+
+describe("navGroupPanelId", () => {
   it("makes an id that is legal in an attribute", () => {
     expect(navGroupPanelId("Compliance & safety")).toBe("nav-group-compliance-safety");
     expect(navGroupPanelId("Pre-construction")).toBe("nav-group-pre-construction");
+    // #240's sixth group, whose two words must not collide into one.
+    expect(navGroupPanelId("Paper trail")).toBe("nav-group-paper-trail");
   });
 });

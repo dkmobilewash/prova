@@ -5,6 +5,8 @@ import { NoAccess } from "@/components/NoAccess";
 import { DrawingSetForm } from "@/components/DrawingSetForm";
 import { DrawingSetRow } from "@/components/DrawingSetRow";
 import { setState, unreceivedRevisions } from "@/components/drawingLabels";
+import { StatusLine } from "@/components/StatusLine";
+import { drawingsStatus } from "@/lib/status-sentences";
 
 /** Stored at UTC midnight, rendered in UTC — same rule as every other
  * dated record in this app. */
@@ -59,11 +61,13 @@ export default async function DrawingsPage({
     })),
   }));
 
-  const behindCount = rows.filter((r) => setState(r.revisions) === "BEHIND").length;
+  // Per set, with how many issues each is missing — "which sets, and how
+  // far behind" is what someone chases the GC with.
+  const behind = rows
+    .filter((r) => setState(r.revisions) === "BEHIND")
+    .map((r) => ({ name: r.name, jobName: r.jobName, missing: unreceivedRevisions(r.revisions).length }));
   const inHandCount = rows.filter((r) => setState(r.revisions) === "CURRENT_IN_HAND").length;
-  // Counted across every set, not per set — "how many issues are we missing
-  // in total" is the number someone chases the GC with.
-  const missingIssues = rows.reduce((n, r) => n + unreceivedRevisions(r.revisions).length, 0);
+  const status = drawingsStatus({ behind, inHand: inHandCount, total: rows.length });
 
   const filterHref = (job: string | null) => (job ? `/drawings?job=${job}` : "/drawings");
 
@@ -87,24 +91,7 @@ export default async function DrawingsPage({
         <DrawingSetForm jobs={jobs} defaultJobId={activeJob ?? undefined} />
       </section>
 
-      <div className="mb-4 grid gap-3 sm:grid-cols-3">
-        <div className="rounded-lg border border-line-card bg-surface p-4">
-          <p className={`text-2xl font-semibold ${behindCount > 0 ? "text-tag-rose-ink" : "text-ink"}`}>
-            {behindCount}
-          </p>
-          <p className="text-xs text-ink-muted">Sets whose newest issue isn&apos;t here</p>
-        </div>
-        <div className="rounded-lg border border-line-card bg-surface p-4">
-          <p className={`text-2xl font-semibold ${missingIssues > 0 ? "text-tag-amber-ink" : "text-ink"}`}>
-            {missingIssues}
-          </p>
-          <p className="text-xs text-ink-muted">Issues never received</p>
-        </div>
-        <div className="rounded-lg border border-line-card bg-surface p-4">
-          <p className="text-2xl font-semibold text-tag-green-ink">{inHandCount}</p>
-          <p className="text-xs text-ink-muted">Sets current in hand</p>
-        </div>
-      </div>
+      <StatusLine report={status} />
 
       {jobs.length > 0 && (
         <div className="mb-4 flex flex-wrap gap-2">

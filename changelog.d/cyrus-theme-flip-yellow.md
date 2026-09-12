@@ -214,3 +214,88 @@ group's links being absent, and all five figures rendering in every state.
 Mutation-proved both ways: making the toggle exclusive turns the two
 independence tests red, and moving a figure inside the collapsible panel
 (the shape of the original regression) turns the three figure tests red.
+
+### #249 merged in: their structure, our palette and our figures (Cyrus)
+`cyrus/theme-flip-yellow` (same branch, filmed demo)
+
+`origin/main` took #249 — the rail collapsing into six pipeline groups
+(#240), ten tile rows becoming one status sentence per page (#241), and the
+assistant made operable — while this branch held a dark-theme flip, the
+Money Rail, `add_punch_items`, the C Stream rename and a rewritten answer
+prompt. Fifteen files conflicted. One rule decided every hunk: **their
+structure and behaviour win, our palette and our money figures re-apply on
+top.** Nothing of #240/#241 was reverted, second-guessed or improved.
+
+The three sections above contain sentences that were true when written and
+are not any more, which is the thing this file exists to stop, so they are
+corrected here rather than left to be inherited:
+
+- **"Proving has no group to sit on since the 3 Sep nav cut."** #240 put
+  `/rfis` and `/submittals` back in the rail, in a new "Paper trail" group
+  (with `/drawings` and `/closeout`). The orphan row's stated reason is
+  therefore gone, though the row is KEPT — see the flag below.
+- **"`MobileNav` is deliberately left flat."** The drawer now carries
+  #240's accordion. It shares `useNavAccordion` with nothing (the rail
+  cannot use it, see below) but keeps its one-group-at-a-time rule, which
+  is right on a 360px screen carrying no figures.
+- **"`settleAskDraft` has one door (`/rfis`, MANAGE_JOBS)."** #249's email
+  hand-off gave `MessageComposer` a second door, and `/messages` is in no
+  `ROUTE_CAPABILITY` entry and asserts nothing on the page — so the doors
+  disagree about whether there is a capability at all. The entry moved from
+  the debt list into `MIXED_DOORS`, recorded as deliberately ungated, with
+  the reason: it is self-scoped (`companyId` AND `createdByUserId` in its
+  `updateMany` where-clause) and the right guard is `canRunCommand` on the
+  card's own command, in the ask lane. Gating it on MANAGE_JOBS now would
+  refuse #249's own feature to everyone who can reach `/messages`.
+
+The rail takes #240's group model whole — six groups, their order, their
+route membership, and `activeGroupHeading` from `navItems.tsx`, whose
+longest-href match is what puts `/vendors/pricing` in Logistics and
+`/settings/assistant` in Financials. The rail's own duplicate of that
+function is DELETED, along with its duplicate tests: `navItems.test.ts`
+pins the shared one, including the two cases the rail's first-prefix-wins
+copy got wrong. Two things the rail does NOT take, both for the same
+reason — the five figures must be on screen at once: it keeps INDEPENDENT
+toggles rather than `useNavAccordion`, and it stays `w-60` rather than the
+64px hover rail, so #240's group icons are drawn in the drawer only.
+
+**The new fragility this merge creates, and the check for it.**
+`STAGE_KEY_FOR_HEADING` is keyed on four heading STRINGS that live in
+`navItems.tsx`, the shared file. A rename there matches nothing here and
+drops four of the five figures with nothing to say so — an empty question
+rather than a wrong answer, which is CLAUDE.md's parser rule wearing a
+`Record`. So the map is exported and `Sidebar.test.ts` asserts every key is
+a real group heading and that all five stages are placed. Mutation-proved
+both ways: renaming a key to `"Financials renamed"` fails the new test by
+name ("is not a nav group heading") and deleting the Proving row fails the
+five-figures test.
+
+`StatusLine` (#241's one sentence) is dressed in the dark tag pairs rather
+than raw `red-500`/`amber-500` at 10% — the only palette in this app whose
+ink-on-ground contrast is asserted, and a 10% tint of a mid utility colour
+on a #0f0f0f canvas is very nearly the canvas. Its own test still passes
+untouched, because it asserts `data-status` and the absence of alert colour
+in the quiet state, not a specific hue.
+
+The draft machinery came out cleanly separable, which was the one thing
+that could have gone badly: `loadRfiDraft` (still HANDOFF, still the reason
+the module exists) and #249's `loadMessageDraft` are both intact, and only
+the punch-list-specific `loadPunchDraft`/`PunchDraft` stay deleted. Proved
+rather than assumed — nothing in the merged tree references either name,
+and the singular `add_punch_item` survives only in prose plus one place it
+mattered: #249's routing eval case `cmd-punch` named the retired command,
+which `CommandName` made a typecheck error the moment the two branches met.
+
+The specific checks: `typecheck` 0, `lint` 0 (warnings only, all
+pre-existing and none in a merged file), `build` 0, and **2423 unit tests
+passing across 141 files, none skipped** — up from 2217 on this branch
+alone. One test failed on the first full run and was a real finding, not
+noise: the capability census above. `grep -rn 'slate-[0-9]' apps/web/app
+apps/web/components` now returns nothing on screen — four files, every hit
+a `print:` variant on a document facsimile (WH-347, union remittance,
+`ContractSummary`) or a comment. The rail's "all five figures without
+scrolling" claim is NOT re-measured here and the arithmetic is the reason
+it is believed: one more heading row (~20px, Paper trail carries no figure)
+and one more 16px gap on a column that measured 463px collapsed in 800px of
+window. A browser is what settled it the first time and is what should
+settle it again.

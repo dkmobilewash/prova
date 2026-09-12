@@ -395,24 +395,6 @@ const OPEN_BEHIND_A_NEWLY_CLOSED_PAGE: Record<string, Capability> = {
  * sweep. The value of writing them down is that the number is now known
  * and can only go down. */
 const OPEN_BEHIND_AN_ALREADY_GUARDED_PAGE: Record<string, Capability> = {
-  // Surfaced 2026-09-12 by a change that did not touch it: `settleAskDraft`
-  // used to be reached from /punch-lists (MANAGE_FIELD) AND /rfis
-  // (MANAGE_JOBS), so its doors disagreed and the rule above could not
-  // decide it. Punch items became a DIRECT command that writes the whole
-  // list itself, PunchListForm stopped calling this, and the second door
-  // closed — leaving one door and therefore this list.
-  //
-  // What actually guards it is not a capability: it settles the asking
-  // person's OWN card and nothing else (`createdByUserId` and `companyId`
-  // both in its `updateMany` where-clause, mode HANDOFF, unclaimed,
-  // unsettled), and the only thing it writes is that card's outcome. A
-  // capability assertion is still the right answer, and the shape of it is a
-  // judgement about the ask machinery — whether the card's own command is
-  // one this person could run (`canRunCommand`) rather than one hardcoded
-  // capability, since the next HANDOFF command may want a different one.
-  // That is lib/actions/ask.ts, Diego's lane (WORK-SPLIT.md), so it is
-  // recorded here rather than guessed at from the punch list lane.
-  "ask.settleAskDraft": "MANAGE_JOBS",
   "backcharges.createBackcharge": "MANAGE_BILLING",
   "backcharges.updateBackcharge": "MANAGE_BILLING",
   "backcharges.disputeBackcharge": "MANAGE_BILLING",
@@ -495,6 +477,41 @@ const MIXED_DOORS: Record<string, { capability: Capability | null; reason: strin
   "fieldReports.updateDailyFieldReport": {
     capability: null,
     reason: "Same two doors and the same prerequisite as createDailyFieldReport.",
+  },
+  // MOVED HERE at the #249 merge, from OPEN_BEHIND_AN_ALREADY_GUARDED_PAGE,
+  // and the journey is the point: this entry has now been correct in three
+  // different lists in two days, because the thing it describes is the SET OF
+  // PAGES that reach one action, and every branch that adds a HANDOFF form
+  // changes that set without touching the action.
+  //
+  //   - two doors, /punch-lists (MANAGE_FIELD) + /rfis (MANAGE_JOBS): mixed;
+  //   - punch items became a DIRECT command, PunchListForm stopped calling
+  //     it, one door left: open-behind-a-guarded-page;
+  //   - #249 gave the composer an email hand-off, so /messages calls it too,
+  //     and /messages is in no ROUTE_CAPABILITY entry and asserts nothing on
+  //     the page. Two doors again, and this time they disagree about whether
+  //     there is a capability at all.
+  //
+  // Recorded as deliberately ungated rather than gated on MANAGE_JOBS, which
+  // is what the one-door version of this entry said. Gating it on MANAGE_JOBS
+  // now would refuse the email hand-off to everyone who can reach /messages
+  // and cannot manage jobs — i.e. break #249's own feature — and gating it on
+  // whatever /messages wants would refuse the RFI one.
+  //
+  // What actually guards it is not a capability: it settles the asking
+  // person's OWN card and nothing else (`createdByUserId` and `companyId`
+  // both in its `updateMany` where-clause, mode HANDOFF, unclaimed,
+  // unsettled), and the only thing it writes is that card's outcome. So the
+  // capability-shaped answer is the wrong shape: what it should ask is
+  // whether the card's own command is one this person could run
+  // (`canRunCommand`), which follows the card rather than the page it was
+  // opened on and is right for the next HANDOFF command too. That is
+  // lib/actions/ask.ts, Diego's lane (WORK-SPLIT.md), so it is recorded
+  // rather than guessed at from a merge.
+  "ask.settleAskDraft": {
+    capability: null,
+    reason:
+      "Reached from /rfis (MANAGE_JOBS) and from /messages (ungated), so no one capability can be asserted without breaking one of the two hand-offs. It is self-scoped instead: updateMany where-clause pins companyId AND createdByUserId, mode HANDOFF, unclaimed and unsettled, and the only column it writes is that card's own outcome. The right guard is canRunCommand on the card's command, in the ask lane.",
   },
   "fieldReports.deleteDailyFieldReport": {
     capability: "MANAGE_FIELD",
@@ -688,6 +705,12 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   drawings: () => import("./actions/drawings"),
   closeout: () => import("./actions/closeout"),
   closeoutSubmissions: () => import("./actions/closeoutSubmissions"),
+  // The Ask box. Only `checkAssistantConnection` lands in MUST_ASSERT: it
+  // is reachable from /settings/assistant alone, which demands
+  // MANAGE_COMPLIANCE. The card actions (confirm, cancel, settle, load)
+  // are reachable from the dashboard, which demands nothing, so their
+  // doors disagree and the derivation leaves them to their own guards.
+  ask: () => import("./actions/ask"),
 };
 
 /** The sentence both guard messages share. Asserting on this rather than on

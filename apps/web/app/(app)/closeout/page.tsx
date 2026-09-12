@@ -12,6 +12,8 @@ import { needsAttention } from "@/lib/closeout-readiness";
 import { loadCloseoutJobs } from "@/lib/closeout-query";
 import { money } from "@/lib/money";
 import { can } from "@/lib/permissions";
+import { StatusLine } from "@/components/StatusLine";
+import { closeoutStatus } from "@/lib/status-sentences";
 
 export default async function CloseoutPage() {
   const { context, allowed } = await requireCapability("MANAGE_JOBS");
@@ -54,6 +56,14 @@ export default async function CloseoutPage() {
   const inWarranty = rows.filter((r) => warrantyState(r.warranty, today) === "ACTIVE").length;
   const openCallbacks = rows.reduce((n, r) => n + r.requests.filter(isOpen).length, 0);
   const totalOutstandingItems = rows.reduce((n, r) => n + outstandingRequired(r.items).length, 0);
+  const status = closeoutStatus({
+    outstandingJobs,
+    outstandingItems: totalOutstandingItems,
+    readyToSubmit: readyToSubmit.length,
+    inWarranty,
+    openCallbacks,
+    retainage: showsMoney && retainageBehindCloseout > 0 ? money(retainageBehindCloseout) : null,
+  });
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8">
@@ -65,40 +75,7 @@ export default async function CloseoutPage() {
         difference between a favour and work you should be paid for.
       </p>
 
-      <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="rounded-lg border border-line-card bg-surface p-4">
-          <p className={`text-2xl font-semibold ${outstandingJobs > 0 ? "text-tag-amber-ink" : "text-ink"}`}>
-            {outstandingJobs}
-          </p>
-          <p className="text-xs text-ink-muted">
-            Jobs with closeout outstanding
-            {totalOutstandingItems > 0 && ` · ${plural(totalOutstandingItems, "item", "items")}`}
-          </p>
-        </div>
-        <div className="rounded-lg border border-line-card bg-surface p-4">
-          <p className="text-2xl font-semibold text-tag-blue-ink">{inWarranty}</p>
-          <p className="text-xs text-ink-muted">Jobs still in warranty</p>
-        </div>
-        <div className="rounded-lg border border-line-card bg-surface p-4">
-          <p className={`text-2xl font-semibold ${openCallbacks > 0 ? "text-tag-rose-ink" : "text-ink"}`}>
-            {openCallbacks}
-          </p>
-          <p className="text-xs text-ink-muted">Open callbacks</p>
-        </div>
-        <div className="rounded-lg border border-line-card bg-surface p-4">
-          <p className="font-mono text-xl font-semibold text-ink">
-            {showsMoney
-              ? money(retainageBehindCloseout)
-              : plural(attention.length, "job", "jobs")}
-          </p>
-          <p className="text-xs text-ink-muted">
-            {showsMoney ? "Retainage behind an unfinished closeout" : "Waiting on something"}
-            {readyToSubmit.length > 0 && (
-              <span className="text-tag-amber-ink"> · {readyToSubmit.length} ready to send today</span>
-            )}
-          </p>
-        </div>
-      </div>
+      <StatusLine report={status} />
 
       {attention.length > 0 && (
         <section className="mb-6 rounded-lg border border-line-card bg-surface p-4">

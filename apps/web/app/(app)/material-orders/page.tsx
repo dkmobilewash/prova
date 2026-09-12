@@ -4,7 +4,9 @@ import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { MaterialOrderForm } from "@/components/MaterialOrderForm";
 import { MaterialOrderRow } from "@/components/MaterialOrderRow";
-import { isLate, orderState } from "@/components/materialOrderLabels";
+import { daysLate, orderState } from "@/components/materialOrderLabels";
+import { StatusLine } from "@/components/StatusLine";
+import { materialOrdersStatus } from "@/lib/status-sentences";
 
 /** Stored at UTC midnight, rendered in UTC — same rule as RFIs,
  * submittals, the safety log and daily field reports. */
@@ -96,9 +98,13 @@ export default async function MaterialOrdersPage({
   // default view hides exactly the delivered set, and a tile that falls to
   // zero because the things it counts are hidden is the bug the RFI impact
   // tile had.
-  const lateCount = allRows.filter((r) => isLate(r.deliveries, r.promisedFor, today)).length;
+  const late = allRows.flatMap((r) => {
+    const d = daysLate(r.deliveries, r.promisedFor, today);
+    return d === null ? [] : [{ vendorName: r.vendorName, daysLate: d }];
+  });
   const outstandingCount = allRows.filter((r) => orderState(r.deliveries) !== "COMPLETE").length;
   const deliveredCount = allRows.filter((r) => orderState(r.deliveries) === "COMPLETE").length;
+  const status = materialOrdersStatus({ late, outstanding: outstandingCount, delivered: deliveredCount });
 
   const filterHref = (params: { job?: string | null; show?: string | null }) => {
     const next = new URLSearchParams();
@@ -134,22 +140,7 @@ export default async function MaterialOrdersPage({
         />
       </section>
 
-      <div className="mb-4 grid gap-3 sm:grid-cols-3">
-        <div className="rounded-lg border border-line-card bg-surface p-4">
-          <p className={`text-2xl font-semibold ${lateCount > 0 ? "text-tag-rose-ink" : "text-ink"}`}>
-            {lateCount}
-          </p>
-          <p className="text-xs text-ink-muted">Past the promised date</p>
-        </div>
-        <div className="rounded-lg border border-line-card bg-surface p-4">
-          <p className="text-2xl font-semibold text-ink">{outstandingCount}</p>
-          <p className="text-xs text-ink-muted">Still outstanding</p>
-        </div>
-        <div className="rounded-lg border border-line-card bg-surface p-4">
-          <p className="text-2xl font-semibold text-tag-green-ink">{deliveredCount}</p>
-          <p className="text-xs text-ink-muted">Delivered</p>
-        </div>
-      </div>
+      <StatusLine report={status} />
 
       {jobs.length > 0 && (
         <div className="mb-4 flex flex-wrap gap-2">

@@ -7,6 +7,8 @@ import { money } from "@/lib/money";
 import { SendDigestButton } from "@/components/SendDigestButton";
 import { sendMyAlertDigest } from "@/lib/actions/notifications";
 import { viewerToday } from "@/lib/viewerToday";
+import { StatusLine } from "@/components/StatusLine";
+import { alertsStatus } from "@/lib/status-sentences";
 
 export default async function AlertsPage({
   searchParams,
@@ -32,6 +34,16 @@ export default async function AlertsPage({
     },
   );
   const summary = summarizeAlerts(visible);
+  // Named, not owed. Several kinds carry no figure at all, and a backcharge
+  // claim and retainage held are money moving in opposite directions —
+  // presenting the sum as a balance would be a number nobody could
+  // reconcile. The sentence says so.
+  const status = alertsStatus({
+    overdue: summary.overdue,
+    dueSoon: summary.dueSoon,
+    standing: summary.standing,
+    amountNamed: summary.amountNamed > 0 ? money(summary.amountNamed) : null,
+  });
 
   const rows = showSilenced ? silenced : visible;
 
@@ -54,42 +66,7 @@ export default async function AlertsPage({
         the thing is what stops the reminders.
       </p>
 
-      <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="rounded-lg border border-line-card bg-surface p-4">
-          <p
-            className={`text-2xl font-semibold ${summary.overdue > 0 ? "text-tag-rose-ink" : "text-ink"}`}
-          >
-            {summary.overdue}
-          </p>
-          <p className="text-xs text-ink-muted">Past due</p>
-        </div>
-        <div className="rounded-lg border border-line-card bg-surface p-4">
-          <p
-            className={`text-2xl font-semibold ${summary.dueSoon > 0 ? "text-tag-amber-ink" : "text-ink"}`}
-          >
-            {summary.dueSoon}
-          </p>
-          <p className="text-xs text-ink-muted">Coming up</p>
-        </div>
-        <div className="rounded-lg border border-line-card bg-surface p-4">
-          <p className="text-2xl font-semibold text-ink">
-            {summary.standing}
-          </p>
-          <p className="text-xs text-ink-muted">Standing conditions, no date</p>
-        </div>
-        <div className="rounded-lg border border-line-card bg-surface p-4">
-          <p className="font-mono text-xl font-semibold text-ink">
-            {money(summary.amountNamed)}
-          </p>
-          {/* Named, not owed. Several kinds carry no figure at all, and a
-              backcharge claim and retainage held are money moving in
-              opposite directions — presenting the sum as a balance would
-              be a number nobody could reconcile. */}
-          <p className="text-xs text-ink-muted">
-            Money named by these alerts, not a balance
-          </p>
-        </div>
-      </div>
+      <StatusLine report={status} />
 
       {currentUser.email && (
         <div className="mb-6">

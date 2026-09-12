@@ -4,7 +4,11 @@ import { requireCompanyContext } from "@/lib/auth";
 import { emailSetupProblem } from "@prova/integrations";
 import { MessageRow } from "@/components/MessageRow";
 import { MessageComposer } from "@/components/MessageComposer";
+import { AskDraftNotice } from "@/components/AskDraftNotice";
+import { loadMessageDraft } from "@/lib/ask/drafts";
 import { deliveryRate, needsAttention, stale } from "@/components/messageLabels";
+import { StatusLine } from "@/components/StatusLine";
+import { messagesStatus } from "@/lib/status-sentences";
 
 /** Stored at UTC midnight, rendered in UTC — same rule as every other date
  * in this app. */
@@ -18,14 +22,20 @@ const MESSAGE_LIMIT = 200;
 export default async function MessagesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ show?: string }>;
+  searchParams: Promise<{ show?: string; draft?: string }>;
 }) {
-  const { company, ...currentUser } = await requireCompanyContext();
-  const { show } = await searchParams;
+  const context = await requireCompanyContext();
+  const { company, ...currentUser } = context;
+  const { show, draft } = await searchParams;
   const onlyProblems = show === "problems";
 
   const today = new Date().toISOString().slice(0, 10);
   const setupProblem = emailSetupProblem();
+
+  // A card from the Ask box (lib/ask/drafts.ts): the composer opens
+  // prefilled from the server-held row, and its own Send is the send.
+  const askDraft = await loadMessageDraft(context, draft);
+  const messageDraft = askDraft.kind === "draft" ? askDraft.draft : undefined;
 
   const jobs = await prisma.job.findMany({
     where: { companyId: company.id },
@@ -77,9 +87,12 @@ export default async function MessagesPage({
   // moment a company sent its 201st: the counters silently became "of the
   // most recent 200" and nothing on the page said so. The scope is now
   // rendered next to the numbers when it matters — see `truncated`.
-  const problems = rows.filter((r) => needsAttention(r.events)).length;
+  const failed = rows
+    .filter((r) => needsAttention(r.events))
+    .map((r) => ({ to: r.toName ?? r.toAddress, subject: r.subject ?? "no subject" }));
   const unconfirmed = rows.filter((r) => stale(r, today)).length;
   const rate = deliveryRate(rows);
+  const status = messagesStatus({ failed, unconfirmed, sent: rows.length, rate });
 
   const visible = onlyProblems
     ? rows.filter((r) => needsAttention(r.events) || stale(r, today))
@@ -115,36 +128,18 @@ export default async function MessagesPage({
       )}
 
       <div className="mb-6">
-        <MessageComposer jobs={jobs} canSend={setupProblem === null} />
+        {askDraft.kind === "gone" && <AskDraftNotice what="email" />}
+        <MessageComposer jobs={jobs} canSend={setupProblem === null} draft={messageDraft} />
       </div>
 
       {truncated && (
         <p className="mb-2 text-xs text-ink-muted">
-          Showing the most recent {MESSAGE_LIMIT} messages. The three figures below are counted
-          over those {MESSAGE_LIMIT}, not over everything ever sent.
+          Showing the most recent {MESSAGE_LIMIT} messages. The line below is counted over those{" "}
+          {MESSAGE_LIMIT}, not over everything ever sent.
         </p>
       )}
 
-      <div className="mb-4 grid gap-3 sm:grid-cols-3">
-        <div className="rounded-lg border border-line-card bg-surface p-4">
-          <p className={`text-2xl font-semibold ${problems > 0 ? "text-tag-rose-ink" : "text-ink"}`}>
-            {problems}
-          </p>
-          <p className="text-xs text-ink-muted">Bounced, refused or spam-flagged</p>
-        </div>
-        <div className="rounded-lg border border-line-card bg-surface p-4">
-          <p className={`text-2xl font-semibold ${unconfirmed > 0 ? "text-tag-amber-ink" : "text-ink"}`}>
-            {unconfirmed}
-          </p>
-          <p className="text-xs text-ink-muted">Sent, never confirmed</p>
-        </div>
-        <div className="rounded-lg border border-line-card bg-surface p-4">
-          <p className="text-2xl font-semibold text-tag-green-ink">{rate === null ? "—" : `${rate}%`}</p>
-          <p className="text-xs text-ink-muted">
-            {rate === null ? "Nothing confirmed yet" : "Reached the far end"}
-          </p>
-        </div>
-      </div>
+      <StatusLine report={status} />
 
       <div className="mb-4 flex flex-wrap gap-2">
         <Link href="/messages" className={chip(!onlyProblems)}>

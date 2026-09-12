@@ -3,7 +3,7 @@
 import { Fragment, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { navGroupsFor, type NavGroup } from "@/components/navItems";
+import { activeGroupHeading, navGroupsFor } from "@/components/navItems";
 import { money } from "@/lib/money";
 import type { Principal } from "@/lib/permissions";
 import type { MoneyRailFigure, MoneyRailStage } from "@/lib/moneyRail";
@@ -61,10 +61,36 @@ import type { MoneyRailFigure, MoneyRailStage } from "@/lib/moneyRail";
  * and approved as-is, and "opening one closes another" is a different product
  * decision wearing the same chevron. `Sidebar.test.ts` holds that shape down.
  *
- * It stays dark under the light theme, deliberately. A dark rail against a
- * light canvas is what makes the chrome recede and the work come forward —
- * and it is what lets the brand-yellow figures read as the loudest thing
- * in the chrome without competing with the page.
+ * The rail is `bg-rail` #171717, deliberately LIFTED off the #0f0f0f canvas
+ * rather than darker than it. This paragraph used to say the rail "stays
+ * dark under the light theme" so the chrome would recede by being the one
+ * dark surface; the dark flip took the light canvas away and left that
+ * sentence describing nothing. On this palette the chrome recedes by being
+ * quiet, and the lift is what keeps the column readable as a column instead
+ * of dissolving into the page — the same note tailwind.config.ts carries on
+ * the token. What has not changed is why it matters: it is what lets the
+ * brand-yellow figures be the loudest thing in the chrome.
+ *
+ * THE GROUP MODEL IS #240's — six groups (Pre-construction, Operations,
+ * Paper trail, Logistics, Financials, Compliance & safety), their order,
+ * their route membership, and `activeGroupHeading` from navItems.tsx, whose
+ * longest-href match is what puts /vendors/pricing in Logistics and
+ * /settings/assistant in Financials rather than in whichever group's prefix
+ * matched first. None of that is re-litigated here; this file only decides
+ * how the column LOOKS and which groups are open.
+ *
+ * Two things it deliberately does NOT take from #240, both for the same
+ * reason — the five figures:
+ *
+ *  - it does not share `useNavAccordion` with the mobile drawer. That hook
+ *    is one-group-at-a-time, and an accordion is fine on a 360px screen
+ *    carrying no figures. Here the toggles are INDEPENDENT (below), which
+ *    the founder approved off a prototype;
+ *  - it is not the 64px hover-expand rail. A rail whose headings ARE the
+ *    money pipeline has to be readable at rest, so it is w-60 always and
+ *    the group icons #240 added for the 64px state are not drawn here (the
+ *    drawer still draws them). A heading's row is the heading, the chevron
+ *    and the figure.
  *
  * NO MONEY ARITHMETIC HERE. Every figure arrives fully computed from
  * lib/moneyRail.ts (getMoneyRailStages, called by the server layout) and a
@@ -77,9 +103,17 @@ import type { MoneyRailFigure, MoneyRailStage } from "@/lib/moneyRail";
  * Pre-construction is where bids live, Operations is the building work,
  * Compliance & safety is staying legal, Financials is getting paid.
  * Logistics carries no stage — vendors and equipment are cost machinery,
- * not a pipeline stage — so it keeps a plain heading.
+ * not a pipeline stage — so it keeps a plain heading. Neither does #240's
+ * "Paper trail"; see the "Proving" note in the component for why that one
+ * is a decision rather than an omission.
+ *
+ * KEYED BY HEADING TEXT, which is the fragile part and the reason it is
+ * exported: these four strings live in navItems.tsx, the shared file, and a
+ * rename there would match nothing here and quietly drop four of the five
+ * figures. `Sidebar.test.ts` asserts every key is a real heading and that
+ * all five stage keys are placed, so the failure is named instead of seen.
  */
-const STAGE_KEY_FOR_HEADING: Record<string, MoneyRailStage["key"]> = {
+export const STAGE_KEY_FOR_HEADING: Record<string, MoneyRailStage["key"]> = {
   "Pre-construction": "bidding",
   Operations: "building",
   "Compliance & safety": "staying-legal",
@@ -130,18 +164,6 @@ export function navGroupPanelId(heading: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
   return `nav-group-${slug}`;
-}
-
-/**
- * The group holding the page you are on, which is the one that starts open.
- * Same match as an item's own active state, so the group that opens is
- * always the group whose item is highlighted. Undefined is a real answer:
- * `/jobs/[id]` is in no group, and then everything starts closed.
- */
-export function activeGroupHeading(groups: NavGroup[], pathname: string): string | undefined {
-  return groups.find((group) =>
-    group.items.some((item) => pathname === item.href || pathname.startsWith(`${item.href}/`)),
-  )?.heading;
 }
 
 function Chevron({ open }: { open: boolean }) {
@@ -204,14 +226,30 @@ export function Sidebar({
   }, [activeHeading]);
 
   const stageByKey = new Map(stages.map((stage) => [stage.key, stage]));
-  // "Proving" (RFIs out, submittals with the GC) has no nav group to sit
-  // on: those routes were removed from the rail on 3 Sep 2026 (see
-  // navItems.tsx) while the pages themselves still exist and the money
-  // still waits on the GC. So it renders as its own linkless heading row,
-  // in pipeline order — after the group that carries "Building". It is a
-  // SIBLING of that group rather than a child of it, which matters now
-  // that groups collapse: a figure nested inside Operations would vanish
-  // with Operations' items, and it is one of the five.
+  // "Proving" (RFIs out, submittals with the GC) renders as its own linkless
+  // heading row, in pipeline order — after the group that carries "Building".
+  // It is a SIBLING of that group rather than a child of it, which is what
+  // keeps it on screen: a figure nested inside Operations would vanish with
+  // Operations' items, and it is one of the five.
+  //
+  // CORRECTED at the #249 merge, because the reason written here was true
+  // and is not any more. It said /rfis and /submittals had been removed from
+  // the rail on 3 Sep 2026, so Proving had no group to sit on. #240 put them
+  // back, in a new group: "Paper trail" is /rfis, /submittals, /drawings,
+  // /closeout — the first two being exactly what this figure counts. So the
+  // stage COULD now hang off that heading like the other four, and the
+  // orphan row could go.
+  //
+  // It is left alone on purpose, for Cyrus to call rather than a merge:
+  // moving it would take the word "Proving" off the rail entirely (a heading
+  // reads its group's name, and a count figure's sub-line is its noun, so
+  // the pipeline stage's own label is what would be lost), and the five
+  // stage names were approved as the rail's vocabulary. Nothing is broken
+  // either way — the figure is on screen and outside every collapse in both
+  // arrangements. Flagged in the merge report.
+  //
+  // If it does move, it is two edits: add `"Paper trail": "proving"` to the
+  // map above and delete the sibling row at the bottom of the group loop.
   const provingStage = stageByKey.get("proving");
   const buildingHeading = Object.entries(STAGE_KEY_FOR_HEADING).find(
     ([, key]) => key === "building",
@@ -267,6 +305,10 @@ export function Sidebar({
                     }
                     aria-expanded={isOpen}
                     aria-controls={panelId}
+                    title={group.heading}
+                    // #240's hook, kept: a click-through can name a group
+                    // without reading its text or its colour.
+                    data-nav-group={group.heading}
                     className="shrink-0 cursor-pointer pt-0.5 text-left hover:bg-rail-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand"
                   >
                     <span className="flex items-center gap-1.5 px-4">

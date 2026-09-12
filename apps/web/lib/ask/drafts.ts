@@ -47,6 +47,19 @@ export type RfiDraft = {
   specSection: string | null;
 };
 
+/** The composer's prefill. The address is the one the command read off
+ * the Contact row; the composer shows it in an editable field like any
+ * other, and the send is the composer's own action, which validates it
+ * again. */
+export type MessageDraft = {
+  proposalId: string;
+  toAddress: string;
+  toName: string;
+  jobId: string | null;
+  subject: string;
+  body: string;
+};
+
 export type DraftLookup<D> =
   | { kind: "none" }
   | { kind: "draft"; draft: D }
@@ -124,5 +137,26 @@ export async function loadRfiDraft(viewer: Viewer, proposalId: string | undefine
  * behind, because nothing can ever propose an `add_punch_item` card again
  * and a loader for one would be exactly the "written, documented and never
  * called" shape CLAUDE.md keeps finding. `raise_rfi` is still HANDOFF and
- * still the reason everything above exists.
+ * still the reason everything above exists — and so is `send_email`, whose
+ * loader below arrived from #249 and is untouched by that retirement.
  */
+
+/** The message composer's prefill. A job is optional on an email, so a
+ * missing `jobId` is "not tied to a job" rather than "gone". */
+export async function loadMessageDraft(
+  viewer: Viewer,
+  proposalId: string | undefined,
+): Promise<DraftLookup<MessageDraft>> {
+  const found = await loadDraftRow(viewer, proposalId, "send_email");
+  if (found.kind !== "draft" || !proposalId) return found as DraftLookup<MessageDraft>;
+  const payload = found.draft;
+  const toAddress = str(payload, "toAddress");
+  const toName = str(payload, "toName");
+  const subject = str(payload, "subject");
+  const body = str(payload, "body");
+  if (!toAddress || !toName || !subject || !body) return { kind: "gone" };
+  return {
+    kind: "draft",
+    draft: { proposalId, toAddress, toName, jobId: str(payload, "jobId"), subject, body },
+  };
+}
