@@ -17,6 +17,7 @@ import { formatCalendarDate, formatInstant } from "@/lib/render-date";
 import { viewerTimeZone } from "@/lib/viewerToday";
 import { SubmitButton } from "@/components/SubmitButton";
 import { ConfirmDeleteButton } from "@/components/ConfirmDeleteButton";
+import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { CompanyLicenses } from "@/components/CompanyLicenses";
 import { CompanyProfileForm } from "@/components/CompanyProfileForm";
 import { companyProfileGaps, type CompanyProfile } from "@/lib/company-profile";
@@ -278,14 +279,34 @@ export default async function SettingsPage({
               QuickBooks company ID: {connection.realmId} · connected{" "}
               {formatInstant(connection.createdAt, timeZone, "numeric")}
             </p>
-            <div className="flex flex-wrap items-center gap-3">
+            {/* Found by the destructive-form census in
+                `rowActionsCensus.test.ts`, not by a person: Disconnect was a
+                bare one-click form sitting next to a live "Test connection",
+                and getting the two confused ends the connection. Reconnecting
+                is an OAuth round trip through Intuit, and the redirect URI has
+                to still be right for it to come back (CLAUDE.md), so this is
+                not a click to spend by accident. The account mapping does
+                survive, which is why the hint says so.
+                Left-aligned cluster, so the FIRST slot is the stable one and
+                Cancel goes first — `pinned` stays at its default "start". */}
+            <RowActions
+              className="flex flex-wrap items-center gap-3"
+              destructive={
+                <ConfirmDelete
+                  action={disconnectQuickBooks}
+                  label="Disconnect"
+                  confirmLabel="Confirm disconnect"
+                  deleteClassName="text-sm text-red-400 hover:underline"
+                  hint={
+                    <span className="max-w-[20rem] text-slate-500">
+                      Reconnecting is a fresh sign-in through Intuit. Your account mapping is kept.
+                    </span>
+                  }
+                />
+              }
+            >
               <QuickBooksTestConnectionButton />
-              <form action={disconnectQuickBooks}>
-                <SubmitButton type="submit" className="text-sm text-red-400 hover:underline">
-                  Disconnect
-                </SubmitButton>
-              </form>
-            </div>
+            </RowActions>
 
             <div className="mt-6 border-t border-line-row pt-4">
               <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink-body">

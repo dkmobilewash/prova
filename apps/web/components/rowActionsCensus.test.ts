@@ -16,6 +16,21 @@
  * What it cannot see, stated plainly so nobody trusts it further than it
  * goes: an arming state under a name with no "confirm" or "armed" in it, and
  * anything about the layout of a row that does use RowActions correctly.
+ *
+ * AND FOR A YEAR IT COULD NOT SEE THE OPPOSITE OF THE BUG IT WAS BUILT FOR.
+ * Every check above starts from something the page already has — an arming
+ * state, a `ConfirmDelete`, a `shrink-0` cluster. A page with NO arming state
+ * at all, deleting a row on one click from a bare `<form action={deleteX}>`,
+ * matches none of those patterns and reads exactly like a page with nothing
+ * wrong. `/team` was never scanned at all, because it does not mention
+ * `ConfirmDelete` for this file to have an opinion about.
+ *
+ * Eleven such controls were found on 2026-09-12 (nine on `/jobs/[id]`, two on
+ * `/team`) plus a twelfth, the QuickBooks disconnect on `/settings`, which the
+ * new rule below found rather than a human. The destructive-form census at the
+ * bottom of this file is that rule: it starts from the ACTIONS instead of from
+ * the markup, so a control with no confirm is a positive finding rather than an
+ * absence of evidence.
  */
 
 import { readdirSync, readFileSync, statSync } from "node:fs";
@@ -230,5 +245,355 @@ describe("the armed-delete census", () => {
       )
       .map((f) => f.path);
     expect(offenders).toEqual([]);
+  });
+});
+
+/**
+ * THE DESTRUCTIVE-FORM CENSUS: a delete that never asks.
+ *
+ * The census above answers "did somebody write a twenty-first copy of the
+ * arming state". This one answers the question that had no check at all: "does
+ * every control that destroys a row ask twice before it does". Those are not
+ * the same question, and the difference is the whole reason eleven one-click
+ * deletes survived on two pages the other rules had already swept —
+ *
+ *   <form action={deleteTimeEntry.bind(null, jobId, id)}>
+ *     <SubmitButton type="submit">Remove</SubmitButton>
+ *   </form>
+ *
+ * There is no arming state here to catch, no `ConfirmDelete` to check the
+ * `pinned` of, and no `window.confirm` to ban. Nine of these sat on
+ * `/jobs/[id]` and two on `/team`, one of them a RECEIVED PAYMENT and one the
+ * line item whose Remove sits next to Save inside the same form.
+ *
+ * IT STARTS FROM THE ACTIONS, NOT FROM THE MARKUP, and that inversion is the
+ * point. The set of things that can destroy a row is derivable — an exported
+ * action whose body removes rows — and every place the JSX hands one of those
+ * to a `action=` / `formAction=` attribute is a submit control that destroys
+ * something. Each one must be the `action` prop of a `<ConfirmDelete>` (or of
+ * `<ConfirmDeleteButton>`, which is one). Anything else is one click.
+ *
+ * DESTRUCTIVENESS IS READ FROM THE BODY, NEVER FROM THE NAME. A name-based
+ * pattern would have missed `cancelInvite` — which deletes an Invite row and
+ * begins with neither "delete" nor "remove" — and would go blind the day
+ * somebody renames an action to `retireX`. The body either calls
+ * `.delete(`/`.deleteMany(` or writes a soft-delete flag, or it does not.
+ *
+ * WHAT IT CANNOT SEE, said plainly, because this file's own history is a
+ * queue of checks that were green about a question nobody asked:
+ *
+ *   - a CLIENT component calling a destructive action from `onClick` or
+ *     `onSubmit` rather than through a form action. That shape exists in this
+ *     app today (`ChangeOrders.tsx`: remove-a-proposal and discard-a-draft),
+ *     and it is deliberately out of this rule's reach rather than
+ *     silently missed: including it would need an exception list of six
+ *     actions whose bodies delete something incidentally (`restoreAlert`,
+ *     `sendOutboundEmail`, the two QuickBooks pushes…), and an exception list
+ *     that long is how a rule gets repealed one reasonable case at a time.
+ *     Those two are a reported gap, not a covered one;
+ *   - an action reached through a variable this file's alias pass cannot
+ *     follow (it follows one hop: `const deleteXWithId = (id) =>
+ *     deleteX.bind(null, jobId, id)`);
+ *   - whether the confirm it found is laid out correctly. That is the
+ *     `pinned` rule above, and neither can see position at all.
+ *
+ * BOTH DERIVED SETS ARE SIZE-CHECKED AGAINST A SOURCE THAT CANNOT DRIFT WITH
+ * THE PATTERN, which is the only reason the rest of it means anything —
+ * `scratch-cleanup-order.test.ts` passed thirteen assertions while parsing 180
+ * of 181 foreign keys, because a pattern that matches nothing is never missing
+ * anything. The function sweep is counted against a bare
+ * `export async function` count, the attribute sweep against a bare
+ * `action={` count, and the destructive set has to still contain five actions
+ * named here by hand. A regex that goes quiet fails loudly instead of passing
+ * everything below it.
+ */
+describe("the destructive-form census", () => {
+  const actionsDir = join(appDir, "lib/actions");
+
+  const actionModules = readdirSync(actionsDir)
+    .filter((name) => name.endsWith(".ts") && !/\.(test|dbtest)\.ts$/.test(name))
+    .map((name) => ({
+      path: `lib/actions/${name}`,
+      code: withoutComments(readFileSync(join(actionsDir, name), "utf8")),
+    }));
+
+  /** `export async function deleteTimeEntry(` — the start of one action. */
+  const EXPORTED_ACTION = /^export\s+async\s+function\s+(\w+)/gm;
+
+  /** What "destroys a row" means, read out of the body: a hard delete through
+   *  the client, or a soft-delete flag being written. */
+  const REMOVES_ROWS = /\.\s*delete(?:Many)?\s*\(|isDeleted\s*:\s*true|deletedAt\s*:/;
+
+  /** Every exported action, with the source between it and the next one. */
+  const actionBodies = actionModules.flatMap((module) => {
+    const starts = [...module.code.matchAll(EXPORTED_ACTION)];
+    return starts.map((start, i) => ({
+      name: start[1],
+      module: module.path,
+      body: module.code.slice(start.index!, starts[i + 1]?.index ?? module.code.length),
+    }));
+  });
+
+  const destructiveActions = new Set(
+    actionBodies.filter((fn) => REMOVES_ROWS.test(fn.body)).map((fn) => fn.name),
+  );
+
+  /**
+   * `action={deleteX.bind(...)}` / `formAction={deleteXWithId(id)}`.
+   *
+   * Deliberately brace-free in the value, so an expression containing its own
+   * object or arrow body does NOT match — which would be a silent hole, except
+   * that the size check below counts these against a bare `action={` and goes
+   * red the moment one appears. Fix the pattern then; do not widen it blind.
+   */
+  const ACTION_ATTR = /\b(action|formAction)=\{([^{}]*)\}/g;
+
+  /** The identifiers in an attribute expression, so membership is an exact
+   *  name match rather than a substring: `deleteCostEntryWithId` must be found
+   *  by the alias pass, not by happening to contain `deleteCostEntry`. */
+  function identifiers(expression: string) {
+    return [...expression.matchAll(/[A-Za-z_$][\w$]*/g)].map((m) => m[0]);
+  }
+
+  /**
+   * The tag an attribute sits on: the nearest `<Tag` before it with no `>`
+   * between the two. `=>` is rewritten to `==` first, since an arrow in an
+   * earlier prop would otherwise look like the end of the tag.
+   *
+   * Coarse, and it fails LOUD rather than quiet: a misread tag name makes a
+   * confirmed delete look bare, which somebody sees immediately, rather than
+   * making a bare delete look confirmed.
+   */
+  function enclosingTag(code: string, index: number) {
+    const before = code.slice(0, index).replace(/=>/g, "==");
+    const open = [...before.matchAll(/<([A-Za-z][\w.]*)/g)].at(-1);
+    if (!open) return "(none)";
+    return before.slice(open.index! + open[0].length).includes(">") ? "(closed)" : open[1];
+  }
+
+  const CONFIRMING_TAGS = new Set(["ConfirmDelete", "ConfirmDeleteButton"]);
+
+  const sites = tsxFiles(appDir).flatMap((full) => {
+    const code = withoutComments(readFileSync(full, "utf8"));
+    const path = relative(appDir, full);
+
+    /* One hop of aliasing, which is how `/jobs/[id]` binds its job id:
+       `const deleteCostEntryWithId = (id) => deleteCostEntry.bind(null, job.id, id);` */
+    const aliases = new Set<string>();
+    for (const decl of code.matchAll(/\b(?:const|let)\s+(\w+)\s*=\s*([^;]*);/g)) {
+      const refs = identifiers(decl[2]);
+      if (refs.some((ref) => destructiveActions.has(ref) || aliases.has(ref))) aliases.add(decl[1]);
+    }
+
+    return [...code.matchAll(ACTION_ATTR)]
+      .filter((attr) =>
+        identifiers(attr[2]).some((id) => destructiveActions.has(id) || aliases.has(id)),
+      )
+      .map((attr) => ({
+        path,
+        line: code.slice(0, attr.index!).split("\n").length,
+        expression: attr[2].trim(),
+        tag: enclosingTag(code, attr.index!),
+      }));
+  });
+
+  // THE TWO SIZE CHECKS COME FIRST. Everything below reasons about a derived
+  // set, and a derived set has two failure modes: the wrong answer, and an
+  // empty question. Only the first one looks like a failure.
+  it("splits every exported action out of the action modules", () => {
+    const literal = actionModules.reduce(
+      (n, m) => n + (m.code.match(/export\s+async\s+function\s+/g) ?? []).length,
+      0,
+    );
+    expect(actionBodies.length).toBe(literal);
+    expect(actionBodies.length).toBeGreaterThanOrEqual(200);
+    expect(actionModules.length).toBeGreaterThanOrEqual(30);
+  });
+
+  it("still recognises a delete when it reads one — the set is not empty", () => {
+    // Named by hand because a floor alone cannot tell "the heuristic still
+    // works" from "it now matches half of what it used to". Rename one of
+    // these and this goes red, which is the deliberate act it should be.
+    const anchors = [
+      "deleteLineItem",
+      "deletePayment",
+      "unassignCrewMember",
+      "removeTeamMember",
+      "cancelInvite",
+    ];
+    const missing = anchors.filter((name) => !destructiveActions.has(name));
+    expect(
+      missing,
+      `These actions delete rows and the body scan stopped seeing it: ${missing.join(", ")}. ` +
+        `A destructive set that has quietly shrunk passes every check below it.`,
+    ).toEqual([]);
+    expect(destructiveActions.size).toBeGreaterThanOrEqual(50);
+  });
+
+  it("reads every action attribute in the app, braces and all", () => {
+    const parsed = tsxFiles(appDir).reduce(
+      (n, full) =>
+        n + [...withoutComments(readFileSync(full, "utf8")).matchAll(ACTION_ATTR)].length,
+      0,
+    );
+    const literal = tsxFiles(appDir).reduce(
+      (n, full) =>
+        n +
+        (withoutComments(readFileSync(full, "utf8")).match(/\b(?:action|formAction)=\{/g) ?? [])
+          .length,
+      0,
+    );
+    expect(
+      parsed,
+      `${literal - parsed} action attribute(s) have braces inside the expression, so the ` +
+        `pattern in this file skipped them. A skipped attribute is a delete this census cannot ` +
+        `see; widen ACTION_ATTR rather than this number.`,
+    ).toBe(literal);
+    // A floor, not the exact number: 49 the day this was written. It exists so
+    // a sweep that finds nothing cannot pass, and it should move only when
+    // somebody can say which forms went.
+    expect(parsed).toBeGreaterThanOrEqual(40);
+  });
+
+  it("finds the destructive submit controls it is supposed to be judging", () => {
+    // A floor under the FILTERED set too: if the alias pass or the identifier
+    // match breaks, `sites` empties and "no bare deletes" becomes vacuously
+    // true. Every one of these is a real control on a real page — 15 of them
+    // the day this was written, nine of which are `/jobs/[id]`, so the floor
+    // would not survive that page's clusters being rewritten without somebody
+    // having to look.
+    expect(sites.length).toBeGreaterThanOrEqual(12);
+    expect(sites.every((site) => site.tag !== "(none)" && site.tag !== "(closed)")).toBe(true);
+  });
+
+  it("never hands a destructive action to a submit control that does not ask twice", () => {
+    const offenders = sites
+      .filter((site) => !CONFIRMING_TAGS.has(site.tag))
+      .map((site) => `${site.path}:${site.line} <${site.tag}> ${site.expression}`);
+
+    expect(
+      offenders,
+      offenders.length === 0
+        ? ""
+        : [
+            "",
+            "These submit controls destroy a row on ONE CLICK:",
+            ...offenders.map((o) => `  ${o}`),
+            "",
+            "CLAUDE.md's list-page conventions say two-step delete, never",
+            "window.confirm. A bare <form action={deleteX}> is neither: the row",
+            "is gone on the first click, and nothing on the page said so.",
+            "",
+            "Give the action to a <ConfirmDelete> inside a <RowActions> — the",
+            "ordinary actions of the row go in its children, where the armed",
+            "state covers them — or to <ConfirmDeleteButton> when the row has no",
+            "other action. Read the `pinned` rule above before choosing an order:",
+            "Cancel inherits the pixel Delete vacated, and which end that is",
+            "depends on the cluster's alignment.",
+            "",
+            "If an action shows up here whose form is NOT destructive (its body",
+            "deletes something incidental), say so in a comment on the action and",
+            "add it to this test with the reason — not to a silent allow-list.",
+            "",
+          ].join("\n"),
+    ).toEqual([]);
+  });
+
+  /**
+   * THE OTHER HALF: a component that deletes from a CALLBACK, not a form.
+   *
+   * The rule above reads JSX attributes, so it stops seeing a delete the moment
+   * the delete moves into `onConfirm`/`onClick` — which is exactly what
+   * converting `/team` to the `ActionResult` pattern did to its two controls.
+   * Without this, closing one page's gap would have quietly reopened the other.
+   *
+   * It is coarse on purpose: file-level, and it only asks whether a file that
+   * calls a destructive action mentions a confirm ANYWHERE. A file with two
+   * deletes can satisfy it with one. What it does catch is the shape that has
+   * actually shipped twice — a row component wired straight to a delete with no
+   * confirm in it at all.
+   *
+   * IT NARROWS THE SET, and the narrowing is the honest part. Destructiveness
+   * for the rule above is read from the body alone, which is right for a form
+   * whose only job is that action; applied file-wide it pulls in six actions
+   * that delete something incidental on the way to doing something else
+   * (`restoreAlert`, `sendOutboundEmail`, both QuickBooks pushes,
+   * `saveJobMediaAnnotations`, `clearQuickBooksAccountMapping`) and would need
+   * an exception each. So here the action must ALSO be named as a removal. A
+   * name is weak evidence and this is the one place it is used, with the body
+   * check still required alongside it.
+   */
+  const NAMED_AS_REMOVAL = /^(delete|remove|unassign|cancel|discard)[A-Z]/;
+
+  const removalActions = new Set(
+    [...destructiveActions].filter((name) => NAMED_AS_REMOVAL.test(name)),
+  );
+
+  /**
+   * Files allowed to call a removal with no confirm in them, each with the
+   * reason. One entry, and it is a REPORTED GAP rather than an accepted one.
+   */
+  const CALLBACK_EXCEPTIONS: Record<string, string> = {
+    "components/ChangeOrders.tsx":
+      "two real one-click destructives (remove-a-proposal, discard-a-draft) reached from " +
+      "onClick/onSubmit. Change orders are the other lane (WORK-SPLIT.md), so this is a " +
+      "GitHub issue for Diego rather than a drive-by edit in a 2000-line file — listed here " +
+      "so the rule stays armed for everybody else in the meantime.",
+  };
+
+  it("keeps a confirm in every component that calls a removal from a callback", () => {
+    const offenders = tsxFiles(appDir)
+      .map((full) => ({ path: relative(appDir, full), code: withoutComments(readFileSync(full, "utf8")) }))
+      .filter((f) => f.path !== "components/RowActions.tsx")
+      .filter((f) => !(f.path in CALLBACK_EXCEPTIONS))
+      .filter((f) =>
+        [...f.code.matchAll(/[A-Za-z_$][\w$]*/g)].some((m) => removalActions.has(m[0])),
+      )
+      /* `<ConfirmDelete`, not `ConfirmDelete` — the ELEMENT, not the name.
+         Found by mutating this rule rather than by thinking of it: stripping
+         the confirm out of `CancelInviteButton.tsx` and leaving the import
+         line behind kept this test GREEN, because an unused import mentions
+         the component just as well as a rendered one does. A check that a
+         leftover import satisfies is the vacuous shape this file is a list
+         of. */
+      .filter((f) => !/<ConfirmDelete(Button)?\b/.test(f.code))
+      .map((f) => f.path);
+
+    expect(
+      offenders,
+      offenders.length === 0
+        ? ""
+        : [
+            "",
+            "These components call an action that removes rows and contain no",
+            "confirm step at all:",
+            ...offenders.map((o) => `  ${o}`),
+            "",
+            "A delete reached from onClick or onSubmit is still a delete. Put it",
+            "behind <ConfirmDelete> in a <RowActions> — `onConfirm` takes a",
+            "callback, so a client row that owns a transition and renders an",
+            "error keeps doing both (CatalogEntryRow.tsx is the reference).",
+            "",
+            "If the component genuinely should not confirm, add it to",
+            "CALLBACK_EXCEPTIONS in this file with the reason.",
+            "",
+          ].join("\n"),
+    ).toEqual([]);
+  });
+
+  it("still finds the removal actions this rule judges, and the files that call them", () => {
+    // Both halves of the previous test can go vacuous: an empty
+    // `removalActions` matches no file, and a file sweep that finds nothing
+    // has no offenders either. 53 removals and 38 calling files when written.
+    expect(removalActions.size).toBeGreaterThanOrEqual(40);
+    for (const anchor of ["deleteLineItem", "removeTeamMember", "cancelInvite", "unassignCrewMember"]) {
+      expect(removalActions.has(anchor), `${anchor} stopped reading as a removal`).toBe(true);
+    }
+    const callers = tsxFiles(appDir).filter((full) =>
+      [...withoutComments(readFileSync(full, "utf8")).matchAll(/[A-Za-z_$][\w$]*/g)].some((m) =>
+        removalActions.has(m[0]),
+      ),
+    );
+    expect(callers.length).toBeGreaterThanOrEqual(25);
   });
 });

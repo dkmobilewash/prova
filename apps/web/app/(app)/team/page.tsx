@@ -1,8 +1,9 @@
 import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
-import { cancelInvite, inviteTeamMember, removeTeamMember } from "@/lib/actions";
-import { SubmitButton } from "@/components/SubmitButton";
+import { CancelInviteButton } from "@/components/CancelInviteButton";
+import { InviteTeamMemberForm } from "@/components/InviteTeamMemberForm";
 import { JobFunctionPicker } from "@/components/JobFunctionPicker";
+import { TeamMemberActions } from "@/components/TeamMemberActions";
 import { capabilityCount, jobFunctionLabel } from "@/components/permissionLabels";
 
 export default async function TeamPage() {
@@ -51,18 +52,15 @@ export default async function TeamPage() {
                 )}
               </div>
 
-              <div className="flex shrink-0 flex-col items-end gap-2">
-                {isOwner && member.role !== "OWNER" && (
+              {/* The picker goes INSIDE the actions cluster rather than beside
+                  it: arming the remove has to hide it, or the second click
+                  lands on a permissions dropdown. TeamMemberActions carries
+                  the geometry decision and the error line. */}
+              {isOwner && member.role !== "OWNER" ? (
+                <TeamMemberActions userId={member.id}>
                   <JobFunctionPicker userId={member.id} current={member.jobFunction} />
-                )}
-                {isOwner && member.role !== "OWNER" && (
-                  <form action={removeTeamMember.bind(null, member.id)}>
-                    <SubmitButton type="submit" className="text-sm text-red-400 hover:underline">
-                      Remove
-                    </SubmitButton>
-                  </form>
-                )}
-              </div>
+                </TeamMemberActions>
+              ) : null}
             </li>
           ))}
         </ul>
@@ -72,24 +70,7 @@ export default async function TeamPage() {
         <>
           <section className="mb-10">
             <h2 className="mb-3 text-sm font-semibold text-ink-label">Invite a teammate</h2>
-            <form action={inviteTeamMember} className="flex flex-wrap items-end gap-3">
-              <label className="flex flex-col gap-1 text-sm text-ink-label">
-                Email
-                <input
-                  name="email"
-                  type="email"
-                  required
-                  placeholder="teammate@example.com"
-                  className="w-64 rounded-md border border-line-card bg-surface px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
-                />
-              </label>
-              <SubmitButton
-                type="submit"
-                className="inline-flex items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500"
-              >
-                Invite
-              </SubmitButton>
-            </form>
+            <InviteTeamMemberForm />
             <p className="mt-2 text-xs text-ink-muted">
               This doesn&apos;t send an email — share the sign-up link with them yourself. When they
               sign up with this email, they&apos;ll join your company automatically.
@@ -103,11 +84,7 @@ export default async function TeamPage() {
                 {invites.map((invite) => (
                   <li key={invite.id} className="flex items-center justify-between p-4">
                     <p className="text-sm text-ink">{invite.email}</p>
-                    <form action={cancelInvite.bind(null, invite.id)}>
-                      <SubmitButton type="submit" className="text-sm text-red-400 hover:underline">
-                        Cancel
-                      </SubmitButton>
-                    </form>
+                    <CancelInviteButton inviteId={invite.id} />
                   </li>
                 ))}
               </ul>
