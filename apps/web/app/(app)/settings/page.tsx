@@ -228,8 +228,8 @@ export default async function SettingsPage({
         <h2 className="mb-3 text-sm font-semibold text-ink-label">QuickBooks Online</h2>
         <p className="mb-4 text-sm text-ink-body">
           Connects your QuickBooks Online company so invoices can be pushed to it. Deliberately
-          ONE direction: Prova writes to QuickBooks and reads the record back to confirm what
-          landed. It does not pull edits made in QuickBooks back into Prova, and does not
+          ONE direction: C Stream writes to QuickBooks and reads the record back to confirm what
+          landed. It does not pull edits made in QuickBooks back into C Stream, and does not
           pretend to — a sync that quietly loses an edit is worse than one that never claimed
           to carry it.
         </p>

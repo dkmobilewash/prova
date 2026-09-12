@@ -85,7 +85,7 @@ export function QuickBooksReconcile() {
 
       {rows && problems.length === 0 && (
         <p className="text-sm text-tag-green-ink">
-          Every invoice sent to QuickBooks still matches what Prova holds.
+          Every invoice sent to QuickBooks still matches what C Stream holds.
           {quiet.some((r) => r.status === "NEVER_SENT") &&
             " Some invoices have never been sent — those are listed below."}
         </p>
@@ -107,7 +107,7 @@ export function QuickBooksReconcile() {
               ))}
               {row.status === "MISSING_IN_QUICKBOOKS" && (
                 <p className="mt-0.5 text-xs opacity-90">
-                  Prova has {money(row.ourTotalCents / 100)} and a link to QuickBooks invoice{" "}
+                  C Stream has {money(row.ourTotalCents / 100)} and a link to QuickBooks invoice{" "}
                   {row.qboId}, but QuickBooks has nothing there — it was deleted in QuickBooks.
                 </p>
               )}
@@ -115,8 +115,8 @@ export function QuickBooksReconcile() {
                   a judgement about someone's books, and guessing it is how
                   an integration loses a bookkeeper's trust for good. */}
               <p className="mt-1 text-xs opacity-70">
-                Open it in QuickBooks and decide which version is right. Re-sending from Prova
-                overwrites QuickBooks with Prova&apos;s numbers.
+                Open it in QuickBooks and decide which version is right. Re-sending from C Stream
+                overwrites QuickBooks with C Stream&apos;s numbers.
               </p>
             </li>
           ))}

@@ -120,7 +120,7 @@ describe("the refusal sentence", () => {
   it("explains the estimate gate by naming BOTH routes, not just the e-signature", () => {
     const refusal = jobStatusTransitionRefusal("ESTIMATE", "IN_PROGRESS") ?? "";
     expect(refusal).toContain("still an estimate");
-    expect(refusal, "must mention the e-sign route").toContain("signs it in Prova");
+    expect(refusal, "must mention the e-sign route").toContain("signs it in C Stream");
     expect(refusal, "must mention the off-platform route").toContain("executed subcontract");
   });
 

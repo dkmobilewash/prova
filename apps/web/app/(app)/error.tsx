@@ -57,7 +57,7 @@ export default function AppError({
         <h1 className="text-lg font-semibold text-tag-rose-ink">This page didn&apos;t load</h1>
         {staleDeploy ? (
           <p className="mt-2 text-sm text-tag-rose-ink/90">
-            A new version of Prova was published while this page was open, and part of it is now
+            A new version of C Stream was published while this page was open, and part of it is now
             missing from your browser&apos;s cache. This is not a problem with anything you just
             saved — reloading fetches the new version.
           </p>

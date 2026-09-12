@@ -52,7 +52,7 @@ export default async function ExportPage() {
     <div className="mx-auto max-w-3xl px-6 py-8">
       <h1 className="mb-2 text-xl font-semibold text-ink">Export your data</h1>
       <p className="mb-6 text-sm text-ink-body">
-        Everything {company.name} has put into Prova, on demand, in a format you can open or
+        Everything {company.name} has put into C Stream, on demand, in a format you can open or
         load somewhere else. No request, no waiting, and it stays available whether or not
         you keep paying us.
       </p>

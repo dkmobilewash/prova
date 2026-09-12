@@ -131,7 +131,7 @@ export default async function PhotosPage({
       <h1 className="mb-1 text-2xl font-semibold text-ink">Site photos</h1>
       <p className="mb-6 text-sm text-ink-body">
         What the job actually looked like, on the day. Photos are filed against a job, tagged in
-        this company&apos;s own words, and stay in Prova rather than on somebody&apos;s phone.
+        this company&apos;s own words, and stay in C Stream rather than on somebody&apos;s phone.
       </p>
 
       {jobs.length === 0 ? (

@@ -70,7 +70,7 @@ export function JobStatusControl({
       {status === "ESTIMATE" ? (
         <p className="mt-2 text-sm text-ink-muted">
           An estimate becomes a contracted job further down this page, once the contract is
-          executed — either the GC signs it in Prova or you record the executed subcontract they
+          executed — either the GC signs it in C Stream or you record the executed subcontract they
           sent.
         </p>
       ) : (

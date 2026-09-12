@@ -70,7 +70,7 @@ export const PROVIDERS: ProviderEntry[] = [
     provider: "QUICKBOOKS",
     name: "QuickBooks Online",
     description:
-      "Invoices push to QuickBooks, the record is read back to confirm what landed, and reconciliation reports where the two disagree. One direction only — Prova does not pull QuickBooks edits back.",
+      "Invoices push to QuickBooks, the record is read back to confirm what landed, and reconciliation reports where the two disagree. One direction only — C Stream does not pull QuickBooks edits back.",
     implementation: { kind: "external", href: "/settings", managedAt: "Settings" },
     icon: (
       <svg viewBox="0 0 20 20" fill="none" className={iconClass} aria-hidden="true">
@@ -88,7 +88,7 @@ export const PROVIDERS: ProviderEntry[] = [
     provider: "DOCUSIGN",
     name: "DocuSign",
     description:
-      "Send subcontracts and change orders for signature through DocuSign. Prova signs contracts with its own e-sign links today; this would cover every document type.",
+      "Send subcontracts and change orders for signature through DocuSign. C Stream signs contracts with its own e-sign links today; this would cover every document type.",
     implementation: { kind: "planned" },
     icon: (
       <svg viewBox="0 0 20 20" fill="none" className={iconClass} aria-hidden="true">

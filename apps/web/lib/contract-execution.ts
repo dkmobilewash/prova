@@ -111,7 +111,7 @@ export function contractIsExecuted(execution: ContractExecution): boolean {
  */
 export const CONTRACT_NOT_EXECUTED_REFUSAL =
   "This job has no executed contract yet. Either send the GC a signing link and wait for them " +
-  "to sign it in Prova, or — if they already sent you the executed subcontract — record it " +
+  "to sign it in C Stream, or — if they already sent you the executed subcontract — record it " +
   "under Contract signature: upload the signed file and enter the date the GC signed.";
 
 /** Rendered at UTC, like every other stored date in this app. */
@@ -131,18 +131,18 @@ export function describeContractExecution(execution: ContractExecution): string 
     case "NONE":
       return "Not executed yet.";
     case "ESIGN":
-      return `E-signed in Prova by ${execution.esign.signerName ?? "the client"}${
+      return `E-signed in C Stream by ${execution.esign.signerName ?? "the client"}${
         execution.esign.signedAt ? ` on ${formatUtcDate(execution.esign.signedAt)}` : ""
       }.`;
     case "OFF_PLATFORM":
       return (
         `Executed off-platform — the GC signed on ${formatUtcDate(execution.document.executedSignedDate)}. ` +
-        `Recorded in Prova by ${execution.document.recordedByName ?? "a teammate"} on ` +
+        `Recorded in C Stream by ${execution.document.recordedByName ?? "a teammate"} on ` +
         `${formatUtcDate(execution.document.recordedAt)}.`
       );
     case "BOTH":
       return (
-        `E-signed in Prova by ${execution.esign.signerName ?? "the client"}${
+        `E-signed in C Stream by ${execution.esign.signerName ?? "the client"}${
           execution.esign.signedAt ? ` on ${formatUtcDate(execution.esign.signedAt)}` : ""
         }, and an executed subcontract signed by the GC on ` +
         `${formatUtcDate(execution.document.executedSignedDate)} is also on file.`

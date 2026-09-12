@@ -106,7 +106,7 @@ export function jobStatusTransitionRefusal(
   }
   if (from === "ESTIMATE") {
     return (
-      "This job is still an estimate. To contract it, either the GC signs it in Prova or you " +
+      "This job is still an estimate. To contract it, either the GC signs it in C Stream or you " +
       "record the executed subcontract they sent — both are on this page, under Contract " +
       "signature."
     );

@@ -111,7 +111,7 @@ export function reconcileInvoice(
 
   if (ours.totalCents !== theirs.totalCents) {
     differences.push(
-      `Prova has ${formatUsd(ours.totalCents)}, QuickBooks has ${formatUsd(theirs.totalCents)}.`,
+      `C Stream has ${formatUsd(ours.totalCents)}, QuickBooks has ${formatUsd(theirs.totalCents)}.`,
     );
   }
 

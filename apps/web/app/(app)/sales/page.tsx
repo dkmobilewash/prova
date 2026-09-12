@@ -136,8 +136,8 @@ export default async function SalesPage() {
     <div className="mx-auto max-w-3xl px-6 py-8">
       <h1 className="mb-1 text-lg font-semibold text-ink">Sales CRM</h1>
       <p className="mb-6 text-sm text-ink-body">
-        Prospective Prova customers and the deals in progress with them -- internal, not visible to
-        any tenant.
+        Prospective C Stream customers and the deals in progress with them -- internal, not visible
+        to any tenant.
       </p>
 
       <SalesPipelineBand

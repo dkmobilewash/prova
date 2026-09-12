@@ -4,7 +4,7 @@ import { StaleDeployBanner } from "@/components/StaleDeployBanner";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Prova",
+  title: "C Stream",
   description: "Contractor operating system",
 };
 

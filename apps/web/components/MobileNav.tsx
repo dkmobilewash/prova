@@ -84,7 +84,7 @@ export function MobileNav({
           >
             <div className="flex items-start justify-between gap-2 border-b border-neutral-800 px-5 py-4">
               <div className="flex min-w-0 flex-col gap-0.5">
-                <span className="text-sm font-semibold tracking-tight text-white">Prova</span>
+                <span className="text-sm font-semibold tracking-tight text-white">C Stream</span>
                 <span className="truncate text-xs text-neutral-400">{companyName}</span>
               </div>
               <button

@@ -86,10 +86,10 @@ describe("what the page tells a reader", () => {
       contractExecutionFor(null, [executedDoc(1, "2026-08-20")]),
     );
 
-    expect(esign).toContain("E-signed in Prova");
+    expect(esign).toContain("E-signed in C Stream");
     expect(esign).not.toContain("off-platform");
     expect(offPlatform).toContain("Executed off-platform");
-    expect(offPlatform).not.toContain("E-signed in Prova");
+    expect(offPlatform).not.toContain("E-signed in C Stream");
     expect(esign).not.toBe(offPlatform);
   });
 
@@ -108,7 +108,7 @@ describe("what the page tells a reader", () => {
         executedDoc(1, "2026-07-04"),
       ]),
     );
-    expect(text).toContain("E-signed in Prova");
+    expect(text).toContain("E-signed in C Stream");
     expect(text).toContain("Jul 4, 2026");
   });
 

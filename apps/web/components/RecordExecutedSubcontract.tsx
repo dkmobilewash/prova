@@ -96,7 +96,7 @@ export function RecordExecutedSubcontract({ jobId }: { jobId: string }) {
 
       <p className="text-xs text-ink-muted">
         Use the date printed on the contract, not today&apos;s date — lien deadlines and retainage
-        are counted from it. Prova records who entered this and when, separately.
+        are counted from it. C Stream records who entered this and when, separately.
       </p>
 
       <div className="flex items-center gap-3">
