@@ -4,6 +4,7 @@ import { requireCapability } from "@/lib/authz";
 import { viewerTimeZone } from "@/lib/viewerToday";
 import { countJobMedia, loadJobMedia, loadJobMediaTags } from "@/lib/job-media-query";
 import { parseLocatedFilter, parseSharedFilter, photosFilterHref } from "@/lib/job-media-tags";
+import { photoReportHref, selectionFromSharedFilter } from "@/lib/photo-report";
 import { NoAccess } from "@/components/NoAccess";
 import { JobMediaCapture } from "@/components/JobMediaCapture";
 import { JobMediaCard } from "@/components/JobMediaCard";
@@ -353,6 +354,24 @@ export default async function PhotosPage({
           {activeJob ? (
             <div className="mb-8 rounded-lg border border-slate-800 bg-slate-900 p-4">
               <JobMediaCapture jobId={activeJob} />
+              {/* ONLY WITH A JOB CHOSEN, because a photo report is one
+                  JOB's document — the header names the job and the client,
+                  and there is no such thing as a company-wide one. The
+                  filters travel with the link, except that an unfiltered
+                  gallery lands on the SAFE selection rather than on
+                  "everything": see `selectionFromSharedFilter`. */}
+              <p className="mt-3 text-sm text-slate-400">
+                <Link
+                  href={photoReportHref(activeJob, {
+                    selection: selectionFromSharedFilter(activeShared),
+                    tag: activeTag,
+                  })}
+                  className="text-blue-400 hover:text-blue-300"
+                >
+                  Photo report for this job →
+                </Link>{" "}
+                — a printable document with the marks on the photos.
+              </p>
             </div>
           ) : (
             <p className="mb-8 text-sm text-slate-400">

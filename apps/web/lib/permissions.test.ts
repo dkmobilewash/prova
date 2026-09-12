@@ -254,6 +254,20 @@ const PAGE_ONLY_CAPABILITY: Record<string, Capability> = {
   // key nothing in the nav can match would be a decision recorded in the
   // wrong place.
   "/union-compliance/remittance": "MANAGE_COMPLIANCE",
+  // The site photo report — one job's captures as a printable document,
+  // with the marks drawn on them. MANAGE_FIELD, exactly what `/photos`,
+  // the job page's photo section and every action behind them take: this
+  // document shows strictly what those galleries show, minus the tags, the
+  // photographer and the coordinates, so a different capability would be
+  // an inconsistency rather than a tightening.
+  //
+  // HERE AND NOT IN ROUTE_CAPABILITY, for the reason this table's own
+  // header gives: a key with `[id]` in it can never match a real URL, and
+  // putting one in the map that FILTERS THE NAV would quietly teach
+  // `canReach` to answer "open" for a guarded page. Nothing in the nav
+  // links this — it is reached from the job's photo section and from
+  // `/photos`, the way wh-347 is reached from certified payroll.
+  "/jobs/[id]/photo-report": "MANAGE_FIELD",
 };
 
 /**

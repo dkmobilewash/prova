@@ -8,6 +8,7 @@ import {
   formatByteSize,
   formatCapturedAt,
   formatCapturedAtInputValue,
+  formatCapturedDay,
   isAllowedJobMediaType,
   isBlobStorageUrl,
   isJobMediaBlobUrl,
@@ -488,6 +489,31 @@ group("rendering a capture time", () => {
     // 06:00 UTC on the 8th is still the evening of the 7th in Los Angeles.
     const label = formatCapturedAt(new Date("2026-09-08T06:00:00.000Z"), "America/Los_Angeles");
     expect(label).toContain("Sep 7");
+  });
+});
+
+group("the day a capture belongs to", () => {
+  // The heading a printed photo report groups under. Same instant, two
+  // zones, two different DAYS — which is the whole reason this takes a zone
+  // rather than reading one, and the reason a photo report cannot group in
+  // UTC: a photo taken at 6pm in Nevada would be filed under the next day's
+  // heading, on a document about what happened on a job on a given day.
+  it("is the viewer's calendar day, not UTC's", () => {
+    const instant = new Date("2026-09-08T02:00:00.000Z");
+    expect(formatCapturedDay(instant, "UTC")).toContain("September 8");
+    expect(formatCapturedDay(instant, "America/Los_Angeles")).toContain("September 7");
+  });
+
+  it("names the weekday and the year, because that is how a job is argued about", () => {
+    const label = formatCapturedDay(new Date("2026-09-04T17:00:00.000Z"), "UTC");
+    expect(label).toContain("Friday");
+    expect(label).toContain("2026");
+  });
+
+  it("gives two captures on the same day the same string, so they group", () => {
+    const morning = new Date("2026-09-04T14:00:00.000Z");
+    const evening = new Date("2026-09-04T23:30:00.000Z");
+    expect(formatCapturedDay(morning, "UTC")).toBe(formatCapturedDay(evening, "UTC"));
   });
 });
 

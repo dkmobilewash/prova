@@ -7,6 +7,7 @@ import {
   formatByteSize,
   formatCapturedAt,
   formatCapturedAtInputValue,
+  formatCapturedDay,
   jobMediaClockWarning,
   jobMediaKind,
   jobMediaPlaybackWarning,
@@ -470,4 +471,144 @@ export async function countSharedJobMediaByJob(jobIds: string[]): Promise<Map<st
     _count: { _all: true },
   });
   return new Map(rows.map((row) => [row.jobId, row._count._all]));
+}
+
+/* ------------------------------------------------------------------ *
+ * The printed document's half
+ * ------------------------------------------------------------------ */
+
+/**
+ * One capture as the printed photo report renders it.
+ *
+ * A SEPARATE TYPE FROM BOTH `JobMediaCardData` AND `PortalJobPhoto`, and
+ * for the reason `PortalJobPhoto` is separate: the exclusions are the
+ * feature, and a type that does not HAVE a field cannot forget to withhold
+ * it. This document is the one artefact of this feature that LEAVES THE
+ * APP ENTIRELY — it becomes a PDF on somebody's desktop, an email
+ * attachment, an exhibit — so it takes the portal's exclusions rather than
+ * the internal card's generosity, and takes them for the same reasons
+ * argued at length on `loadSharedJobMediaForClient`'s `select`:
+ *
+ *   - NO TAGS. "backcharge", "GC delay", "rework" is this sub's own framing
+ *     of the job, written for their retrieval and their argument. A printed
+ *     page carrying those words cannot be un-handed-over.
+ *   - NO PHOTOGRAPHER. A name on a photo of a defect is a person to
+ *     complain about. The company printed the document; the company is in
+ *     the header.
+ *   - NO COORDINATES. A phone's fix is where a person was standing to a few
+ *     metres at a stated minute, and forty of them is a movement record.
+ *     The four grounds are on the portal select and none of them get weaker
+ *     when the page is paper.
+ *   - NO FILE SIZE, NO CLOCK WARNING, NO EDIT AFFORDANCES. Storage detail,
+ *     an internal note that the sub's own device looks wrong, and controls
+ *     a document does not have.
+ *
+ * WHAT IT CARRIES THAT THE PORTAL DOES NOT is `clientCanSee`, and it is not
+ * a widening of the disclosure — it is the opposite. On an internal
+ * selection the document mixes captures the GC has seen with captures they
+ * have not, and the person holding the paper has to be able to tell which
+ * page is which before they photocopy it. It is a boolean rather than the
+ * disclosure timestamp: the report answers "may this leave the building",
+ * not "when was it disclosed", and the date is the portal's business.
+ */
+export type JobPhotoReportCapture = {
+  id: string;
+  blobUrl: string;
+  /** Photo, video or voice note. The report can only PRINT the first —
+   *  see `partitionPrintable` for why the other two are listed rather than
+   *  dropped. */
+  kind: JobMediaKind;
+  caption: string | null;
+  capturedAtLabel: string;
+  /** The day this belongs to, in the viewer's zone, for the page heading it
+   *  is grouped under. Derived on read like every other label here. */
+  dayLabel: string;
+  marks: JobMediaMark[];
+  /** Whether the job's client can currently see this through their portal
+   *  link. Drives one printed note on an internal report and nothing else. */
+  clientCanSee: boolean;
+};
+
+/**
+ * The captures one printed report is built from.
+ *
+ * A SEPARATE READ FROM `loadJobMedia` RATHER THAN A FLAG ON IT. The two
+ * differ in their projection (above), in their default (this one is called
+ * with `shared: true` unless somebody chose otherwise — see
+ * lib/photo-report.ts) and in what a mistake costs: a gallery that shows
+ * one photo too many is a page the sub is already looking at, and a
+ * document that does is a disclosure. Sharing one function would put both
+ * behind one `where` builder that nobody can read twice as carefully for
+ * one caller than the other.
+ *
+ * THE `shared` PARAMETER IS THREE-VALUED and `undefined` means both, the
+ * same shape and the same trap as `JobMediaFilter.shared`: written the
+ * obvious way — `...(shared ? … : {})` — the "not shared" report would
+ * silently become the everything report, which on this surface prints the
+ * crew's own mistakes onto a document headed with the client's job name.
+ *
+ * Ordered newest-first like every other read in this file, and REVERSED
+ * afterwards by `oldestFirst` in the page: the cap has to keep the most
+ * recent captures, and the document has to read forwards. That split is
+ * stated in lib/photo-report.ts rather than done quietly here.
+ */
+export async function loadJobMediaForReport(
+  {
+    jobId,
+    companyId,
+    shared,
+    tagId,
+    take,
+  }: {
+    jobId: string;
+    companyId: string;
+    shared?: boolean;
+    tagId?: string;
+    take: number;
+  },
+  timeZone: string,
+): Promise<JobPhotoReportCapture[]> {
+  const rows = await prisma.jobMedia.findMany({
+    where: jobMediaWhere({
+      companyId,
+      jobId,
+      ...(tagId ? { tagId } : {}),
+      ...(shared === undefined ? {} : { shared }),
+    }),
+    take,
+    orderBy: [{ capturedAt: "desc" }, { createdAt: "desc" }],
+    // An explicit `select` rather than the default row, for the same reason
+    // the portal read has one: the columns that must never reach this
+    // document are not even fetched, so a future edit that wants them is a
+    // visible change to this list rather than a field that appeared.
+    select: {
+      id: true,
+      blobUrl: true,
+      caption: true,
+      capturedAt: true,
+      contentType: true,
+      sharedWithClientAt: true,
+      // NO `capturedBy`, NO `tags`, NO `capturedLatitude`/`Longitude`/
+      // `capturedAccuracyMeters`, NO `byteSize`, NO `createdAt`. Each one is
+      // argued on `JobPhotoReportCapture` above.
+      annotations: {
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        select: { id: true, kind: true, x1: true, y1: true, x2: true, y2: true, label: true },
+      },
+    },
+  });
+
+  return rows.map((row) => ({
+    id: row.id,
+    blobUrl: row.blobUrl,
+    kind: jobMediaKind(row.contentType) ?? "photo",
+    caption: row.caption,
+    capturedAtLabel: formatCapturedAt(row.capturedAt, timeZone),
+    dayLabel: formatCapturedDay(row.capturedAt, timeZone),
+    marks: row.annotations.map(toMark),
+    // The COLUMN is a timestamp and this is a boolean derived from it on
+    // every read — one stored fact, no second flag beside it that could
+    // disagree, exactly as the card's `sharedWithClientLabel` is.
+    clientCanSee: row.sharedWithClientAt !== null,
+  }));
 }
