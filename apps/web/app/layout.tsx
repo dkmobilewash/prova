@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { ClerkProvider } from "@clerk/nextjs";
 import { StaleDeployBanner } from "@/components/StaleDeployBanner";
+import { RscFailureBanner } from "@/components/RscFailureBanner";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -46,6 +47,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               across a deployment as anything under (app). Renders nothing
               until it actually fires -- see the component's own comment. */}
           <StaleDeployBanner />
+          {/* #118: a 5xx on a live RSC navigation fetch or a Server Action
+              POST was previously invisible -- Next either silently kept
+              rendering an earlier successful prefetch, or (for an
+              action) failed with no on-screen sign of it. Renders
+              nothing until it actually fires -- see the component's own
+              comment for exactly what it does and does not fix. */}
+          <RscFailureBanner />
           {children}
         </body>
       </html>
