@@ -33,7 +33,7 @@ drift failure pointing in the unusual direction: the warning was stale, not
 the data. Same lesson as CLAUDE.md's `MIGRATE_EXPECT_HOST` deletion — a doc
 note that says "X has not been done" is a claim with an expiry date on it.
 
-**126 items audited — 100 built / 19 partial / 6 missing / 1 descoped**
+**126 items audited — 101 built / 19 partial / 5 missing / 1 descoped**
 
 (The recount below is HISTORY — a worked example of resolving this file's
 recurring merge-conflict shape, kept for the method. Its arithmetic ends at
@@ -65,9 +65,9 @@ header cannot.)
 
 | Status | Count |
 | --- | --- |
-| Built | 100 |
+| Built | 101 |
 | Partial | 19 |
-| Missing | 6 |
+| Missing | 5 |
 | Descoped | 1 |
 
 
@@ -143,7 +143,7 @@ subcontract agreement storage and versioning shipped same-day.*
 | Status | Feature | Note |
 | --- | --- | --- |
 | Built | Job = subcontract awarded by a GC (not owner-direct) | the `Contact` on a `Job` functions as the GC in this ICP |
-| Partial | Job metadata: GC, project name/address, contract value, dates, jurisdiction | name/dates/derived contract value/location all present; no distinct project address or "substantial completion" date |
+| Partial | Job metadata: GC, project name/address, contract value, dates, jurisdiction | name/dates/derived contract value/location all present; no distinct project ADDRESS. **Corrected 2026-09-12: this row also said there was no "substantial completion" date. `Job.substantialCompletionDate` has existed since the retainage work** (`jobs.prisma:54`) and drives the retainage release forecast on `/jobs/[id]` and `/cash-flow`. Found while reading this sheet for the WIP export; the address half stands |
 | Built | Schedule of values (SOV) as the job's line-item structure | this is exactly what `JobLineItem` is, by design |
 | Partial | Job status lifecycle: bid → awarded → active → substantially complete → closed/warranty | today's `JobStatus` is a simpler 4-stage version: ESTIMATE → CONTRACTED → IN_PROGRESS → COMPLETE |
 
@@ -251,7 +251,7 @@ forecasting shipped 26 Aug 2026.*
 | Built | License/registration records per state | `CompanyLicense`, with create/edit/delete on `/settings` — it was marked Built on the model alone from 25 Aug until 29 Aug, during which no licence could be created at all |
 | Built | Expiration/renewal alerts across all of the above | `lib/compliance-expiry.ts` ranks COIs, licences, policies and bonds together; surfaced on `/compliance` in full and on the dashboard as the worst three. Still computed at read time, never stored — delivery (email/SMS) is Sheet 26 |
 
-## 15. WIP & Financial Reporting — 4 built · 1 partial · 1 missing
+## 15. WIP & Financial Reporting — 5 built · 1 partial · 0 missing
 
 *Updated 3 Sep 2026: the Cash flow forecast row below was still marked
 Missing while `lib/cash-flow.ts`'s `calculateCashFlowForecast` had already
@@ -264,7 +264,7 @@ instruction to check before assuming anything needed building.*
 | --- | --- | --- |
 | Built | Percent-complete (cost-to-cost method) per line item and per job | `lib/wip.ts` |
 | Built | Revenue earned vs. billed (over/under-billing) report | plus an AI narrative layer over it — `generateWipNarrative` |
-| Missing | WIP schedule export in surety/CPA-expected format | shown on-screen only, no export |
+| Built | WIP schedule export in surety/CPA-expected format | `/api/wip-schedule`, reachable from `/cash-flow`. One row per contracted or in-progress job, over- and under-billings in the two columns a balance sheet reads them as, and a title block stating the method and what a blank cell means. A figure whose estimates are thin is BLANK, not zero: the export goes through the same `jobEarnedRevenue`/`jobOverUnderBilling` guards the job page does, so it cannot state a number the screen refuses to |
 | Partial | Job profitability report (budget vs. actual vs. forecast margin) | visible per job on `/jobs/[id]`, and every active job's forecast-vs-contract variance now reads as a sentence in the dashboard's Job health section — still no dedicated exportable report |
 | Built | Cash flow forecast (AR aging, retainage receivable, pay app cycles) | `lib/cash-flow.ts`'s `calculateCashFlowForecast`, rendered on `/cash-flow` under "Forecast, next N months" — AR aging plus retainage expected by month, reading the retainage data from Sheet 11. Was marked Missing here until this update; the code and the nav entry were both already live |
 | Built | Company-wide backlog report across active jobs | `lib/company-financials.ts` sums contract value, blended gross margin, cash collected and retainage held across contracted and in-progress jobs; shown on the metric bar at the bottom of every screen. Derived on read, never stored |
@@ -367,7 +367,7 @@ nav-reachable.*
 | Status | Feature | Note |
 | --- | --- | --- |
 | Built | WIP over/under-billing variance detection (read-only, per line item/job) | `generateWipNarrative` |
-| Partial | Compliance document extraction into structured records with expiration alerts | extraction shipped (`extractComplianceDocument`) — the alerting half doesn't exist yet (see Sheet 26) |
+| Partial | Compliance document extraction into structured records with expiration alerts | extraction shipped (`extractComplianceDocument`). **Corrected 2026-09-12: this row said the alerting half "doesn't exist yet" while Sheet 26's own COI/licence/bond row, on this same page, described it working** — `lib/compliance-expiry.ts`'s `renewalAlerts`, the `RENEWAL` alert kind, gated on MANAGE_COMPLIANCE. Two sheets contradicting each other is the drift this file exists to prevent. Still Partial for Sheet 26's reason and no other: the nightly send needs `CRON_SECRET` and `NOTIFY_BASE_URL` on Vercel and one observed run |
 | Built | Draft estimate line items from text, grounded by trade-scope catalogs | `draftEstimateLineItems` now receives this company's `LineItemCatalogEntry` rows and its won `BidInvitation` amounts as reference data, and prefers matching an existing catalog price over inventing one. A matched line is created through the same path as "add from catalog", carrying `sourceCatalogEntryId` and the entry's cost/craft defaults — not just an echoed number |
 | Built | Ask: answers about the company's own data from the dashboard box | Tool-calling over ten read tools (`lib/ask/tools.ts`), every figure computed by the same library the page uses, cited back to the page it came from; the model never does arithmetic. Every tool now declares the capability its page is guarded by and the list is filtered per person before the model sees it — until 2026-09-08 the executor knew only the company, so a FIELD-function member the dashboard withholds margin from could ask the box beside those tiles and be answered |
 | Built | Ask: does things — a command proposes, a person confirms, one tap executes | `lib/ask/commands.ts`. A command resolves the names the person used into ids, computes a preview in code, writes one `AskProposal` row and ends the stream; the card's tap runs `confirmAskProposal`, which claims the row (`updateMany where claimedAt IS NULL`) before writing, so a double tap is one job and one "already done". One command per question, enforced in the loop, never in the prompt. Phase 1 shipped three: create an estimate-stage job (resolve-or-create the GC, draft line items from the scope), draft line items, add a catalog line. Phase 2a added four over the field lane's own `ActionResult` actions, called in-process and unchanged: log today's daily report, send equipment to a job, bring it back, record a material delivery — the action's own sentence on refusal, today resolved server-side from the person's timezone. A pending card survives a backgrounded phone browser. Phase 2b added the HANDOFF mode for the two field-lane actions that throw: raise an RFI and add a punch item propose a card whose primary is a link to `/rfis?draft=` or `/punch-lists?draft=`, and the page's own form opens prefilled from the server-held payload (`lib/ask/drafts.ts`); the form's action is the write and it settles the card afterwards. Phase 3 added the first money commands, T3, over the billing lane's own guards: bill the client (the next-numbered invoice, retainage and due date computed by the app), log a payment (refused in the action's words when it would overpay), and log today's hours for one person. No figure on a card comes from the model: amounts are the person's typed digits parsed by code. `/settings/assistant` lists every card ever shown with what became of it, outcome derived, owner-only. Every exported Server Action is registered or excluded with a reason (`commands.coverage.test.ts`). Deletes, contract transitions, pay applications and outward sends are never commands |

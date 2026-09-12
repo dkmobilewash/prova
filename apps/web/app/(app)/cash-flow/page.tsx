@@ -89,6 +89,27 @@ export default async function CashFlowPage() {
         one.
       </p>
 
+      <section className="mb-6 rounded-lg border border-slate-800 bg-slate-900 p-4">
+        <h2 className="mb-1 text-sm font-semibold text-slate-100">WIP schedule</h2>
+        <p className="mb-3 max-w-2xl text-sm text-slate-400">
+          Percentage of completion by the cost-to-cost method, one row per contracted or in-progress job, with
+          over- and under-billings split into the two columns a surety or CPA reads them as. Opens in a
+          spreadsheet. A figure whose estimates are mostly missing is left <strong>blank rather than guessed</strong>,
+          and the coverage columns say how much of each job is covered.
+        </p>
+        {/* A plain link, not a button with an onClick: this is a GET that
+            returns a file, so the browser's own download is the whole
+            mechanism and no client component is needed. `download` asks for
+            a save rather than a navigation; the route sets the filename. */}
+        <a
+          href="/api/wip-schedule"
+          download
+          className="inline-flex rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-500"
+        >
+          Download WIP schedule (CSV)
+        </a>
+      </section>
+
       <section className="mb-10">
         <h2 className="mb-3 text-lg font-semibold text-slate-100">Accounts receivable aging</h2>
         <div className="mb-4 grid grid-cols-2 gap-3 rounded-lg border border-slate-800 bg-slate-900 p-4 sm:grid-cols-5">
