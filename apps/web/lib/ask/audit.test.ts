@@ -16,6 +16,7 @@ const fake = vi.hoisted(() => {
       invoice: { findMany: fn() },
       payment: { findMany: fn() },
       timeEntry: { findMany: fn() },
+      retainageRelease: { findMany: fn() },
     },
   };
 });
@@ -34,6 +35,7 @@ beforeEach(() => {
   fake.prisma.invoice.findMany.mockResolvedValue([]);
   fake.prisma.payment.findMany.mockResolvedValue([]);
   fake.prisma.timeEntry.findMany.mockResolvedValue([]);
+  fake.prisma.retainageRelease.findMany.mockResolvedValue([]);
 });
 
 describe("auditOutcome", () => {
@@ -102,16 +104,19 @@ describe("listAskProposals", () => {
       row({ id: "p-4", targetType: "Job", targetId: "job-9" }),
       row({ id: "p-5", targetType: "DailyFieldReport", targetId: "r-1" }),
       row({ id: "p-6", targetType: "Something", targetId: "x-1" }),
+      row({ id: "p-7", targetType: "RetainageRelease", targetId: "rel-1" }),
     ]);
     fake.prisma.invoice.findMany.mockResolvedValue([
       { id: "inv-1", number: 1, jobId: "job-1" },
       { id: "inv-2", number: 2, jobId: "job-1" },
     ]);
     fake.prisma.payment.findMany.mockResolvedValue([{ id: "pay-1", invoice: { number: 1, jobId: "job-1" } }]);
+    fake.prisma.retainageRelease.findMany.mockResolvedValue([{ id: "rel-1", jobId: "job-1" }]);
     const rows = await listAskProposals("co-1", now);
     expect(fake.prisma.invoice.findMany).toHaveBeenCalledTimes(1);
     expect(fake.prisma.invoice.findMany.mock.calls[0][0]).toMatchObject({ where: { id: { in: ["inv-1", "inv-2"] } } });
     expect(fake.prisma.timeEntry.findMany).not.toHaveBeenCalled();
+    expect(fake.prisma.retainageRelease.findMany.mock.calls[0][0]).toMatchObject({ where: { id: { in: ["rel-1"] } } });
     expect(rows.map((r) => r.target)).toEqual([
       { label: "Invoice #1", href: "/jobs/job-1" },
       { label: "Invoice #2", href: "/jobs/job-1" },
@@ -119,6 +124,7 @@ describe("listAskProposals", () => {
       { label: "Job", href: "/jobs/job-9" },
       { label: "Field report", href: "/field-reports" },
       null,
+      { label: "Retainage release", href: "/jobs/job-1" },
     ]);
   });
 });

@@ -20,6 +20,19 @@ const FIELD: Principal = { role: "MEMBER", jobFunction: "FIELD" };
 const ESTIMATOR: Principal = { role: "MEMBER", jobFunction: "ESTIMATOR" };
 const ACCOUNTING: Principal = { role: "MEMBER", jobFunction: "ACCOUNTING" };
 
+/**
+ * A HANDOFF page with no ROUTE_CAPABILITY entry, each with the reason it
+ * is open. The invariant below is that nobody offered a command can land
+ * on NoAccess when they tap it; a guarded page satisfies that only when
+ * its guard IS the command's capability, and an open page satisfies it
+ * for everyone. Listed by hand so an unguarded page is a decision here
+ * rather than an omission in lib/permissions.ts.
+ */
+const OPEN_HANDOFF_PAGES: Record<string, string> = {
+  "/messages":
+    "On lib/permissions.test.ts's open list: the delivery log is open to every signed-in person, and sending is the action's problem, not the page's. send_email's MANAGE_JOBS narrows who is OFFERED the card, not who can reach the composer.",
+};
+
 describe("every command", () => {
   it("has a unique name that is not also a read tool's", () => {
     const names = COMMANDS.map((command) => command.name);
@@ -65,11 +78,16 @@ describe("every command", () => {
         expect(command.core, `${command.name} is HANDOFF with a core`).toBeUndefined();
         expect(typeof command.handoffHref, `${command.name} is HANDOFF with no page`).toBe("function");
         // The page it opens is the one guarded by the command's own
-        // capability, and the card id rides in ?draft= and nowhere else.
+        // capability — or open to everyone, with the reason recorded above
+        // — and the card id rides in ?draft= and nowhere else.
         const href = command.handoffHref!("card-id");
         const [path, query] = href.split("?");
         expect(query, command.name).toBe("draft=card-id");
-        expect(ROUTE_CAPABILITY[path], `${command.name} opens ${path}`).toBe(command.capability);
+        if (path in OPEN_HANDOFF_PAGES) {
+          expect(ROUTE_CAPABILITY[path], `${path} is listed open but is guarded`).toBeUndefined();
+        } else {
+          expect(ROUTE_CAPABILITY[path], `${command.name} opens ${path}`).toBe(command.capability);
+        }
       }
     }
   });
@@ -109,7 +127,7 @@ describe("every command", () => {
 });
 
 describe("who is offered what", () => {
-  it("offers an owner everything, and a FIELD member the field and RFI commands and nothing that prices", () => {
+  it("offers an owner everything, and a FIELD member the field, RFI and email commands and nothing that prices", () => {
     expect(commandsFor(OWNER).length).toBe(COMMANDS.length);
     const field = commandsFor(FIELD).map((c) => c.name);
     expect(field).toEqual([
@@ -120,6 +138,8 @@ describe("who is offered what", () => {
       "raise_rfi",
       "add_punch_item",
       "log_time_entry",
+      "send_email",
+      "reschedule_job",
     ]);
     // FIELD holds MANAGE_FIELD and MANAGE_JOBS (lib/permissions.ts: "an
     // RFI when the drawings are wrong"), and nothing else — so no money.
@@ -128,22 +148,90 @@ describe("who is offered what", () => {
     }
   });
 
-  it("offers an estimator the estimating commands and the RFI — MANAGE_JOBS held, MANAGE_FIELD not", () => {
+  it("offers an estimator the estimating commands, the RFI, the email, the schedule change and the bid invitation — MANAGE_JOBS held, MANAGE_FIELD not", () => {
     expect(commandsFor(ESTIMATOR).map((c) => c.name)).toEqual([
       "create_estimate_job",
       "draft_estimate_lines",
       "add_catalog_line",
       "raise_rfi",
+      "send_email",
+      "reschedule_job",
+      "log_bid_invitation",
     ]);
     expect(commandsFor(ESTIMATOR).map((c) => c.name)).not.toContain("add_punch_item");
   });
 
-  it("offers accounting exactly the two money commands, and nothing that touches the field", () => {
-    expect(commandsFor(ACCOUNTING).map((c) => c.name)).toEqual(["draft_invoice", "log_payment"]);
+  it("registers the bid invitation as a T1 draft, DIRECT over its lifted core, on the capability that guards /bids — and withholds it from the field and from accounting", () => {
+    const bid = COMMANDS.find((c) => c.name === "log_bid_invitation")!;
+    expect(bid.tier).toBe("T1_DRAFT");
+    expect(bid.mode).toBe("DIRECT");
+    expect(bid.core).toBe("createBidInvitationRecord");
+    expect(bid.action).toBe("createBidInvitation");
+    expect(bid.capability).toBe(ROUTE_CAPABILITY["/bids"]);
+    expect(bid.capability).toBe("MANAGE_ESTIMATING");
+    // No money on the card, so nothing beyond the page's own guard.
+    expect(bid.requiresAlso).toBeUndefined();
+    expect(commandsFor(FIELD).map((c) => c.name)).not.toContain("log_bid_invitation");
+    expect(commandsFor(ACCOUNTING).map((c) => c.name)).not.toContain("log_bid_invitation");
+    expect(commandsFor({ role: "MEMBER", jobFunction: "PROJECT_MANAGER" }).map((c) => c.name)).toContain("log_bid_invitation");
+  });
+
+  it("offers accounting exactly the three money commands, and nothing that touches the field or writes to a GC", () => {
+    expect(commandsFor(ACCOUNTING).map((c) => c.name)).toEqual(["draft_invoice", "log_payment", "release_retainage"]);
     for (const command of commandsFor(ACCOUNTING)) {
       expect(command.capability, command.name).toBe("MANAGE_BILLING");
       expect(command.tier, command.name).toBe("T3_MONEY_EVIDENCE");
     }
+  });
+
+  it("registers the retainage release as T3, DIRECT over its lifted core, on the capability the job page's Retainage section demands — and withholds it from the field and from estimating", () => {
+    // Phase 4d: the last per-action money exclusion in commands/billing.ts,
+    // registered from its own file. `showsBilling` on jobs/[id]/page.tsx is
+    // `can(principal, "MANAGE_BILLING")`, and that is the whole gate.
+    const release = COMMANDS.find((c) => c.name === "release_retainage")!;
+    expect(release.tier).toBe("T3_MONEY_EVIDENCE");
+    expect(release.mode).toBe("DIRECT");
+    expect(release.core).toBe("createRetainageReleaseRecord");
+    expect(release.action).toBe("createRetainageRelease");
+    expect(release.capability).toBe("MANAGE_BILLING");
+    expect(release.requiresAlso).toBeUndefined();
+    expect(commandsFor(FIELD).map((c) => c.name)).not.toContain("release_retainage");
+    expect(commandsFor(ESTIMATOR).map((c) => c.name)).not.toContain("release_retainage");
+    expect(commandsFor({ role: "MEMBER", jobFunction: "PROJECT_MANAGER" }).map((c) => c.name)).toContain("release_retainage");
+    // And the delete beside it stays excluded: T5, never a command.
+    expect(EXCLUSIONS.map((e) => e.action)).toContain("deleteRetainageRelease");
+    expect(EXCLUSIONS.map((e) => e.action)).not.toContain("createRetainageRelease");
+  });
+
+  it("registers the outward send as T4 and HANDOFF only — a tap never sends", () => {
+    const outward = COMMANDS.filter((c) => c.tier === "T4_OUTWARD");
+    expect(outward.map((c) => c.name)).toEqual(["send_email"]);
+    for (const command of outward) {
+      expect(command.mode, command.name).toBe("HANDOFF");
+      expect(command.execute, command.name).toBeUndefined();
+    }
+  });
+
+  it("registers the schedule change as a T2 modify beside the three that stamp today — DIRECT over a lifted core, on the capability whose doc comment says 'jobs themselves'", () => {
+    // The whole tier, pinned: the phase-2a three stamp today on a stay or
+    // close an order; reschedule_job is the first to rewrite a row to
+    // values the person stated, which is why it alone carries the dates
+    // the card was made from and compares before it sets.
+    const modifies = COMMANDS.filter((c) => c.tier === "T2_MODIFY");
+    expect(modifies.map((c) => c.name)).toEqual([
+      "record_material_delivery",
+      "send_equipment_to_job",
+      "bring_equipment_back",
+      "reschedule_job",
+    ]);
+    const reschedule = COMMANDS.find((c) => c.name === "reschedule_job")!;
+    expect(reschedule.mode).toBe("DIRECT");
+    expect(reschedule.core).toBe("setJobScheduleDates");
+    expect(reschedule.capability).toBe("MANAGE_JOBS");
+    // Not offered to the two functions that hold no MANAGE_JOBS, who can
+    // still edit the dates by hand on the open job page.
+    expect(commandsFor(ACCOUNTING).map((c) => c.name)).not.toContain("reschedule_job");
+    expect(commandsFor({ role: "MEMBER", jobFunction: "PAYROLL_COMPLIANCE" }).map((c) => c.name)).not.toContain("reschedule_job");
   });
 
   it("withholds create_estimate_job from accounting, who could not open the estimate it made", () => {

@@ -13,7 +13,18 @@ import type { Exclusion } from "../commands";
  * his throwing ones (commands/rfis.ts, commands/punchLists.ts). Phase 3
  * (Diego's lane) replaced billing and labor once the invoice counter
  * (#224) and the #102 guards (#213) existed — commands/billing.ts and
- * commands/labor.ts.
+ * commands/labor.ts. Phase 4a replaced messages as HANDOFF into the
+ * /messages composer, the first T4 command (commands/messages.ts). Phase
+ * 4b registered reschedule_job, the first T2 that rewrites a row to values
+ * the person stated, DIRECT over a lifted core (commands/schedule.ts) —
+ * it replaced a per-action line in
+ * commands/estimating.ts rather than a wildcard here, since jobs.ts had
+ * commands already. Phase 4c did the same for createBidInvitation
+ * (commands/bids.ts), once the contact resolver and the date parser the
+ * per-action line had been waiting for both existed. Phase 4d did it for
+ * createRetainageRelease (commands/retainage.ts), the per-action line in
+ * commands/billing.ts that had been waiting for "a card that can show the
+ * balance it draws down" — phase 3's money cards were that card.
  *
  * commands.coverage.test.ts fails the moment a new module appears with no
  * line here and no registration — so adding an action file is a decision
@@ -28,7 +39,7 @@ export const notYetRegistered: Exclusion[] = [
   // card; a command that proposed confirming a card would be the model
   // confirming its own proposal, which is the one thing this design exists
   // to make impossible.
-  { action: "ask.*", reason: "The confirm and cancel actions are the write path a card resolves to; never a command." },
+  { action: "ask.*", reason: "The confirm and cancel actions are the write path a card resolves to, and the connection check is a diagnostic button on the settings page; never a command." },
 
   // Diego's lane, later phases.
   { action: "changeOrders.*", reason: "Change orders move contract value a sent pay application may depend on (T5 decisions, T3 drafts); a later phase." },
@@ -44,7 +55,6 @@ export const notYetRegistered: Exclusion[] = [
   { action: "sales.*", reason: "Prova-operator-only CRM, unreachable for any contractor tenant; excluded from the agent surface entirely." },
   { action: "alerts.*", reason: "Snooze and dismiss are done on the alert being read; nothing to resolve by name." },
   { action: "notifications.*", reason: "Sends the person their own digest; not a task anyone asks the box for." },
-  { action: "messages.*", reason: "Outward email (T4): hand-off into the /messages composer in phase 4, never DIRECT." },
   { action: "prevailingWage.*", reason: "Rule sets are compliance configuration edited on their own page; needs a File for determinations." },
   { action: "apprenticeship.*", reason: "Enrollment and period sign-off are evidence with sign-off dates; page only for now." },
   { action: "unionCompliance.*", reason: "Craft, local and rate configuration; several writes are global reference data. Never a command." },

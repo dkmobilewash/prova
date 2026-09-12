@@ -7,6 +7,8 @@ import { SafetyIncidentRow } from "@/components/SafetyIncidentRow";
 import { ToolboxTalkForm } from "@/components/ToolboxTalkForm";
 import { ToolboxTalkRow } from "@/components/ToolboxTalkRow";
 import { isRecordable } from "@/components/safetyLabels";
+import { StatusLine } from "@/components/StatusLine";
+import { safetyStatus } from "@/lib/status-sentences";
 
 /** Dates are stored at UTC midnight and rendered in UTC, same rule as
  * daily field reports. Rendering local would show yesterday's date to
@@ -61,6 +63,12 @@ export default async function SafetyPage({
 
   const recordableCount = incidents.filter((i) => isRecordable(i.outcome)).length;
   const daysAwayCases = incidents.filter((i) => i.outcome === "DAYS_AWAY").length;
+  const status = safetyStatus({
+    year: activeYear,
+    cases: incidents.length,
+    recordable: recordableCount,
+    daysAway: daysAwayCases,
+  });
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8">
@@ -99,20 +107,7 @@ export default async function SafetyPage({
           </div>
         </div>
 
-        <div className="mb-4 grid gap-3 sm:grid-cols-3">
-          <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-            <p className="text-2xl font-semibold text-slate-100">{incidents.length}</p>
-            <p className="text-xs text-slate-400">Cases logged</p>
-          </div>
-          <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-            <p className="text-2xl font-semibold text-amber-300">{recordableCount}</p>
-            <p className="text-xs text-slate-400">Recordable on the 300 log</p>
-          </div>
-          <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-            <p className="text-2xl font-semibold text-slate-100">{daysAwayCases}</p>
-            <p className="text-xs text-slate-400">Cases with days away</p>
-          </div>
-        </div>
+        <StatusLine report={status} />
 
         {incidents.length === 0 ? (
           <p className="text-slate-400">
