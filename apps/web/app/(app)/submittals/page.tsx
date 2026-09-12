@@ -4,7 +4,9 @@ import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { SubmittalForm } from "@/components/SubmittalForm";
 import { SubmittalRow } from "@/components/SubmittalRow";
-import { submittalState } from "@/components/submittalLabels";
+import { daysBetween, isOverdue, latestRevision, submittalState } from "@/components/submittalLabels";
+import { StatusLine } from "@/components/StatusLine";
+import { submittalsStatus } from "@/lib/status-sentences";
 
 /** Stored at UTC midnight, rendered in UTC — same rule as RFIs, the
  * safety log and daily field reports. */
@@ -72,12 +74,20 @@ export default async function SubmittalsPage({
     : allRows.filter((row) => submittalState(row.revisions) !== "APPROVED");
 
   const withGcCount = allRows.filter((r) => submittalState(r.revisions) === "WITH_GC").length;
-  const reviseCount = allRows.filter((r) => submittalState(r.revisions) === "REVISE").length;
+  const revise = allRows
+    .filter((r) => submittalState(r.revisions) === "REVISE")
+    .map((r) => ({ number: r.number, jobName: r.jobName }));
+  const overdueWithGc = allRows.flatMap((r) => {
+    if (!isOverdue(r.revisions, today)) return [];
+    const dueBack = latestRevision(r.revisions)?.dueBack as string;
+    return [{ number: r.number, jobName: r.jobName, daysOverdue: daysBetween(dueBack, today) }];
+  });
   // Counted from all rows for this filter, not the visible ones — the
   // default view hides exactly this set, and a tile that falls to zero
   // because the things it counts are hidden is the bug the RFI impact
   // tile had.
   const approvedCount = allRows.filter((r) => submittalState(r.revisions) === "APPROVED").length;
+  const status = submittalsStatus({ revise, overdueWithGc, withGc: withGcCount, approved: approvedCount, total: allRows.length });
 
   const filterHref = (params: { job?: string | null; show?: string | null }) => {
     const next = new URLSearchParams();
@@ -108,22 +118,7 @@ export default async function SubmittalsPage({
         <SubmittalForm jobs={jobs} defaultJobId={activeJob ?? undefined} />
       </section>
 
-      <div className="mb-4 grid gap-3 sm:grid-cols-3">
-        <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-          <p className="text-2xl font-semibold text-slate-100">{withGcCount}</p>
-          <p className="text-xs text-slate-500">With the GC</p>
-        </div>
-        <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-          <p className={`text-2xl font-semibold ${reviseCount > 0 ? "text-amber-300" : "text-slate-100"}`}>
-            {reviseCount}
-          </p>
-          <p className="text-xs text-slate-500">Back in our court to resubmit</p>
-        </div>
-        <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-          <p className="text-2xl font-semibold text-green-300">{approvedCount}</p>
-          <p className="text-xs text-slate-500">Approved</p>
-        </div>
-      </div>
+      <StatusLine report={status} />
 
       {jobs.length > 0 && (
         <div className="mb-4 flex flex-wrap gap-2">
