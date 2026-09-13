@@ -19,7 +19,7 @@ import { renewalAlerts as rankRenewals } from "@/lib/compliance-expiry";
 import { calculateRetainageSummary } from "@/lib/retainage";
 import { calculateJobWip, calculateLineItemWip } from "@/lib/wip";
 import { jobIsOverBudget } from "@/lib/company-financials";
-import { weekStart } from "@/components/fieldReportWeeks";
+import { certifiedPayrollWeekStart } from "@/lib/certified-payroll-week";
 import { can, type Principal } from "@/lib/permissions";
 import { loadRatioReviews } from "@/lib/union-compliance-query";
 
@@ -97,10 +97,11 @@ export async function loadAlerts(
         prevailingWageDeterminations: {
           take: 1,
           orderBy: { createdAt: "desc" },
-          // The jurisdiction's own filing window, where it has been
-          // recorded. Without it the alert falls back to its generic
-          // horizon and says so.
-          select: { id: true, ruleSet: { select: { filingDueDays: true } } },
+          // The jurisdiction's own filing window and frequency, where they
+          // have been recorded. Without a window the alert falls back to
+          // its generic horizon and says so; without a frequency it
+          // assumes WEEKLY, both jobs certifiedPayrollAlerts already does.
+          select: { id: true, ruleSet: { select: { filingDueDays: true, filingFrequency: true } } },
         },
         timeEntries: { select: { date: true } },
         complianceDocuments: {
@@ -221,8 +222,21 @@ export async function loadAlerts(
         .filter((d) => d.periodStart && d.periodEnd)
         .map((d) => ({ start: isoDate(d.periodStart) as string, end: isoDate(d.periodEnd) as string }));
 
+      // #104 finding 7: this used to group by fieldReportWeeks' MONDAY-start
+      // week -- the right convention for a field report, wrong one here.
+      // This alert exists to chase the ACTUAL certified-payroll filing,
+      // and that document's own week (lib/certified-payroll-week.ts,
+      // certifiedPayrollWeekStart) runs SUNDAY-to-Saturday and always has,
+      // by deliberate choice recorded in that file's own header -- printed
+      // on the sheet, encoded in its `?weekStart=` links. An alert grouped
+      // Monday-to-Sunday describes a different seven days from the sheet
+      // it is nagging about, so "week of Mon 8/24" on the alert and
+      // "Aug 23 - Aug 29" on the certified-payroll page could both be
+      // about the same hours and never look like it. Matching the alert
+      // to the FILING's own week, rather than moving the filing to match
+      // the alert, is the direction that touches nothing already filed.
       const weeksWorked = new Set(
-        job.timeEntries.map((entry) => weekStart(isoDate(entry.date) as string)),
+        job.timeEntries.map((entry) => isoDate(certifiedPayrollWeekStart(entry.date)) as string),
       );
 
       for (const start of weeksWorked) {
@@ -238,6 +252,7 @@ export async function loadAlerts(
             weekStart: start,
             weekEnd: end,
             filingDueDays: job.prevailingWageDeterminations[0]?.ruleSet?.filingDueDays ?? null,
+            filingFrequency: job.prevailingWageDeterminations[0]?.ruleSet?.filingFrequency ?? null,
           });
         }
       }

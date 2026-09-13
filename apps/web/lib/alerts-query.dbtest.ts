@@ -307,8 +307,12 @@ describe("alerts assembled from real rows", () => {
     const { visible } = await loadAlerts(context.company.id, context.id, TODAY);
     const alert = visible.find((a) => a.kind === "CERTIFIED_PAYROLL");
     expect(alert).toBeDefined();
-    // 19 Aug 2026 is a Wednesday; the week starts Monday the 17th.
-    expect(alert?.key).toBe(`CERTIFIED_PAYROLL:${jobId}:2026-08-17`);
+    // 19 Aug 2026 is a Wednesday. #104 finding 7: this used to group by
+    // fieldReportWeeks' MONDAY-start week (17th) — the wrong convention
+    // here, since this alert chases the certified-payroll PAGE's own
+    // filing, and that page's week (lib/certified-payroll-week.ts) runs
+    // SUNDAY-to-Saturday, the 16th.
+    expect(alert?.key).toBe(`CERTIFIED_PAYROLL:${jobId}:2026-08-16`);
     expect(alert?.severity).toBe("OVERDUE");
   });
 
@@ -327,9 +331,11 @@ describe("alerts assembled from real rows", () => {
     // A report clipping the week is not evidence the week was filed.
     expect(visible.some((a) => a.kind === "CERTIFIED_PAYROLL")).toBe(true);
 
+    // The full week is now Sun 16 - Sat 22 (certified-payroll's own week,
+    // not fieldReportWeeks' Mon 17 - Sun 23 — see finding 7 above).
     await prisma.complianceDocument.update({
       where: { id: partial.id },
-      data: { periodStart: utc("2026-08-17"), periodEnd: utc("2026-08-23") },
+      data: { periodStart: utc("2026-08-16"), periodEnd: utc("2026-08-22") },
     });
     ({ visible } = await loadAlerts(context.company.id, context.id, TODAY));
     expect(visible.filter((a) => a.kind === "CERTIFIED_PAYROLL")).toEqual([]);

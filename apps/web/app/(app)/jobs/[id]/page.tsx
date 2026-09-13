@@ -241,7 +241,13 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
     prisma.lineItemCatalogEntry.findMany({ where: { companyId: company.id }, orderBy: { description: "asc" } }),
     prisma.craftClassification.findMany({
       where: { companyId: company.id },
-      include: { unionLocal: true, fringeRateSchedules: true },
+      include: {
+        unionLocal: true,
+        // Deterministic even though findEffectiveFringeRateSchedule no
+        // longer depends on fetch order to break a same-day tie — #104
+        // finding 3, so the raw list itself reads sensibly too.
+        fringeRateSchedules: { orderBy: { effectiveFrom: "desc" } },
+      },
       orderBy: { name: "asc" },
     }),
   ]);
