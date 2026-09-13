@@ -613,9 +613,15 @@ export type FilingFrequency = "WEEKLY" | "BIWEEKLY" | "SEMI_MONTHLY" | "MONTHLY"
 export type CertifiedPayrollAlertSource = {
   jobId: string;
   jobName: string;
-  /** The Monday of a finished week that has time entries on it. */
+  /** The SUNDAY of a finished week that has time entries on it.
+   *
+   * Sunday, not Monday — this comment said Monday until 2026-09-13 and #104
+   * finding 7 had already made it false. `alerts-query.ts` groups on
+   * `certifiedPayrollWeekStart`, which is Sunday-based by deliberate choice
+   * recorded in its own header, so the alert and the certified-payroll sheet
+   * describe the same seven days. `filingPeriod` below depends on this. */
   weekStart: string;
-  /** The Sunday. The report is due after the week closes, not during it. */
+  /** The SATURDAY. The report is due after the week closes, not during it. */
   weekEnd: string;
   /**
    * Days after the period closes that this jurisdiction actually allows,
@@ -641,47 +647,95 @@ export type CertifiedPayrollAlertSource = {
  * month with no hours in its first week still has the right due date once
  * hours do show up in a later one.
  *
+ * THE INVARIANT, and the one this function got wrong for its first week:
+ * `periodStart <= weekStart <= periodEnd`. A week must fall inside the period
+ * it is filed under. Asserted as a property over sixty consecutive Sundays
+ * and all four frequencies in `alerts.test.ts`, because the failure was every
+ * OTHER fortnight and any single well-chosen example passed.
+ *
  * WEEKLY and MONTHLY are unambiguous. SEMI_MONTHLY splits each month at the
  * 15th, a common convention with nothing in this schema to contradict it.
  * BIWEEKLY IS A JUDGMENT CALL, flagged rather than assumed: nothing in this
- * app records which Monday an employer's own biweekly cycle anchors to, so
- * this buckets by parity of the ISO week count from a fixed Monday
- * (2020-01-06). A jurisdiction whose real biweekly calendar falls on the
- * opposite parity will see this alert land one week later or earlier than
- * the actual due date — right frequency, possibly wrong week. Flagged in
- * PR #104 for Diego; the fix, if the parity turns out wrong for a real
- * jurisdiction, is an anchor date recorded on the rule set, not a change
- * here.
+ * app records which fortnight an employer's own biweekly cycle anchors to, so
+ * this buckets by parity of the week count from a fixed SUNDAY (2020-01-05).
+ * A jurisdiction whose real biweekly calendar falls on the opposite parity
+ * will see this alert land one week later or earlier than the actual due date
+ * — right frequency, possibly wrong week. Flagged in PR #104 for Diego; the
+ * fix, if the parity turns out wrong for a real jurisdiction, is an anchor
+ * date recorded on the rule set, not a change here.
+ *
+ * THAT EPOCH WAS A MONDAY (2020-01-06) UNTIL 2026-09-13, AND IT WAS ONE DAY
+ * OUT. The weeks reaching this function are SUNDAY-to-Saturday — #104 finding
+ * 7 moved `alerts-query.ts` onto `certifiedPayrollWeekStart` so the alert and
+ * the certified-payroll sheet describe the same seven days — but the fortnight
+ * was still anchored Monday-to-Sunday. Two consequences, both live: a period's
+ * stated `periodEnd` (Sunday 2026-08-23) was ALSO the first day of the next
+ * period's first week, so one calendar day belonged to two filings; and half
+ * of all weeks had a `weekStart` one day BEFORE the period they were filed
+ * under. A biweekly filer's due date was a day late on every fortnight.
+ * Moving the epoch to the Sunday before it shifts the epoch and every Sunday
+ * week-start by the same day, so `weekIndex` and therefore the `BW<n>` key are
+ * UNCHANGED — verified over 400 consecutive Sundays. That matters: the key is
+ * what an acknowledgement is recorded against, and renumbering would have
+ * silently un-dismissed every biweekly alert anyone had already acted on.
+ *
+ * KNOWN LIMITATION, deliberately not fixed here — a week is bucketed by the
+ * period its FIRST DAY falls in, so a week straddling a period boundary is
+ * filed wholly in the earlier period. A MONTHLY filer's week running
+ * 2026-08-30 to 2026-09-05 gets key "2026-08" and `periodEnd` "2026-08-31",
+ * six days of which had not happened yet; SEMI_MONTHLY does the same across
+ * the 15th. Splitting it needs per-day hours and `CertifiedPayrollAlertSource`
+ * carries none — it has a week and nothing inside the week — so fixing it here
+ * would mean inventing a distribution. WEEKLY and (since the Sunday fix)
+ * BIWEEKLY are immune: their periods are whole numbers of these same weeks.
+ * Characterized in `alerts.test.ts` so nobody changes it by accident.
  */
-function filingPeriod(
+export function filingPeriod(
   weekStart: string,
   frequency: FilingFrequency,
-): { key: string; periodEnd: string } {
+): { key: string; periodStart: string; periodEnd: string } {
   const [y, m, d] = weekStart.split("-").map(Number);
+  const month = weekStart.slice(0, 7);
   switch (frequency) {
     case "WEEKLY":
-      return { key: weekStart, periodEnd: addDays(weekStart, 6) };
+      return { key: weekStart, periodStart: weekStart, periodEnd: addDays(weekStart, 6) };
     case "MONTHLY": {
       const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
       return {
-        key: `${weekStart.slice(0, 7)}`,
-        periodEnd: `${weekStart.slice(0, 7)}-${String(lastDay).padStart(2, "0")}`,
+        key: month,
+        periodStart: `${month}-01`,
+        periodEnd: `${month}-${String(lastDay).padStart(2, "0")}`,
       };
     }
     case "SEMI_MONTHLY": {
       const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
       const half = d <= 15;
       return {
-        key: `${weekStart.slice(0, 7)}-${half ? "A" : "B"}`,
-        periodEnd: `${weekStart.slice(0, 7)}-${String(half ? 15 : lastDay).padStart(2, "0")}`,
+        key: `${month}-${half ? "A" : "B"}`,
+        periodStart: `${month}-${half ? "01" : "16"}`,
+        periodEnd: `${month}-${String(half ? 15 : lastDay).padStart(2, "0")}`,
       };
     }
     case "BIWEEKLY": {
-      const epoch = Date.UTC(2020, 0, 6); // an arbitrary Monday — see above
-      const weekIndex = Math.round((Date.UTC(y, m - 1, d) - epoch) / (7 * 86_400_000));
+      const epoch = Date.UTC(2020, 0, 5); // an arbitrary SUNDAY — see above
+      // Floor the asked-for date onto the SUNDAY that starts its week before
+      // indexing. Every caller passes a Sunday today, so this changes nothing
+      // reachable — the `BW<n>` key and therefore every recorded
+      // acknowledgement are untouched. It is here because `Math.round` alone
+      // makes the invariant above a LIE for half the week: a Thursday,
+      // Friday or Saturday rounds UP to the next fortnight and the function
+      // returns a period that STARTS AFTER the date it was asked about
+      // (`filingPeriod("2024-01-11", "BIWEEKLY")` gave 2024-01-14..01-27).
+      // Nobody passes those days now; `weekEnd` is a Saturday and is exactly
+      // the plausible next argument. A doc block promising a property the
+      // code does not hold is the failure this repo keeps paying for, so the
+      // property is made true rather than the sentence softened.
+      const asked = Date.UTC(y, m - 1, d);
+      const weekStartUtc = asked - new Date(asked).getUTCDay() * 86_400_000;
+      const weekIndex = Math.round((weekStartUtc - epoch) / (7 * 86_400_000));
       const periodIndex = Math.floor(weekIndex / 2);
       const periodStart = new Date(epoch + periodIndex * 14 * 86_400_000).toISOString().slice(0, 10);
-      return { key: `BW${periodIndex}`, periodEnd: addDays(periodStart, 13) };
+      return { key: `BW${periodIndex}`, periodStart, periodEnd: addDays(periodStart, 13) };
     }
   }
 }
