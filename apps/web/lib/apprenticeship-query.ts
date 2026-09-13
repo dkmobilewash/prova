@@ -118,23 +118,66 @@ export async function loadApprenticeships(
     // CONTRADICTORY and does not otherwise favour one over the other, so
     // neither is preferred here either) — never later than `today`, since
     // a data-entry mistake dating the close in the future must not credit
-    // hours that have not happened yet. And it is scoped to the SAME craft
-    // as this enrollment, when one is recorded, so a second enrollment in
-    // a different craft cannot pull in hours that belong to the first.
+    // hours that have not happened yet. The craft half of that fix is
+    // narrower than it first shipped and is explained at `craftScope`
+    // below: a TAGGED hour belongs to the enrollment in that craft, an
+    // UNTAGGED one belongs to nobody in particular and still counts.
     const enrollmentEnd = e.completedOn ?? e.cancelledOn;
     const periodEnd = enrollmentEnd !== null && enrollmentEnd < today ? enrollmentEnd : today;
+
+    // The craft condition, and it is OR rather than equality for a reason
+    // worth spelling out — #104 finding 9 shipped the equality and it
+    // silently dropped the ordinary case.
+    //
+    // `TimeEntry.craftClassificationId` is NULLABLE and LogTimeEntryForm's
+    // craft select defaults to "No craft tag", so an untagged entry is the
+    // default state of a timesheet rather than an edge case. A Prisma
+    // scalar equality compiles to SQL `=`, and `=` NEVER MATCHES NULL — so
+    // scoping to the enrollment's craft threw away every untagged hour and
+    // reported an apprentice as behind their programme on the one record
+    // that gates work on public jobs. An OJT figure reading low there is
+    // read as an apprentice who has not done the hours.
+    //
+    // So: the entry's craft equals this enrollment's craft, OR the entry
+    // has no craft at all. Tagged hours stay attributed to exactly one
+    // enrollment, which is what finding 9 was actually about; untagged
+    // hours count again, as they did before that change.
+    //
+    // Null on the ENROLLMENT is a different thing and unchanged: no craft
+    // recorded means nothing to disambiguate with, so every hour counts.
+    // Prisma drops an `undefined` filter rather than matching it
+    // literally, so the query only narrows when a craft IS on file.
+    //
+    // THE RESIDUAL THIS CANNOT REACH, written down rather than left to be
+    // rediscovered: two enrollments open at once for the same apprentice
+    // in DIFFERENT crafts both count the same untagged hours. That is a
+    // knowing over-count of the untagged portion, and it is the better of
+    // the two available wrongs — the alternative drops those hours from
+    // both, which is a figure reading low for every ordinary
+    // single-indenture apprentice and not just this rare shape. Attributing
+    // an untagged hour to one of the two by any rule this code could invent
+    // (earliest enrolled, say) would be a guess about which craft somebody
+    // worked, recorded as a fact on a compliance record. The honest fix is
+    // to report untagged hours as unattributable the way loadRatioReviews
+    // does — see apprentice-ratio.ts, where a day with unclassified hours
+    // is INCOMPLETE and never WITHIN — which is a UI change as well as a
+    // query one, so it is a follow-up rather than part of this one.
+    const craftScope =
+      row.craftClassificationId === null
+        ? {}
+        : {
+            OR: [
+              { craftClassificationId: row.craftClassificationId },
+              { craftClassificationId: null },
+            ],
+          };
 
     const worked = await prisma.timeEntry.aggregate({
       _sum: { hours: true },
       where: {
         employeeUserId: row.apprenticeUserId,
         job: { companyId },
-        // Null on the enrollment means no craft recorded — nothing to
-        // disambiguate with, so every hour counts, matching prior
-        // behaviour for a half-configured enrollment. Prisma drops an
-        // `undefined` filter rather than matching it literally, so this
-        // only narrows the query when a craft IS on file.
-        craftClassificationId: row.craftClassificationId ?? undefined,
+        ...craftScope,
         date: {
           gte: new Date(`${startedOn}T00:00:00.000Z`),
           lte: new Date(`${periodEnd}T00:00:00.000Z`),
