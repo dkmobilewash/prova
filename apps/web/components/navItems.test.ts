@@ -121,6 +121,10 @@ describe("the collapsible rail (#240)", () => {
     // the first four; it just no longer has two silent groups wedged
     // into the middle of it.
     expect(NAV_GROUPS.map((g) => g.heading)).toEqual([
+      // First, added 2026-09-13: the assistant was filed under
+      // Pre-construction behind Jobs & Estimates — the least findable
+      // place for the most distinctive thing in the product.
+      "Ask C Stream",
       "Pre-construction",
       "Operations",
       "Financials",
@@ -162,6 +166,6 @@ describe("the collapsible rail (#240)", () => {
     const owner = { role: "OWNER" as const, jobFunction: null };
     const headings = navGroupsFor(owner, { showsSalesCrm: true }).map((g) => g.heading);
     expect(headings.at(-1)).toBe("Internal");
-    expect(headings).toHaveLength(7);
+    expect(headings).toHaveLength(8); // 7 + "Ask C Stream"
   });
 });

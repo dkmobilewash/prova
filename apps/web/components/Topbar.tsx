@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { UserButton } from "@clerk/nextjs";
 import { MobileNav } from "@/components/MobileNav";
+import { AskLauncher } from "@/components/AskLauncher";
 import type { Principal } from "@/lib/permissions";
 
 /** Dark chrome: the charcoal bar (#171717, same surface as the rail)
@@ -31,6 +32,10 @@ export function Topbar({
       {/* Renders nothing above md — the desktop rail is always visible there. */}
       <MobileNav companyName={companyName} principal={principal} showsSalesCrm={showsSalesCrm} />
       <div className="ml-auto flex items-center gap-3">
+        {/* Ask, on every page. It sits FIRST — left of the bell and the
+            avatar — because it is the thing people are meant to reach for,
+            and chrome reads left to right in order of intent. */}
+        <AskLauncher />
         <Link
           href="/alerts"
           aria-label={

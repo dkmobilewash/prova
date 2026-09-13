@@ -265,6 +265,8 @@ const PAGE_ONLY_CAPABILITY: Record<string, Capability> = {
  * about. A reason string is cheap; an unlisted door cost us this pass.
  */
 const OPEN_ROUTES: Record<string, string> = {
+  "/ask":
+    "The assistant. Open to everyone, the same as /dashboard: every command it can run gates itself by capability inside the panel, so a person is only ever offered what they could already do by hand.",
   "/dashboard":
     "Where everyone lands, and where NoAccess sends people back to. Its money — margin, receivables — is withheld section by section inside the page and pinned by lib/page-money-guards.test.ts.",
   "/alerts":
