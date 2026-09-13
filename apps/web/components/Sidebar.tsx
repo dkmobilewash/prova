@@ -29,10 +29,23 @@ import type { MoneyRailFigure, MoneyRailStage } from "@/lib/moneyRail";
  * "Always visible" is structural rather than a hope about content fitting,
  * and the mechanism is ONE explicit number — `min-h-16` on an open group:
  *
- *  1. an open group may shrink (it is a flex child of the column), and 64px
- *     is the measured height of a heading plus its figure, so a squeezed
- *     group gives up ITEM height and never figure height. The item list is a
+ *  1. an open group may shrink (it is a flex child of the column), and the
+ *     floor is the height of a heading plus its figure, so a squeezed group
+ *     gives up ITEM height and never figure height. The item list is a
  *     scroll container, so those items stay reachable inside it;
+ *
+ *     THE FLOOR IS 72px, NOT 64px, SINCE 2026-09-13, and the reason is the
+ *     whole point of this note: 64px was MEASURED against the old type
+ *     scale. Cyrus asked for the rail to be bigger and bolder, which raised
+ *     the heading from 10px to 12px and the figure's sub-label leading from
+ *     16px to 20px — about 5px more header. A floor left at 64px would no
+ *     longer clear the thing it exists to protect, and the figure could clip
+ *     on a squeezed group: the bug this file was written to fix, reintroduced
+ *     by a type change three hundred lines away. If the type scale moves
+ *     again, RE-MEASURE this number. It is not a round constant, it is a
+ *     measurement, and it has an expiry date attached to the font sizes
+ *     above it. 72px is computed from the deltas rather than measured in a
+ *     browser, so it wants one visual check on a short window;
  *  2. `min-h-16` is what MAKES the shrink legal. A flex item's automatic
  *     minimum size is its min-content height, and a group's min-content
  *     height includes its item list's full height even though that list is
@@ -148,7 +161,7 @@ function StageFigure({ stage }: { stage: MoneyRailStage }) {
       <span className="block truncate text-lg font-semibold leading-tight tabular-nums text-brand">
         {figureMain(stage.figure)}
       </span>
-      <span className="block truncate text-[11px] leading-4 text-neutral-400">
+      <span className="block truncate text-xs font-medium leading-5 text-neutral-300">
         {figureSub(stage)}
       </span>
     </span>
@@ -268,12 +281,12 @@ export function Sidebar({
           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-brand text-sm font-semibold text-neutral-900">
             P
           </span>
-          <span className="truncate whitespace-nowrap text-sm font-semibold text-white">
+          <span className="truncate whitespace-nowrap text-[15px] font-semibold text-white">
             {companyName}
           </span>
         </div>
 
-        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overflow-x-hidden py-3">
+        <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto overflow-x-hidden py-4">
           {groups.map((group) => {
             const stageKey = STAGE_KEY_FOR_HEADING[group.heading];
             const stage = stageKey ? stageByKey.get(stageKey) : undefined;
@@ -294,7 +307,7 @@ export function Sidebar({
                     sets of numbers. A CLOSED group is already at that floor,
                     so it is shrink-0: nothing to give. */}
                 <div
-                  className={`flex flex-col gap-0.5 ${isOpen ? "min-h-16" : "shrink-0"}`}
+                  className={`flex flex-col gap-1 ${isOpen ? "min-h-[72px]" : "shrink-0"}`}
                 >
                   <button
                     type="button"
@@ -312,7 +325,7 @@ export function Sidebar({
                     className="shrink-0 cursor-pointer pt-0.5 text-left hover:bg-rail-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand"
                   >
                     <span className="flex items-center gap-1.5 px-4">
-                      <span className="min-w-0 flex-1 truncate whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
+                      <span className="min-w-0 flex-1 truncate whitespace-nowrap text-xs font-bold uppercase tracking-wider text-neutral-300">
                         {group.heading}
                       </span>
                       <Chevron open={isOpen} />
@@ -329,7 +342,7 @@ export function Sidebar({
                   <div
                     id={panelId}
                     hidden={!isOpen}
-                    className={isOpen ? "flex min-h-0 flex-col gap-0.5 overflow-y-auto" : "hidden"}
+                    className={isOpen ? "flex min-h-0 flex-col gap-1 overflow-y-auto" : "hidden"}
                   >
                     {isOpen
                       ? group.items.map((item) => {
@@ -348,7 +361,7 @@ export function Sidebar({
                                 key={item.href}
                                 title={`${item.label} — coming soon`}
                                 aria-disabled="true"
-                                className="flex h-10 shrink-0 cursor-not-allowed items-center gap-3 px-4 text-sm font-medium text-neutral-600"
+                                className="flex h-11 shrink-0 cursor-not-allowed items-center gap-3 px-4 text-[15px] font-semibold text-neutral-600"
                               >
                                 <span className="shrink-0 opacity-50">{item.icon}</span>
                                 <span className="truncate whitespace-nowrap">{item.label}</span>
@@ -362,7 +375,7 @@ export function Sidebar({
                               href={item.href}
                               aria-current={isActive ? "page" : undefined}
                               title={item.label}
-                              className={`flex h-10 shrink-0 items-center gap-3 px-4 text-sm font-medium transition-colors ${
+                              className={`flex h-11 shrink-0 items-center gap-3 px-4 text-[15px] font-semibold transition-colors ${
                                 isActive
                                   ? "bg-rail-hover text-brand shadow-[inset_3px_0_0_#facc15]"
                                   : "text-neutral-300 hover:bg-rail-hover hover:text-white"
@@ -379,7 +392,7 @@ export function Sidebar({
 
                 {provingStage && group.heading === buildingHeading ? (
                   <div className="flex shrink-0 flex-col gap-0.5">
-                    <p className="truncate whitespace-nowrap px-4 text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
+                    <p className="truncate whitespace-nowrap px-4 text-xs font-bold uppercase tracking-wider text-neutral-300">
                       {provingStage.label}
                     </p>
                     <StageFigure stage={provingStage} />
