@@ -523,18 +523,6 @@ const groupIcon = (d: string) => (
 
 export const NAV_GROUPS: NavGroup[] = [
   {
-    // FIRST on the rail, on Cyrus's call while staging the demo. The
-    // assistant was reachable only from the dashboard, filed under
-    // "Pre-construction" behind Jobs & Estimates — the most distinctive
-    // thing in the product, in the least findable place. It is also on
-    // every page now via the Topbar launcher; this group is what makes it
-    // FINDABLE, which is a different job from making it reachable.
-    heading: "Ask C Stream",
-    // A four-point spark.
-    icon: groupIcon("M10 2.5 11.6 7l4.4 1.6L11.6 10 10 14.5 8.4 10 4 8.6 8.4 7 10 2.5Z"),
-    items: [item("/ask")],
-  },
-  {
     heading: "Pre-construction",
     // A flag: the work you are chasing.
     icon: groupIcon("M5 16.5v-13M5 4h9.5l-2.5 3.25 2.5 3.25H5"),

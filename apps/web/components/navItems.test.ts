@@ -34,7 +34,11 @@ import { JOB_FUNCTIONS } from "@/lib/permissions";
  *  job-function capabilities every other item uses, and is appended by
  *  navGroupsFor. Named here so the exception is a decision on the record
  *  rather than a hole in the check. */
-const APPENDED_SEPARATELY = new Set(["/sales"]);
+// "/ask" is rendered by Sidebar as a standalone link ABOVE the groups. A
+// collapsible group holding a single item costs a click to reveal that
+// there was nothing to choose, so Ask is a one-click link pinned outside
+// the scroll — and it is in the Topbar on every page as well.
+const APPENDED_SEPARATELY = new Set(["/sales", "/ask"]);
 
 function groupedHrefs(groups: typeof NAV_GROUPS): Set<string> {
   return new Set(groups.flatMap((g) => g.items.map((i) => i.href)));
@@ -121,10 +125,6 @@ describe("the collapsible rail (#240)", () => {
     // the first four; it just no longer has two silent groups wedged
     // into the middle of it.
     expect(NAV_GROUPS.map((g) => g.heading)).toEqual([
-      // First, added 2026-09-13: the assistant was filed under
-      // Pre-construction behind Jobs & Estimates — the least findable
-      // place for the most distinctive thing in the product.
-      "Ask C Stream",
       "Pre-construction",
       "Operations",
       "Financials",
@@ -166,6 +166,6 @@ describe("the collapsible rail (#240)", () => {
     const owner = { role: "OWNER" as const, jobFunction: null };
     const headings = navGroupsFor(owner, { showsSalesCrm: true }).map((g) => g.heading);
     expect(headings.at(-1)).toBe("Internal");
-    expect(headings).toHaveLength(8); // 7 + "Ask C Stream"
+    expect(headings).toHaveLength(7);
   });
 });

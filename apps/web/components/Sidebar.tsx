@@ -286,6 +286,34 @@ export function Sidebar({
           </span>
         </div>
 
+        {/* Ask is a LINK, not a collapsible group. It was briefly a group of
+            its own and Cyrus killed it on sight, correctly: a disclosure
+            triangle that hides exactly one item is pure friction — you pay a
+            click to learn there was nothing to choose. It sits above the
+            groups, outside the scroll, so it never moves and is always the
+            first thing on the rail. */}
+        <div className="shrink-0 px-2 pt-3">
+          <Link
+            href="/ask"
+            data-ask-link
+            className={`flex min-h-11 items-center gap-3 rounded-md px-2 text-[15px] font-semibold transition-colors ${
+              pathname === "/ask"
+                ? "bg-brand text-neutral-900"
+                : "text-ink hover:bg-rail-hover"
+            }`}
+          >
+            <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5 shrink-0" aria-hidden="true">
+              <path
+                d="M10 2.5 11.6 7l4.4 1.6L11.6 10 10 14.5 8.4 10 4 8.6 8.4 7 10 2.5Z"
+                stroke="currentColor"
+                strokeWidth="1.3"
+                strokeLinejoin="round"
+              />
+            </svg>
+            <span className="truncate whitespace-nowrap">Ask C Stream</span>
+          </Link>
+        </div>
+
         <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto overflow-x-hidden py-4">
           {groups.map((group) => {
             const stageKey = STAGE_KEY_FOR_HEADING[group.heading];
