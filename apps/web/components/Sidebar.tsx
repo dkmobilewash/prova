@@ -329,7 +329,15 @@ export function Sidebar({
                     // #240's hook, kept: a click-through can name a group
                     // without reading its text or its colour.
                     data-nav-group={group.heading}
-                    className="sticky top-0 z-10 shrink-0 cursor-pointer bg-rail pt-0.5 text-left hover:bg-rail-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand"
+                    // min-h-11 is 44px, the standard pointer/touch target.
+                    // Without it a group with NO figure is only its 12px
+                    // heading line — Paper trail and Logistics were about
+                    // 20px tall and felt unnatural to hit, while the four
+                    // that carry a figure were ~70px. The floor makes every
+                    // heading the same easy target whether it has a number
+                    // under it or not. w-full so the whole row is the
+                    // target, not just the text.
+                    className="sticky top-0 z-10 flex w-full min-h-11 shrink-0 cursor-pointer flex-col justify-center bg-rail py-2 text-left hover:bg-rail-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand"
                   >
                     <span className="flex items-center gap-1.5 px-4">
                       <span className="min-w-0 flex-1 truncate whitespace-nowrap text-xs font-bold uppercase tracking-wider text-neutral-300">
