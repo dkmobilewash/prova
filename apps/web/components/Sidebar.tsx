@@ -263,9 +263,16 @@ export function Sidebar({
   //
   // If it does move, it is two edits: add `"Paper trail": "proving"` to the
   // map above and delete the sibling row at the bottom of the group loop.
+  // MOVED 2026-09-13, on Cyrus's call while staging the demo: the Proving
+  // row now sits after the group carrying "getting-paid" (Financials)
+  // rather than after "building" (Operations). The rail reads big money
+  // first — 418k, 776k, 648k — and only then the two small counts, Proving
+  // and Compliance. Anchoring by STAGE KEY rather than by heading text is
+  // deliberate: the headings are Cyrus's to rename and the anchor should
+  // not quietly break when he does.
   const provingStage = stageByKey.get("proving");
-  const buildingHeading = Object.entries(STAGE_KEY_FOR_HEADING).find(
-    ([, key]) => key === "building",
+  const provingAfterHeading = Object.entries(STAGE_KEY_FOR_HEADING).find(
+    ([, key]) => key === "getting-paid",
   )?.[0];
 
   return (
@@ -390,7 +397,7 @@ export function Sidebar({
                   </div>
                 </div>
 
-                {provingStage && group.heading === buildingHeading ? (
+                {provingStage && group.heading === provingAfterHeading ? (
                   <div className="flex shrink-0 flex-col gap-0.5">
                     <p className="truncate whitespace-nowrap px-4 text-xs font-bold uppercase tracking-wider text-neutral-300">
                       {provingStage.label}
