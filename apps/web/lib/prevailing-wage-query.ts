@@ -209,10 +209,21 @@ export async function reviewJobWeek(
   // on `weekStartIso` — the same "which one applied back then" question
   // FringeRateSchedule already answers for wages via
   // findEffectiveFringeRateSchedule.
+  //
+  // The orderBy mirrors findEffectiveRuleSet's own comparator — latest
+  // effectiveFrom first, id breaking a tie — so the rows arrive in the
+  // order the answer is taken from, and a reader debugging a week's
+  // classification sees the same sequence the function reasoned over.
+  // Determinism does NOT depend on it: findMany without an ORDER BY has no
+  // guaranteed order, so the pure function decides among the rows that
+  // match rather than trusting whichever came first. Belt and braces
+  // deliberately, because this is the first application call site
+  // findEffectiveRuleSet has ever had and the next one will copy it.
   const determination = job.prevailingWageDeterminations[0] ?? null;
   const candidates = determination
     ? await prisma.prevailingWageRuleSet.findMany({
         where: { companyId, jurisdiction: determination.jurisdiction },
+        orderBy: [{ effectiveFrom: "desc" }, { id: "desc" }],
       })
     : [];
 

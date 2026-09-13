@@ -49,6 +49,79 @@ describe("findEffectiveRuleSet", () => {
     // producing confident wrong answers.
     expect(findEffectiveRuleSet([newer], "2026-01-15")).toBeNull();
   });
+
+  describe("the answer cannot depend on the order the rule sets arrived in", () => {
+    // PrevailingWageRuleSet_no_overlapping_rules (20260902021139) is
+    // EXCLUDE USING gist (companyId WITH =, jurisdiction WITH =,
+    // tsrange(effectiveFrom, COALESCE(effectiveTo, 'infinity')) WITH &&).
+    // tsrange's default bounds are [inclusive, exclusive), so two rule sets
+    // where A.effectiveTo == B.effectiveFrom are ADJACENT to Postgres, not
+    // overlapping, and both insert cleanly — while the lookup above treats
+    // effectiveTo as inclusive, so BOTH match on that shared day. The same
+    // hole FringeRateSchedule had (issue #104 finding 3), in the same
+    // shape, and the migration's own comment states the cost: "the rules
+    // that applied that week" would depend on row order.
+    //
+    // The caller (lib/prevailing-wage-query.ts) reads these with
+    // findMany, and Postgres guarantees no order without an ORDER BY, so
+    // "whichever came first" is not a stable choice — a payroll clerk can
+    // get two different overtime classifications for one signed week from
+    // two page loads. Determinism is asserted HERE, in the pure function,
+    // so it cannot be lost by a caller forgetting an orderBy.
+    it("prefers the later rule set on a same-day changeover, in both array orders", () => {
+      const ending = { effectiveFrom: "2026-01-01", effectiveTo: "2026-06-01", id: "rs_ending" };
+      const starting = { effectiveFrom: "2026-06-01", effectiveTo: null, id: "rs_starting" };
+      const sharedDay = "2026-06-01";
+
+      expect(findEffectiveRuleSet([ending, starting], sharedDay)?.id).toBe("rs_starting");
+      // The actual bug: before the fix this second call returned
+      // "rs_ending", purely because of array order.
+      expect(findEffectiveRuleSet([starting, ending], sharedDay)?.id).toBe("rs_starting");
+    });
+
+    it("is deterministic across three rule sets in every fetch order", () => {
+      // Two back-to-back same-day changeovers. The second changeover day is
+      // covered by both b and c; the latest effectiveFrom that still
+      // matches is c, in every ordering.
+      const a = { effectiveFrom: "2026-01-01", effectiveTo: "2026-03-01", id: "rs_a" };
+      const b = { effectiveFrom: "2026-03-01", effectiveTo: "2026-06-01", id: "rs_b" };
+      const c = { effectiveFrom: "2026-06-01", effectiveTo: null, id: "rs_c" };
+      const orderings = [
+        [a, b, c],
+        [c, b, a],
+        [b, a, c],
+        [c, a, b],
+      ];
+      for (const ordering of orderings) {
+        expect(findEffectiveRuleSet(ordering, "2026-06-01")?.id).toBe("rs_c");
+      }
+    });
+
+    it("breaks an identical-effectiveFrom tie on a stable key, not array order", () => {
+      // Reachable, not hypothetical. createPrevailingWageRuleSet rejects
+      // only effectiveTo STRICTLY BEFORE effectiveFrom
+      // (lib/actions/prevailingWage.ts), so a one-day rule set with
+      // effectiveTo == effectiveFrom is accepted — and its tsrange is
+      // [x, x), which is EMPTY, and an empty range overlaps nothing. The
+      // exclusion constraint therefore cannot refuse it alongside a real
+      // rule set beginning the same day, and both share an effectiveFrom.
+      //
+      // "Latest effectiveFrom wins" has nothing left to compare here, so a
+      // reduce with a strict > silently falls back to array order — the
+      // flaw carried by labor-cost.ts's equivalent. The id is the primary
+      // key, so comparing it is a TOTAL order and always answers.
+      const oneDay = { effectiveFrom: "2026-06-01", effectiveTo: "2026-06-01", id: "rs_aaa" };
+      const ongoing = { effectiveFrom: "2026-06-01", effectiveTo: null, id: "rs_zzz" };
+
+      const forwards = findEffectiveRuleSet([oneDay, ongoing], "2026-06-01");
+      const backwards = findEffectiveRuleSet([ongoing, oneDay], "2026-06-01");
+      expect(forwards?.id).toBe(backwards?.id);
+      // Documented tiebreak: the greater id. Arbitrary as a judgment about
+      // which rule set a clerk meant — an id cannot know that — but stable,
+      // which is the only property being claimed.
+      expect(forwards?.id).toBe("rs_zzz");
+    });
+  });
 });
 
 describe("hasOvertimeRules", () => {
