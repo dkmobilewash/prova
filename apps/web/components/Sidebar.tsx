@@ -26,39 +26,32 @@ import type { MoneyRailFigure, MoneyRailStage } from "@/lib/moneyRail";
  * below the fold. A rail that hides your money to show you a link to
  * Settings has defeated itself.
  *
- * "Always visible" is structural rather than a hope about content fitting,
- * and the mechanism is ONE explicit number — `min-h-16` on an open group:
+ * "Always visible" was STRUCTURAL, and the mechanism was one number —
+ * `min-h-16` on an open group, the measured height of a heading plus its
+ * figure. An open group could shrink to it, giving up ITEM height so a
+ * figure never scrolled away, and the item list was its own scroll box.
  *
- *  1. an open group may shrink (it is a flex child of the column), and the
- *     floor is the height of a heading plus its figure, so a squeezed group
- *     gives up ITEM height and never figure height. The item list is a
- *     scroll container, so those items stay reachable inside it;
+ * REPLACED 2026-09-13, and the reason is worth more than the mechanism was.
+ * It did keep every figure on screen. What it did on a real screen, with
+ * four groups open, was give each group a 72px box of its own: Pre-construction
+ * showed four of its seven items, Financials one of three, and nothing on
+ * screen said there was more. The items were reachable and the rail looked
+ * broken, which is the worse half of that trade. Cyrus hit it while staging
+ * the demo, and it is the second time this file has learned that a rule
+ * proved at one window size behaves differently once somebody actually opens
+ * everything.
  *
- *     THE FLOOR IS 72px, NOT 64px, SINCE 2026-09-13, and the reason is the
- *     whole point of this note: 64px was MEASURED against the old type
- *     scale. Cyrus asked for the rail to be bigger and bolder, which raised
- *     the heading from 10px to 12px and the figure's sub-label leading from
- *     16px to 20px — about 5px more header. A floor left at 64px would no
- *     longer clear the thing it exists to protect, and the figure could clip
- *     on a squeezed group: the bug this file was written to fix, reintroduced
- *     by a type change three hundred lines away. If the type scale moves
- *     again, RE-MEASURE this number. It is not a round constant, it is a
- *     measurement, and it has an expiry date attached to the font sizes
- *     above it. 72px is computed from the deltas rather than measured in a
- *     browser, so it wants one visual check on a short window;
- *  2. `min-h-16` is what MAKES the shrink legal. A flex item's automatic
- *     minimum size is its min-content height, and a group's min-content
- *     height includes its item list's full height even though that list is
- *     `overflow-y-auto` — measured in Chromium at 1280x800, five groups open:
- *     with no floor nothing shrank at all (column scrollHeight 1469 against
- *     744 of room) and the last two figures sat at y=838 and y=1367, off a
- *     1367px-tall rail in an 800px window. That is the bug this file is
- *     fixing, reproduced. With the floor, the same five groups fit in 744
- *     with no column scroll and the last figure lands at y=745;
- *  3. the column still has `overflow-y-auto` as a last resort, so on a
- *     genuinely short window (below roughly 530px, where even the headings
- *     alone do not fit) nothing becomes unreachable — it just stops being
- *     scroll-free.
+ * Now: nothing shrinks, every group is its natural height, the COLUMN
+ * scrolls, and each group's heading is `sticky top-0` against the rail's own
+ * background. So the figure of the group you are reading stays pinned at the
+ * top while its items scroll underneath it, and the group you scroll into
+ * takes over the pin. The guarantee is unchanged — you can always see a
+ * figure, and you can always reach every item — but it is paid for with a
+ * scroll rather than a squeeze, and every item gets its full height.
+ *
+ * The sticky heading MUST carry an opaque background (`bg-rail`). Without it
+ * the items scroll visibly through the heading text, which looks like a
+ * rendering fault rather than a pinned header.
  *
  * Collapsed, the whole rail measures 463px at 1280x800 — logo row, five
  * headings, five figures — so every figure is on screen with room for the
@@ -307,15 +300,22 @@ export function Sidebar({
               // keeps its place in pipeline order without inheriting
               // Operations' collapse.
               <Fragment key={group.heading}>
-                {/* min-h-16 (64px) is the floor an OPEN group may shrink to:
-                    heading + figure, measured. Without it the flex algorithm
-                    will not shrink the group at all and the column scrolls
-                    the figures away — see the docstring, which has the two
-                    sets of numbers. A CLOSED group is already at that floor,
-                    so it is shrink-0: nothing to give. */}
-                <div
-                  className={`flex flex-col gap-1 ${isOpen ? "min-h-[72px]" : "shrink-0"}`}
-                >
+                {/* REPLACED 2026-09-13. This used to carry a min-height floor
+                    so an open group could SHRINK, giving up item height to
+                    keep its figure on screen. It worked, and it was wrong in
+                    a way only a real screen shows: with four groups open each
+                    one became its own 72px scroll box, so Pre-construction
+                    showed four of its seven items and Financials one of three
+                    — with no affordance saying there was more. Reachable, and
+                    indistinguishable from broken.
+
+                    Now nothing shrinks. Every group is its natural height,
+                    the COLUMN scrolls, and the heading below is sticky — so
+                    the figure of the group you are reading stays pinned at
+                    the top of the rail while its items scroll under it. Same
+                    guarantee ("you can always see the money"), paid for with
+                    a scroll instead of a squeeze. */}
+                <div className="flex shrink-0 flex-col gap-1">
                   <button
                     type="button"
                     onClick={() =>
@@ -329,7 +329,7 @@ export function Sidebar({
                     // #240's hook, kept: a click-through can name a group
                     // without reading its text or its colour.
                     data-nav-group={group.heading}
-                    className="shrink-0 cursor-pointer pt-0.5 text-left hover:bg-rail-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand"
+                    className="sticky top-0 z-10 shrink-0 cursor-pointer bg-rail pt-0.5 text-left hover:bg-rail-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand"
                   >
                     <span className="flex items-center gap-1.5 px-4">
                       <span className="min-w-0 flex-1 truncate whitespace-nowrap text-xs font-bold uppercase tracking-wider text-neutral-300">
@@ -349,7 +349,7 @@ export function Sidebar({
                   <div
                     id={panelId}
                     hidden={!isOpen}
-                    className={isOpen ? "flex min-h-0 flex-col gap-1 overflow-y-auto" : "hidden"}
+                    className={isOpen ? "flex flex-col gap-1" : "hidden"}
                   >
                     {isOpen
                       ? group.items.map((item) => {
