@@ -483,6 +483,89 @@ describe("certifiedPayrollAlerts", () => {
     expect(alert.severity).toBe("DUE_SOON");
     expect(alert.dueOn).toBe("2026-09-06");
   });
+
+  describe("issue #104 finding 6: filingFrequency was recorded and read by nothing", () => {
+    // Before the fix, this raised one alert per uncovered WEEK regardless
+    // of what the jurisdiction's own rule set said about how often it
+    // actually wants a report — a monthly filer got roughly four "past the
+    // filing window" alerts a month, one per week, each one citing that
+    // same jurisdiction's own filingDueDays as though every week were its
+    // own deadline.
+    const LATER_TODAY = "2026-09-20";
+
+    it("raises exactly one alert for a whole unfiled MONTH, not one per week", () => {
+      // Four weeks of August, all uncovered, all on the same monthly filer.
+      const augustWeeks = [
+        { jobId: "job_1", jobName: "Mercy Tower", weekStart: "2026-08-03", weekEnd: "2026-08-09" },
+        { jobId: "job_1", jobName: "Mercy Tower", weekStart: "2026-08-10", weekEnd: "2026-08-16" },
+        { jobId: "job_1", jobName: "Mercy Tower", weekStart: "2026-08-17", weekEnd: "2026-08-23" },
+        { jobId: "job_1", jobName: "Mercy Tower", weekStart: "2026-08-24", weekEnd: "2026-08-30" },
+      ].map((w) => ({ ...w, filingFrequency: "MONTHLY" as const, filingDueDays: 10 }));
+
+      const alerts = certifiedPayrollAlerts(augustWeeks, LATER_TODAY);
+      expect(alerts).toHaveLength(1);
+      // Period end is 31 Aug (the whole month, even though no week's own
+      // weekEnd landed exactly there), due 10 days later on 10 Sep.
+      expect(alerts[0].dueOn).toBe("2026-09-10");
+      expect(alerts[0].severity).toBe("OVERDUE");
+      expect(alerts[0].key).toBe("CERTIFIED_PAYROLL:job_1:2026-08");
+    });
+
+    it("still raises one alert per week for the WEEKLY default, unchanged from before this fix", () => {
+      const weeks = [
+        { ...week, filingFrequency: "WEEKLY" as const },
+        { ...week, weekStart: "2026-08-24", weekEnd: "2026-08-30", filingFrequency: "WEEKLY" as const },
+      ];
+      expect(certifiedPayrollAlerts(weeks, TODAY)).toHaveLength(2);
+    });
+
+    it("does not raise a monthly alert until the whole month has closed", () => {
+      // This WEEK has already ended (6 Sep, before "today" of 10 Sep) --
+      // the pre-existing per-week gate alone would let it through. The
+      // PERIOD it belongs to (all of September) has not, so a monthly
+      // filer must not be nagged yet just because one week inside it is
+      // over.
+      const oneFinishedWeekMidMonth = [
+        { jobId: "job_1", jobName: "Mercy Tower", weekStart: "2026-09-01", weekEnd: "2026-09-06" },
+      ].map((w) => ({ ...w, filingFrequency: "MONTHLY" as const }));
+      expect(certifiedPayrollAlerts(oneFinishedWeekMidMonth, "2026-09-10")).toEqual([]);
+    });
+
+    it("splits SEMI_MONTHLY at the 15th", () => {
+      const firstHalf = {
+        jobId: "job_1",
+        jobName: "Mercy Tower",
+        weekStart: "2026-08-03",
+        weekEnd: "2026-08-09",
+        filingFrequency: "SEMI_MONTHLY" as const,
+      };
+      const secondHalf = {
+        jobId: "job_1",
+        jobName: "Mercy Tower",
+        weekStart: "2026-08-17",
+        weekEnd: "2026-08-23",
+        filingFrequency: "SEMI_MONTHLY" as const,
+      };
+      const alerts = certifiedPayrollAlerts([firstHalf, secondHalf], LATER_TODAY);
+      expect(alerts).toHaveLength(2);
+      expect(alerts.find((a) => a.key.endsWith("-A"))?.dueOn).toBe("2026-08-22"); // 15th + 7 default
+      expect(alerts.find((a) => a.key.endsWith("-B"))?.dueOn).toBe("2026-09-07"); // 31st + 7 default
+    });
+
+    it("keeps a job's weekly-frequency alert independent of another job's monthly one", () => {
+      const alerts = certifiedPayrollAlerts(
+        [
+          { ...week, jobId: "job_weekly", filingFrequency: "WEEKLY" as const },
+          { ...week, jobId: "job_monthly", filingFrequency: "MONTHLY" as const },
+        ],
+        TODAY,
+      );
+      expect(alerts).toHaveLength(2);
+      expect(new Set(alerts.map((a) => a.key.split(":")[1]))).toEqual(
+        new Set(["job_weekly", "job_monthly"]),
+      );
+    });
+  });
 });
 
 describe("wipAlerts", () => {

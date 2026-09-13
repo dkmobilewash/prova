@@ -581,4 +581,103 @@ describe("isWhollyUnpriced", () => {
     expect(isWhollyUnpriced({ hours: 8, uncomputedHours: 0 })).toBe(false);
     expect(isWhollyUnpriced({ hours: 0, uncomputedHours: 0 })).toBe(false);
   });
+
+  it("is true for a LOCAL whose every craft is wholly unpriced — issue #104 finding 2", () => {
+    // The bug: isWhollyUnpriced guarded every craft ROW so none of them
+    // ever printed a false $0.00, but the local's own header total was
+    // rendered unconditionally as money(local.total) — so a local with
+    // zero priced hours anywhere under it still showed a confident $0.00
+    // above a table that was all dashes. Both crafts here have no schedule
+    // in force on their date, so the whole local is unpriced and its own
+    // row must satisfy the same predicate the crafts do.
+    const report = buildRemittanceReport(
+      [
+        entry({
+          craftClassificationId: "craft_unpriced_a",
+          craftLabel: "Apprentice",
+          date: new Date(Date.UTC(2025, 0, 1)), // before any schedule
+          hours: 8,
+        }),
+        entry({
+          craftClassificationId: "craft_unpriced_b",
+          craftLabel: "Journeyman",
+          date: new Date(Date.UTC(2025, 0, 1)),
+          hours: 5,
+        }),
+      ],
+      new Map(), // no schedules recorded for either craft
+      "2025-01-01",
+      "2025-01-31",
+    );
+    const local = report.locals[0];
+    expect(local.hours).toBe(13);
+    expect(local.uncomputedHours).toBe(13);
+    expect(local.total).toBe(0);
+    expect(local.crafts.every((c) => isWhollyUnpriced(c))).toBe(true);
+    // This is the assertion the page's header now checks before printing
+    // money(local.total) — before the fix, nothing at the local level ever
+    // asked this question.
+    expect(isWhollyUnpriced(local)).toBe(true);
+  });
+});
+
+describe("issue #104 finding 1: components round to the cent BEFORE summing", () => {
+  it("prints a total equal to the sum of the (rounded) fund columns, not the sum of the unrounded ones", () => {
+    // The issue's own numbers: four fund rates chosen so each component's
+    // EXACT value is 24.1425 — which rounds to 24.14 — and the four exact
+    // values sum to exactly 96.57, one cent more than 4 x 24.14 (96.56).
+    // A remittance that rounds the total separately from its components
+    // would print 24.14 four times and a Total of 96.57: a fund's clerk
+    // adds the four lines they can see, gets 96.56, and the sheet disagrees
+    // with itself before anyone looks at the money.
+    const rate = 24.1425;
+    const report = buildRemittanceReport(
+      [
+        entry({
+          hours: 1,
+          craftClassificationId: "craft_round",
+          craftLabel: "Journeyman",
+        }),
+      ],
+      new Map([
+        [
+          "craft_round",
+          [
+            schedule({
+              pensionRate: rate,
+              vacationRate: rate,
+              healthWelfareRate: rate,
+              trainingRate: rate,
+            }),
+          ],
+        ],
+      ]),
+      "2026-08-01",
+      "2026-08-31",
+    );
+
+    const craft = craftOf(report, "Local 300", "Journeyman");
+    expect(craft.components).toEqual({
+      pension: 24.14,
+      vacation: 24.14,
+      healthWelfare: 24.14,
+      training: 24.14,
+    });
+    // The number this bug gets wrong: naive unrounded-sum-then-round gives
+    // 96.57. The printed components can only ever sum to 96.56.
+    const sumOfPrintedComponents =
+      craft.components.pension +
+      craft.components.vacation +
+      craft.components.healthWelfare +
+      craft.components.training;
+    expect(sumOfPrintedComponents).toBeCloseTo(96.56, 9);
+    expect(craft.total).toBe(96.56);
+    expect(craft.total).not.toBe(96.57);
+
+    // And every level above the craft row is held to the same rule.
+    const local = report.locals[0];
+    expect(local.total).toBe(96.56);
+    expect(report.total).toBe(96.56);
+    expect(remittanceReconciliationErrors(report)).toEqual([]);
+  });
 });

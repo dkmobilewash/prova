@@ -100,19 +100,44 @@ export async function loadApprenticeships(
 
     const startedOn = currentPeriodStartedOn(e, periods);
 
-    // The derivation. Inclusive of the day the period started, up to today:
-    // a sign-off and a shift on the same date belong to the period that
-    // opened, not to the one that closed, because the hours were worked
-    // after the signature either way and dropping them would silently
-    // shorten every period by a day's work.
+    // #104 finding 9: this window used to run [startedOn, today] with no
+    // upper cap and no craft filter, on the theory that `today` was always
+    // "now, mid-indenture". Two ways that broke:
+    //
+    //   - An indenture that has since COMPLETED or been CANCELLED kept
+    //     accruing "this period" hours past the date it ended, because
+    //     `today` never stopped moving even though the period itself did.
+    //   - A second enrollment for the same apprentice — a new craft, or a
+    //     re-indenture after a cancellation — has its own `startedOn`, and
+    //     with no craft filter its OJT total pulled in every hour this
+    //     person logged company-wide, including hours already credited to
+    //     the FIRST enrollment. Two rows, one pool of hours, double-counted.
+    //
+    // The window's upper end is now capped at whichever of completedOn or
+    // cancelledOn is set (enrollmentState already treats "both set" as
+    // CONTRADICTORY and does not otherwise favour one over the other, so
+    // neither is preferred here either) — never later than `today`, since
+    // a data-entry mistake dating the close in the future must not credit
+    // hours that have not happened yet. And it is scoped to the SAME craft
+    // as this enrollment, when one is recorded, so a second enrollment in
+    // a different craft cannot pull in hours that belong to the first.
+    const enrollmentEnd = e.completedOn ?? e.cancelledOn;
+    const periodEnd = enrollmentEnd !== null && enrollmentEnd < today ? enrollmentEnd : today;
+
     const worked = await prisma.timeEntry.aggregate({
       _sum: { hours: true },
       where: {
         employeeUserId: row.apprenticeUserId,
         job: { companyId },
+        // Null on the enrollment means no craft recorded — nothing to
+        // disambiguate with, so every hour counts, matching prior
+        // behaviour for a half-configured enrollment. Prisma drops an
+        // `undefined` filter rather than matching it literally, so this
+        // only narrows the query when a craft IS on file.
+        craftClassificationId: row.craftClassificationId ?? undefined,
         date: {
           gte: new Date(`${startedOn}T00:00:00.000Z`),
-          lte: new Date(`${today}T00:00:00.000Z`),
+          lte: new Date(`${periodEnd}T00:00:00.000Z`),
         },
       },
     });

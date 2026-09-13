@@ -606,6 +606,10 @@ export function closeoutAlerts(sources: CloseoutAlertSource[], todayIso: string)
 
 /* ---------------------------------------------------- certified payroll */
 
+/** Mirrors PrevailingWageFilingFrequency (prevailing-wage.prisma) without
+ * importing Prisma's generated enum into a module that has no database. */
+export type FilingFrequency = "WEEKLY" | "BIWEEKLY" | "SEMI_MONTHLY" | "MONTHLY";
+
 export type CertifiedPayrollAlertSource = {
   jobId: string;
   jobName: string;
@@ -622,11 +626,69 @@ export type CertifiedPayrollAlertSource = {
    * not the same claim.
    */
   filingDueDays?: number | null;
+  /**
+   * How often this jurisdiction actually wants a report — from the same
+   * rule set `filingDueDays` comes from. Missing or null defaults to
+   * WEEKLY, which is both the Davis-Bacon norm and this alert's original
+   * (and only) behaviour before #104 finding 6, so every existing caller
+   * that never set this keeps its current alerts exactly.
+   */
+  filingFrequency?: FilingFrequency | null;
 };
 
+/** The filing period a week belongs to, and that period's own boundaries —
+ * NOT the boundaries of whichever weeks happen to have hours logged, so a
+ * month with no hours in its first week still has the right due date once
+ * hours do show up in a later one.
+ *
+ * WEEKLY and MONTHLY are unambiguous. SEMI_MONTHLY splits each month at the
+ * 15th, a common convention with nothing in this schema to contradict it.
+ * BIWEEKLY IS A JUDGMENT CALL, flagged rather than assumed: nothing in this
+ * app records which Monday an employer's own biweekly cycle anchors to, so
+ * this buckets by parity of the ISO week count from a fixed Monday
+ * (2020-01-06). A jurisdiction whose real biweekly calendar falls on the
+ * opposite parity will see this alert land one week later or earlier than
+ * the actual due date — right frequency, possibly wrong week. Flagged in
+ * PR #104 for Diego; the fix, if the parity turns out wrong for a real
+ * jurisdiction, is an anchor date recorded on the rule set, not a change
+ * here.
+ */
+function filingPeriod(
+  weekStart: string,
+  frequency: FilingFrequency,
+): { key: string; periodEnd: string } {
+  const [y, m, d] = weekStart.split("-").map(Number);
+  switch (frequency) {
+    case "WEEKLY":
+      return { key: weekStart, periodEnd: addDays(weekStart, 6) };
+    case "MONTHLY": {
+      const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
+      return {
+        key: `${weekStart.slice(0, 7)}`,
+        periodEnd: `${weekStart.slice(0, 7)}-${String(lastDay).padStart(2, "0")}`,
+      };
+    }
+    case "SEMI_MONTHLY": {
+      const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
+      const half = d <= 15;
+      return {
+        key: `${weekStart.slice(0, 7)}-${half ? "A" : "B"}`,
+        periodEnd: `${weekStart.slice(0, 7)}-${String(half ? 15 : lastDay).padStart(2, "0")}`,
+      };
+    }
+    case "BIWEEKLY": {
+      const epoch = Date.UTC(2020, 0, 6); // an arbitrary Monday — see above
+      const weekIndex = Math.round((Date.UTC(y, m - 1, d) - epoch) / (7 * 86_400_000));
+      const periodIndex = Math.floor(weekIndex / 2);
+      const periodStart = new Date(epoch + periodIndex * 14 * 86_400_000).toISOString().slice(0, 10);
+      return { key: `BW${periodIndex}`, periodEnd: addDays(periodStart, 13) };
+    }
+  }
+}
+
 /**
- * A prevailing-wage job with a finished week of hours and no certified
- * payroll report covering it.
+ * A prevailing-wage job with a finished filing PERIOD of hours and no
+ * certified payroll report covering it.
  *
  * The caller is responsible for passing ONLY jobs carrying a
  * PrevailingWageDetermination. That gate is the honesty of this alert:
@@ -636,8 +698,20 @@ export type CertifiedPayrollAlertSource = {
  * it is prevailing-wage, and guessing is exactly what this codebase does
  * not do.
  *
- * The due date is the week's end plus the horizon; the convention this
- * follows is weekly filing shortly after the pay date, which is what
+ * One alert per unfiled PERIOD, not per unfiled WEEK — #104 finding 6.
+ * `filingFrequency` used to be recorded and read by nothing, so a company
+ * that filed MONTHLY got roughly four "past the filing window" alerts a
+ * month, each one citing that same jurisdiction's own `filingDueDays` as
+ * though every week were its own deadline. `sources` is still one entry
+ * per uncovered week (the caller's "is this week filed" check is already
+ * period-shaped and needs no change — a monthly filing's period covers
+ * every week inside it), but they are grouped into filing periods here and
+ * a period raises exactly one alert, due `filingDueDays` (or the generic
+ * horizon) after the PERIOD's own end — not the last week that happened to
+ * have hours in it.
+ *
+ * The due date is the period's end plus the horizon; the convention this
+ * follows is filing shortly after the period's pay date, which is what
  * Davis-Bacon and its state equivalents require. It is a prompt, not a
  * statutory calculation: the exact deadline depends on the contract and
  * the jurisdiction, and there is no wage-determination dataset in this app
@@ -648,26 +722,51 @@ export function certifiedPayrollAlerts(
   todayIso: string,
 ): Alert[] {
   const horizon = ALERT_HORIZON_DAYS.CERTIFIED_PAYROLL ?? 7;
-  const alerts: Alert[] = [];
+
+  const periods = new Map<
+    string,
+    { jobId: string; jobName: string; periodKey: string; periodEnd: string; filingDueDays: number | null }
+  >();
 
   for (const week of sources) {
     // A week still running is not late. The report covers a closed week.
     if (week.weekEnd >= todayIso) continue;
 
-    const recorded = week.filingDueDays ?? null;
-    const dueOn = addDays(week.weekEnd, recorded ?? horizon);
+    const frequency = week.filingFrequency ?? "WEEKLY";
+    const { key, periodEnd } = filingPeriod(week.weekStart, frequency);
+    const mapKey = `${week.jobId}::${key}`;
+    if (!periods.has(mapKey)) {
+      periods.set(mapKey, {
+        jobId: week.jobId,
+        jobName: week.jobName,
+        periodKey: key,
+        periodEnd,
+        filingDueDays: week.filingDueDays ?? null,
+      });
+    }
+  }
+
+  const alerts: Alert[] = [];
+  for (const period of periods.values()) {
+    // The period itself has to be over, not merely the latest week that
+    // happened to have hours logged in it — a monthly filer's third week
+    // closing is not the month closing.
+    if (period.periodEnd >= todayIso) continue;
+
+    const recorded = period.filingDueDays;
+    const dueOn = addDays(period.periodEnd, recorded ?? horizon);
     const days = daysUntilIso(dueOn, todayIso);
     const window = recorded === null ? "the usual filing window" : "this jurisdiction's filing window";
 
     alerts.push({
-      key: alertKey("CERTIFIED_PAYROLL", week.jobId, week.weekStart),
+      key: alertKey("CERTIFIED_PAYROLL", period.jobId, period.periodKey),
       kind: "CERTIFIED_PAYROLL",
       severity: days < 0 ? "OVERDUE" : "DUE_SOON",
-      title: `Certified payroll for ${week.jobName}, week of ${week.weekStart}`,
+      title: `Certified payroll for ${period.jobName}, period ending ${period.periodEnd}`,
       detail:
         days < 0
-          ? `Hours were logged that week and nothing covering it has been filed. ${Math.abs(days)} ${Math.abs(days) === 1 ? "day" : "days"} past ${window}.`
-          : "Hours were logged that week and nothing covering it has been filed yet.",
+          ? `Hours were logged in that period and nothing covering it has been filed. ${Math.abs(days)} ${Math.abs(days) === 1 ? "day" : "days"} past ${window}.`
+          : "Hours were logged in that period and nothing covering it has been filed yet.",
       href: "/compliance",
       dueOn,
       daysUntil: days,

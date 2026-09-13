@@ -13,6 +13,7 @@ import {
   assertOwner,
   enumFromForm,
   isUniqueConstraintError,
+  joinWithConjunction,
   nullableDecimalFromForm,
   optionalEnumFromForm,
   ownerRefusal,
@@ -184,6 +185,24 @@ export async function updateCompanyProfile(formData: FormData): Promise<ActionRe
    The owner check is `ownerRefusal`, not `assertOwner`: an action whose type
    promises `{ ok: false, error }` must not refuse by throwing, which is
    #166's rule and what `ownerRefusalCensus.test.ts` enforces. */
+/** The three "standing terms with this GC" fields — shared by createContact
+ * and updateContact (#218 added them to create; they previously only
+ * existed on the update path). */
+function standingTermsFromForm(formData: FormData) {
+  const defaultRetainagePercent = nullableDecimalFromForm(formData, "defaultRetainagePercent");
+  const paymentTermsDaysRaw = text(formData, "paymentTermsDays");
+  const standardFormsUsed = text(formData, "standardFormsUsed");
+
+  if (paymentTermsDaysRaw && Number.isNaN(Number(paymentTermsDaysRaw))) {
+    throw new InputError('"paymentTermsDays" must be a number');
+  }
+
+  return {
+    defaultRetainagePercent,
+    paymentTermsDays: paymentTermsDaysRaw ? Number(paymentTermsDaysRaw) : null,
+    standardFormsUsed: standardFormsUsed || null,
+  };
+}
 
 /** Invites a teammate by email. They join the OWNER's Company as a MEMBER
  * the next time they sign up with that email — see requireCompanyContext(). */
@@ -287,6 +306,12 @@ export async function createContact(formData: FormData): Promise<ActionResult> {
     const address = text(formData, "address");
     const status = optionalEnumFromForm(formData, "status", CONTACT_STATUSES) ?? "PROSPECT";
     const accountType = optionalEnumFromForm(formData, "accountType", CONTACT_TYPES);
+    // #218: retainage/payment-terms/forms-used are standing GC terms often
+    // already known before the first job — reachable at creation now, not
+    // edit-only. MSA expiration and prequalification expiry stay edit-only
+    // (see ContactEditForm.tsx): those record a document's expiration date,
+    // and a brand new contact typically has no such document yet.
+    const standingTerms = standingTermsFromForm(formData);
 
     await prisma.contact.create({
       data: {
@@ -297,6 +322,7 @@ export async function createContact(formData: FormData): Promise<ActionResult> {
         address: address || null,
         status,
         accountType,
+        ...standingTerms,
       },
     });
 
@@ -338,8 +364,11 @@ export async function deleteContact(contactId: string): Promise<ActionResult> {
     ].filter((reason): reason is string => reason !== null);
 
     if (reasons.length > 0) {
+      // #218: this used to be `reasons.join(", ")` — comma-only, no "and",
+      // unlike deleteSalesLead's equivalent refusal. joinWithConjunction is
+      // the shared style both now use.
       return fail(
-        `${contact.name} has ${reasons.join(", ")} on file, so its record stays. Only a contact with no history can be deleted.`,
+        `${contact.name} has ${joinWithConjunction(reasons)} on file, so its record stays. Only a contact with no history can be deleted.`,
       );
     }
 
@@ -362,15 +391,9 @@ export async function updateContact(contactId: string, formData: FormData): Prom
     const address = text(formData, "address");
     const status = optionalEnumFromForm(formData, "status", CONTACT_STATUSES) ?? contact.status;
     const accountType = optionalEnumFromForm(formData, "accountType", CONTACT_TYPES);
-    const defaultRetainagePercent = nullableDecimalFromForm(formData, "defaultRetainagePercent");
-    const paymentTermsDaysRaw = text(formData, "paymentTermsDays");
-    const standardFormsUsed = text(formData, "standardFormsUsed");
+    const standingTerms = standingTermsFromForm(formData);
     const msaExpirationDate = optionalDate(formData, "msaExpirationDate");
     const prequalificationExpiresAt = optionalDate(formData, "prequalificationExpiresAt");
-
-    if (paymentTermsDaysRaw && Number.isNaN(Number(paymentTermsDaysRaw))) {
-      return fail('"paymentTermsDays" must be a number');
-    }
 
     await prisma.contact.update({
       where: { id: contactId },
@@ -381,9 +404,7 @@ export async function updateContact(contactId: string, formData: FormData): Prom
         address: address || null,
         status,
         accountType,
-        defaultRetainagePercent,
-        paymentTermsDays: paymentTermsDaysRaw ? Number(paymentTermsDaysRaw) : null,
-        standardFormsUsed: standardFormsUsed || null,
+        ...standingTerms,
         msaExpirationDate,
         prequalificationExpiresAt,
       },

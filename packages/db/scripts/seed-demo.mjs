@@ -34,12 +34,20 @@ import { describe } from "./connection-target.mjs";
  * It is scoped to ONE company — the first one, or SEED_COMPANY_ID — and
  * every row it writes is tagged in a way `--undo` can find again, so a demo
  * dataset can be removed without touching anything a person entered.
+ *
+ * IT REFUSES TO SEED A COMPANY THAT ALREADY HAS DEMO DATA. Run twice, it
+ * used to duplicate the equipment and then die half-finished on the
+ * prevailing-wage exclusion constraint, leaving a database that looked
+ * like an app bug (issue #180). The sequence that works is undo → seed;
+ * the refusal message says exactly that. `--force` seeds a second copy on
+ * top anyway, for the rare case where a duplicate set is what you want.
  */
 
 loadEnvFiles();
 
 const MARK = "[demo]";
 const UNDO = process.argv.includes("--undo");
+const FORCE = process.argv.includes("--force");
 
 const target = describe(process.env.DATABASE_URL);
 if (!target) {
@@ -90,6 +98,51 @@ async function main() {
   console.log(`seed: company         ${company.name} (${company.id})`);
 
   if (UNDO) return undo(company.id);
+
+  // ------------------------------------------------- refuse a second seed
+  //
+  // Run twice against the same company, this script used to duplicate the
+  // equipment and then die half-finished on the prevailing-wage EXCLUDE
+  // constraint — those date ranges are computed relative to TODAY, so a
+  // second run's range always overlaps the first run's. Everything before
+  // the failure point committed, everything after did not, and /equipment
+  // reading "16 items" afterwards looked like an app bug. Issue #180.
+  //
+  // So: count the tagged rows this script leaves behind, per family rather
+  // than in total, because a FAILED run or a failed --undo leaves a partial
+  // set — a run that died at prevailing wage has jobs and equipment but no
+  // backcharges, and a --undo that failed on one delete keeps going and can
+  // remove the contacts while the equipment stays. Any non-zero family
+  // means the last word here was not a clean removal.
+  const existing = {
+    contact: await prisma.contact.count({ where: { companyId: company.id, name: { contains: MARK } } }),
+    job: await prisma.job.count({ where: { companyId: company.id, name: { contains: MARK } } }),
+    vendor: await prisma.vendor.count({ where: { companyId: company.id, name: { contains: MARK } } }),
+    equipment: await prisma.equipment.count({ where: { companyId: company.id, name: { contains: MARK } } }),
+    prevailingWageRuleSet: await prisma.prevailingWageRuleSet.count({ where: { companyId: company.id, name: { contains: MARK } } }),
+    lineItemCatalogEntry: await prisma.lineItemCatalogEntry.count({ where: { companyId: company.id, description: { contains: MARK } } }),
+    vendorPriceQuote: await prisma.vendorPriceQuote.count({ where: { companyId: company.id, description: { contains: MARK } } }),
+    bidInvitation: await prisma.bidInvitation.count({ where: { companyId: company.id, projectName: { contains: MARK } } }),
+    outboundMessage: await prisma.outboundMessage.count({ where: { companyId: company.id, body: { contains: MARK } } }),
+  };
+  const found = Object.entries(existing).filter(([, n]) => n > 0);
+  if (found.length && !FORCE) {
+    console.error(
+      `\nseed: REFUSING — this company already has demo data ` +
+        `(${found.map(([m, n]) => `${m}: ${n}`).join(", ")}).\n` +
+        "seed: seeding on top would duplicate all of it. Remove the old set first:\n" +
+        `seed:   SEED_EXPECT_HOST=${expect} node scripts/seed-demo.mjs --undo\n` +
+        "seed: then run the seed again. Nothing has been written.\n" +
+        "seed: (--force seeds a second copy on top anyway, if that is really what you want.)",
+    );
+    process.exit(1);
+  }
+  if (found.length && FORCE) {
+    console.log(
+      `seed: --force         seeding ON TOP of existing demo data ` +
+        `(${found.map(([m, n]) => `${m}: ${n}`).join(", ")})`,
+    );
+  }
 
   // ---------------------------------------------------------------- clients
   //
@@ -1028,52 +1081,63 @@ async function main() {
   // mean "nobody has looked this up", which the review reports as unchecked
   // rather than assuming a figure — a state that cannot be demonstrated by
   // a row with sensible numbers in it.
-  const oregonPrior = await prisma.prevailingWageRuleSet.create({
-    data: {
-      companyId: company.id,
-      name: `Oregon BOLI — prior determination ${MARK}`,
-      jurisdiction: "Oregon",
-      authority: "STATE",
-      dailyOvertimeAfterHours: "8",
-      weeklyOvertimeAfterHours: "40",
-      filingFrequency: "WEEKLY",
-      filingDueDays: 5,
-      formName: "WH-38",
-      effectiveFrom: day(-730),
-      effectiveTo: day(-180),
-      note: "Superseded. Kept so weeks worked under it still review correctly.",
-    },
+  //
+  // Find-or-create, never a blind create. These ranges are computed
+  // relative to TODAY, so a second run's range always overlaps whatever a
+  // first run wrote and the gist EXCLUDE constraint killed the whole seed
+  // halfway (issue #180). A tagged row that is already there was valid the
+  // day it was written and its ranges are still disjoint from each other,
+  // so it is reused as-is rather than raced against the constraint. Prisma
+  // cannot `upsert` here — upsert needs a unique key and non-overlap is an
+  // exclusion constraint the client does not even know exists — which is
+  // why this is spelled out as findFirst + create on the natural key
+  // (company, jurisdiction, tagged name) instead.
+  const ensureRuleSet = async (data) => {
+    const prior = await prisma.prevailingWageRuleSet.findFirst({
+      where: { companyId: data.companyId, jurisdiction: data.jurisdiction, name: data.name },
+    });
+    return prior ?? prisma.prevailingWageRuleSet.create({ data });
+  };
+  const oregonPrior = await ensureRuleSet({
+    companyId: company.id,
+    name: `Oregon BOLI — prior determination ${MARK}`,
+    jurisdiction: "Oregon",
+    authority: "STATE",
+    dailyOvertimeAfterHours: "8",
+    weeklyOvertimeAfterHours: "40",
+    filingFrequency: "WEEKLY",
+    filingDueDays: 5,
+    formName: "WH-38",
+    effectiveFrom: day(-730),
+    effectiveTo: day(-180),
+    note: "Superseded. Kept so weeks worked under it still review correctly.",
   });
-  const oregonCurrent = await prisma.prevailingWageRuleSet.create({
-    data: {
-      companyId: company.id,
-      name: `Oregon BOLI — current ${MARK}`,
-      jurisdiction: "Oregon",
-      authority: "STATE",
-      dailyOvertimeAfterHours: "8",
-      dailyDoubleTimeAfterHours: "12",
-      weeklyOvertimeAfterHours: "40",
-      seventhDayOvertimeAfterHours: "0",
-      filingFrequency: "WEEKLY",
-      filingDueDays: 5,
-      formName: "WH-38",
-      portalUrl: "https://www.oregon.gov/boli/example",
-      sourceUrl: "https://www.oregon.gov/boli/example/rates",
-      effectiveFrom: day(-180),
-      effectiveTo: null,
-    },
+  const oregonCurrent = await ensureRuleSet({
+    companyId: company.id,
+    name: `Oregon BOLI — current ${MARK}`,
+    jurisdiction: "Oregon",
+    authority: "STATE",
+    dailyOvertimeAfterHours: "8",
+    dailyDoubleTimeAfterHours: "12",
+    weeklyOvertimeAfterHours: "40",
+    seventhDayOvertimeAfterHours: "0",
+    filingFrequency: "WEEKLY",
+    filingDueDays: 5,
+    formName: "WH-38",
+    portalUrl: "https://www.oregon.gov/boli/example",
+    sourceUrl: "https://www.oregon.gov/boli/example/rates",
+    effectiveFrom: day(-180),
+    effectiveTo: null,
   });
-  await prisma.prevailingWageRuleSet.create({
-    data: {
-      companyId: company.id,
-      name: `Clark County, WA — not yet researched ${MARK}`,
-      jurisdiction: "Clark County, WA",
-      authority: "COUNTY",
-      // Every threshold null on purpose. See above.
-      filingFrequency: "MONTHLY",
-      effectiveFrom: day(-90),
-      note: "Recorded so the jurisdiction is not invisible. Thresholds still to be read off the determination.",
-    },
+  await ensureRuleSet({
+    companyId: company.id,
+    name: `Clark County, WA — not yet researched ${MARK}`,
+    jurisdiction: "Clark County, WA",
+    authority: "COUNTY",
+    // Every threshold null on purpose. See above.
+    filingFrequency: "MONTHLY",
+    effectiveFrom: day(-90),
+    note: "Recorded so the jurisdiction is not invisible. Thresholds still to be read off the determination.",
   });
   // Attaches the current Oregon rules to the job that has time entries, so
   // /prevailing-wage has a week to review rather than an empty selector.

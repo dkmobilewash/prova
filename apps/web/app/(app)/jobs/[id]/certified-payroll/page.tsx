@@ -87,7 +87,10 @@ export default async function CertifiedPayrollPage({
     loadCertifiedPayrollWeekEntries(company.id, job.id, weekStart),
     prisma.craftClassification.findMany({
       where: { companyId: company.id },
-      include: { fringeRateSchedules: true },
+      // Deterministic even though findEffectiveFringeRateSchedule no
+      // longer depends on fetch order to break a same-day tie — #104
+      // finding 3, so the raw list itself reads sensibly too.
+      include: { fringeRateSchedules: { orderBy: { effectiveFrom: "desc" } } },
     }),
   ]);
 

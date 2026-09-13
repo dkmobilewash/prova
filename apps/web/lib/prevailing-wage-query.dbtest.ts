@@ -191,4 +191,99 @@ describe("reviewJobWeek against real rows", () => {
     expect(review.employees).toEqual([]);
     await prisma.company.delete({ where: { id: other.id } });
   });
+
+  describe("issue #104 finding 5: findEffectiveRuleSet was documented and never called", () => {
+    // The determination's ruleSetId is a single FK a person points at
+    // whatever rule set is CURRENT (setDeterminationRuleSet). When a
+    // jurisdiction's overtime threshold changes, the company records a
+    // NEW PrevailingWageRuleSet row (its own effective dates) and repoints
+    // the determination at it. Before this fix, reviewJobWeek trusted that
+    // FK blindly — so reviewing a week from BEFORE the change silently
+    // checked it against the NEW threshold, because nothing ever asked
+    // whether the linked rule set was actually in force that week.
+    const jurisdiction = `PWQ-historic-${Date.now()}`;
+    let historicJobId = "";
+    let oldRuleSetId = "";
+    let newRuleSetId = "";
+
+    beforeAll(async () => {
+      const contact = await prisma.contact.findFirstOrThrow({ where: { companyId } });
+      const job = await prisma.job.create({
+        data: { companyId, contactId: contact.id, name: "Historic rate job" },
+      });
+      historicJobId = job.id;
+
+      const old = await prisma.prevailingWageRuleSet.create({
+        data: {
+          companyId,
+          name: "2026 H1 rules",
+          jurisdiction,
+          authority: "STATE",
+          filingFrequency: "WEEKLY",
+          dailyOvertimeAfterHours: "8",
+          effectiveFrom: utc("2026-01-01"),
+          effectiveTo: utc("2026-06-30"),
+        },
+      });
+      const next = await prisma.prevailingWageRuleSet.create({
+        data: {
+          companyId,
+          name: "2026 H2 rules",
+          jurisdiction,
+          authority: "STATE",
+          filingFrequency: "WEEKLY",
+          dailyOvertimeAfterHours: "10", // the threshold actually changed
+          effectiveFrom: utc("2026-07-01"),
+        },
+      });
+      oldRuleSetId = old.id;
+      newRuleSetId = next.id;
+
+      // The determination's FK points at the NEWEST rule set — exactly
+      // what a person does by re-running setDeterminationRuleSet once the
+      // new rules take effect. It is deliberately NOT pointed at the rule
+      // set that was actually in force for the historic week this test
+      // reviews, which is the point: that answer has to come from
+      // findEffectiveRuleSet, not from this FK.
+      await prisma.prevailingWageDetermination.create({
+        data: { jobId: historicJobId, jurisdiction, ruleSetId: newRuleSetId },
+      });
+
+      await prisma.timeEntry.create({
+        data: { jobId: historicJobId, employeeUserId: alice, date: utc("2026-03-02"), hours: "9", payType: "STRAIGHT" },
+      });
+    });
+
+    afterAll(async () => {
+      await prisma.timeEntry.deleteMany({ where: { jobId: historicJobId } });
+      await prisma.prevailingWageDetermination.deleteMany({ where: { jobId: historicJobId } });
+      await prisma.job.delete({ where: { id: historicJobId } });
+      await prisma.prevailingWageRuleSet.deleteMany({ where: { id: { in: [oldRuleSetId, newRuleSetId] } } });
+    });
+
+    it("reviews a historic week against the rule set that was in force THEN, not the one the FK now points at", async () => {
+      // Monday 2026-03-02 falls under the OLD rule set's window (Jan-Jun),
+      // even though the determination's ruleSetId points at the NEW one.
+      const review = await reviewJobWeek(companyId, historicJobId, "2026-03-02");
+      expect(review.ruleSetName).toBe("2026 H1 rules");
+
+      const alicesWeek = review.employees.find((e) => e.employeeName === "Alice")!;
+      // 9 hours against the OLD 8-hour threshold: one hour of overtime.
+      const day = alicesWeek.review.disagreements.find((d) => d.date === "2026-03-02")!;
+      expect(day.expected).toMatchObject({ STRAIGHT: 8, OVERTIME: 1 });
+    });
+
+    it("reviews a current week against the new rule set", async () => {
+      await prisma.timeEntry.deleteMany({ where: { jobId: historicJobId } });
+      await prisma.timeEntry.create({
+        data: { jobId: historicJobId, employeeUserId: alice, date: utc("2026-07-06"), hours: "9", payType: "STRAIGHT" },
+      });
+
+      const review = await reviewJobWeek(companyId, historicJobId, "2026-07-06");
+      expect(review.ruleSetName).toBe("2026 H2 rules");
+      const alicesWeek = review.employees.find((e) => e.employeeName === "Alice")!;
+      // 9 hours against the NEW 10-hour threshold: no overtime at all.
+      expect(alicesWeek.review.disagreements).toEqual([]);
+    });
+  });
 });
