@@ -105,14 +105,28 @@ describe("the deployment link", () => {
 });
 
 describe("the collapsible rail (#240)", () => {
-  it("orders the groups as the money pipeline, six of them", () => {
+  it("runs every figure-carrying group first, then the plain ones", () => {
+    // CHANGED 2026-09-13, and the reason is worth keeping. This used to
+    // order the groups as the money PIPELINE — chase it, build it, prove
+    // it, get paid, stay legal — which reads well as a sentence and badly
+    // as a rail. Only four of the six carry a figure, so the pipeline
+    // order alternated: two money groups, two plain ones, then money
+    // again. The eye never settled, and Cyrus called it cluttery while
+    // staging the demo.
+    //
+    // The rail's premise is "that left edge is your money", and the demo
+    // scrolls it top to bottom naming figures in order. Both want the
+    // figures CONTIGUOUS. So the four that carry one lead, and the two
+    // that are navigation follow. The pipeline story is still there in
+    // the first four; it just no longer has two silent groups wedged
+    // into the middle of it.
     expect(NAV_GROUPS.map((g) => g.heading)).toEqual([
       "Pre-construction",
       "Operations",
-      "Paper trail",
-      "Logistics",
       "Financials",
       "Compliance & safety",
+      "Paper trail",
+      "Logistics",
     ]);
   });
 

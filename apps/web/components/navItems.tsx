@@ -547,24 +547,6 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    heading: "Paper trail",
-    // A document with a corner fold: what went to the GC, and when.
-    icon: groupIcon("M6 3.5h6l3 3v9a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-11a1 1 0 0 1 1-1ZM12 3.5v3h3M7.5 10h5M7.5 13h5"),
-    // Question, answer, drawing, sign-off: the order the paper arrives in.
-    items: [item("/rfis"), item("/submittals"), item("/drawings"), item("/closeout")],
-  },
-  {
-    heading: "Logistics",
-    // A truck.
-    icon: groupIcon("M3.5 6.5h8v7h-8zM11.5 9.5h2.8l2.2 2.2v1.8h-5zM6 15.5a1 1 0 1 0 0-2 1 1 0 0 0 0 2ZM14 15.5a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z"),
-    items: [
-      { ...item("/material-orders"), disabled: true },
-      item("/vendors"),
-      item("/vendors/pricing"),
-      item("/equipment"),
-    ],
-  },
-  {
     heading: "Financials",
     // A bank note.
     icon: groupIcon("M3.5 6.5h13v7h-13zM10 12a2 2 0 1 0 0-4 2 2 0 0 0 0 4ZM6 10h.01M14 10h.01"),
@@ -581,6 +563,24 @@ export const NAV_GROUPS: NavGroup[] = [
       { ...item("/safety"), disabled: true },
       item("/certifications"),
       item("/team"),
+    ],
+  },
+  {
+    heading: "Paper trail",
+    // A document with a corner fold: what went to the GC, and when.
+    icon: groupIcon("M6 3.5h6l3 3v9a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-11a1 1 0 0 1 1-1ZM12 3.5v3h3M7.5 10h5M7.5 13h5"),
+    // Question, answer, drawing, sign-off: the order the paper arrives in.
+    items: [item("/rfis"), item("/submittals"), item("/drawings"), item("/closeout")],
+  },
+  {
+    heading: "Logistics",
+    // A truck.
+    icon: groupIcon("M3.5 6.5h8v7h-8zM11.5 9.5h2.8l2.2 2.2v1.8h-5zM6 15.5a1 1 0 1 0 0-2 1 1 0 0 0 0 2ZM14 15.5a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z"),
+    items: [
+      { ...item("/material-orders"), disabled: true },
+      item("/vendors"),
+      item("/vendors/pricing"),
+      item("/equipment"),
     ],
   },
 ];
