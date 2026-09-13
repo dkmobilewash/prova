@@ -2,6 +2,7 @@ import Link from "next/link";
 import { JobMediaCapture } from "@/components/JobMediaCapture";
 import { JobMediaCard, type JobMediaCardData } from "@/components/JobMediaCard";
 import { JobMediaTagDatalist } from "@/components/JobMediaTagDatalist";
+import { photoReportHref } from "@/lib/photo-report";
 
 /**
  * The site-photo section on a job page.
@@ -35,7 +36,21 @@ export function JobMediaSection({
 }) {
   return (
     <section className="mb-10">
-      <h2 className="mb-1 text-lg font-semibold text-slate-100">Site photos</h2>
+      <div className="mb-1 flex flex-wrap items-baseline justify-between gap-3">
+        <h2 className="text-lg font-semibold text-slate-100">Site photos</h2>
+        {/* THE ONLY ENTRY POINT TO THE REPORT FROM A JOB, and it is here
+            rather than in the nav on purpose: the report is one job's
+            document, so it hangs off the job the way wh-347 hangs off
+            certified payroll. Shown even when the gallery is empty —
+            the report's own page explains what is and is not in a
+            selection, which is more useful than a link that vanishes. */}
+        <Link
+          href={photoReportHref(jobId)}
+          className="text-sm text-blue-400 hover:text-blue-300"
+        >
+          Photo report →
+        </Link>
+      </div>
       <p className="mb-4 text-sm text-slate-400">
         What this job actually looked like, on the day.
       </p>

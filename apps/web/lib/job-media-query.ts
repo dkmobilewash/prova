@@ -7,10 +7,12 @@ import {
   formatByteSize,
   formatCapturedAt,
   formatCapturedAtInputValue,
+  formatCapturedDay,
   jobMediaClockWarning,
   jobMediaKind,
   jobMediaPlaybackWarning,
 } from "@/lib/job-media";
+import { describeCapturedLocation } from "@/lib/job-media-location";
 
 /** One stored annotation as the overlay wants it.
  *
@@ -55,11 +57,12 @@ function toMark(row: {
  * in whether the job name is shown (on a job page it is the page).
  */
 
-/** What a gallery is showing: the company, and up to three narrowings.
+/** What a gallery is showing: the company, and up to four narrowings.
  *
- * All three narrowings are optional and they COMPOSE — `/photos` can be
- * looking at one job, one tag, whether the client can see it, any
- * combination or none, and a combination has to mean AND. */
+ * All four narrowings are optional and they COMPOSE — `/photos` can be
+ * looking at one job, one tag, whether the client can see it, whether it
+ * carries a location, any combination or none, and a combination has to
+ * mean AND. */
 export type JobMediaFilter = {
   companyId: string;
   jobId?: string;
@@ -72,6 +75,17 @@ export type JobMediaFilter = {
    * builds this from `SharedFilter`, which is a string union for the same
    * reason (lib/job-media-tags.ts). */
   shared?: boolean;
+  /** `true` — only captures that recorded where they were taken. `false` —
+   * only those that did not. UNDEFINED IS BOTH, exactly like `shared` above
+   * and for the same reason: `false` is a real question here ("which of
+   * these has no location") and a plain boolean cannot hold it apart from
+   * "not filtered". Built from `LocatedFilter`, a string union, for that
+   * reason (lib/job-media-tags.ts).
+   *
+   * NOT A DEGRADED-ROW FILTER. "No location" is a first-class half of this
+   * gallery, not a defect list: every capture taken before this feature
+   * shipped, every desktop upload and every denied permission is in it. */
+  located?: boolean;
 };
 
 export type JobMediaScope = JobMediaFilter & {
@@ -116,6 +130,16 @@ function jobMediaWhere(filter: JobMediaFilter) {
     ...(filter.shared === undefined
       ? {}
       : { sharedWithClientAt: filter.shared ? { not: null } : null }),
+    // Tested against `undefined` for the same reason `shared` is — `false`
+    // is a real value that means the opposite of "no filter" — and asked of
+    // the LATITUDE alone. That is safe rather than sloppy: the database
+    // refuses a row with one coordinate and not the other
+    // (`JobMedia_captured_location_pairing`), so one column answers for the
+    // pair. Written against both would be two clauses that can only ever
+    // agree, and a reader would reasonably wonder what the second was for.
+    ...(filter.located === undefined
+      ? {}
+      : { capturedLatitude: filter.located ? { not: null } : null }),
   };
 }
 
@@ -182,6 +206,16 @@ export async function loadJobMedia(
       ? formatCapturedAt(row.sharedWithClientAt, timeZone)
       : null,
     clockWarning: jobMediaClockWarning(row.capturedAt, row.createdAt),
+    // WHERE, derived on every read from the two or three stored numbers and
+    // held nowhere. The coordinate label, the error bar, the "this fix is
+    // too wide to be a spot" note and the map link are all computed by one
+    // pure function so both galleries say the same words — and so that
+    // changing the coarse-fix threshold changes what every existing row
+    // says, which a stored flag could not.
+    //
+    // Null for most rows, and that is an ordinary row: see the column
+    // comments in media.prisma.
+    location: describeCapturedLocation(row),
     // The DISPLAY name, which is the only form any screen shows.
     // `normalizedName` exists to be the target of a unique index and is
     // deliberately never rendered — see the model comment.
@@ -261,6 +295,10 @@ export async function loadJobMediaTags(companyId: string): Promise<JobMediaTagSu
  *     accident the moment somebody reused the internal projection here.
  *   - NO PHOTOGRAPHER. The GC has no use for which of the crew held the
  *     phone, and a name on a photo of a defect is a name to complain about.
+ *   - NO COORDINATES. Argued at length on `loadSharedJobMediaForClient`'s
+ *     `select` below, because it is the one exclusion here whose case is
+ *     genuinely arguable: the GC knows the job's address already. A phone's
+ *     GPS fix is not the job's address.
  *   - NO `id`-DRIVEN EDIT AFFORDANCES, no file size, no clock warning, no
  *     `capturedAtInputValue`. Those exist to drive the internal card's edit
  *     form; the portal has no form.
@@ -343,6 +381,54 @@ export async function loadSharedJobMediaForClient(
       caption: true,
       capturedAt: true,
       contentType: true,
+      // NO `capturedLatitude`, `capturedLongitude` OR
+      // `capturedAccuracyMeters`, DECIDED RATHER THAN OVERLOOKED.
+      //
+      // This is the one exclusion on this list whose case is genuinely
+      // arguable, so the argument is written down rather than left to the
+      // next reader to re-run. The case FOR sending it is real: the GC knows
+      // the job's address — they own the building — so a coordinate on a
+      // photo of their own site looks like it discloses nothing, and "where
+      // on the site was this" is a question a GC asks constantly.
+      //
+      // It is refused anyway, on four grounds:
+      //
+      //   1. A PHONE'S FIX IS NOT THE JOB'S ADDRESS. It is where a person
+      //      was standing, to a few metres, at a stated minute. A gallery of
+      //      forty shared photos is then forty timestamped positions of a
+      //      crew of three or four, handed to the party they are in a
+      //      commercial relationship with. That is a movement record, and
+      //      nobody uploading a photo of a cracked header thinks they are
+      //      producing one.
+      //   2. IT CONTRADICTS THE EXCLUSION ABOVE IT. The portal already
+      //      withholds WHO took the photo, on the grounds that a name on a
+      //      photo of a defect is a person to complain about. Withholding
+      //      the name while publishing where that unnamed person stood, and
+      //      when, is not a coherent position — it is the same disclosure
+      //      with the identifier moved.
+      //   3. IT CANNOT ANSWER THE QUESTION IT LOOKS LIKE IT ANSWERS. "Which
+      //      part of the building" is floors and gridlines, and a GPS fix
+      //      has no altitude worth the name and reads tens of metres out
+      //      inside a steel frame. The caption is what answers it, and the
+      //      caption is already here.
+      //   4. IT INVITES AN ARGUMENT THE NUMBER CANNOT SETTLE. Handing over
+      //      "36.16994, -115.13983" lets a GC say the photo was taken 40 m
+      //      off their property, from a measurement that is routinely 40 m
+      //      out. Precision that is not accuracy is worse than nothing in a
+      //      dispute, which is the same reason `MEASURE` annotations do not
+      //      measure (media-annotations.prisma).
+      //
+      // ENFORCED STRUCTURALLY, in the two ways this file already uses:
+      // `PortalJobPhoto` does not HAVE these fields, so a future edit that
+      // wants them has to change the type, this select and the component;
+      // and this is an explicit select, so the columns are never even
+      // fetched. job-media-location.dbtest.ts asserts on the serialised
+      // result that neither the digits nor the keys appear.
+      //
+      // If this is ever revisited, revisit it as a SHARING decision — a
+      // per-photo opt-in like `sharedWithClientAt` — and not as a widening
+      // of this projection. "Show the client where this was taken" is a
+      // choice somebody makes about one photo, not a property of the query.
       // THE MARKS GO TO THE GC, and that is the point of the feature rather
       // than a widening to be nervous about: an arrow drawn to show a GC
       // where the damage is, is worthless if the GC cannot see it. What is
@@ -385,4 +471,144 @@ export async function countSharedJobMediaByJob(jobIds: string[]): Promise<Map<st
     _count: { _all: true },
   });
   return new Map(rows.map((row) => [row.jobId, row._count._all]));
+}
+
+/* ------------------------------------------------------------------ *
+ * The printed document's half
+ * ------------------------------------------------------------------ */
+
+/**
+ * One capture as the printed photo report renders it.
+ *
+ * A SEPARATE TYPE FROM BOTH `JobMediaCardData` AND `PortalJobPhoto`, and
+ * for the reason `PortalJobPhoto` is separate: the exclusions are the
+ * feature, and a type that does not HAVE a field cannot forget to withhold
+ * it. This document is the one artefact of this feature that LEAVES THE
+ * APP ENTIRELY — it becomes a PDF on somebody's desktop, an email
+ * attachment, an exhibit — so it takes the portal's exclusions rather than
+ * the internal card's generosity, and takes them for the same reasons
+ * argued at length on `loadSharedJobMediaForClient`'s `select`:
+ *
+ *   - NO TAGS. "backcharge", "GC delay", "rework" is this sub's own framing
+ *     of the job, written for their retrieval and their argument. A printed
+ *     page carrying those words cannot be un-handed-over.
+ *   - NO PHOTOGRAPHER. A name on a photo of a defect is a person to
+ *     complain about. The company printed the document; the company is in
+ *     the header.
+ *   - NO COORDINATES. A phone's fix is where a person was standing to a few
+ *     metres at a stated minute, and forty of them is a movement record.
+ *     The four grounds are on the portal select and none of them get weaker
+ *     when the page is paper.
+ *   - NO FILE SIZE, NO CLOCK WARNING, NO EDIT AFFORDANCES. Storage detail,
+ *     an internal note that the sub's own device looks wrong, and controls
+ *     a document does not have.
+ *
+ * WHAT IT CARRIES THAT THE PORTAL DOES NOT is `clientCanSee`, and it is not
+ * a widening of the disclosure — it is the opposite. On an internal
+ * selection the document mixes captures the GC has seen with captures they
+ * have not, and the person holding the paper has to be able to tell which
+ * page is which before they photocopy it. It is a boolean rather than the
+ * disclosure timestamp: the report answers "may this leave the building",
+ * not "when was it disclosed", and the date is the portal's business.
+ */
+export type JobPhotoReportCapture = {
+  id: string;
+  blobUrl: string;
+  /** Photo, video or voice note. The report can only PRINT the first —
+   *  see `partitionPrintable` for why the other two are listed rather than
+   *  dropped. */
+  kind: JobMediaKind;
+  caption: string | null;
+  capturedAtLabel: string;
+  /** The day this belongs to, in the viewer's zone, for the page heading it
+   *  is grouped under. Derived on read like every other label here. */
+  dayLabel: string;
+  marks: JobMediaMark[];
+  /** Whether the job's client can currently see this through their portal
+   *  link. Drives one printed note on an internal report and nothing else. */
+  clientCanSee: boolean;
+};
+
+/**
+ * The captures one printed report is built from.
+ *
+ * A SEPARATE READ FROM `loadJobMedia` RATHER THAN A FLAG ON IT. The two
+ * differ in their projection (above), in their default (this one is called
+ * with `shared: true` unless somebody chose otherwise — see
+ * lib/photo-report.ts) and in what a mistake costs: a gallery that shows
+ * one photo too many is a page the sub is already looking at, and a
+ * document that does is a disclosure. Sharing one function would put both
+ * behind one `where` builder that nobody can read twice as carefully for
+ * one caller than the other.
+ *
+ * THE `shared` PARAMETER IS THREE-VALUED and `undefined` means both, the
+ * same shape and the same trap as `JobMediaFilter.shared`: written the
+ * obvious way — `...(shared ? … : {})` — the "not shared" report would
+ * silently become the everything report, which on this surface prints the
+ * crew's own mistakes onto a document headed with the client's job name.
+ *
+ * Ordered newest-first like every other read in this file, and REVERSED
+ * afterwards by `oldestFirst` in the page: the cap has to keep the most
+ * recent captures, and the document has to read forwards. That split is
+ * stated in lib/photo-report.ts rather than done quietly here.
+ */
+export async function loadJobMediaForReport(
+  {
+    jobId,
+    companyId,
+    shared,
+    tagId,
+    take,
+  }: {
+    jobId: string;
+    companyId: string;
+    shared?: boolean;
+    tagId?: string;
+    take: number;
+  },
+  timeZone: string,
+): Promise<JobPhotoReportCapture[]> {
+  const rows = await prisma.jobMedia.findMany({
+    where: jobMediaWhere({
+      companyId,
+      jobId,
+      ...(tagId ? { tagId } : {}),
+      ...(shared === undefined ? {} : { shared }),
+    }),
+    take,
+    orderBy: [{ capturedAt: "desc" }, { createdAt: "desc" }],
+    // An explicit `select` rather than the default row, for the same reason
+    // the portal read has one: the columns that must never reach this
+    // document are not even fetched, so a future edit that wants them is a
+    // visible change to this list rather than a field that appeared.
+    select: {
+      id: true,
+      blobUrl: true,
+      caption: true,
+      capturedAt: true,
+      contentType: true,
+      sharedWithClientAt: true,
+      // NO `capturedBy`, NO `tags`, NO `capturedLatitude`/`Longitude`/
+      // `capturedAccuracyMeters`, NO `byteSize`, NO `createdAt`. Each one is
+      // argued on `JobPhotoReportCapture` above.
+      annotations: {
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        select: { id: true, kind: true, x1: true, y1: true, x2: true, y2: true, label: true },
+      },
+    },
+  });
+
+  return rows.map((row) => ({
+    id: row.id,
+    blobUrl: row.blobUrl,
+    kind: jobMediaKind(row.contentType) ?? "photo",
+    caption: row.caption,
+    capturedAtLabel: formatCapturedAt(row.capturedAt, timeZone),
+    dayLabel: formatCapturedDay(row.capturedAt, timeZone),
+    marks: row.annotations.map(toMark),
+    // The COLUMN is a timestamp and this is a boolean derived from it on
+    // every read — one stored fact, no second flag beside it that could
+    // disagree, exactly as the card's `sharedWithClientLabel` is.
+    clientCanSee: row.sharedWithClientAt !== null,
+  }));
 }
