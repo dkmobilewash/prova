@@ -10,6 +10,7 @@ import {
   closeoutAlerts,
   contactFollowUpAlerts,
   factDigest,
+  filingPeriod,
   moneyFact,
   ALERT_AMOUNT_BUCKET,
   partitionAlerts,
@@ -21,6 +22,7 @@ import {
   visibleToPrincipal,
   wipAlerts,
   type Alert,
+  type FilingFrequency,
 } from "./alerts";
 import { classifyRenewal, type RenewalSource } from "./compliance-expiry";
 import { todayInZone } from "./viewer-timezone";
@@ -564,6 +566,232 @@ describe("certifiedPayrollAlerts", () => {
       expect(new Set(alerts.map((a) => a.key.split(":")[1]))).toEqual(
         new Set(["job_weekly", "job_monthly"]),
       );
+    });
+  });
+
+  describe("filing periods are anchored on the same SUNDAY the weeks are", () => {
+    // The weeks handed to this alert are Sunday-to-Saturday: #104 finding 7
+    // moved `alerts-query.ts` onto `certifiedPayrollWeekStart`, which is
+    // Sunday-based by deliberate choice recorded in its own header, so the
+    // alert and the certified-payroll sheet describe the same seven days.
+    //
+    // BIWEEKLY did not follow. It anchored its fortnights on a MONDAY epoch
+    // (2020-01-06), so every biweekly period ran Monday-to-Sunday while the
+    // weeks inside it ran Sunday-to-Saturday — one day out. The visible
+    // consequences were both real: a period's stated end was ALSO the first
+    // day of the next period's first week, and half of all weeks had a
+    // `weekStart` that fell outside the very period they were filed under.
+    //
+    // NOTE for anyone adding a case here: the `week` fixture at the top of
+    // this describe is Monday-to-Sunday (2026-08-17 is a Monday). It predates
+    // #104 finding 7 and does not match what `alerts-query.ts` now produces.
+    // The cases below use real SUNDAYS on purpose.
+    const FREQUENCIES: FilingFrequency[] = ["WEEKLY", "BIWEEKLY", "SEMI_MONTHLY", "MONTHLY"];
+
+    /** `count` consecutive Sunday week-starts from a Sunday. */
+    function sundaysFrom(firstSunday: string, count: number): string[] {
+      const out: string[] = [];
+      for (let i = 0; i < count; i += 1) {
+        out.push(
+          new Date(Date.parse(`${firstSunday}T00:00:00.000Z`) + i * 7 * 86_400_000)
+            .toISOString()
+            .slice(0, 10),
+        );
+      }
+      return out;
+    }
+
+    const dayOfWeek = (iso: string) => new Date(`${iso}T00:00:00.000Z`).getUTCDay();
+
+    // Fourteen months of consecutive Sundays, crossing a year end and every
+    // month length including February.
+    const SUNDAYS = sundaysFrom("2025-12-28", 60);
+
+    it("generates the inputs it claims to — sixty real Sundays", () => {
+      // The guard on the property below. A generator that returned an empty
+      // list, or dates that are not Sundays, would make every assertion in
+      // this block vacuously true while reporting green: nothing is ever
+      // misplaced in an empty list, and a Monday input would be testing a
+      // convention this alert does not use.
+      expect(SUNDAYS).toHaveLength(60);
+      expect(SUNDAYS.filter((s) => dayOfWeek(s) !== 0)).toEqual([]);
+      expect(SUNDAYS[0]).toBe("2025-12-28");
+      expect(SUNDAYS.at(-1)).toBe("2027-02-14");
+    });
+
+    it("files every week under a period that CONTAINS that week's start, for every frequency", () => {
+      // The invariant the Monday anchor broke. Asserted as a property over a
+      // long run of consecutive Sundays rather than on one date, because the
+      // failure was every OTHER fortnight — a single well-chosen example
+      // passes while half the calendar is wrong.
+      const misplaced: string[] = [];
+      let checked = 0;
+      for (const frequency of FREQUENCIES) {
+        for (const weekStart of SUNDAYS) {
+          const period = filingPeriod(weekStart, frequency);
+          checked += 1;
+          if (!(period.periodStart <= weekStart && weekStart <= period.periodEnd)) {
+            misplaced.push(
+              `${frequency} ${weekStart} -> ${period.key} [${period.periodStart}..${period.periodEnd}]`,
+            );
+          }
+        }
+      }
+      // Count the checks that actually ran, against a number that cannot
+      // drift with the loop — a property test over nothing passes too.
+      expect(checked).toBe(FREQUENCIES.length * SUNDAYS.length);
+      expect(misplaced).toEqual([]);
+    });
+
+    it("gives a BIWEEKLY period a Sunday start and a Saturday end, every fortnight", () => {
+      const wrongShape: string[] = [];
+      let checked = 0;
+      for (const weekStart of SUNDAYS) {
+        const { periodStart, periodEnd } = filingPeriod(weekStart, "BIWEEKLY");
+        checked += 1;
+        const span =
+          (Date.parse(`${periodEnd}T00:00:00.000Z`) - Date.parse(`${periodStart}T00:00:00.000Z`)) /
+          86_400_000;
+        if (dayOfWeek(periodStart) !== 0 || dayOfWeek(periodEnd) !== 6 || span !== 13) {
+          wrongShape.push(`${weekStart} -> ${periodStart}..${periodEnd} (${span}d)`);
+        }
+      }
+      expect(checked).toBe(SUNDAYS.length);
+      expect(wrongShape).toEqual([]);
+    });
+
+    it("tiles consecutive BIWEEKLY periods with no gap and no shared day", () => {
+      // Stated plainly: this one PASSED before the fix too. The Monday-anchored
+      // fortnights tiled correctly among THEMSELVES — they were simply offset
+      // by a day from the weeks they contained, which is what the two tests
+      // above catch and this one cannot. It is here because tiling is the
+      // property that must survive any future re-anchoring, not as evidence of
+      // this defect.
+      const seen: { key: string; periodStart: string; periodEnd: string }[] = [];
+      for (const weekStart of SUNDAYS) {
+        const period = filingPeriod(weekStart, "BIWEEKLY");
+        if (seen.at(-1)?.key !== period.key) seen.push(period);
+      }
+      expect(seen).toHaveLength(SUNDAYS.length / 2);
+      const breaks = seen
+        .slice(1)
+        .filter((period, i) => Date.parse(`${period.periodStart}T00:00:00.000Z`) !==
+          Date.parse(`${seen[i].periodEnd}T00:00:00.000Z`) + 86_400_000)
+        .map((period, i) => `${seen[i].periodEnd} -> ${period.periodStart}`);
+      expect(breaks).toEqual([]);
+    });
+
+    it("puts both weeks of the reported fortnight inside it, and ends it on the Saturday", () => {
+      // The exact reproduction from the finding. Before the fix:
+      //   2026-08-09 -> BW172, periodStart 2026-08-10, periodEnd 2026-08-23
+      // so the week's own Sunday start sat one day BEFORE its period began.
+      const first = filingPeriod("2026-08-09", "BIWEEKLY");
+      const second = filingPeriod("2026-08-16", "BIWEEKLY");
+      expect(first.periodStart).toBe("2026-08-09");
+      expect(first.periodEnd).toBe("2026-08-22");
+      expect(second.key).toBe(first.key);
+      expect(second.periodEnd).toBe("2026-08-22");
+
+      // And the next fortnight starts on the day after, not on the same day.
+      const next = filingPeriod("2026-08-23", "BIWEEKLY");
+      expect(next.key).not.toBe(first.key);
+      expect(next.periodStart).toBe("2026-08-23");
+      expect(next.periodEnd).toBe("2026-09-05");
+    });
+
+    it("keeps the BW period numbering the fix inherited, so no acknowledgement is orphaned", () => {
+      // Passes before AND after the fix, deliberately. An alert's key is what
+      // an acknowledgement is recorded against (`alertKey`), so renumbering
+      // the fortnights would silently un-dismiss every biweekly alert anyone
+      // had already acted on. Moving the epoch from Monday 2020-01-06 to the
+      // Sunday before it shifts both the epoch and every Sunday week-start by
+      // the same day, so `weekIndex` — and therefore this key — is unchanged.
+      // Pinned here so a future re-anchoring has to notice the cost.
+      expect(filingPeriod("2026-08-09", "BIWEEKLY").key).toBe("BW172");
+      expect(filingPeriod("2026-08-23", "BIWEEKLY").key).toBe("BW173");
+    });
+
+    it("normalises a Monday week-start onto the Sunday-anchored fortnight too", () => {
+      // Not a shape the current caller produces, but the older fixtures in
+      // this file do and a future caller might. The period must still be the
+      // Sunday-to-Saturday fortnight that contains the week, not a
+      // Monday-anchored one derived from whatever the caller happened to pass.
+      const period = filingPeriod("2026-08-17", "BIWEEKLY");
+      expect(dayOfWeek(period.periodStart)).toBe(0);
+      expect(dayOfWeek(period.periodEnd)).toBe(6);
+      expect(period.periodStart <= "2026-08-17" && "2026-08-17" <= period.periodEnd).toBe(true);
+    });
+
+    it("dates a biweekly filing from the Saturday its fortnight ends, not the Sunday after", () => {
+      // The user-visible half, through the public surface: two Sunday weeks
+      // of one fortnight, no jurisdiction window recorded, so the generic
+      // 7-day horizon applies. Before the fix the period ended 2026-08-23 and
+      // this alert claimed a due date of 2026-08-30 — a day late, on a
+      // compliance deadline, and dated from a day that belongs to the NEXT
+      // period.
+      const fortnight = [
+        { weekStart: "2026-08-09", weekEnd: "2026-08-15" },
+        { weekStart: "2026-08-16", weekEnd: "2026-08-22" },
+      ].map((w) => ({
+        jobId: "job_1",
+        jobName: "Mercy Tower",
+        ...w,
+        filingFrequency: "BIWEEKLY" as const,
+      }));
+
+      const alerts = certifiedPayrollAlerts(fortnight, TODAY);
+      expect(alerts).toHaveLength(1);
+      expect(alerts[0].title).toContain("period ending 2026-08-22");
+      expect(alerts[0].dueOn).toBe("2026-08-29");
+      expect(alerts[0].daysUntil).toBe(-3);
+      expect(alerts[0].severity).toBe("OVERDUE");
+    });
+
+    it("holds the WEEKLY period to exactly the week it was given", () => {
+      const period = filingPeriod("2026-08-09", "WEEKLY");
+      expect(period).toEqual({
+        key: "2026-08-09",
+        periodStart: "2026-08-09",
+        periodEnd: "2026-08-15",
+      });
+    });
+
+    it("ends a MONTHLY or SEMI_MONTHLY February on the real last day of it", () => {
+      // `Date.UTC(y, m, 0)` with a 1-based month is the last day of that
+      // month, which is right and is the kind of index trick worth pinning.
+      expect(filingPeriod("2028-02-27", "MONTHLY").periodEnd).toBe("2028-02-29"); // leap
+      expect(filingPeriod("2027-02-21", "MONTHLY").periodEnd).toBe("2027-02-28"); // not
+      expect(filingPeriod("2028-02-27", "SEMI_MONTHLY")).toEqual({
+        key: "2028-02-B",
+        periodStart: "2028-02-16",
+        periodEnd: "2028-02-29",
+      });
+      expect(filingPeriod("2028-02-13", "SEMI_MONTHLY")).toEqual({
+        key: "2028-02-A",
+        periodStart: "2028-02-01",
+        periodEnd: "2028-02-15",
+      });
+    });
+
+    it("files a period-straddling week wholly in the period its START falls in — KNOWN LIMITATION", () => {
+      // Characterization, not endorsement. This passed before the Sunday fix
+      // and still does: a week is bucketed by its first day, so a week
+      // running 2026-08-30 to 2026-09-05 is filed entirely under August and
+      // its period is declared closed on 2026-08-31 — six days of which had
+      // not happened yet. Same for SEMI_MONTHLY across the 15th.
+      //
+      // Splitting it needs per-day hours, and `CertifiedPayrollAlertSource`
+      // carries none: it has a week and nothing inside the week. Fixing it
+      // here would mean inventing a distribution. Left alone on purpose,
+      // recorded so nobody "fixes" it silently and so the next person has the
+      // reproduction rather than the surprise.
+      expect(filingPeriod("2026-08-30", "MONTHLY")).toEqual({
+        key: "2026-08",
+        periodStart: "2026-08-01",
+        periodEnd: "2026-08-31",
+      });
+      expect(filingPeriod("2026-08-09", "SEMI_MONTHLY").periodEnd).toBe("2026-08-15");
+      expect(filingPeriod("2026-08-13", "SEMI_MONTHLY").periodEnd).toBe("2026-08-15");
     });
   });
 });
