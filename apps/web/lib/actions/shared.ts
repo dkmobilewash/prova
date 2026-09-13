@@ -299,3 +299,23 @@ export function isUniqueConstraintError(err: unknown): boolean {
 export function plural(count: number, one: string, many: string) {
   return `${count} ${count === 1 ? one : many}`;
 }
+
+/**
+ * "a" / "a and b" / "a, b, and c" — the Oxford-comma natural-language list
+ * join for a delete-refusal message that names several non-zero counts.
+ *
+ * Extracted for #218: deleteContact joined with `.join(", ")` ("has 1 bid
+ * invitation, 4 logged interactions, 1 person on file" — no "and" at all)
+ * while deleteSalesLead joined with `.join(" and ")` ("has 2 opportunities
+ * and 2 logged activities" — right for exactly two items, since it has no
+ * third field to ever test, but "a and b and c" for three). Neither was
+ * actually correct at every length; this is, and now there is one place to
+ * get it from instead of a future third caller guessing which style is
+ * "the" style.
+ */
+export function joinWithConjunction(parts: string[]): string {
+  if (parts.length === 0) return "";
+  if (parts.length === 1) return parts[0];
+  if (parts.length === 2) return `${parts[0]} and ${parts[1]}`;
+  return `${parts.slice(0, -1).join(", ")}, and ${parts[parts.length - 1]}`;
+}
