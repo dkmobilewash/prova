@@ -60,16 +60,47 @@ export interface PrevailingWageRuleSetInput {
  * Returns null rather than the nearest match. A near-miss silently
  * standing in for the real thing is how a review starts producing
  * confident wrong answers.
+ *
+ * MORE THAN ONE ROW CAN MATCH, so this does not return the first one it
+ * finds. `PrevailingWageRuleSet_no_overlapping_rules` (migration
+ * 20260902021139) excludes on `tsrange(effectiveFrom, COALESCE(effectiveTo,
+ * 'infinity'))`, and tsrange's default bounds are [inclusive, exclusive) —
+ * so a rule set ending on 1 June and one starting on 1 June are ADJACENT
+ * to Postgres, both insert cleanly, and both match 1 June under the
+ * inclusive comparison above. Exactly the hole FringeRateSchedule had
+ * (issue #104 finding 3), and the migration's own comment names the cost:
+ * "the rules that applied that week" would otherwise depend on row order.
+ *
+ * The choice is therefore made here rather than left to the caller's fetch
+ * order — findMany without an ORDER BY has none to offer, and a review of
+ * one signed week must not classify its overtime differently on two page
+ * loads. Most recently effective wins: the LATEST `effectiveFrom` among
+ * those that match.
+ *
+ * Ties on `effectiveFrom` are real and are broken on `id`. A one-day rule
+ * set (effectiveTo == effectiveFrom, which the create action accepts —
+ * it rejects only an end STRICTLY BEFORE the start) has the empty tsrange
+ * [x, x), and an empty range overlaps nothing, so the exclusion constraint
+ * cannot refuse it alongside a rule set beginning that same day. "Latest
+ * effectiveFrom" then has nothing left to compare, and a reduce with a
+ * strict `>` would silently fall back to array order. `id` is the primary
+ * key, so comparing it is a TOTAL order that always answers. Which id wins
+ * is arbitrary as a judgment — an id cannot know which rule set a payroll
+ * clerk meant — and stability is the only property claimed for it.
  */
-export function findEffectiveRuleSet<T extends { effectiveFrom: string; effectiveTo: string | null }>(
-  ruleSets: T[],
-  dateIso: string,
-): T | null {
-  return (
-    ruleSets.find(
-      (rs) => rs.effectiveFrom <= dateIso && (rs.effectiveTo === null || rs.effectiveTo >= dateIso),
-    ) ?? null
+export function findEffectiveRuleSet<
+  T extends { id: string; effectiveFrom: string; effectiveTo: string | null },
+>(ruleSets: T[], dateIso: string): T | null {
+  const matches = ruleSets.filter(
+    (rs) => rs.effectiveFrom <= dateIso && (rs.effectiveTo === null || rs.effectiveTo >= dateIso),
   );
+  if (matches.length === 0) return null;
+  return matches.reduce((best, candidate) => {
+    if (candidate.effectiveFrom !== best.effectiveFrom) {
+      return candidate.effectiveFrom > best.effectiveFrom ? candidate : best;
+    }
+    return candidate.id > best.id ? candidate : best;
+  });
 }
 
 /** Whether this rule set says anything at all about overtime. A rule set
