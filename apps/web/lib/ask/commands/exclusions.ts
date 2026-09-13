@@ -41,6 +41,12 @@ export const notYetRegistered: Exclusion[] = [
   // to make impossible.
   { action: "ask.*", reason: "The confirm and cancel actions are the write path a card resolves to, and the connection check is a diagnostic button on the settings page; never a command." },
 
+  // Asking a human. The box answering "ask us for help" by mailing us a
+  // question it wrote is the model deciding what the person needed help
+  // with — and if it knew that, they would not be asking. The panel is one
+  // click away on every page and the words have to be theirs.
+  { action: "help.*", reason: "Reaching a person is the one thing the assistant must not do on their behalf: the question has to be in their words, and a model-composed one arrives claiming to be. Never a command." },
+
   // Diego's lane, later phases.
   { action: "changeOrders.*", reason: "Change orders move contract value a sent pay application may depend on (T5 decisions, T3 drafts); a later phase." },
   { action: "backcharges.*", reason: MONEY },
