@@ -5,6 +5,7 @@ import { createToolboxTalk } from "@/lib/actions";
 import { inputClass, labelClass, type JobOption } from "@/components/SafetyIncidentFields";
 import { localToday } from "@/components/localToday";
 import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
+import { jobPickerLabel } from "@/components/jobLabels";
 
 export function ToolboxTalkForm({ jobs, today }: { jobs: JobOption[]; today: string }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -59,7 +60,7 @@ export function ToolboxTalkForm({ jobs, today }: { jobs: JobOption[]; today: str
             <option value="">Not job-specific (shop, yard, all-hands)</option>
             {jobs.map((job) => (
               <option key={job.id} value={job.id}>
-                {job.name}
+                {jobPickerLabel(job)}
               </option>
             ))}
           </select>

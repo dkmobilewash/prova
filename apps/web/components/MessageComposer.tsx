@@ -4,6 +4,7 @@ import { useRef, useState, useTransition } from "react";
 import { sendOutboundEmail, settleAskDraft } from "@/lib/actions";
 import { inputClass, labelClass, type JobOption } from "@/components/RfiFields";
 import type { MessageDraft } from "@/lib/ask/drafts";
+import { jobPickerLabel } from "@/components/jobLabels";
 
 /** The entry point this feature shipped without.
  *
@@ -114,7 +115,7 @@ export function MessageComposer({
           <option value="">Not tied to a job</option>
           {jobs.map((job) => (
             <option key={job.id} value={job.id}>
-              {job.name}
+              {jobPickerLabel(job)}
             </option>
           ))}
         </select>

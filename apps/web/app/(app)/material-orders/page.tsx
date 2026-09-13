@@ -7,6 +7,7 @@ import { MaterialOrderRow } from "@/components/MaterialOrderRow";
 import { daysLate, orderState } from "@/components/materialOrderLabels";
 import { StatusLine } from "@/components/StatusLine";
 import { materialOrdersStatus } from "@/lib/status-sentences";
+import { jobPickerLabel, toJobOption } from "@/components/jobLabels";
 
 /** Stored at UTC midnight, rendered in UTC — same rule as RFIs,
  * submittals, the safety log and daily field reports. */
@@ -27,11 +28,11 @@ export default async function MaterialOrdersPage({
 
   const today = new Date().toISOString().slice(0, 10);
 
-  const [jobs, vendors, lineItems] = await Promise.all([
+  const [jobRows, vendors, lineItems] = await Promise.all([
     prisma.job.findMany({
       where: { companyId: company.id },
       orderBy: { createdAt: "desc" },
-      select: { id: true, name: true },
+      select: { id: true, name: true, status: true, contact: { select: { name: true } } },
     }),
     prisma.vendor.findMany({
       where: { companyId: company.id },
@@ -47,6 +48,9 @@ export default async function MaterialOrdersPage({
       select: { id: true, jobId: true, description: true },
     }),
   ]);
+  // status + contact, not just the name: issue #65 — seven jobs sharing one
+  // placeholder name made every picker seven identical rows.
+  const jobs = jobRows.map(toJobOption);
   const activeJob = jobFilter && jobs.some((j) => j.id === jobFilter) ? jobFilter : null;
 
   const orders = await prisma.materialOrder.findMany({
@@ -149,7 +153,7 @@ export default async function MaterialOrdersPage({
           </Link>
           {jobs.map((j) => (
             <Link key={j.id} href={filterHref({ job: j.id })} className={chip(activeJob === j.id)}>
-              {j.name}
+              {jobPickerLabel(j)}
             </Link>
           ))}
         </div>

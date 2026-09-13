@@ -6,6 +6,7 @@ import { AskDraftNotice } from "@/components/AskDraftNotice";
 import { loadPunchDraft } from "@/lib/ask/drafts";
 import { PunchListForm } from "@/components/PunchListForm";
 import { PunchListRow } from "@/components/PunchListRow";
+import { jobPickerLabel, toJobOption } from "@/components/jobLabels";
 
 export default async function PunchListsPage({
   searchParams,
@@ -23,11 +24,14 @@ export default async function PunchListsPage({
   const askDraft = await loadPunchDraft(context, draft);
   const punchDraft = askDraft.kind === "draft" ? askDraft.draft : undefined;
 
+  // The GC's name, for the pickers: issue #65 — seven jobs sharing one
+  // placeholder name made every picker seven identical rows.
   const jobs = await prisma.job.findMany({
     where: { companyId: company.id },
     orderBy: { createdAt: "desc" },
+    include: { contact: { select: { name: true } } },
   });
-  const jobOptions = jobs.map((j) => ({ id: j.id, name: j.name }));
+  const jobOptions = jobs.map(toJobOption);
   const activeJob = jobFilter && jobs.some((j) => j.id === jobFilter) ? jobFilter : null;
 
   const items = await prisma.punchListItem.findMany({
@@ -88,7 +92,7 @@ export default async function PunchListsPage({
           </Link>
           {jobOptions.map((j) => (
             <Link key={j.id} href={filterHref({ job: j.id })} className={chip(activeJob === j.id)}>
-              {j.name}
+              {jobPickerLabel(j)}
             </Link>
           ))}
         </div>

@@ -7,6 +7,7 @@ import { RenewalAlerts } from "@/components/RenewalAlerts";
 import { renewalSourcesForCompany } from "@/lib/renewals";
 import { renewalAlerts } from "@/lib/compliance-expiry";
 import { serverToday } from "@/lib/serverToday";
+import { toJobOption } from "@/components/jobLabels";
 
 export default async function CompliancePage() {
   const { context, allowed } = await requireCapability("MANAGE_COMPLIANCE");
@@ -19,7 +20,13 @@ export default async function CompliancePage() {
       orderBy: { createdAt: "desc" },
       include: { job: true },
     }),
-    prisma.job.findMany({ where: { companyId: company.id }, orderBy: { createdAt: "desc" } }),
+    // The GC's name, for the picker: issue #65 — seven jobs sharing one
+    // placeholder name made every picker seven identical rows.
+    prisma.job.findMany({
+      where: { companyId: company.id },
+      orderBy: { createdAt: "desc" },
+      include: { contact: { select: { name: true } } },
+    }),
     renewalSourcesForCompany(company.id),
   ]);
 
@@ -53,7 +60,7 @@ export default async function CompliancePage() {
 
       <section className="mb-8 rounded-lg border border-slate-800 bg-slate-900 p-4">
         <h2 className="mb-3 text-sm font-semibold text-slate-300">Upload a document</h2>
-        <ComplianceUploadForm jobs={jobs.map((job) => ({ id: job.id, name: job.name }))} />
+        <ComplianceUploadForm jobs={jobs.map(toJobOption)} />
       </section>
 
       <section>

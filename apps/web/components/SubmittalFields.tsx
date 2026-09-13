@@ -1,6 +1,7 @@
 "use client";
 
 import { inputClass, labelClass, type JobOption } from "@/components/RfiFields";
+import { jobPickerLabel } from "@/components/jobLabels";
 
 export type SubmittalDefaults = {
   title: string;
@@ -32,7 +33,7 @@ export function SubmittalFields({
             </option>
             {jobs.map((job) => (
               <option key={job.id} value={job.id}>
-                {job.name}
+                {jobPickerLabel(job)}
               </option>
             ))}
           </select>
