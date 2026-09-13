@@ -164,6 +164,7 @@ export function PunchListRow({ canDelete, jobs, item, showJob }: PunchListRowPro
         destructive={
           canDelete ? (
             <ConfirmDelete
+              describe="Removes the punch item from this job's list, with its status and notes."
               pinned="end"
               label="Remove"
               confirmLabel="Confirm remove"

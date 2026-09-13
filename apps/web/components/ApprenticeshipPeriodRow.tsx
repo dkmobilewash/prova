@@ -135,6 +135,7 @@ export function ApprenticeshipPeriodRow({
         destructive={
           canDelete ? (
             <ConfirmDelete
+              describe="Removes this period, so its hours stop counting toward the apprentice's registration. Nothing is filed with the program sponsor."
               label="Remove"
               confirmLabel="Confirm remove"
               pendingLabel="Removing…"

@@ -178,6 +178,7 @@ export function SalesOpportunityRow({
           className="flex shrink-0 flex-wrap items-center gap-2"
           destructive={
             <ConfirmDelete
+              describe="Removes the deal from the pipeline, so its value stops counting in the pipeline figures."
               pinned="end"
               pendingLabel="Deleting…"
               pending={isPending}

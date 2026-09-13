@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Hint } from "@/components/Hint";
 import { navGroupsFor } from "@/components/navItems";
 import { useNavAccordion } from "@/components/useNavAccordion";
 import type { Principal } from "@/lib/permissions";
@@ -67,34 +68,42 @@ export function Sidebar({
 
             return (
               <div key={group.heading} className="flex flex-col gap-0.5">
-                <button
-                  type="button"
-                  onClick={() => toggle(group.heading)}
-                  aria-expanded={isOpen}
-                  aria-controls={panelId}
-                  title={group.heading}
-                  data-nav-group={group.heading}
-                  className={`flex h-10 w-full items-center gap-3 px-4 text-left text-sm font-medium transition-colors ${
-                    isOpen || holdsPage
-                      ? "text-white"
-                      : "text-slate-400 hover:bg-rail-hover hover:text-white"
-                  }`}
-                >
-                  <span className="shrink-0">{group.icon}</span>
-                  <span className="flex-1 truncate whitespace-nowrap text-[11px] font-semibold uppercase tracking-wider opacity-0 transition-opacity duration-150 group-hover/rail:opacity-100">
-                    {group.heading}
-                  </span>
-                  <svg
-                    viewBox="0 0 20 20"
-                    fill="none"
-                    aria-hidden="true"
-                    className={`h-4 w-4 shrink-0 opacity-0 transition-[opacity,transform] duration-150 group-hover/rail:opacity-100 ${
-                      isOpen ? "rotate-180" : ""
+                {/* The hint carries the heading as well as the description,
+                    because at 64px the heading is the thing that is hidden —
+                    it replaces a `title` that repeated the heading and said
+                    nothing a collapsed rail does not already show. One
+                    tooltip, not two: `title` is gone rather than kept
+                    alongside. Hint adds no box, so the rail's 64px/240px
+                    transition is untouched. */}
+                <Hint text={`${group.heading} — ${group.description}`}>
+                  <button
+                    type="button"
+                    onClick={() => toggle(group.heading)}
+                    aria-expanded={isOpen}
+                    aria-controls={panelId}
+                    data-nav-group={group.heading}
+                    className={`flex h-10 w-full items-center gap-3 px-4 text-left text-sm font-medium transition-colors ${
+                      isOpen || holdsPage
+                        ? "text-white"
+                        : "text-slate-400 hover:bg-rail-hover hover:text-white"
                     }`}
                   >
-                    <path d="m6 8 4 4 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                </button>
+                    <span className="shrink-0">{group.icon}</span>
+                    <span className="flex-1 truncate whitespace-nowrap text-[11px] font-semibold uppercase tracking-wider opacity-0 transition-opacity duration-150 group-hover/rail:opacity-100">
+                      {group.heading}
+                    </span>
+                    <svg
+                      viewBox="0 0 20 20"
+                      fill="none"
+                      aria-hidden="true"
+                      className={`h-4 w-4 shrink-0 opacity-0 transition-[opacity,transform] duration-150 group-hover/rail:opacity-100 ${
+                        isOpen ? "rotate-180" : ""
+                      }`}
+                    >
+                      <path d="m6 8 4 4 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </button>
+                </Hint>
 
                 <div id={panelId} hidden={!isOpen} className="flex flex-col gap-0.5 pb-2">
                   {group.items.map((item) => {

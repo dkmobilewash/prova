@@ -337,6 +337,7 @@ export function EquipmentDeploymentControls({
                 destructive={
                   canDelete ? (
                     <ConfirmDelete
+                      describe="Cancels this planned stay, so the machine shows as free for those dates again."
                       pinned="end"
                       label="Remove"
                       confirmLabel="Confirm"

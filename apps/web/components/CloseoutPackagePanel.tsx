@@ -233,6 +233,7 @@ export function CloseoutPackagePanel({
                   destructive={
                     canDelete ? (
                       <ConfirmDelete
+                        describe="Removes your record of sending the package. It does not unsend anything — the GC still has whatever went out."
                         confirmLabel="Confirm delete"
                         pendingLabel="Deleting…"
                         pending={isPending}

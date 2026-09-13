@@ -68,6 +68,7 @@ export function IntegrationControls({
           className="flex flex-col items-end gap-1"
           destructive={
             <ConfirmDelete
+              describe="Stops the sync both ways until you reconnect. The sync history and your account mapping are kept."
               label="Disconnect"
               confirmLabel="Confirm disconnect"
               pendingLabel="Disconnecting…"

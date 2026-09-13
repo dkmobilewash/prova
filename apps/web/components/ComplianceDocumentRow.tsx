@@ -256,7 +256,7 @@ export function ComplianceDocumentRow({
           className="flex flex-wrap items-center gap-3"
           destructive={
             canDelete ? (
-              <ConfirmDelete pinned="end" action={deleteComplianceDocument.bind(null, doc.id)} />
+              <ConfirmDelete describe="Removes the document from your compliance file here. A copy you already sent a GC stays with them." pinned="end" action={deleteComplianceDocument.bind(null, doc.id)} />
             ) : null
           }
         >
