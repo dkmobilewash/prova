@@ -1,5 +1,5 @@
 import { prisma } from "@prova/db";
-import { draftEstimateLineItems } from "@prova/integrations";
+import { draftEstimateLineItems, type DraftPriceBasis } from "@prova/integrations";
 import type { ActionResultWith } from "@/lib/actions/shared";
 
 /**
@@ -19,6 +19,40 @@ import type { ActionResultWith } from "@/lib/actions/shared";
  */
 export const NOT_ESTIMATE_STAGE =
   "This job is contracted — edit line items via a change order instead of directly.";
+
+/**
+ * Where the price on THIS row came from — derived from the branch that
+ * actually chose the number, never copied from the model.
+ *
+ * The drafter normalises what the model CLAIMED about its own price
+ * (anthropic.ts), but the number written is chosen here: a matched catalog
+ * entry's own default overrides whatever the model said. Those two
+ * decisions were made in two files and nothing reconciled them, so the
+ * badge on the job page (`PriceBasisBadge`) could contradict the figure
+ * printed beside it, in both directions:
+ *
+ *   - an entry with NO default price, claimed COMPANY_CATALOG: the number
+ *     stored is the model's own invention and the badge read the green
+ *     "Your catalog price". False confidence is the exact thing this field
+ *     exists to prevent, so it degrades to the weakest basis — the same
+ *     rule anthropic.ts already applies to a catalog claim with no entry
+ *     behind it;
+ *   - an entry WITH a default price and any other claim: the number stored
+ *     is the company's own, badged "AI guess, no company data" or, with no
+ *     claim at all, "AI-drafted, unpriced" beside a price. The price is the
+ *     catalog's; say so.
+ *
+ * No price means no claim about where a price came from.
+ */
+export function priceBasisFor(
+  fromCatalog: boolean,
+  unitPrice: string | null,
+  claimed: DraftPriceBasis | null,
+): DraftPriceBasis | null {
+  if (unitPrice == null) return null;
+  if (fromCatalog) return "COMPANY_CATALOG";
+  return claimed === null || claimed === "COMPANY_CATALOG" ? "GENERAL_KNOWLEDGE" : claimed;
+}
 
 export async function draftLinesFromScope(
   companyId: string,
@@ -98,24 +132,25 @@ export async function draftLinesFromScope(
   const created = await prisma.jobLineItem.createMany({
     data: draftLineItems.map((item) => {
       const entry = item.catalogEntryId ? fullEntryById.get(item.catalogEntryId) : undefined;
+      const fromCatalog = entry?.defaultUnitPrice != null;
+      const unitPrice = fromCatalog
+        ? entry!.defaultUnitPrice!.toString()
+        : item.unitPrice != null
+          ? item.unitPrice.toString()
+          : null;
       return {
         jobId: job.id,
         description: entry?.description ?? item.description,
         quantity: item.quantity.toString(),
         unit: entry?.unit ?? item.unit,
-        unitPrice:
-          entry?.defaultUnitPrice != null
-            ? entry.defaultUnitPrice.toString()
-            : item.unitPrice != null
-              ? item.unitPrice.toString()
-              : null,
+        unitPrice,
         budgetedUnitCost: entry?.defaultBudgetedUnitCost ?? null,
         currentEstimatedUnitCost: entry?.defaultBudgetedUnitCost ?? null,
         laborHours: entry?.defaultLaborHours ?? null,
         craftClassificationId: entry?.craftClassificationId ?? null,
         tradeScope: entry?.tradeScope ?? item.tradeScope,
         sourceCatalogEntryId: entry?.id ?? null,
-        priceBasis: item.priceBasis,
+        priceBasis: priceBasisFor(fromCatalog, unitPrice, item.priceBasis),
         aiDrafted: true,
       };
     }),
