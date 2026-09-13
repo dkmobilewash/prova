@@ -1,13 +1,43 @@
 import { currentUser } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { Prisma, prisma } from "@prova/db";
+import { recordLastSeen } from "@/lib/last-seen-stamp";
 
 /**
  * Loads the signed-in user's Prova User + Company, creating both on first
  * sign-in. Call only from protected routes (middleware already enforces
  * auth, so an unauthenticated call here means something is misconfigured).
+ *
+ * ALSO THE ONLY PLACE `lastSeenAt` IS WRITTEN, and this is the one
+ * function in the app where that is cheap to do honestly: every
+ * authenticated route awaits it, so nothing has to be remembered at 40
+ * call sites. What that buys in coverage it pays for in blast radius, so
+ * the stamp is the LAST thing that happens, it is throttled to one write
+ * per person per 15 minutes (see lib/last-seen.ts), and its failure is
+ * swallowed inside `recordLastSeen` rather than here — a 500 on every page
+ * in the product because a telemetry column could not be written is
+ * strictly worse than having no telemetry at all.
+ *
+ * The returned row still carries the PRE-stamp `lastSeenAt`. Nothing reads
+ * it from the context (the operator page runs its own query), and
+ * re-reading the row to refresh one field nobody looks at would double the
+ * cost of the thing being kept cheap.
+ *
+ * ONE HONEST COST, stated rather than hidden: the layout and the page both
+ * call this, and the App Router renders them concurrently, so on the render
+ * that CROSSES the 15-minute boundary both can read the same stale value
+ * and both write. That is two writes instead of one, at most once per
+ * person per interval, of the same timestamp to the same row — idempotent,
+ * and cheaper than making every route share one cached context just to
+ * avoid it.
  */
 export async function requireCompanyContext() {
+  const context = await loadCompanyContext();
+  await recordLastSeen(context);
+  return context;
+}
+
+async function loadCompanyContext() {
   const clerkUser = await currentUser();
   if (!clerkUser) {
     redirect("/sign-in");

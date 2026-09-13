@@ -60,6 +60,12 @@ const isProtectedRoute = createRouteMatcher([
   // route's own checks at that point.
   "/api/job-media/upload(.*)",
   "/deployment(.*)",
+  // Prova's own usage instrument — who is still logging in, across every
+  // company on the database. The page itself refuses anyone who is not the
+  // operator company's OWNER, which is the boundary; this entry is here
+  // because this list is the allowlist a reader checks, and the one
+  // deliberately cross-tenant read in the app must not be absent from it.
+  "/internal(.*)",
 ]);
 
 // /api/integrations/webhooks/[provider] is deliberately NOT protected here.

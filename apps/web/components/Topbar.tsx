@@ -17,18 +17,18 @@ export function Topbar({
    * to appear when it does. */
   alertCount,
   principal,
-  showsSalesCrm = false,
+  showsInternal = false,
 }: {
   companyName: string;
   alertCount: number;
   principal: Principal;
   /** Prova's own operating company only -- see Company.isProvaOperator. */
-  showsSalesCrm?: boolean;
+  showsInternal?: boolean;
 }) {
   return (
     <div className="print:hidden flex h-14 shrink-0 items-center justify-between gap-3 border-b border-slate-800 bg-slate-900 px-4 sm:px-6">
       {/* Renders nothing above md — the desktop rail is always visible there. */}
-      <MobileNav companyName={companyName} principal={principal} showsSalesCrm={showsSalesCrm} />
+      <MobileNav companyName={companyName} principal={principal} showsInternal={showsInternal} />
       <div className="ml-auto flex items-center gap-3">
         <Link
           href="/alerts"

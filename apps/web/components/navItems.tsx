@@ -426,11 +426,11 @@ export const NAV_ITEMS: NavItem[] = [
       </svg>
     ),
   },
-  // Not in NAV_ITEMS's usual home in a NAV_GROUPS group below -- this one
-  // is for Prova's own operating company only (Company.isProvaOperator),
-  // never a tenant, so it is appended separately by navGroupsFor rather
-  // than filtered by the job-function capability system every other item
-  // uses. See SALES_NAV_GROUP.
+  // The next TWO are not in NAV_ITEMS's usual home in a NAV_GROUPS group
+  // below -- both are for Prova's own operating company only
+  // (Company.isProvaOperator), never a tenant, so they are appended
+  // separately by navGroupsFor rather than filtered by the job-function
+  // capability system every other item uses. See INTERNAL_NAV_GROUP.
   {
     href: "/sales",
     label: "Sales CRM",
@@ -444,6 +444,16 @@ export const NAV_ITEMS: NavItem[] = [
           strokeLinejoin="round"
         />
         <path d="M12.5 6h3.5v3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+  },
+  {
+    href: "/internal/usage",
+    label: "Usage",
+    icon: (
+      <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5">
+        <circle cx="10" cy="10" r="6.5" stroke="currentColor" strokeWidth="1.4" />
+        <path d="M10 6.2V10l2.6 1.8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     ),
   },
@@ -606,13 +616,20 @@ export function activeGroupHeading(groups: NavGroup[], pathname: string): string
   return best?.heading ?? null;
 }
 
-/** Prova's own sales pipeline for selling Prova itself -- deliberately
- * outside NAV_GROUPS above, which every tenant's nav is built from. Only
- * ever appended by navGroupsFor, and only when the caller says so. */
-const SALES_NAV_GROUP: NavGroup = {
+/** Prova's own pages -- selling Prova itself, and who is still logging in
+ * -- deliberately outside NAV_GROUPS above, which every tenant's nav is
+ * built from. Only ever appended by navGroupsFor, and only when the caller
+ * says so.
+ *
+ * It held one item until 2026-09-13, which is why the option that appends
+ * it was called `showsSalesCrm`. It is `showsInternal` now: a flag named
+ * after one page while gating two is a lie with nothing to catch it, and
+ * both pages are gated on exactly the same two facts (this Company is
+ * Prova's own operator, and this person is its OWNER). */
+const INTERNAL_NAV_GROUP: NavGroup = {
   heading: "Internal",
   icon: item("/sales").icon,
-  items: [item("/sales")],
+  items: [item("/sales"), item("/internal/usage")],
 };
 
 /**
@@ -630,8 +647,8 @@ const SALES_NAV_GROUP: NavGroup = {
  * forgotten in the other is a feature that exists on a phone and not on a
  * laptop.
  */
-export function navGroupsFor(user: Principal, options: { showsSalesCrm?: boolean } = {}): NavGroup[] {
-  const groups = options.showsSalesCrm ? [...NAV_GROUPS, SALES_NAV_GROUP] : NAV_GROUPS;
+export function navGroupsFor(user: Principal, options: { showsInternal?: boolean } = {}): NavGroup[] {
+  const groups = options.showsInternal ? [...NAV_GROUPS, INTERNAL_NAV_GROUP] : NAV_GROUPS;
   return groups
     .map((group) => ({
       ...group,
