@@ -145,8 +145,10 @@ export async function loadApprenticeships(
     //
     // Null on the ENROLLMENT is a different thing and unchanged: no craft
     // recorded means nothing to disambiguate with, so every hour counts.
-    // Prisma drops an `undefined` filter rather than matching it
-    // literally, so the query only narrows when a craft IS on file.
+    // That case contributes `{}` and the key is therefore ABSENT from the
+    // where-clause entirely — it does not rely on Prisma dropping an
+    // `undefined` filter, which is what the previous version of this code
+    // did and what this comment used to describe.
     //
     // THE RESIDUAL THIS CANNOT REACH, written down rather than left to be
     // rediscovered: two enrollments open at once for the same apprentice
@@ -175,9 +177,14 @@ export async function loadApprenticeships(
     const worked = await prisma.timeEntry.aggregate({
       _sum: { hours: true },
       where: {
+        // craftScope is spread FIRST, deliberately. It can contribute a
+        // top-level `OR`, and a spread in the middle of this literal would
+        // be silently clobbered by any `OR` a later edit added below it —
+        // or clobber one added above. Spread first and the explicit keys
+        // that follow can never be the ones lost.
+        ...craftScope,
         employeeUserId: row.apprenticeUserId,
         job: { companyId },
-        ...craftScope,
         date: {
           gte: new Date(`${startedOn}T00:00:00.000Z`),
           lte: new Date(`${periodEnd}T00:00:00.000Z`),

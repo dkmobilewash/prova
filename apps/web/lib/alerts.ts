@@ -718,7 +718,21 @@ export function filingPeriod(
     }
     case "BIWEEKLY": {
       const epoch = Date.UTC(2020, 0, 5); // an arbitrary SUNDAY — see above
-      const weekIndex = Math.round((Date.UTC(y, m - 1, d) - epoch) / (7 * 86_400_000));
+      // Floor the asked-for date onto the SUNDAY that starts its week before
+      // indexing. Every caller passes a Sunday today, so this changes nothing
+      // reachable — the `BW<n>` key and therefore every recorded
+      // acknowledgement are untouched. It is here because `Math.round` alone
+      // makes the invariant above a LIE for half the week: a Thursday,
+      // Friday or Saturday rounds UP to the next fortnight and the function
+      // returns a period that STARTS AFTER the date it was asked about
+      // (`filingPeriod("2024-01-11", "BIWEEKLY")` gave 2024-01-14..01-27).
+      // Nobody passes those days now; `weekEnd` is a Saturday and is exactly
+      // the plausible next argument. A doc block promising a property the
+      // code does not hold is the failure this repo keeps paying for, so the
+      // property is made true rather than the sentence softened.
+      const asked = Date.UTC(y, m - 1, d);
+      const weekStartUtc = asked - new Date(asked).getUTCDay() * 86_400_000;
+      const weekIndex = Math.round((weekStartUtc - epoch) / (7 * 86_400_000));
       const periodIndex = Math.floor(weekIndex / 2);
       const periodStart = new Date(epoch + periodIndex * 14 * 86_400_000).toISOString().slice(0, 10);
       return { key: `BW${periodIndex}`, periodStart, periodEnd: addDays(periodStart, 13) };

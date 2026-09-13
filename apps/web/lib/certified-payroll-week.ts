@@ -18,16 +18,30 @@
  * every already-filed week by a day, which is a bigger change to a filed
  * document than the overlap fix it would have ridden along with.
  *
- * The consequence is real and is written down here so the next caller
- * does not reuse this by accident: the certified-payroll ALERT
- * (`lib/alerts-query.ts`) and the prevailing-wage week review
- * (`lib/prevailing-wage-query.ts`) both group by MONDAY. So the alert's
- * "week of Mon 8/24 – Sun 8/30" and this page's "Aug 23 – Aug 29" are
- * different seven-day spans with hours in common. Anyone reconciling the
- * two sees a one-day offset. Whether the product should have one workweek
- * everywhere is an open decision — not one this module gets to make
- * silently. If you need the compliance week, import fieldReportWeeks; if
- * you need the week THIS PAGE PRINTS, import this.
+ * CORRECTED 2026-09-13, and the correction is the point. This paragraph
+ * said "the certified-payroll ALERT (`lib/alerts-query.ts`) and the
+ * prevailing-wage week review (`lib/prevailing-wage-query.ts`) both group
+ * by MONDAY", and that HALF STOPPED BEING TRUE when #244 (e18e1f5) moved
+ * `alerts-query.ts` onto `certifiedPayrollWeekStart` — this very function,
+ * which backs up to SUNDAY. The sentence a reader would check the next
+ * week-alignment question against was false for four days, in the file
+ * that exists to warn about exactly this.
+ *
+ * Where the three workweeks actually stand:
+ *   - THIS function (Sunday-start) — the certified-payroll sheet, and
+ *     since #244 the certified-payroll ALERT as well. Those two now
+ *     describe the same seven days, which was the whole point of that fix.
+ *   - `lib/prevailing-wage-query.ts` — still MONDAY-start, for weekly
+ *     overtime and the seventh-consecutive-day review.
+ *   - `fieldReportWeeks` — deliberately not Sunday; see its own header.
+ *
+ * So the offset did not go away, it MOVED: the alert and the sheet agree
+ * now, and the alert and the prevailing-wage OT review no longer do.
+ * Anyone reconciling a week's hours against a week's overtime still sees a
+ * one-day offset. Whether the product should have one workweek everywhere
+ * is an open decision — not one this module gets to make silently. If you
+ * need the overtime week, import from prevailing-wage-query; if you need
+ * the week THIS PAGE PRINTS, import this.
  */
 export function certifiedPayrollWeekStart(date: Date): Date {
   const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));

@@ -639,7 +639,42 @@ describe("certifiedPayrollAlerts", () => {
       }
       // Count the checks that actually ran, against a number that cannot
       // drift with the loop — a property test over nothing passes too.
-      expect(checked).toBe(FREQUENCIES.length * SUNDAYS.length);
+      expect(checked).toBe(240); // 4 frequencies x 60 Sundays, written out: a count derived from the arrays the loop walks passes at 0 === 0 (CLAUDE.md, the guard that parsed nothing)
+      expect(misplaced).toEqual([]);
+    });
+
+    it("holds the invariant for EVERY day of the week, not just the Sunday callers pass", () => {
+      // Added 2026-09-13 after an adversarial review measured the version
+      // above and found the invariant was NOT total: `Math.round` rounded a
+      // Thursday, Friday or Saturday UP to the next fortnight, so BIWEEKLY
+      // returned a period STARTING AFTER the date it was asked about — 546
+      // such days between 2024 and 2031. Sunday was clean, so every test
+      // above passed while the doc block's stated property was false.
+      //
+      // The reachable caller passes a Sunday, so that was not a live bug. It
+      // is tested anyway because `weekEnd` is a Saturday and is the obvious
+      // next argument somebody reaches for, and because a promised property
+      // that silently holds for four days out of seven is the shape this
+      // repo keeps paying for.
+      const misplaced: string[] = [];
+      let checked = 0;
+      // Two full years of CONSECUTIVE days from a Wednesday, so every weekday
+      // is covered ~104 times each. `addDays` is module-private in alerts.ts,
+      // so the day is stepped the same way sundaysFrom does it.
+      const FIRST = Date.parse("2024-01-03T00:00:00.000Z");
+      for (let i = 0; i < 730; i += 1) {
+        const day = new Date(FIRST + i * 86_400_000).toISOString().slice(0, 10);
+        for (const frequency of FREQUENCIES) {
+          const period = filingPeriod(day, frequency);
+          checked += 1;
+          if (!(period.periodStart <= day && day <= period.periodEnd)) {
+            misplaced.push(
+              `${frequency} ${day} (dow ${dayOfWeek(day)}) -> ${period.key} [${period.periodStart}..${period.periodEnd}]`,
+            );
+          }
+        }
+      }
+      expect(checked).toBe(2920); // 730 days x 4 frequencies, written out
       expect(misplaced).toEqual([]);
     });
 
@@ -656,7 +691,7 @@ describe("certifiedPayrollAlerts", () => {
           wrongShape.push(`${weekStart} -> ${periodStart}..${periodEnd} (${span}d)`);
         }
       }
-      expect(checked).toBe(SUNDAYS.length);
+      expect(checked).toBe(60); // written out, not SUNDAYS.length — same reason as above
       expect(wrongShape).toEqual([]);
     });
 
@@ -672,7 +707,7 @@ describe("certifiedPayrollAlerts", () => {
         const period = filingPeriod(weekStart, "BIWEEKLY");
         if (seen.at(-1)?.key !== period.key) seen.push(period);
       }
-      expect(seen).toHaveLength(SUNDAYS.length / 2);
+      expect(seen).toHaveLength(30); // 60 Sundays = 30 fortnights, written out
       const breaks = seen
         .slice(1)
         .filter((period, i) => Date.parse(`${period.periodStart}T00:00:00.000Z`) !==

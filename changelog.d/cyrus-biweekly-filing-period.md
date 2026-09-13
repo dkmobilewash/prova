@@ -65,3 +65,58 @@ Also corrected: `CertifiedPayrollAlertSource.weekStart` was documented as
 "The Monday of a finished week" and `weekEnd` as "The Sunday". #104 finding 7
 had already made both false. That stale comment is exactly what a reader
 would have checked the BIWEEKLY branch against.
+
+### Corrections from an adversarial review of this branch, 2026-09-13
+
+Three agents built these three fixes and three more were told to refute
+them. Two of the refutations landed, and both are fixed here rather than
+noted.
+
+**The two property tests could not fail, and they are the load-bearing
+ones.** Both asserted `expect(checked).toBe(FREQUENCIES.length *
+SUNDAYS.length)` — a count derived from the very arrays the loop walks, so
+it is satisfied at `0 === 0`. Proved vacuous rather than argued: changing
+the generator to `sundaysFrom("2025-12-28", 0)` left BOTH property tests
+GREEN. The counts are now written out (`240`, `60`, `30`), and the same
+mutation now turns four tests RED. This is the guard-that-parsed-nothing
+scar in CLAUDE.md arriving as a property test, which is why it is worth the
+paragraph: a check that derives its input must assert the SIZE of that
+input against a number that cannot drift with it.
+
+**The invariant this fix exists to satisfy was still not total, and the doc
+block claimed it was.** `Math.round` rounds a Thursday, Friday or Saturday
+UP to the next fortnight, so BIWEEKLY returned a period STARTING AFTER the
+date it was asked about — `filingPeriod("2024-01-11", "BIWEEKLY")` gave
+`BW105 [2024-01-14..2024-01-27]`. Measured across 2024-2031: **546 such
+days** before, spread over exactly Thursday/Friday/Saturday. Sunday was
+clean, which is why every test passed while the stated property was false.
+
+Not a live bug — the one production caller passes a Sunday — but the
+sentence a maintainer would trust was wrong, and `weekEnd` is a Saturday
+and the obvious next argument. So the property is made TRUE rather than the
+sentence softened: the date is floored onto the Sunday that starts its week
+before indexing. Now **zero violations on any weekday**, and the `BW<n>`
+key is unchanged for every Sunday — verified day by day across 2,557 days,
+because that key is what an `AlertAcknowledgement` is recorded against and
+renumbering would silently un-dismiss live alerts. A new test asserts the
+invariant over 730 CONSECUTIVE days (every weekday ~104 times) rather than
+60 Sundays; reverting the normalisation turns it red with 156 entries.
+
+Two claims in the other two fixes were also corrected in place: a comment
+in `apprenticeship-query.ts` still explained the OLD mechanism (Prisma
+dropping an `undefined` filter) when the new code omits the key entirely,
+and `prevailing-wage-query.ts` claimed its `orderBy` mirrors
+`findEffectiveRuleSet`'s comparator — it does not provably, since SQL
+orders a raw timestamp and a text collation while the function ties on the
+UTC calendar date and JS `>`. Determinism never depended on it; the comment
+now says so. `craftScope` is also spread FIRST in its where-clause, so a
+top-level `OR` added later cannot silently clobber it.
+
+**Also corrected, three files away and known-false on `main` for four
+days:** `certified-payroll-week.ts` stated that the certified-payroll alert
+and the prevailing-wage week review "both group by MONDAY". #244 moved the
+alert onto this module's Sunday week, so that half became false in the file
+whose entire purpose is warning about week-alignment. The offset did not go
+away, it MOVED — alert and sheet agree now; alert and the prevailing-wage
+overtime review no longer do. Written out as the three workweeks that
+actually exist, because the next person will check this file first.

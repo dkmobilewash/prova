@@ -210,10 +210,16 @@ export async function reviewJobWeek(
   // FringeRateSchedule already answers for wages via
   // findEffectiveFringeRateSchedule.
   //
-  // The orderBy mirrors findEffectiveRuleSet's own comparator — latest
-  // effectiveFrom first, id breaking a tie — so the rows arrive in the
-  // order the answer is taken from, and a reader debugging a week's
-  // classification sees the same sequence the function reasoned over.
+  // The orderBy is for a READER's benefit — latest effectiveFrom first, id
+  // breaking a tie — so somebody debugging a week's classification sees a
+  // stable sequence. It does NOT provably match the function's own
+  // comparator and must not be read as doing so: SQL orders the raw
+  // `timestamp` and the text collation of `id`, while the function ties on
+  // the UTC CALENDAR DATE and on JS UTF-16 `>`. Two rows on the same UTC
+  // date at different times of day order strictly here and tie there, so
+  // `candidates[0]` need not be the row the function returns. Unreachable
+  // through the app (every date enters at UTC midnight) and reachable via
+  // seed or direct SQL.
   // Determinism does NOT depend on it: findMany without an ORDER BY has no
   // guaranteed order, so the pure function decides among the rows that
   // match rather than trusting whichever came first. Belt and braces
