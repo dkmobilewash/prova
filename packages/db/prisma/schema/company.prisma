@@ -127,7 +127,12 @@ model User {
   uploadedComplianceDocuments          ComplianceDocument[]
   savedEstimateVersions                EstimateVersion[]
   uploadedContractDocuments            ContractDocument[]
-  timeEntries                          TimeEntry[]
+  timeEntries                          TimeEntry[]             @relation("TimeEntryEmployee")
+  /// Back-relation only: who corrected a logged hour (issue #63). Named
+  /// because TimeEntry now has two relations to User and Prisma cannot
+  /// disambiguate two unnamed ones. Nothing reads a worker's hours through
+  /// this — `timeEntries` above is still the person who WORKED them.
+  correctedTimeEntries                 TimeEntry[]             @relation("TimeEntryCorrectedBy")
   dispatchSlips                        DispatchSlip[]
   uploadedPrevailingWageDeterminations PrevailingWageDetermination[]
   createdRetainageReleases             RetainageRelease[]
