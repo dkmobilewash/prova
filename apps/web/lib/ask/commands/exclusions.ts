@@ -68,4 +68,23 @@ export const notYetRegistered: Exclusion[] = [
   { action: "drawings.*", reason: CYRUS },
   { action: "closeout.*", reason: CYRUS },
   { action: "certifications.*", reason: CYRUS },
+
+  // Correcting or removing a job's own identity. Deliberately NOT commands,
+  // and the reason is the same for both: they are the two writes on this
+  // page a person should have to look at while making. A rename reaches
+  // every pay application and certified payroll that names the job, and a
+  // removal is the one irreversible act in the product — neither is
+  // something to confirm from a chat card where the thing being changed is
+  // out of sight. Both refuse in a sentence, both are owner-gated where it
+  // matters, and both live on the job they act on.
+  {
+    action: "updateJobDetails",
+    reason:
+      "A rename reaches every document that names the job. Done on the job, where the person can see what they are renaming.",
+  },
+  {
+    action: "deleteEstimateJob",
+    reason:
+      "The only irreversible act in the product. Owner-only, estimate-only, and never from a card that could be confirmed by reflex.",
+  },
 ];
