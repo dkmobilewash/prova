@@ -120,6 +120,7 @@ export function JobDetailsForm({
           <ConfirmDeleteButton
             label="Remove this estimate"
             confirmLabel="Remove it"
+            describe="Removes the estimate and its line items for good. It can only happen while nothing has been filed against the job — no invoice, no hours, no RFI — so there is no history to lose."
             hint={name}
             action={async () => {
               const result = await deleteEstimateJob(jobId);
