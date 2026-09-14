@@ -34,10 +34,18 @@ import { localToday } from "@/components/localToday";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { closeoutChip } from "@/components/closeoutPackageLabels";
 import type { CloseoutBlocker, CloseoutStage } from "@/lib/closeout-readiness";
+import { jobPickerLabel } from "@/components/jobLabels";
 
 export type CloseoutJobData = {
   id: string;
   name: string;
+  /** The GC, and the job's stage. Issue #65: closeout items, warranty
+   * periods and callbacks are all filed FROM this card, and a page of
+   * identically-named headings is a page you can file against the wrong job
+   * from. Carried on the row rather than looked up here — see
+   * `jobPickerLabel`. */
+  clientName: string | null;
+  status: string | null;
   items: CloseoutItemData[];
   warranty: WarrantyPeriodData | null;
   requests: ServiceRequestData[];
@@ -149,7 +157,7 @@ export function CloseoutJobCard({
           href={`/jobs/${job.id}`}
           className="text-slate-100 hover:text-blue-300 hover:underline"
         >
-          {job.name}
+          {jobPickerLabel(job)}
         </Link>
         <span className={`rounded px-1.5 py-0.5 text-xs ${chip.className}`}>{chip.label}</span>
         <span className={`rounded px-1.5 py-0.5 text-xs ${warrantyChip}`}>

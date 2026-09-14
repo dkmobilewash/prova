@@ -38,6 +38,8 @@ function isoDate(date: Date | null): string | null {
 export type CloseoutJobRow = {
   id: string;
   name: string;
+  clientName: string | null;
+  status: string | null;
   items: CloseoutItemData[];
   warranty: WarrantyPeriodData | null;
   requests: ServiceRequestData[];
@@ -57,6 +59,11 @@ export async function loadCloseoutJobs(
     select: {
       id: true,
       name: true,
+      // The GC and the stage, for the card heading — issue #65. Every job on
+      // this page carries forms that file against it, and seven jobs sharing
+      // a placeholder name made seven identical headings.
+      status: true,
+      contact: { select: { name: true } },
       closeoutItems: { orderBy: [{ isRequired: "desc" }, { name: "asc" }] },
       warrantyPeriod: true,
       warrantyServiceRequests: { orderBy: { reportedOn: "desc" } },
@@ -126,6 +133,8 @@ export async function loadCloseoutJobs(
     return {
       id: job.id,
       name: job.name,
+      clientName: job.contact?.name ?? null,
+      status: job.status,
       items,
       warranty: job.warrantyPeriod
         ? {
