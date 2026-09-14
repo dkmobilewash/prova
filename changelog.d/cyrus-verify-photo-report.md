@@ -75,3 +75,71 @@ while both `clean-scratch-data.mjs` and `seed-demo.mjs` do delete it in
 their `del(...)` order. The effect is a false alarm from `blockingTables()`
 rather than a silent failure, which is the safe direction, but it is the
 #227 shape wearing the opposite sign.
+
+**The merge into `cyrus/integration` is where the conflict count lies to
+you.** `cyrus/integration` is the branch the demo is filmed from and it
+carries the dark-palette rebuild. `git merge-tree origin/cyrus/integration
+df6b476` reports exactly two conflicted files — `app/(app)/photos/page.tsx`
+(two hunks) and `components/JobMediaSection.tsx` (one hunk) — and every one
+of those three hunks is the same collision: #252 writes `text-blue-400`,
+`text-slate-100`, `text-slate-400` where the rebuild has already put
+`text-link`, `text-ink`, `text-ink-body`. Those are the easy half. They
+conflict because both branches edited the same lines, so a human is forced
+to look at them.
+
+**The half that needs saying is the half that does NOT conflict.** Three
+more files auto-merge clean and carry raw palette classes in with nothing
+on screen to say so: `JobMediaCard.tsx` (`text-slate-400`, `text-blue-400`,
+`text-blue-300`), `JobMediaCapture.tsx` (`text-slate-400` ×3), and
+`jobs/[id]/photo-report/page.tsx` — a **brand-new file**, which is why it
+cannot conflict with anything, carrying twelve. Counted on the merged tree
+git actually produces, not on either parent. So "two conflicts" is the
+measure of what git noticed, and the palette regression is four files wide.
+
+**Nine of the photo-report page's twelve are violations and three are
+not**, and blanket-converting all twelve would break the feature. Lines
+134, 135, 142, 147, 148 and 201 are app chrome on the dark canvas and want
+tokens. Lines 211, 278 and 313 — `border-slate-300`, `bg-white text-black`,
+`bg-slate-100`, `text-slate-600` — are inside the printable sheet, which is
+deliberately white paper because it is a document somebody hands to a GC. A
+rebuild that tokenises those ships a dark-grey PDF.
+
+**Item by item, what the other checks returned.** The migration is additive
+and then some: `grep -c 'CREATE TABLE'` and `grep -c 'FOREIGN KEY'` on
+`20260911150000_add_job_media_location/migration.sql` both return **0**. It
+ALTERs one existing table, adds three nullable `DOUBLE PRECISION` columns
+and two CHECK constraints, applies no default and rewrites no row. **No new
+model means no new RESTRICT child**, so the #227 three-edit rule
+(`HANDLED_MODELS`, both `del(...)` orders) has nothing to do here —
+confirmed rather than assumed by `lib/scratch-cleanup-order.test.ts`, the
+strengthened #229 version that asserts its parsed FK count against an
+independent count of the literal string, passing 14/14.
+
+**CI, asked for its jobs rather than its colour.** Run `34666863503` is on
+`df6b476`, which equals `headRefOid`; `GET /actions/runs/34666863503/jobs`
+returns **two** jobs, `ci` and `dbtest`, both `success`, both
+`head=df6b476`. The second one matters here specifically: #252's privacy
+guarantee is asserted in `job-media-location.dbtest.ts` (lines 499-504,
+`JSON.stringify(photos)` must not contain the digits or the key names), and
+`.dbtest.ts` files are the class CLAUDE.md records as once having had no
+runner at all. They have one now — a separate `dbtest` job on a scratch
+Postgres 16 that runs `migrate deploy` first, so the two CHECK constraints
+are validated on every PR as well. The guarantee is enforced, not merely
+written.
+
+Re-measured today rather than inherited: main has gained **11 commits**
+since the PR's merge-base `4c8fe18`, so the `pull_request` run tested a
+base that has moved. Merging current `origin/main` into `df6b476` locally
+is clean, and the merged tree gives typecheck clean, lint zero errors (six
+pre-existing `no-unused-vars` warnings, none in #252's files), and
+**145 files / 2514 tests passed**. #252's own five touched test files are
+212 tests, all green.
+
+**The demo seed has no photographs at all, so there is nothing to film.**
+`seed-demo.mjs` mentions `jobMedia` on exactly one line — line 1376, a
+`del(...)` in the teardown — and creates none. There is no annotation seed
+either. A photo report is therefore a hand-staged demo: upload captures,
+draw the marks, and share them, because the report's default selection is
+`shared` and a bare `/jobs/<id>/photo-report` on an unshared gallery prints
+an empty document. That default is the right one and it is the thing most
+likely to be mistaken for a bug on camera.
