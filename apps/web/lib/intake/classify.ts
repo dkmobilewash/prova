@@ -443,6 +443,39 @@ const NOT_A_JOB = new Set([
 ]);
 
 /**
+ * States and territories, which are proper nouns and are not jobs.
+ *
+ * NOT in NOT_A_JOB above, and the difference is the whole point. That list
+ * BREAKS the scan at the offending word, which is right for "Invoice" — no
+ * job starts with it. It is wrong for a state: "Nevada Gym Addition" is an
+ * ordinary job name, and breaking at "Nevada" would throw the whole hint
+ * away. So a state is rejected only when it is the ENTIRE hint, below,
+ * after the words are gathered.
+ *
+ * Found by RUNNING the classifier over the demo folder rather than by
+ * reading it: `Nevada contractor's license C-4.pdf` returned a job hint of
+ * "Nevada". This app is explicitly multi-state — licences, wage
+ * determinations and certified payroll all carry a jurisdiction in the
+ * filename — so that is not a one-off but a whole class of paperwork
+ * proposing a job nobody has. At three such files the tray would suggest
+ * "3 files name Nevada, which is not a job here", and lib/intake/learn.ts
+ * would key a habit on it.
+ *
+ * Multi-word states are listed by their DISTINCTIVE word ("hampshire",
+ * "carolina", "dakota"), because the scan hands this a single leading token
+ * and "New"/"South"/"West" are too ordinary to reject on their own.
+ */
+const JURISDICTION = new Set([
+  "alabama", "alaska", "arizona", "arkansas", "california", "colorado", "connecticut",
+  "delaware", "florida", "georgia", "hawaii", "idaho", "illinois", "indiana", "iowa",
+  "kansas", "kentucky", "louisiana", "maine", "maryland", "massachusetts", "michigan",
+  "minnesota", "mississippi", "missouri", "montana", "nebraska", "nevada", "hampshire",
+  "jersey", "mexico", "york", "carolina", "dakota", "ohio", "oklahoma", "oregon",
+  "pennsylvania", "rhode", "tennessee", "texas", "utah", "vermont", "virginia",
+  "washington", "wisconsin", "wyoming", "columbia", "guam", "puerto", "rico",
+]);
+
+/**
  * A job name, or null. NEVER assembled and never corrected.
  *
  * Read as the leading run of capitalised words in the filename, stopping at
@@ -483,7 +516,12 @@ function jobHintFrom(ctx: Ctx, evidence: Evidence[]): string | null {
     if (quoted.some((q) => q.includes(lower))) break;
     words.push(token);
   }
-  return words.length > 0 ? words.join(" ") : null;
+  if (words.length === 0) return null;
+  // A state ALONE is a jurisdiction, not a job. A state followed by more
+  // capitalised words is an ordinary job name and is left alone: "Nevada Gym
+  // Addition" survives, "Nevada contractor's license" does not.
+  if (words.length === 1 && JURISDICTION.has(words[0].toLowerCase())) return null;
+  return words.join(" ");
 }
 
 /**

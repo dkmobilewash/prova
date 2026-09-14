@@ -61,9 +61,15 @@ const CASES: Case[] = [
   { file: "Oakview Terrace W-9.pdf", mime: PDF, kind: "COMPLIANCE_DOC", confidence: "HIGH", job: "Oakview Terrace" },
   { file: "w9 2026.pdf", mime: PDF, kind: "COMPLIANCE_DOC", confidence: "HIGH" },
   { file: "cert of ins expires 3-1-2027.pdf", mime: PDF, kind: "COMPLIANCE_DOC", confidence: "HIGH" },
-  // "Nevada" is not a job, but it IS in the filename, and the person
-  // confirms. Never inventing beats never missing; see classify.ts.
-  { file: "Nevada contractors license C-4.pdf", mime: PDF, kind: "COMPLIANCE_DOC", confidence: "HIGH", job: "Nevada" },
+  // CHANGED 2026-09-14, and the reason is that the COST of this answer
+  // changed rather than the answer being newly wrong. This used to expect
+  // job "Nevada" on the argument that it is in the filename and the person
+  // confirms — never inventing beats never missing. That held while a
+  // jobHint was only a string on screen. It stopped holding when two things
+  // began ACTING on it: the tray now suggests "3 files name Nevada, which is
+  // not a job here", and lib/intake/learn.ts would key a filing habit on it.
+  // A hint that is merely noise is cheap; a hint that teaches a habit is not.
+  { file: "Nevada contractors license C-4.pdf", mime: PDF, kind: "COMPLIANCE_DOC", confidence: "HIGH" },
   // Bare "license" could be anything, so it must not claim HIGH.
   { file: "license.pdf", mime: PDF, kind: "COMPLIANCE_DOC", confidence: "MEDIUM" },
   { file: "Payment and Performance Bond.pdf", mime: PDF, kind: "COMPLIANCE_DOC", confidence: "HIGH" },
@@ -496,5 +502,50 @@ describe("the reasons a person actually reads", () => {
         expect(r.jobHint, name).not.toBe("Paying");
       }
     });
+  });
+});
+
+describe("a jurisdiction is not a job", () => {
+  /* Found by RUNNING the classifier over the demo folder rather than by
+     reading it. This app is explicitly multi-state, so licences, wage
+     determinations and certified payroll all carry a state in the
+     filename — a whole class of paperwork proposing a job nobody has. */
+  it("does not read a state on a licence as a job", () => {
+    expect(
+      classifyDocument({
+        filename: "Nevada contractor's license C-4.pdf",
+        mimeType: "application/pdf",
+        sizeBytes: 90_000,
+      }).jobHint,
+    ).toBeNull();
+  });
+
+  it("still reads a job that merely starts with a state", () => {
+    // The reason states are NOT in NOT_A_JOB, which breaks the scan: doing
+    // it that way would throw this hint away entirely.
+    //
+    // The honest limit, stated because it is real: the scan already drops
+    // tokens under four letters, so "Nevada Gym" reduces to "Nevada" and is
+    // then rejected as a bare state. A job named after a state plus a SHORT
+    // word loses its hint. Accepted deliberately — state-prefixed licences,
+    // wage determinations and payroll are systematic in a multi-state app,
+    // and a job named "Nevada Gym" is not.
+    expect(
+      classifyDocument({
+        filename: "Nevada Ridge Elementary COI.pdf",
+        mimeType: "application/pdf",
+        sizeBytes: 90_000,
+      }).jobHint,
+    ).toBe("Nevada Ridge Elementary");
+  });
+
+  it("still reads an ordinary job name, so the guard has not eaten everything", () => {
+    expect(
+      classifyDocument({
+        filename: "Riverside COI 2027.pdf",
+        mimeType: "application/pdf",
+        sizeBytes: 90_000,
+      }).jobHint,
+    ).toBe("Riverside");
   });
 });

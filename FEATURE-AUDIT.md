@@ -33,7 +33,7 @@ drift failure pointing in the unusual direction: the warning was stale, not
 the data. Same lesson as CLAUDE.md's `MIGRATE_EXPECT_HOST` deletion — a doc
 note that says "X has not been done" is a claim with an expiry date on it.
 
-**127 items audited — 101 built / 19 partial / 6 missing / 1 descoped**
+**128 items audited — 102 built / 19 partial / 6 missing / 1 descoped**
 
 (The recount below is HISTORY — a worked example of resolving this file's
 recurring merge-conflict shape, kept for the method. Its arithmetic ends at
@@ -73,7 +73,7 @@ header cannot.)
 
 | Status | Count |
 | --- | --- |
-| Built | 101 |
+| Built | 102 |
 | Partial | 19 |
 | Missing | 6 |
 | Descoped | 1 |
