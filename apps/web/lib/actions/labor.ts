@@ -10,20 +10,28 @@ import {
   assertJobInCompany,
   assertLineItemOnJob,
   craftClassificationIdFromForm,
-  nullableDecimalFromForm,
+  joinWithConjunction,
   type ActionResult,
 } from "./shared";
+import {
+  parseTimeEntryFigures,
+  submittedLockedFieldChanges,
+  timeEntryCorrectionUpdateData,
+} from "@/lib/time-entry-correction";
 
-const TIME_ENTRY_PAY_TYPES = ["STRAIGHT", "OVERTIME", "DOUBLE_TIME", "SHIFT_DIFFERENTIAL"] as const;
-
-/** Unrecognized/missing selection falls back to STRAIGHT rather than
- * erroring — every entry needs some pay type, and straight time is the
- * overwhelmingly common case. */
-function timeEntryPayTypeFromForm(formData: FormData): (typeof TIME_ENTRY_PAY_TYPES)[number] {
-  const raw = String(formData.get("payType") ?? "");
-  return TIME_ENTRY_PAY_TYPES.includes(raw as (typeof TIME_ENTRY_PAY_TYPES)[number])
-    ? (raw as (typeof TIME_ENTRY_PAY_TYPES)[number])
-    : "STRAIGHT";
+/**
+ * Every page that reads a job's hours.
+ *
+ * Three routes render TimeEntry rows — the job page, the certified payroll
+ * report and the WH-347 — and until #63 all three write paths revalidated
+ * only the first. A corrected hour that still reads 10 on the payroll report
+ * is the same defect as one that still reads 10 on the job page, and it is
+ * the report somebody sends to a GC.
+ */
+function revalidateJobLabor(jobId: string) {
+  revalidatePath(`/jobs/${jobId}`);
+  revalidatePath(`/jobs/${jobId}/certified-payroll`);
+  revalidatePath(`/jobs/${jobId}/certified-payroll/wh-347`);
 }
 
 /** Logs a day's hours for one employee against a job — optionally tied to
@@ -59,15 +67,21 @@ export async function logTimeEntry(jobId: string, formData: FormData): Promise<A
     throw new Error("Invalid date");
   }
 
-  const hoursRaw = String(formData.get("hours") ?? "").trim();
-  if (!hoursRaw || Number.isNaN(Number(hoursRaw)) || Number(hoursRaw) <= 0) {
-    throw new Error("Hours must be a positive number");
+  // Hours, pay type, note and the two allowances are parsed by the same
+  // function the CORRECTION path uses (lib/time-entry-correction.ts), so the
+  // create form and the edit form — which share one <TimeEntryFields> — cannot
+  // validate the same field names differently.
+  //
+  // It returns its refusals rather than throwing them, and that is a fix
+  // riding along rather than a side effect: "Hours must be a positive number"
+  // used to be thrown, and production REDACTS a thrown Server Action message
+  // to a digest, so a typo'd figure got an opaque failure instead of the
+  // sentence written for it.
+  const figures = parseTimeEntryFigures(formData);
+  if (!figures.ok) {
+    return actionFail(figures.error);
   }
-
-  const note = String(formData.get("note") ?? "").trim();
-  const perDiemAmount = nullableDecimalFromForm(formData, "perDiemAmount");
-  const travelPayAmount = nullableDecimalFromForm(formData, "travelPayAmount");
-  const payType = timeEntryPayTypeFromForm(formData);
+  const { hours: hoursRaw, payType, note, perDiemAmount, travelPayAmount } = figures.value;
 
   // A double-click or a retried submit resubmits the exact same entry, and
   // #102's example is exactly this: 16 hours logged on a day someone
@@ -75,8 +89,10 @@ export async function logTimeEntry(jobId: string, formData: FormData): Promise<A
   // apprentice ratio (can flip a compliance verdict or hide a violation)
   // and doubles burdened cost. Multiple real entries for one employee on
   // one day are ordinary here (different craft codes, different cost
-  // codes) — TimeEntry has no update path at all (see the schema comment),
-  // so this only has to catch a CREATE repeating an identical row, and only
+  // codes). #63 gave TimeEntry its first update path, and this guard is
+  // unaffected by it: a correction cannot change the job, the person or the
+  // day (see updateTimeEntry), and this window is 10 seconds from CREATION —
+  // so it still only has to catch a create repeating an identical row, and only
   // blocks one landing in the last 10 seconds, not a second, different
   // entry made later that happens to share every field. NOT ATOMIC —
   // read-then-write, no lock — so this closes the sequential double-click
@@ -112,11 +128,87 @@ export async function logTimeEntry(jobId: string, formData: FormData): Promise<A
       payType,
       perDiemAmount,
       travelPayAmount,
-      note: note || null,
+      note,
     },
   });
 
-  revalidatePath(`/jobs/${jobId}`);
+  revalidateJobLabor(jobId);
+  return actionOk;
+}
+
+/**
+ * Corrects a logged hour — issue #63.
+ *
+ * WHY THIS IS AN UPDATE AND NOT A DELETE-AND-RECREATE. Until this function
+ * there was no update path to TimeEntry at all, and the only way to fix "10
+ * hours" that should have been "8" was to destroy the row. On a
+ * prevailing-wage job that row is the record of what a person was paid and
+ * for what, so the correction path destroyed the evidence it was correcting
+ * — and it took one unguarded click to do it.
+ *
+ * WHAT IT MAY CHANGE, and where that decision lives: the figures only.
+ * `lib/time-entry-correction.ts` holds the list and the argument for it; the
+ * short version is that the job, the person, the day worked and the crew
+ * member are what a WH-347 line IS, so changing one of those makes a
+ * different record rather than a corrected one. Three things stop it, and
+ * only the last of them is enforcement:
+ *
+ *   1. the form does not render those fields at all;
+ *   2. this function refuses a request that sends a different value for one,
+ *      with a sentence rather than a redacted throw — see below;
+ *   3. `prova_time_entry_identity_lock`, a BEFORE UPDATE trigger installed by
+ *      20260913120000_add_time_entry_correction, RAISES on one. That is the
+ *      rule; 1 and 2 are the manners.
+ *
+ * It records who corrected it and when. It does not record what the figure
+ * used to be — see the columns' own comment in labor.prisma for why the
+ * amendment row the issue suggests is a follow-up and not something smuggled
+ * in here.
+ */
+export async function updateTimeEntry(timeEntryId: string, formData: FormData): Promise<ActionResult> {
+  const { company, ...user } = await requireCompanyContext();
+
+  const timeEntry = await prisma.timeEntry.findUnique({ where: { id: timeEntryId } });
+  if (!timeEntry) {
+    // Returned rather than thrown: the ordinary way to reach this is two
+    // tabs, or somebody deleting the entry while you had the form open.
+    return actionFail("That time entry is gone — somebody removed it. Reload the page before entering it again.");
+  }
+  // Throws, and should: a request naming another company's entry is not a
+  // user with a question, and every other action in this file guards
+  // tenancy the same way.
+  await assertJobInCompany(timeEntry.jobId, company.id);
+
+  const lockedChanges = submittedLockedFieldChanges(formData, timeEntry);
+  if (lockedChanges.length > 0) {
+    return actionFail(
+      `A correction can't change ${joinWithConjunction(lockedChanges)} on a logged hour — that would make it a ` +
+        "different record. Remove this entry and log the right one instead.",
+    );
+  }
+
+  const figures = parseTimeEntryFigures(formData);
+  if (!figures.ok) {
+    return actionFail(figures.error);
+  }
+
+  // Both re-checked against this job and this company on every save. A form
+  // value is not a permission, and an edit can retarget either of them.
+  const lineItemId = figures.value.lineItemId
+    ? (await assertLineItemOnJob(figures.value.lineItemId, timeEntry.jobId)).id
+    : null;
+  const craftClassificationId = await craftClassificationIdFromForm(formData, company.id);
+
+  await prisma.timeEntry.update({
+    where: { id: timeEntry.id },
+    data: timeEntryCorrectionUpdateData(
+      { ...figures.value, lineItemId, craftClassificationId },
+      user.id,
+      new Date(),
+    ),
+  });
+
+  revalidateJobLabor(timeEntry.jobId);
   return actionOk;
 }
 
@@ -208,7 +300,7 @@ export async function deleteTimeEntry(jobId: string, timeEntryId: string) {
 
   await prisma.timeEntry.delete({ where: { id: timeEntryId } });
 
-  revalidatePath(`/jobs/${jobId}`);
+  revalidateJobLabor(jobId);
 }
 
 const PREVAILING_WAGE_DETERMINATION_MEDIA_TYPES = ["application/pdf", "image/png", "image/jpeg", "image/webp"] as const;

@@ -2,26 +2,35 @@
 
 import { useRef, useState, useTransition } from "react";
 import { logTimeEntry } from "@/lib/actions";
+import {
+  TimeEntryFields,
+  type TimeEntryCraftOption,
+  type TimeEntryEmployeeOption,
+  type TimeEntryLineItemOption,
+} from "@/components/TimeEntryFields";
 
-const TIME_ENTRY_PAY_TYPE_OPTIONS = [
-  { value: "STRAIGHT", label: "Straight" },
-  { value: "OVERTIME", label: "Overtime" },
-  { value: "DOUBLE_TIME", label: "Double time" },
-  { value: "SHIFT_DIFFERENTIAL", label: "Shift differential" },
-] as const;
-
-export type TimeEntryEmployeeOption = { id: string; name: string | null; email: string };
-export type TimeEntryLineItemOption = { id: string; description: string };
-export type TimeEntryCraftOption = { id: string; label: string };
+export type {
+  TimeEntryCraftOption,
+  TimeEntryEmployeeOption,
+  TimeEntryLineItemOption,
+} from "@/components/TimeEntryFields";
 
 /**
  * Logs a day's hours for one employee against a job.
  *
+ * The fields themselves moved to `<TimeEntryFields>` when #63 added the
+ * correction form, so the two cannot drift: both post the same names and both
+ * are parsed by `parseTimeEntryFigures`. The DIFFERENCE between them is the
+ * point — this form offers the employee and the date, the correction form
+ * renders those as text, because a logged hour never changes hands.
+ *
  * Needs its own error slot, unlike the plain server-action forms elsewhere
- * on this page: logTimeEntry now refuses an exact repeat of the same entry
+ * on this page: logTimeEntry refuses an exact repeat of the same entry
  * submitted within the last few seconds (see the guard's own comment in
- * lib/actions/labor.ts) and a `<form action={fn}>` has nowhere to show that
- * refusal. Same useTransition + inline error shape as PayApplications.tsx.
+ * lib/actions/labor.ts), and now also refuses hours that are not a positive
+ * number rather than throwing a message production would redact. A
+ * `<form action={fn}>` has nowhere to show either. Same useTransition +
+ * inline error shape as PayApplications.tsx.
  */
 export function LogTimeEntryForm({
   jobId,
@@ -61,103 +70,7 @@ export function LogTimeEntryForm({
       className="flex flex-col gap-2 rounded-lg border border-slate-800 bg-slate-900 p-3"
     >
       <div className="flex flex-wrap items-end gap-2">
-        <label className="flex flex-col gap-1 text-xs text-slate-400">
-          Employee
-          <select
-            name="employeeUserId"
-            required
-            className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
-          >
-            {employees.map((member) => (
-              <option key={member.id} value={member.id}>
-                {member.name ?? member.email}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1 text-xs text-slate-400">
-          Date
-          <input
-            type="date"
-            name="date"
-            required
-            className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-xs text-slate-400">
-          Hours
-          <input
-            name="hours"
-            placeholder="8"
-            required
-            className="w-20 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-xs text-slate-400">
-          Pay type
-          <select
-            name="payType"
-            defaultValue="STRAIGHT"
-            className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
-          >
-            {TIME_ENTRY_PAY_TYPE_OPTIONS.map((p) => (
-              <option key={p.value} value={p.value}>
-                {p.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1 text-xs text-slate-400">
-          Cost code / SOV line
-          <select
-            name="lineItemId"
-            defaultValue=""
-            className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
-          >
-            <option value="">No specific line</option>
-            {lineItems.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.description}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1 text-xs text-slate-400">
-          Craft classification
-          <select
-            name="craftClassificationId"
-            defaultValue=""
-            className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
-          >
-            <option value="">No craft tag</option>
-            {craftOptions.map((craft) => (
-              <option key={craft.id} value={craft.id}>
-                {craft.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1 text-xs text-slate-400">
-          Per diem
-          <input
-            name="perDiemAmount"
-            placeholder="optional"
-            className="w-24 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-600 focus:border-blue-500 focus:outline-none"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-xs text-slate-400">
-          Travel pay
-          <input
-            name="travelPayAmount"
-            placeholder="optional"
-            className="w-24 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-600 focus:border-blue-500 focus:outline-none"
-          />
-        </label>
-        <input
-          name="note"
-          placeholder="Note (optional)"
-          className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
-        />
+        <TimeEntryFields employees={employees} lineItems={lineItems} craftOptions={craftOptions} />
         <button
           type="submit"
           disabled={isPending}

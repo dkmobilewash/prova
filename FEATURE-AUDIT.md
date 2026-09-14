@@ -33,17 +33,25 @@ drift failure pointing in the unusual direction: the warning was stale, not
 the data. Same lesson as CLAUDE.md's `MIGRATE_EXPECT_HOST` deletion — a doc
 note that says "X has not been done" is a claim with an expiry date on it.
 
-**126 items audited — 100 built / 19 partial / 6 missing / 1 descoped**
+**127 items audited — 101 built / 19 partial / 6 missing / 1 descoped**
 
 (The recount below is HISTORY — a worked example of resolving this file's
 recurring merge-conflict shape, kept for the method. Its arithmetic ends at
 119 items because that is what the file held on the day of that merge; rows
-added since (#214's gallery row via #230 among them) moved the totals to
-the 125 / 99 the line above states. Re-derived 2026-09-10 by summing all 26
-per-sheet headers: 99 + 19 + 6 + 1 = 125, agreeing with the prose line and
-the summary table. Until this note, the stale 119 sat forty lines under the
-current 125 with nothing marking which one to believe — the exact
+added since (#214's gallery row via #230 among them, and #63's correction row)
+moved the totals past it. Until this note, the stale 119 sat forty lines under
+the current total with nothing marking which one to believe — the exact
 two-numbers-on-main failure the recount itself was written to end.
+
+THIS PARAGRAPH NO LONGER RESTATES THE TOTAL, and that is the fix rather than
+laziness. It used to carry its own hand-derived figures ("the 125 / 99 the line
+above states", re-derived 2026-09-10 by summing the 26 per-sheet headers), and
+by 13 Sep the line above said 126 / 100 while this paragraph still said
+125 / 99 — a recount written to end two-numbers-on-main had quietly become the
+second number. The arithmetic is checked by `plumbing.test.ts` now, against the
+rows and the per-sheet headers, so there is exactly one place the total is
+written down and a wrong one fails the build. A number repeated in prose is a
+copy nothing checks.
 
 Recounted from the rows on merging `main` into this branch, which is the
 only thing that settles it — the fourth time this exact conflict shape has
@@ -65,7 +73,7 @@ header cannot.)
 
 | Status | Count |
 | --- | --- |
-| Built | 100 |
+| Built | 101 |
 | Partial | 19 |
 | Missing | 6 |
 | Descoped | 1 |
@@ -157,14 +165,18 @@ subcontract agreement storage and versioning shipped same-day.*
 | Partial | Cost categorization: labor, material, equipment, sub/other, by trade tag | `CostCategory` has LABOR/MATERIAL/SUBCONTRACTOR/OTHER plus a `tradeScope` tag — no distinct EQUIPMENT bucket |
 | Partial | Job cost roll-up dashboard: budget vs. actual vs. forecast, per line item and per job | built per-job on `/jobs/[id]`; no cross-job/company-wide roll-up view |
 
-## 07. Labor & Time Tracking — 5 built · 0 partial · 1 missing
+## 07. Labor & Time Tracking — 6 built · 0 partial · 1 missing
 
 *Updated — field time entry, craft classification per hour, pay-type
-tracking, per diem/travel pay, and dispatch slips shipped 26 Aug 2026.*
+tracking, per diem/travel pay, and dispatch slips shipped 26 Aug 2026.
+Correcting a logged hour shipped 13 Sep 2026 (issue #63); before it, the
+only way to fix a wrong figure was a one-click delete with no
+confirmation, which destroyed the record it was correcting.*
 
 | Status | Feature | Note |
 | --- | --- | --- |
 | Built | Field time entry by employee, job, cost code/SOV line, date | `TimeEntry` — logged per job, optionally tied to a `JobLineItem` |
+| Built | Correcting a logged hour, without it changing hands | `updateTimeEntry` corrects the figures (hours, pay type, note, allowances, cost code, craft) and records who corrected it and when; the job, the person, the day and the crew member are locked after creation by the `prova_time_entry_identity_lock` trigger, so a re-attribution is a delete and a re-entry. It does NOT store the previous figure — the amendment row for that is still to come |
 | Built | Craft classification per hour entered | `TimeEntry.craftClassificationId`, optional, same pattern as `JobLineItem` |
 | Built | Straight/overtime/double-time/shift differential tracking | `TimeEntry.payType` — tracks hours by category; does not compute dollar wages (needs a rate-rule engine, still missing) |
 | Built | Per diem / travel pay tracking | `TimeEntry.perDiemAmount` / `.travelPayAmount` — flat daily allowances on the same row |
