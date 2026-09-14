@@ -5,6 +5,8 @@ import { putDocument } from "@/lib/blob";
 import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@prova/db";
 import { extractComplianceDocument } from "@prova/integrations";
+import { ASK_DEFAULT_MODEL } from "@prova/integrations";
+import { recordAskUsage } from "@/lib/ask/usage";
 import {
   actionFail,
   actionOk,
@@ -158,7 +160,24 @@ export async function uploadComplianceDocument(formData: FormData) {
 
   const [blob, extraction] = await Promise.all([
     putDocument(`compliance/${company.id}/${file.name}`, buffer, file.type),
-    extractComplianceDocument({ fileBase64: buffer.toString("base64"), mediaType, fileName: file.name }),
+    extractComplianceDocument({
+      fileBase64: buffer.toString("base64"),
+      mediaType,
+      fileName: file.name,
+      // Metered since 2026-09-14. The most expensive single call in this
+      // app — a 15MB file base64'd into one request, put at $2.25-$4.50 an
+      // upload by audit, against a warm Ask question at $0.05 — and until
+      // now it reported nothing at all.
+      onUsage: (usage) =>
+        recordAskUsage({
+          companyId: company.id,
+          userId: user.id,
+          model: ASK_DEFAULT_MODEL,
+          usage,
+          outcome: "answered",
+          feature: "compliance-extract",
+        }),
+    }),
   ]);
 
   await prisma.complianceDocument.create({

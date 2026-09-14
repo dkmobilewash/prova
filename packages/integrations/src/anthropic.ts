@@ -1,4 +1,56 @@
 import Anthropic from "@anthropic-ai/sdk";
+import type { AskUsageTotals } from "./ask";
+
+/**
+ * What one model call cost, handed back to whoever asked for it.
+ *
+ * THESE THREE FUNCTIONS SPENT MONEY SILENTLY UNTIL 2026-09-14. `AskUsage`
+ * recorded every Ask call and nothing recorded these, so `/settings/assistant`
+ * showed a number that was not the bill and nothing capped them at all — an
+ * audit found compliance extraction alone runs $2.25-$4.50 per upload, 50-90x
+ * a warm Ask question, with no rate limit and no page check.
+ *
+ * WHY A CALLBACK RATHER THAN WRITING THE ROW HERE. This package has no
+ * database and must not gain one: `@prova/integrations` is the outbound edge
+ * and `apps/web` owns persistence. So each function reports what it spent and
+ * the caller — which already holds the company and user — decides what to do
+ * with it. Same shape as `AskUsageTotals` so one recorder serves all four
+ * model callers.
+ *
+ * `passes` is always 1 here. None of these three loops; each is a single
+ * `messages.create`. Ask is the only multi-pass caller.
+ *
+ * Reporting NEVER fails the work. The caller's row is written after the
+ * answer already exists, and `reportUsage` swallows a throwing callback for
+ * the same reason `recordAskUsage` swallows a failed insert: a person must
+ * not lose a compliance extraction because a usage row would not write.
+ */
+export type ModelUsageReporter = (usage: AskUsageTotals) => void | Promise<void>;
+
+type AnthropicUsage = {
+  input_tokens?: number | null;
+  output_tokens?: number | null;
+  cache_read_input_tokens?: number | null;
+  cache_creation_input_tokens?: number | null;
+};
+
+async function reportUsage(
+  onUsage: ModelUsageReporter | undefined,
+  usage: AnthropicUsage | null | undefined,
+): Promise<void> {
+  if (!onUsage) return;
+  try {
+    await onUsage({
+      passes: 1,
+      inputTokens: usage?.input_tokens ?? 0,
+      outputTokens: usage?.output_tokens ?? 0,
+      cacheReadTokens: usage?.cache_read_input_tokens ?? 0,
+      cacheWriteTokens: usage?.cache_creation_input_tokens ?? 0,
+    });
+  } catch (err) {
+    console.error("[integrations] usage not reported", err);
+  }
+}
 
 // AI narrative layer over already-computed WIP figures — see lib/wip.ts in
 // apps/web for the deterministic percentage-of-completion math. Claude never
@@ -42,7 +94,10 @@ export interface WipNarrativeJobSummary {
  * The figures themselves come from the caller (lib/wip.ts) — this function
  * never touches the database or does any arithmetic of its own.
  */
-export async function generateWipNarrative(summary: WipNarrativeJobSummary): Promise<string> {
+export async function generateWipNarrative(
+  summary: WipNarrativeJobSummary,
+  onUsage?: ModelUsageReporter,
+): Promise<string> {
   const client = new Anthropic();
 
   const response = await client.messages.create({
@@ -56,6 +111,11 @@ export async function generateWipNarrative(summary: WipNarrativeJobSummary): Pro
       },
     ],
   });
+
+  // Reported BEFORE the text check. A call that came back without usable
+  // text still cost money, and a bill that only counts successes is the
+  // shape of understatement this whole change exists to end.
+  await reportUsage(onUsage, response.usage);
 
   const textBlock = response.content.find((block): block is Anthropic.TextBlock => block.type === "text");
   if (!textBlock) {
@@ -107,6 +167,10 @@ export async function extractComplianceDocument(params: {
   fileBase64: string;
   mediaType: "application/pdf" | "image/png" | "image/jpeg" | "image/webp";
   fileName: string;
+  /** THE MOST EXPENSIVE CALL IN THIS APP, and the one that was invisible.
+   *  It base64-encodes a file of up to 15MB into a single request — an
+   *  audit put it at $2.25-$4.50 per upload, 50-90x a warm Ask question. */
+  onUsage?: ModelUsageReporter;
 }): Promise<ComplianceDocumentExtraction> {
   const client = new Anthropic();
 
@@ -153,6 +217,11 @@ export async function extractComplianceDocument(params: {
       },
     ],
   });
+
+  // Reported BEFORE the result check, for the reason on
+  // generateWipNarrative: a call that produced nothing usable still
+  // cost the money, and a bill that counts only successes understates.
+  await reportUsage(params.onUsage, response.usage);
 
   const toolUse = response.content.find(
     (block): block is Anthropic.ToolUseBlock => block.type === "tool_use" && block.name === EXTRACTION_TOOL_NAME,
@@ -250,6 +319,10 @@ Never set catalogEntryId to an id that was not given to you, and never claim COM
 export async function draftEstimateLineItems(
   scopeText: string,
   reference: DraftReferenceData = { catalogEntries: [], wonBids: [] },
+  /** This one is nested INSIDE a metered Ask command — it runs at confirm
+   *  time, so one AskUsage row could hide an entire second model call and
+   *  the cap counted questions rather than calls. Reported separately. */
+  onUsage?: ModelUsageReporter,
 ): Promise<DraftLineItem[]> {
   const client = new Anthropic();
 
@@ -339,6 +412,11 @@ export async function draftEstimateLineItems(
     tool_choice: { type: "tool", name: DRAFT_TOOL_NAME },
     messages: [{ role: "user", content: userContent }],
   });
+
+  // Reported BEFORE the result check, for the reason on
+  // generateWipNarrative: a call that produced nothing usable still
+  // cost the money, and a bill that counts only successes understates.
+  await reportUsage(onUsage, response.usage);
 
   const toolUse = response.content.find(
     (block): block is Anthropic.ToolUseBlock => block.type === "tool_use" && block.name === DRAFT_TOOL_NAME,

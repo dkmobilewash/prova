@@ -33,8 +33,17 @@ describe("askAllowance", () => {
     fake.prisma.askUsage.count.mockResolvedValue(0);
     expect(await askAllowance("co-1", "u-1", now)).toEqual({ ok: true });
     const [personArgs, companyArgs] = fake.prisma.askUsage.count.mock.calls.map((c) => c[0]);
-    expect(personArgs).toEqual({ where: { userId: "u-1", createdAt: { gte: new Date("2026-09-11T11:00:00.000Z") } } });
-    expect(companyArgs).toEqual({ where: { companyId: "co-1", createdAt: { gte: new Date("2026-09-10T12:00:00.000Z") } } });
+    // `feature: "ask"` is part of the shape on purpose. Since 2026-09-14 this
+    // table also holds compliance extractions, WIP narratives and estimate
+    // drafts, and these two ceilings are about how many QUESTIONS a person
+    // may ask — without the filter, four compliance uploads would silently
+    // cost somebody four of their hourly questions.
+    expect(personArgs).toEqual({
+      where: { userId: "u-1", feature: "ask", createdAt: { gte: new Date("2026-09-11T11:00:00.000Z") } },
+    });
+    expect(companyArgs).toEqual({
+      where: { companyId: "co-1", feature: "ask", createdAt: { gte: new Date("2026-09-10T12:00:00.000Z") } },
+    });
   });
 
   it("allows the question before the limit and refuses at it, naming the number", async () => {
@@ -59,6 +68,9 @@ describe("recordAskUsage", () => {
     await recordAskUsage({ companyId: "co-1", userId: "u-1", model: "claude-opus-5", usage: totals, outcome: "proposal" });
     expect(fake.prisma.askUsage.create).toHaveBeenCalledWith({
       data: {
+        // Defaulted, not passed: every existing call site omits it and must
+        // keep landing as an Ask row.
+        feature: "ask",
         companyId: "co-1",
         userId: "u-1",
         model: "claude-opus-5",
@@ -108,5 +120,28 @@ describe("usageSummary", () => {
         { who: "a removed account", questions: 1, tokens: 55 },
       ],
     });
+  });
+});
+
+describe("the feature label", () => {
+  /* Three callers in packages/integrations/src/anthropic.ts spent money with
+     no usage row until 2026-09-14. They write rows now; this is the label
+     that keeps them out of the Ask ceilings. */
+  it("records the caller that asked, when one is given", async () => {
+    fake.prisma.askUsage.create.mockResolvedValue({});
+    await recordAskUsage({
+      companyId: "co-1", userId: "u-1", model: "m", usage: totals,
+      outcome: "answered", feature: "compliance-extract",
+    });
+    expect(fake.prisma.askUsage.create.mock.calls[0][0].data.feature).toBe("compliance-extract");
+  });
+
+  it("takes a null userId, because the column is nullable and a call need not have a person", async () => {
+    fake.prisma.askUsage.create.mockResolvedValue({});
+    await recordAskUsage({
+      companyId: "co-1", userId: null, model: "m", usage: totals,
+      outcome: "answered", feature: "draft-estimate-lines",
+    });
+    expect(fake.prisma.askUsage.create.mock.calls[0][0].data.userId).toBeNull();
   });
 });

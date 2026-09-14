@@ -55,4 +55,64 @@ describe("ask usage against a real database", () => {
     expect(refused.ok).toBe(false);
     if (!refused.ok) expect(refused.error).toContain(`${ASK_LIMITS.perPersonPerHour} questions in the last hour`);
   });
+
+  /* ---- the other three model callers, metered since 2026-09-14 ---- */
+
+  /**
+   * Three callers in packages/integrations/src/anthropic.ts spent money with
+   * no usage row and no ceiling until 2026-09-14, so /settings/assistant
+   * showed a number that was not the bill. They write rows now, under their
+   * own `feature`.
+   *
+   * THE SECOND TEST IS THE ONE THAT MATTERS. Putting them in this table must
+   * not make the Ask limits count them — otherwise uploading four compliance
+   * documents silently costs somebody four of their hourly questions, which
+   * is a limit tightening itself as a side effect of a metering change.
+   */
+  it("records a row under its own feature for a caller that is not Ask", async () => {
+    await prisma.askUsage.deleteMany({ where: { companyId } });
+    await recordAskUsage({
+      companyId, userId, model: "claude-opus-5", usage: totals,
+      outcome: "answered", feature: "compliance-extract",
+    });
+    const row = await prisma.askUsage.findFirst({ where: { companyId } });
+    expect(row?.feature).toBe("compliance-extract");
+  });
+
+  it("defaults an unlabelled row to ask, so every existing call site is unchanged", async () => {
+    await prisma.askUsage.deleteMany({ where: { companyId } });
+    await recordAskUsage({ companyId, userId, model: "m", usage: totals, outcome: "answered" });
+    const row = await prisma.askUsage.findFirst({ where: { companyId } });
+    expect(row?.feature).toBe("ask");
+  });
+
+  it("does NOT spend a person's Ask allowance on compliance extractions", async () => {
+    await prisma.askUsage.deleteMany({ where: { companyId } });
+
+    // One short of the hourly ceiling, in real Ask rows.
+    await prisma.askUsage.createMany({
+      data: Array.from({ length: ASK_LIMITS.perPersonPerHour - 1 }, () => ({
+        companyId, userId, model: "m", passes: 1, inputTokens: 1, outputTokens: 1,
+        cacheReadTokens: 0, cacheWriteTokens: 0, outcome: "answered", feature: "ask",
+      })),
+    });
+    expect((await askAllowance(companyId, userId)).ok).toBe(true);
+
+    // A burst of the expensive non-Ask kind. None of it is a question.
+    await prisma.askUsage.createMany({
+      data: Array.from({ length: 10 }, () => ({
+        companyId, userId, model: "m", passes: 1, inputTokens: 1, outputTokens: 1,
+        cacheReadTokens: 0, cacheWriteTokens: 0, outcome: "answered", feature: "compliance-extract",
+      })),
+    });
+    expect(
+      (await askAllowance(companyId, userId)).ok,
+      "ten compliance uploads took ten of this person's questions",
+    ).toBe(true);
+
+    // And one more real question still closes it, so the limit itself works
+    // — without this the test would pass on a limit that never fires.
+    await recordAskUsage({ companyId, userId, model: "m", usage: totals, outcome: "answered" });
+    expect((await askAllowance(companyId, userId)).ok).toBe(false);
+  });
 });
