@@ -6,6 +6,7 @@ import { requireCompanyContext } from "@/lib/auth";
 import { PrintButton } from "@/components/PrintButton";
 import { PrevailingWageDeterminationForm } from "@/components/PrevailingWageDeterminationForm";
 import { ContractSummary } from "@/components/ContractSummary";
+import { JobDetailsForm } from "@/components/JobDetailsForm";
 import { WipNarrativeButton } from "@/components/WipNarrativeButton";
 import { DraftLineItemsForm } from "@/components/DraftLineItemsForm";
 import { TakeoffForm } from "@/components/TakeoffForm";
@@ -238,7 +239,14 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
     notFound();
   }
 
-  const [companyMembers, companyLocations, catalogEntries, craftClassifications] = await Promise.all([
+  const [jobDetailContacts, companyMembers, companyLocations, catalogEntries, craftClassifications] = await Promise.all([
+    // For the Job details form's client picker. Scoped to the company, same
+    // as every other list on this page.
+    prisma.contact.findMany({
+      where: { companyId: company.id },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
     prisma.user.findMany({ where: { companyId: company.id }, orderBy: { createdAt: "asc" } }),
     prisma.companyLocation.findMany({ where: { companyId: company.id }, orderBy: { createdAt: "asc" } }),
     prisma.lineItemCatalogEntry.findMany({ where: { companyId: company.id }, orderBy: { description: "asc" } }),
@@ -679,6 +687,25 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             job past CONTRACTED at all. Not a new slot at the bottom —
             the fixed lower slots (Retainage → Field Reports → Pay Apps)
             are untouched. */}
+        {/* The job's own details. Placed here with Job status and Schedule,
+            deliberately far above the three fixed lower slots (Retainage →
+            Field Reports → Pay Apps) that nothing in this file marks and
+            nothing may reorder. */}
+        {showsJobManagement && (
+        <section className="mb-10">
+          <h2 className="mb-3 text-lg font-semibold text-slate-100">Job details</h2>
+          <JobDetailsForm
+            jobId={job.id}
+            name={job.name}
+            scope={job.scope}
+            contactId={job.contactId}
+            contacts={jobDetailContacts}
+            isEstimate={job.status === "ESTIMATE"}
+            canRemove={currentUser.role === "OWNER"}
+          />
+        </section>
+        )}
+
         {showsJobManagement && (
         <section className="mb-10">
           <h2 className="mb-3 text-lg font-semibold text-slate-100">Job status</h2>
