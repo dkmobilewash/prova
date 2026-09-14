@@ -197,7 +197,6 @@ export function TimeEntryRow({
             pinned="end"
             label="Remove"
             confirmLabel="Confirm remove"
-            describe="Removes this logged hour from the job. Labor cost and certified payroll are recalculated from the hours that remain."
             action={deleteAction}
             /* `describe`, not `hint`, and the comment below is exactly why
                the two are not interchangeable: `hint` is a flex item of this
