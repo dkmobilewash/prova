@@ -293,7 +293,13 @@ export function Sidebar({
             click to learn there was nothing to choose. It sits above the
             groups, outside the scroll, so it never moves and is always the
             first thing on the rail. */}
-        <div className="shrink-0 px-2 pt-3">
+        {/* pb-4 lives HERE, not as the scroll box's padding-top. See the
+            note on that container below: `sticky top-0` pins against the
+            scrollport's PADDING box, so 16px of padding-top there is a band
+            the items scroll through in the open, above the pinned heading.
+            The air is the same; it is just on the side of the scroll edge
+            where nothing can slide under it. */}
+        <div className="shrink-0 px-2 pb-4 pt-3">
           <Link
             href="/ask"
             data-ask-link
@@ -315,7 +321,21 @@ export function Sidebar({
           </Link>
         </div>
 
-        <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto overflow-x-hidden py-4">
+        {/* `pb-4`, NOT `py-4`, and this is a measurement rather than taste.
+            Each group heading is `sticky top-0`, and a sticky offset resolves
+            against the scrollport's PADDING box — so `padding-top: 16px` here
+            pinned every heading 16px BELOW the container's visible top edge
+            and left a 16px band above it where nav items scrolled past in
+            full view. On screen that is a nav row sliced in half, floating
+            over the money figure: it reads as a rendering fault rather than
+            as scrolling.
+
+            Measured in the running app, not reasoned about — the heading's
+            rect sat exactly 16px below the scroller's, matching the padding
+            to the pixel, and moving those 16px onto the Ask block above
+            closed the gap to 0. Bottom padding is untouched because nothing
+            sticks to the bottom. */}
+        <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto overflow-x-hidden pb-4">
           {groups.map((group) => {
             const stageKey = STAGE_KEY_FOR_HEADING[group.heading];
             const stage = stageKey ? stageByKey.get(stageKey) : undefined;

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ALERT_CAPABILITY, intakeAlerts, type AlertKind } from "@/lib/alerts";
 import { ALERT_KIND_LABELS } from "@/components/alertLabels";
-import { UNMATCHED_JOB_FLOOR, intakeTraySummary } from "./review";
+import { UNMATCHED_JOB_FLOOR, countIntake, intakeTraySummary } from "./review";
 
 /**
  * "Tell them what you can do for them, and let them click yes, no or later."
@@ -13,21 +13,63 @@ import { UNMATCHED_JOB_FLOOR, intakeTraySummary } from "./review";
  * they refuse to speak when the evidence is thin.
  */
 
-const row = (over: Partial<{ proposedKind: string; jobHint: string | null; jobId: string | null }> = {}) => ({
+const row = (
+  over: Partial<{
+    proposedKind: string;
+    proposedConfidence: string;
+    status: string;
+    jobHint: string | null;
+    jobId: string | null;
+  }> = {},
+) => ({
   proposedKind: "SUBMITTAL",
+  proposedConfidence: "HIGH",
+  status: "PROPOSED",
   jobHint: null,
   jobId: null,
   ...over,
 });
 
 describe("intakeTraySummary", () => {
-  it("counts what is waiting and what could not be read", () => {
+  it("splits the tray exactly the way the tray's own header does", () => {
+    // Through countIntake, not re-derived. The two screens disagreed once —
+    // the header read "7 ready to file, 4 need a look" and the alert beside
+    // it said 8 and 3, because a MEDIUM-confidence row is "needs a look" to
+    // the page and was "routine" to the alert. Same total, different split,
+    // and each number defensible on its own. Caught by seeding a tray and
+    // reading both screens.
     const summary = intakeTraySummary(
-      [row(), row(), row({ proposedKind: "UNKNOWN" }), row({ proposedKind: "UNKNOWN" })],
+      [
+        row(),
+        row(),
+        row({ proposedKind: "UNKNOWN", proposedConfidence: "LOW" }),
+        // Placed, but NOT sure — the row the two screens used to fight over.
+        row({ proposedConfidence: "MEDIUM" }),
+      ],
       [],
     );
-    expect(summary.waiting).toBe(4);
-    expect(summary.unreadable).toBe(2);
+    expect(summary.readyToFile).toBe(2);
+    expect(summary.needsALook).toBe(2);
+
+    // And it agrees with countIntake itself, which is the point of routing
+    // through it rather than restating the rule.
+    const counts = countIntake([
+      row(),
+      row(),
+      row({ proposedKind: "UNKNOWN", proposedConfidence: "LOW" }),
+      row({ proposedConfidence: "MEDIUM" }),
+    ] as never);
+    expect(summary.readyToFile).toBe(counts.readyToFile);
+    expect(summary.needsALook).toBe(counts.needALook + counts.couldNotPlace);
+  });
+
+  it("does not count a filed or dismissed row as waiting", () => {
+    const summary = intakeTraySummary(
+      [row(), row({ status: "FILED" }), row({ status: "DISMISSED" })],
+      [],
+    );
+    expect(summary.readyToFile).toBe(1);
+    expect(summary.needsALook).toBe(0);
   });
 
   it("does not call a job name missing on the strength of one file", () => {
@@ -69,34 +111,36 @@ describe("intakeTraySummary", () => {
 
 describe("intakeAlerts", () => {
   it("says nothing at all about an empty tray", () => {
-    expect(intakeAlerts({ waiting: 0, unreadable: 0, unmatchedJobNames: [] })).toEqual([]);
+    expect(intakeAlerts({ readyToFile: 0, needsALook: 0, unmatchedJobNames: [] })).toEqual([]);
   });
 
   it("never counts the same file twice", () => {
-    const alerts = intakeAlerts({ waiting: 14, unreadable: 4, unmatchedJobNames: [] });
+    // The two numbers are disjoint by construction now — countIntake puts
+    // each row in exactly one bucket — rather than by a subtraction here
+    // that could disagree with the tray's own header, and once did.
+    const alerts = intakeAlerts({ readyToFile: 10, needsALook: 4, unmatchedJobNames: [] });
     expect(alerts).toHaveLength(2);
-    // 4 need a person, and the OTHER 10 are routine — not 4 and 14.
-    expect(alerts[0].title).toContain("4 dropped files need");
+    expect(alerts[0].title).toContain("4 dropped files need a look");
     expect(alerts[1].title).toContain("10 documents are ready");
   });
 
-  it("drops the routine line entirely when every file needs a person", () => {
-    const alerts = intakeAlerts({ waiting: 4, unreadable: 4, unmatchedJobNames: [] });
+  it("drops the routine line entirely when every file needs a look", () => {
+    const alerts = intakeAlerts({ readyToFile: 0, needsALook: 4, unmatchedJobNames: [] });
     expect(alerts).toHaveLength(1);
-    expect(alerts[0].title).toContain("4 dropped files need");
+    expect(alerts[0].title).toContain("4 dropped files need a look");
   });
 
   it("gets its singulars right — this is on screen, not in a log", () => {
-    const one = intakeAlerts({ waiting: 1, unreadable: 1, unmatchedJobNames: [] });
-    expect(one[0].title).toBe("1 dropped file needs a person");
-    const routine = intakeAlerts({ waiting: 1, unreadable: 0, unmatchedJobNames: [] });
+    const one = intakeAlerts({ readyToFile: 0, needsALook: 1, unmatchedJobNames: [] });
+    expect(one[0].title).toBe("1 dropped file needs a look");
+    const routine = intakeAlerts({ readyToFile: 1, needsALook: 0, unmatchedJobNames: [] });
     expect(routine[0].title).toBe("1 document is ready to file");
   });
 
   it("carries no date and no invented urgency", () => {
     const alerts = intakeAlerts({
-      waiting: 9,
-      unreadable: 2,
+      readyToFile: 7,
+      needsALook: 2,
       unmatchedJobNames: [{ name: "Riverside", files: 4 }],
     });
     expect(alerts).toHaveLength(3);
@@ -111,8 +155,8 @@ describe("intakeAlerts", () => {
   });
 
   it("changes its key when the number changes, so a dismissal cannot outlive the situation", () => {
-    const at14 = intakeAlerts({ waiting: 14, unreadable: 0, unmatchedJobNames: [] })[0];
-    const at8 = intakeAlerts({ waiting: 8, unreadable: 0, unmatchedJobNames: [] })[0];
+    const at14 = intakeAlerts({ readyToFile: 14, needsALook: 0, unmatchedJobNames: [] })[0];
+    const at8 = intakeAlerts({ readyToFile: 8, needsALook: 0, unmatchedJobNames: [] })[0];
     // Dismiss "14 waiting", file six, and it comes back at 8. That is the
     // whole reason these are alerts rather than a suggestions panel of
     // their own — `alertKey` folds the fact into the key and nobody had to
@@ -120,13 +164,13 @@ describe("intakeAlerts", () => {
     expect(at14.key).not.toBe(at8.key);
     // And the same situation twice is the same key, or a dismissal would
     // never stick at all.
-    expect(intakeAlerts({ waiting: 8, unreadable: 0, unmatchedJobNames: [] })[0].key).toBe(at8.key);
+    expect(intakeAlerts({ readyToFile: 8, needsALook: 0, unmatchedJobNames: [] })[0].key).toBe(at8.key);
   });
 
   it("never puts the raw count in the key, the way every other alert here does not", () => {
     // Issue #109's shape: a key readable in the RSC flight payload must not
     // leak the figure the permission layer may have nulled.
-    const alert = intakeAlerts({ waiting: 14, unreadable: 0, unmatchedJobNames: [] })[0];
+    const alert = intakeAlerts({ readyToFile: 14, needsALook: 0, unmatchedJobNames: [] })[0];
     expect(alert.key).not.toContain("14");
   });
 

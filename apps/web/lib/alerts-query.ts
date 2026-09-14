@@ -154,7 +154,13 @@ export async function loadAlerts(
     // person having already answered.
     prisma.documentIntake.findMany({
       where: { companyId, status: "PROPOSED" },
-      select: { proposedKind: true, jobHint: true, jobId: true },
+      select: {
+        proposedKind: true,
+        proposedConfidence: true,
+        status: true,
+        jobHint: true,
+        jobId: true,
+      },
     }),
   ]);
 

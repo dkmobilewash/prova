@@ -614,6 +614,98 @@ describe("the destructive-form census", () => {
     expect(parsed).toBeGreaterThanOrEqual(40);
   });
 
+  it("keeps every delete label short enough that the armed pair still covers it", () => {
+    /* CLAUDE.md rule 2 — "Cancel inherits the Delete pixel" — was measured
+       against clusters whose delete button is ONE SHORT WORD, and it has a
+       failure mode nothing here could see: a LONG label makes the armed pair
+       NARROWER than the button it replaces, so the pair no longer spans the
+       same pixels and the confirm drifts under where the label used to be.
+
+       Measured in the running app on 2026-09-14, not argued: #265 shipped
+       `label="Remove this estimate"` (147px), and a second click at the exact
+       centre of that button landed on "Remove it" — the confirm. The ORDER
+       was correct the whole time, which is why every existing rule here
+       passed. Shortened to "Remove" (71px), the same probe lands on Cancel.
+
+       A character count is a proxy for a pixel width and is admitted as one.
+       It cannot be measured properly in this environment — happy-dom does no
+       layout and returns zeros from getBoundingClientRect, which is why the
+       geometry entries in CLAUDE.md all come from real Chromium. The ceiling
+       is the longest label the app ACTUALLY uses rather than a round number,
+       so it cannot quietly grow: 61 sites, and "Delete draft" at 12 is the
+       longest of them. */
+    const MAX_LABEL = 12;
+
+    /** The opening tag starting at `at`, read to the `>` at brace depth 0 —
+     *  the same shape `actionAttrs` above uses, because a prop can contain
+     *  both braces and a `>`. Local rather than shared: hintCensus.test.ts
+     *  has its own and the two files are deliberately independent. */
+    const openingTagAt = (code: string, at: number): string | null => {
+      let depth = 0;
+      for (let i = at; i < code.length; i += 1) {
+        const ch = code[i];
+        if (ch === '"' || ch === "'" || ch === "`") {
+          const close = code.indexOf(ch, i + 1);
+          if (close === -1) return null;
+          i = close;
+          continue;
+        }
+        if (ch === "{") depth += 1;
+        else if (ch === "}") depth -= 1;
+        else if (ch === ">" && depth === 0) return code.slice(at, i + 1);
+      }
+      return null;
+    };
+
+    /** `<ConfirmDelete` but never `<ConfirmDeleteButton` when asked for the
+     *  first — the longer-name trap hintCensus.test.ts has a fixture for. */
+    const elementStartsFor = (code: string, tag: string): number[] => {
+      const found: number[] = [];
+      for (let i = code.indexOf(`<${tag}`); i !== -1; i = code.indexOf(`<${tag}`, i + 1)) {
+        const next = code[i + tag.length + 1] ?? "";
+        if (!/[A-Za-z0-9_]/.test(next)) found.push(i);
+      }
+      return found;
+    };
+
+    const offenders: string[] = [];
+    let parsed = 0;
+    for (const full of tsxFiles(appDir)) {
+      const code = withoutComments(readFileSync(full, "utf8"));
+      for (const at of [
+        ...elementStartsFor(code, "ConfirmDelete"),
+        ...elementStartsFor(code, "ConfirmDeleteButton"),
+      ]) {
+        const tag = openingTagAt(code, at);
+        if (tag === null) continue;
+        parsed += 1;
+        const label = /\blabel="([^"]*)"/.exec(tag)?.[1];
+        if (label && label.length > MAX_LABEL) {
+          offenders.push(`${relative(appDir, full)}: label="${label}" (${label.length} chars)`);
+        }
+      }
+    }
+
+    // The size assertion this file already applies everywhere else: a parse
+    // that matched nothing would report a spotless app.
+    expect(parsed, "the scan found no two-step deletes at all").toBeGreaterThanOrEqual(40);
+    expect(
+      offenders,
+      offenders.length === 0
+        ? ""
+        : [
+            "",
+            "A delete button's label is long enough that the armed pair may no",
+            "longer cover the pixels it vacated — so a hurried second click can",
+            "land on the confirm. CLAUDE.md rule 2.",
+            "",
+            "Shorten the label. What it removes belongs in `describe` (hover)",
+            "and in the row's own text, not in the button.",
+            "",
+          ].join("\n"),
+    ).toEqual([]);
+  });
+
   it("finds the destructive submit controls it is supposed to be judging", () => {
     // A floor under the FILTERED set too: if the alias pass or the identifier
     // match breaks, `sites` empties and "no bare deletes" becomes vacuously

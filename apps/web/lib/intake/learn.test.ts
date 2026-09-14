@@ -216,6 +216,42 @@ describe("describeLearning", () => {
     expect(all).toContain("brkt-waiver-01.pdf");
   });
 
+  it("says one lesson once, however many words in the filename taught it", () => {
+    // Found by seeding a tray and READING the panel rather than by
+    // reasoning about it: `brkt-waiver-01.pdf` teaches on "brkt" AND on
+    // "waiver", and the list said "are a lien waiver" three separate times
+    // off four documents. An office that prefixes every file with a project
+    // number gets four or five.
+    const learned = learnFromCorrections([
+      answered({ fileName: "brkt-waiver-01.pdf" }),
+      answered({ fileName: "brkt-waiver-02.pdf" }),
+    ]);
+    // Both rules are still LEARNED — this is a presentation fix, not a
+    // behaviour change, and applyLearning still matches on either word.
+    expect(learned.kinds.map((r) => r.token).sort()).toEqual(["brkt", "waiver"]);
+
+    const lines = describeLearning(learned, name);
+    const aboutKind = lines.filter((l) => l.includes("are a lien waiver"));
+    expect(aboutKind).toHaveLength(1);
+    expect(aboutKind[0]).toContain('"brkt" or "waiver"');
+    // ...and the same for the job half.
+    expect(lines.filter((l) => l.includes("go on "))).toHaveLength(1);
+  });
+
+  it("keeps two lessons apart when the evidence is different", () => {
+    // Merging on the conclusion alone would claim evidence a rule does not
+    // have: two separate groups of files can name the same job.
+    const learned = learnFromCorrections([
+      answered({ fileName: "brkt-alpha.pdf", jobId: "job-brackett", proposedKind: "PAY_APP", acceptedKind: "PAY_APP" }),
+      answered({ fileName: "brkt-beta.pdf", jobId: "job-brackett", proposedKind: "PAY_APP", acceptedKind: "PAY_APP" }),
+      answered({ fileName: "gym-gamma.pdf", jobId: "job-brackett", proposedKind: "PAY_APP", acceptedKind: "PAY_APP" }),
+      answered({ fileName: "gym-delta.pdf", jobId: "job-brackett", proposedKind: "PAY_APP", acceptedKind: "PAY_APP" }),
+    ]);
+    const lines = describeLearning(learned, name);
+    // Same job, different files, so two lines — not one claiming eight.
+    expect(lines.filter((l) => l.includes("go on "))).toHaveLength(2);
+  });
+
   it("drops a rule pointing at a job that no longer exists", () => {
     const learned = learnFromCorrections([
       answered({ fileName: "gone-01.pdf", jobId: "job-deleted", acceptedKind: null }),

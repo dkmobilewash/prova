@@ -1184,10 +1184,22 @@ export function summarizeAlerts(alerts: Alert[]) {
 /* ------------------------------------------------------ document intake */
 
 export type IntakeAlertSource = {
-  /** Proposals nobody has answered yet. */
-  waiting: number;
-  /** Of those, the ones the classifier could not read at all. */
-  unreadable: number;
+  /** Placed, and the machine is sure. `countIntake`'s `readyToFile`. */
+  readyToFile: number;
+  /** Everything else waiting: placed-but-unsure plus never-placed.
+   *  `countIntake`'s `needALook` + `couldNotPlace`.
+   *
+   *  TAKEN FROM `countIntake` RATHER THAN RE-DERIVED, and that is a
+   *  correction. This used to be `waiting` and `unreadable`, with
+   *  "unreadable" meaning UNKNOWN alone and the routine line computed as
+   *  `waiting - unreadable`. The totals matched and the SPLIT did not: the
+   *  tray's own header read "7 ready to file, 4 need a look" while the
+   *  alert beside it said 8 and 3, because a MEDIUM-confidence row is
+   *  "needs a look" to the page and was "routine" here. Caught by seeding a
+   *  tray and reading both screens, which is the only way a disagreement
+   *  like that shows up — each number is defensible alone. One rule, in
+   *  `countIntake`, and both screens read it. */
+  needsALook: number;
   /** A job name the evidence suggested, that no job here actually has,
    *  with how many files said it. Only names seen more than once: one file
    *  mentioning a word is not a missing job, it is a word. */
@@ -1227,15 +1239,15 @@ export function intakeAlerts(source: IntakeAlertSource): Alert[] {
   // they are the only rows in the tray that need a person rather than a
   // click. Rolling them into "14 waiting" is how the four that need thought
   // get confirmed along with the ten that do not.
-  if (source.unreadable > 0) {
+  if (source.needsALook > 0) {
     alerts.push({
-      key: alertKey("DOCUMENT_INTAKE", "unreadable", factDigest([String(source.unreadable)])),
+      key: alertKey("DOCUMENT_INTAKE", "unreadable", factDigest([String(source.needsALook)])),
       kind: "DOCUMENT_INTAKE",
       severity: "STANDING",
-      title: `${source.unreadable} dropped ${source.unreadable === 1 ? "file needs" : "files need"} a person`,
+      title: `${source.needsALook} dropped ${source.needsALook === 1 ? "file needs" : "files need"} a look`,
       detail:
-        "We could not tell what these are from the filename, so they are proposed as unsorted and " +
-        "will not file until you say what they are.",
+        "Either we could not tell what these are from the filename, or we are not confident enough " +
+        "to propose it without you. Nothing files until you say what they are.",
       href: "/intake",
       dueOn: null,
       daysUntil: null,
@@ -1243,10 +1255,11 @@ export function intakeAlerts(source: IntakeAlertSource): Alert[] {
     });
   }
 
-  // The plain backlog, counting only the rows that are NOT already covered by
-  // the line above — two alerts that both count the same file read as twice
-  // the work.
-  const routine = source.waiting - source.unreadable;
+  // The plain backlog. The two numbers come from one `countIntake` call and
+  // are disjoint by construction, so nothing here can count a file twice —
+  // which the arithmetic that used to live on this line could, and did get
+  // subtly wrong against the tray's own header.
+  const routine = source.readyToFile;
   if (routine > 0) {
     alerts.push({
       key: alertKey("DOCUMENT_INTAKE", "waiting", factDigest([String(routine)])),

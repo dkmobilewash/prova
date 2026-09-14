@@ -208,8 +208,8 @@ export function intakeSummarySentence(counts: IntakeCounts): string {
 
 /** What the alert source needs to know about the tray, and nothing else. */
 export type IntakeTraySummary = {
-  waiting: number;
-  unreadable: number;
+  readyToFile: number;
+  needsALook: number;
   unmatchedJobNames: { name: string; files: number }[];
 };
 
@@ -239,12 +239,18 @@ export const UNMATCHED_JOB_FLOOR = 3;
  * wrong job is the failure this whole screen is built to avoid.
  */
 export function intakeTraySummary(
-  rows: readonly { proposedKind: string; jobHint: string | null; jobId: string | null }[],
+  rows: readonly {
+    proposedKind: string;
+    proposedConfidence: string;
+    status: string;
+    jobHint: string | null;
+    jobId: string | null;
+  }[],
   jobNames: readonly string[],
 ): IntakeTraySummary {
   const known = new Set(jobNames.map((name) => name.trim().toLowerCase()).filter(Boolean));
 
-  const counts = new Map<string, { name: string; files: number }>();
+  const byName = new Map<string, { name: string; files: number }>();
   for (const row of rows) {
     // A row already ON a job is not evidence of a missing one, whatever its
     // hint said — somebody answered that question.
@@ -253,15 +259,18 @@ export function intakeTraySummary(
     if (!hint) continue;
     const key = hint.toLowerCase();
     if (known.has(key)) continue;
-    const held = counts.get(key);
+    const held = byName.get(key);
     if (held) held.files += 1;
-    else counts.set(key, { name: hint, files: 1 });
+    else byName.set(key, { name: hint, files: 1 });
   }
 
+  // Through countIntake, never re-derived: the tray header and the alert
+  // beside it must split the same tray the same way. They did not, once.
+  const counts = countIntake(rows as unknown as readonly StatusedRow[]);
   return {
-    waiting: rows.length,
-    unreadable: rows.filter((row) => row.proposedKind === "UNKNOWN").length,
-    unmatchedJobNames: [...counts.values()]
+    readyToFile: counts.readyToFile,
+    needsALook: counts.needALook + counts.couldNotPlace,
+    unmatchedJobNames: [...byName.values()]
       .filter((entry) => entry.files >= UNMATCHED_JOB_FLOOR)
       // Loudest first, then by name so two of the same size have a stable order.
       .sort((a, b) => b.files - a.files || a.name.localeCompare(b.name)),

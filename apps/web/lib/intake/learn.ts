@@ -298,26 +298,67 @@ export function describeLearning(
   jobName: (jobId: string) => string | null,
 ): string[] {
   const lines: string[] = [];
-  for (const rule of learned.kinds) {
+  for (const group of groupByLesson(learned.kinds)) {
     lines.push(
-      `Files with "${rule.token}" in the name are ${labelOf(rule.value)} — ` +
-        `you corrected that ${rule.timesAgreed} times (${rule.examples.join(", ")}).`,
+      `Files with ${listTokens(group.tokens)} in the name are ${labelOf(group.value)} — ` +
+        `you corrected that ${group.timesAgreed} times (${group.examples.join(", ")}).`,
     );
   }
-  for (const rule of learned.jobs) {
+  for (const group of groupByLesson(learned.jobs)) {
     // A rule that files to "no job" is real and worth saying, but it is the
     // DEFAULT the screen already offers, so it is not news. Only a rule that
     // names a job changes anything a person sees.
-    if (rule.value === null) continue;
-    const name = jobName(rule.value);
+    if (group.value === null) continue;
+    const name = jobName(group.value);
     // A rule pointing at a job that no longer exists is dropped rather than
     // shown as an id. It cannot fire either — applyLearning would set a
     // jobId the picker has no option for.
     if (!name) continue;
     lines.push(
-      `Files with "${rule.token}" in the name go on ${name} — ` +
-        `you filed ${rule.timesAgreed} that way (${rule.examples.join(", ")}).`,
+      `Files with ${listTokens(group.tokens)} in the name go on ${name} — ` +
+        `you filed ${group.timesAgreed} that way (${group.examples.join(", ")}).`,
     );
   }
   return lines;
+}
+
+/**
+ * One LESSON per line, not one token per line.
+ *
+ * A filename teaches every word in it at once, so `brkt-waiver-01.pdf`
+ * produces a "brkt" rule and a "waiver" rule that say exactly the same
+ * thing from exactly the same files. Listed separately that is two
+ * identical sentences; on a real drop, where an office prefixes every file
+ * with a project number, it is four or five.
+ *
+ * Found by seeding a tray and READING the panel, not by reasoning about it:
+ * three lines said "are a lien waiver" and three said "go on Riverside
+ * Medical Office Building", from four documents.
+ *
+ * Rules are the same lesson when they reach the same conclusion from the
+ * same evidence. Merging on the VALUE alone would be wrong — two different
+ * groups of files can teach the same job for genuinely different reasons,
+ * and collapsing those would claim evidence one of them does not have.
+ */
+function groupByLesson<T>(rules: LearnedRule<T>[]): {
+  tokens: string[];
+  value: T;
+  timesAgreed: number;
+  examples: string[];
+}[] {
+  const groups = new Map<string, { tokens: string[]; value: T; timesAgreed: number; examples: string[] }>();
+  for (const rule of rules) {
+    const lesson = `${String(rule.value)}::${rule.examples.join("|")}`;
+    const held = groups.get(lesson);
+    if (held) held.tokens.push(rule.token);
+    else groups.set(lesson, { tokens: [rule.token], value: rule.value, timesAgreed: rule.timesAgreed, examples: rule.examples });
+  }
+  return [...groups.values()];
+}
+
+/** `"brkt"`, `"brkt" or "waiver"`, `"brkt", "waiver" or "zzscratch"`. */
+function listTokens(tokens: string[]): string {
+  const quoted = tokens.map((token) => `"${token}"`);
+  if (quoted.length === 1) return quoted[0];
+  return `${quoted.slice(0, -1).join(", ")} or ${quoted[quoted.length - 1]}`;
 }
