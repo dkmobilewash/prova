@@ -5,6 +5,7 @@ import { NoAccess } from "@/components/NoAccess";
 import { IntakeDropZone } from "@/components/IntakeDropZone";
 import { IntakeTable, type IntakeRow } from "@/components/IntakeTable";
 import { countIntake, intakeSummarySentence } from "@/lib/intake/review";
+import { applyLearning, describeLearning, learnFromCorrections } from "@/lib/intake/learn";
 import { toJobOption } from "@/components/jobLabels";
 
 /**
@@ -45,12 +46,24 @@ import { toJobOption } from "@/components/jobLabels";
  */
 const TRAY_LIMIT = 200;
 
+/**
+ * How far back a habit is read from.
+ *
+ * A bound, not a preference: this query runs on every page load and the
+ * table it reads grows by a folder at a time. 500 is roughly six of the
+ * eighty-file drops this screen was built for, which is enough for a pattern
+ * and recent enough to still be true — an office that changed how it names
+ * files last spring should not be held to the old way by a thousand rows
+ * underneath.
+ */
+const LEARN_FROM_LAST = 500;
+
 export default async function IntakePage() {
   const { context, allowed } = await requireCapability("MANAGE_JOBS");
   if (!allowed) return <NoAccess capability="MANAGE_JOBS" />;
   const { company } = context;
 
-  const [jobs, tray, trayTotal, filed, dismissed] = await Promise.all([
+  const [jobs, tray, trayTotal, filed, dismissed, decisions] = await Promise.all([
     prisma.job.findMany({
       where: { companyId: company.id },
       orderBy: { createdAt: "desc" },
@@ -84,9 +97,57 @@ export default async function IntakePage() {
     prisma.documentIntake.count({ where: { companyId: company.id, status: "PROPOSED" } }),
     prisma.documentIntake.count({ where: { companyId: company.id, status: "FILED" } }),
     prisma.documentIntake.count({ where: { companyId: company.id, status: "DISMISSED" } }),
+    // EVERY DECISION THIS COMPANY HAS ALREADY MADE, which is what the screen
+    // learns from. The two columns it reads — `proposedKind` and
+    // `acceptedKind` — have been stored side by side since the model was
+    // written, for exactly this ("the only way to know whether this screen is
+    // any good is to be able to ask how often a person changed the answer").
+    // Nothing read them back until now, so the same office corrected the same
+    // document type every Monday forever.
+    //
+    // Bounded and newest-first: a habit is what you do NOW. An office that
+    // changed how it names files last spring should not be held to the old
+    // way by a thousand rows underneath.
+    prisma.documentIntake.findMany({
+      where: { companyId: company.id, status: "FILED", acceptedKind: { not: null } },
+      orderBy: { createdAt: "desc" },
+      take: LEARN_FROM_LAST,
+      select: { fileName: true, proposedKind: true, acceptedKind: true, jobHint: true, jobId: true },
+    }),
   ]);
 
-  const rows: IntakeRow[] = tray;
+  const learned = learnFromCorrections(decisions);
+  const jobNameById = new Map(jobs.map((job) => [job.id, job.name]));
+
+  // Applied to the PROPOSAL as it is rendered, never written to the row.
+  // `proposedKind` is a thing that happened — the schema's own words — and a
+  // habit learned afterwards must not rewrite the reason somebody was shown
+  // when they made a decision. So learning moves what the picker DEFAULTS to
+  // and adds a sentence saying why; the stored proposal is untouched, and
+  // "how often did a person change the answer" stays answerable.
+  const rows: IntakeRow[] = tray.map((row) => {
+    const adjusted = applyLearning(
+      {
+        fileName: row.fileName,
+        kind: row.proposedKind,
+        confidence: row.proposedConfidence,
+        jobId: row.jobId,
+      },
+      learned,
+    );
+    if (adjusted.becauseYouUsually.length === 0) return row;
+    return {
+      ...row,
+      proposedKind: adjusted.kind,
+      jobId: adjusted.jobId,
+      // Appended, never replacing: the classifier's reason is why the
+      // machine thought so, and this is why the OFFICE thinks so. A person
+      // overruling one of them should be able to see both.
+      proposedReason: [row.proposedReason, ...adjusted.becauseYouUsually].join(" "),
+    };
+  });
+
+  const learnedLines = describeLearning(learned, (id) => jobNameById.get(id) ?? null);
 
   // The three tray numbers are counted over the rows actually on this page,
   // and `filed`/`dismissed` come from their own queries rather than from
@@ -112,6 +173,35 @@ export default async function IntakePage() {
       <section className="mb-8">
         <IntakeDropZone companyId={company.id} />
       </section>
+
+      {/* WHAT IT LEARNED, said out loud. Cyrus asked for this by name, and
+          it is the half that makes the rest acceptable: a screen that
+          quietly gets better is indistinguishable from one that quietly gets
+          worse. Every line is a fact about what the PERSON did, with their
+          own filenames as the evidence, so it can be read and disagreed
+          with — never "AI determined", which is a reason nobody can check
+          and therefore a reason nobody can overrule.
+
+          Absent entirely until there is something to say. An empty "what I
+          have learned" panel on a new account teaches the reader that the
+          feature does nothing. */}
+      {learnedLines.length > 0 && (
+        <section className="mb-8 rounded-lg border border-line-card bg-surface p-4">
+          <h2 className="mb-1 text-sm font-semibold text-ink-label">What this has picked up from you</h2>
+          <p className="mb-3 text-xs text-ink-muted">
+            Taken from what you filed, not from anything we were told. It only fills a blank — a
+            clear reading of the document itself always wins, and where two of these disagree it
+            leaves the row for you.
+          </p>
+          <ul className="flex flex-col gap-1.5">
+            {learnedLines.map((line) => (
+              <li key={line} className="text-sm text-ink-body">
+                {line}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {/* THE THREE NUMBERS, above the table they describe. "Ready to file"
           rather than "filed automatically": nothing here has been filed, and
