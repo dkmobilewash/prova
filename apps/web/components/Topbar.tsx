@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { UserButton } from "@clerk/nextjs";
 import { MobileNav } from "@/components/MobileNav";
+import { HelpButton } from "@/components/HelpButton";
+import { helpChannelFromEnv } from "@/lib/help-config";
 import type { Principal } from "@/lib/permissions";
 
 /** Chrome stays dark alongside the rail, so the frame is one thing and the
@@ -30,6 +32,12 @@ export function Topbar({
       {/* Renders nothing above md — the desktop rail is always visible there. */}
       <MobileNav companyName={companyName} principal={principal} showsInternal={showsInternal} />
       <div className="ml-auto flex items-center gap-3">
+        {/* The only way to reach a person from inside the app, and it is
+            here rather than on a page because a help link that exists on
+            one screen is not help — see HelpButton for the two shapes this
+            rejected. The channel is resolved server-side so the panel can
+            only offer what the action will accept. */}
+        <HelpButton companyName={companyName} channel={helpChannelFromEnv()} />
         <Link
           href="/alerts"
           aria-label={

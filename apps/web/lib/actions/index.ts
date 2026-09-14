@@ -45,3 +45,4 @@ export * from "./equipmentAssignments";
 export * from "./certifications";
 export * from "./jobMedia";
 export * from "./ask";
+export * from "./help";
