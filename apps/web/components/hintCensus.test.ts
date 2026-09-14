@@ -397,7 +397,7 @@ describe("the control-hint census", () => {
 
   /* ---------- 3. the nav rail's group headings ---------- */
 
-  const groups = navGroupsFor({ role: "OWNER", jobFunction: null }, { showsSalesCrm: true });
+  const groups = navGroupsFor({ role: "OWNER", jobFunction: null }, { showsInternal: true });
 
   it("describes every nav group, including the one appended separately", () => {
     expect(groups.length).toBeGreaterThanOrEqual(6);

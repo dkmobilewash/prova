@@ -121,6 +121,7 @@ export function JobDetailsForm({
             label="Remove this estimate"
             confirmLabel="Remove it"
             hint={name}
+            describe="Removes this estimate and its line items. An estimate with an invoice, hours or an RFI filed against it stays."
             action={async () => {
               const result = await deleteEstimateJob(jobId);
               if (result.ok) router.push("/jobs");

@@ -197,6 +197,7 @@ export function TimeEntryRow({
             pinned="end"
             label="Remove"
             confirmLabel="Confirm remove"
+            describe="Removes this logged hour from the job. Labor cost and certified payroll are recalculated from the hours that remain."
             action={deleteAction}
             deleteClassName="text-xs text-red-400 hover:underline disabled:opacity-50"
             cancelClassName={btn}
