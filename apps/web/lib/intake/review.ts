@@ -233,10 +233,29 @@ export const UNMATCHED_JOB_FLOOR = 3;
  * names count as missing — so it is here where it can be tested without a
  * database.
  *
- * Job names are compared case-insensitively and trimmed. That is deliberately
- * crude: this decides whether to SUGGEST that somebody look, not whether to
- * file anything, and a fuzzy match that quietly filed a document onto the
- * wrong job is the failure this whole screen is built to avoid.
+ * A hint MATCHES a job when the job's name begins with it at a word
+ * boundary, case-insensitively — "Riverside" matches "Riverside Medical
+ * Office Building".
+ *
+ * IT WAS EXACT EQUALITY, AND EXACT EQUALITY IS WRONG HERE. Real job names
+ * are long ("Riverside Medical Office Building"); the hint the classifier
+ * reads out of a filename is the leading run of capitalised words, which is
+ * short ("Riverside"), because that is what an office types. Under equality
+ * every one of those reads as a MISSING job, so the tray tells you three
+ * files name a job you do not have while the job sits in the picker on the
+ * same screen. Found by running the real demo job names through it rather
+ * than by reading the code.
+ *
+ * Prefix-at-a-word-boundary and nothing looser. Not a substring: "Park"
+ * would match "Cedar Park Elementary" and equally "Parkway Tower", and a
+ * suggestion that cannot tell two jobs apart is worse than none. Not a
+ * fuzzy distance either.
+ *
+ * AND IT STILL DECIDES NOTHING ABOUT FILING. This function only answers
+ * "is it worth telling somebody to look" — it never chooses a job for a
+ * document. That is the whole reason a prefix is safe here and would not be
+ * in `learn.ts`, where a wrong match writes a jobId onto an evidence
+ * record.
  */
 export function intakeTraySummary(
   rows: readonly {
@@ -248,7 +267,18 @@ export function intakeTraySummary(
   }[],
   jobNames: readonly string[],
 ): IntakeTraySummary {
-  const known = new Set(jobNames.map((name) => name.trim().toLowerCase()).filter(Boolean));
+  const known = jobNames.map((name) => name.trim().toLowerCase()).filter(Boolean);
+  const namesAJob = (hint: string): boolean => {
+    const needle = hint.trim().toLowerCase();
+    if (!needle) return false;
+    return known.some((name) => {
+      if (!name.startsWith(needle)) return false;
+      // The word boundary: "River" must not match "Riverside". Either the
+      // names are equal, or the next character is not part of a word.
+      const next = name.charAt(needle.length);
+      return next === "" || !/[a-z0-9]/.test(next);
+    });
+  };
 
   const byName = new Map<string, { name: string; files: number }>();
   for (const row of rows) {
@@ -258,7 +288,7 @@ export function intakeTraySummary(
     const hint = row.jobHint?.trim();
     if (!hint) continue;
     const key = hint.toLowerCase();
-    if (known.has(key)) continue;
+    if (namesAJob(hint)) continue;
     const held = byName.get(key);
     if (held) held.files += 1;
     else byName.set(key, { name: hint, files: 1 });

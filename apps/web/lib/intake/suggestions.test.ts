@@ -95,6 +95,42 @@ describe("intakeTraySummary", () => {
     expect(summary.unmatchedJobNames).toEqual([]);
   });
 
+  it("matches the short hint a filename carries against the long name a job has", () => {
+    // THE CASE THIS RULE EXISTS FOR, and it was wrong under exact equality.
+    // Jobs are named "Riverside Medical Office Building"; the hint a
+    // classifier reads out of `Riverside COI 2027.pdf` is "Riverside",
+    // because that is what an office types. Equality made every one of
+    // those a MISSING job, so the tray announced three files naming a job
+    // you do not have while that job sat in the picker on the same screen.
+    // Found by running the real job names through it.
+    const jobs = [
+      "Riverside Medical Office Building [demo]",
+      "Northgate Apartments Phase 2 [demo]",
+      "Cedar Park Elementary [demo]",
+    ];
+    const three = (hint: string) => [row({ jobHint: hint }), row({ jobHint: hint }), row({ jobHint: hint })];
+
+    expect(intakeTraySummary(three("Riverside"), jobs).unmatchedJobNames).toEqual([]);
+    expect(intakeTraySummary(three("Northgate"), jobs).unmatchedJobNames).toEqual([]);
+    expect(intakeTraySummary(three("Cedar Park"), jobs).unmatchedJobNames).toEqual([]);
+  });
+
+  it("stops at a word boundary, so a prefix of a word is not a match", () => {
+    // Not a substring and not a fuzzy distance. "River" is not "Riverside",
+    // and a suggestion that cannot tell two jobs apart is worse than none.
+    const jobs = ["Riverside Medical Office Building [demo]"];
+    const three = (hint: string) => [row({ jobHint: hint }), row({ jobHint: hint }), row({ jobHint: hint })];
+
+    expect(intakeTraySummary(three("River"), jobs).unmatchedJobNames).toEqual([
+      { name: "River", files: 3 },
+    ]);
+    // And a genuinely absent job still gets said out loud — the control
+    // that stops this rule going quietly permissive.
+    expect(intakeTraySummary(three("Oakmont"), jobs).unmatchedJobNames).toEqual([
+      { name: "Oakmont", files: 3 },
+    ]);
+  });
+
   it("ignores the hint on a row somebody has already put on a job", () => {
     const summary = intakeTraySummary(
       [

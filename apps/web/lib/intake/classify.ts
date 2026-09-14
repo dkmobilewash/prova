@@ -216,6 +216,20 @@ function detectComplianceDoc(ctx: Ctx): Detection | null {
       // apostrophe is followed by an s, not a space. Caught by review.
       /\bcontractors?(?:'s)?\s+licen[sc]e\b/i,
       /\bOSHA\s*(?:10|30)\b/i,
+      // Both of these are records this app already KEEPS as compliance
+      // documents — they are on the dashboard's own Compliance card, with
+      // expiry dates, beside the COIs. The classifier not knowing them
+      // meant a GC's master agreement and a prequal came back "we could
+      // not tell what this is" on a screen whose whole claim is that it
+      // files a GC's paperwork. Found by running an 85-file demo folder
+      // through it rather than by reading the detector.
+      //
+      // "MSA" is deliberately NOT here: three letters that are also a
+      // supplier, a product and an abbreviation for half a dozen things,
+      // and this detector's own note on "bond" and "license" is the
+      // precedent for refusing a term that common.
+      /\bmaster\s+(?:service|subcontract)\s+agreements?\b/i,
+      /\bpre-?qual(?:ification)?\b/i,
     ),
     fromText(
       ctx,

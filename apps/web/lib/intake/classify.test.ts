@@ -549,3 +549,36 @@ describe("a jurisdiction is not a job", () => {
     ).toBe("Riverside");
   });
 });
+
+describe("the compliance records this app already keeps", () => {
+  /* Found by running an 85-file demo folder through the classifier: a
+     master service agreement and a prequalification came back UNKNOWN —
+     "we could not tell what this is" — on a screen whose whole claim is
+     that it files a GC's paperwork. Both are records this app ALREADY
+     tracks as compliance documents, with expiry dates, on the dashboard's
+     own Compliance card. */
+  it("knows a master service agreement", () => {
+    const c = classifyDocument({
+      filename: "Master Service Agreement Halvorsen.pdf",
+      mimeType: "application/pdf",
+      sizeBytes: 90_000,
+    });
+    expect(c.kind).toBe("COMPLIANCE_DOC");
+    expect(c.confidence).toBe("HIGH");
+  });
+
+  it("knows a prequalification, hyphenated or not", () => {
+    for (const filename of ["Northgate prequalification.pdf", "Brackett pre-qual 2026.pdf"]) {
+      expect(classifyDocument({ filename, mimeType: "application/pdf", sizeBytes: 90_000 }).kind, filename)
+        .toBe("COMPLIANCE_DOC");
+    }
+  });
+
+  it("still refuses the bare abbreviation", () => {
+    // "MSA" is three letters that are also a supplier, a product and half a
+    // dozen other things. Same reasoning the detector already applies to
+    // "bond" and "license", which are material terms in this trade.
+    const c = classifyDocument({ filename: "MSA.pdf", mimeType: "application/pdf", sizeBytes: 90_000 });
+    expect(c.kind).toBe("UNKNOWN");
+  });
+});
