@@ -101,7 +101,7 @@ export default async function IntakePage() {
       <h1 className="mb-2 text-2xl font-semibold text-ink">Document intake</h1>
       <p className="mb-6 max-w-3xl text-sm text-ink-body">
         Drop in everything a GC has sent you and we will tell you what each file looks like and
-        where it should go. We read the filename and the first page; we do not file anything —
+        where it should go. We read the filename; we do not file anything —
         you confirm every row, and you can overrule any answer on the row itself.
       </p>
 

@@ -269,18 +269,47 @@ export async function confirmIntakeRows(
     if (jobs.length !== wantedJobIds.length) return fail("Job not found");
   }
 
-  await prisma.$transaction(async (tx) => {
-    for (const entry of checked) {
-      await tx.documentIntake.update({
-        where: { id: entry.id },
-        data: {
-          acceptedKind: entry.kind,
-          jobId: entry.jobId || null,
-          status: "FILED",
-        },
-      });
-    }
-  });
+  // ONE STATEMENT PER DISTINCT DESTINATION, not one per row. "Confirm all"
+  // is the most-clicked button in this feature and the drop it follows is
+  // sized in the dozens, so a `for` loop of individual updates was up to
+  // TRAY_LIMIT statements inside one interactive transaction — which can
+  // exceed Prisma's default timeout and then THROWS, and production redacts
+  // a thrown Server Action message to a digest. The button would have
+  // failed with nothing on screen at all.
+  //
+  // Rows are grouped by what they are being filed AS, because that is the
+  // only thing the write varies by. Eighty documents across eight kinds is
+  // eight statements, not eighty.
+  const byDestination = new Map<string, { kind: FilableKind; jobId: string | null; ids: string[] }>();
+  for (const entry of checked) {
+    const jobId = entry.jobId || null;
+    const key = `${entry.kind}::${jobId ?? ""}`;
+    const group = byDestination.get(key);
+    if (group) group.ids.push(entry.id);
+    else byDestination.set(key, { kind: entry.kind, jobId, ids: [entry.id] });
+  }
+
+  try {
+    await prisma.$transaction(
+      async (tx) => {
+        for (const group of byDestination.values()) {
+          await tx.documentIntake.updateMany({
+            where: { id: { in: group.ids }, companyId },
+            data: { acceptedKind: group.kind, jobId: group.jobId, status: "FILED" },
+          });
+        }
+      },
+      // Generous rather than default: the grouping above makes a timeout
+      // unlikely, and a partial file is worse than a slow one.
+      { timeout: 20_000, maxWait: 10_000 },
+    );
+  } catch {
+    // A returned sentence, never a throw — CLAUDE.md: production redacts a
+    // thrown message and the form would render nothing. Nothing was filed:
+    // the transaction is all or nothing, so the tray is unchanged and the
+    // person can simply press it again.
+    return fail("Filing those documents took too long and nothing was filed. Please try again.");
+  }
 
   revalidatePath("/intake");
   return ok;
