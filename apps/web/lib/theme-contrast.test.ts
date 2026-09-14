@@ -86,6 +86,94 @@ describe("theme contrast", () => {
     expect(contrastRatio(colors.brand, colors.canvas)).toBeGreaterThanOrEqual(3);
   });
 
+  /**
+   * THE TEST ABOVE MEASURES A COLOUR NOBODY IS OBLIGED TO USE.
+   *
+   * It proves white-on-brand clears 4.5:1. It says nothing about whether the
+   * buttons in this app actually put white on brand — and the moment one of
+   * them does not, that assertion is measuring a pairing that is not on
+   * screen. A token test that is never tied back to the markup is a fact
+   * about the config file.
+   *
+   * `bg-brand` is blue-600 (#2563eb), a DARK fill, and its whole ramp was
+   * chosen that way: the tailwind config records that blue-500 was rejected
+   * because its white label came out at 3.7:1. A dark label on it measures
+   * 3.47:1 — under the 4.5 floor, and on this app's most-clicked buttons.
+   *
+   * This branch shipped exactly that, twice, on the two biggest buttons of
+   * the feature being filmed ("Choose a folder" and "Confirm all N"):
+   * `bg-brand … text-neutral-900`, copied from a palette note that describes
+   * a yellow brand this repo does not have. Typecheck, lint and every other
+   * test were green — a class name is a string.
+   *
+   * SIZE-ASSERTED, because the parse derives its own set: a regex that
+   * stopped matching would find no offenders and pass. The floor is a floor
+   * rather than an equality so adding a brand button does not fail a test
+   * about contrast, but a parse that collapses to nothing fails loudly.
+   */
+  it("puts the white label it measured on every brand fill in the app", async () => {
+    const { readdirSync, readFileSync, statSync } = await import("node:fs");
+    const { join, relative } = await import("node:path");
+    const { fileURLToPath } = await import("node:url");
+
+    const appDir = fileURLToPath(new URL("..", import.meta.url));
+    const tsx = (dir: string, out: string[] = []) => {
+      for (const name of readdirSync(dir)) {
+        if (name === "node_modules" || name === ".next" || name.startsWith(".")) continue;
+        const full = join(dir, name);
+        if (statSync(full).isDirectory()) tsx(full, out);
+        else if (name.endsWith(".tsx")) out.push(full);
+      }
+      return out;
+    };
+    // Comments stripped for the same reason rowActionsCensus.test.ts strips
+    // them: a paragraph explaining a class name is not a class name, and a
+    // scan that reads its own documentation answers nothing.
+    const withoutComments = (source: string) =>
+      source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+
+    // A single class string — quotes and backticks, never across a newline,
+    // so one className cannot swallow the next.
+    const CLASS_STRING_WITH_BRAND = /(["`])([^"`\n]*\bbg-brand\b[^"`\n]*)\1/g;
+
+    const found: { path: string; classes: string }[] = [];
+    for (const full of tsx(appDir)) {
+      const code = withoutComments(readFileSync(full, "utf8"));
+      for (const match of code.matchAll(CLASS_STRING_WITH_BRAND)) {
+        found.push({ path: relative(appDir, full), classes: match[2] });
+      }
+    }
+
+    expect(
+      found.length,
+      "the scan found almost no bg-brand at all — the pattern has stopped matching, " +
+        "and a check that parses nothing passes everything below it",
+    ).toBeGreaterThanOrEqual(6);
+
+    const offenders = found
+      .filter((f) => !/\btext-white\b/.test(f.classes))
+      .map((f) => `${f.path}: ${f.classes.trim()}`);
+
+    expect(
+      offenders,
+      offenders.length === 0
+        ? ""
+        : [
+            "",
+            "A bg-brand fill is carrying a label that is not text-white.",
+            "",
+            "brand is blue-600 — a DARK fill. White on it is 5.17:1; the",
+            "text-neutral-900 that a light/yellow brand would want measures",
+            "3.47:1, under the 4.5 floor a button label answers to.",
+            "",
+            "Use text-white, which is what the assertion above this one",
+            "actually measured and what every other brand button in the app",
+            "already does.",
+            "",
+          ].join("\n"),
+    ).toEqual([]);
+  });
+
   it("keeps all four ink levels distinguishable from each other", () => {
     // The light ramp could only afford three informational greys; the
     // fourth was hierarchy bought with legibility. The dark ramp has room

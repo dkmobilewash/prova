@@ -1,0 +1,157 @@
+/// Document intake — the tray a folder of GC paperwork lands in, and the
+/// proposals a person confirms or overrides before anything is filed.
+///
+/// THE ROW IS THE PROPOSAL, NOT THE FILING. `/intake` records what the
+/// classifier thinks each file is, and a person accepts or changes it. It
+/// does NOT create a Submittal, an Rfi or a ComplianceDocument: those are
+/// evidence records with identity rules this pass deliberately does not
+/// guess at (a submittal number comes from a counter; an RFI's fields lock
+/// on creation; a compliance document has an expiry somebody has to read
+/// off the page). Filing here means recording the accepted kind and job on
+/// this row, which is honest, testable and demoable. Routing each kind into
+/// its destination model is the next change, and the UI says "filed as"
+/// rather than "added to your submittals" so nobody is promised otherwise.
+///
+/// COMPANY-SCOPED WITH AN OPTIONAL JOB, which is the shape of the problem
+/// rather than a convenience. Half of what arrives in one of these drops is
+/// not about a job at all — a renewed COI, a W-9, a certified-payroll
+/// workbook — and the half that is often does not say which job until
+/// somebody reads it. A required `jobId` would force a guess at the moment
+/// there is least evidence, which is exactly what this screen exists to
+/// stop happening silently.
+///
+/// NOT AN EVIDENCE RECORD. Nothing here was sent to anybody; a mis-uploaded
+/// file is a mistake to undo, not correspondence to preserve. So unlike a
+/// Submittal it can be dismissed, and unlike a JobMedia row it carries no
+/// counter and no sequence number.
+model DocumentIntake {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  /// The job this is filed against, once somebody says. Null until then,
+  /// and null forever for the compliance paperwork that belongs to the
+  /// company rather than to a job.
+  ///
+  /// OPTIONAL MEANS `ON DELETE SET NULL` (Prisma's default for a nullable
+  /// relation), so this does NOT block deleting a job the way a counter
+  /// does — see CLAUDE.md on InvoiceCounter, which blocked every job delete
+  /// because nothing connected the two facts. It is still in the cleanup
+  /// scripts' delete order and in HANDLED_MODELS, because a scratch job's
+  /// intake rows are the scratch job's data whether or not Postgres would
+  /// refuse the delete without them.
+  jobId String?
+  job   Job?    @relation(fields: [jobId], references: [id])
+
+  /// Where the file actually lives. Vercel Blob, `access: "public"` with a
+  /// random suffix — unguessable rather than private, matching every other
+  /// upload in this app (apps/web/lib/blob.ts).
+  ///
+  /// The path in it is not decoration: it is
+  /// `document-intake/<companyId>/<file>`, and both the token route and the
+  /// recording action refuse a URL that sits anywhere else. See
+  /// apps/web/lib/intake/upload.ts for why the company id is in the path
+  /// here when lib/blob.ts records at length that it was a mistake for
+  /// compliance documents.
+  blobUrl String
+
+  /// What the person's own file was called, before the store's random
+  /// suffix and before the sanitising. It is what the table shows and what
+  /// somebody recognises the row by, so it is stored rather than re-derived
+  /// from the URL.
+  fileName    String
+  contentType String
+  byteSize    Int
+
+  /// THE PROPOSAL, exactly as the classifier made it, at the moment it made
+  /// it.
+  ///
+  /// STORED RATHER THAN RE-DERIVED, which is a deliberate exception to this
+  /// schema's "derived state is never stored" rule and worth the words.
+  /// These are not derived from anything this database holds: the
+  /// classifier reads the filename and the first few KB of the file's TEXT,
+  /// and that text is not kept. Re-running it later would need the file
+  /// fetched and parsed again, and a newer classifier would then quietly
+  /// rewrite the reason a person was shown when they made their decision.
+  /// A proposal is a thing that happened, like a `capturedAt`.
+  proposedKind       DocumentIntakeKind
+  proposedConfidence DocumentIntakeConfidence
+
+  /// The sentence shown in the table, in the person's words, saying why —
+  /// "Filename contains 'COI' and 'expires'". Never "AI determined": a
+  /// reason nobody can check is a reason nobody can overrule.
+  proposedReason String
+
+  /// "Rev 4", "ASI 18", or null. Shown beside the filename; it is the thing
+  /// that tells a drawing revision from the set it revises.
+  revisionHint String?
+
+  /// The job name the evidence suggested, kept even when no job of that
+  /// name exists. That case is the useful one: the table can say "suggested
+  /// Riverside — no job of that name" instead of silently showing no job at
+  /// all, which reads as the classifier having found nothing.
+  jobHint String?
+
+  /// WHAT THE PERSON SAID IT WAS. Null until they confirm — nothing is
+  /// filed by the machine, including a HIGH-confidence proposal, and an
+  /// UNKNOWN never files at all.
+  ///
+  /// Kept ALONGSIDE `proposedKind` rather than overwriting it, and that is
+  /// the point of having two columns: the only way to know whether this
+  /// screen is any good is to be able to ask how often a person changed the
+  /// answer, and a single column that the confirm overwrites cannot answer
+  /// it.
+  acceptedKind DocumentIntakeKind?
+
+  status DocumentIntakeStatus @default(PROPOSED)
+
+  uploadedByUserId String?
+  uploadedBy       User?   @relation("DocumentIntakeUploadedBy", fields: [uploadedByUserId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  /// The tray's own query: this company, newest first, usually filtered to
+  /// PROPOSED. The review ORDER is not this index's business — uncertain
+  /// first is computed at read time (apps/web/lib/intake/review.ts) because
+  /// it is derived from kind and confidence together and must not become a
+  /// stored rank that can disagree with them.
+  @@index([companyId, status, createdAt])
+  /// "What came in on this job" — the only other way anyone reaches these.
+  @@index([jobId])
+}
+
+/// Where a document can be filed. The SAME TEN as `IntakeKind` in
+/// apps/web/lib/intake/classify.ts and `INTAKE_KINDS` in
+/// apps/web/lib/intake/review.ts; `review.test.ts` fails the build if the
+/// four lists ever disagree, because a dropdown offering a value this enum
+/// does not hold is a 500 on the confirm button and nothing else catches it.
+enum DocumentIntakeKind {
+  DRAWING
+  SUBMITTAL
+  RFI_RESPONSE
+  COMPLIANCE_DOC
+  EXECUTED_SUBCONTRACT
+  PAY_APP
+  LIEN_WAIVER
+  CERTIFIED_PAYROLL
+  PHOTO
+  UNKNOWN
+}
+
+/// How sure the classifier was. HIGH sorts to the BOTTOM of the review
+/// screen, which is what makes over-claiming it the expensive mistake.
+enum DocumentIntakeConfidence {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+/// PROPOSED — in the tray, waiting for a person.
+/// FILED — a person confirmed a destination.
+/// DISMISSED — a person said this does not belong here. The row stays so
+/// the same file dropped twice is not proposed twice as if it were new.
+enum DocumentIntakeStatus {
+  PROPOSED
+  FILED
+  DISMISSED
+}

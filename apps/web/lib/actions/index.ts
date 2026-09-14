@@ -44,4 +44,5 @@ export * from "./notifications";
 export * from "./equipmentAssignments";
 export * from "./certifications";
 export * from "./jobMedia";
+export * from "./intake";
 export * from "./ask";

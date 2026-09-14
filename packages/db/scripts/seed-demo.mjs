@@ -1374,6 +1374,21 @@ async function undo(companyId) {
     // RESTRICT on Job — see the note in clean-scratch-data.mjs about the
     // blobs these rows point at, which this does not remove.
     await del("jobMedia", () => prisma.jobMedia.deleteMany({ where: { jobId: { in: jobIds } } }));
+    // SCOPED TO THE DEMO JOBS, unlike the same delete in
+    // clean-scratch-data.mjs, which scopes to the company. The difference is
+    // what each script is allowed to touch: this undo removes only what the
+    // seed created and anything filed against it, and a company's unfiled
+    // intake tray is a person's own data that no seed put there. So an
+    // intake row with no job survives this and is removed by the other
+    // script, which is the one that exists to clear typed-in scratch.
+    //
+    // Not a blocker of Job (optional jobId -> SET NULL), so the job delete
+    // below would succeed without this line. It is here so a demo job's
+    // filed documents go with the job rather than becoming tray rows
+    // pointing at nothing.
+    await del("documentIntake", () =>
+      prisma.documentIntake.deleteMany({ where: { jobId: { in: jobIds } } }),
+    );
     // Children first, in dependency order. Adding rows without extending
     // this is how the second run left two of every job behind: the delete
     // failed on a foreign key, `del` swallowed it as "skipped", and the

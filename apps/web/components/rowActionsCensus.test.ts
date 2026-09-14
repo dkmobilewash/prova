@@ -126,6 +126,101 @@ describe("the armed-delete census", () => {
   });
 
   /**
+   * THE GAP THE TEST ABOVE LEAVES, AND IT IS A WIDE ONE.
+   *
+   * That check asks whether a file mentions `RowActions` at all. Mentioning
+   * it is not using it: `<RowActions>{...<ConfirmDelete/>}</RowActions>`
+   * satisfies every other assertion in this file and is BROKEN IN THE
+   * OPPOSITE DIRECTION to issue #152.
+   *
+   * Read what RowActions does with its children — `{armed ? null : children}`
+   * — and then put the ConfirmDelete in them. Arming the delete unmounts the
+   * ordinary actions, which is the fix, AND unmounts the ConfirmDelete
+   * itself, which is not: the arming state lives in the parent, so the row
+   * stays armed forever with an EMPTY action cell. The confirm cannot be
+   * clicked, the cancel cannot be clicked, and the only way out is a reload.
+   * A delete that cannot be completed or abandoned is worse than the sibling
+   * bug this census was written to end.
+   *
+   * It is also invisible everywhere else. `arm` is non-null — the context
+   * provider wraps children and `destructive` alike — so ConfirmDelete's own
+   * "must be the `destructive` prop" throw never fires. Typecheck is happy:
+   * `children` takes any ReactNode. Lint is happy. The three assertions above
+   * are happy. It was written that way on THIS branch, in IntakeTable, and
+   * nothing in the repo said a word.
+   *
+   * So this asks the structural question instead: is each `<ConfirmDelete`
+   * lexically inside a `destructive={` expression? The window between the
+   * two must contain no other `<`, which is what tells a conditional
+   * (`destructive={canDelete ? (<ConfirmDelete …`, the common shape here)
+   * apart from a second ConfirmDelete sitting in the children after a first
+   * one that was passed correctly.
+   *
+   * AND IT COUNTS WHAT IT PARSED. A pattern that matched nothing would have
+   * no offenders and would pass — the failure mode CLAUDE.md names for every
+   * derived check in this repo. 39 files and 43 occurrences on the day this
+   * was written; the literals are a floor rather than an equality so adding a
+   * row does not fail a test about something else, and a parse that collapses
+   * fails loudly instead of going quiet.
+   */
+  const CONFIRM_DELETE_OPEN = /<ConfirmDelete\b/g;
+  const DESTRUCTIVE_PROP = "destructive={";
+
+  it("passes ConfirmDelete as the destructive PROP, never as a child", () => {
+    const using = files
+      .filter((f) => f.path !== "components/RowActions.tsx")
+      .map((f) => ({
+        path: f.path,
+        code: f.code,
+        at: [...f.code.matchAll(CONFIRM_DELETE_OPEN)].map((m) => m.index ?? 0),
+      }))
+      .filter((f) => f.at.length > 0);
+
+    const occurrences = using.reduce((total, f) => total + f.at.length, 0);
+    expect(
+      using.length,
+      "the scan found almost no ConfirmDelete at all — the pattern has stopped matching, " +
+        "and a check that parses nothing passes everything below it",
+    ).toBeGreaterThanOrEqual(35);
+    expect(occurrences).toBeGreaterThanOrEqual(40);
+
+    const offenders: string[] = [];
+    for (const file of using) {
+      for (const index of file.at) {
+        const prop = file.code.lastIndexOf(DESTRUCTIVE_PROP, index);
+        if (prop === -1) {
+          offenders.push(`${file.path} (no destructive={ before it — it is a child)`);
+          continue;
+        }
+        const between = file.code.slice(prop + DESTRUCTIVE_PROP.length, index);
+        if (between.includes("<")) {
+          offenders.push(`${file.path} (outside the destructive={ } it follows)`);
+        }
+      }
+    }
+
+    expect(
+      offenders,
+      offenders.length === 0
+        ? ""
+        : [
+            "",
+            "A <ConfirmDelete> is sitting in a <RowActions>'s CHILDREN instead of",
+            "its `destructive` prop.",
+            "",
+            "RowActions renders `{armed ? null : children}`. A ConfirmDelete in",
+            "there unmounts ITSELF the moment it is armed, while the arming state",
+            "stays true in the parent — so the row's actions vanish and neither",
+            "Confirm nor Cancel can be reached. A reload is the only way out.",
+            "",
+            "Move it: <RowActions destructive={<ConfirmDelete … />}>ordinary",
+            "actions</RowActions>.",
+            "",
+          ].join("\n"),
+    ).toEqual([]);
+  });
+
+  /**
    * Rule 2, at the only layer anything in this repo can catch it.
    *
    * A `<RowActions>` whose own className says `shrink-0` is a cluster that
