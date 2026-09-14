@@ -5,10 +5,10 @@ import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { classifyDocument } from "@/lib/intake/classify";
-import { isIntakeKind, type FilableKind } from "@/lib/intake/review";
+import { isIntakeKind, soleJobForHint, type FilableKind } from "@/lib/intake/review";
 import {
   INTAKE_MAX_FILE_BYTES,
-  intakeFileName,
+  displayFileName,
   isAllowedIntakeType,
   isIntakeBlobUrl,
 } from "@/lib/intake/upload";
@@ -68,13 +68,27 @@ function text(formData: FormData, key: string) {
  * matched nothing is the useful case: the table can say what was suggested
  * instead of showing an empty job cell that reads as "found nothing".
  */
+/**
+ * The job a filename hint points at, pre-filled into the row's picker.
+ *
+ * WAS AN EXACT `equals` UNTIL 2026-09-14, AND SO NEVER MATCHED ANYTHING.
+ * Job names are long ("Riverside Medical Office Building"); the hint a
+ * classifier reads out of `Riverside COI 2027.pdf` is "Riverside", because
+ * that is what an office types. Equality left `jobId` null on every row —
+ * and the table then printed "Looks like Riverside, which is not a job here"
+ * immediately above a dropdown containing that job. Found by uploading three
+ * real files, which is the only way it could have been.
+ *
+ * `soleJobForHint` refuses an ambiguous hint rather than guessing: two jobs
+ * both starting "Riverside" mean the filename does not say which, and
+ * pre-filling one for a person to rubber-stamp is worse than leaving it
+ * blank. Nothing is filed by this either way — it only decides what the
+ * picker starts on, and a person still confirms every row.
+ */
 async function jobFromHint(hint: string | null, companyId: string): Promise<string | null> {
   if (!hint) return null;
-  const job = await prisma.job.findFirst({
-    where: { companyId, name: { equals: hint, mode: "insensitive" } },
-    select: { id: true },
-  });
-  return job?.id ?? null;
+  const jobs = await prisma.job.findMany({ where: { companyId }, select: { id: true, name: true } });
+  return soleJobForHint(jobs, hint)?.id ?? null;
 }
 
 /**
@@ -91,7 +105,27 @@ export async function recordIntakeDocument(formData: FormData): Promise<ActionRe
 
   const blobUrl = text(formData, "blobUrl");
   const contentType = text(formData, "contentType");
-  const fileName = intakeFileName(text(formData, "fileName"));
+  // THE PERSON'S OWN FILENAME, not the store-path sanitiser's version of it.
+  //
+  // This called `intakeFileName` until 2026-09-14, which is the pathname
+  // sanitiser — it turns every run of non-`[A-Za-z0-9._-]` into a hyphen. The
+  // schema says outright that this column is "what the person's own file was
+  // called, BEFORE the store's random suffix and BEFORE the sanitising",
+  // because it is what somebody recognises the row by, and the table was
+  // showing `Nevada-contractor-s-license-C-4.pdf` instead.
+  //
+  // WORSE THAN COSMETIC, AND THIS IS WHY IT MATTERS: the same sanitised
+  // string was fed to the CLASSIFIER, whose patterns are written against real
+  // filenames. `contractors?(?:'s)?\s+licen[sc]e` needs an apostrophe and a
+  // space; after sanitising there are neither, so a file that classifies as a
+  // compliance document with HIGH confidence on its real name came back
+  // MEDIUM ("contains 'license' — not conclusive") through the upload path.
+  // The sanitiser was quietly degrading accuracy on the only path that runs.
+  //
+  // `intakeFileName` still guards the STORE PATH, where it belongs — the
+  // client builds that with `intakeUploadPathname`, and the route refuses a
+  // pathname that is not this company's. Nothing here reaches a filesystem.
+  const fileName = displayFileName(text(formData, "fileName"));
   if (!blobUrl) return fail("The upload did not complete — try again");
 
   // Three checks on the URL, and each one answers a question the previous

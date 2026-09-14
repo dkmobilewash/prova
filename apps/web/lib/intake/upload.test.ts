@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 import {
   INTAKE_MAX_FILES,
   INTAKE_MAX_FILE_BYTES,
+  displayFileName,
   intakeFileName,
   intakeUploadPathname,
   isAllowedIntakeType,
   isIntakeBlobUrl,
   isIntakePathname,
 } from "./upload";
+import { jobNameMatchesHint, soleJobForHint } from "./review";
 
 /**
  * The upload policy for the intake tray.
@@ -143,5 +145,76 @@ describe("a dropped folder repeats filenames, and the UI must survive it", () =>
     // The name is sanitised before it is a pathname, so names that differ in
     // the browser can collide here: another reason a name cannot be a key.
     expect(intakeFileName("pay app (1).pdf")).toBe(intakeFileName("pay app  1 .pdf"));
+  });
+});
+
+describe("the name a person sees, versus the name a store gets", () => {
+  /* These were the same function until 2026-09-14 and that cost real
+     accuracy, not just looks. `intakeFileName` builds a STORE PATH, so it
+     replaces every run of non-[A-Za-z0-9._-] with a hyphen. Running it on
+     the DISPLAY name showed people a mangled filename — and, because the
+     same string was handed to the classifier, removed the apostrophe and
+     space that the compliance pattern needs. A file that reads HIGH on its
+     real name came back MEDIUM through the upload path. Found by uploading
+     three real files. */
+  it("keeps the characters a person would recognise", () => {
+    expect(displayFileName("Nevada contractor's license C-4.pdf")).toBe(
+      "Nevada contractor's license C-4.pdf",
+    );
+    expect(displayFileName("Riverside COI 2027.pdf")).toBe("Riverside COI 2027.pdf");
+  });
+
+  it("still differs from the path sanitiser, which must keep mangling", () => {
+    // The control: if these two ever agree on this input, one of them has
+    // been changed into the other and the bug is back.
+    const real = "Nevada contractor's license C-4.pdf";
+    expect(intakeFileName(real)).not.toBe(displayFileName(real));
+    expect(intakeFileName(real)).toBe("Nevada-contractor-s-license-C-4.pdf");
+  });
+
+  it("takes the leaf of a dropped folder's path, and bounds what it shows", () => {
+    expect(displayFileName("Riverside/COI.pdf")).toBe("COI.pdf");
+    expect(displayFileName("a\\\\b\\\\COI.pdf")).toBe("COI.pdf");
+    expect(displayFileName("  spaced   out .pdf ")).toBe("spaced out .pdf");
+    expect(displayFileName("")).toBe("document");
+    expect(displayFileName("x".repeat(500)).length).toBeLessThanOrEqual(200);
+  });
+});
+
+describe("a filename hint against a real job name", () => {
+  /* One rule, three callers — the tray summary, the action's jobFromHint,
+     and the table's "not a job here" line. They were three different rules
+     and all three used equality, so a short hint never matched a long job
+     name and the table contradicted its own dropdown. */
+  const JOBS = [
+    { id: "j1", name: "Riverside Medical Office Building [demo]" },
+    { id: "j2", name: "Cedar Park Elementary [demo]" },
+  ];
+
+  it("matches the short hint a filename carries", () => {
+    expect(jobNameMatchesHint("Riverside Medical Office Building [demo]", "Riverside")).toBe(true);
+    expect(soleJobForHint(JOBS, "Riverside")?.id).toBe("j1");
+    expect(soleJobForHint(JOBS, "Cedar Park")?.id).toBe("j2");
+  });
+
+  it("stops at a word boundary", () => {
+    expect(jobNameMatchesHint("Riverside Medical Office Building", "River")).toBe(false);
+    expect(soleJobForHint(JOBS, "River")).toBeNull();
+  });
+
+  it("refuses an ambiguous hint rather than guessing one", () => {
+    // Blank when ambiguous: the filename does not say which, so pre-filling
+    // one for a person to rubber-stamp is worse than leaving it to them.
+    const two = [
+      { id: "a", name: "Riverside Medical" },
+      { id: "b", name: "Riverside Retail" },
+    ];
+    expect(two.filter((j) => jobNameMatchesHint(j.name, "Riverside"))).toHaveLength(2);
+    expect(soleJobForHint(two, "Riverside")).toBeNull();
+  });
+
+  it("returns null for no hint and for no match", () => {
+    expect(soleJobForHint(JOBS, null)).toBeNull();
+    expect(soleJobForHint(JOBS, "Oakmont")).toBeNull();
   });
 });

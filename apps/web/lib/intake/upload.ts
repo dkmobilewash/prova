@@ -201,3 +201,40 @@ export function intakeUploadErrorMessage(err: unknown): string {
   }
   return raw || "Upload failed";
 }
+
+
+/**
+ * The person's own filename, fit to show in a table.
+ *
+ * DELIBERATELY NOT `intakeFileName`. That one builds a STORE PATH and so
+ * replaces every run of non-`[A-Za-z0-9._-]` with a hyphen — correct for a
+ * URL, wrong for a label. Using it on the display name turned
+ * `Nevada contractor's license C-4.pdf` into
+ * `Nevada-contractor-s-license-C-4.pdf` on screen, and — because the same
+ * string was handed to the classifier — cost that file its HIGH confidence,
+ * since the compliance pattern needs the apostrophe and the space that the
+ * sanitiser had just removed.
+ *
+ * So this keeps the characters and only does what a label needs:
+ *
+ *   - drops any directory part, because a dropped FOLDER gives
+ *     `webkitRelativePath`-style names and the row wants the leaf;
+ *   - strips control characters, which have no business in a cell;
+ *   - collapses whitespace, so a name that wrapped oddly does not;
+ *   - bounds the length, since this is unvalidated input rendered into a page.
+ *
+ * NOT an escaping function and not a security boundary: React escapes what it
+ * renders, and nothing here ever becomes a path. The store path is built by
+ * `intakeUploadPathname` and enforced by `isIntakePathname` on the token
+ * route, which are the two places that DO need sanitising.
+ */
+export function displayFileName(fileName: string): string {
+  const leaf = fileName.split(/[\\/]/).pop() ?? "";
+  const cleaned = leaf
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u001f\u007f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, MAX_FILE_NAME_LENGTH);
+  return cleaned || "document";
+}

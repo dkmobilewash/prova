@@ -11,6 +11,7 @@ import {
 } from "@/lib/intake/review";
 import { formatIntakeSize } from "@/lib/intake/upload";
 import { jobPickerLabel, type JobOption } from "@/components/jobLabels";
+import { jobNameMatchesHint } from "@/lib/intake/review";
 
 /**
  * The tray: one row per file, the machine's proposal, and a dropdown the
@@ -235,7 +236,15 @@ export function IntakeTable({ rows, jobs }: { rows: IntakeRow[]; jobs: IntakeJob
                         </option>
                       ))}
                     </select>
-                    {row.jobHint && !row.jobId && (
+                    {/* Only when the hint really does name no job. It used to
+                        fire on `jobHint && !jobId`, and `jobId` was null on
+                        every row because the action matched the hint against
+                        job names with `equals` — so this printed "Riverside is
+                        not a job here" directly above a dropdown containing
+                        Riverside Medical Office Building. The action is fixed;
+                        this checks the same shared rule rather than trusting
+                        that `jobId` being null means what it used to. */}
+                    {row.jobHint && !row.jobId && !jobs.some((job) => jobNameMatchesHint(job.name, row.jobHint!)) && (
                       <p className="mt-1 text-xs text-ink-muted">
                         Looks like &ldquo;{row.jobHint}&rdquo;, which is not a job here.
                       </p>

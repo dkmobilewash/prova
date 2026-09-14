@@ -267,18 +267,8 @@ export function intakeTraySummary(
   }[],
   jobNames: readonly string[],
 ): IntakeTraySummary {
-  const known = jobNames.map((name) => name.trim().toLowerCase()).filter(Boolean);
-  const namesAJob = (hint: string): boolean => {
-    const needle = hint.trim().toLowerCase();
-    if (!needle) return false;
-    return known.some((name) => {
-      if (!name.startsWith(needle)) return false;
-      // The word boundary: "River" must not match "Riverside". Either the
-      // names are equal, or the next character is not part of a word.
-      const next = name.charAt(needle.length);
-      return next === "" || !/[a-z0-9]/.test(next);
-    });
-  };
+  const known = jobNames.map((name) => name.trim()).filter(Boolean);
+  const namesAJob = (hint: string): boolean => known.some((name) => jobNameMatchesHint(name, hint));
 
   const byName = new Map<string, { name: string; files: number }>();
   for (const row of rows) {
@@ -305,4 +295,52 @@ export function intakeTraySummary(
       // Loudest first, then by name so two of the same size have a stable order.
       .sort((a, b) => b.files - a.files || a.name.localeCompare(b.name)),
   };
+}
+
+
+/**
+ * Does this job's name answer to the hint a filename carried?
+ *
+ * ONE RULE, THREE CALLERS, and it was three different rules until 2026-09-14.
+ * A filename hint is short because that is what an office types
+ * ("Riverside"); a job name is long ("Riverside Medical Office Building
+ * [demo]"). Matching them with equality — which `intakeTraySummary`, the
+ * table's own "not a job here" line and `jobFromHint` in the action each did
+ * separately — means a hint NEVER matches, so:
+ *
+ *   - the tray suggested "3 files name Riverside, which is not a job here",
+ *   - and the row said the same thing DIRECTLY ABOVE a dropdown containing
+ *     that job, which is the version a person actually sees and disbelieves.
+ *
+ * Found by uploading three real files, not by reading the code.
+ *
+ * Prefix at a WORD BOUNDARY, and nothing looser. Not a substring: "Park"
+ * would match "Cedar Park Elementary" and equally "Parkway Tower". Not a
+ * fuzzy distance. "River" still does not match "Riverside".
+ */
+export function jobNameMatchesHint(jobName: string, hint: string): boolean {
+  const needle = hint.trim().toLowerCase();
+  const name = jobName.trim().toLowerCase();
+  if (!needle || !name) return false;
+  if (!name.startsWith(needle)) return false;
+  const next = name.charAt(needle.length);
+  return next === "" || !/[a-z0-9]/.test(next);
+}
+
+/**
+ * The ONE job a hint names, or null.
+ *
+ * Null when nothing matches AND when more than one does. The second half is
+ * the important one and it is this repo's blank-when-ambiguous rule: two jobs
+ * called "Riverside Medical" and "Riverside Retail" mean the filename does
+ * not say which, and picking one for a person to rubber-stamp is worse than
+ * leaving the field for them.
+ */
+export function soleJobForHint<T extends { id: string; name: string }>(
+  jobs: readonly T[],
+  hint: string | null,
+): T | null {
+  if (!hint) return null;
+  const hits = jobs.filter((job) => jobNameMatchesHint(job.name, hint));
+  return hits.length === 1 ? hits[0] : null;
 }
