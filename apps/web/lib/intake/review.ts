@@ -205,3 +205,65 @@ export function intakeSummarySentence(counts: IntakeCounts): string {
   if (parts.length === 0) return "Nothing waiting";
   return parts.join(", ");
 }
+
+/** What the alert source needs to know about the tray, and nothing else. */
+export type IntakeTraySummary = {
+  waiting: number;
+  unreadable: number;
+  unmatchedJobNames: { name: string; files: number }[];
+};
+
+/**
+ * How many files a job name must appear on before it is a MISSING JOB
+ * rather than a word.
+ *
+ * One file mentioning "Riverside" is a word in a filename. Three are a job
+ * somebody has not created, or has created under another name. The whole
+ * value of the suggestion is that it is worth acting on, and a list of
+ * every stray capitalised noun in a folder of eighty is not.
+ */
+export const UNMATCHED_JOB_FLOOR = 3;
+
+/**
+ * The tray as the alert engine sees it.
+ *
+ * Pure, and separate from the query, for the reason `alerts-query.ts` states
+ * about itself: it fetches and normalises, `alerts.ts` decides. This is the
+ * normalising half and it is the part with a judgement in it — which job
+ * names count as missing — so it is here where it can be tested without a
+ * database.
+ *
+ * Job names are compared case-insensitively and trimmed. That is deliberately
+ * crude: this decides whether to SUGGEST that somebody look, not whether to
+ * file anything, and a fuzzy match that quietly filed a document onto the
+ * wrong job is the failure this whole screen is built to avoid.
+ */
+export function intakeTraySummary(
+  rows: readonly { proposedKind: string; jobHint: string | null; jobId: string | null }[],
+  jobNames: readonly string[],
+): IntakeTraySummary {
+  const known = new Set(jobNames.map((name) => name.trim().toLowerCase()).filter(Boolean));
+
+  const counts = new Map<string, { name: string; files: number }>();
+  for (const row of rows) {
+    // A row already ON a job is not evidence of a missing one, whatever its
+    // hint said — somebody answered that question.
+    if (row.jobId) continue;
+    const hint = row.jobHint?.trim();
+    if (!hint) continue;
+    const key = hint.toLowerCase();
+    if (known.has(key)) continue;
+    const held = counts.get(key);
+    if (held) held.files += 1;
+    else counts.set(key, { name: hint, files: 1 });
+  }
+
+  return {
+    waiting: rows.length,
+    unreadable: rows.filter((row) => row.proposedKind === "UNKNOWN").length,
+    unmatchedJobNames: [...counts.values()]
+      .filter((entry) => entry.files >= UNMATCHED_JOB_FLOOR)
+      // Loudest first, then by name so two of the same size have a stable order.
+      .sort((a, b) => b.files - a.files || a.name.localeCompare(b.name)),
+  };
+}

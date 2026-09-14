@@ -41,7 +41,8 @@ export type AlertKind =
   | "CERTIFIED_PAYROLL"
   | "APPRENTICE_RATIO"
   | "WIP_VARIANCE"
-  | "CONTACT_FOLLOW_UP";
+  | "CONTACT_FOLLOW_UP"
+  | "DOCUMENT_INTAKE";
 
 /** Three levels, not five. OVERDUE is "a date has passed"; DUE_SOON is "a
  * date is coming"; STANDING is a condition with no deadline attached to
@@ -100,6 +101,10 @@ export const ALERT_CAPABILITY: Record<AlertKind, Capability> = {
   // Same gate as the interactions/bid-invitations section it comes from on
   // /contacts/[id] -- relationship work, not billing or compliance.
   CONTACT_FOLLOW_UP: "MANAGE_ESTIMATING",
+  // The same capability /intake itself requires (lib/permissions.ts). An
+  // alert is a summary of the thing it points at, so a person who cannot
+  // open the tray is not told what is in it.
+  DOCUMENT_INTAKE: "MANAGE_JOBS",
 };
 
 /**
@@ -1173,4 +1178,113 @@ export function summarizeAlerts(alerts: Alert[]) {
      * presented as a balance. */
     amountNamed: alerts.reduce((sum, a) => sum + (a.amount ?? 0), 0),
   };
+}
+
+
+/* ------------------------------------------------------ document intake */
+
+export type IntakeAlertSource = {
+  /** Proposals nobody has answered yet. */
+  waiting: number;
+  /** Of those, the ones the classifier could not read at all. */
+  unreadable: number;
+  /** A job name the evidence suggested, that no job here actually has,
+   *  with how many files said it. Only names seen more than once: one file
+   *  mentioning a word is not a missing job, it is a word. */
+  unmatchedJobNames: { name: string; files: number }[];
+};
+
+/**
+ * What to do next with the folder somebody just dropped in.
+ *
+ * Cyrus asked for this in his own words: when they drop the documents, tell
+ * them what you can do for them, and let them click yes, no, or later.
+ *
+ * THE YES/NO/LATER MACHINERY ALREADY EXISTED, which is why this is an alert
+ * source and not a feature. `AlertAcknowledgement` carries `snoozedUntil`
+ * and the alert list already renders dismiss and snooze — so "no" and
+ * "later" are free, and correct, and consistent with every other thing in
+ * this app that asks for attention. "Yes" is the `href`, which this type
+ * already documents as "where to go and do something about it". A separate
+ * suggestions inbox would have been a second place to look, with its own
+ * dismissal rules, drifting from this one.
+ *
+ * AND THE KEY IS WHY IT BELONGS HERE RATHER THAN ANYWHERE ELSE. `alertKey`
+ * folds the FACT into the key, so a dismissal stops applying the moment the
+ * situation changes. Dismiss "14 files waiting", file six of them, and the
+ * alert comes back at 8 — which is exactly right, and is behaviour nobody
+ * would have written by hand for a suggestions panel.
+ *
+ * Every suggestion below is a FACT with somewhere to go. None of them
+ * claims the app will do the work: this screen files nothing without a
+ * person, and a suggestion that over-promises is worse than none, because
+ * the first one a contractor catches lying is the last one they read.
+ */
+export function intakeAlerts(source: IntakeAlertSource): Alert[] {
+  const alerts: Alert[] = [];
+
+  // The unreadable ones FIRST, and separately from the waiting count, because
+  // they are the only rows in the tray that need a person rather than a
+  // click. Rolling them into "14 waiting" is how the four that need thought
+  // get confirmed along with the ten that do not.
+  if (source.unreadable > 0) {
+    alerts.push({
+      key: alertKey("DOCUMENT_INTAKE", "unreadable", factDigest([String(source.unreadable)])),
+      kind: "DOCUMENT_INTAKE",
+      severity: "STANDING",
+      title: `${source.unreadable} dropped ${source.unreadable === 1 ? "file needs" : "files need"} a person`,
+      detail:
+        "We could not tell what these are from the filename, so they are proposed as unsorted and " +
+        "will not file until you say what they are.",
+      href: "/intake",
+      dueOn: null,
+      daysUntil: null,
+      amount: null,
+    });
+  }
+
+  // The plain backlog, counting only the rows that are NOT already covered by
+  // the line above — two alerts that both count the same file read as twice
+  // the work.
+  const routine = source.waiting - source.unreadable;
+  if (routine > 0) {
+    alerts.push({
+      key: alertKey("DOCUMENT_INTAKE", "waiting", factDigest([String(routine)])),
+      kind: "DOCUMENT_INTAKE",
+      severity: "STANDING",
+      title: `${routine} ${routine === 1 ? "document is" : "documents are"} ready to file`,
+      detail:
+        "Each one has a proposed home and a reason you can disagree with. Nothing files until you " +
+        "confirm it.",
+      href: "/intake",
+      dueOn: null,
+      daysUntil: null,
+      amount: null,
+    });
+  }
+
+  for (const unmatched of source.unmatchedJobNames) {
+    alerts.push({
+      key: alertKey(
+        "DOCUMENT_INTAKE",
+        `job:${unmatched.name.toLowerCase()}`,
+        factDigest([String(unmatched.files)]),
+      ),
+      kind: "DOCUMENT_INTAKE",
+      severity: "STANDING",
+      title: `${unmatched.files} files name "${unmatched.name}", which is not a job here`,
+      // Says what it does NOT know, which is the honest half: the paperwork
+      // may be for a job under a different name in this system, and guessing
+      // which is exactly the thing this app refuses to do.
+      detail:
+        "Either the job is missing, or it is here under another name. Open the tray to put these " +
+        "on the right job — or leave them as company paperwork.",
+      href: "/intake",
+      dueOn: null,
+      daysUntil: null,
+      amount: null,
+    });
+  }
+
+  return alerts;
 }
