@@ -161,6 +161,7 @@ export function RuleSetRow({
         destructive={
           canDelete ? (
             <ConfirmDelete
+              describe="Removes this prevailing-wage rule set. Payrolls already filed keep the rates they were filed with."
               pinned="end"
               confirmLabel="Confirm delete"
               pendingLabel="Deleting…"

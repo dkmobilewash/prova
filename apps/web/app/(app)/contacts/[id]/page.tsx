@@ -260,6 +260,7 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
                   className="flex items-center gap-2"
                   destructive={
                     <ConfirmDelete
+                      describe="Takes this bid invitation off the GC's record here. The GC is not told, and a won bid stops counting toward your win rate with them."
                       pinned="end"
                       action={deleteBidInvitation.bind(null, bid.id)}
                       deleteClassName="text-xs text-slate-400 hover:text-red-400 hover:underline"

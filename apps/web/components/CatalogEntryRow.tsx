@@ -49,6 +49,7 @@ export function CatalogEntryRow({
           className="flex flex-col items-end gap-1"
           destructive={
             <ConfirmDelete
+              describe="Takes the item out of your price book. Costed lines priced from it keep their numbers but stop feeding actuals back here."
               armedClassName="flex items-center gap-2"
               pendingLabel="Deleting…"
               pending={isPending}

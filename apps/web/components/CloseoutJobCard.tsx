@@ -278,6 +278,7 @@ export function CloseoutJobCard({
                     destructive={
                       canDelete ? (
                         <ConfirmDelete
+                          describe="Takes the item off this job's closeout checklist. A document attached to it stays where it is."
                           label="Remove"
                           confirmLabel="Confirm remove"
                           pending={isPending}
@@ -426,6 +427,7 @@ export function CloseoutJobCard({
             destructive={
               job.warranty && canDelete ? (
                 <ConfirmDelete
+                  describe="Clears the warranty dates on this job. Callbacks already logged against it are kept."
                   label="Remove"
                   confirmLabel="Confirm remove"
                   pending={isPending}
@@ -558,6 +560,7 @@ export function CloseoutJobCard({
                     destructive={
                       canDelete ? (
                         <ConfirmDelete
+                          describe="Removes the warranty callback from this job's record."
                           label="Remove"
                           confirmLabel="Confirm remove"
                           pending={isPending}

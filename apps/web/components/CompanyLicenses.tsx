@@ -316,6 +316,7 @@ function LicenceRow({
           className="flex flex-wrap items-center gap-2"
           destructive={
             <ConfirmDelete
+              describe="Takes the licence off your company record. Nothing is filed with the state board."
               pinned="end"
               pendingLabel="Removing…"
               pending={isPending}
