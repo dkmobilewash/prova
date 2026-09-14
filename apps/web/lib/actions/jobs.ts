@@ -10,6 +10,7 @@ import { Prisma, prisma } from "@prova/db";
 import { createEstimateJob } from "@/lib/estimating/create-job";
 import { draftLinesFromScope } from "@/lib/estimating/draft-lines";
 import { END_BEFORE_START } from "@/lib/estimating/job-schedule";
+import { priceChanged } from "@/lib/estimating/price-claim";
 import {
   CONTRACT_NOT_EXECUTED_REFUSAL,
   parseExecutedSignedDate,
@@ -151,12 +152,21 @@ export async function draftLineItemsFromScope(jobId: string, formData: FormData)
 
 
 
-/** Direct edit of a line item — only while the job is still an ESTIMATE. */
+/** Direct edit of a line item — only while the job is still an ESTIMATE.
+ *
+ * Editing the PRICE also retires whatever the row claimed about where that
+ * price came from. `priceBasis` is rendered on the job page as the badge
+ * that sends the estimator here in the first place ("AI guess, no company
+ * data — check the price"), and leaving it alone left that badge sitting on
+ * the number they had just typed themselves — or left the green "Your
+ * catalog price" over a figure the catalog never held. There is no basis
+ * value for "the estimator's own number", and there should not be: the row
+ * simply stops claiming one, and stops being a machine's draft. */
 export async function updateLineItem(jobId: string, lineItemId: string, formData: FormData) {
   const { company } = await requireCompanyContext();
   const job = await assertJobInCompany(jobId, company.id);
   assertEditableDirectly(job);
-  await assertLineItemOnJob(lineItemId, jobId);
+  const existing = await assertLineItemOnJob(lineItemId, jobId);
 
   const description = String(formData.get("description") ?? "").trim();
   const unit = String(formData.get("unit") ?? "").trim();
@@ -185,6 +195,12 @@ export async function updateLineItem(jobId: string, lineItemId: string, formData
       tradeScope,
       laborHours,
       craftClassificationId,
+      // Only when the figure itself moved: an edit to the wording or the
+      // quantity leaves a machine-drafted price exactly as machine-drafted
+      // as it was, and still wanting a look.
+      ...(priceChanged(existing.unitPrice, unitPrice)
+        ? { priceBasis: null, aiDrafted: false }
+        : {}),
     },
   });
 
