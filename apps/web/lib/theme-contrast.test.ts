@@ -140,6 +140,130 @@ describe("theme contrast", () => {
     expect(contrastRatio(colors["line-card"], colors.surface)).toBeGreaterThanOrEqual(1.5);
   });
 
+  /**
+   * THE TEST ABOVE MEASURES A COLOUR NOBODY IS OBLIGED TO USE.
+   *
+   * It proves the label-on-brand pairing clears 4.5:1. It says nothing
+   * about whether the buttons in this app actually use that pairing — and
+   * the moment one of them does not, that assertion is measuring something
+   * that is not on screen. A token test never tied back to the markup is a
+   * fact about the config file.
+   *
+   * `bg-brand` is the founder-approved yellow (#facc15), a LIGHT fill, so
+   * the label on it is DARK. Measured with the helper at the top of this
+   * file rather than asserted from memory: `text-neutral-900` (#171717) on
+   * brand is 11.71:1, and white on brand is **1.53:1** — not marginal,
+   * unreadable.
+   *
+   * INVERTED 2026-09-14, and the inversion is the lesson rather than the
+   * fix. This check arrived on `cyrus/document-intake`, a branch cut BEFORE
+   * the theme flip, when brand was blue-600 (#2563eb) — a DARK fill whose
+   * ramp was chosen for a white label, with blue-500 rejected at 3.7:1. On
+   * that palette "every brand fill carries text-white" was exactly right,
+   * and the branch had caught two real defects with it.
+   *
+   * The flip changed the token and not this test, and git merged the two
+   * halves without a conflict: the file went on pinning `colors.brand` to
+   * `#facc15` in one assertion while demanding a white label on it in the
+   * next. Both halves were true when written. Satisfying the merged version
+   * would have put 1.53:1 white text on every brand button in the app —
+   * a test doing the precise opposite of its own purpose, with typecheck,
+   * lint and 2900 other tests green, because a class name is a string.
+   *
+   * So: a contrast test must derive its expectation from the TOKEN, not
+   * name a colour in prose. The assertion below reads `colors.brand` and
+   * measures, so the next palette change fails here instead of inverting
+   * here.
+   *
+   * SIZE-ASSERTED, because the parse derives its own set: a regex that
+   * stopped matching would find no offenders and pass. The floor is a floor
+   * rather than an equality so adding a brand button does not fail a test
+   * about contrast, but a parse that collapses to nothing fails loudly.
+   */
+  it("puts the dark label it measured on every brand fill in the app", async () => {
+    const { readdirSync, readFileSync, statSync } = await import("node:fs");
+    const { join, relative } = await import("node:path");
+    const { fileURLToPath } = await import("node:url");
+
+    const appDir = fileURLToPath(new URL("..", import.meta.url));
+    const tsx = (dir: string, out: string[] = []) => {
+      for (const name of readdirSync(dir)) {
+        if (name === "node_modules" || name === ".next" || name.startsWith(".")) continue;
+        const full = join(dir, name);
+        if (statSync(full).isDirectory()) tsx(full, out);
+        else if (name.endsWith(".tsx")) out.push(full);
+      }
+      return out;
+    };
+    // Comments stripped for the same reason rowActionsCensus.test.ts strips
+    // them: a paragraph explaining a class name is not a class name, and a
+    // scan that reads its own documentation answers nothing.
+    const withoutComments = (source: string) =>
+      source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+
+    // A single class string — quotes and backticks, never across a newline,
+    // so one className cannot swallow the next.
+    //
+    // `(?!\/)` excludes a SOFT fill. `bg-brand/15` is 15% yellow over the
+    // page ground, which is a chip rather than a button, and the label that
+    // belongs on it is `text-brand` — the opposite of the rule below.
+    // MobileNav's active pill is the one in the app, and without this it
+    // reads as an offender forever, which is how a census gets an exception
+    // list instead of a fix.
+    const CLASS_STRING_WITH_BRAND = /(["`])([^"`\n]*\bbg-brand\b(?!\/)[^"`\n]*)\1/g;
+
+    const found: { path: string; classes: string }[] = [];
+    for (const full of tsx(appDir)) {
+      const code = withoutComments(readFileSync(full, "utf8"));
+      for (const match of code.matchAll(CLASS_STRING_WITH_BRAND)) {
+        found.push({ path: relative(appDir, full), classes: match[2] });
+      }
+    }
+
+    expect(
+      found.length,
+      "the scan found almost no bg-brand at all — the pattern has stopped matching, " +
+        "and a check that parses nothing passes everything below it",
+    ).toBeGreaterThanOrEqual(6);
+
+    // Derived from the token rather than hardcoded, so a future palette
+    // change fails this test rather than silently inverting it.
+    const onBrand = { white: contrastRatio("#ffffff", colors.brand), dark: contrastRatio("#171717", colors.brand) };
+    expect(
+      onBrand.dark,
+      `text-neutral-900 on ${colors.brand} measures ${onBrand.dark.toFixed(2)}:1. If this has ` +
+        `dropped below the floor, the brand token moved and the rule below is the one to revisit.`,
+    ).toBeGreaterThanOrEqual(4.5);
+    expect(
+      onBrand.white,
+      `white on ${colors.brand} measures ${onBrand.white.toFixed(2)}:1 — if that ever clears 4.5 ` +
+        `the brand has become a dark fill and this whole test should be checking for text-white.`,
+    ).toBeLessThan(4.5);
+
+    const offenders = found
+      .filter((f) => !/\btext-neutral-900\b/.test(f.classes))
+      .map((f) => `${f.path}: ${f.classes.trim()}`);
+
+    expect(
+      offenders,
+      offenders.length === 0
+        ? ""
+        : [
+            "",
+            "A bg-brand fill is carrying a label that is not text-neutral-900.",
+            "",
+            "brand is the founder-approved yellow (#facc15) — a LIGHT fill.",
+            "text-neutral-900 on it measures 11.71:1; white measures 1.53:1,",
+            "which is not marginal, it is unreadable.",
+            "",
+            "Use text-neutral-900, which is what the two assertions directly",
+            "above this one measure from the token itself, and what every",
+            "other brand button in the app already does.",
+            "",
+          ].join("\n"),
+    ).toEqual([]);
+  });
+
   it("keeps all four ink levels distinguishable from each other", () => {
     // The light ramp could only afford three informational greys; the
     // fourth was hierarchy bought with legibility. The dark ramp has room

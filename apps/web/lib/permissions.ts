@@ -219,6 +219,15 @@ export const ROUTE_CAPABILITY: Record<string, Capability> = {
   // and withhold money section by section instead.
   "/rfis": "MANAGE_JOBS",
   "/submittals": "MANAGE_JOBS",
+  // The tray everything above arrives in. MANAGE_JOBS for the obvious
+  // reason — a drop of GC paperwork IS the correspondence this capability
+  // names, and the person who files a returned submittal is the person who
+  // sent it. Arguable against MANAGE_COMPLIANCE, since a COI and a
+  // certified-payroll workbook land here too; called this way because a
+  // tray gated on compliance would shut out the PM who receives most of
+  // what is in it, and PAYROLL_COMPLIANCE holds no MANAGE_JOBS while
+  // PROJECT_MANAGER, ESTIMATOR, EXECUTIVE and FIELD all do.
+  "/intake": "MANAGE_JOBS",
   "/drawings": "MANAGE_JOBS",
   "/closeout": "MANAGE_JOBS",
 };

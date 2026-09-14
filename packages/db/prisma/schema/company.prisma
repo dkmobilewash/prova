@@ -59,6 +59,7 @@ model Company {
   dailyFieldReports       DailyFieldReport[]
   jobMedia                JobMedia[]
   jobMediaTags            JobMediaTag[]
+  documentIntakes         DocumentIntake[]
   rfis                    Rfi[]
   backcharges             Backcharge[]
   closeoutSubmissions     CloseoutSubmission[]
@@ -163,6 +164,7 @@ model User {
   raisedPunchListItems                 PunchListItem[]
   filedDailyFieldReports               DailyFieldReport[]
   capturedJobMedia                     JobMedia[]              @relation("JobMediaCapturedBy")
+  uploadedDocumentIntakes              DocumentIntake[]        @relation("DocumentIntakeUploadedBy")
   sharedJobMedia                       JobMedia[]              @relation("JobMediaSharedBy")
   jobMediaAnnotations                  JobMediaAnnotation[]    @relation("JobMediaAnnotationBy")
   jobMediaTagAssignments               JobMediaTagAssignment[]

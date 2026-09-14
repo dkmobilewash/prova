@@ -56,6 +56,15 @@ export const notYetRegistered: Exclusion[] = [
   { action: "company.*", reason: ADMIN + " Contact creation is reached through create_estimate_job's resolve-or-create instead." },
   { action: "permissions.*", reason: ADMIN },
   { action: "jobMedia.*", reason: "Site photos: recording one needs a real File in the blob store, and tags and deletes are edits made on the photo being looked at. Never a command." },
+  // Document intake. Recording needs a real File already in the blob store,
+  // the same reason jobMedia is excluded above — but the confirm is the one
+  // worth spelling out, because it is the action that LOOKS most like a
+  // command and must never be one. /intake's entire claim is that a PERSON
+  // decides what each document is, with the machine's reasoning in front of
+  // them and the uncertain rows at the top. An agent confirming those rows
+  // is the machine agreeing with itself, which is precisely the failure the
+  // screen was built to prevent.
+  { action: "intake.*", reason: "Recording needs a real File in the blob store, and confirming a proposal is the human judgement the whole screen exists for — never a command." },
   { action: "compliance.*", reason: "Compliance documents need a real File and are evidence records; page only until a hand-off mode exists." },
   { action: "crm.*", reason: "Contact people and interactions: a natural T1 command, unassigned in WORK-SPLIT.md (open question in the plan)." },
   { action: "sales.*", reason: "Prova-operator-only CRM, unreachable for any contractor tenant; excluded from the agent surface entirely." },

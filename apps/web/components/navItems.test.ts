@@ -143,10 +143,20 @@ describe("the collapsible rail (#240)", () => {
     }
   });
 
-  it("brings RFIs, Submittals, Drawings and Closeout back under Paper trail, in the order the paper arrives", () => {
+  it("brings Intake, RFIs, Submittals, Drawings and Closeout back under Paper trail, in the order the paper arrives", () => {
     const paperTrail = NAV_GROUPS.find((g) => g.heading === "Paper trail");
-    expect(paperTrail?.items.map((i) => i.href)).toEqual(["/rfis", "/submittals", "/drawings", "/closeout"]);
-    // Findable means clickable: none of the four is disabled.
+    // `/intake` leads, and the position is the point rather than an
+    // afterthought: it is where the paper LANDS. Everything else in this
+    // group is something you go looking for; intake is the one you are sent
+    // to by a folder somebody just emailed you.
+    expect(paperTrail?.items.map((i) => i.href)).toEqual([
+      "/intake",
+      "/rfis",
+      "/submittals",
+      "/drawings",
+      "/closeout",
+    ]);
+    // Findable means clickable: none of the five is disabled.
     expect(paperTrail?.items.filter((i) => i.disabled)).toEqual([]);
   });
 

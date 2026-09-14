@@ -29,6 +29,7 @@ const isProtectedRoute = createRouteMatcher([
   "/union-compliance(.*)",
   "/field-reports(.*)",
   "/photos(.*)",
+  "/intake(.*)",
   "/sales(.*)",
   "/certifications(.*)",
   // Ask streams over a route handler rather than a Server Action.
@@ -60,6 +61,15 @@ const isProtectedRoute = createRouteMatcher([
   // fire, and nothing will say so — remove this line and rely on the
   // route's own checks at that point.
   "/api/job-media/upload(.*)",
+  // The same credential, for the intake tray: this route mints the one-shot
+  // token a browser uses to upload a dropped document straight to the blob
+  // store. Protected here as well as authenticating itself
+  // (requireCompanyContext + a MANAGE_JOBS check + a pathname check bound to
+  // the caller's own company), for the same belt-and-braces reason — and the
+  // same consequence applies: an `onUploadCompleted` callback added later
+  // would carry no Clerk session and would never fire while this line
+  // stands.
+  "/api/intake/upload(.*)",
   "/deployment(.*)",
   // Prova's own usage instrument — who is still logging in, across every
   // company on the database. The page itself refuses anyone who is not the

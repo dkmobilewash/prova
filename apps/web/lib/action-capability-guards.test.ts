@@ -711,6 +711,13 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   drawings: () => import("./actions/drawings"),
   closeout: () => import("./actions/closeout"),
   closeoutSubmissions: () => import("./actions/closeoutSubmissions"),
+  // Document intake. All three actions are reachable only from /intake,
+  // which demands MANAGE_JOBS, so the derivation puts all three in
+  // MUST_ASSERT and every one of them is EXECUTED below as a principal
+  // without it. That matters more here than on most modules: this one is
+  // reached from an upload route as well as a page, and the file it records
+  // a URL for is in a blob store shared by every tenant.
+  intake: () => import("./actions/intake"),
   // The Ask box. Only `checkAssistantConnection` lands in MUST_ASSERT: it
   // is reachable from /settings/assistant alone, which demands
   // MANAGE_COMPLIANCE. The card actions (confirm, cancel, settle, load)
