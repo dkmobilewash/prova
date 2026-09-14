@@ -9,6 +9,7 @@ import { ToolboxTalkRow } from "@/components/ToolboxTalkRow";
 import { isRecordable } from "@/components/safetyLabels";
 import { StatusLine } from "@/components/StatusLine";
 import { safetyStatus } from "@/lib/status-sentences";
+import { toJobOption } from "@/components/jobLabels";
 
 /** Dates are stored at UTC midnight and rendered in UTC, same rule as
  * daily field reports. Rendering local would show yesterday's date to
@@ -42,11 +43,16 @@ export default async function SafetyPage({
   const parsedYear = Number(yearParam);
   const activeYear = knownYears.includes(parsedYear) ? parsedYear : thisYear;
 
-  const jobs = await prisma.job.findMany({
-    where: { companyId: company.id },
-    orderBy: { createdAt: "desc" },
-    select: { id: true, name: true },
-  });
+  // status + contact, not just the name: issue #65 — fifteen jobs, seven of
+  // them called "Smith kitchen remodel", and this picker showed seven
+  // identical rows. See components/jobLabels.ts.
+  const jobs = (
+    await prisma.job.findMany({
+      where: { companyId: company.id },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, name: true, status: true, contact: { select: { name: true } } },
+    })
+  ).map(toJobOption);
 
   const incidents = await prisma.safetyIncident.findMany({
     where: { companyId: company.id, caseYear: activeYear },

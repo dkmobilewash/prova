@@ -222,6 +222,7 @@ export function CertificationRequirements({
                 destructive={
                   canRemove ? (
                     <ConfirmDelete
+                      describe="Stops this certification being required for the trade. Certificates already on file for your workers are kept."
                       pinned="end"
                       label="Remove"
                       confirmLabel="Confirm remove"

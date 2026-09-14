@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useState, type ReactNode } from "react";
+import { Hint } from "@/components/Hint";
 import { SubmitButton } from "@/components/SubmitButton";
 
 /**
@@ -168,6 +169,7 @@ export function ConfirmDelete({
   prompt,
   pendingLabel,
   hint,
+  describe,
   pending = false,
   disabled = false,
   pinned = "start",
@@ -186,8 +188,25 @@ export function ConfirmDelete({
   prompt?: ReactNode;
   /** Shown on the confirm button while `pending`. Defaults to `confirmLabel`. */
   pendingLabel?: string;
-  /** One line saying what is about to go, when the row's own text doesn't. */
+  /** One line saying what is about to go, when the row's own text doesn't.
+   *  Shown BESIDE the armed pair, after the first click. */
   hint?: ReactNode;
+  /** What deleting this actually does, shown on hover and on keyboard focus
+   *  BEFORE the first click — which is the click somebody does not make when
+   *  they cannot tell whether "Remove" takes a document off a list or takes
+   *  it away from the GC.
+   *
+   *  Required in practice: `hintCensus.test.ts` fails the build on a
+   *  `<ConfirmDelete>` without one. It is typed optional only because
+   *  `ConfirmDeleteButton` forwards it.
+   *
+   *  It is attached to the UNARMED delete button ONLY, and that is a
+   *  geometry decision rather than an editorial one. The armed pair's boxes
+   *  were measured in real Chromium (see `pinned` below) and nothing here
+   *  may move them, so once the delete is armed this component renders
+   *  exactly the DOM it rendered before this prop existed. `<Hint>` itself
+   *  adds no box either — see the header of `Hint.tsx`. */
+  describe?: ReactNode;
   pending?: boolean;
   disabled?: boolean;
   /** Which end of the cluster keeps its position when the row empties.
@@ -264,7 +283,7 @@ export function ConfirmDelete({
   }
 
   if (!arm.armed) {
-    return (
+    const deleteButton = (
       <button
         type="button"
         disabled={disabled || pending}
@@ -277,6 +296,11 @@ export function ConfirmDelete({
         {label}
       </button>
     );
+
+    /* `<Hint>` is `display: contents` and its tooltip is fixed and hidden,
+       so this button's box is the box it always was — which matters because
+       it is the box rule 2's measurements are taken against. */
+    return describe ? <Hint text={describe}>{deleteButton}</Hint> : deleteButton;
   }
 
   /* CANCEL INHERITS THE DELETE PIXEL. The row is now empty of everything

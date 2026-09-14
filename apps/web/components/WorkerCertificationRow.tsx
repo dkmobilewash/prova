@@ -184,6 +184,7 @@ function HoldingBlock({
                 destructive={
                   canDelete ? (
                     <ConfirmDelete
+                      describe="Removes the certificate from this worker's file, so it stops counting toward their requirements."
                       pinned="end"
                       label="Remove"
                       confirmLabel="Confirm remove"

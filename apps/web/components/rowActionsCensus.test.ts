@@ -338,15 +338,59 @@ describe("the destructive-form census", () => {
     actionBodies.filter((fn) => REMOVES_ROWS.test(fn.body)).map((fn) => fn.name),
   );
 
+  /** Where an `action={` / `formAction={` attribute begins. The VALUE is read
+   *  by `actionAttrs` below, which has to balance braces; this only finds the
+   *  starts, and is also what the size check counts against. */
+  const ACTION_ATTR_START = /\b(action|formAction)=\{/g;
+
   /**
-   * `action={deleteX.bind(...)}` / `formAction={deleteXWithId(id)}`.
+   * `action={deleteX.bind(...)}`, `formAction={deleteXWithId(id)}`, and —
+   * since #265 — `action={async () => { … }}`.
    *
-   * Deliberately brace-free in the value, so an expression containing its own
-   * object or arrow body does NOT match — which would be a silent hole, except
-   * that the size check below counts these against a bare `action={` and goes
-   * red the moment one appears. Fix the pattern then; do not widen it blind.
+   * THIS USED TO BE ONE BRACE-FREE REGEX, and the comment where it stood said
+   * so on purpose: an expression carrying its own object or arrow body did not
+   * match, which is a silent hole, except that the size check below counts
+   * matches against a bare `action={` and goes red the moment one appears.
+   * "Fix the pattern then; do not widen it blind."
+   *
+   * It went red, exactly as designed, on `JobDetailsForm.tsx`: #265 deletes an
+   * estimate from an arrow body, `action={async () => { … }}`, and every rule
+   * in this census was blind to it. So the pattern is a scanner now rather
+   * than a regex — it balances braces and steps over strings and template
+   * literals, the same shape `hintCensus.test.ts` uses to read past a `>`
+   * inside a prop. Its own fixture test is directly below it, for the reason
+   * that file gives: a scanner returning nothing looks exactly like a clean
+   * app.
+   *
+   * It returns what `matchAll` did — `index` and the expression — so the rules
+   * downstream are unchanged.
    */
-  const ACTION_ATTR = /\b(action|formAction)=\{([^{}]*)\}/g;
+  function actionAttrs(code: string): { index: number; name: string; expression: string }[] {
+    const found: { index: number; name: string; expression: string }[] = [];
+    for (const start of code.matchAll(ACTION_ATTR_START)) {
+      const open = start.index! + start[0].length;
+      let depth = 1;
+      let i = open;
+      for (; i < code.length && depth > 0; i += 1) {
+        const ch = code[i];
+        if (ch === '"' || ch === "'" || ch === "`") {
+          const close = code.indexOf(ch, i + 1);
+          if (close === -1) break;
+          i = close;
+          continue;
+        }
+        if (ch === "{") depth += 1;
+        else if (ch === "}") depth -= 1;
+      }
+      // An unterminated attribute is dropped rather than guessed at, and the
+      // size check below is what makes that loud: it would count here and not
+      // there, which is the failure this scanner exists to make visible.
+      if (depth === 0) {
+        found.push({ index: start.index!, name: start[1], expression: code.slice(open, i - 1) });
+      }
+    }
+    return found;
+  }
 
   /** The identifiers in an attribute expression, so membership is an exact
    *  name match rather than a substring: `deleteCostEntryWithId` must be found
@@ -385,15 +429,15 @@ describe("the destructive-form census", () => {
       if (refs.some((ref) => destructiveActions.has(ref) || aliases.has(ref))) aliases.add(decl[1]);
     }
 
-    return [...code.matchAll(ACTION_ATTR)]
+    return actionAttrs(code)
       .filter((attr) =>
-        identifiers(attr[2]).some((id) => destructiveActions.has(id) || aliases.has(id)),
+        identifiers(attr.expression).some((id) => destructiveActions.has(id) || aliases.has(id)),
       )
       .map((attr) => ({
         path,
-        line: code.slice(0, attr.index!).split("\n").length,
-        expression: attr[2].trim(),
-        tag: enclosingTag(code, attr.index!),
+        line: code.slice(0, attr.index).split("\n").length,
+        expression: attr.expression.trim(),
+        tag: enclosingTag(code, attr.index),
       }));
   });
 
@@ -430,12 +474,32 @@ describe("the destructive-form census", () => {
     expect(destructiveActions.size).toBeGreaterThanOrEqual(50);
   });
 
+  it("reads an action attribute past the braces of its own arrow body", () => {
+    // The literal case that widened this scanner: #265's estimate delete.
+    const arrow =
+      'x <form action={async () => { await deleteEstimateJob(id); router.push("/jobs"); }}>';
+    expect(actionAttrs(arrow)).toHaveLength(1);
+    expect(actionAttrs(arrow)[0].expression).toContain("deleteEstimateJob");
+    // The plain shape still reads exactly as it did.
+    expect(actionAttrs("<form action={deleteX.bind(null, id)}>")[0].expression).toBe(
+      "deleteX.bind(null, id)",
+    );
+    expect(actionAttrs("<button formAction={deleteXWithId(id)} />")[0].name).toBe("formAction");
+    // A brace inside a string is not a brace. Without the quote skip this
+    // would close early and hand the rules half an expression.
+    expect(actionAttrs('<form action={run("}")}>')[0].expression).toBe('run("}")');
+    // And an unterminated one is DROPPED, which is what makes the size check
+    // next door go red instead of this scanner inventing a match.
+    expect(actionAttrs("<form action={deleteX")).toEqual([]);
+  });
+
   it("reads every action attribute in the app, braces and all", () => {
     const parsed = tsxFiles(appDir).reduce(
-      (n, full) =>
-        n + [...withoutComments(readFileSync(full, "utf8")).matchAll(ACTION_ATTR)].length,
+      (n, full) => n + actionAttrs(withoutComments(readFileSync(full, "utf8"))).length,
       0,
     );
+    // Counted by a pattern that CANNOT drift with the scanner — it only looks
+    // for the attribute's opening, and knows nothing about how the value ends.
     const literal = tsxFiles(appDir).reduce(
       (n, full) =>
         n +
@@ -445,9 +509,9 @@ describe("the destructive-form census", () => {
     );
     expect(
       parsed,
-      `${literal - parsed} action attribute(s) have braces inside the expression, so the ` +
-        `pattern in this file skipped them. A skipped attribute is a delete this census cannot ` +
-        `see; widen ACTION_ATTR rather than this number.`,
+      `${literal - parsed} action attribute(s) were not read to a balanced closing brace, so ` +
+        `the scanner in this file skipped them. A skipped attribute is a delete this census ` +
+        `cannot see; fix actionAttrs rather than this number.`,
     ).toBe(literal);
     // A floor, not the exact number: 49 the day this was written. It exists so
     // a sweep that finds nothing cannot pass, and it should move only when

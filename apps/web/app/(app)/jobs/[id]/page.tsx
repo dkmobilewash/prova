@@ -7,6 +7,7 @@ import { PrintButton } from "@/components/PrintButton";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { PrevailingWageDeterminationForm } from "@/components/PrevailingWageDeterminationForm";
 import { ContractSummary } from "@/components/ContractSummary";
+import { JobDetailsForm } from "@/components/JobDetailsForm";
 import { WipNarrativeButton } from "@/components/WipNarrativeButton";
 import { DraftLineItemsForm } from "@/components/DraftLineItemsForm";
 import { TakeoffForm } from "@/components/TakeoffForm";
@@ -16,6 +17,7 @@ import { PayApplications, StatusForm } from "@/components/PayApplications";
 import { AddCostEntryForm } from "@/components/AddCostEntryForm";
 import { LogPaymentForm } from "@/components/LogPaymentForm";
 import { LogTimeEntryForm } from "@/components/LogTimeEntryForm";
+import { TimeEntryRow } from "@/components/TimeEntryRow";
 import { PushPaymentToQuickBooks } from "@/components/PushPaymentToQuickBooks";
 import { PushInvoiceToQuickBooks } from "@/components/PushInvoiceToQuickBooks";
 import { pushBlockers } from "@/lib/quickbooks-sync";
@@ -84,12 +86,10 @@ import {
   uploadContractDocument,
 } from "@/lib/actions";
 
-const TIME_ENTRY_PAY_TYPE_OPTIONS = [
-  { value: "STRAIGHT", label: "Straight" },
-  { value: "OVERTIME", label: "Overtime" },
-  { value: "DOUBLE_TIME", label: "Double time" },
-  { value: "SHIFT_DIFFERENTIAL", label: "Shift differential" },
-] as const;
+/* TIME_ENTRY_PAY_TYPE_OPTIONS used to be a third copy of the pay-type labels
+   (here, in LogTimeEntryForm and in the action). It is one list now, in
+   lib/time-entry-correction.ts, read through `timeEntryPayTypeLabel` by the
+   row that renders it. */
 const TRADE_SCOPE_OPTIONS = [
   { value: "METAL_FRAMING_DRYWALL", label: "Metal framing / drywall" },
   { value: "LATH_PLASTER", label: "Lath & plaster" },
@@ -241,6 +241,10 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
           employeeUser: true,
           lineItem: true,
           craftClassification: { include: { unionLocal: true } },
+          // Who corrected this hour, for the "corrected <date> by <name>"
+          // trace on the row (issue #63). Null on every entry nobody has
+          // corrected, which is most of them.
+          lastCorrectedByUser: true,
         },
       },
       dispatchSlips: {
@@ -265,7 +269,14 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
     notFound();
   }
 
-  const [companyMembers, companyLocations, catalogEntries, craftClassifications] = await Promise.all([
+  const [jobDetailContacts, companyMembers, companyLocations, catalogEntries, craftClassifications] = await Promise.all([
+    // For the Job details form's client picker. Scoped to the company, same
+    // as every other list on this page.
+    prisma.contact.findMany({
+      where: { companyId: company.id },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
     prisma.user.findMany({ where: { companyId: company.id }, orderBy: { createdAt: "asc" } }),
     prisma.companyLocation.findMany({ where: { companyId: company.id }, orderBy: { createdAt: "asc" } }),
     prisma.lineItemCatalogEntry.findMany({ where: { companyId: company.id }, orderBy: { description: "asc" } }),
@@ -309,6 +320,11 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
     label: `${craft.unionLocal.parentInternational} ${craft.unionLocal.localNumber} — ${craft.name}`,
     hourlyRate: burdenedHourlyRate(schedulesByCraft.get(craft.id) ?? [], laborRateDate),
   }));
+  /* The same craft list without the rate, for the two time-entry forms. Built
+     once rather than inline in each: since #63 there are two of them — logging
+     and correcting — and a correction form offering a different set of crafts
+     from the log form would be its own small bug. */
+  const timeEntryCraftOptions = craftOptions.map(({ id, label }) => ({ id, label }));
 
   const estimatedLaborCostByLineItem = new Map(
     job.lineItems.map((item) => [
@@ -701,6 +717,25 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             job past CONTRACTED at all. Not a new slot at the bottom —
             the fixed lower slots (Retainage → Field Reports → Pay Apps)
             are untouched. */}
+        {/* The job's own details. Placed here with Job status and Schedule,
+            deliberately far above the three fixed lower slots (Retainage →
+            Field Reports → Pay Apps) that nothing in this file marks and
+            nothing may reorder. */}
+        {showsJobManagement && (
+        <section className="mb-10">
+          <h2 className="mb-3 text-lg font-semibold text-slate-100">Job details</h2>
+          <JobDetailsForm
+            jobId={job.id}
+            name={job.name}
+            scope={job.scope}
+            contactId={job.contactId}
+            contacts={jobDetailContacts}
+            isEstimate={job.status === "ESTIMATE"}
+            canRemove={currentUser.role === "OWNER"}
+          />
+        </section>
+        )}
+
         {showsJobManagement && (
         <section className="mb-10">
           <h2 className="mb-3 text-lg font-semibold text-ink">Job status</h2>
@@ -770,6 +805,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                           <ConfirmDelete
                             pinned="end"
                             action={unassignCrewWithId(assignment.userId)}
+                            describe="Takes this person off this job's crew. Their account, and any hours they already logged here, are untouched."
                             label="Remove"
                             confirmLabel="Confirm remove"
                             deleteClassName={rowDeleteClass}
@@ -974,6 +1010,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                         <ConfirmDelete
                           pinned="end"
                           action={deleteContractDocument.bind(null, doc.id)}
+                          describe="Removes the document from this job. If a GC was ever sent it, their copy is unaffected — this only clears your record of it."
                           confirmLabel="Confirm delete"
                           armedClassName="flex flex-wrap items-center justify-end gap-2"
                           deleteClassName={rowDeleteClass}
@@ -1158,6 +1195,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                                 <ConfirmDelete
                                   pinned="end"
                                   action={deleteCostEntryWithId(entry.id)}
+                                  describe="Removes this cost from the job. Job cost and margin are recalculated without it; nothing is refunded or unbilled."
                                   label="Remove"
                                   confirmLabel="Confirm remove"
                                   deleteClassName={rowDeleteClass}
@@ -1226,58 +1264,44 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
 
           {job.timeEntries.length > 0 && (
             <ul className="mb-4 flex flex-col gap-2">
+              {/* <TimeEntryRow> since #63: Remove used to delete on one click
+                  and there was no way to correct an hour at all. The row owns
+                  the two-step confirm and the inline correction form; this
+                  page still owns WHAT gets deleted, via the bound action. */}
               {job.timeEntries.map((entry) => (
-                <li
+                <TimeEntryRow
                   key={entry.id}
-                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line-card bg-surface p-3 text-sm"
-                >
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                    <span className="text-ink">
-                      {formatCalendarDate(entry.date)}
-                    </span>
-                    <span className="text-ink-label">{entry.employeeUser.name ?? entry.employeeUser.email}</span>
-                    <span className="text-ink-body">{Number(entry.hours)}h</span>
-                    <span className="rounded bg-neutral-800 px-1.5 py-0.5 text-xs text-ink-body">
-                      {TIME_ENTRY_PAY_TYPE_OPTIONS.find((p) => p.value === entry.payType)?.label ?? entry.payType}
-                    </span>
-                    {entry.craftClassification && (
-                      <span className="text-xs text-ink-muted">{entry.craftClassification.name}</span>
-                    )}
-                    {entry.lineItem && <span className="text-xs text-ink-muted">{entry.lineItem.description}</span>}
-                    {timeEntryLaborCosts.get(entry.id) != null && (
-                      <span className="text-xs text-ink-muted">
-                        Est. cost {money(timeEntryLaborCosts.get(entry.id)!)}
-                      </span>
-                    )}
-                    {entry.perDiemAmount != null && (
-                      <span className="text-xs text-ink-muted">Per diem {money(Number(entry.perDiemAmount))}</span>
-                    )}
-                    {entry.travelPayAmount != null && (
-                      <span className="text-xs text-ink-muted">Travel {money(Number(entry.travelPayAmount))}</span>
-                    )}
-                    {entry.note && <span className="text-xs text-ink-muted">— {entry.note}</span>}
-                  </div>
-                  <RowActions
-                    className="flex shrink-0 flex-col items-end gap-1"
-                    destructive={
-                      <ConfirmDelete
-                        pinned="end"
-                        action={deleteTimeEntryWithId(entry.id)}
-                        label="Remove"
-                        confirmLabel="Confirm remove"
-                        armedClassName="flex flex-wrap items-center justify-end gap-2"
-                        deleteClassName={rowDeleteClass}
-                        cancelClassName={rowCancelClass}
-                        confirmClassName={rowConfirmClass}
-                        hint={
-                          <span className="max-w-[16rem] text-right text-ink-muted">
-                            These hours come off certified payroll for that week.
-                          </span>
-                        }
-                      />
-                    }
-                  />
-                </li>
+                  entry={{
+                    id: entry.id,
+                    dateLabel: formatCalendarDate(entry.date),
+                    employeeLabel: entry.employeeUser.name ?? entry.employeeUser.email,
+                    hours: String(Number(entry.hours)),
+                    payType: entry.payType,
+                    note: entry.note,
+                    perDiemAmount: entry.perDiemAmount != null ? String(entry.perDiemAmount) : null,
+                    travelPayAmount: entry.travelPayAmount != null ? String(entry.travelPayAmount) : null,
+                    lineItemId: entry.lineItemId,
+                    lineItemLabel: entry.lineItem?.description ?? null,
+                    craftClassificationId: entry.craftClassificationId,
+                    craftLabel: entry.craftClassification?.name ?? null,
+                    estimatedCostLabel:
+                      timeEntryLaborCosts.get(entry.id) != null
+                        ? money(timeEntryLaborCosts.get(entry.id)!)
+                        : null,
+                    // A real moment, so the reader's own zone — not UTC. The
+                    // day WORKED above is a calendar day and stays in UTC.
+                    lastCorrectedLabel: entry.lastCorrectedAt
+                      ? `corrected ${formatInstant(entry.lastCorrectedAt, timeZone)}${
+                          entry.lastCorrectedByUser
+                            ? ` by ${entry.lastCorrectedByUser.name ?? entry.lastCorrectedByUser.email}`
+                            : ""
+                        }`
+                      : null,
+                  }}
+                  lineItems={job.lineItems.map((item) => ({ id: item.id, description: item.description }))}
+                  craftOptions={timeEntryCraftOptions}
+                  deleteAction={deleteTimeEntryWithId(entry.id)}
+                />
               ))}
             </ul>
           )}
@@ -1290,14 +1314,8 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
           <LogTimeEntryForm
             jobId={job.id}
             employees={companyMembers}
-            lineItems={job.lineItems.map((item) => ({
-              id: item.id,
-              description: item.description,
-            }))}
-            craftOptions={craftClassifications.map((craft) => ({
-              id: craft.id,
-              label: `${craft.unionLocal.parentInternational} ${craft.unionLocal.localNumber} — ${craft.name}`,
-            }))}
+            lineItems={job.lineItems}
+            craftOptions={timeEntryCraftOptions}
           />
         </section>
 
@@ -1346,6 +1364,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                       <ConfirmDelete
                         pinned="end"
                         action={deleteDispatchSlipWithId(slip.id)}
+                        describe="Removes the hall's referral record for this worker. Nothing is sent to the local, and hours already logged stay."
                         label="Remove"
                         confirmLabel="Confirm remove"
                         armedClassName="flex flex-wrap items-center justify-end gap-2"
@@ -1487,6 +1506,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                       <ConfirmDelete
                         pinned="end"
                         action={deletePrevailingWageDeterminationWithId(determination.id)}
+                        describe="Removes the wage determination from this job. Certified payroll for weeks already filed is unchanged; future weeks lose the rates it supplied."
                         label="Remove"
                         confirmLabel="Confirm remove"
                         armedClassName="flex flex-wrap items-center justify-end gap-2"
@@ -1588,6 +1608,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                                   <ConfirmDelete
                                     pinned="end"
                                     action={deletePayment.bind(null, job.id, payment.id)}
+                                    describe="Un-records money you had marked as received. Cash collected and the invoice's balance both move. Nothing is returned to the GC — this only corrects your books."
                                     label="Remove"
                                     confirmLabel="Confirm remove"
                                     deleteClassName={rowDeleteClass}
@@ -1755,6 +1776,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                         <ConfirmDelete
                           pinned="end"
                           action={deleteRetainageReleaseWithId(release.id)}
+                          describe="Removes your record of the release. Nothing is requested of or withdrawn from the GC; retainage held goes back up by this amount."
                           label="Remove"
                           confirmLabel="Confirm remove"
                           armedClassName="flex flex-wrap items-center justify-end gap-2"
@@ -1946,6 +1968,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                       <ConfirmDelete
                         pinned="end"
                         action={deleteLineItemWithId(item.id)}
+                        describe="Removes the line and its cost history from the estimate. The contract value drops by its amount. A line already billed on a pay application cannot be removed."
                         label="Remove"
                         confirmLabel="Confirm remove"
                         deleteClassName="rounded-md bg-red-950 px-2 py-1 text-xs font-medium text-red-400 hover:bg-red-900"

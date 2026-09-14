@@ -4,6 +4,7 @@ import { useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { createPunchListItem } from "@/lib/actions";
 import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
+import { jobPickerLabel, type JobOption } from "@/components/jobLabels";
 
 // 16px, not the 14px inherited from the `text-sm` label: iOS Safari zooms the
 // whole page when a focused input is under 16px, and the foreman then has to
@@ -12,7 +13,10 @@ const inputClass =
   "min-h-11 rounded-md border border-line-card bg-canvas px-3 py-2 text-base text-ink placeholder:text-ink-muted focus:border-link focus:outline-none";
 const labelClass = "flex flex-col gap-1 text-sm text-ink-label";
 
-export type JobOption = { id: string; name: string };
+/** One definition, in @/components/jobLabels, and it requires the GC name
+ * and the status — see issue #65. Re-exported here so the existing import
+ * sites keep working. */
+export type { JobOption };
 
 /** Stays open after a save, unlike the vendor and equipment forms. Punch
  * items get logged in bursts during a walkthrough — five in a row, same
@@ -96,7 +100,7 @@ export function PunchListForm({
         >
           {jobs.map((job) => (
             <option key={job.id} value={job.id}>
-              {job.name}
+              {jobPickerLabel(job)}
             </option>
           ))}
         </select>

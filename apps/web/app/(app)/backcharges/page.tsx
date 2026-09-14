@@ -6,6 +6,7 @@ import { BackchargeForm } from "@/components/BackchargeForm";
 import { BackchargeRow } from "@/components/BackchargeRow";
 import { isResponseOverdue, summarizeBackcharges } from "@/lib/backcharges";
 import { money } from "@/lib/money";
+import { jobPickerLabel, toJobOption } from "@/components/jobLabels";
 
 /** Stored at UTC midnight, rendered in UTC — same rule as the RFI log and
  * the safety log. Rendering locally shows the previous day to anyone west
@@ -27,11 +28,16 @@ export default async function BackchargesPage({
 
   const today = new Date().toISOString().slice(0, 10);
 
-  const jobs = await prisma.job.findMany({
-    where: { companyId: company.id },
-    orderBy: { createdAt: "desc" },
-    select: { id: true, name: true },
-  });
+  // status + contact, not just the name: issue #65 — fifteen jobs, seven of
+  // them called "Smith kitchen remodel", and this picker showed seven
+  // identical rows. See components/jobLabels.ts.
+  const jobs = (
+    await prisma.job.findMany({
+      where: { companyId: company.id },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, name: true, status: true, contact: { select: { name: true } } },
+    })
+  ).map(toJobOption);
   const activeJob = jobFilter && jobs.some((j) => j.id === jobFilter) ? jobFilter : null;
 
   const backcharges = await prisma.backcharge.findMany({
@@ -156,7 +162,7 @@ export default async function BackchargesPage({
           </Link>
           {jobs.map((j) => (
             <Link key={j.id} href={filterHref({ job: j.id })} className={chip(activeJob === j.id)}>
-              {j.name}
+              {jobPickerLabel(j)}
             </Link>
           ))}
         </div>

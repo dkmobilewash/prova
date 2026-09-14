@@ -72,6 +72,7 @@ export function ContactRow({
           className="flex items-center gap-2"
           destructive={
             <ConfirmDelete
+              describe="Removes the company and its people from your contacts. Jobs already run under them are kept."
               prompt={`Delete ${contact.name}?`}
               pendingLabel="Deleting…"
               pending={isPending}

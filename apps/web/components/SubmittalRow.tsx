@@ -321,6 +321,7 @@ export function SubmittalRow({
         destructive={
           canDelete && state === "NOT_SENT" ? (
             <ConfirmDelete
+              describe="Deletes the submittal. Only one that has not been sent can be deleted — once it is with the GC it can be closed but never removed."
               pinned="end"
               pending={isPending}
               pendingLabel="Deleting…"

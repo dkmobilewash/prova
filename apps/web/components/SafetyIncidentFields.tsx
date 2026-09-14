@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { INCIDENT_CLASSIFICATIONS, INCIDENT_OUTCOMES } from "@/components/safetyLabels";
+import { jobPickerLabel, type JobOption } from "@/components/jobLabels";
 
 // `text-base` is load-bearing, not decoration. These inputs sit inside a
 // `text-sm` label and INHERIT 14px, and iOS Safari zooms the whole page
@@ -12,7 +13,10 @@ export const inputClass =
   "min-h-11 rounded-md border border-line-card bg-canvas px-3 py-2 text-base text-ink placeholder:text-ink-muted focus:border-link focus:outline-none";
 export const labelClass = "flex flex-col gap-1 text-sm text-ink-label";
 
-export type JobOption = { id: string; name: string };
+/** One definition, in @/components/jobLabels, and it requires the GC name
+ * and the status — see issue #65. Re-exported here so the existing import
+ * sites keep working. */
+export type { JobOption };
 
 export type IncidentDefaults = {
   occurredAt: string;
@@ -75,7 +79,7 @@ export function SafetyIncidentFields({
             <option value="">Not job-related (yard, shop, travel)</option>
             {jobs.map((job) => (
               <option key={job.id} value={job.id}>
-                {job.name}
+                {jobPickerLabel(job)}
               </option>
             ))}
           </select>

@@ -159,6 +159,7 @@ export function VendorPriceQuoteRow({
         destructive={
           canDelete ? (
             <ConfirmDelete
+              describe="Removes the quote from this vendor's pricing history. Nothing is sent to the vendor."
               pinned="end"
               label="Remove"
               confirmLabel="Confirm remove"

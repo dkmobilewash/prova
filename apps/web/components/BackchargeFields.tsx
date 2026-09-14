@@ -2,6 +2,7 @@
 
 import { BACKCHARGE_CATEGORIES } from "@/components/backchargeLabels";
 import { inputClass, labelClass, type JobOption } from "@/components/RfiFields";
+import { jobPickerLabel } from "@/components/jobLabels";
 
 export type BackchargeDefaults = {
   gcReference: string | null;
@@ -46,7 +47,7 @@ export function BackchargeFields({
             </option>
             {jobs.map((job) => (
               <option key={job.id} value={job.id}>
-                {job.name}
+                {jobPickerLabel(job)}
               </option>
             ))}
           </select>

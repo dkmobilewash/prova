@@ -6,6 +6,7 @@ import type { ActionResult } from "@/lib/actions/shared";
 import type { JobOption } from "@/components/PunchListForm";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
+import { jobPickerLabel } from "@/components/jobLabels";
 
 // `text-base` is load-bearing, not decoration: these inputs sit inside a
 // `text-sm` label and INHERIT 14px, and iOS Safari zooms the page whenever
@@ -88,7 +89,7 @@ export function PunchListRow({ canDelete, jobs, item, showJob }: PunchListRowPro
           <select name="jobId" defaultValue={item.jobId} className={inputClass}>
             {jobs.map((job) => (
               <option key={job.id} value={job.id}>
-                {job.name}
+                {jobPickerLabel(job)}
               </option>
             ))}
           </select>
@@ -179,6 +180,7 @@ export function PunchListRow({ canDelete, jobs, item, showJob }: PunchListRowPro
         destructive={
           canDelete ? (
             <ConfirmDelete
+              describe="Removes the punch item from this job's list, with its status and notes."
               pinned="end"
               label="Remove"
               confirmLabel="Confirm remove"

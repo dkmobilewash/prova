@@ -125,6 +125,7 @@ export function VendorRow({ canDelete, vendor }: VendorRowProps) {
         destructive={
           canDelete ? (
             <ConfirmDelete
+              describe="Removes the vendor and their quoted pricing. Orders already placed against them are kept."
               pinned="end"
               label="Remove"
               confirmLabel="Confirm remove"

@@ -558,6 +558,7 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
               className="mt-auto flex flex-wrap items-center gap-3 pt-1"
               destructive={
                 <ConfirmDelete
+                  describe="Deletes this photo or video from the job for everyone in the company."
                   pendingLabel="Deleting…"
                   pending={isPending}
                   onConfirm={() => {

@@ -58,6 +58,7 @@ export function TeamMemberActions({
         destructive={
           <ConfirmDelete
             pinned="end"
+            describe="Takes this person out of the company, so the app stops opening for them. Owners cannot be removed here."
             label="Remove"
             confirmLabel="Confirm remove"
             pendingLabel="Removing…"

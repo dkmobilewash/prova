@@ -29,16 +29,18 @@ import { JOB_FUNCTIONS } from "@/lib/permissions";
  * The fix that lasts is not adding the orphans back — it is these tests.
  */
 
-/** /sales is deliberately outside NAV_GROUPS: it belongs to Prova's own
- *  operating company, is gated on Company.isProvaOperator rather than the
- *  job-function capabilities every other item uses, and is appended by
- *  navGroupsFor. Named here so the exception is a decision on the record
- *  rather than a hole in the check. */
-// "/ask" is rendered by Sidebar as a standalone link ABOVE the groups. A
-// collapsible group holding a single item costs a click to reveal that
-// there was nothing to choose, so Ask is a one-click link pinned outside
-// the scroll — and it is in the Topbar on every page as well.
-const APPENDED_SEPARATELY = new Set(["/sales", "/ask"]);
+/** /sales and /internal/usage are deliberately outside NAV_GROUPS: both
+ *  belong to Prova's own operating company, both are gated on
+ *  Company.isProvaOperator rather than the job-function capabilities every
+ *  other item uses, and both are appended by navGroupsFor. Named here so
+ *  the exception is a decision on the record rather than a hole in the
+ *  check. */
+// "/ask" is a third kind of exception: it IS a tenant route, but Sidebar
+// renders it as a standalone link ABOVE the groups. A collapsible group
+// holding a single item costs a click to reveal there was nothing to
+// choose, so Ask is a one-click link pinned outside the scroll — and it is
+// in the Topbar on every page as well.
+const APPENDED_SEPARATELY = new Set(["/sales", "/internal/usage", "/ask"]);
 
 function groupedHrefs(groups: typeof NAV_GROUPS): Set<string> {
   return new Set(groups.flatMap((g) => g.items.map((i) => i.href)));
@@ -76,7 +78,7 @@ describe("every nav item is reachable", () => {
     const tenant = navGroupsFor(owner);
     expect(groupedHrefs(tenant).has("/sales")).toBe(false);
 
-    const operator = navGroupsFor(owner, { showsSalesCrm: true });
+    const operator = navGroupsFor(owner, { showsInternal: true });
     expect(groupedHrefs(operator).has("/sales")).toBe(true);
   });
 });
@@ -136,7 +138,7 @@ describe("the collapsible rail (#240)", () => {
 
   it("gives every group an icon, since at 64px the rail shows nothing else for it", () => {
     const owner = { role: "OWNER" as const, jobFunction: null };
-    for (const group of navGroupsFor(owner, { showsSalesCrm: true })) {
+    for (const group of navGroupsFor(owner, { showsInternal: true })) {
       expect(group.icon, `${group.heading} has no icon`).toBeTruthy();
     }
   });
@@ -164,8 +166,49 @@ describe("the collapsible rail (#240)", () => {
 
   it("keeps the internal sales group last, outside every tenant's pipeline", () => {
     const owner = { role: "OWNER" as const, jobFunction: null };
-    const headings = navGroupsFor(owner, { showsSalesCrm: true }).map((g) => g.heading);
+    const headings = navGroupsFor(owner, { showsInternal: true }).map((g) => g.heading);
     expect(headings.at(-1)).toBe("Internal");
     expect(headings).toHaveLength(7);
+  });
+});
+
+/**
+ * The usage page is the second thing in the Internal group, and the first
+ * time that group has held more than one item — which is why the option
+ * that appends it is no longer called `showsSalesCrm`. A flag named after
+ * one page that gates two is a lie a reader has no way to catch.
+ *
+ * What these pin is the half a page guard cannot: that no tenant's rail
+ * ever advertises it. The guard on the page itself (isProvaOperator, then
+ * OWNER) is the actual boundary and is recorded in
+ * lib/permissions.test.ts's OPEN_ROUTES with its reason.
+ */
+describe("the internal usage page", () => {
+  const owner = { role: "OWNER" as const, jobFunction: null };
+
+  it("appears only when the caller says this is the operator company", () => {
+    expect(hrefsIn(navGroupsFor(owner))).not.toContain("/internal/usage");
+    expect(hrefsIn(navGroupsFor(owner, { showsInternal: true }))).toContain("/internal/usage");
+  });
+
+  it("sits in the Internal group beside the sales CRM, in no tenant group", () => {
+    const internal = navGroupsFor(owner, { showsInternal: true }).find(
+      (group) => group.heading === "Internal",
+    );
+    expect(internal?.items.map((item) => item.href)).toEqual(["/sales", "/internal/usage"]);
+
+    // The stronger half: it is not in NAV_GROUPS at all, so there is no
+    // path by which a tenant's rail could render it.
+    const inTenantGroups = NAV_GROUPS.flatMap((group) => group.items.map((item) => item.href));
+    expect(inTenantGroups).not.toContain("/internal/usage");
+  });
+
+  it("is invisible to every job function on a tenant account", () => {
+    for (const jobFunction of [null, ...JOB_FUNCTIONS]) {
+      const visible = hrefsIn(navGroupsFor({ role: "MEMBER", jobFunction }));
+      expect(visible, `a ${jobFunction ?? "unset"} member can see /internal/usage`).not.toContain(
+        "/internal/usage",
+      );
+    }
   });
 });

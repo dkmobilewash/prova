@@ -346,6 +346,7 @@ export function DrawingSetRow({
                         destructive={
                           canDelete ? (
                             <ConfirmDelete
+                              describe="Removes this revision from the set. Whichever revision is newest afterwards becomes the current one."
                               label="Remove"
                               confirmLabel="Confirm remove"
                               pendingLabel="Removing…"
@@ -400,6 +401,7 @@ export function DrawingSetRow({
         destructive={
           canDelete && set.revisions.length === 0 ? (
             <ConfirmDelete
+              describe="Deletes the whole drawing set and every revision in it."
               pinned="end"
               confirmLabel="Confirm delete"
               pendingLabel="Deleting…"

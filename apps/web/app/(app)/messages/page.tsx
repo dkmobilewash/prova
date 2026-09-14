@@ -9,6 +9,7 @@ import { loadMessageDraft } from "@/lib/ask/drafts";
 import { deliveryRate, needsAttention, stale } from "@/components/messageLabels";
 import { StatusLine } from "@/components/StatusLine";
 import { messagesStatus } from "@/lib/status-sentences";
+import { toJobOption } from "@/components/jobLabels";
 
 /** Stored at UTC midnight, rendered in UTC — same rule as every other date
  * in this app. */
@@ -37,11 +38,15 @@ export default async function MessagesPage({
   const askDraft = await loadMessageDraft(context, draft);
   const messageDraft = askDraft.kind === "draft" ? askDraft.draft : undefined;
 
-  const jobs = await prisma.job.findMany({
-    where: { companyId: company.id },
-    select: { id: true, name: true },
-    orderBy: { name: "asc" },
-  });
+  // status + contact, not just the name: issue #65 — seven jobs sharing one
+  // placeholder name made every picker seven identical rows.
+  const jobs = (
+    await prisma.job.findMany({
+      where: { companyId: company.id },
+      select: { id: true, name: true, status: true, contact: { select: { name: true } } },
+      orderBy: { name: "asc" },
+    })
+  ).map(toJobOption);
 
   const messages = await prisma.outboundMessage.findMany({
     where: { companyId: company.id },

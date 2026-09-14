@@ -10,8 +10,12 @@ import {
   inputClass,
   labelClass,
 } from "@/components/DailyFieldReports";
+import { jobPickerLabel, type JobOption } from "@/components/jobLabels";
 
-export type JobChoice = { id: string; name: string };
+/** Was its own `{ id, name }` declaration — the fourth in the app, and the
+ * reason issue #65's bare-name picker kept getting copied. The shared type
+ * requires the GC name and the status. */
+export type JobChoice = JobOption;
 
 /** Filing a day from the company-wide log, where the job has to be chosen
  * rather than inherited from the page.
@@ -118,7 +122,7 @@ export function FieldReportComposer({
           >
             {jobs.map((job) => (
               <option key={job.id} value={job.id}>
-                {job.name}
+                {jobPickerLabel(job)}
               </option>
             ))}
           </select>

@@ -7,6 +7,7 @@ import { DrawingSetRow } from "@/components/DrawingSetRow";
 import { setState, unreceivedRevisions } from "@/components/drawingLabels";
 import { StatusLine } from "@/components/StatusLine";
 import { drawingsStatus } from "@/lib/status-sentences";
+import { jobPickerLabel, toJobOption } from "@/components/jobLabels";
 
 /** Stored at UTC midnight, rendered in UTC — same rule as every other
  * dated record in this app. */
@@ -26,11 +27,16 @@ export default async function DrawingsPage({
 
   const today = new Date().toISOString().slice(0, 10);
 
-  const jobs = await prisma.job.findMany({
-    where: { companyId: company.id },
-    orderBy: { createdAt: "desc" },
-    select: { id: true, name: true },
-  });
+  // status + contact, not just the name: issue #65 — fifteen jobs, seven of
+  // them called "Smith kitchen remodel", and this picker showed seven
+  // identical rows. See components/jobLabels.ts.
+  const jobs = (
+    await prisma.job.findMany({
+      where: { companyId: company.id },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, name: true, status: true, contact: { select: { name: true } } },
+    })
+  ).map(toJobOption);
   const activeJob = jobFilter && jobs.some((j) => j.id === jobFilter) ? jobFilter : null;
 
   const sets = await prisma.drawingSet.findMany({
@@ -100,7 +106,7 @@ export default async function DrawingsPage({
           </Link>
           {jobs.map((j) => (
             <Link key={j.id} href={filterHref(j.id)} className={chip(activeJob === j.id)}>
-              {j.name}
+              {jobPickerLabel(j)}
             </Link>
           ))}
         </div>

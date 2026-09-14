@@ -10,6 +10,7 @@ import {
   stayLength,
   utilisation,
 } from "@/components/equipmentDeployment";
+import { toJobOption } from "@/components/jobLabels";
 
 export const dynamic = "force-dynamic";
 
@@ -34,10 +35,16 @@ export default async function EquipmentPage() {
         },
       },
     }),
-    prisma.job.findMany({ where: { companyId: company.id }, orderBy: { createdAt: "desc" } }),
+    prisma.job.findMany({
+      where: { companyId: company.id },
+      orderBy: { createdAt: "desc" },
+      include: { contact: { select: { name: true } } },
+    }),
   ]);
 
-  const jobOptions = jobs.map((job) => ({ id: job.id, name: job.name }));
+  // The GC's name, for the pickers: issue #65 — seven jobs sharing one
+  // placeholder name made every picker seven identical rows.
+  const jobOptions = jobs.map(toJobOption);
 
   // Dates are stored and rendered at UTC midnight, so "today" is the UTC
   // date. The user's own calendar date is only ever a form default.

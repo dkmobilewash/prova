@@ -100,6 +100,7 @@ export function SalesLeadRow({
         className="flex items-center gap-2"
         destructive={
           <ConfirmDelete
+            describe="Deletes the lead. Its deals and activity have to be removed first, so this refuses while any are left."
             prompt={`Delete ${lead.companyName}?`}
             pendingLabel="Deleting…"
             pending={isPending}

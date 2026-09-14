@@ -193,6 +193,16 @@ export const laborExclusions: Exclusion[] = [
   { action: "uploadDispatchSlip", reason: "Needs a real File from the hiring hall; page only until a hand-off mode carries attachments." },
   { action: "deleteDispatchSlip", reason: "T5: deletes are never commands." },
   { action: "deleteTimeEntry", reason: "T5: deletes are never commands, and a time entry is payroll evidence." },
+  {
+    action: "updateTimeEntry",
+    // #63. Logging an hour by voice is fine — it creates a record. CHANGING
+    // one that already exists is a correction to payroll evidence, and it
+    // needs the operator looking at the row they are about to alter: which
+    // entry, whose day, what the figure is now. A resolver that picks the
+    // entry from "make Mike's Monday eight hours" is one ambiguous match away
+    // from correcting the wrong day's hours, and nothing would show it had.
+    reason: "Corrections to payroll evidence are made on the row, in front of the current figure; page only.",
+  },
   { action: "uploadPrevailingWageDetermination", reason: "Needs a real File and is compliance configuration for a job; page only." },
   { action: "deletePrevailingWageDetermination", reason: "T5: deletes are never commands." },
 ];

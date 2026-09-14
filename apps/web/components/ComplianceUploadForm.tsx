@@ -2,6 +2,7 @@
 
 import { useRef, useState, useTransition } from "react";
 import { uploadComplianceDocument } from "@/lib/actions";
+import { jobPickerLabel, type JobOption } from "@/components/jobLabels";
 
 const inputClass =
   "rounded-md border border-line-card bg-canvas px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none";
@@ -11,7 +12,7 @@ const labelClass = "flex flex-col gap-1 text-sm text-ink-label";
  * the file), which can take several seconds — hence the pending state,
  * same pattern as WipNarrativeButton. revalidatePath inside the server
  * action refreshes the list once it lands. */
-export function ComplianceUploadForm({ jobs }: { jobs: { id: string; name: string }[] }) {
+export function ComplianceUploadForm({ jobs }: { jobs: JobOption[] }) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
@@ -48,7 +49,7 @@ export function ComplianceUploadForm({ jobs }: { jobs: { id: string; name: strin
           <option value="">— Company-level —</option>
           {jobs.map((job) => (
             <option key={job.id} value={job.id}>
-              {job.name}
+              {jobPickerLabel(job)}
             </option>
           ))}
         </select>

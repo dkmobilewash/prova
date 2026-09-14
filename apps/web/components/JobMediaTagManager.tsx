@@ -170,6 +170,7 @@ function JobMediaTagRow({ tag }: { tag: JobMediaTagSummary }) {
         className="flex shrink-0 flex-wrap items-center gap-2"
         destructive={
           <ConfirmDelete
+            describe="Deletes the tag and takes it off every photo carrying it. The photos themselves are untouched."
             pinned="end"
             pendingLabel="Deleting…"
             pending={isPending}

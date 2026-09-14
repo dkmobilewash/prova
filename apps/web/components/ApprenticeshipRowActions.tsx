@@ -279,6 +279,7 @@ export function ApprenticeshipRowActions({
         destructive={
           canDelete ? (
             <ConfirmDelete
+              describe="Ends the registration here and removes its periods with it. No timesheet is touched and nothing is filed with the sponsor."
               label="Remove"
               confirmLabel="Confirm remove"
               pendingLabel="Removing…"

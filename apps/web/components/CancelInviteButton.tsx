@@ -44,6 +44,7 @@ export function CancelInviteButton({ inviteId }: { inviteId: string }) {
         destructive={
           <ConfirmDelete
             pinned="end"
+            describe="Withdraws the invitation. Nobody is emailed either way — the sign-up link you shared simply stops joining them to your company."
             label="Cancel"
             confirmLabel="Confirm cancel"
             pendingLabel="Cancelling…"

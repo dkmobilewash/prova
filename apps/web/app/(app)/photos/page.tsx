@@ -9,6 +9,7 @@ import { JobMediaCapture } from "@/components/JobMediaCapture";
 import { JobMediaCard } from "@/components/JobMediaCard";
 import { JobMediaTagDatalist } from "@/components/JobMediaTagDatalist";
 import { JobMediaTagManager } from "@/components/JobMediaTagManager";
+import { jobPickerLabel, toJobOption } from "@/components/jobLabels";
 
 /**
  * Every site photo the company has, newest first, filterable by job, by
@@ -64,14 +65,17 @@ export default async function PhotosPage({
   const { company } = context;
   const { job: jobFilter, tag: tagFilter, shared: sharedFilter } = await searchParams;
 
-  const [jobs, tags] = await Promise.all([
+  const [jobRows, tags] = await Promise.all([
     prisma.job.findMany({
       where: { companyId: company.id },
       orderBy: { createdAt: "desc" },
-      select: { id: true, name: true },
+      select: { id: true, name: true, status: true, contact: { select: { name: true } } },
     }),
     loadJobMediaTags(company.id),
   ]);
+  // status + contact, not just the name: issue #65 — seven jobs sharing one
+  // placeholder name made every picker seven identical rows.
+  const jobs = jobRows.map(toJobOption);
   // Both filters are validated against what this company actually has, so
   // an id from a stale link or another company's URL falls back to "no
   // filter" rather than producing an empty gallery with a live chip
@@ -165,7 +169,7 @@ export default async function PhotosPage({
                 href={photosFilterHref({ job: job.id, tag: activeTag, shared: activeShared })}
                 className={chip(activeJob === job.id)}
               >
-                {job.name}
+                {jobPickerLabel(job)}
               </Link>
             ))}
           </div>

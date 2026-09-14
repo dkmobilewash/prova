@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { pushInvoiceToQuickBooks } from "@/lib/actions";
+import { Hint } from "@/components/Hint";
 
 /**
  * Sends one invoice to QuickBooks.
@@ -76,18 +77,20 @@ export function PushInvoiceToQuickBooks({
 
   return (
     <div className="flex flex-col items-end gap-1">
-      <button
-        type="button"
-        onClick={push}
-        disabled={isPending || blocked}
-        className="rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-neutral-800 disabled:opacity-50"
-      >
-        {isPending
-          ? "Sending…"
-          : linkedQboId
-            ? "Re-send to QuickBooks"
-            : "Send to QuickBooks"}
-      </button>
+      <Hint text="Writes this invoice into QuickBooks for your bookkeeper. This one does leave the building — it reaches Intuit, not the GC. Re-sending updates the invoice already there rather than making a second one.">
+        <button
+          type="button"
+          onClick={push}
+          disabled={isPending || blocked}
+          className="rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:border-slate-500 disabled:opacity-50"
+        >
+          {isPending
+            ? "Sending…"
+            : linkedQboId
+              ? "Re-send to QuickBooks"
+              : "Send to QuickBooks"}
+        </button>
+      </Hint>
 
       {blocked && message === null && (
         <p className="max-w-[18rem] text-right text-xs text-ink-muted">{blockers.join(" ")}</p>

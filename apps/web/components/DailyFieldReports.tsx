@@ -315,6 +315,7 @@ export function DailyFieldReports({
                     destructive={
                       canDelete ? (
                         <ConfirmDelete
+                          describe="Deletes the day's field report and everything entered on it — crew, hours, weather and notes for that date."
                           pinned="end"
                           label="Remove"
                           confirmLabel="Confirm remove"

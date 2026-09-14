@@ -440,11 +440,11 @@ export const NAV_ITEMS: NavItem[] = [
       </svg>
     ),
   },
-  // Not in NAV_ITEMS's usual home in a NAV_GROUPS group below -- this one
-  // is for Prova's own operating company only (Company.isProvaOperator),
-  // never a tenant, so it is appended separately by navGroupsFor rather
-  // than filtered by the job-function capability system every other item
-  // uses. See SALES_NAV_GROUP.
+  // The next TWO are not in NAV_ITEMS's usual home in a NAV_GROUPS group
+  // below -- both are for Prova's own operating company only
+  // (Company.isProvaOperator), never a tenant, so they are appended
+  // separately by navGroupsFor rather than filtered by the job-function
+  // capability system every other item uses. See INTERNAL_NAV_GROUP.
   {
     href: "/sales",
     label: "Sales CRM",
@@ -458,6 +458,16 @@ export const NAV_ITEMS: NavItem[] = [
           strokeLinejoin="round"
         />
         <path d="M12.5 6h3.5v3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+  },
+  {
+    href: "/internal/usage",
+    label: "Usage",
+    icon: (
+      <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5">
+        <circle cx="10" cy="10" r="6.5" stroke="currentColor" strokeWidth="1.4" />
+        <path d="M10 6.2V10l2.6 1.8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     ),
   },
@@ -503,6 +513,15 @@ export type NavGroup = {
   /** Shown at 64px, where the heading text is not — the only thing a
    * collapsed rail says about a group. */
   icon: ReactNode;
+  /** What is filed under this heading, on hover and on keyboard focus.
+   *
+   * The rail is six icons at 64px and two words expanded, and "Paper trail"
+   * is not self-explanatory at either width — an icon plus a `title` that
+   * repeated the heading was the whole of what the group used to say about
+   * itself. It is required (`hintCensus.test.ts` fails the build on a group
+   * without one) and it is phrased as what you would come here LOOKING for,
+   * not as a restatement of the heading. */
+  description: string;
   items: (NavItem & { disabled?: boolean })[];
 };
 
@@ -524,6 +543,7 @@ const groupIcon = (d: string) => (
 export const NAV_GROUPS: NavGroup[] = [
   {
     heading: "Pre-construction",
+    description: "Work you are chasing and have not won yet: leads, bid invitations, the people you bid to, and your price book.",
     // A flag: the work you are chasing.
     icon: groupIcon("M5 16.5v-13M5 4h9.5l-2.5 3.25 2.5 3.25H5"),
     items: [
@@ -538,6 +558,7 @@ export const NAV_GROUPS: NavGroup[] = [
   },
   {
     heading: "Operations",
+    description: "The jobs under way — who and what is where this week, what the crew wrote down, and what is left to fix.",
     // A hard hat: the work under way.
     icon: groupIcon("M3.5 14h13M5 14v-1.5a5 5 0 0 1 10 0V14M10 7.5V4M8 4h4"),
     items: [
@@ -562,12 +583,14 @@ export const NAV_GROUPS: NavGroup[] = [
   },
   {
     heading: "Financials",
+    description: "Money in and money held back: cash coming in, backcharges you are claiming, and the company settings behind them.",
     // A bank note.
     icon: groupIcon("M3.5 6.5h13v7h-13zM10 12a2 2 0 1 0 0-4 2 2 0 0 0 0 4ZM6 10h.01M14 10h.01"),
     items: [item("/cash-flow"), item("/backcharges"), item("/settings")],
   },
   {
     heading: "Compliance & safety",
+    description: "What you have to prove to stay on the job: certificates, wage filings, union reporting, incidents, and your people.",
     // A clipboard with a tick.
     icon: groupIcon("M7 4.5h6a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1v-10a1 1 0 0 1 1-1ZM8 4.5v-1h4v1M8 10.5l1.5 1.5 2.5-3"),
     items: [
@@ -581,6 +604,7 @@ export const NAV_GROUPS: NavGroup[] = [
   },
   {
     heading: "Paper trail",
+    description: "Correspondence with the GC that you may have to produce later: questions asked, submittals, current drawings, closeout.",
     // A document with a corner fold: what went to the GC, and when.
     icon: groupIcon("M6 3.5h6l3 3v9a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-11a1 1 0 0 1 1-1ZM12 3.5v3h3M7.5 10h5M7.5 13h5"),
     // Question, answer, drawing, sign-off: the order the paper arrives in.
@@ -588,6 +612,7 @@ export const NAV_GROUPS: NavGroup[] = [
   },
   {
     heading: "Logistics",
+    description: "Getting material and machines to the job: vendors, their quoted prices, orders, and where your equipment is.",
     // A truck.
     icon: groupIcon("M3.5 6.5h8v7h-8zM11.5 9.5h2.8l2.2 2.2v1.8h-5zM6 15.5a1 1 0 1 0 0-2 1 1 0 0 0 0 2ZM14 15.5a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z"),
     items: [
@@ -620,13 +645,21 @@ export function activeGroupHeading(groups: NavGroup[], pathname: string): string
   return best?.heading ?? null;
 }
 
-/** Prova's own sales pipeline for selling Prova itself -- deliberately
- * outside NAV_GROUPS above, which every tenant's nav is built from. Only
- * ever appended by navGroupsFor, and only when the caller says so. */
-const SALES_NAV_GROUP: NavGroup = {
+/** Prova's own pages -- selling Prova itself, and who is still logging in
+ * -- deliberately outside NAV_GROUPS above, which every tenant's nav is
+ * built from. Only ever appended by navGroupsFor, and only when the caller
+ * says so.
+ *
+ * It held one item until 2026-09-13, which is why the option that appends
+ * it was called `showsSalesCrm`. It is `showsInternal` now: a flag named
+ * after one page while gating two is a lie with nothing to catch it, and
+ * both pages are gated on exactly the same two facts (this Company is
+ * Prova's own operator, and this person is its OWNER). */
+const INTERNAL_NAV_GROUP: NavGroup = {
   heading: "Internal",
+  description: "Prova's own sales pipeline — selling Prova itself. Only visible to the operating company.",
   icon: item("/sales").icon,
-  items: [item("/sales")],
+  items: [item("/sales"), item("/internal/usage")],
 };
 
 /**
@@ -644,8 +677,8 @@ const SALES_NAV_GROUP: NavGroup = {
  * forgotten in the other is a feature that exists on a phone and not on a
  * laptop.
  */
-export function navGroupsFor(user: Principal, options: { showsSalesCrm?: boolean } = {}): NavGroup[] {
-  const groups = options.showsSalesCrm ? [...NAV_GROUPS, SALES_NAV_GROUP] : NAV_GROUPS;
+export function navGroupsFor(user: Principal, options: { showsInternal?: boolean } = {}): NavGroup[] {
+  const groups = options.showsInternal ? [...NAV_GROUPS, INTERNAL_NAV_GROUP] : NAV_GROUPS;
   return groups
     .map((group) => ({
       ...group,

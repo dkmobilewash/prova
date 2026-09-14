@@ -3,54 +3,35 @@
 import { useRef, useState, useTransition } from "react";
 import type { JobLineItem } from "@prova/db";
 import { logTimeEntry } from "@/lib/actions";
+import {
+  TimeEntryFields,
+  type TimeEntryCraftOption,
+  type TimeEntryEmployeeOption,
+  type TimeEntryLineItemOption,
+} from "@/components/TimeEntryFields";
 
-const TIME_ENTRY_PAY_TYPE_OPTIONS = [
-  { value: "STRAIGHT", label: "Straight" },
-  { value: "OVERTIME", label: "Overtime" },
-  { value: "DOUBLE_TIME", label: "Double time" },
-  { value: "SHIFT_DIFFERENTIAL", label: "Shift differential" },
-] as const;
-
-export type TimeEntryEmployeeOption = { id: string; name: string | null; email: string };
-
-/**
- * All the cost-code picker reads: a value for the `<option>` and a label to
- * show. No quantity, no price, no cost — nothing numeric at all.
- *
- * The second half is a boundary guard, not decoration. This type was already
- * `{ id, description }` and the page still passed whole `job.lineItems` rows
- * to it for weeks, because TypeScript is structural: a JobLineItem HAS an id
- * and a description, so a wider object satisfies a narrower type and the
- * compiler says nothing. What it carried besides was six Prisma `Decimal`
- * columns plus a nested `costEntries` relation, and Next 15 cannot serialize
- * a Decimal across the server/client boundary — so every render of
- * /jobs/[id] logged "Decimal objects are not supported" once per field and
- * put a dev-overlay issue count on screen.
- *
- * Banning the rest of the row makes that pass a compile error instead. The
- * banned keys are derived from `JobLineItem` rather than listed, so a Decimal
- * column added to the model tomorrow is covered without anyone remembering
- * this file — a hand-written list is the drift this guard exists to stop.
- * Type-only import: erased at compile time, so the db package stays out of
- * the client bundle.
- */
-export type TimeEntryLineItemOption = {
-  id: string;
-  description: string;
-} & {
-  [K in Exclude<keyof JobLineItem, "id" | "description">]?: never;
-};
-
-export type TimeEntryCraftOption = { id: string; label: string };
+export type {
+  TimeEntryCraftOption,
+  TimeEntryEmployeeOption,
+  TimeEntryLineItemOption,
+} from "@/components/TimeEntryFields";
 
 /**
  * Logs a day's hours for one employee against a job.
  *
+ * The fields themselves moved to `<TimeEntryFields>` when #63 added the
+ * correction form, so the two cannot drift: both post the same names and both
+ * are parsed by `parseTimeEntryFigures`. The DIFFERENCE between them is the
+ * point — this form offers the employee and the date, the correction form
+ * renders those as text, because a logged hour never changes hands.
+ *
  * Needs its own error slot, unlike the plain server-action forms elsewhere
- * on this page: logTimeEntry now refuses an exact repeat of the same entry
+ * on this page: logTimeEntry refuses an exact repeat of the same entry
  * submitted within the last few seconds (see the guard's own comment in
- * lib/actions/labor.ts) and a `<form action={fn}>` has nowhere to show that
- * refusal. Same useTransition + inline error shape as PayApplications.tsx.
+ * lib/actions/labor.ts), and now also refuses hours that are not a positive
+ * number rather than throwing a message production would redact. A
+ * `<form action={fn}>` has nowhere to show either. Same useTransition +
+ * inline error shape as PayApplications.tsx.
  */
 export function LogTimeEntryForm({
   jobId,
@@ -90,103 +71,7 @@ export function LogTimeEntryForm({
       className="flex flex-col gap-2 rounded-lg border border-line-card bg-surface p-3"
     >
       <div className="flex flex-wrap items-end gap-2">
-        <label className="flex flex-col gap-1 text-xs text-ink-body">
-          Employee
-          <select
-            name="employeeUserId"
-            required
-            className="rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink focus:border-link focus:outline-none"
-          >
-            {employees.map((member) => (
-              <option key={member.id} value={member.id}>
-                {member.name ?? member.email}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1 text-xs text-ink-body">
-          Date
-          <input
-            type="date"
-            name="date"
-            required
-            className="rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink focus:border-link focus:outline-none"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-xs text-ink-body">
-          Hours
-          <input
-            name="hours"
-            placeholder="8"
-            required
-            className="w-20 rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-xs text-ink-body">
-          Pay type
-          <select
-            name="payType"
-            defaultValue="STRAIGHT"
-            className="rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink focus:border-link focus:outline-none"
-          >
-            {TIME_ENTRY_PAY_TYPE_OPTIONS.map((p) => (
-              <option key={p.value} value={p.value}>
-                {p.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1 text-xs text-ink-body">
-          Cost code / SOV line
-          <select
-            name="lineItemId"
-            defaultValue=""
-            className="rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink focus:border-link focus:outline-none"
-          >
-            <option value="">No specific line</option>
-            {lineItems.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.description}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1 text-xs text-ink-body">
-          Craft classification
-          <select
-            name="craftClassificationId"
-            defaultValue=""
-            className="rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink focus:border-link focus:outline-none"
-          >
-            <option value="">No craft tag</option>
-            {craftOptions.map((craft) => (
-              <option key={craft.id} value={craft.id}>
-                {craft.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1 text-xs text-ink-body">
-          Per diem
-          <input
-            name="perDiemAmount"
-            placeholder="optional"
-            className="w-24 rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-xs text-ink-body">
-          Travel pay
-          <input
-            name="travelPayAmount"
-            placeholder="optional"
-            className="w-24 rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
-          />
-        </label>
-        <input
-          name="note"
-          placeholder="Note (optional)"
-          className="rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
-        />
+        <TimeEntryFields employees={employees} lineItems={lineItems} craftOptions={craftOptions} />
         <button
           type="submit"
           disabled={isPending}

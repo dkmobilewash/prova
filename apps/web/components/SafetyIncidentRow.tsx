@@ -161,6 +161,7 @@ export function SafetyIncidentRow({
         destructive={
           canDelete ? (
             <ConfirmDelete
+              describe="Removes the incident from your safety log. If it was recordable it leaves the OSHA log too, and its case number is retired rather than reused."
               pinned="end"
               label="Remove"
               confirmLabel="Confirm remove"

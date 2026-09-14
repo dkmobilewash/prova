@@ -294,6 +294,7 @@ export default async function SettingsPage({
               destructive={
                 <ConfirmDelete
                   action={disconnectQuickBooks}
+                  describe="Stops the push to QuickBooks until somebody reconnects. Nothing already in QuickBooks is changed or removed, and your chart-of-accounts mapping below is kept."
                   label="Disconnect"
                   confirmLabel="Confirm disconnect"
                   deleteClassName="text-sm text-red-400 hover:underline"
@@ -393,7 +394,10 @@ export default async function SettingsPage({
                     </p>
                   )}
                 </div>
-                <ConfirmDeleteButton action={deleteCompanyLocation.bind(null, location.id)} />
+                <ConfirmDeleteButton
+                  describe="Takes this yard or office off the company record. No job and no crew is moved."
+                  action={deleteCompanyLocation.bind(null, location.id)}
+                />
               </li>
             ))}
           </ul>
@@ -520,7 +524,10 @@ export default async function SettingsPage({
                       {status && <span className={`ml-2 ${status.className}`}>{status.text}</span>}
                     </p>
                   </div>
-                  <ConfirmDeleteButton action={deleteInsurancePolicy.bind(null, policy.id)} />
+                  <ConfirmDeleteButton
+                    describe="Takes the policy off your record here only. Nothing is cancelled with the carrier, and a certificate a GC already holds still stands."
+                    action={deleteInsurancePolicy.bind(null, policy.id)}
+                  />
                 </li>
               );
             })}
@@ -618,7 +625,10 @@ export default async function SettingsPage({
                       {status && <span className={`ml-2 ${status.className}`}>{status.text}</span>}
                     </p>
                   </div>
-                  <ConfirmDeleteButton action={deleteBond.bind(null, bond.id)} />
+                  <ConfirmDeleteButton
+                    describe="Takes the bond off your record here only. Nothing is filed with the surety."
+                    action={deleteBond.bind(null, bond.id)}
+                  />
                 </li>
               );
             })}

@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Hint } from "@/components/Hint";
 import { activeGroupHeading, navGroupsFor } from "@/components/navItems";
 import { money } from "@/lib/money";
 import type { Principal } from "@/lib/permissions";
@@ -196,20 +197,20 @@ function Chevron({ open }: { open: boolean }) {
 export function Sidebar({
   companyName,
   principal,
-  showsSalesCrm = false,
+  showsInternal = false,
   stages,
 }: {
   companyName: string;
   principal: Principal;
   /** Prova's own operating company only -- see Company.isProvaOperator. */
-  showsSalesCrm?: boolean;
+  showsInternal?: boolean;
   /** The five money-pipeline figures, loaded server-side by the layout
    * with getMoneyRailStages. Never computed here. */
   stages: MoneyRailStage[];
 }) {
   // Filtered here rather than in the layout so the desktop rail and
   // the mobile drawer run the same function on the same input.
-  const groups = navGroupsFor(principal, { showsSalesCrm });
+  const groups = navGroupsFor(principal, { showsInternal });
   const pathname = usePathname();
   const activeHeading = activeGroupHeading(groups, pathname);
 
@@ -344,6 +345,21 @@ export function Sidebar({
                     guarantee ("you can always see the money"), paid for with
                     a scroll instead of a squeeze. */}
                 <div className="flex shrink-0 flex-col gap-1">
+                  {/* #264's description, kept — with its `title` dropped
+                      rather than kept alongside it. On THIS rail the heading
+                      is never hidden (w-60 always), so #264's own reason for
+                      the hint does not apply and a better one does: the
+                      heading is two words and the figure under it is a
+                      number, and neither says what is filed in the group.
+                      "Paper trail — $0" is the least self-explanatory thing
+                      on the column. The `title` it replaces repeated the
+                      heading text verbatim, which is invisible to a keyboard
+                      and says nothing to a mouse.
+
+                      Hint is `display: contents`, so it adds no box: the
+                      button stays the same flex item, and `sticky top-0`
+                      still resolves against the scrolling column. */}
+                  <Hint text={`${group.heading} — ${group.description}`}>
                   <button
                     type="button"
                     onClick={() =>
@@ -353,7 +369,6 @@ export function Sidebar({
                     }
                     aria-expanded={isOpen}
                     aria-controls={panelId}
-                    title={group.heading}
                     // #240's hook, kept: a click-through can name a group
                     // without reading its text or its colour.
                     data-nav-group={group.heading}
@@ -375,6 +390,7 @@ export function Sidebar({
                     </span>
                     {stage ? <StageFigure stage={stage} /> : null}
                   </button>
+                  </Hint>
 
                   {/* The items. Closed means NOT RENDERED — no opacity, no
                       height trick: a link that is invisible but tabbable is

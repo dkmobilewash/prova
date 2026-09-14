@@ -29,17 +29,25 @@ export function ConfirmDeleteButton({
   confirmLabel = "Confirm delete",
   /** Names what is about to go, when the row's own text doesn't. */
   hint,
+  /** What deleting it actually does, on hover and on keyboard focus, BEFORE
+   *  the first click. Required rather than optional: `hintCensus.test.ts`
+   *  fails the build on a two-step delete without one, and a required prop
+   *  says so at the call site instead of at the end of a test run. See the
+   *  prop's own comment on `ConfirmDelete`. */
+  describe,
 }: {
   action: () => Promise<void> | void;
   label?: string;
   confirmLabel?: string;
   hint?: ReactNode;
+  describe: ReactNode;
 }) {
   return (
     <RowActions
       className="flex shrink-0 flex-col items-end gap-1"
       destructive={
         <ConfirmDelete
+          describe={describe}
           pinned="end"
           action={action}
           label={label}

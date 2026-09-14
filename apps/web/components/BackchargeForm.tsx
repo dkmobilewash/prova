@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createBackcharge } from "@/lib/actions";
+import { Hint } from "@/components/Hint";
 import { BackchargeFields } from "@/components/BackchargeFields";
 import type { JobOption } from "@/components/RfiFields";
 import { localToday } from "@/components/localToday";
@@ -41,13 +42,15 @@ export function BackchargeForm({
 
   if (!isOpen) {
     return (
-      <button
-        type="button"
-        onClick={() => setIsOpen(true)}
-        className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500"
-      >
-        Log a backcharge
-      </button>
+      <Hint text="Opens the form. A backcharge is money you expect to recover from another trade or the GC — logging it records the claim here, it does not bill anybody.">
+        <button
+          type="button"
+          onClick={() => setIsOpen(true)}
+          className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
+        >
+          Log a backcharge
+        </button>
+      </Hint>
     );
   }
 
@@ -112,13 +115,15 @@ export function BackchargeForm({
       {error && <p className="text-sm text-red-400">{error}</p>}
 
       <div className="flex gap-2">
-        <button
-          type="submit"
-          disabled={isPending}
-          className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
-        >
-          {isPending ? "Saving…" : "Save backcharge"}
-        </button>
+        <Hint text="Records the claim against this job and gives it a number. Nothing is sent to the GC or the other trade — this is your own paper trail for when it is argued about.">
+          <button
+            type="submit"
+            disabled={isPending}
+            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+          >
+            {isPending ? "Saving…" : "Save backcharge"}
+          </button>
+        </Hint>
         <button
           type="button"
           disabled={isPending}

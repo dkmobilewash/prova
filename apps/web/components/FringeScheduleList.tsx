@@ -136,6 +136,7 @@ export function FringeScheduleList({
                     destructive={
                       canDelete ? (
                         <ConfirmDelete
+                          describe="Removes this fringe rate schedule. Remittances already filed keep the rates they were filed with."
                           label="delete"
                           confirmLabel="confirm delete"
                           cancelLabel="cancel"

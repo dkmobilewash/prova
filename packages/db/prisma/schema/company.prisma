@@ -115,6 +115,30 @@ model User {
   /// capabilities never depend on it.
   jobFunction JobFunction?
 
+  /// The last instant an authenticated request was made by this person —
+  /// written by `recordLastSeen` (apps/web/lib/last-seen-stamp.ts) from
+  /// inside requireCompanyContext, throttled to one write per 15 minutes.
+  ///
+  /// A recorded FACT, not derived state: nothing else in this schema
+  /// implies when somebody last opened the app, so there is nothing for it
+  /// to disagree with. "Active" / "going quiet" / "quiet" ARE derived and
+  /// are computed at render from this column and the clock — see
+  /// apps/web/lib/last-seen.ts. No status flag is stored anywhere, for the
+  /// usual reason: it would be wrong the day after it was written and no
+  /// event would correct it.
+  ///
+  /// Nullable with NO BACKFILL, and the null is load-bearing. `createdAt`
+  /// is not evidence of a visit — a login that was minted and never used
+  /// is precisely the row this column exists to surface — so an existing
+  /// user reads as "never seen" until they make a request, and the
+  /// operator page says out loud that null means "nothing recorded since
+  /// this shipped" rather than "never used the product".
+  ///
+  /// An INSTANT, unlike the UTC-midnight date columns elsewhere in this
+  /// schema, so it renders through `formatInstant` on the reader's
+  /// calendar rather than `formatCalendarDate`.
+  lastSeenAt DateTime?
+
   companyId String
   company   Company  @relation(fields: [companyId], references: [id])
   createdAt DateTime @default(now())
@@ -127,7 +151,12 @@ model User {
   uploadedComplianceDocuments          ComplianceDocument[]
   savedEstimateVersions                EstimateVersion[]
   uploadedContractDocuments            ContractDocument[]
-  timeEntries                          TimeEntry[]
+  timeEntries                          TimeEntry[]             @relation("TimeEntryEmployee")
+  /// Back-relation only: who corrected a logged hour (issue #63). Named
+  /// because TimeEntry now has two relations to User and Prisma cannot
+  /// disambiguate two unnamed ones. Nothing reads a worker's hours through
+  /// this — `timeEntries` above is still the person who WORKED them.
+  correctedTimeEntries                 TimeEntry[]             @relation("TimeEntryCorrectedBy")
   dispatchSlips                        DispatchSlip[]
   uploadedPrevailingWageDeterminations PrevailingWageDetermination[]
   createdRetainageReleases             RetainageRelease[]

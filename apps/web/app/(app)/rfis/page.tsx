@@ -9,6 +9,7 @@ import { RfiRow } from "@/components/RfiRow";
 import { daysBetween, isOpen, isOverdue } from "@/components/rfiLabels";
 import { StatusLine } from "@/components/StatusLine";
 import { rfisStatus } from "@/lib/status-sentences";
+import { jobPickerLabel, toJobOption } from "@/components/jobLabels";
 
 /** Stored at UTC midnight, rendered in UTC — same rule as the safety log
  * and daily field reports. Local rendering shows the previous day to
@@ -35,11 +36,16 @@ export default async function RfisPage({
 
   const today = new Date().toISOString().slice(0, 10);
 
-  const jobs = await prisma.job.findMany({
-    where: { companyId: company.id },
-    orderBy: { createdAt: "desc" },
-    select: { id: true, name: true },
-  });
+  // status + contact, not just the name: issue #65 — fifteen jobs, seven of
+  // them called "Smith kitchen remodel", and this picker showed seven
+  // identical rows. See components/jobLabels.ts.
+  const jobs = (
+    await prisma.job.findMany({
+      where: { companyId: company.id },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, name: true, status: true, contact: { select: { name: true } } },
+    })
+  ).map(toJobOption);
   const activeJob = jobFilter && jobs.some((j) => j.id === jobFilter) ? jobFilter : null;
 
   const rfis = await prisma.rfi.findMany({
@@ -136,7 +142,7 @@ export default async function RfisPage({
           </Link>
           {jobs.map((j) => (
             <Link key={j.id} href={filterHref({ job: j.id })} className={chip(activeJob === j.id)}>
-              {j.name}
+              {jobPickerLabel(j)}
             </Link>
           ))}
         </div>

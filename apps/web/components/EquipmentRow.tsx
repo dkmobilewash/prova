@@ -152,6 +152,7 @@ export function EquipmentRow({ canDelete, item }: EquipmentRowProps) {
         destructive={
           canDelete ? (
             <ConfirmDelete
+              describe="Takes the machine off your equipment list. Its deployment history goes with it."
               pinned="end"
               label="Remove"
               confirmLabel="Confirm remove"

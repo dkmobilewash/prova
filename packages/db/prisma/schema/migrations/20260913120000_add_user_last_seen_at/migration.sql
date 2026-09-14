@@ -1,0 +1,21 @@
+-- Usage visibility: when each person was last actually here.
+--
+-- Additive and nullable, so it is safe against the real data in
+-- ep-little-sea: no default, no backfill, no constraint, no rewrite of
+-- existing rows, nothing dropped. NULL means "no authenticated request has
+-- been recorded for this user since this migration", which is deliberately
+-- NOT the same claim as "this person has never used the product".
+--
+-- Backfilling from `createdAt` was considered and rejected: it would
+-- invent a visit that may never have happened, and the row it would invent
+-- one for — a login that was minted and never used — is exactly the row
+-- this column exists to surface.
+--
+-- No index, and no foreign key. The only reader is the operator page at
+-- /internal/usage, which reads every company and every user on purpose (a
+-- table with tens of rows) and orders them in JavaScript because the
+-- ordering is derived from the clock. An index here would cost something
+-- on every stamp and buy nothing.
+
+-- AlterTable
+ALTER TABLE "User" ADD COLUMN     "lastSeenAt" TIMESTAMP(3);
