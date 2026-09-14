@@ -212,7 +212,9 @@ function detectComplianceDoc(ctx: Ctx): Detection | null {
       /\bcert(?:ificate)?\.?\s*of\s*ins(?:urance)?\b/i,
       /\bW-?9\b/i,
       /\b(?:payment|performance|bid)\s+(?:and\s+\w+\s+)?bonds?\b/i,
-      /\bcontractors?'?\s+licen[sc]e\b/i,
+      // `'?` before `\s+` cannot match "contractor's license" — the
+      // apostrophe is followed by an s, not a space. Caught by review.
+      /\bcontractors?(?:'s)?\s+licen[sc]e\b/i,
       /\bOSHA\s*(?:10|30)\b/i,
     ),
     fromText(
@@ -373,7 +375,35 @@ function detectPhoto(ctx: Ctx): Detection | null {
       note: "A scanned document can arrive as an image, so please confirm this is a site photo.",
     };
   }
-  return { kind: "PHOTO", confidence: "HIGH", evidence: [typeEvidence] };
+  // HIGH requires evidence that this image is a SITE photo, not merely that
+  // it is an image. The mime type is a property every image shares, so on
+  // its own it cannot carry the module's strongest claim — that is the same
+  // over-claiming this file exists to prevent, and an independent review
+  // caught it here: `IMG_4410.jpeg` was returning HIGH with the reason "The
+  // file type is 'image/jpeg'."
+  //
+  // Camera-roll naming (IMG_, DSC_, DJI_, PXL_) or an explicit word is what
+  // a phone actually produces on a jobsite, and it is specific. Anything
+  // else is an image of unknown purpose: MEDIUM, and a person glances.
+  // `[-_ ]?` and not `[-_]?`: this module matches against a copy of the
+  // filename with underscores turned into spaces (because `\b` does not
+  // cross an underscore), so `IMG_8831` arrives here as `IMG 8831`.
+  const cameraNamed =
+    fromFilename(ctx, /\b(?:IMG|DSC|DCIM|PXL|DJI|GOPR)[-_ ]?\d{3,}\b/i) ??
+    fromFilename(ctx, /\b(?:site\s*photo|jobsite|progress\s*photo|field\s*photo)\b/i) ??
+    // A camera-native container is specific in a way `image/jpeg` is not:
+    // phones write .heic and cameras write .dng, and almost nothing else
+    // does. A scan or an emailed logo arrives as jpeg or png.
+    fromFilename(ctx, /\.(?:heic|heif|dng)$/i);
+  if (cameraNamed) {
+    return { kind: "PHOTO", confidence: "HIGH", evidence: [typeEvidence, cameraNamed] };
+  }
+  return {
+    kind: "PHOTO",
+    confidence: "MEDIUM",
+    evidence: [typeEvidence],
+    note: "It is an image, but nothing in the name says it is a site photo — please confirm.",
+  };
 }
 
 /** Priority order. When two families both fire, the more confident one wins
@@ -404,6 +434,12 @@ const NOT_A_JOB = new Set([
   "west", "partition", "framing", "ceiling", "wall", "sheet", "plan", "plans", "detail", "details",
   "week", "january", "february", "march", "april", "june", "july", "august", "september", "october",
   "november", "december", "sept", "report", "notes", "stuff", "new",
+  // Added after review reproduced `Invoice IN-2026 Riverside.pdf` returning
+  // a job hint of "Invoice" and `Paying appliance invoice.pdf` returning
+  // "Paying". A leading capitalised word is only a job when it is not one
+  // of the words every office puts at the front of a filename.
+  "invoice", "invoices", "paying", "payment", "payments", "receipt", "statement",
+  "letter", "memo", "email", "print", "export", "backup", "old", "current",
 ]);
 
 /**
@@ -426,7 +462,13 @@ function jobHintFrom(ctx: Ctx, evidence: Evidence[]): string | null {
   const explicit = firstMatch(ctx.text, /\b(?:project|job)\s*(?:name)?\s*[:#]\s*[^\n\r]{2,60}/i);
   if (explicit) {
     const value = explicit.replace(/^[^:#]*[:#]\s*/, "").trim();
-    if (value.length >= 2) return value;
+    // A BLANK form says `Project: ______________`, and an independent review
+    // reproduced that returning a job hint of "_". Require the value to be
+    // mostly letters and digits; an unfilled field is punctuation.
+    const substantive = value.replace(/[^A-Za-z0-9]/g, "");
+    if (value.length >= 2 && substantive.length >= 2 && substantive.length * 2 >= value.length) {
+      return value;
+    }
   }
 
   const quoted = evidence.map((e) => e.quote.toLowerCase());
@@ -458,7 +500,7 @@ function jobHintFrom(ctx: Ctx, evidence: Evidence[]): string | null {
  * text, because "Request for Information No. 42" in a document header
  * identifies THAT document and nothing else.
  */
-function revisionHintFrom(ctx: Ctx): string | null {
+function revisionHintFrom(ctx: Ctx, isRfi: boolean): string | null {
   const inName = (re: RegExp): string | null => ctx.matchable.match(re)?.[1] ?? null;
   const inAny = (re: RegExp): string | null =>
     inName(re) ?? (ctx.text ? (ctx.text.match(re)?.[1] ?? null) : null);
@@ -472,9 +514,17 @@ function revisionHintFrom(ctx: Ctx): string | null {
   const bulletin = inName(/\bbulletins?\s*-?\s*#?\s*(\d{1,3})\b/i);
   if (bulletin) return `Bulletin ${Number(bulletin)}`;
 
-  const rfi =
-    inAny(/\bRFI\s*-?\s*#?\s*(\d{1,4})\b/i) ??
-    inAny(/\brequest\s+for\s+information\s*(?:no\.?|#)?\s*(\d{1,4})\b/i);
+  // The RFI number is the ONE marker allowed out of body text, because
+  // "Request for Information No. 42" in a header identifies that document
+  // and nothing else. But it may only be applied when an RFI is what we
+  // actually detected: an independent review reproduced a drawing whose
+  // body mentioned an RFI coming back with that RFI's number as its own
+  // revision, at HIGH confidence. A marker read from prose must never
+  // attach itself to a different document.
+  const rfi = isRfi
+    ? inAny(/\bRFI\s*-?\s*#?\s*(\d{1,4})\b/i) ??
+      inAny(/\brequest\s+for\s+information\s*(?:no\.?|#)?\s*(\d{1,4})\b/i)
+    : inName(/\bRFI\s*-?\s*#?\s*(\d{1,4})\b/i);
   if (rfi) return `RFI ${rfi}`;
 
   const sub = inName(/\bSUB[-_ ]?(\d{1,4})\b/i);
@@ -565,7 +615,7 @@ export function classifyDocument(input: {
       confidence: "LOW",
       reason: NOTHING_TO_GO_ON,
       jobHint: jobHintFrom(ctx, []),
-      revisionHint: revisionHintFrom(ctx),
+      revisionHint: revisionHintFrom(ctx, false),
     };
   }
 
@@ -588,6 +638,6 @@ export function classifyDocument(input: {
     confidence,
     reason: reasonFor({ ...winner, confidence }, rival),
     jobHint: jobHintFrom(ctx, evidence),
-    revisionHint: revisionHintFrom(ctx),
+    revisionHint: revisionHintFrom(ctx, winner.kind === "RFI_RESPONSE"),
   };
 }

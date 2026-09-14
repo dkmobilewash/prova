@@ -428,4 +428,73 @@ describe("the reasons a person actually reads", () => {
     expect(r.jobHint).toBeNull();
     expect(r.revisionHint).toBeNull();
   });
+
+  // -------------------------------------------------------------------
+  // Five defects an independent review reproduced on 2026-09-13. Each one
+  // is here because the module's own stated rules forbid it, and each was
+  // live before these tests existed.
+  // -------------------------------------------------------------------
+  describe("review findings, pinned", () => {
+    it("never claims HIGH on the mime type alone — every image shares it", () => {
+      const r = classifyDocument({ filename: "attachment.jpg", mimeType: "image/jpeg", sizeBytes: 90_000 });
+      expect(r.kind).toBe("PHOTO");
+      expect(r.confidence).not.toBe("HIGH");
+      expect(r.reason.toLowerCase()).toContain("confirm");
+    });
+
+    it("still claims HIGH when the NAME says camera, not merely image", () => {
+      for (const name of ["IMG_8831.jpeg", "PXL_20260906_181233.jpg", "level 2 ceiling grid.heic"]) {
+        const r = classifyDocument({ filename: name, mimeType: "image/jpeg", sizeBytes: 90_000 });
+        expect(r.kind, name).toBe("PHOTO");
+        expect(r.confidence, name).toBe("HIGH");
+      }
+    });
+
+    it("reads no job name out of a BLANK form field", () => {
+      const r = classifyDocument({
+        filename: "scan_0091.pdf",
+        mimeType: "application/pdf",
+        sizeBytes: 40_000,
+        textPreview: "U.S. Department of Labor  Payroll  Form WH-347\nProject: ______________________\n",
+      });
+      expect(r.kind).toBe("CERTIFIED_PAYROLL");
+      expect(r.jobHint).toBeNull();
+    });
+
+    it("does not hang an RFI number read from prose onto a document that is not an RFI", () => {
+      const r = classifyDocument({
+        filename: "A-201 Rev4.pdf",
+        mimeType: "application/pdf",
+        sizeBytes: 400_000,
+        textPreview: "Issued in response to Request for Information No. 42 from the architect.",
+      });
+      // The kind is genuinely ambiguous here and the module says so rather
+      // than picking: MEDIUM, with BOTH readings named in the reason. That
+      // is the designed behaviour, not a defect.
+      expect(r.confidence).toBe("MEDIUM");
+      expect(r.reason).toContain("A-201");
+      expect(r.reason.toLowerCase()).toContain("please confirm");
+      // The defect: the marker must be the document's OWN revision, off its
+      // own filename — never the RFI number lifted out of somebody's prose.
+      expect(r.revisionHint).toBe("Rev 4");
+    });
+
+    it("matches the possessive spelling of a contractor's licence", () => {
+      const r = classifyDocument({
+        filename: "Nevada contractor's license C-4.pdf",
+        mimeType: "application/pdf",
+        sizeBytes: 30_000,
+      });
+      expect(r.kind).toBe("COMPLIANCE_DOC");
+      expect(r.confidence).toBe("HIGH");
+    });
+
+    it("does not offer a document word as a job name", () => {
+      for (const name of ["Invoice IN-2026 Riverside.pdf", "Paying appliance invoice.pdf"]) {
+        const r = classifyDocument({ filename: name, mimeType: "application/pdf", sizeBytes: 20_000 });
+        expect(r.jobHint, name).not.toBe("Invoice");
+        expect(r.jobHint, name).not.toBe("Paying");
+      }
+    });
+  });
 });
