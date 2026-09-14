@@ -9,7 +9,13 @@ Vercel deployment and repo settings). Each drives their own agent.
 
 ## The prime directive: verify by result, never by claim
 
-- Merged = `git log main..origin/<branch>` prints nothing. A PR exists =
+- Merged = `git log main..origin/<branch>` prints nothing — that is the
+  proof for a MERGE commit. This repo squashes PRs, which writes the
+  changes as a new commit with a new SHA, so the branch's original commit
+  never becomes an ancestor and that command still prints it after a
+  successful squash. Proof for a squash merge = `git log --oneline
+  origin/main` names the squash commit (PR title + `(#NNN)`) and
+  `git show <sha> --stat` lists the same files. A PR exists =
   its ref is in `git ls-remote origin 'refs/pull/*/head'`. Migrations
   exist = `prisma migrate status` NAMES them (it has printed "No
   migration found" and "up to date" in the same run).
@@ -131,8 +137,12 @@ scrollback gets broken by whoever didn't scroll far enough.
   `main` for eight hours, with every check green the whole time. #13
   merged at its then-head and left two commits behind, one a live
   money-display bug. So: delete the branch when you merge a stacked PR,
-  and after ANY merge run `git log origin/main..<branch>` — empty output
-  is the only proof it landed. "The PR says Merged" is not.
+  and after ANY merge confirm it landed. For a merge commit, `git log
+  origin/main..<branch>` is empty. For a squash merge (the default here)
+  the branch's commit is rewritten under a new SHA, so that command still
+  prints it — instead confirm `git log --oneline origin/main` names the
+  squash commit (PR title + `(#NNN)`) and `git show <sha> --stat` lists
+  the same files. "The PR says Merged" is not.
 - Scripts start with `set -e` AND `set -o pipefail` (a failed build
   piped to `tee` printed ALL GREEN once), and clear a stale index lock
   with `rm -f "$(git rev-parse --git-path index.lock)"`.
