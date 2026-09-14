@@ -43,7 +43,24 @@ import {
 
 const CONCURRENCY = 4;
 
-type Outcome = { name: string; ok: boolean; message?: string };
+/**
+ * One file's fate. `key` is the REACT key and exists because `name` is not
+ * unique: a dropped folder is walked recursively, so `A/COI.pdf` and
+ * `B/COI.pdf` both arrive as "COI.pdf" — which is not a corner case here but
+ * the ordinary shape of a GC's transmittal folder, where each job or package
+ * is a subfolder using the same handful of document names.
+ *
+ * Two React children with the same key inside one list is not a warning you
+ * can ignore: React reconciles by key, so the second row can inherit the
+ * first's DOM, and the failure it renders is the wrong file's. On a list
+ * whose entire job is naming the files that did NOT make it, that is the
+ * worst possible thing to get wrong.
+ *
+ * The index is the key rather than a hash of the name: this list is built
+ * once per drop and never reordered or filtered, so an index is stable for
+ * exactly as long as the list exists.
+ */
+type Outcome = { key: string; name: string; ok: boolean; message?: string };
 
 /** Every file under a dropped directory, depth-first.
  *
@@ -139,9 +156,11 @@ export function IntakeDropZone({ companyId }: { companyId: string }) {
     let done = 0;
     setProgress({ done: 0, total: files.length });
 
-    const one = async (file: File) => {
-      const record = (outcome: Outcome) => {
-        results.push(outcome);
+    const one = async (file: File, index: number) => {
+      // The key is supplied HERE rather than at each of the five call sites
+      // below, so a new outcome cannot be added without one.
+      const record = (outcome: Omit<Outcome, "key">) => {
+        results.push({ ...outcome, key: String(index) });
         done += 1;
         setProgress({ done, total: files.length });
       };
@@ -211,7 +230,7 @@ export function IntakeDropZone({ companyId }: { companyId: string }) {
           const index = next;
           next += 1;
           if (index >= files.length) return;
-          await one(files[index]);
+          await one(files[index], index);
         }
       }),
     );
@@ -318,7 +337,7 @@ export function IntakeDropZone({ companyId }: { companyId: string }) {
           {failures.length > 0 && (
             <ul className="mt-1 space-y-0.5 text-xs text-tag-rose-ink">
               {failures.map((failure) => (
-                <li key={failure.name}>
+                <li key={failure.key}>
                   {failure.name} — {failure.message}
                 </li>
               ))}

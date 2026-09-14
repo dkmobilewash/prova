@@ -864,6 +864,54 @@ scrollback gets broken by whoever didn't scroll far enough.
   It costs 56px of row height while armed and makes both buttons full width,
   at phone widths only.
 
+  **AND A THIRD AXIS NOBODY HAD MEASURED: THE LABEL'S OWN WIDTH.** Added
+  2026-09-14. Both halves above are about ORDER — which end of the cluster
+  Cancel goes to. Order is not the only way the confirm ends up under the
+  delete's pixel, and the other way passes every check in this repo.
+
+  A LONG delete label makes the armed pair NARROWER than the button it
+  replaces, so the pair stops covering the same span and the confirm drifts
+  under where the label used to be. #265 shipped `label="Remove this
+  estimate"` on `ConfirmDeleteButton` — 147px against the 71px of an
+  ordinary "Remove". Probed in the running app: armed, the element at the
+  exact centre of where that button had been was **"Remove it"**, the
+  confirm. The order was right the whole time (Cancel last, right-pinned,
+  exactly as this entry says), which is precisely why nothing caught it.
+
+  | label | delete width | at its old centre, once armed |
+  | --- | --- | --- |
+  | `Remove this estimate` | 147px | **Remove it** — the confirm |
+  | `Remove` | 71px | Cancel |
+
+  So the rule needs a second sentence: **Cancel inherits the delete pixel,
+  and the delete has to be narrow enough for the pair to reach it.** The
+  practical form is a short label — what is being removed belongs in
+  `describe` (which is a tooltip and costs no width) and in the row's own
+  text, never in the button.
+
+  `rowActionsCensus.test.ts` caps a delete label at 12 characters. That is a
+  character count standing in for a pixel width and the test says so: nothing
+  here can measure layout — happy-dom returns zeros from
+  `getBoundingClientRect`, which is why every number in this entry comes from
+  real Chromium. The ceiling is the longest label the app ACTUALLY uses
+  rather than a round number (61 sites; "Delete draft" at 12 is the longest),
+  so it cannot quietly grow to admit the next offender.
+
+- **`pnpm build` AND THE DEV SERVER SHARE `.next`, AND THE BUILD WINS.**
+  Both write `apps/web/.next`. Run a build while `next dev` is serving and
+  the dev server starts throwing `Cannot find module …
+  segment-explorer-node.js#SegmentViewNode` and
+  `__webpack_modules__[moduleId] is not a function` on every route — a 500
+  that looks like the branch is broken and is not. It cost a debugging
+  detour on 2026-09-14, and it fires on the ordinary workflow of verifying a
+  change and then clicking it.
+
+  The fix is `rm -rf apps/web/.next` and restart the dev server. There is
+  nothing to repair in the diff. If a dev server that was working starts
+  500ing on EVERY route right after a `build`, `test` or `preflight` run,
+  this is it — check for that module name in the server log before reading
+  any code.
+
 - **A watcher whose needle is ALREADY ON THE PAGE cannot fail, and it will
   report a fast, confident, wrong number.** Born from the #61 capture
   above, and the same shape as every other vacuous test in this file — it

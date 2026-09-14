@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   INTAKE_MAX_FILES,
   INTAKE_MAX_FILE_BYTES,
+  intakeFileName,
   intakeUploadPathname,
   isAllowedIntakeType,
   isIntakeBlobUrl,
@@ -109,5 +110,38 @@ describe("the URL that comes back", () => {
 
   it("refuses a double slash, which names a different blob key", () => {
     expect(isIntakeBlobUrl(url(`/document-intake/${COMPANY}/x.pdf`), COMPANY)).toBe(false);
+  });
+});
+
+describe("a dropped folder repeats filenames, and the UI must survive it", () => {
+  /**
+   * NOT a hypothetical. `IntakeDropZone` walks a dropped folder recursively,
+   * so `A/COI.pdf` and `B/COI.pdf` both arrive as a File named "COI.pdf" —
+   * and that is the ORDINARY shape of a GC's transmittal folder, where each
+   * job or package is a subfolder using the same handful of document names.
+   *
+   * The failure list keyed its rows on `file.name`. Two React children with
+   * the same key in one list is not a warning to wave through: React
+   * reconciles by key, so the second row can inherit the first's DOM and
+   * render the wrong file's failure — on the one list whose entire job is
+   * naming the files that did NOT make it.
+   *
+   * This asserts the PROPERTY that makes the fix work rather than the fix:
+   * the sanitised store pathname is not unique per file either, so nothing
+   * derived from the name can be the key. The component keys on the file's
+   * index within the drop.
+   */
+  it("gives two same-named files in different subfolders the same pathname", () => {
+    const companyId = "cmp_1234567890";
+    const a = intakeUploadPathname(companyId, "COI.pdf");
+    const b = intakeUploadPathname(companyId, "COI.pdf");
+    expect(a).not.toBeNull();
+    expect(a).toBe(b);
+  });
+
+  it("sanitises two different names to the same thing, which is the same hazard", () => {
+    // The name is sanitised before it is a pathname, so names that differ in
+    // the browser can collide here: another reason a name cannot be a key.
+    expect(intakeFileName("pay app (1).pdf")).toBe(intakeFileName("pay app  1 .pdf"));
   });
 });
