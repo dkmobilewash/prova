@@ -157,6 +157,42 @@ group("asserting the named target", () => {
     expect(wrongTarget("   ", production)).toBeNull();
   });
 
+  // Issue #182. The other half of the opt-in above, and the opposite
+  // decision: a name WAS given, so a check was promised. Returning null
+  // here — which is what it used to do — answers "no problem" to a
+  // question it never got to ask, and that reads exactly like a pass.
+  it("is fatal when a target is named but nothing can be read", () => {
+    const problem = wrongTarget("ep-patient-lake", null, null);
+    expect(problem?.level).toBe("fatal");
+    expect(problem?.message).toContain("NO connection string could be read");
+  });
+
+  it("is fatal when a target is named and no target is passed at all", () => {
+    expect(wrongTarget("ep-patient-lake")?.level).toBe("fatal");
+  });
+
+  it("says the assertion did not run, not that the target was right", () => {
+    // The distinction this whole issue is about. An operator reading a log
+    // must not be able to mistake "could not check" for "checked, fine".
+    const message = wrongTarget("ep-patient-lake", null)?.message ?? "";
+    expect(message).toContain("not the same as the target being correct");
+    expect(message).toContain("Nothing has been applied");
+    expect(message).toContain("ep-patient-lake");
+  });
+
+  it("returns null ONLY for the deliberate opt-in, never for an empty check", () => {
+    // Stated as one assertion because the two null-returning paths looked
+    // identical from the call site and one of them was a defect: the guard
+    // that cannot fail and the guard that passed returned the same value.
+    const nulls = [
+      wrongTarget(undefined, null),
+      wrongTarget("", null),
+      wrongTarget("ep-patient-lake", demo, demoDirect),
+    ].filter((p) => p === null);
+    expect(nulls).toHaveLength(3);
+    expect(wrongTarget("ep-patient-lake", null)).not.toBeNull();
+  });
+
   it("does not leak the credential into the refusal", () => {
     const problem = wrongTarget("ep-patient-lake", describeTarget(OTHER_DIRECT));
     expect(JSON.stringify(problem)).not.toContain("hunter2");
