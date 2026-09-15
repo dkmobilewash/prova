@@ -3,7 +3,7 @@ import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { anthropicIsConfigured, ASK_DEFAULT_MODEL } from "@prova/integrations";
 import { auditSummary, listAskProposals, OUTCOME_LABEL, type AuditOutcome } from "@/lib/ask/audit";
-import { ASK_LIMITS, usageSummary } from "@/lib/ask/usage";
+import { ASK_LIMITS, MIGRATE_COMMAND, usageSummary } from "@/lib/ask/usage";
 import { AssistantConnectionCheck } from "@/components/AssistantConnectionCheck";
 import { StatusLine } from "@/components/StatusLine";
 import { assistantStatus } from "@/lib/status-sentences";
@@ -90,15 +90,32 @@ export default async function AssistantAuditPage() {
 
       {/* Counted from AskUsage rows, the same rows the limits are counted
           from, so the figures here and the refusal a person sees at the
-          limit cannot disagree. */}
+          limit cannot disagree.
+
+          When those rows cannot be read the figures are NOT shown (#257).
+          Zero questions is what a quiet month looks like, so printing the
+          zeros would report a database one migration behind as good news
+          — and this is the page somebody opens to find out why the box is
+          behaving oddly, which makes it the worst place in the app to be
+          reassuring by accident. */}
       <section className="mb-6 rounded-lg border border-slate-800 bg-slate-900 p-4" data-ask="usage">
         <h2 className="mb-1 text-sm font-semibold text-slate-100">Usage, last 30 days</h2>
-        <p className="mb-3 text-sm text-slate-400">
-          {usage.questions} questions sent to the model · {usage.inputTokens.toLocaleString("en-US")} tokens in,{" "}
-          {usage.outputTokens.toLocaleString("en-US")} out. Limits: {ASK_LIMITS.perPersonPerHour} questions per person per hour,{" "}
-          {ASK_LIMITS.perCompanyPerDay} per company per day; past either, the box says so and sends nothing to the model.
-        </p>
-        {usage.byPerson.length > 0 && (
+        {usage.readable ? (
+          <p className="mb-3 text-sm text-slate-400">
+            {usage.questions} questions sent to the model · {usage.inputTokens.toLocaleString("en-US")} tokens in,{" "}
+            {usage.outputTokens.toLocaleString("en-US")} out. Limits: {ASK_LIMITS.perPersonPerHour} questions per person per hour,{" "}
+            {ASK_LIMITS.perCompanyPerDay} per company per day; past either, the box says so and sends nothing to the model.
+          </p>
+        ) : (
+          <p className="mb-3 text-sm text-red-300" data-ask="usage-unreadable">
+            Usage can&apos;t be read on this deployment — the <code>AskUsage</code> table is missing or unreadable,
+            which means this database is behind the code. The box still answers, but the{" "}
+            {ASK_LIMITS.perPersonPerHour}-per-person-per-hour and {ASK_LIMITS.perCompanyPerDay}-per-company-per-day
+            limits are <strong>not being enforced</strong> until it is fixed. Run <code>{MIGRATE_COMMAND}</code> against
+            this database — or, on a preview, the <strong>Migrate demo database</strong> workflow.
+          </p>
+        )}
+        {usage.readable && usage.byPerson.length > 0 && (
           <ul className="divide-y divide-slate-800 text-sm">
             {usage.byPerson.map((row) => (
               <li key={row.who} className="flex justify-between gap-3 py-1">
