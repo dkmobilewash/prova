@@ -65,3 +65,43 @@ export type Media = {
   capturedLongitude: number | null;
   capturedAccuracyMeters: number | null;
 };
+
+export type ToolboxTalk = {
+  id: string;
+  jobId: string | null;
+  heldOn: string;
+  topic: string;
+  presenter: string | null;
+  attendees: string | null;
+  notes: string | null;
+};
+
+export type IncidentClassification =
+  | "INJURY"
+  | "SKIN_DISORDER"
+  | "RESPIRATORY_CONDITION"
+  | "POISONING"
+  | "HEARING_LOSS"
+  | "OTHER_ILLNESS";
+
+export type IncidentOutcome =
+  | "DEATH"
+  | "DAYS_AWAY"
+  | "RESTRICTED_OR_TRANSFER"
+  | "OTHER_RECORDABLE"
+  | "FIRST_AID_ONLY";
+
+export type SafetyIncident = {
+  id: string;
+  caseNumber: number;
+  caseYear: number;
+  occurredAt: string;
+  employeeName: string;
+  jobTitle: string | null;
+  location: string | null;
+  description: string;
+  classification: IncidentClassification;
+  outcome: IncidentOutcome;
+  daysAway: number | null;
+  daysRestricted: number | null;
+};

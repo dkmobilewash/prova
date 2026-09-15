@@ -3,6 +3,8 @@ import type {
   FieldReportRow,
   Job,
   Media,
+  SafetyIncident,
+  ToolboxTalk,
   UpdateFieldReportInput,
 } from "./types";
 
@@ -59,6 +61,44 @@ export async function updateFieldReport(
 
 export async function listJobs(token: string): Promise<Job[]> {
   return request(`/api/v1/jobs`, { token });
+}
+
+export async function listToolboxTalks(jobId: string, token: string): Promise<ToolboxTalk[]> {
+  return request(`/api/v1/jobs/${encodeURIComponent(jobId)}/toolbox-talks`, { token });
+}
+
+export async function createToolboxTalk(
+  jobId: string,
+  input: { topic: string; heldOn: string; presenter?: string; attendees?: string; notes?: string },
+  token: string,
+): Promise<ToolboxTalk> {
+  return request(`/api/v1/jobs/${encodeURIComponent(jobId)}/toolbox-talks`, {
+    method: "POST",
+    token,
+    body: input,
+  });
+}
+
+export async function listIncidents(jobId: string, token: string): Promise<SafetyIncident[]> {
+  return request(`/api/v1/jobs/${encodeURIComponent(jobId)}/incidents`, { token });
+}
+
+export async function createIncident(
+  jobId: string,
+  input: {
+    employeeName: string;
+    description: string;
+    occurredAt: string;
+    classification: string;
+    outcome: string;
+  },
+  token: string,
+): Promise<SafetyIncident> {
+  return request(`/api/v1/jobs/${encodeURIComponent(jobId)}/incidents`, {
+    method: "POST",
+    token,
+    body: input,
+  });
 }
 
 export async function listMedia(jobId: string, token: string): Promise<Media[]> {
