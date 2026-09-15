@@ -50,6 +50,8 @@ let ownerUserId = "";
 let otherUserId = "";
 let jobId = "";
 let mediaId = "";
+let videoId = "";
+let voiceId = "";
 let otherMediaId = "";
 
 function arrow(over: Record<string, unknown> = {}) {
@@ -78,7 +80,32 @@ async function makeCompany(name: string, email: string) {
       capturedByUserId: user.id,
     },
   });
-  return { company, user, job, media };
+  // A video and a voice note on the same job, for the kind guard. Real
+  // content types off the allowlist rather than invented ones, so the test
+  // exercises what an upload can actually produce.
+  const video = await prisma.jobMedia.create({
+    data: {
+      companyId: company.id,
+      jobId: job.id,
+      blobUrl: `https://public.blob.vercel-storage.com/job-media/${job.id}/walk.mp4`,
+      contentType: "video/mp4",
+      byteSize: 400_000,
+      capturedAt: new Date("2026-09-10T12:05:00.000Z"),
+      capturedByUserId: user.id,
+    },
+  });
+  const voice = await prisma.jobMedia.create({
+    data: {
+      companyId: company.id,
+      jobId: job.id,
+      blobUrl: `https://public.blob.vercel-storage.com/job-media/${job.id}/note.m4a`,
+      contentType: "audio/mp4",
+      byteSize: 90_000,
+      capturedAt: new Date("2026-09-10T12:10:00.000Z"),
+      capturedByUserId: user.id,
+    },
+  });
+  return { company, user, job, media, video, voice };
 }
 
 describe("marks on a site photo", () => {
@@ -88,6 +115,8 @@ describe("marks on a site photo", () => {
     ownerUserId = mine.user.id;
     jobId = mine.job.id;
     mediaId = mine.media.id;
+    videoId = mine.video.id;
+    voiceId = mine.voice.id;
 
     const theirs = await makeCompany("Other Drywall", OTHER);
     otherCompanyId = theirs.company.id;
@@ -110,7 +139,54 @@ describe("marks on a site photo", () => {
 
   beforeEach(async () => {
     context = { id: ownerUserId, companyId, email: OWNER, role: "OWNER", jobFunction: null };
-    await prisma.jobMediaAnnotation.deleteMany({ where: { mediaId: { in: [mediaId, otherMediaId] } } });
+    await prisma.jobMediaAnnotation.deleteMany({
+      where: { mediaId: { in: [mediaId, videoId, voiceId, otherMediaId] } },
+    });
+  });
+
+  /* #275. The UI hides the mark-up button on anything that is not a photo,
+   * and until this guard that was the ONLY thing stopping a set of arrows
+   * being filed against a voice note — courtesy where every other guard in
+   * the action is enforcement.
+   *
+   * THE ROW COUNT IS THE ASSERTION, not the returned refusal. An action can
+   * return { ok: false } and have written anyway; that is the failure worth
+   * catching here, and checking only the sentence would not see it. */
+  it("refuses a video, and writes nothing", async () => {
+    const result = await saveJobMediaAnnotations(videoId, [arrow()]);
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.error).toContain("video");
+
+    expect(await prisma.jobMediaAnnotation.count({ where: { mediaId: videoId } })).toBe(0);
+  });
+
+  it("refuses a voice note, and writes nothing", async () => {
+    const result = await saveJobMediaAnnotations(voiceId, [arrow()]);
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.error).toContain("voice note");
+
+    expect(await prisma.jobMediaAnnotation.count({ where: { mediaId: voiceId } })).toBe(0);
+  });
+
+  /* The kind is refused BEFORE the cap, so a caller posting far too many
+   * marks at a video is told what is actually wrong with the request. The
+   * cap's own message names a number; this one must not. */
+  it("says it is a video rather than counting the marks, when both are wrong", async () => {
+    const tooMany = Array.from({ length: 40 }, () => arrow());
+    const result = await saveJobMediaAnnotations(videoId, tooMany);
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.error).toContain("video");
+    expect(result.ok === false && result.error).not.toMatch(/\d/);
+
+    expect(await prisma.jobMediaAnnotation.count({ where: { mediaId: videoId } })).toBe(0);
+  });
+
+  /* The control. Without it the three cases above would still pass if the
+   * guard refused EVERYTHING, which is the vacuous shape this repo keeps
+   * finding — a check that cannot distinguish a pass from a total refusal. */
+  it("still accepts a photograph, so the guard is not refusing everything", async () => {
+    expect(await saveJobMediaAnnotations(mediaId, [arrow()])).toEqual({ ok: true });
+    expect(await prisma.jobMediaAnnotation.count({ where: { mediaId } })).toBe(1);
   });
 
   it("saves what was drawn, and hands it back to the gallery", async () => {
@@ -121,7 +197,14 @@ describe("marks on a site photo", () => {
       ]),
     ).toEqual({ ok: true });
 
-    const [card] = await loadJobMedia({ companyId, jobId, take: 10 }, "UTC");
+    // Found by id, not taken as the first card. The job also holds a video
+    // and a voice note (the #275 fixtures) and the gallery is newest-first,
+    // so a positional read here silently asserted about whichever file
+    // happened to sort first — which is how adding those two fixtures broke
+    // this test rather than the code it covers.
+    const cards = await loadJobMedia({ companyId, jobId, take: 10 }, "UTC");
+    const card = cards.find((c) => c.id === mediaId)!;
+    expect(card).toBeDefined();
     expect(card.marks).toHaveLength(2);
     expect(card.marks.map((m) => m.kind).sort()).toEqual(["ARROW", "TEXT"]);
     // Trimmed on the way in, so no reader has to trim it again.
