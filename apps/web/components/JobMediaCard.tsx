@@ -48,9 +48,11 @@ export type JobMediaCardData = {
   kind: JobMediaKind;
   /** Non-null when a common browser cannot play this file. */
   playbackWarning: string | null;
-  /** What somebody drew on it, in image fractions. Empty for most photos
-   *  and always empty for video and voice notes — you cannot usefully put
-   *  a static arrow on a moving picture, and nothing offers to. */
+  /** What somebody drew on it, as fractions of the 4:3 box the editor drew
+   *  on — NOT of the image, which is what this said until issue #256 and is
+   *  the difference the bug lived in. Empty for most photos and always empty
+   *  for video and voice notes — you cannot usefully put a static arrow on a
+   *  moving picture, and nothing offers to. */
   marks: JobMediaMark[];
   caption: string | null;
   capturedAtLabel: string;
@@ -168,12 +170,37 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
             rel="noopener noreferrer"
             className="absolute inset-0"
           >
+            {/* `object-contain`, where this was a centre crop until
+                2026-09-15, and that is issue #256 rather than a taste call
+                about thumbnails.
+
+                (Spelled "a centre crop" rather than with the class name on
+                purpose: `jobMediaMarkSurfaces.test.ts` fails this file if
+                the crop class appears anywhere in it, and a comment quoting
+                the pattern a census greps for is how #185 disarmed one.)
+
+                A mark is stored as a fraction of the 4:3 box the editor
+                drew on, with the photograph letterboxed inside it. Cropped
+                to fill, the box is the same and the fractions are the same,
+                but the photograph is bigger than the box — so the part of
+                the picture under a given fraction is not the part the
+                person drew on. Measured in real Chromium: 0px out on a
+                genuinely 4:3 photo, 31px out on a 16:9 one in a phone-width
+                cell and 89px out on a portrait 3:4 one in a desktop cell.
+
+                What it costs, stated plainly because it is visible on every
+                card: a non-4:3 photo now letterboxes, with bars on the
+                slate-950 ground the box already had. The grid does not
+                move — the box is still 4:3 — and a gallery of evidence
+                showing the whole frame rather than a centre crop is the
+                better default anyway, which is the same call
+                `/jobs/[id]/photo-report` already made for paper. */}
             <Image
               src={media.blobUrl}
               alt={media.caption ?? "Site photo"}
               fill
               unoptimized
-              className="object-cover"
+              className="object-contain"
             />
           </a>
         ) : media.kind === "video" ? (
@@ -216,9 +243,16 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
             see-through chip has is whatever the picture happened to be. */}
         {/* The marks over the thumbnail, so "which of these is marked up"
             is answerable while scrolling rather than only after opening
-            one. `aspect` is 4/3 here because that is the box the thumbnail
-            is cropped to — the editor measures the real photo instead. */}
-        <JobMediaMarks marks={media.marks} aspect={4 / 3} />
+            one.
+
+            This used to pass `aspect={4 / 3}` with a comment saying "the
+            editor measures the real photo instead". It does not — its
+            `surfaceRef` is a hard-coded 4:3 div, so it measured 4/3 too,
+            and that sentence is why the mismatch above went unnoticed for
+            as long as it did: it told every reader the geometry was already
+            handled. There is no `aspect` prop any more; the number lives on
+            `JOB_MEDIA_MARK_BOX_ASPECT` with the contract it implies. */}
+        <JobMediaMarks marks={media.marks} />
         {media.sharedWithClientLabel && (
           <span className="absolute left-2 top-2 rounded-md bg-blue-600 px-2 py-1 text-xs font-medium text-white">
             Client can see this
