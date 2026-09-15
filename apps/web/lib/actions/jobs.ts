@@ -7,6 +7,7 @@ import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { documentDisplayFileName, documentUrlProblem } from "@/lib/document-uploads";
 import { Prisma, prisma } from "@prova/db";
+import { issueContractDocumentVersion } from "@/lib/billing/contract-document-version";
 import { createEstimateJob } from "@/lib/estimating/create-job";
 import { draftLinesFromScope } from "@/lib/estimating/draft-lines";
 import { END_BEFORE_START } from "@/lib/estimating/job-schedule";
@@ -384,21 +385,32 @@ export async function recordExecutedSubcontract(
 
   const note = String(formData.get("note") ?? "").trim();
 
-  const lastVersion = await prisma.contractDocument.findFirst({
-    where: { jobId },
-    orderBy: { versionNumber: "desc" },
-  });
-
-  await prisma.contractDocument.create({
-    data: {
-      jobId,
-      versionNumber: (lastVersion?.versionNumber ?? 0) + 1,
-      fileUrl,
-      fileName,
-      note: note || null,
-      executedSignedDate: signedDate.value,
-      uploadedByUserId: context.id,
-    },
+  // THE VERSION NUMBER COMES FROM THE COUNTER, in the same transaction as
+  // the insert — issue #280. This read `MAX(versionNumber) + 1` off the
+  // surviving rows while `uploadContractDocument` used
+  // `ContractDocumentVersionCounter`, so one table had two writers with two
+  // numbering schemes and the counter only ever heard from one of them.
+  //
+  // The cost was not a stale number, it was a permanent outage per job. A
+  // document written this way left the counter behind the rows, so the next
+  // ordinary upload issued a number that already existed and violated
+  // @@unique([jobId, versionNumber]); the bump and the insert being one
+  // transaction meant the failure rolled the bump back too, so every retry
+  // failed identically for ever. On a fresh job one click did it — the GC
+  // sends the subcontract signed, this records it as version 1 with no
+  // counter row, and every later amendment upload on that job was dead.
+  await prisma.$transaction(async (tx) => {
+    await tx.contractDocument.create({
+      data: {
+        jobId,
+        versionNumber: await issueContractDocumentVersion(tx, jobId),
+        fileUrl,
+        fileName,
+        note: note || null,
+        executedSignedDate: signedDate.value,
+        uploadedByUserId: context.id,
+      },
+    });
   });
 
   revalidatePath(`/jobs/${jobId}`);
