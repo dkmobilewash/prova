@@ -110,13 +110,13 @@ export default async function RfisPage({
   // taps to reach their own job's RFIs.
   const chip = (active: boolean) =>
     `inline-flex min-h-11 items-center rounded-md border px-3 py-2 text-sm ${
-      active ? "border-blue-500 text-blue-400" : "border-slate-700 text-slate-300 hover:border-slate-500"
+      active ? "border-brand text-link" : "border-line-card text-ink-label hover:bg-neutral-800"
     }`;
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-slate-100">RFIs</h1>
-      <p className="mb-6 text-sm text-slate-400">
+      <h1 className="mb-2 text-xl font-semibold text-ink">RFIs</h1>
+      <p className="mb-6 text-sm text-ink-body">
         Questions to the GC or architect, and what came back. This is evidence before it&apos;s a
         to-do list: an RFI sent on a date and answered three weeks later is the documentation behind a
         delay claim, and &ldquo;we asked and nobody got back to us&rdquo; is worth nothing without the
@@ -149,24 +149,24 @@ export default async function RfisPage({
       )}
 
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-slate-300">
+        <h2 className="text-sm font-semibold text-ink-label">
           {rows.length} {showClosed ? "total" : "in play"}
         </h2>
         <Link
           href={filterHref({ show: showClosed ? null : "all" })}
-          className="inline-flex min-h-11 items-center text-sm text-blue-400"
+          className="inline-flex min-h-11 items-center text-sm text-link"
         >
           {showClosed ? "Hide closed" : "Show closed"}
         </Link>
       </div>
 
       {rows.length === 0 ? (
-        <p className="text-slate-400">
+        <p className="text-ink-body">
           Nothing here yet. Raise one the day the question comes up rather than the day it becomes a
           problem — the gap between those two dates is the whole value of the log.
         </p>
       ) : (
-        <ul className="divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900">
+        <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
           {rows.map((rfi) => (
             <RfiRow
               key={rfi.id}

@@ -1,8 +1,8 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
-import { createPunchListItem, settleAskDraft } from "@/lib/actions";
-import type { PunchDraft } from "@/lib/ask/drafts";
+import Link from "next/link";
+import { createPunchListItem } from "@/lib/actions";
 import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
 import { jobPickerLabel, type JobOption } from "@/components/jobLabels";
 
@@ -10,8 +10,8 @@ import { jobPickerLabel, type JobOption } from "@/components/jobLabels";
 // whole page when a focused input is under 16px, and the foreman then has to
 // pinch back out between fields. `min-h-11` is a 44px tap target.
 const inputClass =
-  "min-h-11 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-base text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none";
-const labelClass = "flex flex-col gap-1 text-sm text-slate-300";
+  "min-h-11 rounded-md border border-line-card bg-canvas px-3 py-2 text-base text-ink placeholder:text-ink-muted focus:border-link focus:outline-none";
+const labelClass = "flex flex-col gap-1 text-sm text-ink-label";
 
 /** One definition, in @/components/jobLabels, and it requires the GC name
  * and the status — see issue #65. Re-exported here so the existing import
@@ -25,13 +25,9 @@ export type { JobOption };
 export function PunchListForm({
   jobs,
   defaultJobId,
-  draft,
 }: {
   jobs: JobOption[];
   defaultJobId?: string;
-  /** A card from the Ask box: one item, prefilled, and the card is told
-   * it saved. The job comes through `defaultJobId` like any other. */
-  draft?: PunchDraft;
 }) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -54,25 +50,40 @@ export function PunchListForm({
     setError(null);
     const formData = new FormData(event.currentTarget);
     startTransition(async () => {
-      try {
-        await createPunchListItem(formData);
-        formDraft.clear();
-        if (draft) void settleAskDraft(draft.proposalId);
-        if (descriptionRef.current) {
-          descriptionRef.current.value = "";
-          descriptionRef.current.focus();
-        }
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Could not add item");
+      const result = await createPunchListItem(formData);
+      // The refusal is RETURNED now, not thrown: a thrown Server Action
+      // message is replaced in production by React's own "omitted in
+      // production builds" paragraph, so the `err.message` this used to
+      // render was never "Description is required". Nothing is cleared on
+      // the failure branch, so what was typed is still in the fields.
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      formDraft.clear();
+      if (descriptionRef.current) {
+        descriptionRef.current.value = "";
+        descriptionRef.current.focus();
       }
     });
   }
 
+  // The same case /photos handles with a real link — refusing with a bare
+  // sentence leaves the one thing to do next as something you have to go
+  // and find.
   if (jobs.length === 0) {
     return (
-      <p className="text-sm text-slate-400">
-        Punch list items attach to a job, and there aren&apos;t any yet. Create a job first.
-      </p>
+      <div>
+        <p className="text-sm text-ink-body">
+          Punch list items attach to a job, and there aren&apos;t any yet.
+        </p>
+        <Link
+          href="/jobs/new"
+          className="mt-3 inline-flex min-h-11 items-center rounded-md bg-brand px-4 text-sm font-medium text-neutral-900 hover:bg-yellow-500"
+        >
+          Create a job
+        </Link>
+      </div>
     );
   }
 
@@ -102,18 +113,24 @@ export function PunchListForm({
           type="text"
           name="description"
           required
-          defaultValue={draft?.description}
           placeholder="e.g. Ceiling grid out of level, east corridor"
           className={inputClass}
         />
       </label>
 
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {/* role="alert" so the reason is announced rather than only drawn —
+          the person who just submitted is usually still looking at the
+          field they think is wrong, not at this line. */}
+      {error && (
+        <p role="alert" className="text-sm text-red-400">
+          {error}
+        </p>
+      )}
 
       <button
         type="submit"
         disabled={isPending}
-        className="inline-flex min-h-11 items-center justify-center self-start rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+        className="inline-flex min-h-11 items-center justify-center self-start rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
       >
         {isPending ? "Adding…" : "Add item"}
       </button>

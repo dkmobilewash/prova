@@ -86,7 +86,7 @@ export type JobMediaCardData = {
 };
 
 const btn =
-  "min-h-11 inline-flex items-center rounded-md border border-slate-700 px-3 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50";
+  "min-h-11 inline-flex items-center rounded-md border border-line-card px-3 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50";
 
 export function JobMediaCard({ media }: { media: JobMediaCardData }) {
   /* One mode for the card, with the tag form as a third value rather than
@@ -118,7 +118,7 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
 
   if (mode === "marks") {
     return (
-      <li className="flex flex-col overflow-hidden rounded-lg border border-slate-800 bg-slate-900 p-3">
+      <li className="flex flex-col overflow-hidden rounded-lg border border-line-card bg-surface p-3">
         <JobMediaAnnotator
           mediaId={media.id}
           blobUrl={media.blobUrl}
@@ -131,7 +131,7 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
   }
 
   return (
-    <li className="flex flex-col overflow-hidden rounded-lg border border-slate-800 bg-slate-900">
+    <li className="flex flex-col overflow-hidden rounded-lg border border-line-card bg-surface">
       {/* The blob URL is the only src. No proxy, no signing — these are
           public-but-unguessable (lib/blob.ts), which is the same posture
           every other upload in this app already has.
@@ -152,7 +152,7 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
           That same early return drops `srcSet` and `sizes`, so there is
           deliberately no `sizes` prop here: it would be inert, and an inert
           prop reads like a working one. Sizing is entirely CSS. */}
-      <div className="relative block aspect-[4/3] bg-slate-950">
+      <div className="relative block aspect-[4/3] bg-canvas">
         {/* THREE RENDERINGS, ONE BOX. The aspect box is kept for all three
             so a mixed gallery stays a grid rather than reflowing around
             whichever card happens to hold a voice note.
@@ -221,7 +221,7 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
              and the control sits under it rather than floating in black. */
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-4">
             <span aria-hidden className="text-3xl">🎙️</span>
-            <p className="text-sm text-slate-400">Voice note</p>
+            <p className="text-sm text-ink-body">Voice note</p>
             <audio src={media.blobUrl} controls preload="metadata" className="w-full" />
           </div>
         )}
@@ -238,9 +238,10 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
             shared with the team. The whole risk in this feature is somebody
             misreading which audience is meant.
 
-            White on blue-600 rather than a translucent overlay: the
-            background is an arbitrary photograph, so any contrast a
-            see-through chip has is whatever the picture happened to be. */}
+            A dark label on the opaque brand yellow rather than a
+            translucent overlay: the background is an arbitrary photograph,
+            so any contrast a see-through chip has is whatever the picture
+            happened to be. */}
         {/* The marks over the thumbnail, so "which of these is marked up"
             is answerable while scrolling rather than only after opening
             one.
@@ -254,14 +255,14 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
             `JOB_MEDIA_MARK_BOX_ASPECT` with the contract it implies. */}
         <JobMediaMarks marks={media.marks} />
         {media.sharedWithClientLabel && (
-          <span className="absolute left-2 top-2 rounded-md bg-blue-600 px-2 py-1 text-xs font-medium text-white">
+          <span className="absolute left-2 top-2 rounded-md bg-brand px-2 py-1 text-xs font-semibold text-neutral-900">
             Client can see this
           </span>
         )}
       </div>
 
       <div className="flex flex-1 flex-col gap-2 p-3">
-        {media.jobName && <p className="text-sm font-medium text-slate-200">{media.jobName}</p>}
+        {media.jobName && <p className="text-sm font-medium text-ink-label">{media.jobName}</p>}
 
         {mode === "edit" ? (
           <form
@@ -304,13 +305,13 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
             className="flex flex-col gap-2"
           >
             <FormDraftNotice draft={detailsDraft} />
-            <label className="flex flex-col gap-1 text-sm text-slate-300">
+            <label className="flex flex-col gap-1 text-sm text-ink-label">
               Caption
               <input
                 name="caption"
                 defaultValue={media.caption ?? ""}
                 placeholder="What this shows"
-                className="min-h-11 rounded-md border border-slate-700 bg-slate-950 px-3 text-base text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+                className="min-h-11 rounded-md border border-line-card bg-canvas px-3 text-base text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
               />
             </label>
             {/* Correctable because it was never entered by a person in the
@@ -318,13 +319,13 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
                 remedy for the warning shown in the view state; without it
                 that warning is a dead end, since re-uploading from the same
                 wrong clock reproduces the same wrong time. */}
-            <label className="flex flex-col gap-1 text-sm text-slate-300">
+            <label className="flex flex-col gap-1 text-sm text-ink-label">
               Taken
               <input
                 type="datetime-local"
                 name="capturedAt"
                 defaultValue={media.capturedAtInputValue}
-                className="min-h-11 rounded-md border border-slate-700 bg-slate-950 px-3 text-base text-slate-100 focus:border-blue-500 focus:outline-none"
+                className="min-h-11 rounded-md border border-line-card bg-canvas px-3 text-base text-ink focus:border-link focus:outline-none"
               />
             </label>
             {error && <p className="text-sm text-red-400">{error}</p>}
@@ -332,7 +333,7 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
               <button
                 type="submit"
                 disabled={isPending}
-                className="min-h-11 inline-flex items-center rounded-md bg-blue-600 px-4 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+                className="min-h-11 inline-flex items-center rounded-md bg-brand px-4 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
               >
                 {isPending ? "Saving…" : "Save"}
               </button>
@@ -368,7 +369,7 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
             className="flex flex-col gap-2"
           >
             <FormDraftNotice draft={tagsDraft} />
-            <label className="flex flex-col gap-1 text-sm text-slate-300">
+            <label className="flex flex-col gap-1 text-sm text-ink-label">
               Tags
               {/* `list` points at the ONE datalist the page renders
                   (JobMediaTagDatalist), so the browser offers the words this
@@ -388,10 +389,10 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
                 list={JOB_MEDIA_TAG_DATALIST_ID}
                 placeholder="west wall, before pour"
                 autoFocus
-                className="min-h-11 rounded-md border border-slate-700 bg-slate-950 px-3 text-base text-slate-100 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none"
+                className="min-h-11 rounded-md border border-line-card bg-canvas px-3 text-base text-ink placeholder:text-ink-body focus:border-link focus:outline-none"
               />
             </label>
-            <p className="text-sm text-slate-400">
+            <p className="text-sm text-ink-body">
               Separate several with commas. {media.tags.length} of {JOB_MEDIA_TAGS_PER_PHOTO_MAX} used.
             </p>
             {error && <p className="text-sm text-red-400">{error}</p>}
@@ -399,7 +400,7 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
               <button
                 type="submit"
                 disabled={isPending}
-                className="min-h-11 inline-flex items-center rounded-md bg-blue-600 px-4 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+                className="min-h-11 inline-flex items-center rounded-md bg-brand px-4 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
               >
                 {isPending ? "Adding…" : "Add"}
               </button>
@@ -436,8 +437,8 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
              a confirm step stops meaning anything — the same argument the
              tag chips' one-click remove is written from, further down. */
           <div className="flex flex-col gap-2">
-            <p className="text-sm font-medium text-slate-200">Show this photo to the client?</p>
-            <p className="text-sm text-slate-400">
+            <p className="text-sm font-medium text-ink-label">Show this photo to the client?</p>
+            <p className="text-sm text-ink-body">
               Anyone holding this job&apos;s portal link will see the file, any marks drawn on it,
               its caption and when it was taken. Tags and who took it are never shown. You can stop
               sharing it later, but you cannot un-show it.
@@ -450,7 +451,7 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
               <p className="text-sm text-amber-400">{media.playbackWarning}</p>
             )}
             {annotationSummary(media.marks.length) && (
-              <p className="text-sm text-slate-400">{annotationSummary(media.marks.length)}</p>
+              <p className="text-sm text-ink-body">{annotationSummary(media.marks.length)}</p>
             )}
             {error && <p className="text-sm text-red-400">{error}</p>}
             <div className="flex flex-wrap gap-2">
@@ -473,7 +474,7 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
                     }
                   });
                 }}
-                className="min-h-11 inline-flex items-center rounded-md bg-blue-600 px-4 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+                className="min-h-11 inline-flex items-center rounded-md bg-brand px-4 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
               >
                 {isPending ? "Sharing…" : "Share with client"}
               </button>
@@ -502,9 +503,9 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
                 {media.tags.map((tag) => (
                   <li
                     key={tag.id}
-                    className="inline-flex items-center overflow-hidden rounded-full border border-slate-700 bg-slate-950"
+                    className="inline-flex items-center overflow-hidden rounded-full border border-line-card bg-canvas"
                   >
-                    <span className="py-1 pl-3 text-sm text-slate-300">{tag.name}</span>
+                    <span className="py-1 pl-3 text-sm text-ink-label">{tag.name}</span>
                     {/* 44px square, per #89: this is the smallest thing on
                         the card and it is on a phone screen. The label says
                         which tag, because "×" alone is what a screen reader
@@ -529,7 +530,7 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
                           }
                         });
                       }}
-                      className="ml-1 inline-flex min-h-11 min-w-11 items-center justify-center text-slate-400 hover:text-red-400 disabled:opacity-50"
+                      className="ml-1 inline-flex min-h-11 min-w-11 items-center justify-center text-ink-body hover:text-red-400 disabled:opacity-50"
                     >
                       <span aria-hidden="true">×</span>
                     </button>
@@ -538,13 +539,13 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
               </ul>
             )}
 
-            <p className="text-sm text-slate-200">
-              {media.caption ?? <span className="text-slate-400">No caption</span>}
+            <p className="text-sm text-ink-label">
+              {media.caption ?? <span className="text-ink-body">No caption</span>}
             </p>
-            {/* slate-400 rather than slate-500: #89 measured slate-500 on a
-                slate-900 card at 3.83:1, under the 4.5 floor, and this line
-                carries the when and the who. */}
-            <p className="text-sm text-slate-400">
+            {/* ink-body rather than ink-muted: the muted level is under the
+                4.5 floor (#89's rule), and this line carries the when and
+                the who. */}
+            <p className="text-sm text-ink-body">
               {media.capturedAtLabel}
               {media.capturedByName ? ` · ${media.capturedByName}` : ""} · {media.sizeLabel}
             </p>
@@ -576,7 +577,7 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
                   href={media.location.mapHref}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-blue-400 hover:text-blue-300"
+                  className="text-link hover:text-link-hover"
                 >
                   Map
                 </a>
@@ -606,7 +607,7 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
                 href={media.blobUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-sm text-blue-400 hover:text-blue-300"
+                className="text-sm text-link hover:text-link-hover"
               >
                 Open file
               </a>
@@ -619,13 +620,12 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
                 — "we sent you that on the 8th" is a claim the timestamp
                 supports and a badge does not.
 
-                blue-300, matching the badge's family, so the two read as one
-                state rather than as two unrelated pieces of furniture. On
-                slate-900 it measures well clear of the 4.5 floor #89 set;
-                the slate-500 that failed it is not used anywhere on this
-                card. */}
+                tag-blue-ink, matching the badge's brand family, so the two
+                read as one state rather than as two unrelated pieces of
+                furniture. On the white card it measures well clear of the
+                4.5 floor #89 set. */}
             {media.sharedWithClientLabel && (
-              <p className="text-sm text-blue-300">
+              <p className="text-sm text-tag-blue-ink">
                 Shared with client, {media.sharedWithClientLabel}
               </p>
             )}
@@ -661,7 +661,7 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
                   hint="The file is removed from storage too."
                   deleteClassName={btn}
                   cancelClassName={btn}
-                  confirmClassName="min-h-11 inline-flex items-center rounded-md border border-red-500 px-3 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+                  confirmClassName="min-h-11 inline-flex items-center rounded-md border border-red-500 px-3 text-sm text-red-400 hover:bg-tag-rose disabled:opacity-50"
                 />
               }
             >

@@ -56,6 +56,9 @@ const LABELLED_PICKERS: Record<string, number> = {
   // Two: deploy a piece of equipment, and move an existing stay to another job.
   "components/EquipmentDeploymentControls.tsx": 2,
   "components/FieldReportComposer.tsx": 1,
+  // Where a DROPPED document gets filed. Added with /intake; it shipped
+  // rendering `job.name` and this census is what caught it.
+  "components/IntakeTable.tsx": 1,
   "components/MaterialOrderFields.tsx": 1,
   "components/MessageComposer.tsx": 1,
   "components/PunchListForm.tsx": 1,
@@ -162,7 +165,11 @@ describe("the job-picker census", () => {
     const expected = Object.values(LABELLED_PICKERS).reduce((a, b) => a + b, 0);
     const actual = files.reduce((n, f) => n + countOf(f.code, HELPER_CALL), 0);
 
-    expect(expected).toEqual(22);
+    // 22 -> 23 on 2026-09-14: /intake's picker, which shipped rendering the
+    // bare `job.name` and was caught by the rule below rather than by a
+    // reviewer. Moving this number is meant to be a decision, which is why
+    // it is a literal and not derived.
+    expect(expected).toEqual(23);
     expect(actual).toEqual(expected);
   });
 

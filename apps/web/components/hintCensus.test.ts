@@ -170,30 +170,35 @@ const MONEY_CONTROLS = [
 /**
  * Destructive controls that never went through `ConfirmDelete` at all.
  *
- * Twelve `>Remove<`/`>Delete<`/`>Disconnect<` button labels in this app sit in
- * a `button`/`SubmitButton` that acts on ONE click, and check 1 cannot see any
- * of them — they never went near `ConfirmDelete`, so neither this census nor
- * `rowActionsCensus.test.ts` has anything to hold onto. Eleven of the twelve
- * delete a record, which is a defect in its own right (the list-page
- * convention in CLAUDE.md says two-step, never one) and a separate fix. The
- * twelfth is `TakeoffForm`'s, which drops an UNSAVED opening out of a form
- * before anything is written, and is correctly one click.
+ * Twelve `>Remove<`/`>Delete<`/`>Disconnect<` button labels in this app sat in
+ * a `button`/`SubmitButton` that acted on ONE click, and check 1 cannot see
+ * any of them — they never went near `ConfirmDelete`, so neither this census
+ * nor `rowActionsCensus.test.ts` had anything to hold onto. Eleven of the
+ * twelve deleted a record, which is a defect in its own right (the list-page
+ * convention in CLAUDE.md says two-step, never one). The twelfth is
+ * `TakeoffForm`'s, which drops an UNSAVED opening out of a form before
+ * anything is written, and is correctly one click.
  *
- * The two below are the record-deleting ones outside the other lane's file,
- * and they are the scariest pair in the set — one removes a person's access,
- * one cuts the QuickBooks connection. Scoped by FILE as well as label, because
- * "Remove" on its own would match half the app.
+ * **EMPTY as of 2026-09-14, and the emptiness is the point of the entry.**
+ * The two that used to be listed here — `team/page.tsx`'s "Remove" and
+ * `settings/page.tsx`'s "Disconnect", the scariest pair in the set, one
+ * removing a person's access and one cutting the QuickBooks connection —
+ * were each described by a `<Hint>` on the one-click button, and then ARMED:
+ * they are `<ConfirmDelete>`s now (`TeamMemberActions.tsx` and the
+ * QuickBooks `RowActions` cluster respectively), which puts them inside
+ * check 1, where `describe` is enforced rather than listed. Describing a
+ * one-click delete was the stopgap; two-stepping it is the fix.
  *
- * The other NINE are all in `app/(app)/jobs/[id]/page.tsx`, which CLAUDE.md
- * names as the other lane's file — one of them deletes a retainage release.
- * Left alone deliberately; the count is written down here so the next person
- * does not re-derive it. Counted 2026-09-13 by the same rule this file uses:
- * a delete-word label whose enclosing tag is `button` or `SubmitButton`.
+ * The loop below is left standing rather than deleted, because this list
+ * REFUSES a stale entry: a label that moves makes it fail by name, which is
+ * how these two were caught rather than silently un-checked. An empty list
+ * checks nothing and claims nothing, which is the honest state — every
+ * remaining one-click delete is in `app/(app)/jobs/[id]/page.tsx`, the other
+ * lane's file by CLAUDE.md, and one of them deletes a retainage release.
+ * NINE of them, counted 2026-09-13 by the same rule this file uses: a
+ * delete-word label whose enclosing tag is `button` or `SubmitButton`.
  */
-const HAND_ROLLED_DESTRUCTIVE = [
-  { label: "Disconnect", file: "app/(app)/settings/page.tsx" },
-  { label: "Remove", file: "app/(app)/team/page.tsx" },
-];
+const HAND_ROLLED_DESTRUCTIVE: { label: string; file: string }[] = [];
 
 /**
  * Files allowed to name `<ConfirmDelete` without passing `describe`.

@@ -136,7 +136,7 @@ describe("who is offered what", () => {
       "send_equipment_to_job",
       "bring_equipment_back",
       "raise_rfi",
-      "add_punch_item",
+      "add_punch_items",
       "log_time_entry",
       "send_email",
       "reschedule_job",
@@ -158,7 +158,7 @@ describe("who is offered what", () => {
       "reschedule_job",
       "log_bid_invitation",
     ]);
-    expect(commandsFor(ESTIMATOR).map((c) => c.name)).not.toContain("add_punch_item");
+    expect(commandsFor(ESTIMATOR).map((c) => c.name)).not.toContain("add_punch_items");
   });
 
   it("registers the bid invitation as a T1 draft, DIRECT over its lifted core, on the capability that guards /bids — and withholds it from the field and from accounting", () => {

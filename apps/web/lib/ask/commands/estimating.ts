@@ -183,7 +183,7 @@ async function executeCreateJob(ctx: CommandContext, payload: ResolvedPayload) {
     : `Created ${resolved.jobName} for ${resolved.contact.name}.`;
 
   if (resolved.draftLines && resolved.scope) {
-    const drafted = await draftLinesFromScope(ctx.companyId, { jobId, scopeText: resolved.scope });
+    const drafted = await draftLinesFromScope(ctx.companyId, { jobId, scopeText: resolved.scope }, ctx.userId);
     message += drafted.ok
       ? ` Drafted ${drafted.value.count} line ${drafted.value.count === 1 ? "item" : "items"} from the scope, flagged for review.`
       : ` Line items could not be drafted (${drafted.error}). Use "Draft line items" on the job page.`;
@@ -297,7 +297,7 @@ async function executeDraftLines(ctx: CommandContext, payload: ResolvedPayload) 
   if (!jobId || !jobName || !scopeText) {
     return { ok: false as const, error: "That card can't be executed. Ask again." };
   }
-  const drafted = await draftLinesFromScope(ctx.companyId, { jobId, scopeText });
+  const drafted = await draftLinesFromScope(ctx.companyId, { jobId, scopeText }, ctx.userId);
   if (!drafted.ok) return { ok: false as const, error: drafted.error };
   const n = drafted.value.count;
   return {

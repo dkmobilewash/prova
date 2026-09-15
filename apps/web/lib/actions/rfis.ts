@@ -1,15 +1,45 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireCapabilityForAction } from "@/lib/authz";
+import { requireCompanyContext } from "@/lib/auth";
+import { can } from "@/lib/permissions";
 import { Prisma, prisma } from "@prova/db";
-import { assertOwner } from "./shared";
+import {
+  actionFail as fail,
+  actionOk as ok,
+  InputError,
+  ownerRefusal,
+  runAction,
+  type ActionResult,
+} from "./shared";
 
 /** Every entry point to these records is a page guarded by MANAGE_JOBS,
  * so every write here answers to the same capability. A guarded page
  * in front of an open action is not a guard: the action is its own
- * endpoint and answers whoever posts to it. */
+ * endpoint and answers whoever posts to it.
+ *
+ * Returned rather than thrown, like every other refusal in this module. */
 const JOBS_ONLY = "Job correspondence isn't part of your job function. The account owner sets who sees what, on the Team page.";
+
+/** Actions in this module RETURN their failures instead of throwing them.
+ *
+ * THIS MODULE IS WHY THE RULE EXISTS. Eleven guards, every one of them a
+ * sentence somebody sat down and wrote for a person in a dispute — "Send
+ * this RFI before recording an answer", "The answer can't have come back
+ * before the RFI was sent" — and every one of them thrown, which means no
+ * user has ever read one. Production replaces a thrown Server Action
+ * message with React's own boilerplate: the installed
+ * react-server-dom-webpack's production `emitErrorChunk(request, id, digest)`
+ * has no parameter for the error, and the browser's `resolveErrorProd()`
+ * takes none either and builds a fixed "the specific message is omitted in
+ * production builds to avoid leaking sensitive details" Error. So the
+ * `err.message` these forms rendered was that paragraph, about RFI
+ * chronology.
+ *
+ * `throw` is reserved for genuine bugs, which SHOULD be redacted.
+ * `submittals.ts` is the reference for this shape; the two modules describe
+ * the same workflow and now refuse in the same way.
+ */
 
 function text(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();
@@ -17,7 +47,7 @@ function text(formData: FormData, key: string) {
 
 function required(formData: FormData, key: string, label: string) {
   const value = text(formData, key);
-  if (!value) throw new Error(`${label} is required`);
+  if (!value) throw new InputError(`${label} is required`);
   return value;
 }
 
@@ -33,19 +63,19 @@ function optionalDate(formData: FormData, key: string): Date | null {
   const raw = text(formData, key);
   if (!raw) return null;
   const date = new Date(`${raw}T00:00:00.000Z`);
-  if (Number.isNaN(date.getTime())) throw new Error("Date is not valid");
+  if (Number.isNaN(date.getTime())) throw new InputError("Date is not valid");
   return date;
 }
 
-async function assertJob(jobId: string, companyId: string) {
+async function findOwnJob(jobId: string, companyId: string) {
   const job = await prisma.job.findUnique({ where: { id: jobId } });
-  if (!job || job.companyId !== companyId) throw new Error("Job not found");
+  if (!job || job.companyId !== companyId) return null;
   return job;
 }
 
-async function assertRfi(rfiId: string, companyId: string) {
+async function findOwnRfi(rfiId: string, companyId: string) {
   const rfi = await prisma.rfi.findUnique({ where: { id: rfiId } });
-  if (!rfi || rfi.companyId !== companyId) throw new Error("RFI not found");
+  if (!rfi || rfi.companyId !== companyId) return null;
   return rfi;
 }
 
@@ -68,162 +98,217 @@ async function issueRfiNumber(tx: Prisma.TransactionClient, jobId: string) {
   return counter.lastNumber;
 }
 
-export async function createRfi(formData: FormData) {
-  const { company, ...user } = await requireCapabilityForAction("MANAGE_JOBS", JOBS_ONLY);
+export async function createRfi(formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  const { company, ...user } = context;
+  return runAction(async () => {
+    if (!can(context, "MANAGE_JOBS")) return fail(JOBS_ONLY);
 
-  const jobId = required(formData, "jobId", "Job");
-  await assertJob(jobId, company.id);
+    const jobId = required(formData, "jobId", "Job");
+    if (!(await findOwnJob(jobId, company.id))) return fail("Job not found");
 
-  const subject = required(formData, "subject", "Subject");
-  const question = required(formData, "question", "Question");
-  const drawingReference = text(formData, "drawingReference");
-  const specSection = text(formData, "specSection");
-  const dueBy = optionalDate(formData, "dueBy");
+    const subject = required(formData, "subject", "Subject");
+    const question = required(formData, "question", "Question");
+    const drawingReference = text(formData, "drawingReference");
+    const specSection = text(formData, "specSection");
+    const dueBy = optionalDate(formData, "dueBy");
 
-  // The sent date is entered, not stamped. Stamping it `now` made the first
-  // real use of this feature impossible: entering the RFIs you already sent
-  // over the last three weeks would record them all as sent today, and the
-  // response-time evidence — the entire point of the log — would be fiction.
-  // Blank means it hasn't gone out yet, which is what a draft is.
-  const sentOn = optionalDate(formData, "sentOn");
+    // The sent date is entered, not stamped. Stamping it `now` made the first
+    // real use of this feature impossible: entering the RFIs you already sent
+    // over the last three weeks would record them all as sent today, and the
+    // response-time evidence — the entire point of the log — would be fiction.
+    // Blank means it hasn't gone out yet, which is what a draft is.
+    const sentOn = optionalDate(formData, "sentOn");
 
-  await prisma.$transaction(async (tx) => {
-    await tx.rfi.create({
-      data: {
-        companyId: company.id,
-        jobId,
-        number: await issueRfiNumber(tx, jobId),
-        subject,
-        question,
-        drawingReference: drawingReference || null,
-        specSection: specSection || null,
-        dueBy,
-        status: sentOn ? "SENT" : "DRAFT",
-        sentOn,
-        askedByUserId: user.id,
-      },
+    await prisma.$transaction(async (tx) => {
+      await tx.rfi.create({
+        data: {
+          companyId: company.id,
+          jobId,
+          number: await issueRfiNumber(tx, jobId),
+          subject,
+          question,
+          drawingReference: drawingReference || null,
+          specSection: specSection || null,
+          dueBy,
+          status: sentOn ? "SENT" : "DRAFT",
+          sentOn,
+          askedByUserId: user.id,
+        },
+      });
     });
-  });
 
-  revalidatePath("/rfis");
+    revalidatePath("/rfis");
+    return ok;
+  });
 }
 
-export async function updateRfi(rfiId: string, formData: FormData) {
-  const { company } = await requireCapabilityForAction("MANAGE_JOBS", JOBS_ONLY);
-  const rfi = await assertRfi(rfiId, company.id);
+export async function updateRfi(rfiId: string, formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  const { company } = context;
+  return runAction(async () => {
+    if (!can(context, "MANAGE_JOBS")) return fail(JOBS_ONLY);
 
-  const sentOn = optionalDate(formData, "sentOn");
+    const rfi = await findOwnRfi(rfiId, company.id);
+    if (!rfi) return fail("RFI not found");
 
-  // Once an RFI has been sent it can never become a draft again.
-  //
-  // This is not tidiness. `deleteRfi` allows deleting drafts only, so
-  // without this guard the delete rule is bypassable entirely through the
-  // normal UI: edit a sent RFI, clear the date, save — it is now a draft —
-  // delete it. That destroys correspondence the GC also holds and leaves a
-  // permanent hole in the numbering. The weaker version of the same bug
-  // loses the original send date, which is the evidence the log exists for.
-  if (rfi.sentOn && !sentOn) {
-    throw new Error("This RFI has already been sent, so it can't go back to being a draft");
-  }
-  if (sentOn && rfi.answeredOn && sentOn > rfi.answeredOn) {
-    throw new Error("The sent date can't be after the date the answer came back");
-  }
+    const sentOn = optionalDate(formData, "sentOn");
 
-  // Job and number are the identity of a sent RFI — a GC has them in
-  // writing. Neither is editable here; a wrong job means a new RFI.
-  await prisma.rfi.update({
-    where: { id: rfi.id },
-    data: {
-      subject: required(formData, "subject", "Subject"),
-      question: required(formData, "question", "Question"),
-      drawingReference: text(formData, "drawingReference") || null,
-      specSection: text(formData, "specSection") || null,
-      dueBy: optionalDate(formData, "dueBy"),
-      sentOn,
-      // Editing an RFI must never change where it sits in the workflow.
-      // Deriving status purely from the dates put a withdrawn (CLOSED,
-      // never answered) RFI back on the open list the moment someone
-      // fixed a typo in its subject. A draft that has just been given a
-      // sent date is the one real transition, and it is the only one.
-      status: rfi.status === "DRAFT" && sentOn ? "SENT" : rfi.status,
-    },
+    // Once an RFI has been sent it can never become a draft again.
+    //
+    // This is not tidiness. `deleteRfi` allows deleting drafts only, so
+    // without this guard the delete rule is bypassable entirely through the
+    // normal UI: edit a sent RFI, clear the date, save — it is now a draft —
+    // delete it. That destroys correspondence the GC also holds and leaves a
+    // permanent hole in the numbering. The weaker version of the same bug
+    // loses the original send date, which is the evidence the log exists for.
+    if (rfi.sentOn && !sentOn) {
+      return fail("This RFI has already been sent, so it can't go back to being a draft");
+    }
+    if (sentOn && rfi.answeredOn && sentOn > rfi.answeredOn) {
+      return fail("The sent date can't be after the date the answer came back");
+    }
+
+    // Read before the update rather than inside its argument list: a blank
+    // subject has to come back as a sentence, and `required` throwing from
+    // inside the `data` object would work only by accident of evaluation
+    // order.
+    const subject = required(formData, "subject", "Subject");
+    const question = required(formData, "question", "Question");
+
+    // Job and number are the identity of a sent RFI — a GC has them in
+    // writing. Neither is editable here; a wrong job means a new RFI.
+    await prisma.rfi.update({
+      where: { id: rfi.id },
+      data: {
+        subject,
+        question,
+        drawingReference: text(formData, "drawingReference") || null,
+        specSection: text(formData, "specSection") || null,
+        dueBy: optionalDate(formData, "dueBy"),
+        sentOn,
+        // Editing an RFI must never change where it sits in the workflow.
+        // Deriving status purely from the dates put a withdrawn (CLOSED,
+        // never answered) RFI back on the open list the moment someone
+        // fixed a typo in its subject. A draft that has just been given a
+        // sent date is the one real transition, and it is the only one.
+        status: rfi.status === "DRAFT" && sentOn ? "SENT" : rfi.status,
+      },
+    });
+
+    revalidatePath("/rfis");
+    return ok;
   });
-
-  revalidatePath("/rfis");
 }
 
 /** Stamps the sent date. Separate from create because the date it left our
  * hands is the fact the log exists to hold. */
-export async function markRfiSent(rfiId: string) {
-  const { company } = await requireCapabilityForAction("MANAGE_JOBS", JOBS_ONLY);
-  const rfi = await assertRfi(rfiId, company.id);
-  if (rfi.status !== "DRAFT") throw new Error("This RFI has already been sent");
+export async function markRfiSent(rfiId: string): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  const { company } = context;
+  return runAction(async () => {
+    if (!can(context, "MANAGE_JOBS")) return fail(JOBS_ONLY);
 
-  await prisma.rfi.update({
-    where: { id: rfi.id },
-    // UTC midnight, like every other date here. Storing the wall-clock
-    // instant instead made a same-day answer impossible: the answer date
-    // normalises to midnight, so it compared as EARLIER than a send
-    // stamped at 14:30, and the guard rejected it with a message blaming
-    // the user for data that was correct.
-    data: { status: "SENT", sentOn: utcMidnight(new Date()) },
+    const rfi = await findOwnRfi(rfiId, company.id);
+    if (!rfi) return fail("RFI not found");
+    // Reachable from a page that has gone stale — "Mark sent" only renders
+    // for a DRAFT, so seeing this means somebody else sent it first, which
+    // is exactly the case the person needs told rather than redacted.
+    if (rfi.status !== "DRAFT") return fail("This RFI has already been sent");
+
+    await prisma.rfi.update({
+      where: { id: rfi.id },
+      // UTC midnight, like every other date here. Storing the wall-clock
+      // instant instead made a same-day answer impossible: the answer date
+      // normalises to midnight, so it compared as EARLIER than a send
+      // stamped at 14:30, and the guard rejected it with a message blaming
+      // the user for data that was correct.
+      data: { status: "SENT", sentOn: utcMidnight(new Date()) },
+    });
+    revalidatePath("/rfis");
+    return ok;
   });
-  revalidatePath("/rfis");
 }
 
-export async function answerRfi(rfiId: string, formData: FormData) {
-  const { company } = await requireCapabilityForAction("MANAGE_JOBS", JOBS_ONLY);
-  const rfi = await assertRfi(rfiId, company.id);
-  if (rfi.status === "DRAFT") throw new Error("Send this RFI before recording an answer");
+export async function answerRfi(rfiId: string, formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  const { company } = context;
+  return runAction(async () => {
+    if (!can(context, "MANAGE_JOBS")) return fail(JOBS_ONLY);
 
-  const answeredAt = optionalDate(formData, "answeredOn") ?? utcMidnight(new Date());
+    const rfi = await findOwnRfi(rfiId, company.id);
+    if (!rfi) return fail("RFI not found");
+    if (rfi.status === "DRAFT") return fail("Send this RFI before recording an answer");
 
-  // An answer that arrived before the question was asked discredits the
-  // whole log — and a log that can hold one is worth nothing in a dispute.
-  if (rfi.sentOn && answeredAt < rfi.sentOn) {
-    throw new Error("The answer can't have come back before the RFI was sent");
-  }
+    const answeredAt = optionalDate(formData, "answeredOn") ?? utcMidnight(new Date());
 
-  await prisma.rfi.update({
-    where: { id: rfi.id },
-    data: {
-      answer: required(formData, "answer", "Answer"),
-      // The date the answer came back, not the date it was typed in — an
-      // answer entered a week late must not read as a week-late response.
-      answeredOn: answeredAt,
-      status: "ANSWERED",
-      costImpact: formData.get("costImpact") === "on",
-      scheduleImpact: formData.get("scheduleImpact") === "on",
-    },
+    // An answer that arrived before the question was asked discredits the
+    // whole log — and a log that can hold one is worth nothing in a dispute.
+    if (rfi.sentOn && answeredAt < rfi.sentOn) {
+      return fail("The answer can't have come back before the RFI was sent");
+    }
+
+    const answer = required(formData, "answer", "Answer");
+
+    await prisma.rfi.update({
+      where: { id: rfi.id },
+      data: {
+        answer,
+        // The date the answer came back, not the date it was typed in — an
+        // answer entered a week late must not read as a week-late response.
+        answeredOn: answeredAt,
+        status: "ANSWERED",
+        costImpact: formData.get("costImpact") === "on",
+        scheduleImpact: formData.get("scheduleImpact") === "on",
+      },
+    });
+
+    revalidatePath("/rfis");
+    return ok;
   });
-
-  revalidatePath("/rfis");
 }
 
-export async function setRfiClosed(rfiId: string, closed: boolean) {
-  const { company } = await requireCapabilityForAction("MANAGE_JOBS", JOBS_ONLY);
-  const rfi = await assertRfi(rfiId, company.id);
-  if (closed && rfi.status === "DRAFT") throw new Error("An unsent RFI can be deleted, not closed");
+export async function setRfiClosed(rfiId: string, closed: boolean): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  const { company } = context;
+  return runAction(async () => {
+    if (!can(context, "MANAGE_JOBS")) return fail(JOBS_ONLY);
 
-  await prisma.rfi.update({
-    where: { id: rfi.id },
-    data: { status: closed ? "CLOSED" : rfi.answeredOn ? "ANSWERED" : "SENT" },
+    const rfi = await findOwnRfi(rfiId, company.id);
+    if (!rfi) return fail("RFI not found");
+    if (closed && rfi.status === "DRAFT") return fail("An unsent RFI can be deleted, not closed");
+
+    await prisma.rfi.update({
+      where: { id: rfi.id },
+      data: { status: closed ? "CLOSED" : rfi.answeredOn ? "ANSWERED" : "SENT" },
+    });
+    revalidatePath("/rfis");
+    return ok;
   });
-  revalidatePath("/rfis");
 }
 
-export async function deleteRfi(rfiId: string) {
-  const context = await requireCapabilityForAction("MANAGE_JOBS", JOBS_ONLY);
-  assertOwner(context, "Only the account owner can delete an RFI draft");
-  const rfi = await assertRfi(rfiId, context.company.id);
+export async function deleteRfi(rfiId: string): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  return runAction(async () => {
+    if (!can(context, "MANAGE_JOBS")) return fail(JOBS_ONLY);
 
-  // Deleting a sent RFI destroys correspondence the GC also holds. Close
-  // it instead — the number stays retired either way, but the record of
-  // having asked survives.
-  if (rfi.status !== "DRAFT") {
-    throw new Error("Only an unsent draft can be deleted. Close this RFI instead.");
-  }
+    // `ownerRefusal`, not `assertOwner`: this action's declared type promises
+    // a sentence the row can render, and `assertOwner` throws it instead.
+    const refusal = ownerRefusal(context, "Only the account owner can delete an RFI draft");
+    if (refusal) return refusal;
 
-  await prisma.rfi.delete({ where: { id: rfi.id } });
-  revalidatePath("/rfis");
+    const rfi = await findOwnRfi(rfiId, context.company.id);
+    if (!rfi) return fail("RFI not found");
+
+    // Deleting a sent RFI destroys correspondence the GC also holds. Close
+    // it instead — the number stays retired either way, but the record of
+    // having asked survives.
+    if (rfi.status !== "DRAFT") {
+      return fail("Only an unsent draft can be deleted. Close this RFI instead.");
+    }
+
+    await prisma.rfi.delete({ where: { id: rfi.id } });
+    revalidatePath("/rfis");
+    return ok;
+  });
 }

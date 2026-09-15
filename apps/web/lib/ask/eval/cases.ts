@@ -104,7 +104,10 @@ export const EVAL_CASES: EvalCase[] = [
   command("cmd-bring-back", "bring the scissor lift back from Riverside", "bring_equipment_back"),
   command("cmd-delivery", "the drywall delivery for Riverside just arrived", "record_material_delivery", { jobName: "Riverside" }),
   command("cmd-rfi", "raise an RFI on Riverside: the door schedule conflicts with the plans at 2B", "raise_rfi", { jobName: "Riverside" }),
-  command("cmd-punch", "add a punch item on Riverside: patch the corner bead at 2B", "add_punch_item", { jobName: "Riverside" }),
+  // `add_punch_items` (plural) since the batch command retired the
+  // single-item one: one card writes the whole list, so a one-item question
+  // routes here too. The expectation is unchanged otherwise.
+  command("cmd-punch", "add a punch item on Riverside: patch the corner bead at 2B", "add_punch_items", { jobName: "Riverside" }),
   command("cmd-invoice", "invoice Riverside for 45,000 for the September progress", "draft_invoice", { jobName: "Riverside", amount: "45" }),
   command("cmd-invoice-bill", "bill Turner 10,000 on Riverside", "draft_invoice", { jobName: "Riverside", amount: "10" }),
   command("cmd-payment", "log a 12,500 payment against invoice 3 on Riverside, check 4471", "log_payment", { jobName: "Riverside", amount: "12", invoiceNumber: "3" }),

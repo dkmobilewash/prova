@@ -87,16 +87,16 @@ export function RuleSetFields({ defaults }: { defaults: RuleSetDefaults }) {
             defaultValue={defaults.effectiveTo ?? ""}
             className={inputClass}
           />
-          <span className="text-xs text-slate-500">Blank means still current.</span>
+          <span className="text-xs text-ink-muted">Blank means still current.</span>
         </label>
       </div>
 
-      <p className="mt-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+      <p className="mt-1 text-xs font-medium uppercase tracking-wide text-ink-muted">
         Overtime thresholds
       </p>
-      <p className="-mt-2 text-xs text-slate-500">
+      <p className="-mt-2 text-xs text-ink-muted">
         Read these off the awarding body&apos;s own documents and put the citation in Source below.
-        <span className="text-slate-400">
+        <span className="text-ink-body">
           {" "}
           Leave a field blank if you haven&apos;t looked it up — a week is then reported as unchecked
           rather than measured against a number nobody gave us.
@@ -172,7 +172,7 @@ export function RuleSetFields({ defaults }: { defaults: RuleSetDefaults }) {
         </label>
       </div>
 
-      <p className="mt-1 text-xs font-medium uppercase tracking-wide text-slate-500">Filing</p>
+      <p className="mt-1 text-xs font-medium uppercase tracking-wide text-ink-muted">Filing</p>
       <div className="grid gap-3 sm:grid-cols-3">
         <label className={labelClass}>
           Frequency
@@ -196,7 +196,7 @@ export function RuleSetFields({ defaults }: { defaults: RuleSetDefaults }) {
             placeholder="days"
             className={inputClass}
           />
-          <span className="text-xs text-slate-500">
+          <span className="text-xs text-ink-muted">
             Used by the certified payroll alert. Blank falls back to its generic horizon, and the
             alert says which it used.
           </span>
@@ -233,7 +233,7 @@ export function RuleSetFields({ defaults }: { defaults: RuleSetDefaults }) {
             placeholder="https://… where these rules are published"
             className={inputClass}
           />
-          <span className="text-xs text-slate-500">
+          <span className="text-xs text-ink-muted">
             A threshold with no citation is somebody&apos;s memory.
           </span>
         </label>

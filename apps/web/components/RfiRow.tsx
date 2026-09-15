@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { answerRfi, deleteRfi, markRfiSent, setRfiClosed, updateRfi } from "@/lib/actions";
+import type { ActionResult } from "@/lib/actions/shared";
 import { RfiFields, fieldInputClass, labelClass, type RfiDefaults } from "@/components/RfiFields";
 import { daysBetween, isOverdue, statusLabel } from "@/components/rfiLabels";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
@@ -24,7 +25,7 @@ export type RfiRowData = RfiDefaults & {
 // 44px, from 34px.  +  is what makes min-h centre
 // the label rather than pin it to the top.
 const btn =
-  "inline-flex min-h-11 items-center justify-center rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50";
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50";
 
 export function RfiRow({
   rfi,
@@ -45,14 +46,23 @@ export function RfiRow({
   const editDraft = useFormDraft(`rfi:edit:${rfi.id}`);
   const answerDraft = useFormDraft(`rfi:answer:${rfi.id}`);
 
-  function run(fn: () => Promise<void>, fallback: string) {
+  /** Runs an action and renders the sentence it refuses with.
+   *
+   * THE REASON THIS COMPONENT CHANGED. `rfis.ts` holds the best-written
+   * refusals in the app — "Send this RFI before recording an answer", "The
+   * answer can't have come back before the RFI was sent" — and threw every
+   * one of them. Production replaces a thrown Server Action message with
+   * React's own "the specific message is omitted in production builds"
+   * paragraph, so `err.message` here was never an RFI sentence and the
+   * per-call fallbacks ("Could not mark it sent") were the whole of what
+   * anyone read. The actions return their refusals now, so there is nothing
+   * left to fall back to. Same shape as `SubmittalRow`. */
+  function run(fn: () => Promise<ActionResult>, onOk?: () => void) {
     setError(null);
     startTransition(async () => {
-      try {
-        await fn();
-      } catch (err) {
-        setError(err instanceof Error ? err.message : fallback);
-      }
+      const result = await fn();
+      if (result.ok) onOk?.();
+      else setError(result.error);
     });
   }
 
@@ -65,25 +75,33 @@ export function RfiRow({
           onSubmit={(event) => {
             event.preventDefault();
             const formData = new FormData(event.currentTarget);
-            run(async () => {
-              await updateRfi(rfi.id, formData);
-              editDraft.clear();
-              setMode("view");
-            }, "Could not save changes");
+            // Draft cleared and form closed on the OK branch only, so a
+            // refused save leaves the whole edit exactly as typed.
+            run(
+              () => updateRfi(rfi.id, formData),
+              () => {
+                editDraft.clear();
+                setMode("view");
+              },
+            );
           }}
           className="flex flex-col gap-3"
         >
-          <p className="text-sm font-semibold text-slate-300">
+          <p className="text-sm font-semibold text-ink-label">
             RFI {rfi.number} · {rfi.jobName}
           </p>
           <FormDraftNotice draft={editDraft} />
           <RfiFields defaults={rfi} />
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && (
+            <p role="alert" className="text-sm text-red-400">
+              {error}
+            </p>
+          )}
           <div className="flex flex-wrap gap-2">
             <button
               type="submit"
               disabled={isPending}
-              className="inline-flex min-h-11 items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+              className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
             >
               {isPending ? "Saving…" : "Save changes"}
             </button>
@@ -105,15 +123,20 @@ export function RfiRow({
           onSubmit={(event) => {
             event.preventDefault();
             const formData = new FormData(event.currentTarget);
-            run(async () => {
-              await answerRfi(rfi.id, formData);
-              answerDraft.clear();
-              setMode("view");
-            }, "Could not record the answer");
+            // The chronology guards live behind this call — a refusal here
+            // must leave the typed answer on screen, not discard it along
+            // with the reason.
+            run(
+              () => answerRfi(rfi.id, formData),
+              () => {
+                answerDraft.clear();
+                setMode("view");
+              },
+            );
           }}
           className="flex flex-col gap-3"
         >
-          <p className="text-sm font-semibold text-slate-300">
+          <p className="text-sm font-semibold text-ink-label">
             Record the answer to RFI {rfi.number}
           </p>
           <FormDraftNotice draft={answerDraft} />
@@ -138,10 +161,10 @@ export function RfiRow({
               defaultValue={rfi.answeredOn ?? localToday()}
               className={fieldInputClass}
             />
-            {/* slate-400 — slate-500 measures 3.83:1 here, under the 4.5 floor
+            {/* ink-body — ink-muted is under the 4.5 floor here
                 for text, and this is the sentence that stops a late answer
                 being recorded as an on-time one. */}
-            <span className="text-xs text-slate-400">
+            <span className="text-xs text-ink-body">
               The date it actually came back, not today — an answer entered late must not read as a late
               answer.
             </span>
@@ -151,36 +174,40 @@ export function RfiRow({
               44px instead of the 20px it was. The box itself goes 16px → 20px:
               these two ticks are what marks an RFI worth pulling into a change
               order, so a miss costs money later. */}
-          <label className="flex min-h-11 items-center gap-3 py-2 text-sm text-slate-300">
+          <label className="flex min-h-11 items-center gap-3 py-2 text-sm text-ink-label">
             <input
               type="checkbox"
               name="costImpact"
               defaultChecked={rfi.costImpact}
-              className="h-5 w-5 shrink-0 accent-blue-500"
+              className="h-5 w-5 shrink-0 accent-yellow-500"
             />
             The answer changes cost
           </label>
-          <label className="flex min-h-11 items-center gap-3 py-2 text-sm text-slate-300">
+          <label className="flex min-h-11 items-center gap-3 py-2 text-sm text-ink-label">
             <input
               type="checkbox"
               name="scheduleImpact"
               defaultChecked={rfi.scheduleImpact}
-              className="h-5 w-5 shrink-0 accent-blue-500"
+              className="h-5 w-5 shrink-0 accent-yellow-500"
             />
             The answer changes schedule
           </label>
-          <p className="-mt-1 text-xs text-slate-400">
+          <p className="-mt-1 text-xs text-ink-body">
             These don&apos;t create a change order. They mark the RFIs worth pulling when someone builds
             one.
           </p>
 
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && (
+            <p role="alert" className="text-sm text-red-400">
+              {error}
+            </p>
+          )}
 
           <div className="flex flex-wrap gap-2">
             <button
               type="submit"
               disabled={isPending}
-              className="inline-flex min-h-11 items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+              className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
             >
               {isPending ? "Saving…" : "Record answer"}
             </button>
@@ -205,48 +232,49 @@ export function RfiRow({
     <li className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start">
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="font-mono text-xs text-slate-400">RFI {rfi.number}</span>
-          <span className="text-slate-100">{rfi.subject}</span>
+          <span className="font-mono text-xs text-ink-body">RFI {rfi.number}</span>
+          <span className="text-ink">{rfi.subject}</span>
           {overdue ? (
-            <span className="rounded bg-red-500/15 px-1.5 py-0.5 text-xs text-red-300">
+            <span className="rounded bg-tag-rose px-1.5 py-0.5 text-xs text-tag-rose-ink">
               Overdue
             </span>
           ) : (
-            <span className="rounded bg-slate-800 px-1.5 py-0.5 text-xs text-slate-400">
+            <span className="rounded bg-neutral-800 px-1.5 py-0.5 text-xs text-ink-body">
               {statusLabel(rfi.status)}
             </span>
           )}
           {rfi.costImpact && (
-            <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-xs text-amber-300">Cost</span>
+            <span className="rounded bg-tag-amber px-1.5 py-0.5 text-xs text-tag-amber-ink">Cost</span>
           )}
           {rfi.scheduleImpact && (
-            <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-xs text-amber-300">Schedule</span>
+            <span className="rounded bg-tag-amber px-1.5 py-0.5 text-xs text-tag-amber-ink">Schedule</span>
           )}
         </div>
 
-        <p className="mt-1 text-sm text-slate-300">{rfi.question}</p>
+        <p className="mt-1 text-sm text-ink-label">{rfi.question}</p>
 
         {rfi.answer && (
-          <p className="mt-2 border-l-2 border-slate-700 pl-3 text-sm text-slate-400">{rfi.answer}</p>
+          <p className="mt-2 border-l-2 border-line-card pl-3 text-sm text-ink-body">{rfi.answer}</p>
         )}
 
-        {/* slate-400, not slate-500 — measured 3.83:1 on the slate-900 card,
-            under the 4.5 floor. These dates ARE the delay claim; this page's
-            own intro says "we asked and nobody got back to us" is worth
-            nothing without them. They do not get to be the faintest line. */}
-        <p className="mt-1 text-xs text-slate-400">
-          {showJob && <span className="text-blue-400">{rfi.jobName} · </span>}
+        {/* ink-body, not ink-muted: the muted level is under the 4.5 text floor. */}
+        <p className="mt-1 text-xs text-ink-body">
+          {showJob && <span className="text-link">{rfi.jobName} · </span>}
           {rfi.sentOn ? `sent ${rfi.sentOn}` : "not sent"}
           {rfi.dueBy && ` · due ${rfi.dueBy}`}
           {rfi.answeredOn && ` · answered ${rfi.answeredOn}`}
           {openDays !== null && ` · ${openDays} day${openDays === 1 ? "" : "s"}`}
         </p>
-        <p className="text-xs text-slate-400">
+        <p className="text-xs text-ink-body">
           {[rfi.drawingReference, rfi.specSection].filter(Boolean).join(" · ")}
           {rfi.askedByName && `${rfi.drawingReference || rfi.specSection ? " · " : ""}raised by ${rfi.askedByName}`}
         </p>
 
-        {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
+        {error && (
+          <p role="alert" className="mt-1 text-sm text-red-400">
+            {error}
+          </p>
+        )}
       </div>
 
       {/* The widest action cluster in the app, and the sharpest instance of
@@ -278,10 +306,10 @@ export function RfiRow({
               confirmLabel="Confirm delete"
               pendingLabel="Deleting…"
               pending={isPending}
-              onConfirm={() => run(() => deleteRfi(rfi.id), "Could not delete the draft")}
+              onConfirm={() => run(() => deleteRfi(rfi.id))}
               deleteClassName={btn}
               cancelClassName={btn}
-              confirmClassName="inline-flex min-h-11 items-center justify-center rounded-md border border-red-500 px-3 py-2 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+              confirmClassName="inline-flex min-h-11 items-center justify-center rounded-md border border-red-500 px-3 py-2 text-sm text-red-400 hover:bg-tag-rose disabled:opacity-50"
             />
           ) : null
         }
@@ -290,8 +318,8 @@ export function RfiRow({
           <button
             type="button"
             disabled={isPending}
-            onClick={() => run(() => markRfiSent(rfi.id), "Could not mark it sent")}
-            className="inline-flex min-h-11 items-center justify-center rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+            onClick={() => run(() => markRfiSent(rfi.id))}
+            className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-3 py-2 text-sm font-medium text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
           >
             Mark sent
           </button>
@@ -307,7 +335,7 @@ export function RfiRow({
           <button
             type="button"
             disabled={isPending}
-            onClick={() => run(() => setRfiClosed(rfi.id, true), "Could not close it")}
+            onClick={() => run(() => setRfiClosed(rfi.id, true))}
             className={btn}
           >
             Close
@@ -318,7 +346,7 @@ export function RfiRow({
           <button
             type="button"
             disabled={isPending}
-            onClick={() => run(() => setRfiClosed(rfi.id, false), "Could not reopen it")}
+            onClick={() => run(() => setRfiClosed(rfi.id, false))}
             className={btn}
           >
             Reopen

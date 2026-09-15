@@ -69,7 +69,7 @@ export function SalesOpportunityFields({
             defaultValue={defaults.stageEffectiveOn}
             className={inputClass}
           />
-          <span className="mt-1 block text-xs font-normal text-slate-500">
+          <span className="mt-1 block text-xs font-normal text-ink-muted">
             {mode === "create"
               ? "The day the deal actually reached this stage — backdate it if it was not today."
               : "Only recorded if you change the stage above. Editing the amount is not a move."}

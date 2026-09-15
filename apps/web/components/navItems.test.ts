@@ -35,7 +35,12 @@ import { JOB_FUNCTIONS } from "@/lib/permissions";
  *  other item uses, and both are appended by navGroupsFor. Named here so
  *  the exception is a decision on the record rather than a hole in the
  *  check. */
-const APPENDED_SEPARATELY = new Set(["/sales", "/internal/usage"]);
+// "/ask" is a third kind of exception: it IS a tenant route, but Sidebar
+// renders it as a standalone link ABOVE the groups. A collapsible group
+// holding a single item costs a click to reveal there was nothing to
+// choose, so Ask is a one-click link pinned outside the scroll — and it is
+// in the Topbar on every page as well.
+const APPENDED_SEPARATELY = new Set(["/sales", "/internal/usage", "/ask"]);
 
 function groupedHrefs(groups: typeof NAV_GROUPS): Set<string> {
   return new Set(groups.flatMap((g) => g.items.map((i) => i.href)));
@@ -106,14 +111,28 @@ describe("the deployment link", () => {
 });
 
 describe("the collapsible rail (#240)", () => {
-  it("orders the groups as the money pipeline, six of them", () => {
+  it("runs every figure-carrying group first, then the plain ones", () => {
+    // CHANGED 2026-09-13, and the reason is worth keeping. This used to
+    // order the groups as the money PIPELINE — chase it, build it, prove
+    // it, get paid, stay legal — which reads well as a sentence and badly
+    // as a rail. Only four of the six carry a figure, so the pipeline
+    // order alternated: two money groups, two plain ones, then money
+    // again. The eye never settled, and Cyrus called it cluttery while
+    // staging the demo.
+    //
+    // The rail's premise is "that left edge is your money", and the demo
+    // scrolls it top to bottom naming figures in order. Both want the
+    // figures CONTIGUOUS. So the four that carry one lead, and the two
+    // that are navigation follow. The pipeline story is still there in
+    // the first four; it just no longer has two silent groups wedged
+    // into the middle of it.
     expect(NAV_GROUPS.map((g) => g.heading)).toEqual([
       "Pre-construction",
       "Operations",
-      "Paper trail",
-      "Logistics",
       "Financials",
       "Compliance & safety",
+      "Paper trail",
+      "Logistics",
     ]);
   });
 
@@ -124,10 +143,20 @@ describe("the collapsible rail (#240)", () => {
     }
   });
 
-  it("brings RFIs, Submittals, Drawings and Closeout back under Paper trail, in the order the paper arrives", () => {
+  it("brings Intake, RFIs, Submittals, Drawings and Closeout back under Paper trail, in the order the paper arrives", () => {
     const paperTrail = NAV_GROUPS.find((g) => g.heading === "Paper trail");
-    expect(paperTrail?.items.map((i) => i.href)).toEqual(["/rfis", "/submittals", "/drawings", "/closeout"]);
-    // Findable means clickable: none of the four is disabled.
+    // `/intake` leads, and the position is the point rather than an
+    // afterthought: it is where the paper LANDS. Everything else in this
+    // group is something you go looking for; intake is the one you are sent
+    // to by a folder somebody just emailed you.
+    expect(paperTrail?.items.map((i) => i.href)).toEqual([
+      "/intake",
+      "/rfis",
+      "/submittals",
+      "/drawings",
+      "/closeout",
+    ]);
+    // Findable means clickable: none of the five is disabled.
     expect(paperTrail?.items.filter((i) => i.disabled)).toEqual([]);
   });
 

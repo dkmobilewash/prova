@@ -2,25 +2,17 @@
 @tailwind components;
 @tailwind utilities;
 
-/* The body stays dark, and that is now a deliberate second decision
-   rather than the original one.
- 
-   The light theme was meant to land here, with other pages merely looking
-   inconsistent until a follow-up pass converted them. They did not merely
-   look inconsistent: browser testing found unreadable content on 15 of 17
-   pages — most seriously an entire column of money on /cash-flow
-   rendering white-on-white, because that table sits directly on the page
-   background rather than inside a card.
- 
-   So the light surface is scoped to what has actually been converted. The
-   dashboard opts in; every other page keeps the ground its classes were
-   written against, and converts when someone converts it. See the
-   checklist in the PR. */
+/* The body is dark: the founder chose the dark "MainVision / Money Rail"
+   mockups for filming (2026-09-11, the same day the light palette
+   landed). Nothing here changed for the flip — the body reads its colours
+   from the tokens in tailwind.config.ts, which is the whole point of the
+   token pass: this re-skin was the config file plus a sweep of hardcoded
+   utilities, not a rewrite of this file. */
 body {
-  background-color: theme("colors.slate.950");
-  color: theme("colors.slate.100");
+  background-color: theme("colors.canvas");
+  color: theme("colors.ink");
 }
 
 ::selection {
-  background-color: theme("colors.blue.600 / 40%");
+  background-color: theme("colors.brand / 50%");
 }

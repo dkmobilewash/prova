@@ -18,7 +18,7 @@ export function ToolboxTalkForm({ jobs, today }: { jobs: JobOption[]; today: str
       <button
         type="button"
         onClick={() => setIsOpen(true)}
-        className="inline-flex min-h-11 items-center justify-center rounded-md border border-slate-700 px-4 py-2 text-sm font-medium text-slate-200 hover:border-slate-500"
+        className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm font-medium text-ink-label hover:bg-neutral-800"
       >
         Log a toolbox talk
       </button>
@@ -44,9 +44,9 @@ export function ToolboxTalkForm({ jobs, today }: { jobs: JobOption[]; today: str
           }
         });
       }}
-      className="flex flex-col gap-3 rounded-lg border border-slate-800 bg-slate-900 p-4"
+      className="flex flex-col gap-3 rounded-lg border border-line-card bg-surface p-4"
     >
-      <h2 className="text-sm font-semibold text-slate-300">Log a toolbox talk</h2>
+      <h2 className="text-sm font-semibold text-ink-label">Log a toolbox talk</h2>
       <FormDraftNotice draft={draft} />
 
       <div className="grid gap-3 sm:grid-cols-2">
@@ -105,7 +105,7 @@ export function ToolboxTalkForm({ jobs, today }: { jobs: JobOption[]; today: str
         <button
           type="submit"
           disabled={isPending}
-          className="inline-flex min-h-11 items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+          className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
         >
           {isPending ? "Saving…" : "Log talk"}
         </button>
@@ -116,7 +116,7 @@ export function ToolboxTalkForm({ jobs, today }: { jobs: JobOption[]; today: str
             setIsOpen(false);
             setError(null);
           }}
-          className="inline-flex min-h-11 items-center justify-center rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50"
+          className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50"
         >
           Cancel
         </button>

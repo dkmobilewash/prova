@@ -78,7 +78,7 @@ export function MaterialOrderFields({
             </option>
           ))}
         </select>
-        <span className="text-xs text-slate-500">
+        <span className="text-xs text-ink-muted">
           Who owes you the material. This is who the late list points at.
         </span>
       </label>
@@ -106,7 +106,7 @@ export function MaterialOrderFields({
               </option>
             ))}
           </select>
-          <span className="text-xs text-slate-500">
+          <span className="text-xs text-ink-muted">
             Optional, and for attribution only — it ties a late delivery to the scope it holds up. No
             cost is carried here; material cost stays on the job&apos;s cost entries.
           </span>
@@ -123,7 +123,7 @@ export function MaterialOrderFields({
             placeholder="e.g. SO-44821"
             className={inputClass}
           />
-          <span className="text-xs text-slate-500">
+          <span className="text-xs text-ink-muted">
             So a phone call can open with the number they&apos;ll recognise.
           </span>
         </label>
@@ -135,7 +135,7 @@ export function MaterialOrderFields({
             defaultValue={defaults.promisedFor ?? ""}
             className={inputClass}
           />
-          <span className="text-xs text-slate-500">
+          <span className="text-xs text-ink-muted">
             Leave blank if they haven&apos;t committed to a date — a guessed date would
             manufacture lateness nobody agreed to.
           </span>

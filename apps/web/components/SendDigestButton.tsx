@@ -29,13 +29,13 @@ export function SendDigestButton({
   const router = useRouter();
 
   return (
-    <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
+    <div className="rounded-lg border border-line-card bg-surface p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-sm font-medium text-slate-200">
+          <p className="text-sm font-medium text-ink-label">
             Email these to me
           </p>
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-ink-muted">
             One email to {recipientEmail}, covering anything you haven&apos;t
             already been told.
           </p>
@@ -61,7 +61,7 @@ export function SendDigestButton({
               }
             });
           }}
-          className="inline-flex shrink-0 items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+          className="inline-flex shrink-0 items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
         >
           {isPending ? "Sending…" : "Email these to me"}
         </button>
