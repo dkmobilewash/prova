@@ -23,7 +23,7 @@ export default function RootLayout() {
   return (
     <ClerkProvider publishableKey={publishableKey} tokenCache={tokenCache}>
       <Stack>
-        <Stack.Screen name="index" options={{ title: "Jobs" }} />
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="sign-in" options={{ title: "Sign in" }} />
         <Stack.Screen name="reports/[jobId]" options={{ title: "Field reports" }} />
       </Stack>

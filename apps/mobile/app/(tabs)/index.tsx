@@ -29,7 +29,6 @@ export default function JobsScreen() {
 
   return (
     <View style={{ padding: 16, gap: 12, flex: 1 }}>
-      <Text style={{ fontSize: 20, fontWeight: "600" }}>Jobs</Text>
       {error ? <Text style={{ color: "#b00" }}>{error}</Text> : null}
       <FlatList
         data={jobs}
