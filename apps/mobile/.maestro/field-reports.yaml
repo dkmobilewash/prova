@@ -1,7 +1,7 @@
 appId: host.exp.Exponent
 ---
 # The signed-in user lands on the Jobs list; tap a job to reach its reports.
-- tapOn: "TAKEOFF-TEST-2026-09-02, ESTIMATE"
+- tapOn: "TAKEOFF-TEST-2026-09-02, Estimate"
 - extendedWaitUntil:
     visible: "Pending sync: 0"
     timeout: 20000

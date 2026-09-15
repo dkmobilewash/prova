@@ -3,6 +3,9 @@ import { Redirect, router } from "expo-router";
 import { useEffect, useState } from "react";
 import { FlatList, Pressable, Text, View } from "react-native";
 import * as api from "@/lib/api";
+import { Card } from "@/components/Card";
+import { StatusBadge } from "@/components/StatusBadge";
+import { colors } from "@/lib/theme";
 import type { Job } from "@/lib/types";
 
 export default function JobsScreen() {
@@ -24,22 +27,22 @@ export default function JobsScreen() {
     })();
   }, [isSignedIn, getToken]);
 
-  if (!isLoaded) return <Text>Loading…</Text>;
+  if (!isLoaded) return <Text style={{ color: colors.ink }}>Loading…</Text>;
   if (!isSignedIn) return <Redirect href="/sign-in" />;
 
   return (
-    <View style={{ padding: 16, gap: 12, flex: 1 }}>
-      {error ? <Text style={{ color: "#b00" }}>{error}</Text> : null}
+    <View style={{ flex: 1, backgroundColor: colors.canvas, padding: 16 }}>
+      {error ? <Text style={{ color: colors.tagRoseInk, marginBottom: 12 }}>{error}</Text> : null}
       <FlatList
         data={jobs}
         keyExtractor={(item) => item.id}
+        contentContainerStyle={{ gap: 12 }}
         renderItem={({ item }) => (
-          <Pressable
-            onPress={() => router.push(`/reports/${item.id}`)}
-            style={{ paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: "#eee" }}
-          >
-            <Text style={{ fontWeight: "600" }}>{item.name}</Text>
-            <Text style={{ color: "#666" }}>{item.status.replace("_", " ")}</Text>
+          <Pressable onPress={() => router.push(`/reports/${item.id}`)}>
+            <Card>
+              <Text style={{ fontWeight: "600", color: colors.ink, marginBottom: 6 }}>{item.name}</Text>
+              <StatusBadge status={item.status} />
+            </Card>
           </Pressable>
         )}
       />

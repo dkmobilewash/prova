@@ -1,17 +1,16 @@
 import { useAuth } from "@clerk/expo";
-import { Pressable, Text, View } from "react-native";
+import { View } from "react-native";
+import { Button } from "@/components/Button";
+import { colors } from "@/lib/theme";
 
 export default function MoreScreen() {
   const { signOut } = useAuth();
 
   return (
-    <View style={{ padding: 16, gap: 12 }}>
-      <Pressable
-        onPress={() => signOut()}
-        style={{ backgroundColor: "#111", borderRadius: 6, padding: 12 }}
-      >
-        <Text style={{ color: "#fff", textAlign: "center" }}>Sign out</Text>
-      </Pressable>
+    <View style={{ flex: 1, backgroundColor: colors.canvas, padding: 16 }}>
+      <Button variant="secondary" onPress={() => signOut()}>
+        Sign out
+      </Button>
     </View>
   );
 }

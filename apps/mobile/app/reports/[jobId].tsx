@@ -1,6 +1,9 @@
 import { useLocalSearchParams } from "expo-router";
 import { useState } from "react";
-import { FlatList, Pressable, Text, TextInput, View } from "react-native";
+import { FlatList, Text, TextInput, View } from "react-native";
+import { Button } from "@/components/Button";
+import { Card } from "@/components/Card";
+import { colors } from "@/lib/theme";
 import { useFieldReports } from "@/lib/use-field-reports";
 
 export default function ReportsScreen() {
@@ -10,51 +13,57 @@ export default function ReportsScreen() {
   const [workPerformed, setWorkPerformed] = useState("");
 
   return (
-    <View style={{ padding: 16, gap: 12, flex: 1 }}>
-      <Text>Pending sync: {pending}</Text>
-      {error ? <Text style={{ color: "#b00" }}>{error}</Text> : null}
+    <View style={{ flex: 1, backgroundColor: colors.canvas, padding: 16, gap: 12 }}>
+      <Text style={{ color: colors.inkMuted }}>Pending sync: {pending}</Text>
+      {error ? <Text style={{ color: colors.tagRoseInk }}>{error}</Text> : null}
 
       <TextInput
         placeholder="Date (YYYY-MM-DD)"
+        placeholderTextColor={colors.inkMuted}
         value={reportDate}
         onChangeText={setReportDate}
-        style={{ borderWidth: 1, borderColor: "#ccc", borderRadius: 6, padding: 10 }}
+        style={inputStyle}
       />
       <TextInput
         placeholder="Work performed"
+        placeholderTextColor={colors.inkMuted}
         value={workPerformed}
         onChangeText={setWorkPerformed}
         multiline
-        style={{ borderWidth: 1, borderColor: "#ccc", borderRadius: 6, padding: 10, minHeight: 60 }}
+        style={[inputStyle, { minHeight: 60, textAlignVertical: "top" }]}
       />
-      <Pressable
+      <Button
+        variant="primary"
         onPress={() => {
           if (!reportDate || !workPerformed) return;
-          create({
-            reportDate,
-            workPerformed,
-            crewPresent: null,
-            weather: null,
-            delays: null,
-          });
+          create({ reportDate, workPerformed, crewPresent: null, weather: null, delays: null });
           setWorkPerformed("");
         }}
-        style={{ backgroundColor: "#111", borderRadius: 6, padding: 12 }}
       >
-        <Text style={{ color: "#fff", textAlign: "center" }}>Add report</Text>
-      </Pressable>
+        Add report
+      </Button>
 
       <FlatList
         data={reports}
         keyExtractor={(item) => item.id}
+        contentContainerStyle={{ gap: 12 }}
         renderItem={({ item }) => (
-          <View style={{ paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: "#eee" }}>
-            <Text style={{ fontWeight: "600" }}>{item.reportDate}</Text>
-            <Text>{item.workPerformed}</Text>
-            {item.crewPresent ? <Text>Crew: {item.crewPresent}</Text> : null}
-          </View>
+          <Card>
+            <Text style={{ fontWeight: "600", color: colors.ink, marginBottom: 4 }}>{item.reportDate}</Text>
+            <Text style={{ color: colors.inkBody }}>{item.workPerformed}</Text>
+            {item.crewPresent ? <Text style={{ color: colors.inkBody }}>Crew: {item.crewPresent}</Text> : null}
+          </Card>
         )}
       />
     </View>
   );
 }
+
+const inputStyle = {
+  borderWidth: 1,
+  borderColor: colors.lineCard,
+  backgroundColor: colors.surface,
+  borderRadius: 6,
+  padding: 10,
+  color: colors.ink,
+};
