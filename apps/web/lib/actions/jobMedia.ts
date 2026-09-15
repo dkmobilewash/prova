@@ -10,8 +10,13 @@ import {
   isBlobStorageUrl,
   isJobMediaBlobUrl,
   isOurBlobStoreUrl,
+  jobMediaKind,
   jobMediaMaxBytes,
 } from "@/lib/job-media";
+import {
+  locationProblemMessage,
+  parseCapturedLocation,
+} from "@/lib/job-media-location";
 import {
   annotationProblem,
   annotationProblemMessage,
@@ -156,6 +161,30 @@ export async function recordJobMedia(jobId: string, formData: FormData): Promise
 
   const caption = text(formData, "caption");
 
+  // WHERE, and the three fields are absent on most uploads.
+  //
+  // A REFUSAL, NOT A SHRUG, when they are present and wrong — and the
+  // distinction matters because the browser is built so this can never fire
+  // on an honest upload. `JobMediaCapture` runs the SAME parser before it
+  // sends anything, and drops the location (telling the person why) if it
+  // objects, so a coordinate arriving here that is not on Earth means a
+  // caller that is not the form. Recording the photo and silently discarding
+  // the location would hide that forever; failing the record makes it
+  // visible in the one place somebody is looking.
+  //
+  // The empty case is NOT a refusal. `parseCapturedLocation` returns
+  // `{ ok: true, location: null }` for three blank fields, which is a
+  // desktop upload, a denied permission, and every capture older than an
+  // hour. Those must record exactly like any other photo — the photo is the
+  // point and the coordinate is a bonus.
+  const parsedLocation = parseCapturedLocation({
+    latitude: text(formData, "latitude"),
+    longitude: text(formData, "longitude"),
+    accuracyMeters: text(formData, "accuracyMeters"),
+  });
+  if (!parsedLocation.ok) return fail(locationProblemMessage(parsedLocation.problem));
+  const location = parsedLocation.location;
+
   await prisma.jobMedia.create({
     data: {
       companyId: context.companyId,
@@ -166,6 +195,13 @@ export async function recordJobMedia(jobId: string, formData: FormData): Promise
       caption: caption || null,
       capturedAt,
       capturedByUserId: context.id,
+      // Written as a group or not at all, which is what the database's
+      // `JobMedia_captured_location_pairing` CHECK requires. Rounded to five
+      // decimals by the parser above, once, so the stored value is the
+      // displayed value.
+      capturedLatitude: location?.latitude ?? null,
+      capturedLongitude: location?.longitude ?? null,
+      capturedAccuracyMeters: location?.accuracyMeters ?? null,
     },
   });
 
@@ -192,6 +228,18 @@ export async function recordJobMedia(jobId: string, formData: FormData): Promise
  * clock produces the same wrong time. So the rule this actually follows is
  * the other one — dates that matter are ENTERED, not stamped — with the
  * device's guess as the default rather than the last word.
+ *
+ * WHERE IT WAS TAKEN IS NOT EDITABLE, and that is the opposite call to
+ * `capturedAt` on purpose. A capture time is a value a person can genuinely
+ * know better than the device did — they remember Friday. A coordinate is
+ * not: nobody can type five decimals of latitude from memory, so an editable
+ * one would only ever be a guess entered by hand, stored in the same three
+ * columns as a measurement and indistinguishable from one afterwards. The
+ * error bar stored beside it (`capturedAccuracyMeters`) is what a wrong-
+ * looking fix is answered with instead, and the remedy for a location that
+ * should not be there at all is deleting the capture. That is a real gap —
+ * there is no "remove just the location" — and it is named in the changelog
+ * rather than papered over.
  */
 export async function updateJobMediaDetails(
   mediaId: string,
@@ -693,9 +741,42 @@ export async function saveJobMediaAnnotations(
 
   const media = await prisma.jobMedia.findUnique({
     where: { id: mediaId },
-    select: { id: true, companyId: true, jobId: true },
+    // `contentType` is read for the kind check below. There is no `kind`
+    // column to read instead, deliberately — see media.prisma; a stored one
+    // could disagree with the type the file was signed and uploaded as.
+    select: { id: true, companyId: true, jobId: true, contentType: true },
   });
   if (!media || media.companyId !== context.companyId) return fail("Photo not found");
+
+  // MARKS GO ON PHOTOGRAPHS, AND THIS IS THE ENFORCEMENT OF THAT rather
+  // than a second opinion about it. Until #275 the only thing standing
+  // between a voice note and a set of arrows was `JobMediaCard` declining
+  // to render the button, which is the courtesy side — and the comment
+  // four lines below already says why that is not enough: this is an
+  // endpoint any signed-in caller can post to directly.
+  //
+  // The odd one out among this action's guards, which is exactly why it
+  // was missed: ownership, the cap and every mark's geometry were all
+  // enforced here from the first commit. This one read as handled because
+  // the button genuinely is hidden.
+  //
+  // Refused BEFORE the cap and the geometry: "that is a voice note" is the
+  // useful sentence, and telling someone their thirty marks are too many
+  // for a file that can hold none is not.
+  //
+  // `!== "photo"` rather than a video/audio pair, so a contentType this
+  // build does not recognise (jobMediaKind returns null) is refused too
+  // rather than falling through the gap between two named kinds.
+  const kind = jobMediaKind(media.contentType);
+  if (kind !== "photo") {
+    return fail(
+      kind === "video"
+        ? "Marks go on photos. This is a video — a mark would point at whatever was in frame at second nought."
+        : kind === "audio"
+          ? "Marks go on photos. This is a voice note, so there is nothing to draw on."
+          : "Marks go on photos, and this file is not one.",
+    );
+  }
 
   // The cap first: a person who has somehow drawn thirty marks should be
   // told that, rather than told about whichever one of them is also
