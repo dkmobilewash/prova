@@ -7,7 +7,7 @@ import { actionFail as fail, actionOk as ok, type ActionResult } from "./shared"
 import { can } from "@/lib/permissions";
 import {
   createFieldReport,
-  fieldReportFields,
+  updateFieldReport,
   FieldReportInputError,
   FIELD_ONLY,
 } from "@/lib/field-reports-core";
@@ -66,8 +66,9 @@ export async function createDailyFieldReport(
     weather: text(formData, "weather"),
     delays: text(formData, "delays"),
   });
-  if (result.ok) revalidateBoth(jobId);
-  return result;
+  if (!result.ok) return result;
+  revalidateBoth(jobId);
+  return ok;
 }
 
 export async function updateDailyFieldReport(
@@ -76,20 +77,14 @@ export async function updateDailyFieldReport(
 ): Promise<ActionResult> {
   const { company } = await requireCompanyContext();
   return runAction(async () => {
-    const report = await prisma.dailyFieldReport.findUnique({ where: { id: reportId } });
-    if (!report || report.companyId !== company.id) return fail("Report not found");
-
-    await prisma.dailyFieldReport.update({
-      where: { id: reportId },
-      data: fieldReportFields({
-        workPerformed: text(formData, "workPerformed"),
-        crewPresent: text(formData, "crewPresent"),
-        weather: text(formData, "weather"),
-        delays: text(formData, "delays"),
-      }),
+    const result = await updateFieldReport(company, reportId, {
+      workPerformed: text(formData, "workPerformed"),
+      crewPresent: text(formData, "crewPresent"),
+      weather: text(formData, "weather"),
+      delays: text(formData, "delays"),
     });
-
-    revalidateBoth(report.jobId);
+    if (!result.ok) return result;
+    revalidateBoth(result.value.report.jobId);
     return ok;
   });
 }
