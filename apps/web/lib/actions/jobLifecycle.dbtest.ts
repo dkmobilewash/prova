@@ -141,6 +141,17 @@ describe("the job lifecycle against a real database", () => {
       const jobs = await prisma.job.findMany({ where: { companyId: id }, select: { id: true } });
       const jobIds = jobs.map((j) => j.id);
       await prisma.contractDocument.deleteMany({ where: { jobId: { in: jobIds } } });
+      // Issue #279 made this line necessary, and the reason is worth a
+      // sentence. `recordExecutedSubcontract` used to number its rows from
+      // MAX(versionNumber) + 1 and never created a counter row, so this
+      // teardown was correct only by accident. Routing it through
+      // ContractDocumentVersionCounter means the suite now leaves one —
+      // and the counter is a RESTRICT child of Job that deleting the
+      // DOCUMENTS does not reach, so the job delete below failed. Same
+      // shape as #227's InvoiceCounter, one layer down; the real cleanup
+      // scripts already handle this model (scratch-scope.mjs,
+      // clean-scratch-data.mjs, seed-demo.mjs), this teardown did not.
+      await prisma.contractDocumentVersionCounter.deleteMany({ where: { jobId: { in: jobIds } } });
       await prisma.jobLineItem.deleteMany({ where: { jobId: { in: jobIds } } });
       await prisma.signatureRequest.deleteMany({ where: { jobId: { in: jobIds } } });
       await prisma.job.deleteMany({ where: { companyId: id } });

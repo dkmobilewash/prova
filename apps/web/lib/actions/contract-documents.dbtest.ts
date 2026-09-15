@@ -28,7 +28,14 @@ import { prisma } from "@prova/db";
  * billing.dbtest.ts documents.
  */
 
-const context = { company: { id: "" }, id: "user_1", role: "OWNER" as string };
+// `jobFunction` is here for `recordExecutedSubcontract`, which asserts
+// MANAGE_JOBS through `can()` — the plain upload asserts no capability.
+const context = {
+  company: { id: "" },
+  id: "user_1",
+  role: "OWNER" as string,
+  jobFunction: null as string | null,
+};
 
 vi.mock("@/lib/auth", () => ({
   requireCompanyContext: async () => context,
@@ -54,7 +61,35 @@ vi.mock("@vercel/blob", () => ({
   },
 }));
 
+// `jobs.ts` imports `redirect` at module scope, so importing it needs this
+// even though nothing in these blocks redirects.
+vi.mock("next/navigation", () => ({
+  redirect: (url: string) => {
+    throw new Error(`NEXT_REDIRECT:${url}`);
+  },
+}));
+
 const { uploadContractDocument, deleteContractDocument } = await import("./billing");
+// The SECOND writer of ContractDocument — issue #279. Both are driven from
+// one suite deliberately: the bug was not in either action, it was in the
+// two of them disagreeing, so a test that imports only one cannot see it.
+const { recordExecutedSubcontract } = await import("./jobs");
+
+/** What the browser posts to `recordExecutedSubcontract`. Same folder as
+ * `fileForm`'s URL — `contracts/<jobId>/`, shared by both purposes — and a
+ * signed date, which this action requires and the plain upload has no
+ * column for. */
+function executedForm(signedDate = "2026-07-04") {
+  uploadSeq += 1;
+  const fd = new FormData();
+  fd.set(
+    "fileUrl",
+    `https://${OUR_STORE}.public.blob.vercel-storage.com/contracts/${currentJobId}/executed-r4nd0m${uploadSeq}.pdf`,
+  );
+  fd.set("fileName", "executed-subcontract.pdf");
+  fd.set("executedSignedDate", signedDate);
+  return fd;
+}
 
 /** What the browser sends once `upload()` has finished: the URL the store
  * returned, with the random suffix the token asked for, and the name of
@@ -271,5 +306,126 @@ describe("deleteContractDocument also deletes the blob — issue #106 finding 3"
     await expect(deleteContractDocument(doc.id)).resolves.toBeUndefined();
 
     expect(await prisma.contractDocument.findUnique({ where: { id: doc.id } })).toBeNull();
+  });
+});
+
+describe("issue #279: the two writers of ContractDocument agree on the version", () => {
+  /**
+   * The bug this pins was NOT a race, which is what makes it worth a
+   * database test rather than a unit one. `recordExecutedSubcontract`
+   * numbered from `MAX(versionNumber) + 1` and never created a counter
+   * row, while `uploadContractDocument` took its number from the counter.
+   * So the ordinary order of events on a job — the GC sends the executed
+   * subcontract, then weeks later sends an amendment — put version 1 in
+   * the table with no counter behind it, and the next upload's upsert
+   * created `lastNumber: 1`, issued 1, and violated
+   * @@unique([jobId, versionNumber]).
+   *
+   * One person, two clicks, no concurrency. Both orders are covered
+   * because they fail at different steps: executed-first collides on the
+   * very next upload, upload-first collides one version later.
+   */
+  const ctx = { companyId: "", executedJobId: "", uploadJobId: "" };
+
+  beforeAll(async () => {
+    const company = await prisma.company.create({ data: { name: "Doc Version Agreement Co" } });
+    ctx.companyId = company.id;
+    context.company.id = company.id;
+    const user = await prisma.user.create({
+      data: { companyId: company.id, clerkId: "clerk_doc_279", email: "doc-279@test.example", role: "OWNER" },
+    });
+    context.id = user.id;
+    const contact = await prisma.contact.create({ data: { companyId: company.id, name: "Amendment GC" } });
+    const executed = await prisma.job.create({
+      data: { companyId: company.id, contactId: contact.id, name: "Executed First Job", status: "CONTRACTED" },
+    });
+    const upload = await prisma.job.create({
+      data: { companyId: company.id, contactId: contact.id, name: "Upload First Job", status: "CONTRACTED" },
+    });
+    ctx.executedJobId = executed.id;
+    ctx.uploadJobId = upload.id;
+  });
+
+  afterAll(async () => {
+    const jobIds = [ctx.executedJobId, ctx.uploadJobId];
+    await prisma.contractDocument.deleteMany({ where: { jobId: { in: jobIds } } });
+    await prisma.contractDocumentVersionCounter.deleteMany({ where: { jobId: { in: jobIds } } });
+    await prisma.job.deleteMany({ where: { companyId: ctx.companyId } });
+    await prisma.contact.deleteMany({ where: { companyId: ctx.companyId } });
+    await prisma.user.deleteMany({ where: { companyId: ctx.companyId } });
+    await prisma.company.delete({ where: { id: ctx.companyId } });
+    await prisma.$disconnect();
+  });
+
+  it("records the executed subcontract THROUGH the counter, so the row and the counter agree", async () => {
+    currentJobId = ctx.executedJobId;
+    expect(await recordExecutedSubcontract(ctx.executedJobId, executedForm())).toEqual({ ok: true });
+
+    const counter = await prisma.contractDocumentVersionCounter.findUnique({
+      where: { jobId: ctx.executedJobId },
+    });
+    // `counter row: null` here is the entire bug. It is what let the next
+    // upload start counting from zero against a table that already held 1.
+    expect(counter?.lastNumber).toBe(1);
+  });
+
+  it("then takes an amendment upload without colliding — the exact reported sequence", async () => {
+    currentJobId = ctx.executedJobId;
+    expect(await uploadContractDocument(ctx.executedJobId, fileForm("amendment.pdf"))).toEqual({
+      ok: true,
+    });
+
+    const versions = (
+      await prisma.contractDocument.findMany({
+        where: { jobId: ctx.executedJobId },
+        orderBy: { versionNumber: "asc" },
+      })
+    ).map((d) => d.versionNumber);
+    expect(versions).toEqual([1, 2]);
+  });
+
+  it("collides in the reverse order too, one version later, and must not", async () => {
+    currentJobId = ctx.uploadJobId;
+    // Upload first: counter row created at 1. Then the executed
+    // subcontract, which under the old code read MAX = 1 and wrote 2
+    // WITHOUT bumping the counter — leaving the counter at 1 and the table
+    // at 2, so the NEXT upload issued 2 and collided.
+    expect(await uploadContractDocument(ctx.uploadJobId, fileForm("first.pdf"))).toEqual({ ok: true });
+    expect(await recordExecutedSubcontract(ctx.uploadJobId, executedForm())).toEqual({ ok: true });
+    expect(await uploadContractDocument(ctx.uploadJobId, fileForm("third.pdf"))).toEqual({ ok: true });
+
+    const versions = (
+      await prisma.contractDocument.findMany({
+        where: { jobId: ctx.uploadJobId },
+        orderBy: { versionNumber: "asc" },
+      })
+    ).map((d) => d.versionNumber);
+    expect(versions).toEqual([1, 2, 3]);
+
+    const counter = await prisma.contractDocumentVersionCounter.findUnique({
+      where: { jobId: ctx.uploadJobId },
+    });
+    expect(counter?.lastNumber).toBe(3);
+  });
+
+  it("does not reissue an executed subcontract's version after that row is deleted", async () => {
+    // The counter's reason for existing, now proved on the path that was
+    // bypassing it. `deleteContractDocument` is a real action here, unlike
+    // invoices, so this reissue is reachable rather than theoretical.
+    currentJobId = ctx.uploadJobId;
+    const v3 = await prisma.contractDocument.findFirstOrThrow({
+      where: { jobId: ctx.uploadJobId, versionNumber: 3 },
+    });
+    await prisma.contractDocument.delete({ where: { id: v3.id } });
+
+    expect(await recordExecutedSubcontract(ctx.uploadJobId, executedForm())).toEqual({ ok: true });
+
+    const versions = (
+      await prisma.contractDocument.findMany({
+        where: { jobId: ctx.uploadJobId },
+        orderBy: { versionNumber: "asc" },
+      })
+    ).map((d) => d.versionNumber);
+    expect(versions).toEqual([1, 2, 4]);
   });
 });

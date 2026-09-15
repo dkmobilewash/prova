@@ -25,6 +25,7 @@ const db = {
   jobs: [] as Row[],
   contacts: [] as Row[],
   contractDocuments: [] as Row[],
+  contractDocumentVersionCounters: [] as Row[],
   signatureRequests: [] as Row[],
   lineItems: [] as Row[],
 };
@@ -78,9 +79,40 @@ const prisma = {
       )[0];
     },
     create: async ({ data }: { data: Row }) => {
-      const doc = { id: `doc_${db.contractDocuments.length + 1}`, ...data };
+      const doc: Row = { id: `doc_${db.contractDocuments.length + 1}`, ...data };
+      // @@unique([jobId, versionNumber]) is the constraint the whole of
+      // issue #279 turns on, so the fake enforces it rather than accepting
+      // a duplicate silently. A fake that takes a collision the real
+      // database would refuse can only ever agree with itself.
+      if (
+        db.contractDocuments.some(
+          (d) => d.jobId === doc.jobId && d.versionNumber === doc.versionNumber,
+        )
+      ) {
+        throw new Error(
+          `Unique constraint failed on the fields: (\`jobId\`,\`versionNumber\`)`,
+        );
+      }
       db.contractDocuments.push(doc);
       return doc;
+    },
+  },
+  /** Issue #279: `recordExecutedSubcontract` numbers through the counter
+   * now, like `uploadContractDocument` always did. Modelled properly —
+   * absent row creates at `create.lastNumber`, present row increments —
+   * because a stub returning a fixed number would pass whether or not the
+   * action bumped anything, which is the defect this suite now covers. */
+  contractDocumentVersionCounter: {
+    upsert: async ({ where, create, update }: { where: Row; create: Row; update: Row }) => {
+      const existing = db.contractDocumentVersionCounters.find((c) => c.jobId === where.jobId);
+      if (!existing) {
+        const row = { jobId: where.jobId, lastNumber: create.lastNumber };
+        db.contractDocumentVersionCounters.push(row);
+        return row;
+      }
+      const bump = (update.lastNumber as Row).increment;
+      existing.lastNumber = Number(existing.lastNumber) + Number(bump);
+      return existing;
     },
   },
   signatureRequest: {
@@ -146,6 +178,7 @@ beforeEach(() => {
     { id: "con_outsider", companyId: OTHER_COMPANY_ID, name: "Someone else's GC", email: null },
   ];
   db.contractDocuments = [];
+  db.contractDocumentVersionCounters = [];
   db.signatureRequests = [];
   db.lineItems = [{ id: "li_1", jobId: JOB_ID, isDeleted: false }];
   jobUpdates.length = 0;

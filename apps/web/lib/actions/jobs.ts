@@ -7,6 +7,7 @@ import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { documentDisplayFileName, documentUrlProblem } from "@/lib/document-uploads";
 import { Prisma, prisma } from "@prova/db";
+import { issueContractDocumentVersion } from "@/lib/billing/contract-document-version";
 import { createEstimateJob } from "@/lib/estimating/create-job";
 import { draftLinesFromScope } from "@/lib/estimating/draft-lines";
 import { END_BEFORE_START } from "@/lib/estimating/job-schedule";
@@ -384,21 +385,29 @@ export async function recordExecutedSubcontract(
 
   const note = String(formData.get("note") ?? "").trim();
 
-  const lastVersion = await prisma.contractDocument.findFirst({
-    where: { jobId },
-    orderBy: { versionNumber: "desc" },
-  });
-
-  await prisma.contractDocument.create({
-    data: {
-      jobId,
-      versionNumber: (lastVersion?.versionNumber ?? 0) + 1,
-      fileUrl,
-      fileName,
-      note: note || null,
-      executedSignedDate: signedDate.value,
-      uploadedByUserId: context.id,
-    },
+  // Issue #279. This read `MAX(versionNumber) + 1` off the surviving rows
+  // while `uploadContractDocument` took its number from
+  // ContractDocumentVersionCounter, so the two writers of this table
+  // disagreed — and because THIS one never created a counter row, the
+  // collision was deterministic rather than a race. Record the executed
+  // subcontract on a new job (version 1, no counter row), then upload the
+  // first amendment: the counter's upsert finds nothing, creates
+  // `lastNumber: 1`, issues 1, and the insert violates
+  // @@unique([jobId, versionNumber]). That is the ordinary order of events
+  // on a job, one person, weeks apart, and it surfaces as a redacted
+  // digest because neither action guards P2002.
+  await prisma.$transaction(async (tx) => {
+    await tx.contractDocument.create({
+      data: {
+        jobId,
+        versionNumber: await issueContractDocumentVersion(tx, jobId),
+        fileUrl,
+        fileName,
+        note: note || null,
+        executedSignedDate: signedDate.value,
+        uploadedByUserId: context.id,
+      },
+    });
   });
 
   revalidatePath(`/jobs/${jobId}`);
