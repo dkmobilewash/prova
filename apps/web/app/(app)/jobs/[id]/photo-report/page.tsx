@@ -300,10 +300,17 @@ export default async function JobPhotoReportPage({
                           be a third answer to "what does an arrow look
                           like", and the one that matters is that the paper
                           agrees with the screen the sub was looking at when
-                          they decided to print it. `aspect` is 4/3 because
-                          that is this box, exactly as the annotator's own
-                          `aspect()` reads 4/3 off its surface. */}
-                      <JobMediaMarks marks={capture.marks} aspect={4 / 3} />
+                          they decided to print it.
+
+                          It used to pass `aspect={4 / 3}` and say so. The
+                          prop is gone with issue #256 — the number is
+                          `JOB_MEDIA_MARK_BOX_ASPECT` and the component owns
+                          it, because four callers agreeing about a constant
+                          is four chances to disagree about one. This page
+                          was already correct and needed no geometry change;
+                          the gallery and the portal were the two that
+                          cropped. */}
+                      <JobMediaMarks marks={capture.marks} />
                     </div>
 
                     <figcaption className="mx-auto mt-1 max-w-xl text-[11px] print:max-w-[5in]">

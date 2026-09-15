@@ -24,6 +24,14 @@ import {
  * see media-annotations.prisma for why the pixels are never modified, and
  * for the cost of that decision (the raw file still serves an unmarked
  * photo, which is why nothing here calls the blob URL "the photo").
+ *
+ * WHAT A STORED COORDINATE IS A FRACTION OF, which is the whole of issue
+ * #256 and was written down wrongly, until 2026-09-15, in every file that
+ * described it — this one included. It is NOT a fraction of the photograph. It is a fraction of the 4:3 BOX the
+ * photograph is letterboxed inside — `JOB_MEDIA_MARK_BOX_ASPECT` below —
+ * because that box, not the image, is what `JobMediaAnnotator` measures
+ * when a finger goes down on it. See that constant for the contract every
+ * surface rendering this component has to keep.
  */
 
 export type JobMediaMark = {
@@ -47,24 +55,49 @@ export type JobMediaMark = {
 const STROKE = "#f59e0b";
 const OUTLINE = "#1c1917";
 
-export function JobMediaMarks({
-  marks,
-  aspect,
-}: {
-  marks: JobMediaMark[];
-  /** The image's width/height. Used ONLY for the arrow head, which is
-   *  skewed by exactly the amount the image is non-square without it. */
-  aspect: number;
-}) {
+/**
+ * THE COORDINATE SPACE EVERY MARK LIVES IN, and the contract every surface
+ * that renders this component has to keep. One number, in one file, because
+ * it used to be four copies of `4 / 3` passed in as a prop and the prop was
+ * never the problem — the box underneath it was.
+ *
+ * A mark is stored as a fraction of a 4:3 box with the photograph
+ * letterboxed inside it (`object-contain`), because that is precisely what
+ * `JobMediaAnnotator` measures: its `surfaceRef` is the 4:3 div, so a
+ * pointer becomes a fraction of THAT, never of the photo. So any surface
+ * drawing these marks owes the reader two things:
+ *
+ *   - a box of exactly this ratio, and
+ *   - the photograph fitted inside it with `object-contain`.
+ *
+ * ISSUE #256 IS WHAT HAPPENS WHEN THE SECOND ONE IS MISSED. The gallery
+ * card and the GC's portal used `object-cover`: same box, same fractions,
+ * but the photograph filled the box and was cropped, so the pixel under a
+ * given fraction was a DIFFERENT PART OF THE PICTURE from the one the
+ * person had drawn on. Measured in real Chromium against a target burned
+ * into the test image: 0px out on a genuinely 4:3 photo — which is why it
+ * read as fine — and 31 to 89px out on 16:9 and 3:4 phone photos, worse
+ * the larger the card and the further from the centre. An arrow on a GC's
+ * screen pointed at the wrong thing.
+ *
+ * `components/jobMediaMarkSurfaces.test.ts` is what stops the next surface
+ * getting it wrong; this comment is what stops it being reverted.
+ */
+export const JOB_MEDIA_MARK_BOX_ASPECT = 4 / 3;
+
+export function JobMediaMarks({ marks }: { marks: JobMediaMark[] }) {
   if (marks.length === 0) return null;
 
   return (
     /* `viewBox="0 0 1 1"` with a non-uniform preserveAspectRatio is what
        lets every stored coordinate be used as-is: the marks are fractions
-       of the image, and `none` makes the SVG's own box stretch to the
-       image's box exactly, so a fraction lands where it was drawn whatever
-       the card's width. `pointer-events-none` so the overlay never eats a
-       tap meant for the photo or the player underneath it. */
+       of the 4:3 box, and `none` makes the SVG's own box stretch to that
+       box exactly, so a fraction lands where it was drawn whatever the
+       card's width. (It said "fractions of the image" here until #256, and
+       that one word is the bug: the SVG stretches to the BOX, and the photo
+       only fills the box when it is letterboxed into it.)
+       `pointer-events-none` so the overlay never eats a tap meant for the
+       photo or the player underneath it. */
     <svg
       viewBox="0 0 1 1"
       preserveAspectRatio="none"
@@ -72,13 +105,20 @@ export function JobMediaMarks({
       className="pointer-events-none absolute inset-0 h-full w-full"
     >
       {marks.map((mark) => (
-        <Mark key={mark.id} mark={mark} aspect={aspect} />
+        <Mark key={mark.id} mark={mark} />
       ))}
     </svg>
   );
 }
 
-function Mark({ mark, aspect }: { mark: JobMediaMark; aspect: number }) {
+function Mark({ mark }: { mark: JobMediaMark }) {
+  /* The box's own ratio, not a prop. Every caller passed the same literal
+     `4 / 3` and one of them (the editor) passed a measurement that could
+     only ever BE 4/3 — so the prop was four chances to disagree about a
+     constant. Used for the arrow head and the text, both of which are
+     skewed by exactly the amount the box is non-square without it. */
+  const aspect = JOB_MEDIA_MARK_BOX_ASPECT;
+
   /* Stroke widths are in the 0..1 viewBox, so they are fractions too, and
      `vectorEffect="non-scaling-stroke"` is deliberately NOT used: it would
      make a mark on a thumbnail as thick as one on a full-width photo, and
@@ -91,14 +131,14 @@ function Mark({ mark, aspect }: { mark: JobMediaMark; aspect: number }) {
       <text
         x={mark.x1}
         y={mark.y1}
-        /* 0.045 of the image height. Fixed rather than scaled to the mark,
+        /* 0.045 of the BOX's height. Fixed rather than scaled to the mark,
            because a text mark has no size of its own to scale to. */
         fontSize={0.045}
         fill={STROKE}
         stroke={OUTLINE}
         strokeWidth={thin}
         paintOrder="stroke"
-        /* The SVG is stretched to the image's box, so a proportional font
+        /* The SVG is stretched to the 4:3 box, so a proportional font
            would stretch with it. This undoes that on the text alone. */
         style={{ transform: `scale(${1 / aspect}, 1)`, transformOrigin: `${mark.x1}px ${mark.y1}px` }}
       >
