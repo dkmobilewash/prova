@@ -91,6 +91,22 @@ export const EVAL_CASES: EvalCase[] = [
   command("cmd-hours", "log 8 hours for Mike on Riverside", "log_time_entry", { jobName: "Riverside", employeeName: "Mike", hours: "8" }),
   command("cmd-hours-ot", "put Mike down for 10 hours of overtime on Riverside today", "log_time_entry", { employeeName: "Mike", hours: "10" }),
   command("cmd-field-hours", "log 8 hours for Mike on Riverside", "log_time_entry", { hours: "8" }, FIELD),
+  // The day in the person's own words (phase 4e). What is graded is that
+  // the words are PASSED THROUGH — a model that helpfully converts
+  // "yesterday" to a date is the failure this checks for, since the app
+  // reads the day against the person's own calendar and the model does
+  // not know what day it is where they are standing.
+  command("cmd-hours-yesterday", "log 8 hours for Mike on Riverside yesterday", "log_time_entry", {
+    jobName: "Riverside",
+    employeeName: "Mike",
+    hours: "8",
+    date: "yesterday",
+  }),
+  command("cmd-hours-weekday", "put down 6 hours for Mike on Riverside last Tuesday", "log_time_entry", {
+    employeeName: "Mike",
+    hours: "6",
+    date: "tuesday",
+  }),
   command("cmd-accounting-invoice", "invoice Riverside for 45,000", "draft_invoice", { amount: "45" }, ACCOUNTING),
   // Outward email (phase 4a). The recipient is a NAME the app resolves, and
   // the body is the person's words; an address in the input would fail
