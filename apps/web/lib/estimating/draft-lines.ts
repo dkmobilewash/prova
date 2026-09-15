@@ -1,6 +1,8 @@
 import { prisma } from "@prova/db";
 import { draftEstimateLineItems } from "@prova/integrations";
 import type { ActionResultWith } from "@/lib/actions/shared";
+import { ASK_DEFAULT_MODEL } from "@prova/integrations";
+import { recordAskUsage } from "@/lib/ask/usage";
 
 /**
  * Draft line items from scope text — the one place in the app where model
@@ -23,6 +25,10 @@ export const NOT_ESTIMATE_STAGE =
 export async function draftLinesFromScope(
   companyId: string,
   input: { jobId: string; scopeText: string },
+  /** Whose spend this is. Optional only so the signature stays compatible
+   *  with a caller that has no person — the usage row's own column is
+   *  nullable for the same reason. Both Ask call sites pass `ctx.userId`. */
+  userId: string | null = null,
 ): Promise<ActionResultWith<{ count: number }>> {
   const job = await prisma.job.findFirst({
     where: { id: input.jobId, companyId },
@@ -72,7 +78,21 @@ export async function draftLinesFromScope(
         tradeScope: bid.tradeScope,
         bidAmount: Number(bid.bidAmount),
       })),
-    });
+    },
+    // Metered since 2026-09-14. This is a SECOND model call nested inside a
+    // single already-metered Ask command — it runs at confirm time, so one
+    // AskUsage row used to hide it entirely and the cap counted questions
+    // rather than model calls. Its own row now, under its own feature.
+    (usage) =>
+      recordAskUsage({
+        companyId,
+        userId,
+        model: ASK_DEFAULT_MODEL,
+        usage,
+        outcome: "answered",
+        feature: "draft-estimate-lines",
+      }),
+    );
   } catch (err) {
     // The drafter throws when the model returns nothing usable. That is a
     // sentence for the person, not a bug: say so and write nothing.

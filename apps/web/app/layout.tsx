@@ -5,7 +5,7 @@ import { RscFailureBanner } from "@/components/RscFailureBanner";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Prova",
+  title: "C Stream",
   description: "Contractor operating system",
 };
 
@@ -29,19 +29,28 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       signUpUrl="/sign-up"
       appearance={{
         variables: {
-          colorPrimary: "#3b82f6",
-          colorBackground: "#0f172a",
-          colorInputBackground: "#1e293b",
-          colorInputText: "#f1f5f9",
-          colorText: "#f1f5f9",
-          colorTextSecondary: "#94a3b8",
-          colorNeutral: "#94a3b8",
+          // The dark palette (2026-09-11, the approved dark mockups) —
+          // same values as tailwind.config.ts: surface card, canvas
+          // inputs, the four-step ink ramp. Yellow still cannot carry
+          // white text, so the on-primary colour is set explicitly
+          // instead of letting Clerk assume light-on-primary.
+          colorPrimary: "#facc15",
+          colorTextOnPrimaryBackground: "#171717",
+          colorBackground: "#1a1a1a",
+          colorInputBackground: "#0f0f0f",
+          colorInputText: "#fafafa",
+          colorText: "#fafafa",
+          colorTextSecondary: "#d4d4d4",
+          // Clerk derives its grey ramp (borders, secondary buttons)
+          // from this; on a dark background it has to be the LIGHT
+          // anchor or every derived grey sinks into the card.
+          colorNeutral: "#fafafa",
           borderRadius: "0.5rem",
         },
       }}
     >
       <html lang="en">
-        <body className="min-h-screen bg-slate-950 text-slate-100">
+        <body className="min-h-screen bg-canvas text-ink">
           {/* #118: covers every route group, including the public portal
               and esign pages, which are just as likely to be left open
               across a deployment as anything under (app). Renders nothing

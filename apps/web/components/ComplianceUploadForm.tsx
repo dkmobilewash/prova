@@ -6,8 +6,8 @@ import { singleFileFrom, uploadDocumentFile } from "@/lib/document-upload-client
 import { jobPickerLabel, type JobOption } from "@/components/jobLabels";
 
 const inputClass =
-  "rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none";
-const labelClass = "flex flex-col gap-1 text-sm text-slate-300";
+  "rounded-md border border-line-card bg-canvas px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none";
+const labelClass = "flex flex-col gap-1 text-sm text-ink-label";
 
 /** Upload triggers extractComplianceDocument (a real Claude call reading
  * the file), which can take several seconds — hence the pending state,
@@ -83,7 +83,7 @@ export function ComplianceUploadForm({ companyId, jobs }: { companyId: string; j
           name="file"
           required
           accept=".pdf,.png,.jpg,.jpeg,.webp"
-          className="text-sm text-slate-300 file:mr-3 file:rounded-md file:border-0 file:bg-slate-800 file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-100 hover:file:bg-slate-700"
+          className="text-sm text-ink-label file:mr-3 file:rounded-md file:border-0 file:bg-neutral-800 file:px-3 file:py-2 file:text-sm file:font-medium file:text-ink hover:file:bg-neutral-700"
         />
       </label>
       <label className={labelClass}>
@@ -100,7 +100,7 @@ export function ComplianceUploadForm({ companyId, jobs }: { companyId: string; j
       <button
         type="submit"
         disabled={isPending}
-        className="inline-flex w-fit items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+        className="inline-flex w-fit items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
       >
         {isPending ? "Uploading & extracting…" : "Upload & extract"}
       </button>

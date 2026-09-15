@@ -6,6 +6,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   transpilePackages: ["@prova/ui", "@prova/db"],
+  // The floating N badge is dev-only chrome, and this branch gets filmed for
+  // the demo video — nothing that says "dev server" can be in frame.
+  devIndicators: false,
   // Tags every RSC/Server Action response with the build that produced it, so
   // a browser mid-navigation during a production promotion can tell it's
   // talking to a version that no longer matches what it loaded, and forces a

@@ -1,13 +1,15 @@
 import Link from "next/link";
 import { UserButton } from "@clerk/nextjs";
 import { MobileNav } from "@/components/MobileNav";
+import { AskLauncher } from "@/components/AskLauncher";
 import { HelpButton } from "@/components/HelpButton";
 import { helpChannelFromEnv } from "@/lib/help-config";
 import type { Principal } from "@/lib/permissions";
 
-/** Chrome stays dark alongside the rail, so the frame is one thing and the
- * page inside it is another. Converts to the light tokens when the pages
- * it frames do. */
+/** Dark chrome: the charcoal bar (#171717, same surface as the rail)
+ * with the 2px brand-yellow rule under it, per the approved dark
+ * mockups. Chrome and rail read as one continuous frame around the
+ * #0f0f0f canvas — that seamlessness is the design, not a leftover. */
 export function Topbar({
   companyName,
   /** Alerts needing attention. Lives in the chrome rather than on the
@@ -28,10 +30,17 @@ export function Topbar({
   showsInternal?: boolean;
 }) {
   return (
-    <div className="print:hidden flex h-14 shrink-0 items-center justify-between gap-3 border-b border-slate-800 bg-slate-900 px-4 sm:px-6">
+    <div className="print:hidden flex h-14 shrink-0 items-center justify-between gap-3 border-b-2 border-brand bg-rail px-4 sm:px-6">
       {/* Renders nothing above md — the desktop rail is always visible there. */}
       <MobileNav companyName={companyName} principal={principal} showsInternal={showsInternal} />
       <div className="ml-auto flex items-center gap-3">
+        {/* Ask, on every page. It sits FIRST — left of the bell and the
+            avatar — because it is the thing people are meant to reach for,
+            and chrome reads left to right in order of intent. */}
+        <AskLauncher />
+        {/* Help sits AFTER Ask on purpose: the assistant answers most
+            questions and is the cheaper thing to try, so it is reached
+            first. Help is for when it could not. */}
         {/* The only way to reach a person from inside the app, and it is
             here rather than on a page because a help link that exists on
             one screen is not help — see HelpButton for the two shapes this
@@ -45,7 +54,7 @@ export function Topbar({
               ? "Alerts — nothing needs attention"
               : `Alerts — ${alertCount} needing attention`
           }
-          className="relative rounded-md p-2 text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+          className="relative rounded-md p-2 text-ink-body hover:bg-rail-hover hover:text-ink"
         >
           <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5" aria-hidden="true">
             <path
@@ -57,7 +66,7 @@ export function Topbar({
             <path d="M8.5 14.5a1.6 1.6 0 0 0 3 0" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
           </svg>
           {alertCount > 0 && (
-            <span className="absolute -right-0.5 -top-0.5 min-w-[1.15rem] rounded-full bg-red-500 px-1 text-center text-[0.65rem] font-semibold leading-[1.15rem] text-white">
+            <span className="absolute -right-0.5 -top-0.5 min-w-[1.15rem] rounded-full bg-red-600 px-1 text-center text-[0.65rem] font-semibold leading-[1.15rem] text-white">
               {alertCount > 99 ? "99+" : alertCount}
             </span>
           )}

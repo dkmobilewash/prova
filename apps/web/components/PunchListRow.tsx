@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { deletePunchListItem, setPunchListItemDone, updatePunchListItem } from "@/lib/actions";
+import type { ActionResult } from "@/lib/actions/shared";
 import type { JobOption } from "@/components/PunchListForm";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
@@ -12,17 +13,17 @@ import { jobPickerLabel } from "@/components/jobLabels";
 // a focused field is under 16px. On a phone that leaves the foreman zoomed
 // in and scrolled sideways after every tap. `min-h-11` is 44px.
 const inputClass =
-  "min-h-11 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-base text-slate-100 focus:border-blue-500 focus:outline-none";
+  "min-h-11 rounded-md border border-line-card bg-canvas px-3 py-2 text-base text-ink focus:border-link focus:outline-none";
 
 // One definition for the row's controls, so they can't drift back under 44px
 // a button at a time. `inline-flex` + `items-center` is what makes min-h
 // actually centre the label instead of pinning it to the top.
 const rowBtn =
-  "inline-flex min-h-11 items-center justify-center rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50";
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50";
 const rowBtnDanger =
-  "inline-flex min-h-11 items-center justify-center rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:border-red-500 hover:text-red-400 disabled:opacity-50";
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:border-red-500 hover:text-red-400 disabled:opacity-50";
 const rowBtnConfirm =
-  "inline-flex min-h-11 items-center justify-center rounded-md border border-red-500 px-3 py-2 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50";
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-red-500 px-3 py-2 text-sm text-red-400 hover:bg-tag-rose disabled:opacity-50";
 
 type PunchListRowProps = {
   canDelete: boolean;
@@ -45,14 +46,21 @@ export function PunchListRow({ canDelete, jobs, item, showJob }: PunchListRowPro
   // Keyed by the item id so two rows' edit forms can never share a draft.
   const draft = useFormDraft(`punch-list:edit:${item.id}`);
 
-  function run(fn: () => Promise<void>, fallback: string) {
+  /** Runs an action and renders the sentence it refuses with.
+   *
+   * Was a try/catch over `err.message`, which in production is React's
+   * "the specific message is omitted in production builds" paragraph rather
+   * than anything this app wrote — so the per-call fallback strings it took
+   * ("Could not save changes") were the only text ever shown, and the
+   * reasons never arrived. These actions return their refusals now, so
+   * there is a real sentence and nothing to fall back to. Same shape as
+   * `SubmittalRow`. */
+  function run(fn: () => Promise<ActionResult>, onOk?: () => void) {
     setError(null);
     startTransition(async () => {
-      try {
-        await fn();
-      } catch (err) {
-        setError(err instanceof Error ? err.message : fallback);
-      }
+      const result = await fn();
+      if (result.ok) onOk?.();
+      else setError(result.error);
     });
   }
 
@@ -65,11 +73,15 @@ export function PunchListRow({ canDelete, jobs, item, showJob }: PunchListRowPro
           onSubmit={(event) => {
             event.preventDefault();
             const formData = new FormData(event.currentTarget);
-            run(async () => {
-              await updatePunchListItem(item.id, formData);
-              draft.clear();
-              setIsEditing(false);
-            }, "Could not save changes");
+            // The draft is cleared and the form closed only on the OK
+            // branch — a refused save leaves every field exactly as typed.
+            run(
+              () => updatePunchListItem(item.id, formData),
+              () => {
+                draft.clear();
+                setIsEditing(false);
+              },
+            );
           }}
           className="flex flex-col gap-3"
         >
@@ -83,13 +95,17 @@ export function PunchListRow({ canDelete, jobs, item, showJob }: PunchListRowPro
           </select>
           <input type="text" name="description" required defaultValue={item.description} className={inputClass} />
 
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && (
+            <p role="alert" className="text-sm text-red-400">
+              {error}
+            </p>
+          )}
 
           <div className="flex flex-wrap gap-2">
             <button
               type="submit"
               disabled={isPending}
-              className="inline-flex min-h-11 items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+              className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
             >
               {isPending ? "Saving…" : "Save changes"}
             </button>
@@ -100,7 +116,7 @@ export function PunchListRow({ canDelete, jobs, item, showJob }: PunchListRowPro
                 setIsEditing(false);
                 setError(null);
               }}
-              className="inline-flex min-h-11 items-center justify-center rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50"
+              className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50"
             >
               Cancel
             </button>
@@ -127,26 +143,25 @@ export function PunchListRow({ canDelete, jobs, item, showJob }: PunchListRowPro
             type="checkbox"
             checked={item.isDone}
             disabled={isPending}
-            onChange={(event) =>
-              run(() => setPunchListItemDone(item.id, event.target.checked), "Could not update item")
-            }
+            onChange={(event) => run(() => setPunchListItemDone(item.id, event.target.checked))}
             className="h-6 w-6 accent-blue-500"
             aria-label={item.isDone ? "Mark as not done" : "Mark as done"}
           />
         </label>
 
         <div className="min-w-0 flex-1">
-          <p className={item.isDone ? "text-slate-500 line-through" : "text-slate-100"}>{item.description}</p>
-          {/* slate-400, not slate-500: measured 3.83:1 against the slate-900
-              card, under the 4.5 floor. tailwind.config.ts says as much of
-              this exact value — "optional text only". The job and who raised
-              it are not optional. */}
-          <p className="text-xs text-slate-400">
-            {showJob && <span className="text-blue-400">{item.jobName}</span>}
+          <p className={item.isDone ? "text-ink-muted line-through" : "text-ink"}>{item.description}</p>
+          {/* ink-body, not ink-muted: the muted level is under the 4.5 text floor. */}
+          <p className="text-xs text-ink-body">
+            {showJob && <span className="text-link">{item.jobName}</span>}
             {showJob && item.raisedByName && " · "}
             {item.raisedByName && `raised by ${item.raisedByName}`}
           </p>
-          {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
+          {error && (
+            <p role="alert" className="mt-1 text-sm text-red-400">
+              {error}
+            </p>
+          )}
         </div>
       </div>
 
@@ -171,7 +186,7 @@ export function PunchListRow({ canDelete, jobs, item, showJob }: PunchListRowPro
               confirmLabel="Confirm remove"
               pendingLabel="Removing…"
               pending={isPending}
-              onConfirm={() => run(() => deletePunchListItem(item.id), "Could not delete item")}
+              onConfirm={() => run(() => deletePunchListItem(item.id))}
               deleteClassName={rowBtnDanger}
               cancelClassName={rowBtn}
               confirmClassName={rowBtnConfirm}

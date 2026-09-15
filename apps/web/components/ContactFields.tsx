@@ -124,7 +124,7 @@ export function ContactStandingTermsFields({ defaults }: { defaults: ContactStan
           className={`w-32 ${inputClass}`}
         />
       </label>
-      <label className="flex min-w-[200px] flex-1 flex-col gap-1 text-sm text-slate-300">
+      <label className="flex min-w-[200px] flex-1 flex-col gap-1 text-sm text-ink-label">
         Standard forms used
         <input
           name="standardFormsUsed"

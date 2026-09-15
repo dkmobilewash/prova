@@ -183,6 +183,20 @@ export const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
+    href: "/ask",
+    label: "Ask C Stream",
+    icon: (
+      <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5">
+        <path
+          d="M10 2.5 11.6 7l4.4 1.6L11.6 10 10 14.5 8.4 10 4 8.6 8.4 7 10 2.5Z"
+          stroke="currentColor"
+          strokeWidth="1.3"
+          strokeLinejoin="round"
+        />
+      </svg>
+    ),
+  },
+  {
     href: "/punch-lists",
     label: "Punch lists",
     icon: (
@@ -211,6 +225,21 @@ export const NAV_ITEMS: NavItem[] = [
           strokeLinejoin="round"
         />
         <path d="M8.5 7.4a1.6 1.6 0 1 1 1.9 1.9v.9" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      </svg>
+    ),
+  },
+  {
+    href: "/intake",
+    label: "Document intake",
+    icon: (
+      // A tray with something dropping into it.
+      <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5">
+        <path
+          d="M3.5 11.5h4l1 2h3l1-2h4M3.5 11.5 5 5.5h10l1.5 6v4a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1v-4Z"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinejoin="round"
+        />
       </svg>
     ),
   },
@@ -568,26 +597,6 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    heading: "Paper trail",
-    description: "Correspondence with the GC that you may have to produce later: questions asked, submittals, current drawings, closeout.",
-    // A document with a corner fold: what went to the GC, and when.
-    icon: groupIcon("M6 3.5h6l3 3v9a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-11a1 1 0 0 1 1-1ZM12 3.5v3h3M7.5 10h5M7.5 13h5"),
-    // Question, answer, drawing, sign-off: the order the paper arrives in.
-    items: [item("/rfis"), item("/submittals"), item("/drawings"), item("/closeout")],
-  },
-  {
-    heading: "Logistics",
-    description: "Getting material and machines to the job: vendors, their quoted prices, orders, and where your equipment is.",
-    // A truck.
-    icon: groupIcon("M3.5 6.5h8v7h-8zM11.5 9.5h2.8l2.2 2.2v1.8h-5zM6 15.5a1 1 0 1 0 0-2 1 1 0 0 0 0 2ZM14 15.5a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z"),
-    items: [
-      { ...item("/material-orders"), disabled: true },
-      item("/vendors"),
-      item("/vendors/pricing"),
-      item("/equipment"),
-    ],
-  },
-  {
     heading: "Financials",
     description: "Money in and money held back: cash coming in, backcharges you are claiming, and the company settings behind them.",
     // A bank note.
@@ -606,6 +615,29 @@ export const NAV_GROUPS: NavGroup[] = [
       { ...item("/safety"), disabled: true },
       item("/certifications"),
       item("/team"),
+    ],
+  },
+  {
+    heading: "Paper trail",
+    description: "Correspondence with the GC that you may have to produce later: what landed in your inbox, questions asked, submittals, current drawings, closeout.",
+    // A document with a corner fold: what went to the GC, and when.
+    icon: groupIcon("M6 3.5h6l3 3v9a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-11a1 1 0 0 1 1-1ZM12 3.5v3h3M7.5 10h5M7.5 13h5"),
+    // Intake first, then question, answer, drawing, sign-off: the order the
+    // paper arrives in. Intake leads because it is where the paper LANDS —
+    // everything else in this group is something you go looking for, and
+    // this is the one you are sent to by a folder somebody just emailed.
+    items: [item("/intake"), item("/rfis"), item("/submittals"), item("/drawings"), item("/closeout")],
+  },
+  {
+    heading: "Logistics",
+    description: "Getting material and machines to the job: vendors, their quoted prices, orders, and where your equipment is.",
+    // A truck.
+    icon: groupIcon("M3.5 6.5h8v7h-8zM11.5 9.5h2.8l2.2 2.2v1.8h-5zM6 15.5a1 1 0 1 0 0-2 1 1 0 0 0 0 2ZM14 15.5a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z"),
+    items: [
+      { ...item("/material-orders"), disabled: true },
+      item("/vendors"),
+      item("/vendors/pricing"),
+      item("/equipment"),
     ],
   },
 ];

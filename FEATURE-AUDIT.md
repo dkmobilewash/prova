@@ -33,14 +33,22 @@ drift failure pointing in the unusual direction: the warning was stale, not
 the data. Same lesson as CLAUDE.md's `MIGRATE_EXPECT_HOST` deletion — a doc
 note that says "X has not been done" is a claim with an expiry date on it.
 
-**129 items audited — 104 built / 19 partial / 5 missing / 1 descoped**
+**130 items audited — 105 built / 19 partial / 5 missing / 1 descoped**
 
-(Sheet 17 gained two rows — GPS on site capture on 2026-09-11 and the
-printable site photo report on 2026-09-12 — taking it from 8 built to 10.
-Sheet 15's WIP schedule export then flipped Missing → Built on 2026-09-15.
-Re-counted with the same rule the paragraph below insists on: rows beneath
-a `## NN.` header only, which is 104 / 19 / 5 / 1 and sums to 129, and all
-26 per-sheet headers still agree with their own rows.
+(THIS IS THE FOURTH MERGE IN A DAY WHERE BOTH SIDES' TOTALS WERE WRONG, and
+the count is now worth less than the habit. Sheet 17 gained two rows on
+`main` — GPS on site capture on 2026-09-11, the printable photo report on
+2026-09-12 — and Sheet 15's WIP schedule export flipped Missing → Built on
+2026-09-15; `cyrus/integration` separately gained `/intake` in Sheet 16.
+`main` said 129 / 104 / 19 / 5 / 1 and the branch said 130 / 104 / 19 / 6 / 1.
+Each was true before the other landed. Neither was picked.
+
+Re-derived with the rule the paragraph below insists on — rows beneath a
+`## NN.` header only — which is 105 / 19 / 5 / 1 and sums to 130. Note that
+the two sides agreed on `built: 104` and were BOTH wrong about it, which is
+the reason this file re-derives rather than diffs: agreement between two
+stale numbers is not evidence. All 26 per-sheet headers already agreed with
+their own rows and are untouched.
 
 That recount is the point rather than the bookkeeping. This paragraph said
 103 / 19 / 6 and the branch it merged with said 101 / 19 / 5, and BOTH were
@@ -93,7 +101,7 @@ header cannot.)
 
 | Status | Count |
 | --- | --- |
-| Built | 104 |
+| Built | 105 |
 | Partial | 19 |
 | Missing | 5 |
 | Descoped | 1 |
@@ -301,7 +309,7 @@ instruction to check before assuming anything needed building.*
 | Built | Cash flow forecast (AR aging, retainage receivable, pay app cycles) | `lib/cash-flow.ts`'s `calculateCashFlowForecast`, rendered on `/cash-flow` under "Forecast, next N months" — AR aging plus retainage expected by month, reading the retainage data from Sheet 11. Was marked Missing here until this update; the code and the nav entry were both already live |
 | Built | Company-wide backlog report across active jobs | `lib/company-financials.ts` sums contract value, blended gross margin, cash collected and retainage held across contracted and in-progress jobs; shown on the metric bar at the bottom of every screen. Derived on read, never stored |
 
-## 16. Submittals, RFIs, Drawings — 3 built · 0 partial · 0 missing
+## 16. Submittals, RFIs, Drawings — 4 built · 0 partial · 0 missing
 
 *Updated 3 Sep 2026: all three rows stay Built — none of this code changed
 or was removed. What changed is nav-only: `/submittals`, `/rfis` and
@@ -318,6 +326,7 @@ file's own Built rows already showed before this update touched anything.*
 | --- | --- | --- |
 | Built | Shop drawing/submittal tracking and GC approval status | `Submittal` + `SubmittalRevision` + `SubmittalCounter`, `/submittals` — numbers issued per job and never reissued, per-revision sent/due/returned dates, outcome (approved / approved-as-noted / revise-and-resubmit / rejected), current-revision state derived, never stored. Removed from nav 3 Sep 2026 — see `NAV-IA-AUDIT.md` |
 | Built | RFI log per job | `Rfi` + `RfiCounter`, `/rfis` — number issued per job and never reissued, sent/due/answered dates, overdue derived, cost/schedule impact flags. Removed from nav 3 Sep 2026 — see `NAV-IA-AUDIT.md` |
+| Built | Document intake — drop a folder of a GC's paperwork in and get a table of proposals | `DocumentIntake`, `/intake` — a pure classifier (`lib/intake/classify.ts`) reads the FILENAME only and proposes a kind, a confidence and a reason in words a person can disagree with; `sortForReview` puts the uncertain rows at the top. **Nothing is filed by the machine, including a HIGH-confidence proposal, and an UNKNOWN never files at all.** `proposedKind` and `acceptedKind` are stored side by side on purpose, so "how often did a person change the answer" stays answerable — and since 14 Sep `lib/intake/learn.ts` reads them back: two agreeing corrections make a habit, one contradiction kills it permanently, a HIGH-confidence reading is never overridden, and two habits that disagree leave the row blank. What it learned is shown on the page in the person's own filenames. Suggestions ("4 files need a person", "3 files name Riverside, which is not a job here") are `DOCUMENT_INTAKE` alerts, so dismiss and snooze are the existing yes/no/later. **Needs `BLOB_READ_WRITE_TOKEN`** — without it the drop zone cannot upload and the page is unusable |
 | Built | Current drawing set storage/versioning per job | `DrawingSet` + `DrawingRevision`, `/drawings` — one set per discipline per job, issues recorded under the ARCHITECT'S label (no counter: we don't issue these numbers), issued/received dates entered not stamped, current revision and "issued but never received" both derived per render. The set itself is linked, not uploaded — a Server Action body caps around 1MB and real sets are far larger. Removed from nav 3 Sep 2026 — see `NAV-IA-AUDIT.md` |
 
 ## 17. Safety & Field Operations — 10 built · 0 partial · 0 missing

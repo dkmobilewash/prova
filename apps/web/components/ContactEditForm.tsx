@@ -33,7 +33,7 @@ function expiryNote(dateIso: string | null, kind: "MSA" | "PREQUALIFICATION", to
   );
   if (renewal.urgency === "EXPIRED") return { text: "Expired", className: "text-red-400" };
   if (renewal.urgency === "DUE_SOON") return { text: renewalTiming(renewal), className: "text-amber-400" };
-  return { text: renewalTiming(renewal), className: "text-slate-500" };
+  return { text: renewalTiming(renewal), className: "text-ink-muted" };
 }
 
 export function ContactEditForm({
@@ -75,7 +75,7 @@ export function ContactEditForm({
     >
       <ContactFields defaults={defaults} />
 
-      <p className="mt-2 text-xs font-medium uppercase tracking-wide text-slate-500">
+      <p className="mt-2 text-xs font-medium uppercase tracking-wide text-ink-muted">
         Standing terms with this GC
       </p>
       <ContactStandingTermsFields defaults={defaults} />
@@ -89,7 +89,7 @@ export function ContactEditForm({
           doesn't exist into the create form is friction with nothing to
           fill in; these become meaningful once that document exists,
           which is exactly what editing the contact later is for. */}
-      <p className="mt-2 text-xs font-medium uppercase tracking-wide text-slate-500">
+      <p className="mt-2 text-xs font-medium uppercase tracking-wide text-ink-muted">
         Master service agreement &amp; prequalification
       </p>
       <div className="flex flex-wrap gap-3">
@@ -101,7 +101,7 @@ export function ContactEditForm({
             defaultValue={defaults.msaExpirationDate ?? ""}
             className={inputClass}
           />
-          <span className="text-xs text-slate-500">
+          <span className="text-xs text-ink-muted">
             Blank means no MSA on file.
             {msaNote && <span className={`ml-1 ${msaNote.className}`}>{msaNote.text}</span>}
           </span>
@@ -114,7 +114,7 @@ export function ContactEditForm({
             defaultValue={defaults.prequalificationExpiresAt ?? ""}
             className={inputClass}
           />
-          <span className="text-xs text-slate-500">
+          <span className="text-xs text-ink-muted">
             Blank means never prequalified with this GC.
             {prequalNote && <span className={`ml-1 ${prequalNote.className}`}>{prequalNote.text}</span>}
           </span>
@@ -126,7 +126,7 @@ export function ContactEditForm({
       <SubmitButton
         type="submit"
         disabled={isPending}
-        className="mt-2 inline-flex w-fit items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+        className="mt-2 inline-flex w-fit items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
       >
         {isPending ? "Saving…" : "Save"}
       </SubmitButton>

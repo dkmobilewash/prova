@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { deleteEquipment, updateEquipment } from "@/lib/actions";
+import type { ActionResult } from "@/lib/actions/shared";
 import { EquipmentFields, type EquipmentFieldValues } from "@/components/EquipmentFields";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
@@ -10,11 +11,11 @@ import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
 // button at a time. `inline-flex` + `items-center` is what makes min-h centre
 // the label rather than pin it to the top.
 const rowBtn =
-  "inline-flex min-h-11 items-center justify-center rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50";
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50";
 const rowBtnDanger =
-  "inline-flex min-h-11 items-center justify-center rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:border-red-500 hover:text-red-400 disabled:opacity-50";
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:border-red-500 hover:text-red-400 disabled:opacity-50";
 const rowBtnConfirm =
-  "inline-flex min-h-11 items-center justify-center rounded-md border border-red-500 px-3 py-2 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50";
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-red-500 px-3 py-2 text-sm text-red-400 hover:bg-tag-rose disabled:opacity-50";
 
 type EquipmentRowProps = {
   canDelete: boolean;
@@ -39,30 +40,38 @@ export function EquipmentRow({ canDelete, item }: EquipmentRowProps) {
   // Keyed by the item id so two rows' edit forms can never share a draft.
   const draft = useFormDraft(`equipment:edit:${item.id}`);
 
-  function handleSave(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  /** Runs an action and renders the sentence it refuses with.
+   *
+   * Was two try/catch blocks over `err.message`, which in production is
+   * React's "the specific message is omitted in production builds"
+   * paragraph rather than anything this app wrote — so the local fallback
+   * strings were the only text ever shown. These actions return their
+   * refusals now. Same shape as `SubmittalRow`. */
+  function run(fn: () => Promise<ActionResult>, onOk?: () => void) {
     setError(null);
-    const formData = new FormData(event.currentTarget);
     startTransition(async () => {
-      try {
-        await updateEquipment(item.id, formData);
-        draft.clear();
-        setIsEditing(false);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Could not save changes");
-      }
+      const result = await fn();
+      if (result.ok) onOk?.();
+      else setError(result.error);
     });
   }
 
+  function handleSave(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    // Draft cleared and form closed on the OK branch only, so a refused
+    // save leaves every field exactly as typed.
+    run(
+      () => updateEquipment(item.id, formData),
+      () => {
+        draft.clear();
+        setIsEditing(false);
+      },
+    );
+  }
+
   function handleDelete() {
-    setError(null);
-    startTransition(async () => {
-      try {
-        await deleteEquipment(item.id);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Could not delete equipment");
-      }
-    });
+    run(() => deleteEquipment(item.id));
   }
 
   if (isEditing) {
@@ -72,13 +81,17 @@ export function EquipmentRow({ canDelete, item }: EquipmentRowProps) {
           <FormDraftNotice draft={draft} />
           <EquipmentFields defaults={item} />
 
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && (
+            <p role="alert" className="text-sm text-red-400">
+              {error}
+            </p>
+          )}
 
           <div className="flex flex-wrap gap-2">
             <button
               type="submit"
               disabled={isPending}
-              className="inline-flex min-h-11 items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+              className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
             >
               {isPending ? "Saving…" : "Save changes"}
             </button>
@@ -89,7 +102,7 @@ export function EquipmentRow({ canDelete, item }: EquipmentRowProps) {
                 setIsEditing(false);
                 setError(null);
               }}
-              className="inline-flex min-h-11 items-center justify-center rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50"
+              className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50"
             >
               Cancel
             </button>
@@ -111,12 +124,16 @@ export function EquipmentRow({ canDelete, item }: EquipmentRowProps) {
     // right-pinned from sm up, which is where justify-between still applies.
     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
       <div className="min-w-0">
-        <p className="font-medium text-slate-100">{item.name}</p>
-        {detail && <p className="text-sm text-slate-400">{detail}</p>}
+        <p className="font-medium text-ink">{item.name}</p>
+        {detail && <p className="text-sm text-ink-body">{detail}</p>}
         {/* slate-400 rather than slate-500: slate-500 measures 3.83:1 on the
             slate-900 card, under the 4.5 text floor. */}
-        {item.notes && <p className="mt-1 text-sm text-slate-400">{item.notes}</p>}
-        {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
+        {item.notes && <p className="mt-1 text-sm text-ink-body">{item.notes}</p>}
+        {error && (
+          <p role="alert" className="mt-1 text-sm text-red-400">
+            {error}
+          </p>
+        )}
       </div>
 
       {/* Arming "Remove" empties this row: "Edit" is a child of RowActions

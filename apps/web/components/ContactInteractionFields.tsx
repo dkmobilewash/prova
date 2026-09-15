@@ -54,7 +54,7 @@ export function ContactInteractionFields({
             defaultValue={defaults.occurredOn}
             className={inputClass}
           />
-          <span className="text-xs text-slate-500">
+          <span className="text-xs text-ink-muted">
             The date it actually happened -- backdate one you&apos;re entering late.
           </span>
         </label>

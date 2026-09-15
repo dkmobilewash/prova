@@ -4,6 +4,7 @@ import Link from "next/link";
 import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { PrintButton } from "@/components/PrintButton";
+import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { PrevailingWageDeterminationForm } from "@/components/PrevailingWageDeterminationForm";
 import { ContractSummary } from "@/components/ContractSummary";
 import { JobDetailsForm } from "@/components/JobDetailsForm";
@@ -114,21 +115,21 @@ function dateInputValue(date: Date | null) {
 function PriceBasisBadge({ basis }: { basis: "COMPANY_CATALOG" | "HISTORICAL_BID" | "GENERAL_KNOWLEDGE" | null }) {
   if (basis === "COMPANY_CATALOG") {
     return (
-      <span className="inline-flex items-center rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs font-medium text-emerald-300">
+      <span className="inline-flex items-center rounded-full bg-tag-green px-2 py-0.5 text-xs font-medium text-tag-green-ink">
         Your catalog price
       </span>
     );
   }
   if (basis === "HISTORICAL_BID") {
     return (
-      <span className="inline-flex items-center rounded-full bg-blue-500/15 px-2 py-0.5 text-xs font-medium text-blue-300">
+      <span className="inline-flex items-center rounded-full bg-tag-blue px-2 py-0.5 text-xs font-medium text-tag-blue-ink">
         From your past bids — verify
       </span>
     );
   }
   if (basis === "GENERAL_KNOWLEDGE") {
     return (
-      <span className="inline-flex items-center rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-300">
+      <span className="inline-flex items-center rounded-full bg-tag-amber px-2 py-0.5 text-xs font-medium text-tag-amber-ink">
         AI guess, no company data — check the price
       </span>
     );
@@ -136,7 +137,7 @@ function PriceBasisBadge({ basis }: { basis: "COMPANY_CATALOG" | "HISTORICAL_BID
   // Drafted, but no price was suggested. Nothing to be confident or unsure
   // about; the row still needs reviewing as a drafted row.
   return (
-    <span className="inline-flex items-center rounded-full bg-slate-700/40 px-2 py-0.5 text-xs font-medium text-slate-300">
+    <span className="inline-flex items-center rounded-full bg-neutral-700 px-2 py-0.5 text-xs font-medium text-ink-label">
       AI-drafted, unpriced — verify
     </span>
   );
@@ -150,11 +151,40 @@ function PriceBasisBadge({ basis }: { basis: "COMPANY_CATALOG" | "HISTORICAL_BID
 function LaborCostHint({ cost }: { cost: number | null }) {
   if (cost === null) return null;
   return (
-    <span className="text-xs text-slate-400" title="Burdened labor: base wage plus fringes, at straight time">
+    <span className="text-xs text-ink-body" title="Burdened labor: base wage plus fringes, at straight time">
       ≈ {money(cost)} labor
     </span>
   );
 }
+
+/**
+ * THE NINE TWO-STEP DELETES ON THIS PAGE, and why they all look the same.
+ *
+ * Until 2026-09-12 every destructive control here was a bare
+ * `<form action={deleteX}><SubmitButton>Remove</SubmitButton></form>`: one
+ * click and the row was gone — a crew assignment, a cost entry, a logged day's
+ * hours, a dispatch slip, a wage determination, a RECEIVED PAYMENT, a
+ * retainage release, an executed contract document, an estimate line item.
+ * CLAUDE.md's list-page conventions have said "two-step delete, never
+ * window.confirm" the whole time, and roughly forty row components across the
+ * app honour it; this page was the hole, and nothing tested for it.
+ * `rowActionsCensus.test.ts` does now.
+ *
+ * GEOMETRY, which is a real decision and not a style: every one of these
+ * clusters is the LAST child of a `justify-between` row, so it hangs off the
+ * right edge, so the LAST control is the one that keeps its position when the
+ * row empties — `pinned="end"`, which puts Cancel on the pixel the delete
+ * vacated. `RowActions.tsx` carries the measurements; the phone case is the
+ * component's own business, not this file's.
+ *
+ * The three class names are shared so the rows stay identical to each other,
+ * and match the pills `/contacts/[id]` already uses for the same job.
+ */
+const rowDeleteClass = "text-xs text-red-400 hover:underline";
+const rowCancelClass =
+  "rounded-md border border-slate-700 px-2 py-1 text-xs text-ink-label hover:border-slate-500";
+const rowConfirmClass =
+  "rounded-md border border-red-500 px-2 py-1 text-xs text-red-400 hover:bg-red-500/10";
 
 export default async function JobPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -706,39 +736,39 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
 
         {showsJobManagement && (
         <section className="mb-10">
-          <h2 className="mb-3 text-lg font-semibold text-slate-100">Job status</h2>
+          <h2 className="mb-3 text-lg font-semibold text-ink">Job status</h2>
           <JobStatusControl jobId={job.id} status={job.status as JobStatusValue} />
         </section>
         )}
 
         <section className="mb-10">
-          <h2 className="mb-3 text-lg font-semibold text-slate-100">Schedule</h2>
-          <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
+          <h2 className="mb-3 text-lg font-semibold text-ink">Schedule</h2>
+          <div className="rounded-lg border border-line-card bg-surface p-4">
             <form action={updateScheduleWithId} className="flex flex-wrap items-end gap-3">
-              <label className="flex flex-col gap-1 text-sm text-slate-300">
+              <label className="flex flex-col gap-1 text-sm text-ink-label">
                 Start date
                 <input
                   type="date"
                   name="startDate"
                   defaultValue={dateInputValue(job.startDate)}
-                  className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
+                  className="rounded-md border border-line-card bg-canvas px-3 py-2 text-ink focus:border-link focus:outline-none"
                 />
               </label>
-              <label className="flex flex-col gap-1 text-sm text-slate-300">
+              <label className="flex flex-col gap-1 text-sm text-ink-label">
                 End date
                 <input
                   type="date"
                   name="endDate"
                   defaultValue={dateInputValue(job.endDate)}
-                  className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
+                  className="rounded-md border border-line-card bg-canvas px-3 py-2 text-ink focus:border-link focus:outline-none"
                 />
               </label>
-              <label className="flex flex-col gap-1 text-sm text-slate-300">
+              <label className="flex flex-col gap-1 text-sm text-ink-label">
                 Operating location
                 <select
                   name="operatingLocationId"
                   defaultValue={job.operatingLocationId ?? ""}
-                  className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
+                  className="rounded-md border border-line-card bg-canvas px-3 py-2 text-ink focus:border-link focus:outline-none"
                 >
                   <option value="">Unassigned</option>
                   {companyLocations.map((location) => (
@@ -750,28 +780,38 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
               </label>
               <SubmitButton
                 type="submit"
-                className="rounded-md bg-slate-800 px-3 py-2 text-sm font-medium text-slate-100 hover:bg-slate-700"
+                className="rounded-md bg-neutral-800 px-3 py-2 text-sm font-medium text-ink hover:bg-neutral-700"
               >
                 Save dates
               </SubmitButton>
             </form>
 
-            <div className="mt-4 border-t border-slate-800 pt-4">
-              <p className="mb-2 text-sm font-medium text-slate-300">Crew</p>
+            <div className="mt-4 border-t border-line-row pt-4">
+              <p className="mb-2 text-sm font-medium text-ink-label">Crew</p>
               {job.assignments.length === 0 ? (
-                <p className="text-sm text-slate-500">No one assigned yet.</p>
+                <p className="text-sm text-ink-muted">No one assigned yet.</p>
               ) : (
                 <ul className="mb-3 flex flex-col gap-1">
                   {job.assignments.map((assignment) => (
                     <li key={assignment.id} className="flex items-center justify-between text-sm">
-                      <span className="text-slate-100">
+                      <span className="text-ink">
                         {assignment.user.name ?? assignment.user.email}
                       </span>
-                      <form action={unassignCrewWithId(assignment.userId)}>
-                        <SubmitButton type="submit" className="text-xs text-red-400 hover:underline">
-                          Remove
-                        </SubmitButton>
-                      </form>
+                      <RowActions
+                        className="flex shrink-0 items-center justify-end gap-2"
+                        destructive={
+                          <ConfirmDelete
+                            pinned="end"
+                            action={unassignCrewWithId(assignment.userId)}
+                            describe="Takes this person off this job's crew. Their account, and any hours they already logged here, are untouched."
+                            label="Remove"
+                            confirmLabel="Confirm remove"
+                            deleteClassName={rowDeleteClass}
+                            cancelClassName={rowCancelClass}
+                            confirmClassName={rowConfirmClass}
+                          />
+                        }
+                      />
                     </li>
                   ))}
                 </ul>
@@ -779,12 +819,12 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
 
               {unassignedMembers.length > 0 && (
                 <form action={assignCrewWithId} className="flex items-end gap-2">
-                  <label className="flex flex-col gap-1 text-sm text-slate-300">
+                  <label className="flex flex-col gap-1 text-sm text-ink-label">
                     Assign teammate
                     <select
                       name="userId"
                       required
-                      className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
+                      className="rounded-md border border-line-card bg-canvas px-3 py-2 text-ink focus:border-link focus:outline-none"
                     >
                       {unassignedMembers.map((member) => (
                         <option key={member.id} value={member.id}>
@@ -795,7 +835,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                   </label>
                   <SubmitButton
                     type="submit"
-                    className="rounded-md bg-slate-800 px-3 py-2 text-sm font-medium text-slate-100 hover:bg-slate-700"
+                    className="rounded-md bg-neutral-800 px-3 py-2 text-sm font-medium text-ink hover:bg-neutral-700"
                   >
                     Assign
                   </SubmitButton>
@@ -808,7 +848,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
         {/* The signing link renders the priced contract. */}
         {showsJobMoney && (
         <section className="mb-10">
-          <h2 className="mb-3 text-lg font-semibold text-slate-100">Contract signature</h2>
+          <h2 className="mb-3 text-lg font-semibold text-ink">Contract signature</h2>
 
           {/* WHICH ROUTE THIS CONTRACT TOOK, said outright.
               An e-signature and somebody's assertion that the GC signed a
@@ -818,24 +858,24 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
           <div
             className={`mb-3 rounded-lg border p-4 ${
               isContractExecuted
-                ? "border-green-900 bg-green-950/40"
-                : "border-slate-800 bg-slate-900"
+                ? "border-green-700 bg-tag-green"
+                : "border-line-card bg-surface"
             }`}
           >
-            <p className="text-xs uppercase tracking-wide text-slate-500">How this contract was executed</p>
+            <p className="text-xs uppercase tracking-wide text-ink-muted">How this contract was executed</p>
             <p
-              className={`mt-1 text-sm ${isContractExecuted ? "text-green-300" : "text-slate-300"}`}
+              className={`mt-1 text-sm ${isContractExecuted ? "text-tag-green-ink" : "text-ink-label"}`}
             >
               {describeContractExecution(contractExecution)}
             </p>
             {(contractExecution.route === "OFF_PLATFORM" || contractExecution.route === "BOTH") && (
-              <p className="mt-1 text-xs text-slate-400">
+              <p className="mt-1 text-xs text-ink-body">
                 Evidence: v{contractExecution.document.versionNumber}{" "}
                 <a
                   href={contractExecution.document.fileUrl}
                   target="_blank"
                   rel="noreferrer"
-                  className="text-blue-400 hover:underline"
+                  className="text-link hover:underline"
                 >
                   {contractExecution.document.fileName}
                 </a>{" "}
@@ -849,7 +889,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             )}
           </div>
 
-          <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
+          <div className="rounded-lg border border-line-card bg-surface p-4">
             {signedSignature ? (
               <p className="text-sm text-green-400">
                 Signed by {signedSignature.signerName} on{" "}
@@ -870,7 +910,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                 <form action={createSignatureRequestWithId}>
                   <SubmitButton
                     type="submit"
-                    className="rounded-md bg-slate-800 px-3 py-2 text-sm font-medium text-slate-100 hover:bg-slate-700"
+                    className="rounded-md bg-neutral-800 px-3 py-2 text-sm font-medium text-ink hover:bg-neutral-700"
                   >
                     Create a new signing link
                   </SubmitButton>
@@ -878,21 +918,21 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
               </div>
             ) : pendingSignature ? (
               <div className="text-sm">
-                <p className="mb-2 text-slate-300">
+                <p className="mb-2 text-ink-label">
                   Waiting on the client to sign. Share this link with them:
                 </p>
-                <p className="mb-3 break-all rounded-md bg-slate-950 px-3 py-2 font-mono text-xs text-blue-400">
+                <p className="mb-3 break-all rounded-md bg-canvas px-3 py-2 font-mono text-xs text-link">
                   {origin}/esign/{pendingSignature.token}
                 </p>
                 {pendingSignature.expiresAt && (
-                  <p className="mb-3 text-xs text-slate-500">
+                  <p className="mb-3 text-xs text-ink-muted">
                     Expires {formatSignedDate(pendingSignature.expiresAt, timeZone)}.
                   </p>
                 )}
                 <form action={revokeSignatureRequestWithId(pendingSignature.id)}>
                   <SubmitButton
                     type="submit"
-                    className="rounded-md border border-rose-800 px-3 py-2 text-sm font-medium text-rose-300 hover:bg-rose-950"
+                    className="rounded-md border border-rose-300 px-3 py-2 text-sm font-medium text-tag-rose-ink hover:bg-tag-rose"
                   >
                     Revoke signing link
                   </SubmitButton>
@@ -900,13 +940,13 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
               </div>
             ) : (
               <div>
-                <p className="mb-3 text-sm text-slate-400">
+                <p className="mb-3 text-sm text-ink-body">
                   No signing link yet. Once the client signs, this job can be marked as contracted.
                 </p>
                 <form action={createSignatureRequestWithId}>
                   <SubmitButton
                     type="submit"
-                    className="rounded-md bg-slate-800 px-3 py-2 text-sm font-medium text-slate-100 hover:bg-slate-700"
+                    className="rounded-md bg-neutral-800 px-3 py-2 text-sm font-medium text-ink hover:bg-neutral-700"
                   >
                     Create signing link
                   </SubmitButton>
@@ -920,18 +960,18 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
         {/* The subcontract PDF states the contract value. */}
         {showsJobMoney && (
         <section className="mb-10">
-          <h2 className="mb-1 text-lg font-semibold text-slate-100">Subcontract agreement</h2>
-          <p className="mb-3 text-sm text-slate-400">
+          <h2 className="mb-1 text-lg font-semibold text-ink">Subcontract agreement</h2>
+          <p className="mb-3 text-sm text-ink-body">
             The actual GC-to-sub contract file — separate from the e-sign snapshot above. Upload the
             original agreement, then any amendment the GC sends later as a new version; nothing is
             overwritten.
           </p>
           {job.contractDocuments.length > 0 && (
-            <ul className="mb-4 divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900">
+            <ul className="mb-4 divide-y divide-line-row rounded-lg border border-line-card bg-surface">
               {job.contractDocuments.map((doc) => (
                 <li key={doc.id} className="flex flex-wrap items-center justify-between gap-3 p-4">
                   <div>
-                    <p className="font-medium text-slate-100">
+                    <p className="font-medium text-ink">
                       v{doc.versionNumber}
                       {doc.versionNumber === 1 ? " (original)" : " (amendment)"}
                       {/* An ordinary upload and a recorded EXECUTED
@@ -939,34 +979,56 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                           and only one of them is the evidence that made this
                           job billable. */}
                       {doc.executedSignedDate && (
-                        <span className="ml-2 rounded-full bg-green-950 px-2 py-0.5 text-xs font-medium text-green-300">
+                        <span className="ml-2 rounded-full bg-tag-green px-2 py-0.5 text-xs font-medium text-tag-green-ink">
                           Executed — GC signed {formatUtcDate(doc.executedSignedDate)}
                         </span>
                       )}
                     </p>
-                    <p className="text-sm text-slate-400">
+                    <p className="text-sm text-ink-body">
                       {doc.executedSignedDate ? "Recorded " : ""}
                       {formatInstant(doc.createdAt, timeZone, "numeric")}
                       {doc.uploadedByUser?.name || doc.uploadedByUser?.email
                         ? ` · ${doc.uploadedByUser.name ?? doc.uploadedByUser.email}`
                         : ""}
                     </p>
-                    {doc.note && <p className="text-sm text-slate-500">{doc.note}</p>}
+                    {doc.note && <p className="text-sm text-ink-muted">{doc.note}</p>}
                     <a
                       href={doc.fileUrl}
                       target="_blank"
                       rel="noreferrer"
-                      className="mt-1 inline-block text-xs text-blue-400 hover:underline"
+                      className="mt-1 inline-block text-xs text-link hover:underline"
                     >
                       {doc.fileName}
                     </a>
                   </div>
                   {currentUser.role === "OWNER" && (
-                    <form action={deleteContractDocument.bind(null, doc.id)}>
-                      <SubmitButton type="submit" className="text-xs text-red-400 hover:underline">
-                        Delete
-                      </SubmitButton>
-                    </form>
+                    <RowActions
+                      className="flex shrink-0 flex-col items-end gap-1"
+                      destructive={
+                        <ConfirmDelete
+                          pinned="end"
+                          action={deleteContractDocument.bind(null, doc.id)}
+                          describe="Removes the document from this job. If a GC was ever sent it, their copy is unaffected — this only clears your record of it."
+                          confirmLabel="Confirm delete"
+                          armedClassName="flex flex-wrap items-center justify-end gap-2"
+                          deleteClassName={rowDeleteClass}
+                          cancelClassName={rowCancelClass}
+                          confirmClassName={rowConfirmClass}
+                          hint={
+                            doc.executedSignedDate ? (
+                              <span className="max-w-[16rem] text-right text-amber-300">
+                                This is the EXECUTED subcontract — the evidence that made this job
+                                billable. Deleting it removes the file and the signed date.
+                              </span>
+                            ) : (
+                              <span className="max-w-[16rem] text-right text-ink-muted">
+                                The file goes with it.
+                              </span>
+                            )
+                          }
+                        />
+                      }
+                    />
                   )}
                 </li>
               ))}
@@ -987,20 +1049,20 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             still a WIP table, and half a screen of blanks reads as broken. */}
         {showsJobMoney && (
         <section className="mb-10">
-          <h2 className="mb-3 text-lg font-semibold text-slate-100">Job costing &amp; WIP</h2>
+          <h2 className="mb-3 text-lg font-semibold text-ink">Job costing &amp; WIP</h2>
 
-          <div className="mb-4 grid grid-cols-2 gap-3 rounded-lg border border-slate-800 bg-slate-900 p-4 sm:grid-cols-4">
+          <div className="mb-4 grid grid-cols-2 gap-3 rounded-lg border border-line-card bg-surface p-4 sm:grid-cols-4">
             <div>
-              <p className="text-xs text-slate-500">Contract value</p>
-              <p className="text-slate-100">{money(jobWip.contractValue)}</p>
+              <p className="text-xs text-ink-muted">Contract value</p>
+              <p className="text-ink">{money(jobWip.contractValue)}</p>
             </div>
             <div>
-              <p className="text-xs text-slate-500">Actual cost to date</p>
-              <p className="text-slate-100">{money(jobWip.actualCostToDate)}</p>
+              <p className="text-xs text-ink-muted">Actual cost to date</p>
+              <p className="text-ink">{money(jobWip.actualCostToDate)}</p>
             </div>
             <div>
-              <p className="text-xs text-slate-500">% complete</p>
-              <p className="text-slate-100">
+              <p className="text-xs text-ink-muted">% complete</p>
+              <p className="text-ink">
                 {formatPercentComplete(jobWip.percentComplete) ?? "—"}
               </p>
               {/* This tile is what a surety's WIP schedule gets typed from,
@@ -1025,23 +1087,23 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                 )}
             </div>
             <div>
-              <p className="text-xs text-slate-500">Earned revenue</p>
+              <p className="text-xs text-ink-muted">Earned revenue</p>
               {/* "—" for the same reason each per-line row below already
                   shows one: a line with no cost estimate has no earned
                   revenue, and summing it as zero is what turned this job
                   total into a fact it is not. */}
-              <p className="text-slate-100">
+              <p className="text-ink">
                 {earnedRevenue != null ? money(earnedRevenue) : "—"}
               </p>
             </div>
             <div>
-              <p className="text-xs text-slate-500">Billed to date</p>
-              <p className="text-slate-100">{money(jobWip.billedToDate)}</p>
+              <p className="text-xs text-ink-muted">Billed to date</p>
+              <p className="text-ink">{money(jobWip.billedToDate)}</p>
             </div>
             <div className="col-span-2 sm:col-span-1">
-              <p className="text-xs text-slate-500">Over / under billed</p>
+              <p className="text-xs text-ink-muted">Over / under billed</p>
               {billingPosition === null ? (
-                <p className="text-slate-400">
+                <p className="text-ink-body">
                   Only {formatCoveragePercent(jobWip.earnedCoverage)} of this job&apos;s value has an
                   earned-revenue figure, so a billing position would be guesswork. Budget the rest
                   to see where it lands.
@@ -1064,53 +1126,60 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             {lineItemWip.map(({ item, wip }) => {
               const tradeLabel = TRADE_SCOPE_OPTIONS.find((t) => t.value === item.tradeScope)?.label;
               return (
-                <div key={item.id} className="rounded-lg border border-slate-800 bg-slate-900 p-4">
+                <div key={item.id} className="rounded-lg border border-line-card bg-surface p-4">
                   <div className="flex flex-wrap items-baseline justify-between gap-2">
-                    <p className="font-medium text-slate-100">
+                    <p className="font-medium text-ink">
                       {item.description}
                       {tradeLabel && (
-                        <span className="ml-2 rounded bg-slate-800 px-1.5 py-0.5 text-xs text-slate-400">
+                        <span className="ml-2 rounded bg-neutral-800 px-1.5 py-0.5 text-xs text-ink-body">
                           {tradeLabel}
                         </span>
                       )}
                     </p>
                   </div>
                   <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm">
-                    <span className="text-slate-400">Contract {money(wip.contractValue)}</span>
-                    <span className="text-slate-400">
+                    <span className="text-ink-body">Contract {money(wip.contractValue)}</span>
+                    <span className="text-ink-body">
                       Budget {wip.budgetedCost != null ? money(wip.budgetedCost) : "—"}
                     </span>
-                    <span className="text-slate-400">
+                    <span className="text-ink-body">
                       Current est. {wip.currentEstimatedCost != null ? money(wip.currentEstimatedCost) : "—"}
                     </span>
-                    <span className="text-slate-400">Actual {money(wip.actualCostToDate)}</span>
-                    <span className="text-slate-400">
+                    <span className="text-ink-body">Actual {money(wip.actualCostToDate)}</span>
+                    <span className="text-ink-body">
                       % complete {formatPercentComplete(wip.percentComplete) ?? "—"}
                     </span>
-                    <span className="text-slate-400">
+                    <span className="text-ink-body">
                       Earned {wip.earnedRevenue != null ? money(wip.earnedRevenue) : "—"}
                     </span>
                   </div>
 
                   {item.costEntries.length > 0 && (
-                    <ul className="mt-3 flex flex-col gap-1 border-t border-slate-800 pt-3">
+                    <ul className="mt-3 flex flex-col gap-1 border-t border-line-row pt-3">
                       {item.costEntries.map((entry) => (
                         <li key={entry.id} className="flex items-center justify-between text-sm">
-                          <span className="text-slate-300">
+                          <span className="text-ink-label">
                             {entry.description}{" "}
-                            <span className="text-xs text-slate-500">({entry.category})</span>
+                            <span className="text-xs text-ink-muted">({entry.category})</span>
                           </span>
                           <span className="flex items-center gap-2">
-                            <span className="text-slate-100">{money(Number(entry.amount))}</span>
-                            <form action={deleteCostEntryWithId(entry.id)}>
-                              <SubmitButton
-                                type="submit"
-                                title="Remove"
-                                className="text-xs text-red-400 hover:underline"
-                              >
-                                Remove
-                              </SubmitButton>
-                            </form>
+                            <span className="text-ink">{money(Number(entry.amount))}</span>
+                            <RowActions
+                              as="span"
+                              className="flex shrink-0 items-center justify-end gap-2"
+                              destructive={
+                                <ConfirmDelete
+                                  pinned="end"
+                                  action={deleteCostEntryWithId(entry.id)}
+                                  describe="Removes this cost from the job. Job cost and margin are recalculated without it; nothing is refunded or unbilled."
+                                  label="Remove"
+                                  confirmLabel="Confirm remove"
+                                  deleteClassName={rowDeleteClass}
+                                  cancelClassName={rowCancelClass}
+                                  confirmClassName={rowConfirmClass}
+                                />
+                              }
+                            />
                           </span>
                         </li>
                       ))}
@@ -1121,30 +1190,30 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
 
                   <form
                     action={updateLineItemForecastWithId(item.id)}
-                    className="mt-3 flex flex-wrap items-end gap-2 border-t border-slate-800 pt-3"
+                    className="mt-3 flex flex-wrap items-end gap-2 border-t border-line-row pt-3"
                   >
-                    <label className="flex flex-col gap-1 text-xs text-slate-400">
+                    <label className="flex flex-col gap-1 text-xs text-ink-body">
                       Re-forecast current unit cost
                       <input
                         name="currentEstimatedUnitCost"
                         defaultValue={item.currentEstimatedUnitCost?.toString() ?? ""}
                         placeholder="per unit"
-                        className="w-28 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-600 focus:border-blue-500 focus:outline-none"
+                        className="w-28 rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
                       />
                     </label>
-                    <label className="flex flex-col gap-1 text-xs text-slate-400">
+                    <label className="flex flex-col gap-1 text-xs text-ink-body">
                       Override cost-to-complete
                       <input
                         name="estimatedCostToComplete"
                         defaultValue={item.estimatedCostToComplete?.toString() ?? ""}
                         placeholder="leave blank to auto-derive"
                         title="Overrides the mechanical (current estimate - actual) calculation — use when you know something the cost data doesn't reflect yet"
-                        className="w-44 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-600 focus:border-blue-500 focus:outline-none"
+                        className="w-44 rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
                       />
                     </label>
                     <SubmitButton
                       type="submit"
-                      className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-100 hover:bg-slate-700"
+                      className="rounded-md bg-neutral-800 px-3 py-1.5 text-sm font-medium text-ink hover:bg-neutral-700"
                     >
                       Save forecast
                     </SubmitButton>
@@ -1158,12 +1227,12 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
 
         <section className="mb-10">
           <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
-            <h2 className="text-lg font-semibold text-slate-100">Field time entries</h2>
-            <Link href={`/jobs/${job.id}/certified-payroll`} className="text-sm text-blue-400 hover:underline">
+            <h2 className="text-lg font-semibold text-ink">Field time entries</h2>
+            <Link href={`/jobs/${job.id}/certified-payroll`} className="text-sm text-link hover:underline">
               Certified payroll report →
             </Link>
           </div>
-          <p className="mb-3 text-sm text-slate-500">
+          <p className="mb-3 text-sm text-ink-muted">
             Hours worked by employee, by day — optionally tied to a cost code and craft classification.
             Tracks hours by pay type; wage cost is estimated from the applicable fringe rate schedule when one
             applies.
@@ -1213,6 +1282,11 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             </ul>
           )}
 
+          {/* lineItems is explicitly picked, never the whole row: a
+              JobLineItem carries six Decimal columns and a costEntries
+              relation, none of which survive the trip to a client component.
+              Same shape as the ContractSummary and pay-application
+              projections above. */}
           <LogTimeEntryForm
             jobId={job.id}
             employees={companyMembers}
@@ -1222,8 +1296,8 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
         </section>
 
         <section className="mb-10">
-          <h2 className="mb-1 text-lg font-semibold text-slate-100">Union hiring-hall dispatch</h2>
-          <p className="mb-3 text-sm text-slate-500">
+          <h2 className="mb-1 text-lg font-semibold text-ink">Union hiring-hall dispatch</h2>
+          <p className="mb-3 text-sm text-ink-muted">
             The hiring hall&rsquo;s referral of a worker to this job — the authorization to work under that
             local&rsquo;s agreement, separate from hours actually logged in Field time entries above.
           </p>
@@ -1233,18 +1307,18 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
               {job.dispatchSlips.map((slip) => (
                 <li
                   key={slip.id}
-                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-800 bg-slate-900 p-3 text-sm"
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line-card bg-surface p-3 text-sm"
                 >
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                    <span className="text-slate-100">
+                    <span className="text-ink">
                       {formatCalendarDate(slip.dispatchDate)}
                     </span>
-                    <span className="text-slate-300">{slip.employeeUser.name ?? slip.employeeUser.email}</span>
+                    <span className="text-ink-label">{slip.employeeUser.name ?? slip.employeeUser.email}</span>
                     {slip.craftClassification && (
-                      <span className="text-xs text-slate-500">{slip.craftClassification.name}</span>
+                      <span className="text-xs text-ink-muted">{slip.craftClassification.name}</span>
                     )}
                     {slip.dispatchNumber && (
-                      <span className="rounded bg-slate-800 px-1.5 py-0.5 text-xs text-slate-400">
+                      <span className="rounded bg-neutral-800 px-1.5 py-0.5 text-xs text-ink-body">
                         #{slip.dispatchNumber}
                       </span>
                     )}
@@ -1253,18 +1327,37 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                         href={slip.fileUrl}
                         target="_blank"
                         rel="noreferrer"
-                        className="text-xs text-blue-400 hover:underline"
+                        className="text-xs text-link hover:underline"
                       >
                         {slip.fileName ?? "View slip"}
                       </a>
                     )}
-                    {slip.note && <span className="text-xs text-slate-500">— {slip.note}</span>}
+                    {slip.note && <span className="text-xs text-ink-muted">— {slip.note}</span>}
                   </div>
-                  <form action={deleteDispatchSlipWithId(slip.id)}>
-                    <SubmitButton type="submit" title="Remove" className="text-xs text-red-400 hover:underline">
-                      Remove
-                    </SubmitButton>
-                  </form>
+                  <RowActions
+                    className="flex shrink-0 flex-col items-end gap-1"
+                    destructive={
+                      <ConfirmDelete
+                        pinned="end"
+                        action={deleteDispatchSlipWithId(slip.id)}
+                        describe="Removes the hall's referral record for this worker. Nothing is sent to the local, and hours already logged stay."
+                        label="Remove"
+                        confirmLabel="Confirm remove"
+                        armedClassName="flex flex-wrap items-center justify-end gap-2"
+                        deleteClassName={rowDeleteClass}
+                        cancelClassName={rowCancelClass}
+                        confirmClassName={rowConfirmClass}
+                        hint={
+                          slip.fileUrl ? (
+                            <span className="max-w-[16rem] text-right text-ink-muted">
+                              The hall&rsquo;s referral for this worker goes, and the uploaded slip
+                              stops being reachable from this job.
+                            </span>
+                          ) : undefined
+                        }
+                      />
+                    }
+                  />
                 </li>
               ))}
             </ul>
@@ -1289,8 +1382,8 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
         </section>
 
         <section className="mb-10">
-          <h2 className="mb-1 text-lg font-semibold text-slate-100">Prevailing wage determination</h2>
-          <p className="mb-3 text-sm text-slate-500">
+          <h2 className="mb-1 text-lg font-semibold text-ink">Prevailing wage determination</h2>
+          <p className="mb-3 text-sm text-ink-muted">
             The government wage determination for this job&rsquo;s jurisdiction (federal or state) — attach a copy
             or a link to it. This app doesn&rsquo;t look one up automatically; there&rsquo;s no licensed
             prevailing-wage dataset built in.
@@ -1301,16 +1394,16 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
               {job.prevailingWageDeterminations.map((determination) => (
                 <li
                   key={determination.id}
-                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-800 bg-slate-900 p-3 text-sm"
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line-card bg-surface p-3 text-sm"
                 >
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                    <span className="text-slate-100">{determination.jurisdiction}</span>
+                    <span className="text-ink">{determination.jurisdiction}</span>
                     {determination.fileUrl && (
                       <a
                         href={determination.fileUrl}
                         target="_blank"
                         rel="noreferrer"
-                        className="text-xs text-blue-400 hover:underline"
+                        className="text-xs text-link hover:underline"
                       >
                         {determination.fileName ?? "View document"}
                       </a>
@@ -1320,18 +1413,35 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                         href={determination.sourceUrl}
                         target="_blank"
                         rel="noreferrer"
-                        className="text-xs text-blue-400 hover:underline"
+                        className="text-xs text-link hover:underline"
                       >
                         Source link
                       </a>
                     )}
-                    {determination.note && <span className="text-xs text-slate-500">— {determination.note}</span>}
+                    {determination.note && <span className="text-xs text-ink-muted">— {determination.note}</span>}
                   </div>
-                  <form action={deletePrevailingWageDeterminationWithId(determination.id)}>
-                    <SubmitButton type="submit" title="Remove" className="text-xs text-red-400 hover:underline">
-                      Remove
-                    </SubmitButton>
-                  </form>
+                  <RowActions
+                    className="flex shrink-0 flex-col items-end gap-1"
+                    destructive={
+                      <ConfirmDelete
+                        pinned="end"
+                        action={deletePrevailingWageDeterminationWithId(determination.id)}
+                        describe="Removes the wage determination from this job. Certified payroll for weeks already filed is unchanged; future weeks lose the rates it supplied."
+                        label="Remove"
+                        confirmLabel="Confirm remove"
+                        armedClassName="flex flex-wrap items-center justify-end gap-2"
+                        deleteClassName={rowDeleteClass}
+                        cancelClassName={rowCancelClass}
+                        confirmClassName={rowConfirmClass}
+                        hint={
+                          <span className="max-w-[16rem] text-right text-ink-muted">
+                            The wage determination this job&rsquo;s certified payroll is checked
+                            against.
+                          </span>
+                        }
+                      />
+                    }
+                  />
                 </li>
               ))}
             </ul>
@@ -1342,21 +1452,21 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
 
         {!isEstimateStage && showsBilling && (
           <section className="mb-10">
-            <h2 className="mb-3 text-lg font-semibold text-slate-100">Invoices</h2>
+            <h2 className="mb-3 text-lg font-semibold text-ink">Invoices</h2>
             <div className="flex flex-col gap-4">
               {job.invoices.map((invoice) => {
                 const paid = invoice.payments.reduce((s, p) => s + Number(p.amount), 0);
                 const balance = Number(invoice.amount) - paid;
                 return (
-                  <div key={invoice.id} className="rounded-lg border border-slate-800 bg-slate-900 p-4">
+                  <div key={invoice.id} className="rounded-lg border border-line-card bg-surface p-4">
                     <div className="flex flex-wrap items-baseline justify-between gap-2">
-                      <p className="font-medium text-slate-100">
+                      <p className="font-medium text-ink">
                         Invoice #{invoice.number}
                         {invoice.description ? ` — ${invoice.description}` : ""}
                       </p>
                       <div className="flex items-center gap-4 text-sm">
-                        <span className="text-slate-400">Amount {money(Number(invoice.amount))}</span>
-                        <span className="text-slate-400">Paid {money(paid)}</span>
+                        <span className="text-ink-body">Amount {money(Number(invoice.amount))}</span>
+                        <span className="text-ink-body">Paid {money(paid)}</span>
                         <span className={balance <= 0 ? "text-green-400" : "text-amber-400"}>
                           {balance <= 0 ? "Paid in full" : `Balance ${money(balance)}`}
                         </span>
@@ -1379,60 +1489,79 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                     {invoice.lineItems.length > 0 && (
                       <Link
                         href={`/jobs/${job.id}/pay-applications/${invoice.id}`}
-                        className="mt-1 inline-block text-xs text-blue-400 hover:underline"
+                        className="mt-1 inline-block text-xs text-link hover:underline"
                       >
                         View pay application →
                       </Link>
                     )}
                     {invoice.dueAt && (
-                      <p className="mt-1 text-xs text-slate-500">
+                      <p className="mt-1 text-xs text-ink-muted">
                         Due {formatCalendarDate(invoice.dueAt)}
                       </p>
                     )}
                     {invoice.retainageWithheld != null && (
-                      <p className="mt-1 text-xs text-slate-500">
+                      <p className="mt-1 text-xs text-ink-muted">
                         Retainage withheld this invoice: {money(Number(invoice.retainageWithheld))}
                       </p>
                     )}
 
                     {invoice.payments.length > 0 && (
-                      <ul className="mt-3 flex flex-col gap-1 border-t border-slate-800 pt-3">
+                      <ul className="mt-3 flex flex-col gap-1 border-t border-line-row pt-3">
                         {invoice.payments.map((payment) => (
                           <li key={payment.id} className="flex items-center justify-between text-sm">
-                            <span className="text-slate-300">
+                            <span className="text-ink-label">
                               {formatInstant(payment.receivedAt, timeZone, "dayMonth")}
                               {payment.method ? ` · ${payment.method}` : ""}
                               {payment.note ? ` · ${payment.note}` : ""}
                             </span>
                             <span className="flex items-center gap-2">
-                              <span className="text-slate-100">{money(Number(payment.amount))}</span>
-                              <PushPaymentToQuickBooks
-                                paymentId={payment.id}
-                                linkedQboId={quickBooksPaymentLinks.get(payment.id)?.qboId ?? null}
-                                lastVerifiedAt={
-                                  quickBooksPaymentLinks.get(payment.id)?.lastVerifiedAt ?? null
+                              <span className="text-ink">{money(Number(payment.amount))}</span>
+                              {/* The QuickBooks push is `children`, not a
+                                  sibling: this is money received, the worst
+                                  row on the page to lose to a stray click, and
+                                  while the delete is armed the only other
+                                  button in the row must not still be live. */}
+                              <RowActions
+                                as="span"
+                                className="flex shrink-0 items-center justify-end gap-2"
+                                destructive={
+                                  <ConfirmDelete
+                                    pinned="end"
+                                    action={deletePayment.bind(null, job.id, payment.id)}
+                                    describe="Un-records money you had marked as received. Cash collected and the invoice's balance both move. Nothing is returned to the GC — this only corrects your books."
+                                    label="Remove"
+                                    confirmLabel="Confirm remove"
+                                    deleteClassName={rowDeleteClass}
+                                    cancelClassName={rowCancelClass}
+                                    confirmClassName={rowConfirmClass}
+                                    hint={
+                                      <span className="max-w-[16rem] text-right text-amber-300">
+                                        {money(Number(payment.amount))} received comes off this
+                                        invoice, and the balance goes back up.
+                                      </span>
+                                    }
+                                  />
                                 }
-                                blockers={paymentPushBlockers({
-                                  hasConnection: quickBooksUsable,
-                                  customerQboId: jobCustomerLink?.qboId ?? null,
-                                  // The ordering constraint, and the one the
-                                  // browser test found unguarded: a payment is
-                                  // APPLIED to an invoice, so the invoice has to
-                                  // be there first.
-                                  invoiceQboId:
-                                    quickBooksInvoiceLinks.get(invoice.id)?.qboId ?? null,
-                                  amountCents: Math.round(Number(payment.amount) * 100),
-                                })}
-                              />
-                              <form action={deletePayment.bind(null, job.id, payment.id)}>
-                                <SubmitButton
-                                  type="submit"
-                                  title="Remove"
-                                  className="text-xs text-red-400 hover:underline"
-                                >
-                                  Remove
-                                </SubmitButton>
-                              </form>
+                              >
+                                <PushPaymentToQuickBooks
+                                  paymentId={payment.id}
+                                  linkedQboId={quickBooksPaymentLinks.get(payment.id)?.qboId ?? null}
+                                  lastVerifiedAt={
+                                    quickBooksPaymentLinks.get(payment.id)?.lastVerifiedAt ?? null
+                                  }
+                                  blockers={paymentPushBlockers({
+                                    hasConnection: quickBooksUsable,
+                                    customerQboId: jobCustomerLink?.qboId ?? null,
+                                    // The ordering constraint, and the one the
+                                    // browser test found unguarded: a payment is
+                                    // APPLIED to an invoice, so the invoice has
+                                    // to be there first.
+                                    invoiceQboId:
+                                      quickBooksInvoiceLinks.get(invoice.id)?.qboId ?? null,
+                                    amountCents: Math.round(Number(payment.amount) * 100),
+                                  })}
+                                />
+                              </RowActions>
                             </span>
                           </li>
                         ))}
@@ -1447,35 +1576,35 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
 
             <form
               action={createInvoiceWithId}
-              className="mt-4 flex flex-wrap items-end gap-3 rounded-lg border border-slate-800 bg-slate-900 p-4"
+              className="mt-4 flex flex-wrap items-end gap-3 rounded-lg border border-line-card bg-surface p-4"
             >
-              <label className="flex flex-col gap-1 text-sm text-slate-300">
+              <label className="flex flex-col gap-1 text-sm text-ink-label">
                 Description
                 <input
                   name="description"
                   placeholder="Deposit, final payment, etc."
-                  className="w-56 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+                  className="w-56 rounded-md border border-line-card bg-canvas px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
                 />
               </label>
-              <label className="flex flex-col gap-1 text-sm text-slate-300">
+              <label className="flex flex-col gap-1 text-sm text-ink-label">
                 Amount
                 <input
                   name="amount"
                   required
-                  className="w-28 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
+                  className="w-28 rounded-md border border-line-card bg-canvas px-3 py-2 text-ink focus:border-link focus:outline-none"
                 />
               </label>
-              <label className="flex flex-col gap-1 text-sm text-slate-300">
+              <label className="flex flex-col gap-1 text-sm text-ink-label">
                 Due date
                 <input
                   type="date"
                   name="dueAt"
-                  className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
+                  className="rounded-md border border-line-card bg-canvas px-3 py-2 text-ink focus:border-link focus:outline-none"
                 />
               </label>
               <SubmitButton
                 type="submit"
-                className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
+                className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500"
               >
                 Create invoice
               </SubmitButton>
@@ -1485,53 +1614,53 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
 
         {!isEstimateStage && showsBilling && (
           <section className="mb-10">
-            <h2 className="mb-1 text-lg font-semibold text-slate-100">Retainage</h2>
-            <p className="mb-3 text-sm text-slate-500">
+            <h2 className="mb-1 text-lg font-semibold text-ink">Retainage</h2>
+            <p className="mb-3 text-sm text-ink-muted">
               Withheld amounts are snapshotted onto each invoice when it&rsquo;s created from the rate below —
               changing the rate only affects invoices created after the change.
             </p>
 
             <form
               action={updateJobRetainageTermsWithId}
-              className="mb-4 flex flex-wrap items-end gap-2 rounded-lg border border-slate-800 bg-slate-900 p-3"
+              className="mb-4 flex flex-wrap items-end gap-2 rounded-lg border border-line-card bg-surface p-3"
             >
-              <label className="flex flex-col gap-1 text-xs text-slate-400">
+              <label className="flex flex-col gap-1 text-xs text-ink-body">
                 Retainage %
                 <input
                   name="retainagePercent"
                   defaultValue={job.retainagePercent?.toString() ?? job.contact.defaultRetainagePercent?.toString() ?? ""}
                   placeholder="e.g. 10"
-                  className="w-24 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-600 focus:border-blue-500 focus:outline-none"
+                  className="w-24 rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
                 />
               </label>
-              <label className="flex flex-col gap-1 text-xs text-slate-400">
+              <label className="flex flex-col gap-1 text-xs text-ink-body">
                 Expected substantial completion
                 <input
                   type="date"
                   name="substantialCompletionDate"
                   defaultValue={dateInputValue(job.substantialCompletionDate)}
-                  className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
+                  className="rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink focus:border-link focus:outline-none"
                 />
               </label>
               <SubmitButton
                 type="submit"
-                className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-100 hover:bg-slate-700"
+                className="rounded-md bg-neutral-800 px-3 py-1.5 text-sm font-medium text-ink hover:bg-neutral-700"
               >
                 Save
               </SubmitButton>
             </form>
 
-            <div className="mb-4 grid grid-cols-2 gap-3 rounded-lg border border-slate-800 bg-slate-900 p-4 sm:grid-cols-3">
+            <div className="mb-4 grid grid-cols-2 gap-3 rounded-lg border border-line-card bg-surface p-4 sm:grid-cols-3">
               <div>
-                <p className="text-xs text-slate-500">Total withheld</p>
-                <p className="text-slate-100">{money(retainageSummary.totalWithheld)}</p>
+                <p className="text-xs text-ink-muted">Total withheld</p>
+                <p className="text-ink">{money(retainageSummary.totalWithheld)}</p>
               </div>
               <div>
-                <p className="text-xs text-slate-500">Total released</p>
-                <p className="text-slate-100">{money(retainageSummary.totalReleased)}</p>
+                <p className="text-xs text-ink-muted">Total released</p>
+                <p className="text-ink">{money(retainageSummary.totalReleased)}</p>
               </div>
               <div>
-                <p className="text-xs text-slate-500">Outstanding balance</p>
+                <p className="text-xs text-ink-muted">Outstanding balance</p>
                 <p className={retainageSummary.balance > 0 ? "text-amber-400" : "text-green-400"}>
                   {money(retainageSummary.balance)}
                 </p>
@@ -1539,7 +1668,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             </div>
 
             {retainageSummary.balance > 0 && retainageSummary.substantialCompletionDate && (
-              <p className="mb-4 text-sm text-slate-400">
+              <p className="mb-4 text-sm text-ink-body">
                 Expected release: {money(retainageSummary.balance)} around{" "}
                 {formatCalendarDate(retainageSummary.substantialCompletionDate)}{" "}
                 (this job&rsquo;s expected substantial completion date) — a forecast based on the date set above, not
@@ -1552,20 +1681,37 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                 {job.retainageReleases.map((release) => (
                   <li
                     key={release.id}
-                    className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-800 bg-slate-900 p-3 text-sm"
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line-card bg-surface p-3 text-sm"
                   >
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                      <span className="text-slate-100">
+                      <span className="text-ink">
                         {formatCalendarDate(release.releasedAt)}
                       </span>
-                      <span className="text-slate-300">{money(Number(release.amount))}</span>
-                      {release.note && <span className="text-xs text-slate-500">— {release.note}</span>}
+                      <span className="text-ink-label">{money(Number(release.amount))}</span>
+                      {release.note && <span className="text-xs text-ink-muted">— {release.note}</span>}
                     </div>
-                    <form action={deleteRetainageReleaseWithId(release.id)}>
-                      <SubmitButton type="submit" title="Remove" className="text-xs text-red-400 hover:underline">
-                        Remove
-                      </SubmitButton>
-                    </form>
+                    <RowActions
+                      className="flex shrink-0 flex-col items-end gap-1"
+                      destructive={
+                        <ConfirmDelete
+                          pinned="end"
+                          action={deleteRetainageReleaseWithId(release.id)}
+                          describe="Removes your record of the release. Nothing is requested of or withdrawn from the GC; retainage held goes back up by this amount."
+                          label="Remove"
+                          confirmLabel="Confirm remove"
+                          armedClassName="flex flex-wrap items-center justify-end gap-2"
+                          deleteClassName={rowDeleteClass}
+                          cancelClassName={rowCancelClass}
+                          confirmClassName={rowConfirmClass}
+                          hint={
+                            <span className="max-w-[16rem] text-right text-amber-300">
+                              {money(Number(release.amount))} goes back into the outstanding
+                              retainage balance.
+                            </span>
+                          }
+                        />
+                      }
+                    />
                   </li>
                 ))}
               </ul>
@@ -1573,33 +1719,33 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
 
             <form
               action={createRetainageReleaseWithId}
-              className="flex flex-wrap items-end gap-2 rounded-lg border border-slate-800 bg-slate-900 p-3"
+              className="flex flex-wrap items-end gap-2 rounded-lg border border-line-card bg-surface p-3"
             >
-              <label className="flex flex-col gap-1 text-xs text-slate-400">
+              <label className="flex flex-col gap-1 text-xs text-ink-body">
                 Amount released
                 <input
                   name="amount"
                   placeholder="Amount"
                   required
-                  className="w-28 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+                  className="w-28 rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
                 />
               </label>
-              <label className="flex flex-col gap-1 text-xs text-slate-400">
+              <label className="flex flex-col gap-1 text-xs text-ink-body">
                 Date
                 <input
                   type="date"
                   name="releasedAt"
-                  className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
+                  className="rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink focus:border-link focus:outline-none"
                 />
               </label>
               <input
                 name="note"
                 placeholder="Note (optional)"
-                className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+                className="rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
               />
               <SubmitButton
                 type="submit"
-                className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-100 hover:bg-slate-700"
+                className="rounded-md bg-neutral-800 px-3 py-1.5 text-sm font-medium text-ink hover:bg-neutral-700"
               >
                 Log release
               </SubmitButton>
@@ -1614,7 +1760,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
         {!showsJobMoney ? null : isEstimateStage ? (
           <>
             <section className="mb-10">
-              <h2 className="mb-3 text-lg font-semibold text-slate-100">Line items (estimate)</h2>
+              <h2 className="mb-3 text-lg font-semibold text-ink">Line items (estimate)</h2>
               <DraftLineItemsForm jobId={job.id} initialScope={job.scope ?? ""} />
               {/* Beside the scope drafter rather than below the list: both
                   answer "where do line items come from", and the two ways in
@@ -1622,12 +1768,12 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                   assertEditableDirectly, so it only appears where lines can
                   actually be added. */}
               <TakeoffForm jobId={job.id} />
-              <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
+              <div className="rounded-lg border border-line-card bg-surface p-4">
                 {job.lineItems.length === 0 && (
-                  <p className="py-2 text-sm text-slate-400">No line items yet — add one below.</p>
+                  <p className="py-2 text-sm text-ink-body">No line items yet — add one below.</p>
                 )}
                 {job.lineItems.map((item) => (
-                  <div key={item.id} className="border-t border-slate-800 py-3 first:border-t-0">
+                  <div key={item.id} className="border-t border-line-row py-3 first:border-t-0">
                   <form
                     action={updateLineItemWithId(item.id)}
                     className="flex flex-col gap-2"
@@ -1639,25 +1785,25 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                         defaultValue={item.description}
                         required
                         placeholder="Description"
-                        className="min-w-[160px] flex-1 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
+                        className="min-w-[160px] flex-1 rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink focus:border-link focus:outline-none"
                       />
                       <input
                         name="quantity"
                         defaultValue={item.quantity.toString()}
                         required
                         title="Quantity"
-                        className="w-16 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
+                        className="w-16 rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink focus:border-link focus:outline-none"
                       />
                       <input
                         name="unit"
                         defaultValue={item.unit ?? ""}
                         placeholder="Unit"
-                        className="w-20 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
+                        className="w-20 rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink focus:border-link focus:outline-none"
                       />
                       <select
                         name="tradeScope"
                         defaultValue={item.tradeScope ?? ""}
-                        className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
+                        className="rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink focus:border-link focus:outline-none"
                       >
                         <option value="">No trade tag</option>
                         {TRADE_SCOPE_OPTIONS.map((t) => (
@@ -1668,33 +1814,33 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                       </select>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
-                      <label className="flex items-center gap-1 text-xs text-slate-400">
+                      <label className="flex items-center gap-1 text-xs text-ink-body">
                         Unit price
                         <input
                           name="unitPrice"
                           defaultValue={item.unitPrice?.toString() ?? ""}
                           placeholder="cost-only"
                           title="Leave blank for a cost-only budget line (general conditions, overhead) with no client-facing price"
-                          className="w-24 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-600 focus:border-blue-500 focus:outline-none"
+                          className="w-24 rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
                         />
                       </label>
-                      <label className="flex items-center gap-1 text-xs text-slate-400">
+                      <label className="flex items-center gap-1 text-xs text-ink-body">
                         Budgeted cost
                         <input
                           name="budgetedUnitCost"
                           defaultValue={item.budgetedUnitCost?.toString() ?? ""}
                           placeholder="per unit"
                           title="Estimated unit cost at estimate approval — the frozen historical baseline for WIP reporting"
-                          className="w-24 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-600 focus:border-blue-500 focus:outline-none"
+                          className="w-24 rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
                         />
                       </label>
-                      <label className="flex items-center gap-1 text-xs text-slate-400">
+                      <label className="flex items-center gap-1 text-xs text-ink-body">
                         Labor hrs
                         <input
                           name="laborHours"
                           defaultValue={item.laborHours?.toString() ?? ""}
                           placeholder="hrs"
-                          className="w-16 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-600 focus:border-blue-500 focus:outline-none"
+                          className="w-16 rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
                         />
                       </label>
                       <LaborCostHint cost={estimatedLaborCostByLineItem.get(item.id) ?? null} />
@@ -1702,7 +1848,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                         name="craftClassificationId"
                         defaultValue={item.craftClassificationId ?? ""}
                         title="Craft classification"
-                        className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
+                        className="rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink focus:border-link focus:outline-none"
                       >
                         <option value="">No craft tag</option>
                         {craftClassifications.map((c) => (
@@ -1714,81 +1860,111 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                       <SubmitButton
                         type="submit"
                         title="Save"
-                        className="rounded-md bg-slate-800 px-2 py-1 text-xs font-medium text-slate-100 hover:bg-slate-700"
+                        className="rounded-md bg-neutral-800 px-2 py-1 text-xs font-medium text-ink hover:bg-neutral-700"
                       >
                         Save
                       </SubmitButton>
-                      <SubmitButton
-                        type="submit"
-                        formAction={deleteLineItemWithId(item.id)}
-                        title="Remove"
-                        className="rounded-md bg-red-950 px-2 py-1 text-xs font-medium text-red-400 hover:bg-red-900"
-                      >
-                        Remove
-                      </SubmitButton>
                     </div>
                   </form>
-                  <form action={saveLineItemAsCatalogEntry.bind(null, item.id)} className="mt-1">
-                    <SubmitButton type="submit" className="text-xs text-slate-500 hover:text-slate-300 hover:underline">
-                      Save as catalog item
-                    </SubmitButton>
-                  </form>
+                  {/* THE REMOVE USED TO BE THE BUTTON AFTER SAVE, INSIDE THAT
+                      FORM — `<SubmitButton formAction={deleteLineItem…}>`,
+                      touching the Save it looked exactly like. One mis-click
+                      deleted the line you meant to save, with no confirm, and
+                      a nested <form> is not legal markup, so the two-step
+                      delete could not go where the button was. It moves out of
+                      the form instead, which removes the adjacency as well as
+                      adding the confirm.
+                      The cluster is deliberately `justify-end`: a right-pinned
+                      cluster's right edge does not move when the row empties,
+                      so `pinned="end"` puts Cancel exactly where Remove was —
+                      the geometry with 0% measured overlap in #176. "Save as
+                      catalog item" is `children`, so arming Remove hides it
+                      rather than leaving it live next to a confirm. It costs
+                      that link moving from the left of this line to the right
+                      of it. */}
+                  <RowActions
+                    className="mt-1 flex flex-wrap items-center justify-end gap-3"
+                    destructive={
+                      <ConfirmDelete
+                        pinned="end"
+                        action={deleteLineItemWithId(item.id)}
+                        describe="Removes the line and its cost history from the estimate. The contract value drops by its amount. A line already billed on a pay application cannot be removed."
+                        label="Remove"
+                        confirmLabel="Confirm remove"
+                        deleteClassName="rounded-md bg-red-950 px-2 py-1 text-xs font-medium text-red-400 hover:bg-red-900"
+                        cancelClassName={rowCancelClass}
+                        confirmClassName={rowConfirmClass}
+                        hint={
+                          <span className="max-w-[18rem] text-right text-ink-muted">
+                            The line comes off the estimate and its price out of the total. It is
+                            marked deleted rather than erased, so change-order history keeps it.
+                          </span>
+                        }
+                      />
+                    }
+                  >
+                    <form action={saveLineItemAsCatalogEntry.bind(null, item.id)}>
+                      <SubmitButton type="submit" className="text-xs text-ink-muted hover:text-ink-label hover:underline">
+                        Save as catalog item
+                      </SubmitButton>
+                    </form>
+                  </RowActions>
                   </div>
                 ))}
               </div>
             </section>
 
             <section className="mb-10">
-              <h2 className="mb-3 text-lg font-semibold text-slate-100">Add line item</h2>
+              <h2 className="mb-3 text-lg font-semibold text-ink">Add line item</h2>
               <form action={addLineItemWithId} className="flex flex-wrap items-end gap-3">
-                <label className="flex flex-col gap-1 text-sm text-slate-300">
+                <label className="flex flex-col gap-1 text-sm text-ink-label">
                   Description
                   <input
                     name="description"
                     required
-                    className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
+                    className="rounded-md border border-line-card bg-surface px-3 py-2 text-ink focus:border-link focus:outline-none"
                   />
                 </label>
-                <label className="flex flex-col gap-1 text-sm text-slate-300">
+                <label className="flex flex-col gap-1 text-sm text-ink-label">
                   Qty
                   <input
                     name="quantity"
                     defaultValue="1"
                     required
-                    className="w-20 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
+                    className="w-20 rounded-md border border-line-card bg-surface px-3 py-2 text-ink focus:border-link focus:outline-none"
                   />
                 </label>
-                <label className="flex flex-col gap-1 text-sm text-slate-300">
+                <label className="flex flex-col gap-1 text-sm text-ink-label">
                   Unit
                   <input
                     name="unit"
-                    className="w-24 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
+                    className="w-24 rounded-md border border-line-card bg-surface px-3 py-2 text-ink focus:border-link focus:outline-none"
                   />
                 </label>
-                <label className="flex flex-col gap-1 text-sm text-slate-300">
+                <label className="flex flex-col gap-1 text-sm text-ink-label">
                   Unit price
                   <input
                     name="unitPrice"
                     placeholder="cost-only"
                     title="Leave blank for a cost-only budget line (general conditions, overhead) with no client-facing price"
-                    className="w-28 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+                    className="w-28 rounded-md border border-line-card bg-surface px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
                   />
                 </label>
-                <label className="flex flex-col gap-1 text-sm text-slate-300">
+                <label className="flex flex-col gap-1 text-sm text-ink-label">
                   Budgeted cost
                   <input
                     name="budgetedUnitCost"
                     placeholder="per unit"
                     title="Estimated unit cost — the historical baseline for WIP reporting"
-                    className="w-28 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+                    className="w-28 rounded-md border border-line-card bg-surface px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
                   />
                 </label>
-                <label className="flex flex-col gap-1 text-sm text-slate-300">
+                <label className="flex flex-col gap-1 text-sm text-ink-label">
                   Trade
                   <select
                     name="tradeScope"
                     defaultValue=""
-                    className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
+                    className="rounded-md border border-line-card bg-surface px-3 py-2 text-ink focus:border-link focus:outline-none"
                   >
                     <option value="">No trade tag</option>
                     {TRADE_SCOPE_OPTIONS.map((t) => (
@@ -1801,7 +1977,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                 <LaborHoursField crafts={craftOptions} />
                 <SubmitButton
                   type="submit"
-                  className="inline-flex items-center justify-center rounded-md bg-slate-800 px-4 py-2 text-sm font-medium text-slate-100 hover:bg-slate-700"
+                  className="inline-flex items-center justify-center rounded-md bg-neutral-800 px-4 py-2 text-sm font-medium text-ink hover:bg-neutral-700"
                 >
                   Add line item
                 </SubmitButton>
@@ -1809,12 +1985,12 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
 
               {catalogEntries.length > 0 && (
                 <form action={addLineItemFromCatalogWithId} className="mt-4 flex flex-wrap items-end gap-3">
-                  <label className="flex flex-col gap-1 text-sm text-slate-300">
+                  <label className="flex flex-col gap-1 text-sm text-ink-label">
                     Add from catalog
                     <select
                       name="catalogEntryId"
                       required
-                      className="min-w-[220px] rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
+                      className="min-w-[220px] rounded-md border border-line-card bg-surface px-3 py-2 text-ink focus:border-link focus:outline-none"
                     >
                       {catalogEntries.map((entry) => (
                         <option key={entry.id} value={entry.id}>
@@ -1823,18 +1999,18 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                       ))}
                     </select>
                   </label>
-                  <label className="flex flex-col gap-1 text-sm text-slate-300">
+                  <label className="flex flex-col gap-1 text-sm text-ink-label">
                     Qty
                     <input
                       name="quantity"
                       defaultValue="1"
                       required
-                      className="w-20 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none"
+                      className="w-20 rounded-md border border-line-card bg-surface px-3 py-2 text-ink focus:border-link focus:outline-none"
                     />
                   </label>
                   <SubmitButton
                     type="submit"
-                    className="inline-flex items-center justify-center rounded-md border border-slate-700 px-4 py-2 text-sm font-medium text-slate-200 hover:bg-slate-800"
+                    className="inline-flex items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm font-medium text-ink-label hover:bg-neutral-800"
                   >
                     Add from catalog
                   </SubmitButton>
@@ -1843,13 +2019,13 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             </section>
 
             <section className="mb-10">
-              <h2 className="mb-1 text-lg font-semibold text-slate-100">Estimate versions</h2>
-              <p className="mb-3 text-sm text-slate-400">
+              <h2 className="mb-1 text-lg font-semibold text-ink">Estimate versions</h2>
+              <p className="mb-3 text-sm text-ink-body">
                 A manual checkpoint of the line items above — save one before a scope change so you
                 can see what this was priced at before.
               </p>
               {job.estimateVersions.length > 0 && (
-                <ul className="mb-4 divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900">
+                <ul className="mb-4 divide-y divide-line-row rounded-lg border border-line-card bg-surface">
                   {job.estimateVersions.map((version) => {
                     const snapshotItems = Array.isArray(version.snapshot)
                       ? (version.snapshot as {
@@ -1860,17 +2036,17 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                       : [];
                     return (
                       <li key={version.id} className="p-3 text-sm">
-                        <p className="font-medium text-slate-100">
+                        <p className="font-medium text-ink">
                           v{version.versionNumber}
-                          <span className="ml-2 font-normal text-slate-500">
+                          <span className="ml-2 font-normal text-ink-muted">
                             {formatInstant(version.createdAt, timeZone, "numeric")}
                             {version.createdByUser?.name || version.createdByUser?.email
                               ? ` · ${version.createdByUser.name ?? version.createdByUser.email}`
                               : ""}
                           </span>
                         </p>
-                        {version.note && <p className="mt-1 text-slate-400">{version.note}</p>}
-                        <p className="mt-1 text-xs text-slate-500">
+                        {version.note && <p className="mt-1 text-ink-body">{version.note}</p>}
+                        <p className="mt-1 text-xs text-ink-muted">
                           {snapshotItems.length} line item{snapshotItems.length === 1 ? "" : "s"}:{" "}
                           {snapshotItems.map((i) => i.description).join(", ")}
                         </p>
@@ -1880,26 +2056,26 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                 </ul>
               )}
               <form action={saveEstimateVersionWithId} className="flex flex-wrap items-end gap-3">
-                <label className="flex flex-1 min-w-[200px] flex-col gap-1 text-sm text-slate-300">
+                <label className="flex flex-1 min-w-[200px] flex-col gap-1 text-sm text-ink-label">
                   Note (optional)
                   <input
                     name="note"
                     placeholder="e.g. Before client asked to add the backsplash"
-                    className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+                    className="rounded-md border border-line-card bg-surface px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
                   />
                 </label>
                 <SubmitButton
                   type="submit"
-                  className="inline-flex items-center justify-center rounded-md border border-slate-700 px-4 py-2 text-sm font-medium text-slate-200 hover:bg-slate-800"
+                  className="inline-flex items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm font-medium text-ink-label hover:bg-neutral-800"
                 >
                   Save version
                 </SubmitButton>
               </form>
             </section>
 
-            <section className="mb-10 rounded-lg border border-slate-800 bg-slate-900 p-4">
-              <h2 className="mb-2 text-lg font-semibold text-slate-100">Ready to lock this in?</h2>
-              <p className="mb-3 text-sm text-slate-400">
+            <section className="mb-10 rounded-lg border border-line-card bg-surface p-4">
+              <h2 className="mb-2 text-lg font-semibold text-ink">Ready to lock this in?</h2>
+              <p className="mb-3 text-sm text-ink-body">
                 Once contracted, line items can only change through a change order — this keeps an
                 audit trail of anything that changes after the client agrees to it.
               </p>

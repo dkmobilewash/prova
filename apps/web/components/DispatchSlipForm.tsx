@@ -6,7 +6,7 @@ import { uploadDispatchSlip } from "@/lib/actions";
 import { singleFileFrom, uploadDocumentFile } from "@/lib/document-upload-client";
 
 const field =
-  "rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-600 focus:border-blue-500 focus:outline-none";
+  "rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none";
 
 export type DispatchSlipEmployee = { id: string; name: string | null; email: string };
 export type DispatchSlipCraft = { id: string; label: string };
@@ -86,10 +86,10 @@ export function DispatchSlipForm({
         });
       }}
       onInput={() => setError(null)}
-      className="flex flex-col gap-2 rounded-lg border border-slate-800 bg-slate-900 p-3"
+      className="flex flex-col gap-2 rounded-lg border border-line-card bg-surface p-3"
     >
       <div className="flex flex-wrap items-end gap-2">
-        <label className="flex flex-col gap-1 text-xs text-slate-400">
+        <label className="flex flex-col gap-1 text-xs text-ink-body">
           Employee
           <select name="employeeUserId" required className={field}>
             {employees.map((member) => (
@@ -99,11 +99,11 @@ export function DispatchSlipForm({
             ))}
           </select>
         </label>
-        <label className="flex flex-col gap-1 text-xs text-slate-400">
+        <label className="flex flex-col gap-1 text-xs text-ink-body">
           Dispatch date
           <input type="date" name="dispatchDate" required className={field} />
         </label>
-        <label className="flex flex-col gap-1 text-xs text-slate-400">
+        <label className="flex flex-col gap-1 text-xs text-ink-body">
           Craft classification
           <select name="craftClassificationId" defaultValue="" className={field}>
             <option value="">No craft tag</option>
@@ -114,24 +114,24 @@ export function DispatchSlipForm({
             ))}
           </select>
         </label>
-        <label className="flex flex-col gap-1 text-xs text-slate-400">
+        <label className="flex flex-col gap-1 text-xs text-ink-body">
           Dispatch #
           <input name="dispatchNumber" placeholder="optional" className={`w-28 ${field}`} />
         </label>
-        <label className="flex flex-col gap-1 text-xs text-slate-400">
+        <label className="flex flex-col gap-1 text-xs text-ink-body">
           Slip (optional)
           <input
             type="file"
             name="file"
             accept="application/pdf,image/png,image/jpeg,image/webp"
-            className={`${field} file:mr-2 file:rounded file:border-0 file:bg-slate-800 file:px-2 file:py-1 file:text-slate-200`}
+            className={`${field} file:mr-2 file:rounded file:border-0 file:bg-neutral-800 file:px-2 file:py-1 file:text-ink-label`}
           />
         </label>
         <input name="note" placeholder="Note (optional)" className={field} />
         <button
           type="submit"
           disabled={isPending}
-          className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-100 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+          className="rounded-md bg-neutral-800 px-3 py-1.5 text-sm font-medium text-ink hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {isPending ? "Logging…" : "Log dispatch"}
         </button>

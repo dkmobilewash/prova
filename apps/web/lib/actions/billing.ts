@@ -20,6 +20,8 @@ import { issueContractDocumentVersion } from "@/lib/billing/contract-document-ve
 import { createRetainageReleaseRecord } from "@/lib/billing/retainage-release";
 import { MIN_EARNED_COVERAGE } from "@/lib/company-financials";
 import { payAppEntryError } from "@/lib/pay-application";
+import { recordAskUsage } from "@/lib/ask/usage";
+import { ASK_DEFAULT_MODEL } from "@prova/integrations";
 import {
   actionFail,
   actionOk,
@@ -734,7 +736,7 @@ export async function testQuickBooksConnection(): Promise<QuickBooksCompanyInfo>
 export async function generateJobWipNarrative(
   jobId: string,
 ): Promise<ActionResultWith<string>> {
-  const { company } = await requireCompanyContext();
+  const { company, ...user } = await requireCompanyContext();
   const job = await assertJobInCompany(jobId, company.id);
 
   const lineItems = await prisma.jobLineItem.findMany({
@@ -794,7 +796,20 @@ export async function generateJobWipNarrative(
       currentEstimatedCost: wip.currentEstimatedCost,
       actualCostToDate: wip.actualCostToDate,
     })),
-  });
+  },
+  // Metered since 2026-09-14. This button caches nothing and re-bills on
+  // every click, and the UI relabels itself "Regenerate analysis" — so it
+  // invites the repeat and, until now, reported none of it.
+  (usage) =>
+    recordAskUsage({
+      companyId: company.id,
+      userId: user.id,
+      model: ASK_DEFAULT_MODEL,
+      usage,
+      outcome: "answered",
+      feature: "wip-narrative",
+    }),
+  );
 
   return { ok: true, value: narrative };
 }

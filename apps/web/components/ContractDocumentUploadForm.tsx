@@ -78,31 +78,31 @@ export function ContractDocumentUploadForm({
       // Any edit invalidates the last refusal — a red sentence that
       // outlives the input it was about contradicts what the form now says.
       onInput={() => setError(null)}
-      className="flex flex-col gap-3 rounded-lg border border-slate-800 bg-slate-900 p-4"
+      className="flex flex-col gap-3 rounded-lg border border-line-card bg-surface p-4"
     >
       <div className="flex flex-wrap items-end gap-3">
-        <label className="flex flex-col gap-1 text-sm text-slate-300">
+        <label className="flex flex-col gap-1 text-sm text-ink-label">
           {hasDocuments ? "Upload an amendment" : "Upload the agreement"}
           <input
             type="file"
             name="file"
             required
             accept=".pdf,.png,.jpg,.jpeg,.webp"
-            className="text-sm text-slate-300 file:mr-3 file:rounded-md file:border-0 file:bg-slate-800 file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-100 hover:file:bg-slate-700"
+            className="text-sm text-ink-label file:mr-3 file:rounded-md file:border-0 file:bg-neutral-800 file:px-3 file:py-2 file:text-sm file:font-medium file:text-ink hover:file:bg-neutral-700"
           />
         </label>
-        <label className="flex flex-1 min-w-[180px] flex-col gap-1 text-sm text-slate-300">
+        <label className="flex flex-1 min-w-[180px] flex-col gap-1 text-sm text-ink-label">
           Note (optional)
           <input
             name="note"
             placeholder={hasDocuments ? "e.g. Amendment #1: added scope" : ""}
-            className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+            className="rounded-md border border-line-card bg-canvas px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
           />
         </label>
         <button
           type="submit"
           disabled={isPending}
-          className="inline-flex items-center justify-center rounded-md border border-slate-700 px-4 py-2 text-sm font-medium text-slate-200 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+          className="inline-flex items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm font-medium text-ink-label hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {isPending ? "Uploading…" : "Upload"}
         </button>

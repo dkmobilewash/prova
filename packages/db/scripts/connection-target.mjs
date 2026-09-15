@@ -102,13 +102,39 @@ export function sameDatabase(a, b) {
  * endpoint and its `-pooler` twin — they are the same database by design.
  * Returns null when `expected` is blank: the assertion is opt-in, because
  * production's migrate job predates it and silently breaking that to add a
- * guard would be a poor trade.
+ * guard would be a poor trade. That is a DECISION — no name was given, so
+ * nothing was promised.
+ *
+ * Naming a target and having nothing to check it against is the opposite,
+ * and it used to return null too (issue #182). A name was given, so a check
+ * WAS promised, and answering "no problem" to an empty question is the one
+ * failure shape this repo has paid for over and over: the guard that cannot
+ * fail reads exactly like the guard that passed. It is fatal now.
+ *
+ * Reachability, stated rather than implied, because a fix for something
+ * nobody can reach is worth less than it looks: as of 2026-09-12 the one
+ * caller (`migrate-deploy.mjs`) already exits on a null target before it
+ * gets here, and both workflows supply a name — `migrate.yml` hardcodes it,
+ * `migrate-demo.yml` marks its input `required: true` and pre-validates the
+ * shape. So this branch is UNREACHABLE today. It is fixed anyway because
+ * what makes it unreachable is an invariant in the CALLER that nothing
+ * states and nothing tests; a second caller, or a relaxed exit above, turns
+ * the assertion vacuous with every check still green.
  */
 export function wrongTarget(expected, ...targets) {
   const want = expected?.trim();
   if (!want) return null;
   const named = targets.filter(Boolean);
-  if (named.length === 0) return null;
+  if (named.length === 0) {
+    return {
+      level: "fatal",
+      message:
+        `you named "${want}" as the target, but NO connection string could be read,\n` +
+        "db: so there is nothing to compare it against. Nothing has been applied.\n" +
+        "db: This is not the same as the target being correct — the assertion you\n" +
+        "db: asked for did not run. Fix DATABASE_URL and DIRECT_URL and re-run.",
+    };
+  }
   const missed = named.filter((t) => !t.host.includes(want));
   if (missed.length === 0) return null;
   return {

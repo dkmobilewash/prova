@@ -63,8 +63,10 @@ export function MobileNav({
         // 44px, from 36px. This is the gateway to every field screen on a
         // phone, and it was the smallest control in the chrome. The icon still
         // draws at 20px; only the hit area grew, and `-ml-3` keeps its left
-        // edge where it was against the topbar's px-4.
-        className="-ml-3 rounded-md p-3 text-slate-300 hover:bg-slate-800 hover:text-slate-100"
+        // edge where it was against the topbar's px-4. Light icon: the
+        // topbar is the dark chrome (#171717) now, so the hamburger
+        // inverted back from the text-neutral-900 the white bar needed.
+        className="-ml-3 rounded-md p-3 text-neutral-100 hover:bg-rail-hover"
       >
         <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5" aria-hidden="true">
           <path d="M3 5.5h14M3 10h14M3 14.5h14" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
@@ -77,22 +79,22 @@ export function MobileNav({
             type="button"
             aria-label="Close navigation"
             onClick={() => setOpen(false)}
-            className="fixed inset-0 z-40 bg-slate-950/70"
+            className="fixed inset-0 z-40 bg-neutral-950/70"
           />
           <div
             id="mobile-nav"
-            className="fixed inset-y-0 left-0 z-50 flex w-72 max-w-[85vw] flex-col border-r border-slate-800 bg-slate-900"
+            className="fixed inset-y-0 left-0 z-50 flex w-72 max-w-[85vw] flex-col border-r border-neutral-800 bg-rail"
           >
-            <div className="flex items-start justify-between gap-2 border-b border-slate-800 px-5 py-4">
+            <div className="flex items-start justify-between gap-2 border-b border-neutral-800 px-5 py-4">
               <div className="flex min-w-0 flex-col gap-0.5">
-                <span className="text-sm font-semibold tracking-tight text-slate-100">Prova</span>
-                <span className="truncate text-xs text-slate-400">{companyName}</span>
+                <span className="text-sm font-semibold tracking-tight text-white">C Stream</span>
+                <span className="truncate text-xs text-neutral-400">{companyName}</span>
               </div>
               <button
                 type="button"
                 onClick={() => setOpen(false)}
                 aria-label="Close navigation"
-                className="-mr-3 -mt-2 rounded-md p-3 text-slate-400 hover:bg-slate-800 hover:text-slate-100"
+                className="-mr-3 -mt-2 rounded-md p-3 text-neutral-400 hover:bg-rail-hover hover:text-white"
               >
                 <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5" aria-hidden="true">
                   <path d="M5 5l10 10M15 5L5 15" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
@@ -103,7 +105,13 @@ export function MobileNav({
             {/* Still scrolls on its own so the close button stays in reach
                 on a short screen, though with one group open at a time
                 it rarely needs to. Grouped exactly like the desktop rail,
-                with the same group open — one nav, two shapes. */}
+                with the same group open — one nav, two shapes.
+
+                The drawer keeps the accordion (#240) rather than the
+                desktop rail's independent toggles: the rail's five money
+                figures are what force every heading to stay on screen at
+                once, and the drawer carries no figures, so one group at a
+                time is the right answer on a 360px screen. */}
             <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-3 py-4">
               {groups.map((group) => {
                 const isOpen = accordion.open === group.heading;
@@ -120,8 +128,11 @@ export function MobileNav({
                       data-nav-group={group.heading}
                       // 44px: a header is now a tap target, and it sits in
                       // the same stack a gloved thumb works down.
+                      // neutral-400, not neutral-500: neutral-500 measures
+                      // under the 4.5 floor on this ground, and at 10-11px
+                      // it is the first thing sunlight takes away.
                       className={`flex min-h-11 w-full items-center gap-3 rounded-md px-3 py-3 text-left text-[11px] font-semibold uppercase tracking-wider ${
-                        isOpen || holdsPage ? "text-slate-100" : "text-slate-400 hover:bg-slate-800 hover:text-slate-100"
+                        isOpen || holdsPage ? "text-white" : "text-neutral-400 hover:bg-rail-hover hover:text-white"
                       }`}
                     >
                       <span className="shrink-0">{group.icon}</span>
@@ -150,7 +161,7 @@ export function MobileNav({
                               key={item.href}
                               title={`${item.label} — coming soon`}
                               aria-disabled="true"
-                              className="flex cursor-not-allowed items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-slate-600"
+                              className="flex cursor-not-allowed items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-neutral-600"
                             >
                               <span className="opacity-50">{item.icon}</span>
                               {item.label}
@@ -168,8 +179,8 @@ export function MobileNav({
                             // is exactly where a gloved thumb lands on the wrong one.
                             className={`flex min-h-11 items-center gap-3 rounded-md px-3 py-3 text-sm font-medium transition-colors ${
                               isActive
-                                ? "bg-blue-500/15 text-blue-300"
-                                : "text-slate-400 hover:bg-slate-800 hover:text-slate-100"
+                                ? "bg-brand/15 text-brand"
+                                : "text-neutral-300 hover:bg-rail-hover hover:text-white"
                             }`}
                           >
                             {item.icon}

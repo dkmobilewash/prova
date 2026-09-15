@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
-import { Prisma, prisma } from "@prova/db";
+import { prisma } from "@prova/db";
 import {
   CONTACT_STATUSES,
   CONTACT_TYPES,
@@ -12,11 +12,24 @@ import {
   actionOk as ok,
   assertOwner,
   enumFromForm,
+  isUniqueConstraintError,
   joinWithConjunction,
   nullableDecimalFromForm,
   optionalEnumFromForm,
+  ownerRefusal,
   plural,
 } from "./shared";
+import { normalizeEin, normalizeWebsite } from "@/lib/company-profile";
+import { can } from "@/lib/permissions";
+
+/** The job-function refusal for the company record, worded the way
+ * `closeoutSubmissions.ts` words its own: the person reading it has done
+ * nothing wrong and needs to know who can change it.
+ *
+ * RETURNED, not thrown — production redacts a thrown Server Action message
+ * to a digest, so a thrown version of this sentence never arrives. */
+const COMPLIANCE_ONLY =
+  "The company record isn't part of your job function. The account owner sets who sees what, on the Team page.";
 
 /** Thrown by the form parsers below, caught at each action's boundary and
  * converted to a returned failure — same shape as submittals.ts, the
@@ -42,6 +55,15 @@ function optionalDate(formData: FormData, key: string): Date | null {
   return date;
 }
 
+/** A write refused by a foreign key (Prisma P2003, or P2014 for a required
+ * relation). Reads `code` rather than using `instanceof`, which is FALSE at
+ * runtime here — see `isUniqueConstraintError` in ./shared for the
+ * measurement. */
+function isForeignKeyViolation(err: unknown): boolean {
+  const code = (err as { code?: unknown } | null)?.code;
+  return code === "P2003" || code === "P2014";
+}
+
 async function runAction(fn: () => Promise<ActionResult>): Promise<ActionResult> {
   try {
     return await fn();
@@ -51,6 +73,118 @@ async function runAction(fn: () => Promise<ActionResult>): Promise<ActionResult>
   }
 }
 
+/**
+ * Edits the company's OWN record — the first and only writer of it.
+ *
+ * `Company.name` was written once, by `requireCompanyContext` on first
+ * sign-in, as `${name}'s Company`; `dbaName`, `ein`, `hqAddress*`, `phone`
+ * and `website` have existed on the model with nothing writing them at all.
+ * That generated string prints as the contractor on the WH-347 certified
+ * payroll form, as the employer on a union trust-fund remittance report, in
+ * the sidebar, and above the signature block a GC signs — and until this
+ * action there was no way to change any of it.
+ *
+ * TWO GUARDS, IN THIS ORDER, and the order is the decision.
+ *
+ * `/settings` demands MANAGE_COMPLIANCE, and a page guard stops a page
+ * rendering — it does nothing about the action behind it, which is a
+ * separate endpoint with a stable id that answers whoever posts to it.
+ * `lib/action-capability-guards.test.ts` derives that requirement from the
+ * page's own guard and fails the build without it; it found this action the
+ * moment it existed. So the capability is checked FIRST, because it is the
+ * broader fact about the person (their job function is not this), and the
+ * owner check second, because it is about this record specifically. A member
+ * who holds MANAGE_COMPLIANCE gets the owner sentence, which is the true
+ * reason they are being refused.
+ *
+ * OWNER-ONLY, via `ownerRefusal` rather than `assertOwner`. Both are in
+ * shared.ts and the difference is not stylistic: this action's declared
+ * return type PROMISES the caller a sentence it can render, and
+ * `assertOwner` throws, which production redacts to a digest. The
+ * owner-refusal census (`lib/ownerRefusalCensus.test.ts`) fails the build
+ * for exactly that combination. The message names the consequence rather
+ * than the rule, because "renaming this changes a federal form" is the
+ * reason a member is being refused.
+ *
+ * Validation is deliberately narrow: a blank legal name is refused because
+ * every one of those documents has to name somebody, and the EIN and
+ * website are normalised on the way in (see lib/company-profile.ts for
+ * which stored form and why). `phone` stays free text — extensions, a
+ * second number and "ask for Dave" are all real, and a format rule here
+ * would refuse a contractor's actual phone number for no gain. `hqState` is
+ * upper-cased because a state code prints on a federal form; it is not
+ * otherwise checked, since refusing a two-letter code nobody recognises is
+ * worse than printing it.
+ */
+export async function updateCompanyProfile(formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  return runAction(async () => {
+    if (!can(context, "MANAGE_COMPLIANCE")) return fail(COMPLIANCE_ONLY);
+
+    const refusal = ownerRefusal(
+      context,
+      "Only the account owner can change the company record. The legal name and address here print on the WH-347 certified payroll form, on union remittance reports, and above the signature block a GC signs.",
+    );
+    if (refusal) return refusal;
+
+    const name = required(formData, "name", "Legal company name");
+
+    const ein = normalizeEin(text(formData, "ein"));
+    if (!ein.ok) return fail(ein.error);
+
+    const website = normalizeWebsite(text(formData, "website"));
+    if (!website.ok) return fail(website.error);
+
+    const dbaName = text(formData, "dbaName");
+    const hqAddressLine1 = text(formData, "hqAddressLine1");
+    const hqAddressLine2 = text(formData, "hqAddressLine2");
+    const hqCity = text(formData, "hqCity");
+    const hqState = text(formData, "hqState").toUpperCase();
+    const hqZip = text(formData, "hqZip");
+    const phone = text(formData, "phone");
+
+    await prisma.company.update({
+      where: { id: context.company.id },
+      data: {
+        name,
+        dbaName: dbaName || null,
+        ein: ein.value,
+        hqAddressLine1: hqAddressLine1 || null,
+        hqAddressLine2: hqAddressLine2 || null,
+        hqCity: hqCity || null,
+        hqState: hqState || null,
+        hqZip: hqZip || null,
+        phone: phone || null,
+        website: website.value,
+      },
+    });
+
+    // The three surfaces this record is READ on, named rather than left to
+    // a single /settings revalidation: the remittance sheet and the WH-347
+    // print it, and both are routes somebody may already have open.
+    revalidatePath("/settings");
+    revalidatePath("/union-compliance/remittance");
+    revalidatePath("/jobs");
+    return ok;
+  });
+}
+/* THE THREE /team ACTIONS RETURN THEIR REFUSALS, and until 2026-09-12 all
+   three threw them.
+
+   Every guard in them is an EXPECTED outcome a person needs to read — the
+   email is already invited, the person already has an account, someone else
+   removed the member a second ago, you are not the owner — and production
+   redacts a thrown Server Action message to a digest (CLAUDE.md, verified on
+   a real production build). So the page showed nothing at all: the invite
+   form appeared to do nothing on a duplicate email, and a failed removal left
+   the teammate on the list with no explanation anywhere.
+   `lib/actions/submittals.ts` is the reference for the shape; the
+   `InputError`/`runAction`/`fail()` machinery above already existed here for
+   the contact actions and is reused rather than duplicated.
+
+   The owner check is `ownerRefusal`, not `assertOwner`: an action whose type
+   promises `{ ok: false, error }` must not refuse by throwing, which is
+   #166's rule and what `ownerRefusalCensus.test.ts` enforces. */
 /** The three "standing terms with this GC" fields — shared by createContact
  * and updateContact (#218 added them to create; they previously only
  * existed on the update path). */
@@ -72,65 +206,91 @@ function standingTermsFromForm(formData: FormData) {
 
 /** Invites a teammate by email. They join the OWNER's Company as a MEMBER
  * the next time they sign up with that email — see requireCompanyContext(). */
-export async function inviteTeamMember(formData: FormData) {
+export async function inviteTeamMember(formData: FormData): Promise<ActionResult> {
   const { company, ...user } = await requireCompanyContext();
-  assertOwner(user);
+  const refusal = ownerRefusal(user, "Only the account owner can invite a teammate");
+  if (refusal) return refusal;
 
-  const email = String(formData.get("email") ?? "")
-    .trim()
-    .toLowerCase();
-  if (!email) {
-    throw new Error("Email is required");
-  }
+  return runAction(async () => {
+    const email = required(formData, "email", "Email").toLowerCase();
 
-  const existingUser = await prisma.user.findUnique({ where: { email } });
-  if (existingUser) {
-    throw new Error("Someone with that email already has an account");
-  }
-
-  try {
-    await prisma.invite.create({ data: { companyId: company.id, email } });
-  } catch (error) {
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-      throw new Error("That email has already been invited (here or elsewhere)");
+    const existingUser = await prisma.user.findUnique({ where: { email } });
+    if (existingUser) {
+      return fail("Someone with that email already has an account");
     }
-    throw error;
-  }
 
-  revalidatePath("/team");
+    try {
+      await prisma.invite.create({ data: { companyId: company.id, email } });
+    } catch (error) {
+      /* isUniqueConstraintError, not `instanceof
+         Prisma.PrismaClientKnownRequestError`: that instanceof is FALSE at
+         runtime under this bundling (CLAUDE.md, measured 2026-08-28), so the
+         guard written here never fired and a second invite to the same
+         address 500'd instead of saying so. */
+      if (isUniqueConstraintError(error)) {
+        return fail("That email has already been invited (here or elsewhere)");
+      }
+      throw error;
+    }
+
+    revalidatePath("/team");
+    return ok;
+  });
 }
 
 /** Cancels a pending invite (e.g. to fix a typo). */
-export async function cancelInvite(inviteId: string) {
+export async function cancelInvite(inviteId: string): Promise<ActionResult> {
   const { company, ...user } = await requireCompanyContext();
-  assertOwner(user);
+  const refusal = ownerRefusal(user, "Only the account owner can cancel an invite");
+  if (refusal) return refusal;
 
   const invite = await prisma.invite.findUnique({ where: { id: inviteId } });
   if (!invite || invite.companyId !== company.id) {
-    throw new Error("Invite not found");
+    return fail("That invite is no longer there — someone may have cancelled it already.");
   }
 
   await prisma.invite.delete({ where: { id: inviteId } });
 
   revalidatePath("/team");
+  return ok;
 }
 
 /** Removes a MEMBER from the company. Owners can't be removed this way. */
-export async function removeTeamMember(memberUserId: string) {
+export async function removeTeamMember(memberUserId: string): Promise<ActionResult> {
   const { company, ...user } = await requireCompanyContext();
-  assertOwner(user);
+  const refusal = ownerRefusal(user, "Only the account owner can remove a teammate");
+  if (refusal) return refusal;
 
   const member = await prisma.user.findUnique({ where: { id: memberUserId } });
   if (!member || member.companyId !== company.id) {
-    throw new Error("Team member not found");
+    return fail("That teammate is no longer on this company.");
   }
   if (member.role === "OWNER") {
-    throw new Error("Owners can't be removed");
+    return fail("Owners can't be removed here — change the role first.");
   }
 
-  await prisma.user.delete({ where: { id: memberUserId } });
+  try {
+    await prisma.user.delete({ where: { id: memberUserId } });
+  } catch (error) {
+    /* A teammate with work recorded against them cannot be deleted at all:
+       TimeEntry.employeeUser, DispatchSlip.employeeUser and the certification
+       holder are REQUIRED relations, which Prisma defaults to RESTRICT. That
+       refusal comes from the database, and before this it reached the person
+       as a redacted digest on a page that then looked broken. Checked by
+       `code` rather than `instanceof`, for the reason isUniqueConstraintError
+       documents. */
+    if (isForeignKeyViolation(error)) {
+      return fail(
+        "This teammate has work recorded against them — hours, a dispatch slip or a " +
+          "certification — so their account can't be deleted. Clear their job function instead " +
+          "to take away access while keeping the record.",
+      );
+    }
+    throw error;
+  }
 
   revalidatePath("/team");
+  return ok;
 }
 
 /** Adds a new GC/developer/vendor contact directly — not tied to opening a

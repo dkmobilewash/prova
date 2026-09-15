@@ -64,12 +64,26 @@ function usageUnreadable(what: string, err: unknown): void {
 export type Allowance = { ok: true } | { ok: false; error: string };
 
 export async function askAllowance(companyId: string, userId: string, now: Date = new Date()): Promise<Allowance> {
+  // `feature: "ask"` is load-bearing rather than tidy. These two ceilings are
+  // about how many QUESTIONS a person may ask, and since 2026-09-14 this
+  // table also holds compliance extractions, WIP narratives and estimate
+  // drafts. Without the filter, uploading four compliance documents would
+  // silently cost somebody four of their hourly questions — a limit tightening
+  // itself as a side effect of a metering change nobody connected to it.
+  //
+  // Bounding those three is a real and separate problem: the audit that found
+  // them put compliance extraction at $2.25-$4.50 a call, which a ROW count is
+  // the wrong instrument for. That wants a spend ceiling, and it is not this.
   let person: number;
   let company: number;
   try {
     [person, company] = await Promise.all([
-      prisma.askUsage.count({ where: { userId, createdAt: { gte: new Date(now.getTime() - HOUR) } } }),
-      prisma.askUsage.count({ where: { companyId, createdAt: { gte: new Date(now.getTime() - DAY) } } }),
+      prisma.askUsage.count({
+        where: { userId, feature: "ask", createdAt: { gte: new Date(now.getTime() - HOUR) } },
+      }),
+      prisma.askUsage.count({
+        where: { companyId, feature: "ask", createdAt: { gte: new Date(now.getTime() - DAY) } },
+      }),
     ]);
   } catch (err) {
     // FAILS OPEN, and the reason is three functions down: recordAskUsage
@@ -87,6 +101,10 @@ export async function askAllowance(companyId: string, userId: string, now: Date 
     // line below is console.error rather than a warning, and why the
     // settings page says so on screen instead of printing a reassuring
     // zero.
+    //
+    // Note the two now compose: a database that has AskUsage but not yet
+    // its `feature` column lands here too, which is the correct outcome —
+    // the question is answered rather than refused by a schema gap.
     usageUnreadable("the limit check could not run, so this question went to the model unbounded", err);
     return { ok: true };
   }
@@ -109,12 +127,35 @@ export async function askAllowance(companyId: string, userId: string, now: Date 
  * failure reason. Stored as a string so a new reason needs no migration. */
 export type AskUsageOutcome = "answered" | "proposal" | "clarify" | `error:${string}`;
 
+/**
+ * Which model caller a row is.
+ *
+ * Until 2026-09-14 this table held Ask and nothing else, while three other
+ * callers in `packages/integrations/src/anthropic.ts` spent money silently —
+ * so `/settings/assistant` reported a number that was not the bill.
+ *
+ * A union rather than a free string, unlike `outcome`: `outcome` carries a
+ * model-supplied reason and must not need a migration to gain one, but the
+ * set of model CALLERS is a fact about this codebase that somebody has to
+ * add code to change. Adding a caller should make the compiler ask which
+ * feature it is.
+ */
+export type AskUsageFeature =
+  | "ask"
+  | "wip-narrative"
+  | "compliance-extract"
+  | "draft-estimate-lines";
+
 export type AskUsageRecord = {
   companyId: string;
-  userId: string;
+  /** Nullable because the column is: a model call is not guaranteed to have
+   *  a person behind it. Every caller today does pass one. */
+  userId: string | null;
   model: string;
   usage: AskUsageTotals;
   outcome: AskUsageOutcome;
+  /** Defaults to "ask" so every existing call site is unchanged. */
+  feature?: AskUsageFeature;
 };
 
 /**
@@ -126,7 +167,9 @@ export type AskUsageRecord = {
  */
 export async function recordAskUsage(record: AskUsageRecord): Promise<void> {
   const { usage } = record;
+  const feature = record.feature ?? "ask";
   console.log("[ask] usage", {
+    feature,
     companyId: record.companyId,
     userId: record.userId,
     model: record.model,
@@ -140,6 +183,7 @@ export async function recordAskUsage(record: AskUsageRecord): Promise<void> {
   try {
     await prisma.askUsage.create({
       data: {
+        feature,
         companyId: record.companyId,
         userId: record.userId,
         model: record.model,

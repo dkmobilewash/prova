@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { createDailyFieldReport } from "@/lib/actions";
 import { localToday } from "@/components/localToday";
 import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
@@ -53,12 +54,23 @@ export function FieldReportComposer({
     onDiscard: () => setJobId(defaultJobId ?? jobs[0]?.id ?? ""),
   });
 
+  // The same case /photos handles with a real link — refusing with a bare
+  // sentence leaves the one thing to do next as something you have to go
+  // and find.
   if (jobs.length === 0) {
     return (
-      <p className="rounded-lg border border-slate-800 bg-slate-900 p-4 text-sm text-slate-400">
-        No jobs yet. A field report records what happened on a job, so there has to be one to
-        file against.
-      </p>
+      <div className="rounded-lg border border-line-card bg-surface p-4">
+        <p className="text-sm text-ink-body">
+          No jobs yet. A field report records what happened on a job, so there has to be one to
+          file against.
+        </p>
+        <Link
+          href="/jobs/new"
+          className="mt-3 inline-flex min-h-11 items-center rounded-md bg-brand px-4 text-sm font-medium text-neutral-900 hover:bg-yellow-500"
+        >
+          Create a job
+        </Link>
+      </div>
     );
   }
 
@@ -67,7 +79,7 @@ export function FieldReportComposer({
       <button
         type="button"
         onClick={() => setIsOpen(true)}
-        className="rounded-md bg-blue-600 px-5 py-3 text-base font-medium text-white hover:bg-blue-500"
+        className="rounded-md bg-brand px-5 py-3 text-base font-semibold text-neutral-900 hover:bg-yellow-500"
       >
         Log a day
       </button>
@@ -93,9 +105,9 @@ export function FieldReportComposer({
           }
         });
       }}
-      className="flex flex-col gap-3 rounded-lg border border-slate-800 bg-slate-900 p-4"
+      className="flex flex-col gap-3 rounded-lg border border-line-card bg-surface p-4"
     >
-      <h2 className="text-sm font-semibold text-slate-300">Log a day</h2>
+      <h2 className="text-sm font-semibold text-ink-label">Log a day</h2>
       <FormDraftNotice draft={draft} />
 
       <div className="grid gap-3 sm:grid-cols-2">
@@ -124,11 +136,11 @@ export function FieldReportComposer({
             defaultValue={localToday()}
             className={inputClass}
           />
-          {/* slate-400, not slate-500 — measured 3.83:1 on the slate-900 card,
+          {/* ink-body, not ink-muted — the muted level is under the 4.5 floor,
               under the 4.5 floor. This sentence is the difference between a
               report filed against the right day and the wrong one; it cannot
               be the first thing sunlight takes away. */}
-          <span className="text-xs text-slate-400">
+          <span className="text-xs text-ink-body">
             The day the work happened, not the day you typed it in.
           </span>
         </label>
@@ -145,7 +157,7 @@ export function FieldReportComposer({
         <button
           type="submit"
           disabled={isPending}
-          className="rounded-md bg-blue-600 px-5 py-3 text-base font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+          className="rounded-md bg-brand px-5 py-3 text-base font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
         >
           {isPending ? "Saving…" : "Save report"}
         </button>
@@ -156,7 +168,7 @@ export function FieldReportComposer({
             setIsOpen(false);
             setError(null);
           }}
-          className="rounded-md border border-slate-700 px-5 py-3 text-base text-slate-300 hover:border-slate-500 disabled:opacity-50"
+          className="rounded-md border border-line-card px-5 py-3 text-base text-ink-label hover:bg-neutral-800 disabled:opacity-50"
         >
           Cancel
         </button>
