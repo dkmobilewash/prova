@@ -1,0 +1,15 @@
+appId: host.exp.Exponent
+---
+- tapOn: "Prova"
+- extendedWaitUntil:
+    visible: "Job ID"
+    timeout: 15000
+- tapOn: "Job ID"
+- eraseText: 100
+- inputText: "cmtjg1oi20003l404xksg5wbl"
+- tapOn: "Open reports"
+- extendedWaitUntil:
+    visible: "Pending sync"
+    timeout: 20000
+- assertNotVisible: "Job not found"
+- assertNotVisible: "Request failed"
