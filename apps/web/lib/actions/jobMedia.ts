@@ -10,6 +10,7 @@ import {
   isBlobStorageUrl,
   isJobMediaBlobUrl,
   isOurBlobStoreUrl,
+  jobMediaKind,
   jobMediaMaxBytes,
 } from "@/lib/job-media";
 import {
@@ -740,9 +741,42 @@ export async function saveJobMediaAnnotations(
 
   const media = await prisma.jobMedia.findUnique({
     where: { id: mediaId },
-    select: { id: true, companyId: true, jobId: true },
+    // `contentType` is read for the kind check below. There is no `kind`
+    // column to read instead, deliberately — see media.prisma; a stored one
+    // could disagree with the type the file was signed and uploaded as.
+    select: { id: true, companyId: true, jobId: true, contentType: true },
   });
   if (!media || media.companyId !== context.companyId) return fail("Photo not found");
+
+  // MARKS GO ON PHOTOGRAPHS, AND THIS IS THE ENFORCEMENT OF THAT rather
+  // than a second opinion about it. Until #275 the only thing standing
+  // between a voice note and a set of arrows was `JobMediaCard` declining
+  // to render the button, which is the courtesy side — and the comment
+  // four lines below already says why that is not enough: this is an
+  // endpoint any signed-in caller can post to directly.
+  //
+  // The odd one out among this action's guards, which is exactly why it
+  // was missed: ownership, the cap and every mark's geometry were all
+  // enforced here from the first commit. This one read as handled because
+  // the button genuinely is hidden.
+  //
+  // Refused BEFORE the cap and the geometry: "that is a voice note" is the
+  // useful sentence, and telling someone their thirty marks are too many
+  // for a file that can hold none is not.
+  //
+  // `!== "photo"` rather than a video/audio pair, so a contentType this
+  // build does not recognise (jobMediaKind returns null) is refused too
+  // rather than falling through the gap between two named kinds.
+  const kind = jobMediaKind(media.contentType);
+  if (kind !== "photo") {
+    return fail(
+      kind === "video"
+        ? "Marks go on photos. This is a video — a mark would point at whatever was in frame at second nought."
+        : kind === "audio"
+          ? "Marks go on photos. This is a voice note, so there is nothing to draw on."
+          : "Marks go on photos, and this file is not one.",
+    );
+  }
 
   // The cap first: a person who has somehow drawn thirty marks should be
   // told that, rather than told about whichever one of them is also
