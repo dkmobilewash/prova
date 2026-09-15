@@ -1,4 +1,4 @@
-import { ClerkProvider } from "@clerk/clerk-expo";
+import { ClerkProvider } from "@clerk/expo";
 import { Stack } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 

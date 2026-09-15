@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { useAuth } from "@clerk/clerk-expo";
+import { useAuth } from "@clerk/expo";
 import * as api from "./api";
 import { getClientId } from "./client-id";
 import { uuid } from "./id";
