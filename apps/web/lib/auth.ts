@@ -32,17 +32,38 @@ import { recordLastSeen } from "@/lib/last-seen-stamp";
  * avoid it.
  */
 export async function requireCompanyContext() {
-  const context = await loadCompanyContext();
-  await recordLastSeen(context);
-  return context;
-}
-
-async function loadCompanyContext() {
   const clerkUser = await currentUser();
   if (!clerkUser) {
     redirect("/sign-in");
   }
+  const context = await adoptCompanyContext(clerkUser);
+  await recordLastSeen(context);
+  return context;
+}
 
+/**
+ * The mobile/API counterpart to requireCompanyContext. A browser with no
+ * session is redirected to /sign-in; a phone has no page to be redirected
+ * to, so this returns null and the caller answers 401. The adoption logic
+ * is identical — see adoptCompanyContext.
+ */
+export async function requireApiContext() {
+  const clerkUser = await currentUser();
+  if (!clerkUser) return null;
+  const context = await adoptCompanyContext(clerkUser);
+  await recordLastSeen(context);
+  return context;
+}
+
+type ClerkUser = NonNullable<Awaited<ReturnType<typeof currentUser>>>;
+
+/**
+ * The sign-in adoption logic, shared by requireCompanyContext (web) and
+ * requireApiContext (mobile). Verbatim from the old loadCompanyContext: the
+ * verified-email gate, invite consumption, company creation, and the Prisma
+ * concurrency re-read all stay exactly as they were.
+ */
+export async function adoptCompanyContext(clerkUser: ClerkUser) {
   const existing = await prisma.user.findUnique({
     where: { clerkId: clerkUser.id },
     include: { company: true },
