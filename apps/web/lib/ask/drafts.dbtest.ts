@@ -20,7 +20,7 @@ const context = {
 vi.mock("@/lib/auth", () => ({ requireCompanyContext: async () => context }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 
-const { loadRfiDraft, loadPunchDraft } = await import("./drafts");
+const { loadRfiDraft, loadPunchDraft, loadMessageDraft } = await import("./drafts");
 const { confirmAskProposal, loadAskProposal, settleAskDraft } = await import("@/lib/actions/ask");
 const { linkToken } = await import("@/lib/tokens");
 
@@ -28,16 +28,29 @@ let companyId = "";
 let ownerId = "";
 let otherUserId = "";
 let jobId = "";
+let contactId = "";
+
+const EMAIL_PAYLOAD = {
+  contactId: "",
+  toName: "ASK-DRAFT Turner",
+  toAddress: "pm@ask-draft.example",
+  jobId: "",
+  jobName: "ASK-DRAFT job",
+  subject: "Studs",
+  body: "The studs are three weeks late.",
+};
 
 async function card(
-  command: "raise_rfi" | "add_punch_item",
+  command: "raise_rfi" | "add_punch_item" | "send_email",
   overrides: { createdByUserId?: string; expiresAt?: Date; mode?: string } = {},
 ) {
   const id = linkToken();
   const resolved =
     command === "raise_rfi"
       ? { jobId, jobName: "ASK-DRAFT job", subject: "Head-of-wall", question: "Which governs?", drawingReference: "A-501 / 3", specSection: null }
-      : { jobId, jobName: "ASK-DRAFT job", description: "grid out of level" };
+      : command === "send_email"
+        ? { ...EMAIL_PAYLOAD, contactId, jobId }
+        : { jobId, jobName: "ASK-DRAFT job", description: "grid out of level" };
   await prisma.askProposal.create({
     data: {
       id,
@@ -72,7 +85,10 @@ describe("a HANDOFF card against a real database", () => {
       data: { companyId, clerkId: `draft_m_${Date.now()}`, email: `draft_m_${Date.now()}@example.test`, role: "MEMBER" },
     });
     otherUserId = other.id;
-    const contact = await prisma.contact.create({ data: { companyId, name: "ASK-DRAFT Turner" } });
+    const contact = await prisma.contact.create({
+      data: { companyId, name: "ASK-DRAFT Turner", email: "pm@ask-draft.example" },
+    });
+    contactId = contact.id;
     const job = await prisma.job.create({ data: { companyId, contactId: contact.id, name: "ASK-DRAFT job" } });
     jobId = job.id;
   });
@@ -125,6 +141,24 @@ describe("a HANDOFF card against a real database", () => {
 
     const direct = await card("raise_rfi", { mode: "DIRECT" });
     expect(await loadRfiDraft(viewer(), direct)).toEqual({ kind: "gone" });
+
+    // An email card loads on the composer with the address the command
+    // read off the Contact row, and is "gone" to the RFI page like any
+    // card for a different form.
+    const email = await card("send_email");
+    expect(await loadMessageDraft(viewer(), email)).toEqual({
+      kind: "draft",
+      draft: {
+        proposalId: email,
+        toAddress: "pm@ask-draft.example",
+        toName: "ASK-DRAFT Turner",
+        jobId,
+        subject: "Studs",
+        body: "The studs are three weeks late.",
+      },
+    });
+    expect(await loadRfiDraft(viewer(), email)).toEqual({ kind: "gone" });
+    expect(await loadMessageDraft(viewer(), punch)).toEqual({ kind: "gone" });
 
     const expired = await card("raise_rfi", { expiresAt: new Date(Date.now() - 60_000) });
     expect(await loadRfiDraft(viewer(), expired)).toEqual({ kind: "gone" });

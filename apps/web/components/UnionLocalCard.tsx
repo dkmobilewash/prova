@@ -201,6 +201,7 @@ export function UnionLocalCard({
                     destructive={
                       canDelete ? (
                         <ConfirmDelete
+                          describe="Removes this craft classification from the local. Rates entered under it go with it."
                           pinned="end"
                           label="delete"
                           confirmLabel="confirm delete"

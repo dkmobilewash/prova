@@ -112,6 +112,7 @@ export function MessageRow({
           destructive={
             canDelete && !message.wentOut ? (
               <ConfirmDelete
+                describe="Removes the draft from this thread. Only a message that never went out can be removed."
                 label="Remove"
                 confirmLabel="Confirm remove"
                 pendingLabel="Removing…"

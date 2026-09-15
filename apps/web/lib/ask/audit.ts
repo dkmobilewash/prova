@@ -91,6 +91,12 @@ async function targetLinks(
       links.set(`TimeEntry:${t.id}`, { label: "Time entry", href: `/jobs/${t.jobId}` });
     }
   }
+  const releases = ids("RetainageRelease");
+  if (releases.length) {
+    for (const r of await prisma.retainageRelease.findMany({ where: { id: { in: releases } }, select: { id: true, jobId: true } })) {
+      links.set(`RetainageRelease:${r.id}`, { label: "Retainage release", href: `/jobs/${r.jobId}` });
+    }
+  }
   for (const row of rows) {
     if (!row.targetType || !row.targetId) continue;
     const key = `${row.targetType}:${row.targetId}`;

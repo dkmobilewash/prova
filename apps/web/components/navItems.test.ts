@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { NAV_GROUPS, NAV_ITEMS, navGroupsFor } from "./navItems";
+import { activeGroupHeading, NAV_GROUPS, NAV_ITEMS, navGroupsFor } from "./navItems";
 import { JOB_FUNCTIONS } from "@/lib/permissions";
 
 /**
@@ -29,12 +29,13 @@ import { JOB_FUNCTIONS } from "@/lib/permissions";
  * The fix that lasts is not adding the orphans back — it is these tests.
  */
 
-/** /sales is deliberately outside NAV_GROUPS: it belongs to Prova's own
- *  operating company, is gated on Company.isProvaOperator rather than the
- *  job-function capabilities every other item uses, and is appended by
- *  navGroupsFor. Named here so the exception is a decision on the record
- *  rather than a hole in the check. */
-const APPENDED_SEPARATELY = new Set(["/sales"]);
+/** /sales and /internal/usage are deliberately outside NAV_GROUPS: both
+ *  belong to Prova's own operating company, both are gated on
+ *  Company.isProvaOperator rather than the job-function capabilities every
+ *  other item uses, and both are appended by navGroupsFor. Named here so
+ *  the exception is a decision on the record rather than a hole in the
+ *  check. */
+const APPENDED_SEPARATELY = new Set(["/sales", "/internal/usage"]);
 
 function groupedHrefs(groups: typeof NAV_GROUPS): Set<string> {
   return new Set(groups.flatMap((g) => g.items.map((i) => i.href)));
@@ -72,7 +73,7 @@ describe("every nav item is reachable", () => {
     const tenant = navGroupsFor(owner);
     expect(groupedHrefs(tenant).has("/sales")).toBe(false);
 
-    const operator = navGroupsFor(owner, { showsSalesCrm: true });
+    const operator = navGroupsFor(owner, { showsInternal: true });
     expect(groupedHrefs(operator).has("/sales")).toBe(true);
   });
 });
@@ -99,6 +100,95 @@ describe("the deployment link", () => {
       const visible = hrefsIn(navGroupsFor({ role: "MEMBER", jobFunction }));
       expect(visible, `a ${jobFunction ?? "unset"} member cannot see /deployment`).toContain(
         "/deployment",
+      );
+    }
+  });
+});
+
+describe("the collapsible rail (#240)", () => {
+  it("orders the groups as the money pipeline, six of them", () => {
+    expect(NAV_GROUPS.map((g) => g.heading)).toEqual([
+      "Pre-construction",
+      "Operations",
+      "Paper trail",
+      "Logistics",
+      "Financials",
+      "Compliance & safety",
+    ]);
+  });
+
+  it("gives every group an icon, since at 64px the rail shows nothing else for it", () => {
+    const owner = { role: "OWNER" as const, jobFunction: null };
+    for (const group of navGroupsFor(owner, { showsInternal: true })) {
+      expect(group.icon, `${group.heading} has no icon`).toBeTruthy();
+    }
+  });
+
+  it("brings RFIs, Submittals, Drawings and Closeout back under Paper trail, in the order the paper arrives", () => {
+    const paperTrail = NAV_GROUPS.find((g) => g.heading === "Paper trail");
+    expect(paperTrail?.items.map((i) => i.href)).toEqual(["/rfis", "/submittals", "/drawings", "/closeout"]);
+    // Findable means clickable: none of the four is disabled.
+    expect(paperTrail?.items.filter((i) => i.disabled)).toEqual([]);
+  });
+
+  it("opens the group of the current page, by the longest matching href", () => {
+    expect(activeGroupHeading(NAV_GROUPS, "/rfis")).toBe("Paper trail");
+    expect(activeGroupHeading(NAV_GROUPS, "/jobs/abc")).toBe(null);
+    // /vendors and /vendors/pricing are both in Logistics, so either prefix
+    // lands there; /settings/assistant hangs off /settings and must land in
+    // the group that holds it, not on whichever prefix came first.
+    expect(activeGroupHeading(NAV_GROUPS, "/vendors/pricing")).toBe("Logistics");
+    expect(activeGroupHeading(NAV_GROUPS, "/settings/assistant")).toBe("Financials");
+    // A prefix that is not a path segment is not a match: /teams would be
+    // a different page from /team.
+    expect(activeGroupHeading(NAV_GROUPS, "/teamwork")).toBe(null);
+    expect(activeGroupHeading(NAV_GROUPS, "/sign-in")).toBe(null);
+  });
+
+  it("keeps the internal sales group last, outside every tenant's pipeline", () => {
+    const owner = { role: "OWNER" as const, jobFunction: null };
+    const headings = navGroupsFor(owner, { showsInternal: true }).map((g) => g.heading);
+    expect(headings.at(-1)).toBe("Internal");
+    expect(headings).toHaveLength(7);
+  });
+});
+
+/**
+ * The usage page is the second thing in the Internal group, and the first
+ * time that group has held more than one item — which is why the option
+ * that appends it is no longer called `showsSalesCrm`. A flag named after
+ * one page that gates two is a lie a reader has no way to catch.
+ *
+ * What these pin is the half a page guard cannot: that no tenant's rail
+ * ever advertises it. The guard on the page itself (isProvaOperator, then
+ * OWNER) is the actual boundary and is recorded in
+ * lib/permissions.test.ts's OPEN_ROUTES with its reason.
+ */
+describe("the internal usage page", () => {
+  const owner = { role: "OWNER" as const, jobFunction: null };
+
+  it("appears only when the caller says this is the operator company", () => {
+    expect(hrefsIn(navGroupsFor(owner))).not.toContain("/internal/usage");
+    expect(hrefsIn(navGroupsFor(owner, { showsInternal: true }))).toContain("/internal/usage");
+  });
+
+  it("sits in the Internal group beside the sales CRM, in no tenant group", () => {
+    const internal = navGroupsFor(owner, { showsInternal: true }).find(
+      (group) => group.heading === "Internal",
+    );
+    expect(internal?.items.map((item) => item.href)).toEqual(["/sales", "/internal/usage"]);
+
+    // The stronger half: it is not in NAV_GROUPS at all, so there is no
+    // path by which a tenant's rail could render it.
+    const inTenantGroups = NAV_GROUPS.flatMap((group) => group.items.map((item) => item.href));
+    expect(inTenantGroups).not.toContain("/internal/usage");
+  });
+
+  it("is invisible to every job function on a tenant account", () => {
+    for (const jobFunction of [null, ...JOB_FUNCTIONS]) {
+      const visible = hrefsIn(navGroupsFor({ role: "MEMBER", jobFunction }));
+      expect(visible, `a ${jobFunction ?? "unset"} member can see /internal/usage`).not.toContain(
+        "/internal/usage",
       );
     }
   });

@@ -3,7 +3,11 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { updateContact } from "@/lib/actions";
-import { ContactFields, type ContactDefaults } from "@/components/ContactFields";
+import {
+  ContactFields,
+  ContactStandingTermsFields,
+  type ContactDefaults,
+} from "@/components/ContactFields";
 import { inputClass, labelClass } from "@/components/RfiFields";
 import { classifyRenewal, renewalTiming } from "@/lib/compliance-expiry";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -74,36 +78,17 @@ export function ContactEditForm({
       <p className="mt-2 text-xs font-medium uppercase tracking-wide text-slate-500">
         Standing terms with this GC
       </p>
-      <div className="flex flex-wrap gap-3">
-        <label className={labelClass}>
-          Default retainage %
-          <input
-            name="defaultRetainagePercent"
-            defaultValue={defaults.defaultRetainagePercent ?? ""}
-            placeholder="e.g. 10"
-            className={`w-32 ${inputClass}`}
-          />
-        </label>
-        <label className={labelClass}>
-          Payment terms (days)
-          <input
-            name="paymentTermsDays"
-            defaultValue={defaults.paymentTermsDays ?? ""}
-            placeholder="e.g. 30"
-            className={`w-32 ${inputClass}`}
-          />
-        </label>
-        <label className="flex min-w-[200px] flex-1 flex-col gap-1 text-sm text-slate-300">
-          Standard forms used
-          <input
-            name="standardFormsUsed"
-            defaultValue={defaults.standardFormsUsed ?? ""}
-            placeholder="e.g. AIA A401"
-            className={inputClass}
-          />
-        </label>
-      </div>
+      <ContactStandingTermsFields defaults={defaults} />
 
+      {/* #218: MSA expiration and prequalification expiry stay edit-only,
+          deliberately not part of ContactStandingTermsFields — unlike
+          retainage/payment-terms/forms-used, these two record a specific
+          document's expiration date, which a contact usually has none of
+          yet at the moment it's first added (a fresh PROSPECT has no MSA
+          on file by definition). Putting a date picker for a document that
+          doesn't exist into the create form is friction with nothing to
+          fill in; these become meaningful once that document exists,
+          which is exactly what editing the contact later is for. */}
       <p className="mt-2 text-xs font-medium uppercase tracking-wide text-slate-500">
         Master service agreement &amp; prequalification
       </p>

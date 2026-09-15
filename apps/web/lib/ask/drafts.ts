@@ -49,6 +49,19 @@ export type RfiDraft = {
 
 export type PunchDraft = { proposalId: string; jobId: string; description: string };
 
+/** The composer's prefill. The address is the one the command read off
+ * the Contact row; the composer shows it in an editable field like any
+ * other, and the send is the composer's own action, which validates it
+ * again. */
+export type MessageDraft = {
+  proposalId: string;
+  toAddress: string;
+  toName: string;
+  jobId: string | null;
+  subject: string;
+  body: string;
+};
+
 export type DraftLookup<D> =
   | { kind: "none" }
   | { kind: "draft"; draft: D }
@@ -129,4 +142,24 @@ export async function loadPunchDraft(
   const description = str(payload, "description");
   if (!jobId || !description) return { kind: "gone" };
   return { kind: "draft", draft: { proposalId, jobId, description } };
+}
+
+/** The message composer's prefill. A job is optional on an email, so a
+ * missing `jobId` is "not tied to a job" rather than "gone". */
+export async function loadMessageDraft(
+  viewer: Viewer,
+  proposalId: string | undefined,
+): Promise<DraftLookup<MessageDraft>> {
+  const found = await loadDraftRow(viewer, proposalId, "send_email");
+  if (found.kind !== "draft" || !proposalId) return found as DraftLookup<MessageDraft>;
+  const payload = found.draft;
+  const toAddress = str(payload, "toAddress");
+  const toName = str(payload, "toName");
+  const subject = str(payload, "subject");
+  const body = str(payload, "body");
+  if (!toAddress || !toName || !subject || !body) return { kind: "gone" };
+  return {
+    kind: "draft",
+    draft: { proposalId, toAddress, toName, jobId: str(payload, "jobId"), subject, body },
+  };
 }

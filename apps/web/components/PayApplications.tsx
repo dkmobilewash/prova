@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useRef, useState, useTransition } from "react";
+import { Hint } from "@/components/Hint";
 import { submitPayApplication, updateInvoiceStatus } from "@/lib/actions";
 import { formatInstant } from "@/lib/render-date";
 
@@ -89,13 +90,15 @@ export function PayApplications({
       <div className="mb-1 flex items-center justify-between">
         <h2 className="text-lg font-semibold text-slate-100">Pay applications</h2>
         {!isOpen && (
-          <button
-            type="button"
-            onClick={() => setIsOpen(true)}
-            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
-          >
-            Submit pay application
-          </button>
+          <Hint text="Opens the form. Nothing is billed and nothing reaches the GC until you submit it.">
+            <button
+              type="button"
+              onClick={() => setIsOpen(true)}
+              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
+            >
+              Submit pay application
+            </button>
+          </Hint>
         )}
       </div>
       <p className="mb-3 text-sm text-slate-500">
@@ -219,13 +222,15 @@ export function PayApplications({
 
           {error && <p className="text-sm text-red-400">{error}</p>}
           <div className="flex gap-2">
-            <button
-              type="submit"
-              disabled={isPending}
-              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
-            >
-              {isPending ? "Submitting…" : "Submit pay application"}
-            </button>
+            <Hint text="Creates the application here and numbers it. It does not email the GC — print or export the G702/G703 below and send it the way this GC wants it.">
+              <button
+                type="submit"
+                disabled={isPending}
+                className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+              >
+                {isPending ? "Submitting…" : "Submit pay application"}
+              </button>
+            </Hint>
             <button
               type="button"
               disabled={isPending}

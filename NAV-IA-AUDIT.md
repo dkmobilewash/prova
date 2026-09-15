@@ -91,3 +91,29 @@ have made the desktop rail and the mobile drawer disagree about whether
 those pages are reachable, which is exactly the "one fact in two places"
 bug class `navItems.test.ts` (added 3 Sep 2026, same day) exists to catch
 in the other direction. Fixed to match `Sidebar.tsx`'s existing behavior.
+
+## Addendum, 11 Sep 2026 — four of the cuts reversed, on a ground this audit did not have (#240)
+
+RFIs, Submittals, Drawings and Closeout are back on the rail, under a
+"Paper trail" group, and the rail collapses: each group is a header that
+toggles, only the group holding the current page is open, and the six
+headers fit a laptop screen without scrolling. Nothing behind the routes
+changed then or now.
+
+This audit cut the four on two grounds. One was product scope — a sub
+does not RUN those workflows — and that stands as an argument about what
+to build. The other was the rail: at 22 flat items four more labels made
+finding anything worse, which issue #240 quantified against the category's
+reviews ("way too many menus" is Procore's most-cited negative). A
+collapsed group costs one header whether it holds one item or five, so
+the second ground is gone, and the first was never a reason to hide the
+RFI somebody sent last Tuesday. Cyrus asked for them findable.
+
+The group order also changed, from category taxonomy to the sub's money
+pipeline: Pre-construction → Operations → Paper trail → Logistics →
+Financials → Compliance & safety, with the operator-only Sales CRM group
+last and outside every tenant's rail. `navItems.test.ts` pins the order,
+the Paper trail membership, and which group opens for a given path.
+
+`/safety` and `/material-orders` stay `disabled: true` for the reason
+given above; that part of this audit is unchanged.

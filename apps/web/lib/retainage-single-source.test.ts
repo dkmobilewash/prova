@@ -86,6 +86,8 @@ const RETAINAGE_COLUMN_FILES: Record<string, string> = {
     "WRITES the snapshot when a pay application is submitted. The plain-invoice write moved out in phase 3 of the Ask build (below). Never reads a total.",
   "lib/billing/create-invoice.ts":
     "WRITES the snapshot for a plain invoice: createInvoice's body, lifted so the form and the draft_invoice card share one write and one formula. Never reads a total.",
+  "lib/billing/retainage-release.ts":
+    "READS one job's snapshots to sum them the way the job page does — the same calculateRetainageSummary call over the same rows — for the release_retainage card's three figures and for the ceiling and the stale-card check on its tap. Per-job by necessity; never a total. Arrived with phase 4d of the Ask build.",
   "lib/actions/quickbooks.ts": "Maps one invoice's snapshot into a QuickBooks memo.",
   "lib/export.ts": "Names the column in the Invoice CSV export.",
   "lib/pay-application.ts": "Pure G702 arithmetic — documentation only, no query.",
@@ -99,7 +101,9 @@ const RETAINAGE_COLUMN_FILES: Record<string, string> = {
   "lib/actions/quickbooks-invoice-push.test.ts":
     "Pins the invoice-push idempotency path, which asserts on the retainage snapshot it sends. Arrived with #160.",
   "lib/ask/commands/billing.test.ts": "Fakes the lifted core's result, snapshot included, to pin what the invoice card hands back.",
-  "lib/actions/ask.dbtest.ts": "Asserts the snapshot on the invoice a tapped card created, against real rows.",
+  "lib/billing/retainage-release.test.ts": "Fakes the invoice rows the lifted release core sums, snapshot included, to pin its cents and its two refusals.",
+  "lib/ask/commands/retainage.test.ts": "Fakes the invoice rows the release card is made from, so the card's figures run through the real per-job read.",
+  "lib/actions/ask.dbtest.ts": "Asserts the snapshot on the invoice a tapped card created, and seeds the snapshots a release card is made from, against real rows.",
 };
 
 /** Case-sensitive, and not matched inside a longer identifier: this is the

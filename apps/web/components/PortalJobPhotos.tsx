@@ -90,12 +90,22 @@ export function PortalJobPhotos({
                   rel="noopener noreferrer"
                   className="absolute inset-0"
                 >
+                  {/* `object-contain`, and on this surface it is the
+                      correctness fix rather than a presentation one. Issue
+                      #256: a mark is a fraction of the 4:3 box the sub drew
+                      on, with the photograph letterboxed inside it, so a
+                      `cover` crop here put the GC's arrow over a different
+                      part of the picture than the one the sub aimed at —
+                      measured at up to 89px on a portrait phone photo. The
+                      one thing this whole feature has to guarantee is that
+                      the GC's screen agrees with the sub's; a centre crop
+                      on the client-facing page was the place it did not. */}
                   <Image
                     src={photo.blobUrl}
                     alt={photo.caption ?? "Site photo"}
                     fill
                     unoptimized
-                    className="object-cover"
+                    className="object-contain"
                   />
                 </a>
               ) : photo.kind === "video" ? (
@@ -118,7 +128,7 @@ export function PortalJobPhotos({
                   convenient: an arrow drawn to show the GC where the damage
                   is has to land in the same place on their screen as it did
                   on the screen where somebody decided to show it. */}
-              <JobMediaMarks marks={photo.marks} aspect={4 / 3} />
+              <JobMediaMarks marks={photo.marks} />
             </div>
             <div className="flex flex-col gap-1 p-3">
               <p className="text-sm text-slate-200">

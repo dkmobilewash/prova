@@ -272,6 +272,7 @@ export function RfiRow({
         destructive={
           canDelete && rfi.status === "DRAFT" ? (
             <ConfirmDelete
+              describe="Deletes the draft. Only an unsent RFI can be deleted — once it has gone to the GC it can be answered and closed but never removed."
               pinned="end"
               label="Delete draft"
               confirmLabel="Confirm delete"

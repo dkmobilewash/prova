@@ -6,6 +6,7 @@ import { requireCompanyContext } from "@/lib/auth";
 import { PrintButton } from "@/components/PrintButton";
 import { PrevailingWageDeterminationForm } from "@/components/PrevailingWageDeterminationForm";
 import { ContractSummary } from "@/components/ContractSummary";
+import { JobDetailsForm } from "@/components/JobDetailsForm";
 import { WipNarrativeButton } from "@/components/WipNarrativeButton";
 import { DraftLineItemsForm } from "@/components/DraftLineItemsForm";
 import { TakeoffForm } from "@/components/TakeoffForm";
@@ -15,6 +16,7 @@ import { PayApplications, StatusForm } from "@/components/PayApplications";
 import { AddCostEntryForm } from "@/components/AddCostEntryForm";
 import { LogPaymentForm } from "@/components/LogPaymentForm";
 import { LogTimeEntryForm } from "@/components/LogTimeEntryForm";
+import { TimeEntryRow } from "@/components/TimeEntryRow";
 import { PushPaymentToQuickBooks } from "@/components/PushPaymentToQuickBooks";
 import { PushInvoiceToQuickBooks } from "@/components/PushInvoiceToQuickBooks";
 import { pushBlockers } from "@/lib/quickbooks-sync";
@@ -83,12 +85,10 @@ import {
   uploadContractDocument,
 } from "@/lib/actions";
 
-const TIME_ENTRY_PAY_TYPE_OPTIONS = [
-  { value: "STRAIGHT", label: "Straight" },
-  { value: "OVERTIME", label: "Overtime" },
-  { value: "DOUBLE_TIME", label: "Double time" },
-  { value: "SHIFT_DIFFERENTIAL", label: "Shift differential" },
-] as const;
+/* TIME_ENTRY_PAY_TYPE_OPTIONS used to be a third copy of the pay-type labels
+   (here, in LogTimeEntryForm and in the action). It is one list now, in
+   lib/time-entry-correction.ts, read through `timeEntryPayTypeLabel` by the
+   row that renders it. */
 const TRADE_SCOPE_OPTIONS = [
   { value: "METAL_FRAMING_DRYWALL", label: "Metal framing / drywall" },
   { value: "LATH_PLASTER", label: "Lath & plaster" },
@@ -211,6 +211,10 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
           employeeUser: true,
           lineItem: true,
           craftClassification: { include: { unionLocal: true } },
+          // Who corrected this hour, for the "corrected <date> by <name>"
+          // trace on the row (issue #63). Null on every entry nobody has
+          // corrected, which is most of them.
+          lastCorrectedByUser: true,
         },
       },
       dispatchSlips: {
@@ -235,13 +239,26 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
     notFound();
   }
 
-  const [companyMembers, companyLocations, catalogEntries, craftClassifications] = await Promise.all([
+  const [jobDetailContacts, companyMembers, companyLocations, catalogEntries, craftClassifications] = await Promise.all([
+    // For the Job details form's client picker. Scoped to the company, same
+    // as every other list on this page.
+    prisma.contact.findMany({
+      where: { companyId: company.id },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
     prisma.user.findMany({ where: { companyId: company.id }, orderBy: { createdAt: "asc" } }),
     prisma.companyLocation.findMany({ where: { companyId: company.id }, orderBy: { createdAt: "asc" } }),
     prisma.lineItemCatalogEntry.findMany({ where: { companyId: company.id }, orderBy: { description: "asc" } }),
     prisma.craftClassification.findMany({
       where: { companyId: company.id },
-      include: { unionLocal: true, fringeRateSchedules: true },
+      include: {
+        unionLocal: true,
+        // Deterministic even though findEffectiveFringeRateSchedule no
+        // longer depends on fetch order to break a same-day tie — #104
+        // finding 3, so the raw list itself reads sensibly too.
+        fringeRateSchedules: { orderBy: { effectiveFrom: "desc" } },
+      },
       orderBy: { name: "asc" },
     }),
   ]);
@@ -273,6 +290,11 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
     label: `${craft.unionLocal.parentInternational} ${craft.unionLocal.localNumber} — ${craft.name}`,
     hourlyRate: burdenedHourlyRate(schedulesByCraft.get(craft.id) ?? [], laborRateDate),
   }));
+  /* The same craft list without the rate, for the two time-entry forms. Built
+     once rather than inline in each: since #63 there are two of them — logging
+     and correcting — and a correction form offering a different set of crafts
+     from the log form would be its own small bug. */
+  const timeEntryCraftOptions = craftOptions.map(({ id, label }) => ({ id, label }));
 
   const estimatedLaborCostByLineItem = new Map(
     job.lineItems.map((item) => [
@@ -665,6 +687,25 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             job past CONTRACTED at all. Not a new slot at the bottom —
             the fixed lower slots (Retainage → Field Reports → Pay Apps)
             are untouched. */}
+        {/* The job's own details. Placed here with Job status and Schedule,
+            deliberately far above the three fixed lower slots (Retainage →
+            Field Reports → Pay Apps) that nothing in this file marks and
+            nothing may reorder. */}
+        {showsJobManagement && (
+        <section className="mb-10">
+          <h2 className="mb-3 text-lg font-semibold text-slate-100">Job details</h2>
+          <JobDetailsForm
+            jobId={job.id}
+            name={job.name}
+            scope={job.scope}
+            contactId={job.contactId}
+            contacts={jobDetailContacts}
+            isEstimate={job.status === "ESTIMATE"}
+            canRemove={currentUser.role === "OWNER"}
+          />
+        </section>
+        )}
+
         {showsJobManagement && (
         <section className="mb-10">
           <h2 className="mb-3 text-lg font-semibold text-slate-100">Job status</h2>
@@ -1154,43 +1195,44 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
 
           {job.timeEntries.length > 0 && (
             <ul className="mb-4 flex flex-col gap-2">
+              {/* <TimeEntryRow> since #63: Remove used to delete on one click
+                  and there was no way to correct an hour at all. The row owns
+                  the two-step confirm and the inline correction form; this
+                  page still owns WHAT gets deleted, via the bound action. */}
               {job.timeEntries.map((entry) => (
-                <li
+                <TimeEntryRow
                   key={entry.id}
-                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-800 bg-slate-900 p-3 text-sm"
-                >
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                    <span className="text-slate-100">
-                      {formatCalendarDate(entry.date)}
-                    </span>
-                    <span className="text-slate-300">{entry.employeeUser.name ?? entry.employeeUser.email}</span>
-                    <span className="text-slate-400">{Number(entry.hours)}h</span>
-                    <span className="rounded bg-slate-800 px-1.5 py-0.5 text-xs text-slate-400">
-                      {TIME_ENTRY_PAY_TYPE_OPTIONS.find((p) => p.value === entry.payType)?.label ?? entry.payType}
-                    </span>
-                    {entry.craftClassification && (
-                      <span className="text-xs text-slate-500">{entry.craftClassification.name}</span>
-                    )}
-                    {entry.lineItem && <span className="text-xs text-slate-500">{entry.lineItem.description}</span>}
-                    {timeEntryLaborCosts.get(entry.id) != null && (
-                      <span className="text-xs text-slate-500">
-                        Est. cost {money(timeEntryLaborCosts.get(entry.id)!)}
-                      </span>
-                    )}
-                    {entry.perDiemAmount != null && (
-                      <span className="text-xs text-slate-500">Per diem {money(Number(entry.perDiemAmount))}</span>
-                    )}
-                    {entry.travelPayAmount != null && (
-                      <span className="text-xs text-slate-500">Travel {money(Number(entry.travelPayAmount))}</span>
-                    )}
-                    {entry.note && <span className="text-xs text-slate-500">— {entry.note}</span>}
-                  </div>
-                  <form action={deleteTimeEntryWithId(entry.id)}>
-                    <SubmitButton type="submit" title="Remove" className="text-xs text-red-400 hover:underline">
-                      Remove
-                    </SubmitButton>
-                  </form>
-                </li>
+                  entry={{
+                    id: entry.id,
+                    dateLabel: formatCalendarDate(entry.date),
+                    employeeLabel: entry.employeeUser.name ?? entry.employeeUser.email,
+                    hours: String(Number(entry.hours)),
+                    payType: entry.payType,
+                    note: entry.note,
+                    perDiemAmount: entry.perDiemAmount != null ? String(entry.perDiemAmount) : null,
+                    travelPayAmount: entry.travelPayAmount != null ? String(entry.travelPayAmount) : null,
+                    lineItemId: entry.lineItemId,
+                    lineItemLabel: entry.lineItem?.description ?? null,
+                    craftClassificationId: entry.craftClassificationId,
+                    craftLabel: entry.craftClassification?.name ?? null,
+                    estimatedCostLabel:
+                      timeEntryLaborCosts.get(entry.id) != null
+                        ? money(timeEntryLaborCosts.get(entry.id)!)
+                        : null,
+                    // A real moment, so the reader's own zone — not UTC. The
+                    // day WORKED above is a calendar day and stays in UTC.
+                    lastCorrectedLabel: entry.lastCorrectedAt
+                      ? `corrected ${formatInstant(entry.lastCorrectedAt, timeZone)}${
+                          entry.lastCorrectedByUser
+                            ? ` by ${entry.lastCorrectedByUser.name ?? entry.lastCorrectedByUser.email}`
+                            : ""
+                        }`
+                      : null,
+                  }}
+                  lineItems={job.lineItems.map((item) => ({ id: item.id, description: item.description }))}
+                  craftOptions={timeEntryCraftOptions}
+                  deleteAction={deleteTimeEntryWithId(entry.id)}
+                />
               ))}
             </ul>
           )}
@@ -1199,10 +1241,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             jobId={job.id}
             employees={companyMembers}
             lineItems={job.lineItems}
-            craftOptions={craftClassifications.map((craft) => ({
-              id: craft.id,
-              label: `${craft.unionLocal.parentInternational} ${craft.unionLocal.localNumber} — ${craft.name}`,
-            }))}
+            craftOptions={timeEntryCraftOptions}
           />
         </section>
 

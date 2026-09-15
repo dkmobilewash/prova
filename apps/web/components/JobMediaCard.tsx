@@ -13,6 +13,7 @@ import {
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { JOB_MEDIA_TAG_DATALIST_ID, JOB_MEDIA_TAGS_PER_PHOTO_MAX } from "@/lib/job-media-tags";
 import type { JobMediaKind } from "@/lib/job-media";
+import type { CapturedLocationSummary } from "@/lib/job-media-location";
 import { JobMediaMarks, type JobMediaMark } from "@/components/JobMediaMarks";
 import { JobMediaAnnotator } from "@/components/JobMediaAnnotator";
 import { annotationSummary } from "@/lib/job-media-annotations";
@@ -47,9 +48,11 @@ export type JobMediaCardData = {
   kind: JobMediaKind;
   /** Non-null when a common browser cannot play this file. */
   playbackWarning: string | null;
-  /** What somebody drew on it, in image fractions. Empty for most photos
-   *  and always empty for video and voice notes — you cannot usefully put
-   *  a static arrow on a moving picture, and nothing offers to. */
+  /** What somebody drew on it, as fractions of the 4:3 box the editor drew
+   *  on — NOT of the image, which is what this said until issue #256 and is
+   *  the difference the bug lived in. Empty for most photos and always empty
+   *  for video and voice notes — you cannot usefully put a static arrow on a
+   *  moving picture, and nothing offers to. */
   marks: JobMediaMark[];
   caption: string | null;
   capturedAtLabel: string;
@@ -61,6 +64,12 @@ export type JobMediaCardData = {
   /** Non-null only when the row's own two timestamps disagree — see
    * jobMediaClockWarning. Derived at read time, stored nowhere. */
   clockWarning: string | null;
+  /** WHERE it was taken, or null — which is what most rows are and what an
+   * ordinary row looks like. Every field of it is derived from the stored
+   * coordinates at read time (`describeCapturedLocation`), including the
+   * map link: no coordinate arithmetic happens in this component and no
+   * mapping library is loaded anywhere in this app. */
+  location: CapturedLocationSummary | null;
   /** The labels on this photo, in name order, as they were typed. Display
    * names only: `normalizedName` exists to be the target of a unique index
    * and is never shown, so it never leaves the query module. */
@@ -161,12 +170,37 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
             rel="noopener noreferrer"
             className="absolute inset-0"
           >
+            {/* `object-contain`, where this was a centre crop until
+                2026-09-15, and that is issue #256 rather than a taste call
+                about thumbnails.
+
+                (Spelled "a centre crop" rather than with the class name on
+                purpose: `jobMediaMarkSurfaces.test.ts` fails this file if
+                the crop class appears anywhere in it, and a comment quoting
+                the pattern a census greps for is how #185 disarmed one.)
+
+                A mark is stored as a fraction of the 4:3 box the editor
+                drew on, with the photograph letterboxed inside it. Cropped
+                to fill, the box is the same and the fractions are the same,
+                but the photograph is bigger than the box — so the part of
+                the picture under a given fraction is not the part the
+                person drew on. Measured in real Chromium: 0px out on a
+                genuinely 4:3 photo, 31px out on a 16:9 one in a phone-width
+                cell and 89px out on a portrait 3:4 one in a desktop cell.
+
+                What it costs, stated plainly because it is visible on every
+                card: a non-4:3 photo now letterboxes, with bars on the
+                slate-950 ground the box already had. The grid does not
+                move — the box is still 4:3 — and a gallery of evidence
+                showing the whole frame rather than a centre crop is the
+                better default anyway, which is the same call
+                `/jobs/[id]/photo-report` already made for paper. */}
             <Image
               src={media.blobUrl}
               alt={media.caption ?? "Site photo"}
               fill
               unoptimized
-              className="object-cover"
+              className="object-contain"
             />
           </a>
         ) : media.kind === "video" ? (
@@ -209,9 +243,16 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
             see-through chip has is whatever the picture happened to be. */}
         {/* The marks over the thumbnail, so "which of these is marked up"
             is answerable while scrolling rather than only after opening
-            one. `aspect` is 4/3 here because that is the box the thumbnail
-            is cropped to — the editor measures the real photo instead. */}
-        <JobMediaMarks marks={media.marks} aspect={4 / 3} />
+            one.
+
+            This used to pass `aspect={4 / 3}` with a comment saying "the
+            editor measures the real photo instead". It does not — its
+            `surfaceRef` is a hard-coded 4:3 div, so it measured 4/3 too,
+            and that sentence is why the mismatch above went unnoticed for
+            as long as it did: it told every reader the geometry was already
+            handled. There is no `aspect` prop any more; the number lives on
+            `JOB_MEDIA_MARK_BOX_ASPECT` with the contract it implies. */}
+        <JobMediaMarks marks={media.marks} />
         {media.sharedWithClientLabel && (
           <span className="absolute left-2 top-2 rounded-md bg-blue-600 px-2 py-1 text-xs font-medium text-white">
             Client can see this
@@ -508,6 +549,47 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
               {media.capturedByName ? ` · ${media.capturedByName}` : ""} · {media.sizeLabel}
             </p>
             {media.clockWarning && <p className="text-sm text-amber-400">{media.clockWarning}</p>}
+            {/* WHERE, on the line under WHEN and WHO, because that is the
+                order somebody reads a caption in and because a photo
+                without one must not leave a hole. Nothing at all is
+                rendered for an unlocated capture — no "no location", no
+                greyed-out pin. Most rows have none and a placeholder on
+                every one of them would turn the normal case into a
+                complaint.
+
+                THE MAP IS A LINK, NOT A MAP. This app loads no third-party
+                script into any page, and an embedded map would also hand a
+                crew member's position to a tile server on render, for every
+                card in a sixty-photo gallery, without anybody choosing to.
+                A link means the disclosure happens when a person decides it
+                should. `rel="noopener noreferrer"` for the same reason
+                every other outbound link here carries it.
+
+                slate-400 rather than slate-500, per #89 — slate-500 on
+                slate-900 measures 3.83:1, under the 4.5 floor. */}
+            {media.location && (
+              <p className="text-sm text-slate-400">
+                <span aria-hidden="true">📍 </span>
+                {media.location.coordinateLabel}
+                {media.location.accuracyLabel ? ` · ${media.location.accuracyLabel}` : ""}{" "}
+                <a
+                  href={media.location.mapHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-400 hover:text-blue-300"
+                >
+                  Map
+                </a>
+              </p>
+            )}
+            {/* Amber, like the clock warning above and for the same reason:
+                a caveat about the record rather than a failure of it. This
+                is the whole point of storing the accuracy radius — without
+                it a 2 km network fix and an 8 m GPS fix are the same
+                five-decimal number on the same line. */}
+            {media.location?.coarseNote && (
+              <p className="text-sm text-amber-400">{media.location.coarseNote}</p>
+            )}
             {/* Amber like the clock warning and for the same reason: it is
                 a caveat about the file rather than a failure, and the
                 person who needs it is the one about to show this to a GC. */}
@@ -558,6 +640,7 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
               className="mt-auto flex flex-wrap items-center gap-3 pt-1"
               destructive={
                 <ConfirmDelete
+                  describe="Deletes this photo or video from the job for everyone in the company."
                   pendingLabel="Deleting…"
                   pending={isPending}
                   onConfirm={() => {

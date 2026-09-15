@@ -2,6 +2,7 @@
 
 import { useRef, useState, useTransition } from "react";
 import { logPayment } from "@/lib/actions";
+import { Hint } from "@/components/Hint";
 
 /**
  * Logs a payment against an invoice.
@@ -56,13 +57,15 @@ export function LogPaymentForm({ jobId, invoiceId }: { jobId: string; invoiceId:
           placeholder="Note (optional)"
           className="flex-1 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
         />
-        <button
-          type="submit"
-          disabled={isPending}
-          className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-100 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {isPending ? "Logging…" : "Log payment"}
-        </button>
+        <Hint text="Records money you have actually received against this invoice. It changes what the invoice shows as outstanding here; it does not move any money and it does not tell the GC.">
+          <button
+            type="submit"
+            disabled={isPending}
+            className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-100 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isPending ? "Logging…" : "Log payment"}
+          </button>
+        </Hint>
       </div>
       {error && <p className="text-sm text-red-400">{error}</p>}
     </form>

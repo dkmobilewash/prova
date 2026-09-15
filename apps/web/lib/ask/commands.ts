@@ -3,11 +3,15 @@ import { can, type Capability, type Principal } from "@/lib/permissions";
 import { equipmentCommands, equipmentExclusions } from "./commands/equipment";
 import { estimatingCommands, estimatingExclusions } from "./commands/estimating";
 import { notYetRegistered } from "./commands/exclusions";
+import { bidCommands } from "./commands/bids";
 import { billingCommands, billingExclusions } from "./commands/billing";
 import { fieldCommands, fieldExclusions } from "./commands/field";
 import { laborCommands, laborExclusions } from "./commands/labor";
+import { messageCommands, messageExclusions } from "./commands/messages";
 import { punchListCommands, punchListExclusions } from "./commands/punchLists";
+import { retainageCommands } from "./commands/retainage";
 import { rfiCommands, rfiExclusions } from "./commands/rfis";
+import { scheduleCommands } from "./commands/schedule";
 
 /**
  * The commands: what Ask can DO, as distinct from what it can answer.
@@ -52,10 +56,16 @@ export type CommandName =
   | "add_punch_item"
   | "draft_invoice"
   | "log_payment"
-  | "log_time_entry";
+  | "release_retainage"
+  | "log_time_entry"
+  | "send_email"
+  | "reschedule_job"
+  | "log_bid_invitation";
 
 /** Risk tier. T5 (delete, void, contract, admin, outward send without a
- * composer) has no member on purpose: it cannot be registered. */
+ * composer) has no member on purpose: it cannot be registered. T4 is an
+ * outward send THROUGH a composer — HANDOFF only, so the person's own
+ * press of Send is the send. */
 export type CommandTier = "T1_DRAFT" | "T2_MODIFY" | "T3_MONEY_EVIDENCE" | "T4_OUTWARD";
 
 /** DIRECT: the tap executes. HANDOFF: the tap is a link to the page named
@@ -105,7 +115,17 @@ export type Resolution =
   | { kind: "refuse"; reason: string; href?: string };
 
 export type Executed =
-  | { ok: true; message: string; created?: Link & { targetType: string; targetId: string } }
+  | {
+      ok: true;
+      message: string;
+      /** The record the card was about — made by a create command,
+       * changed by a modify — for the audit row and the card's link. */
+      created?: Link & { targetType: string; targetId: string };
+      /** Paths beyond the dashboard, /jobs, /contacts and `created.href`
+       * that the confirm action must revalidate: whatever the action this
+       * command stands in for would have revalidated itself. */
+      revalidate?: string[];
+    }
   | { ok: false; error: string };
 
 type CommandBase = {
@@ -177,7 +197,11 @@ export const COMMANDS: CommandDefinition[] = [
   ...rfiCommands,
   ...punchListCommands,
   ...billingCommands,
+  ...retainageCommands,
   ...laborCommands,
+  ...messageCommands,
+  ...scheduleCommands,
+  ...bidCommands,
 ];
 
 export const EXCLUSIONS: Exclusion[] = [
@@ -188,6 +212,7 @@ export const EXCLUSIONS: Exclusion[] = [
   ...punchListExclusions,
   ...billingExclusions,
   ...laborExclusions,
+  ...messageExclusions,
   ...notYetRegistered,
 ];
 

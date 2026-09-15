@@ -89,12 +89,14 @@ describe("confirmAskProposal against a real database", () => {
 
   afterAll(async () => {
     await prisma.timeEntry.deleteMany({ where: { job: { companyId } } });
+    await prisma.retainageRelease.deleteMany({ where: { job: { companyId } } });
     await prisma.payment.deleteMany({ where: { invoice: { job: { companyId } } } });
     await prisma.invoice.deleteMany({ where: { job: { companyId } } });
     await prisma.invoiceCounter.deleteMany({ where: { job: { companyId } } });
     await prisma.dailyFieldReport.deleteMany({ where: { companyId } });
     await prisma.job.deleteMany({ where: { companyId } });
     await prisma.askProposal.deleteMany({ where: { companyId } });
+    await prisma.bidInvitation.deleteMany({ where: { companyId } });
     await prisma.contact.deleteMany({ where: { companyId } });
     await prisma.user.deleteMany({ where: { companyId } });
     await prisma.company.delete({ where: { id: companyId } });
@@ -362,5 +364,280 @@ describe("confirmAskProposal against a real database", () => {
     const row = await prisma.askProposal.findUniqueOrThrow({ where: { id } });
     expect(row.targetType).toBe("TimeEntry");
     expect(row.targetId).toBe(entries[0].id);
+  });
+
+  it("a reschedule card moves the job's dates through the lifted core, refuses a member without MANAGE_JOBS in a sentence, and refuses once the row moved under it", async () => {
+    // Phase 4b: the first MODIFY. The payload carries the dates the card
+    // was made from, and the core's compare-and-set — one UPDATE whose
+    // WHERE names them — is what makes the tap safe against an edit made
+    // on the job page between card and tap. Only a real database can
+    // prove that statement matches nothing once the row has moved.
+    const job = await prisma.job.create({
+      data: {
+        companyId,
+        contactId,
+        name: `ASK-DBTEST schedule ${Date.now()}`,
+        status: "IN_PROGRESS",
+        startDate: new Date("2026-10-01T00:00:00.000Z"),
+      },
+    });
+    const card = (over: Partial<Record<"startDate" | "endDate" | "wasStartDate" | "wasEndDate", string | null>> = {}) =>
+      cardFor("reschedule_job", {
+        jobId: job.id,
+        jobName: job.name,
+        startDate: "2026-10-06",
+        endDate: "2026-11-20",
+        wasStartDate: "2026-10-01",
+        wasEndDate: null,
+        ...over,
+      });
+
+    // A MEMBER whose job function holds no MANAGE_JOBS: refused by the
+    // confirm action itself, as a returned sentence, before any claim.
+    context.role = "MEMBER";
+    context.jobFunction = "ACCOUNTING";
+    const refusedId = await card();
+    const refused = await confirmAskProposal(refusedId);
+    context.role = "OWNER";
+    context.jobFunction = null;
+    expect(refused.ok).toBe(false);
+    if (!refused.ok) expect(refused.error).toMatch(/job correspondence access \(MANAGE_JOBS\)/);
+    const refusedRow = await prisma.askProposal.findUniqueOrThrow({ where: { id: refusedId } });
+    expect(refusedRow.outcome).toBe("REFUSED");
+    expect(refusedRow.claimedAt).toBeNull();
+    const untouched = await prisma.job.findUniqueOrThrow({ where: { id: job.id } });
+    expect(untouched.startDate?.toISOString()).toBe("2026-10-01T00:00:00.000Z");
+    expect(untouched.endDate).toBeNull();
+
+    // The owner's tap: both dates move, and nothing else on the row.
+    const firstId = await card();
+    const first = await confirmAskProposal(firstId);
+    expect(first.ok).toBe(true);
+    if (first.ok) {
+      expect(first.value.message).toBe(`${job.name} now starts Oct 6, 2026 (Tuesday) and ends Nov 20, 2026 (Friday).`);
+      expect(first.value.created).toEqual({ label: job.name, href: `/jobs/${job.id}` });
+    }
+    const moved = await prisma.job.findUniqueOrThrow({ where: { id: job.id } });
+    expect(moved.startDate?.toISOString()).toBe("2026-10-06T00:00:00.000Z");
+    expect(moved.endDate?.toISOString()).toBe("2026-11-20T00:00:00.000Z");
+    expect(moved.status).toBe("IN_PROGRESS");
+    const row = await prisma.askProposal.findUniqueOrThrow({ where: { id: firstId } });
+    expect(row.outcome).toBe("OK");
+    expect(row.targetType).toBe("Job");
+    expect(row.targetId).toBe(job.id);
+
+    // A second card made from the OLD dates — somebody edited the job
+    // between card and tap. Refused in a sentence naming what the row
+    // holds now; nothing written.
+    const staleId = await card({ startDate: "2026-10-13" });
+    const stale = await confirmAskProposal(staleId);
+    expect(stale.ok).toBe(false);
+    if (!stale.ok) {
+      expect(stale.error).toBe(
+        `${job.name}'s dates have changed since you last saw them — it now runs Oct 6, 2026 to Nov 20, 2026. Ask again to see the current dates before moving them.`,
+      );
+    }
+    const still = await prisma.job.findUniqueOrThrow({ where: { id: job.id } });
+    expect(still.startDate?.toISOString()).toBe("2026-10-06T00:00:00.000Z");
+    expect(still.endDate?.toISOString()).toBe("2026-11-20T00:00:00.000Z");
+    const staleRow = await prisma.askProposal.findUniqueOrThrow({ where: { id: staleId } });
+    expect(staleRow.outcome).toBe("FAILED");
+    expect(staleRow.outcomeNote).toMatch(/dates have changed since you last saw them/);
+
+    // An end before the start: the action's own words, before any write.
+    const backwards = await confirmAskProposal(
+      await card({ startDate: "2026-12-01", endDate: "2026-11-20", wasStartDate: "2026-10-06", wasEndDate: "2026-11-20" }),
+    );
+    expect(backwards.ok).toBe(false);
+    if (!backwards.ok) expect(backwards.error).toBe("End date can't be before the start date");
+    const unchanged = await prisma.job.findUniqueOrThrow({ where: { id: job.id } });
+    expect(unchanged.startDate?.toISOString()).toBe("2026-10-06T00:00:00.000Z");
+    expect(unchanged.endDate?.toISOString()).toBe("2026-11-20T00:00:00.000Z");
+  });
+
+  it("a retainage release card lands through the lifted core with the form's own fields, refuses a member without MANAGE_BILLING, refuses a stale card naming the balance now, and refuses more than the balance held by the core's own ceiling", async () => {
+    // Phase 4d: the last money command. The card carries the balance it
+    // was made from; the core re-reads the job's rows inside a
+    // serializable transaction and compares before it inserts. Only a
+    // real database can prove the re-read sees the release that landed
+    // in between.
+    const job = await prisma.job.create({
+      data: { companyId, contactId, name: `ASK-DBTEST retainage ${Date.now()}`, status: "IN_PROGRESS", retainagePercent: "10" },
+    });
+    // Two invoices with snapshots, one without: $7,500.00 withheld, the
+    // job page's own population (every invoice on the job).
+    await prisma.invoice.createMany({
+      data: [
+        { jobId: job.id, number: 1, amount: "45000.00", retainageWithheld: "4500.00" },
+        { jobId: job.id, number: 2, amount: "30000.00", retainageWithheld: "3000.00" },
+        { jobId: job.id, number: 3, amount: "1000.00", retainageWithheld: null },
+      ],
+    });
+    const card = (over: Partial<Record<"amount" | "releasedAt" | "note" | "expectedBalance", string | null>> = {}) =>
+      cardFor("release_retainage", {
+        jobId: job.id,
+        jobName: job.name,
+        amount: "2500.00",
+        fullBalance: false,
+        releasedAt: "2026-09-08",
+        note: "check 5102",
+        expectedBalance: "7500.00",
+        ...over,
+      });
+
+    // A MEMBER whose job function holds no MANAGE_BILLING: refused by the
+    // confirm action itself, as a returned sentence, before any claim.
+    context.role = "MEMBER";
+    context.jobFunction = "FIELD";
+    const refusedId = await card();
+    const refused = await confirmAskProposal(refusedId);
+    context.role = "OWNER";
+    context.jobFunction = null;
+    expect(refused.ok).toBe(false);
+    if (!refused.ok) expect(refused.error).toMatch(/billing access \(MANAGE_BILLING\)/);
+    expect((await prisma.askProposal.findUniqueOrThrow({ where: { id: refusedId } })).claimedAt).toBeNull();
+    expect(await prisma.retainageRelease.count({ where: { jobId: job.id } })).toBe(0);
+
+    // The owner's tap: the row lands with exactly what the form would
+    // have posted, dated the calendar day on the card.
+    const firstId = await card();
+    const first = await confirmAskProposal(firstId);
+    expect(first.ok).toBe(true);
+    if (first.ok) {
+      expect(first.value.message).toBe(`Released $2,500.00 of retainage on ${job.name}; $5,000.00 is still held.`);
+      expect(first.value.created).toEqual({ label: `Retainage release, ${job.name}`, href: `/jobs/${job.id}` });
+    }
+    const releases = await prisma.retainageRelease.findMany({ where: { jobId: job.id } });
+    expect(releases).toHaveLength(1);
+    expect(Number(releases[0].amount)).toBe(2500);
+    expect(releases[0].releasedAt.toISOString()).toBe("2026-09-08T00:00:00.000Z");
+    expect(releases[0].note).toBe("check 5102");
+    expect(releases[0].createdByUserId).toBe(ownerId);
+    const row = await prisma.askProposal.findUniqueOrThrow({ where: { id: firstId } });
+    expect(row.outcome).toBe("OK");
+    expect(row.targetType).toBe("RetainageRelease");
+    expect(row.targetId).toBe(releases[0].id);
+
+    // A second card made from the OLD balance — the release above landed
+    // between card and tap. Refused naming what the job holds now;
+    // nothing written.
+    const staleId = await card({ amount: "1000.00" });
+    const stale = await confirmAskProposal(staleId);
+    expect(stale.ok).toBe(false);
+    if (!stale.ok) {
+      expect(stale.error).toBe(
+        `${job.name}'s retainage has changed since you last saw it — $7,500.00 withheld, $2,500.00 released, $5,000.00 still held. Ask again to see the balance before releasing against it.`,
+      );
+    }
+    expect(await prisma.retainageRelease.count({ where: { jobId: job.id } })).toBe(1);
+    const staleRow = await prisma.askProposal.findUniqueOrThrow({ where: { id: staleId } });
+    expect(staleRow.outcome).toBe("FAILED");
+    expect(staleRow.outcomeNote).toMatch(/retainage has changed since you last saw it/);
+
+    // $6,000 against $5,000 held, on a card made from the CURRENT balance:
+    // the core's ceiling, not the resolver's (the resolver never saw this
+    // card). Nothing written.
+    const over = await confirmAskProposal(await card({ amount: "6000.00", expectedBalance: "5000.00" }));
+    expect(over.ok).toBe(false);
+    if (!over.ok) {
+      expect(over.error).toBe(
+        `That would bring total released to $8,500.00, more than the $7,500.00 withheld on ${job.name}. Only $5,000.00 is still held.`,
+      );
+    }
+    expect(await prisma.retainageRelease.count({ where: { jobId: job.id } })).toBe(1);
+
+    // The full balance, from a current card: clears it, and says so.
+    const cleared = await confirmAskProposal(await card({ amount: "5000.00", expectedBalance: "5000.00", note: null }));
+    expect(cleared.ok).toBe(true);
+    if (cleared.ok) expect(cleared.value.message).toBe(`Released $5,000.00 of retainage on ${job.name}; nothing is still held.`);
+    const all = await prisma.retainageRelease.findMany({ where: { jobId: job.id }, orderBy: { createdAt: "asc" } });
+    expect(all.map((r) => Number(r.amount))).toEqual([2500, 5000]);
+    expect(all[1].note).toBeNull();
+
+    // And the job page's own arithmetic over the same rows agrees with
+    // every figure the sentences above named.
+    const { loadJobRetainage } = await import("@/lib/billing/retainage-release");
+    expect(await loadJobRetainage(prisma, job.id)).toMatchObject({ withheldCents: 750_000, releasedCents: 750_000, balanceCents: 0, invoicesWithRetainage: 2, releases: 2 });
+  });
+
+  it("a bid invitation card logs the row through the lifted core with the form's own fields, links an open twin rather than doubling it, refuses a foreign contact, and refuses a member without MANAGE_ESTIMATING", async () => {
+    // Phase 4c. The payload holds what the contact page's form would have
+    // posted — contact, project, trade tag, due day, notes — and the core
+    // writes exactly those, with status INVITED and no amount.
+    const projectName = `ASK-DBTEST bid ${Date.now()}`;
+    const card = (over: Partial<Record<"contactId" | "projectName" | "tradeScope" | "dueDate" | "notes", string | null>> = {}) =>
+      cardFor("log_bid_invitation", {
+        contactId,
+        contactName: "ASK-DBTEST Turner",
+        projectName,
+        tradeScope: "METAL_FRAMING_DRYWALL",
+        dueDate: "2026-10-03",
+        notes: "walk-through Tuesday",
+        ...over,
+      });
+
+    // A MEMBER whose job function holds no MANAGE_ESTIMATING: refused by
+    // the confirm action itself, as a returned sentence, before any claim.
+    context.role = "MEMBER";
+    context.jobFunction = "FIELD";
+    const refusedId = await card();
+    const refused = await confirmAskProposal(refusedId);
+    context.role = "OWNER";
+    context.jobFunction = null;
+    expect(refused.ok).toBe(false);
+    if (!refused.ok) expect(refused.error).toMatch(/estimating access \(MANAGE_ESTIMATING\)/);
+    expect(await prisma.bidInvitation.count({ where: { companyId } })).toBe(0);
+
+    const firstId = await card();
+    const first = await confirmAskProposal(firstId);
+    expect(first.ok).toBe(true);
+    if (first.ok) {
+      expect(first.value.message).toBe(`Logged ASK-DBTEST Turner's invitation to bid on ${projectName}, due Oct 3, 2026 (Saturday).`);
+      expect(first.value.created).toEqual({ label: `${projectName} · ASK-DBTEST Turner`, href: "/bids" });
+    }
+    const bids = await prisma.bidInvitation.findMany({ where: { companyId } });
+    expect(bids).toHaveLength(1);
+    expect(bids[0].contactId).toBe(contactId);
+    expect(bids[0].projectName).toBe(projectName);
+    expect(bids[0].tradeScope).toBe("METAL_FRAMING_DRYWALL");
+    expect(bids[0].dueDate?.toISOString()).toBe("2026-10-03T00:00:00.000Z");
+    expect(bids[0].notes).toBe("walk-through Tuesday");
+    expect(bids[0].status).toBe("INVITED");
+    expect(bids[0].bidAmount).toBeNull();
+    const row = await prisma.askProposal.findUniqueOrThrow({ where: { id: firstId } });
+    expect(row.outcome).toBe("OK");
+    expect(row.targetType).toBe("BidInvitation");
+    expect(row.targetId).toBe(bids[0].id);
+
+    // A second card for the same contact and project, differently cased:
+    // the tap's own re-check links the open invitation instead of logging
+    // a twin.
+    const twin = await confirmAskProposal(await card({ projectName: projectName.toUpperCase(), dueDate: null, tradeScope: null }));
+    expect(twin.ok).toBe(true);
+    if (twin.ok) expect(twin.value.message).toMatch(/already has an open bid invitation/);
+    expect(await prisma.bidInvitation.count({ where: { companyId } })).toBe(1);
+
+    // Once that invitation is closed, the same project from the same GC is
+    // a new invitation — the form's behaviour, kept.
+    await prisma.bidInvitation.update({ where: { id: bids[0].id }, data: { status: "LOST" } });
+    const rebid = await confirmAskProposal(await card({ dueDate: null, notes: null }));
+    expect(rebid.ok).toBe(true);
+    if (rebid.ok) expect(rebid.value.message).toBe(`Logged ASK-DBTEST Turner's invitation to bid on ${projectName}.`);
+    expect(await prisma.bidInvitation.count({ where: { companyId } })).toBe(2);
+
+    // A contact that is not this company's: the core's own sentence, and
+    // nothing written.
+    const elsewhere = await prisma.company.create({ data: { name: "ASK-DBTEST Elsewhere" } });
+    const theirs = await prisma.contact.create({ data: { companyId: elsewhere.id, name: "ASK-DBTEST Theirs" } });
+    try {
+      const foreign = await confirmAskProposal(await card({ contactId: theirs.id, projectName: `${projectName} foreign` }));
+      expect(foreign.ok).toBe(false);
+      if (!foreign.ok) expect(foreign.error).toBe("Contact not found");
+      expect(await prisma.bidInvitation.count({ where: { companyId } })).toBe(2);
+      expect(await prisma.bidInvitation.count({ where: { companyId: elsewhere.id } })).toBe(0);
+    } finally {
+      await prisma.contact.delete({ where: { id: theirs.id } });
+      await prisma.company.delete({ where: { id: elsewhere.id } });
+    }
   });
 });

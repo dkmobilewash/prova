@@ -52,6 +52,7 @@ export function ToolboxTalkRow({ talk, canDelete }: { talk: ToolboxTalkRowData; 
           className="flex shrink-0 flex-wrap items-center gap-3"
           destructive={
             <ConfirmDelete
+              describe="Removes the toolbox talk and its attendance list from your safety record."
               pinned="end"
               label="Remove"
               confirmLabel="Confirm remove"

@@ -164,6 +164,7 @@ export function SalesActivityRow({
           className="flex shrink-0 flex-wrap items-center gap-2"
           destructive={
             <ConfirmDelete
+              describe="Removes this logged call or note from the lead's history. The call happened; only your record of it goes."
               pinned="end"
               pendingLabel="Deleting…"
               pending={isPending}

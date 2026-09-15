@@ -361,6 +361,7 @@ export function BackchargeRow({
         destructive={
           canDelete && backcharge.status === "RECEIVED" ? (
             <ConfirmDelete
+              describe="Removes the backcharge, so the amount stops being held against this job. Nobody outside is told."
               pinned="end"
               pendingLabel="Deleting…"
               pending={isPending}

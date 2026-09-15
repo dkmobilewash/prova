@@ -170,4 +170,146 @@ describe("loadApprenticeships against a real database", () => {
     expect(await loadApprenticeships(other.id, TODAY)).toEqual([]);
     await prisma.company.delete({ where: { id: other.id } });
   });
+
+  describe("issue #104 finding 9: the OJT window used to run past the indenture's own end", () => {
+    // Two defects in one window: [periodStarted, today] had no upper cap at
+    // completedOn/cancelledOn, so a COMPLETED indenture kept accruing "this
+    // period" hours for as long as `today` kept moving; and it had no
+    // craftClassificationId filter, so a SECOND enrollment for the same
+    // apprentice (a different craft, or a re-indenture) pulled in hours
+    // that belonged to the first one. Both are real double-counts on the
+    // same underlying pool of TimeEntry rows for one person.
+    let localId = "";
+    let craftAId = "";
+    let craftBId = "";
+    let enrollmentAId = "";
+    let enrollmentBId = "";
+
+    beforeAll(async () => {
+      const local = await prisma.unionLocal.create({
+        data: { companyId, parentInternational: "Test Intl", localNumber: `L-${Date.now()}`, jurisdictionName: "Testville" },
+      });
+      localId = local.id;
+      const craftA = await prisma.craftClassification.create({
+        data: { companyId, unionLocalId: localId, name: "Craft A" },
+      });
+      const craftB = await prisma.craftClassification.create({
+        data: { companyId, unionLocalId: localId, name: "Craft B" },
+      });
+      craftAId = craftA.id;
+      craftBId = craftB.id;
+
+      // Enrollment A: craft A, COMPLETED on 2026-06-01.
+      const enrollmentA = await prisma.apprenticeshipEnrollment.create({
+        data: {
+          companyId,
+          apprenticeUserId: apprenticeId,
+          craftClassificationId: craftAId,
+          sponsorName: "Carpenters JATC",
+          enrolledOn: new Date("2026-01-01T00:00:00.000Z"),
+          completedOn: new Date("2026-06-01T00:00:00.000Z"),
+          requiredOjtHoursPerPeriod: "1000",
+        },
+      });
+      enrollmentAId = enrollmentA.id;
+
+      // Enrollment B: craft B, still active, started while A was still
+      // open -- the realistic shape (cross-training, or a re-indenture)
+      // that would double-count without a craft filter.
+      const enrollmentB = await prisma.apprenticeshipEnrollment.create({
+        data: {
+          companyId,
+          apprenticeUserId: apprenticeId,
+          craftClassificationId: craftBId,
+          sponsorName: "Carpenters JATC",
+          enrolledOn: new Date("2026-05-01T00:00:00.000Z"),
+          requiredOjtHoursPerPeriod: "1000",
+        },
+      });
+      enrollmentBId = enrollmentB.id;
+
+      await prisma.timeEntry.createMany({
+        data: [
+          // Craft A hours, before A completed -- these count for A.
+          { jobId, employeeUserId: apprenticeId, craftClassificationId: craftAId, date: new Date("2026-02-01T00:00:00.000Z"), hours: "20" },
+          // Craft A hours AFTER A completed -- must NOT count for A.
+          { jobId, employeeUserId: apprenticeId, craftClassificationId: craftAId, date: new Date("2026-08-01T00:00:00.000Z"), hours: "40" },
+          // Craft B hours, inside A's [enrolledOn, today] window but a
+          // DIFFERENT craft -- must count for B, never for A.
+          { jobId, employeeUserId: apprenticeId, craftClassificationId: craftBId, date: new Date("2026-05-15T00:00:00.000Z"), hours: "15" },
+        ],
+      });
+    });
+
+    afterAll(async () => {
+      await prisma.timeEntry.deleteMany({ where: { craftClassificationId: { in: [craftAId, craftBId] } } });
+      await prisma.apprenticeshipEnrollment.deleteMany({ where: { id: { in: [enrollmentAId, enrollmentBId] } } });
+      await prisma.craftClassification.deleteMany({ where: { id: { in: [craftAId, craftBId] } } });
+      await prisma.unionLocal.delete({ where: { id: localId } });
+    });
+
+    // The outer fixture's three shifts carry NO craft tag, which is what a
+    // timesheet looks like by default, and an untagged hour counts toward
+    // whichever indenture's window it falls in — see `craftScope` in
+    // apprenticeship-query.ts. So each expectation below is "this craft's
+    // tagged hours PLUS the untagged ones in the same window", spelled out
+    // rather than folded into one number, because the interesting half is
+    // which rows are absent.
+    const UNTAGGED_IN_A_WINDOW = 16; // 8h on 2026-02-02 + 8h on 2026-03-02
+    const UNTAGGED_IN_B_WINDOW = 6; // 6h on 2026-08-03
+
+    it("caps a completed enrollment's OJT hours at completedOn, not at today", async () => {
+      const rows = await loadApprenticeships(companyId, TODAY);
+      const a = rows.find((r) => r.enrollmentId === enrollmentAId)!;
+      // Only what was logged before 2026-06-01: the 20 craft-A hours and the
+      // two untagged February/March shifts. The 40 craft-A hours in August
+      // must not appear even though TODAY is well after them — and neither
+      // must the untagged 6 hours on 2026-08-03, which is the half a
+      // craft-or-null filter could have let back in past the closing date.
+      expect(a.ojtHoursThisPeriod).toBe(20 + UNTAGGED_IN_A_WINDOW);
+    });
+
+    it("does not let a second enrollment's different-craft hours inflate this one's total", async () => {
+      const rows = await loadApprenticeships(companyId, TODAY);
+      const a = rows.find((r) => r.enrollmentId === enrollmentAId)!;
+      const b = rows.find((r) => r.enrollmentId === enrollmentBId)!;
+      // A must not have picked up B's 15 craft-B hours, even though they
+      // fall inside a window that, before the craft filter, A's query would
+      // have matched with no craft condition at all. B likewise must not
+      // pick up A's 40 August craft-A hours, which ARE inside B's window.
+      expect(a.ojtHoursThisPeriod).toBe(20 + UNTAGGED_IN_A_WINDOW);
+      expect(b.ojtHoursThisPeriod).toBe(15 + UNTAGGED_IN_B_WINDOW);
+    });
+
+    it("counts an UNTAGGED entry toward a craft-scoped enrollment", async () => {
+      // The regression this file could not see before, against real SQL
+      // rather than a fake: a Prisma scalar equality compiles to `=`, and
+      // `=` never matches NULL, so scoping the sum to the enrollment's craft
+      // dropped every untagged hour — the default state of the form. Written
+      // as a DELTA so it does not depend on the rest of the fixture's
+      // arithmetic: under a craft equality the new row is invisible and the
+      // delta is 0.
+      const before = (await loadApprenticeships(companyId, TODAY)).find(
+        (r) => r.enrollmentId === enrollmentBId,
+      )!.ojtHoursThisPeriod;
+
+      const untagged = await prisma.timeEntry.create({
+        data: {
+          jobId,
+          employeeUserId: apprenticeId,
+          // Inside B's window [2026-05-01, TODAY], and no craft tag.
+          date: new Date("2026-06-10T00:00:00.000Z"),
+          hours: "9",
+        },
+      });
+
+      const after = (await loadApprenticeships(companyId, TODAY)).find(
+        (r) => r.enrollmentId === enrollmentBId,
+      )!.ojtHoursThisPeriod;
+
+      expect(after - before).toBe(9);
+
+      await prisma.timeEntry.delete({ where: { id: untagged.id } });
+    });
+  });
 });

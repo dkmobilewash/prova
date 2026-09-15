@@ -16,8 +16,11 @@ import {
   stayLength,
 } from "@/components/equipmentDeployment";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
+import { jobPickerLabel, type JobOption } from "@/components/jobLabels";
 
-export type JobChoice = { id: string; name: string };
+/** Was its own `{ id, name }` declaration. The shared type requires the GC
+ * name and the status — issue #65. */
+export type JobChoice = JobOption;
 
 /** Send a piece out, bring it back, and read where it has been.
  *
@@ -126,7 +129,7 @@ export function EquipmentDeploymentControls({
                 </option>
                 {jobs.map((job) => (
                   <option key={job.id} value={job.id}>
-                    {job.name}
+                    {jobPickerLabel(job)}
                   </option>
                 ))}
               </select>
@@ -258,7 +261,7 @@ export function EquipmentDeploymentControls({
                       <select name="jobId" defaultValue={stay.jobId} className={inputClass}>
                         {jobs.map((job) => (
                           <option key={job.id} value={job.id}>
-                            {job.name}
+                            {jobPickerLabel(job)}
                           </option>
                         ))}
                       </select>
@@ -337,6 +340,7 @@ export function EquipmentDeploymentControls({
                 destructive={
                   canDelete ? (
                     <ConfirmDelete
+                      describe="Cancels this planned stay, so the machine shows as free for those dates again."
                       pinned="end"
                       label="Remove"
                       confirmLabel="Confirm"

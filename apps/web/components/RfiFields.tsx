@@ -1,5 +1,7 @@
 "use client";
 
+import { jobPickerLabel, type JobOption } from "@/components/jobLabels";
+
 export const inputClass =
   "rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none";
 export const labelClass = "flex flex-col gap-1 text-sm text-slate-300";
@@ -19,7 +21,10 @@ export const labelClass = "flex flex-col gap-1 text-sm text-slate-300";
  */
 export const fieldInputClass = `min-h-11 text-base ${inputClass}`;
 
-export type JobOption = { id: string; name: string };
+/** One definition, in @/components/jobLabels, and it requires the GC name
+ * and the status — see issue #65. Re-exported here so the existing import
+ * sites keep working. */
+export type { JobOption };
 
 export type RfiDefaults = {
   subject: string;
@@ -53,7 +58,7 @@ export function RfiFields({
             </option>
             {jobs.map((job) => (
               <option key={job.id} value={job.id}>
-                {job.name}
+                {jobPickerLabel(job)}
               </option>
             ))}
           </select>

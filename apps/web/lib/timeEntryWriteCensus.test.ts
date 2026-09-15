@@ -1,49 +1,60 @@
 /**
- * An hour, once attributed to a crew member, does not change hands.
+ * An hour, once logged, does not move — not to another person, not to
+ * another day, not to another job.
  *
- * THIS GUARANTEE USED TO BE A DATABASE TRIGGER AND IS NOW THIS FILE. That
- * is a downgrade, deliberately taken, and the reason is written into
- * `20260905183000_add_crew_members/migration.sql` where the trigger was:
- * `prova_time_entry_crew_member_lock` was a BEFORE UPDATE trigger on
- * `TimeEntry`, which is a LIVE PAYROLL TABLE carrying real production rows.
- * Shipping an unclicked trigger onto live payroll is the one category where
- * being wrong is not an afternoon, so it came out.
+ * WHAT THIS FILE USED TO CHECK, AND WHY IT CHANGED ON 2026-09-13.
  *
- * WHY THE GUARANTEE MATTERS AT ALL. Locking a CrewMember's legal name is
- * worth nothing if the TimeEntry can be repointed at a DIFFERENT CrewMember
- * afterwards: the hours on an already-filed certified payroll would move
- * from one named person to another, and the filing and the data would
- * disagree with nothing anywhere to show they had ever agreed. These rows
- * end up on a WH-347 signed under penalty of perjury.
+ * It used to assert that there was NO update path to `TimeEntry` anywhere in
+ * the repo, because there wasn't one: created x13, createMany x2, delete x2,
+ * deleteMany x15, reads, and zero updates. A row that can only be created and
+ * deleted cannot have its `crewMemberId` reassigned, so the guarantee held by
+ * construction and this file's whole job was to refuse to let that precondition
+ * disappear quietly.
  *
- * WHAT THIS FILE ACTUALLY CHECKS, and it is not the guarantee itself. It
- * checks the PRECONDITION the guarantee currently rests on: that there is
- * no update path to `TimeEntry` at all. CLAUDE.md records this was
- * established call site by call site — create x13, createMany x2, delete
- * x2, deleteMany x15, findMany x6, findUnique x1, count x3, aggregate x1,
- * and ZERO updates. A row that is only ever created and deleted cannot have
- * its `crewMemberId` reassigned, so today nothing can break the rule.
+ * It went red, as designed, when issue #63 added `updateTimeEntry`. That issue
+ * is the other side of the same coin: with no update path, the only way to fix
+ * "10 hours" that should have been "8" was to DELETE the row — on a
+ * one-click Remove with no confirmation — so the correction path destroyed the
+ * evidence it was correcting. "No updates" was never the goal; it was a cheap
+ * proxy for the goal, and it cost an audit trail to keep.
  *
- * This starts GREEN and goes RED the moment somebody adds the update path
- * that would make reassignment possible. That is the whole job: it does not
- * enforce the rule, it refuses to let the precondition disappear quietly.
+ * The old message said what to do about exactly this, and it is what was done:
+ * PUT THE LOCK BACK IN THE DATABASE. `prova_time_entry_identity_lock`, a
+ * BEFORE UPDATE trigger installed by 20260913120000_add_time_entry_correction,
+ * RAISES on any UPDATE that changes `jobId`, `employeeUserId` or `date`, and on
+ * a `crewMemberId` that is already set becoming a different one. That is the
+ * trigger 20260905183000_add_crew_members deliberately held back, and the
+ * reason it held back — TimeEntry is live payroll and nothing exercised the
+ * trigger, so real rows would have met it first — is precisely what #63
+ * changed: there is a correction form now, and saving a correction exercises
+ * the lock on the ordinary path.
  *
- * WHAT IT CANNOT SEE, stated plainly so nobody trusts it further than it
- * goes. A source scan cannot catch:
- *   - raw SQL (`$executeRaw`, `$executeRawUnsafe`, `$queryRaw`) — checked
- *     separately below, but only by name;
- *   - a nested write reaching TimeEntry through another model's update;
- *   - anything run against Neon by hand, from a psql prompt or the console.
- * The trigger could see all of those. This cannot. If `crewMemberId` ever
- * becomes writable through a form, put the lock back in the database —
- * that is the right home for it, and the only reason it is not there today
- * is that a trigger on live payroll wanted a person's ruling first.
+ * `time-entry-correction.test.ts` is what fails the build if that trigger stops
+ * naming every locked column, and if the update payload ever grows one.
+ *
+ * SO WHAT THIS FILE CHECKS NOW. Not "does an update exist" — one does — but
+ * the two things a source scan can still answer that the trigger cannot:
+ *
+ *   1. every `timeEntry.update` builds its `data` with
+ *      `timeEntryCorrectionUpdateData`, the one payload builder whose key set
+ *      is asserted EXACTLY by a unit test. An update that assembles its own
+ *      object is how a locked column gets written by somebody who never read
+ *      any of this;
+ *   2. no `updateMany`, no `upsert`, and no nested relation write reaching
+ *      TimeEntry through another model — none of which any feature needs, and
+ *      the nested one is the door the accessor pattern cannot see.
+ *
+ * WHAT IT CANNOT SEE, stated plainly so nobody trusts it further than it goes:
+ * raw SQL (checked separately below, and only by name), and anything run
+ * against Neon by hand. The trigger can see all of those, which is the point
+ * of it being in the database and not here.
  */
 
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { TIME_ENTRY_LOCKED_COLUMNS } from "./time-entry-correction";
 
 const appDir = fileURLToPath(new URL("..", import.meta.url));
 const repoRoot = fileURLToPath(new URL("../../../", import.meta.url));
@@ -80,6 +91,11 @@ function sourceFiles(dir: string, out: string[] = []): string[] {
 const TIME_ENTRY_WRITE =
   /\btimeEntry\s*\.\s*(updateManyAndReturn|updateMany|update|upsert)\s*\(/g;
 
+/** The one payload builder. Its output's key set is asserted exactly in
+ * `time-entry-correction.test.ts`, which is what makes "goes through this"
+ * worth anything. */
+const PAYLOAD_BUILDER = "timeEntryCorrectionUpdateData";
+
 /**
  * The nested-relation door, which the accessor pattern above cannot see.
  *
@@ -90,21 +106,28 @@ const TIME_ENTRY_WRITE =
  * implementation once this model gets wired, and it is the one an adversarial
  * review actually constructed.
  *
- * Worse, the CrewMember identity trigger that this migration KEPT does not
- * stop it: that trigger fires on the parent UPDATE and passes, because no
- * identity column changed.
+ * The trigger DOES now catch this one at the database, which is a real
+ * improvement over the note that used to be here. It is still refused in
+ * source, because a nested write that the trigger rejects is a 500 on a form
+ * nobody tested, and because the failure it produces names a plpgsql function
+ * rather than the person who wrote the nested write.
  *
  * Five models carry a `timeEntries` back-relation (crew, company, labor and
- * two in jobs), so there are five such doors.
+ * two in jobs) — six as of #63, since User gained `correctedTimeEntries` —
+ * so there are that many such doors.
  *
  * Only WRITE verbs are listed. A read — `include: { timeEntries: { where } }`,
  * `select: { timeEntries: true }` — uses none of them, so this does not fire
  * on the many legitimate reads.
  */
+const NESTED_TIME_ENTRY_WRITE =
+  /\btimeEntries\s*:\s*\{[\s\S]{0,300}?\b(connect|connectOrCreate|disconnect|set|update|updateMany|upsert|create|createMany|delete|deleteMany)\s*:/;
+
 /**
- * This file scans itself, and its own failure messages necessarily contain
- * examples of every shape it hunts for. Comment-stripping does not help:
- * the examples live in STRING LITERALS, which are code.
+ * This file scans itself, and its own failure messages — and now its own
+ * POSITIVE CONTROLS — necessarily contain examples of every shape it hunts
+ * for. Comment-stripping does not help: the examples live in STRING
+ * LITERALS, which are code.
  *
  * So it is excluded from its own scan, structurally, by path — NOT via
  * EXCEPTIONS. An EXCEPTIONS entry disarms a file for a REASON somebody
@@ -117,9 +140,6 @@ const TIME_ENTRY_WRITE =
  * here.
  */
 const SELF = "apps/web/lib/timeEntryWriteCensus.test.ts";
-
-const NESTED_TIME_ENTRY_WRITE =
-  /\btimeEntries\s*:\s*\{[\s\S]{0,300}?\b(connect|connectOrCreate|disconnect|set|update|updateMany|upsert|create|createMany|delete|deleteMany)\s*:/;
 
 /** Raw SQL naming the table. Cannot prove intent, only that it is worth a
  * human reading the call — which is why the message says so. */
@@ -150,17 +170,81 @@ function stripComments(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
 }
 
+/**
+ * The text between the parentheses of a call starting at `index`.
+ *
+ * Balanced rather than "the next 400 characters", because a Prisma call's
+ * argument object is nested and a fixed window either stops inside it (and
+ * misses the `data`) or runs past it (and reads the next statement). If the
+ * parentheses never balance it returns the REST of the file: an unparseable
+ * call has to look like an offender, never like a clean one. That is the
+ * empty-question failure mode CLAUDE.md names — a parser that finds nothing
+ * passes every assertion downstream of it.
+ */
+function callArguments(source: string, index: number): string {
+  const open = source.indexOf("(", index);
+  if (open === -1) return source.slice(index);
+  let depth = 0;
+  for (let i = open; i < source.length; i++) {
+    if (source[i] === "(") depth += 1;
+    else if (source[i] === ")") {
+      depth -= 1;
+      if (depth === 0) return source.slice(open + 1, i);
+    }
+  }
+  return source.slice(open);
+}
+
+type Scanned = { path: string; source: string };
+
+/** Every TimeEntry write call in a file, with its arguments. */
+function timeEntryWrites(file: Scanned) {
+  return [...file.source.matchAll(TIME_ENTRY_WRITE)].map((match) => ({
+    verb: match[1],
+    args: callArguments(file.source, match.index ?? 0),
+  }));
+}
+
+const LOCKED_KEY = new RegExp(`\\b(${TIME_ENTRY_LOCKED_COLUMNS.join("|")})\\s*:`);
+
+/** Update call sites that either assemble their own payload or name a locked
+ * column anywhere in the call. Exported shape kept tiny on purpose: the two
+ * tests below and the positive controls all go through this one function, so
+ * a control proving it CAN flag is a control over the real check. */
+function offendingWrites(files: Scanned[]) {
+  const out: string[] = [];
+  for (const file of files) {
+    for (const write of timeEntryWrites(file)) {
+      if (write.verb !== "update") {
+        out.push(`${file.path}: ${write.verb} — no feature needs a bulk or upserting write to payroll`);
+        continue;
+      }
+      if (!write.args.includes(PAYLOAD_BUILDER)) {
+        out.push(`${file.path}: update builds its own data instead of using ${PAYLOAD_BUILDER}()`);
+      }
+      const locked = LOCKED_KEY.exec(write.args);
+      if (locked) {
+        out.push(`${file.path}: update names the locked column "${locked[1]}"`);
+      }
+    }
+  }
+  return out;
+}
+
 const EXCEPTIONS: Record<string, string> = {
-  // Intentionally empty. A line here means somebody decided TimeEntry may
-  // be updated from that file; write the reason and say what stops
-  // crewMemberId being reassigned by it.
+  // Intentionally empty. A line here means somebody decided TimeEntry may be
+  // written from that file in a way this census refuses; write the reason,
+  // and say what stops the job, the person, the day or the crew member being
+  // reassigned by it.
 };
 
 describe("the TimeEntry write census", () => {
-  const files = [...sourceFiles(appDir), ...sourceFiles(scriptsDir)].map((full) => ({
-    path: relative(repoRoot, full),
-    source: stripComments(readFileSync(full, "utf8")),
-  }));
+  const files = [...sourceFiles(appDir), ...sourceFiles(scriptsDir)]
+    .map((full) => ({
+      path: relative(repoRoot, full),
+      source: stripComments(readFileSync(full, "utf8")),
+    }))
+    .filter((f) => f.path !== SELF);
 
   it("finds the app AND the db scripts, so an empty sweep cannot pass by accident", () => {
     // The failure this guards is the one rowActionsCensus guards too: a
@@ -174,19 +258,62 @@ describe("the TimeEntry write census", () => {
 
   it("proves the scan can see a TimeEntry call at all", () => {
     // Guards the guard from the other side. If the accessor is ever renamed
-    // and every pattern silently stops matching, the census above would go
+    // and every pattern silently stops matching, the census below would go
     // quiet rather than red. This asserts the corpus really does contain
     // TimeEntry work for the scan to have looked at.
     const mentions = files.filter((f) => /\btimeEntry\s*\./.test(f.source));
     expect(mentions.length).toBeGreaterThan(0);
   });
 
-  it("has no update, updateMany or upsert path to TimeEntry", () => {
-    const offenders = files
-      .filter((f) => !(f.path in EXCEPTIONS))
-      .map((f) => ({ path: f.path, hits: [...f.source.matchAll(TIME_ENTRY_WRITE)].map((m) => m[1]) }))
-      .filter((f) => f.hits.length > 0)
-      .map((f) => `${f.path} (${[...new Set(f.hits)].join(", ")})`);
+  it("finds the one update path that exists, so the checks below are not scanning zero calls", () => {
+    // The size assertion. Until #63 this file's guarantee was "no updates",
+    // and the checks below would all pass vacuously if the correction path
+    // were deleted, renamed, or moved somewhere this scan cannot read — which
+    // reads exactly like a clean census.
+    const writes = files.flatMap((f) => timeEntryWrites(f).map((w) => `${f.path}: ${w.verb}`));
+    expect(writes).toEqual(["apps/web/lib/actions/labor.ts: update"]);
+  });
+
+  it("CAN flag a bad write — the positive control for the two checks below", () => {
+    /* Synthetic offenders, because a check whose only evidence is that it
+       found nothing is the failure this repo has paid for four times over
+       (green `gh pr checks` on a commit nobody asked about; a watcher whose
+       needle was already on the page; a guard that parsed nothing and passed
+       thirteen assertions). These three strings are what the real pattern is
+       run against, through the same function, so the control is over the
+       check and not over a copy of it. */
+    const planted: Scanned[] = [
+      {
+        path: "fake/hand-rolled.ts",
+        source: 'await prisma.timeEntry.update({ where: { id }, data: { hours: "8" } });',
+      },
+      {
+        path: "fake/reassigns.ts",
+        source: `await prisma.timeEntry.update({ where: { id }, data: ${PAYLOAD_BUILDER}(f, u, now), date: newDate });`,
+      },
+      { path: "fake/bulk.ts", source: "await prisma.timeEntry.updateMany({ data: { payType: p } });" },
+    ];
+
+    const flagged = offendingWrites(planted);
+    expect(flagged).toHaveLength(3);
+    expect(flagged[0]).toContain("builds its own data");
+    expect(flagged[1]).toContain('locked column "date"');
+    expect(flagged[2]).toContain("updateMany");
+
+    // And the real shape is NOT flagged, so the check is discriminating
+    // rather than merely noisy.
+    expect(
+      offendingWrites([
+        {
+          path: "fake/correction.ts",
+          source: `await prisma.timeEntry.update({ where: { id: entry.id }, data: ${PAYLOAD_BUILDER}(figures, user.id, new Date()) });`,
+        },
+      ]),
+    ).toEqual([]);
+  });
+
+  it("writes TimeEntry only through the audited correction payload", () => {
+    const offenders = offendingWrites(files.filter((f) => !(f.path in EXCEPTIONS)));
 
     expect(
       offenders,
@@ -194,29 +321,33 @@ describe("the TimeEntry write census", () => {
         ? ""
         : [
             "",
-            "Something can now UPDATE a TimeEntry, and until this commit nothing could.",
+            "A TimeEntry write is not going through the one audited path.",
             "",
-            "That matters because of one field. `TimeEntry.crewMemberId` must be",
-            "one-way: NULL -> a crew member id is how an entry gets attributed, and",
-            "anything after that is a reassignment. Hours on an already-filed",
-            "certified payroll would move from one named person to another, and the",
-            "filing and the data would disagree with nothing to show they ever agreed.",
-            "A misattributed entry is DELETED and re-entered — which is what",
-            "deleteTimeEntry already does.",
+            "Four columns on this table are LOCKED after creation — jobId,",
+            "employeeUserId, crewMemberId, date. They are what a WH-347 line is",
+            "keyed by: the project, the named person, the day worked. An UPDATE",
+            "that changes one does not correct a record, it silently turns it into",
+            "a different one, and a filing already sent would disagree with the",
+            "data with nothing anywhere to show that they ever agreed.",
             "",
-            "This was a BEFORE UPDATE trigger in the database until",
-            "20260905183000_add_crew_members. It was removed because a trigger on a",
-            "live payroll table, shipped unclicked, wanted a person's ruling first.",
-            "This census is the weaker replacement, and it only works while no update",
-            "path exists at all.",
+            `So every update passes its data through ${PAYLOAD_BUILDER}(), whose`,
+            "key set is asserted EXACTLY in time-entry-correction.test.ts — not as",
+            "a subset, because a subset check would pass just as happily with",
+            "`date` in the payload.",
             "",
-            "So if you are adding one: put the lock back in the database. That is the",
-            "right home for it and the migration comment says how. Do not add a",
-            "check in the action and call it done — an action-layer rule is exactly",
-            "what this repo's 'written, documented, and never called' scar is about.",
+            "The database refuses these too: prova_time_entry_identity_lock, a",
+            "BEFORE UPDATE trigger from 20260913120000_add_time_entry_correction,",
+            "RAISES on any of the four. That is the enforcement and this is the",
+            "manners — a write the trigger rejects is a 500 on a form nobody",
+            "tested, naming a plpgsql function instead of the person who wrote it.",
             "",
-            "If it genuinely cannot touch crewMemberId, add the file to EXCEPTIONS in",
-            "this file with the reason and what stops it.",
+            "If you need to correct a figure this payload does not carry, add it",
+            "there and to TIME_ENTRY_CORRECTABLE_KEYS, and argue it in that file",
+            "— that is one decision in one place, which is the whole arrangement.",
+            "",
+            "If a locked name here is a `where` FILTER rather than a write, that",
+            "is a limit of this pattern rather than a bug in your code: say so in",
+            "EXCEPTIONS, or make the pattern read the data clause only.",
             "",
           ].join("\n"),
     ).toEqual([]);
@@ -224,7 +355,6 @@ describe("the TimeEntry write census", () => {
 
   it("has no nested relation write reaching TimeEntry through another model", () => {
     const offenders = files
-      .filter((f) => f.path !== SELF)
       .filter((f) => !(f.path in EXCEPTIONS))
       .filter((f) => NESTED_TIME_ENTRY_WRITE.test(f.source))
       .map((f) => f.path);
@@ -245,10 +375,12 @@ describe("the TimeEntry write census", () => {
             "",
             "That reassigns TimeEntry.crewMemberId. The CrewMember identity trigger",
             "does NOT stop it — that trigger fires on the parent UPDATE and passes,",
-            "because no identity column changed.",
+            "because no identity column changed. The TimeEntry trigger added in",
+            "20260913120000_add_time_entry_correction DOES stop it, at the cost of",
+            "a raised exception on a form somebody shipped.",
             "",
-            "Same rule as the census above: crewMemberId is one-way, and if you are",
-            "adding a write path the lock belongs back in the database.",
+            "Correct a figure through updateTimeEntry. Re-attributing an hour is a",
+            "delete and a re-entry, which is what the two-step Remove is for.",
             "",
             "If this is a READ (include/select) that happens to match, that is a bug",
             "in this pattern rather than in your code — say so in EXCEPTIONS and fix",
@@ -273,9 +405,9 @@ describe("the TimeEntry write census", () => {
             "Raw SQL naming TimeEntry. This cannot tell a SELECT from an UPDATE, so",
             "it is asking a human to read the call rather than accusing it.",
             "",
-            "If it writes crewMemberId, see the message on the census above: the lock",
-            "belongs in the database. If it only reads, add it to EXCEPTIONS with",
-            "that reason.",
+            "If it writes one of the locked columns the trigger will refuse it at",
+            "runtime — read the census message above for which four and why. If it",
+            "only reads, add it to EXCEPTIONS with that reason.",
             "",
           ].join("\n"),
     ).toEqual([]);

@@ -58,7 +58,9 @@ describe("a halting tool", () => {
       if (event.type === "halt") halt = event.halt;
     }
 
-    expect(events).toEqual(["reset", "tools", "reset", "halt"]);
+    // `usage` sits between the reset and the halt: the passes that ran
+    // were billed, and the caller records them before the card is shown.
+    expect(events).toEqual(["reset", "tools", "reset", "usage", "halt"]);
     expect(halt).toEqual({ proposalId: "p1" });
     // The second canned turn was never requested.
     expect(stream).toHaveBeenCalledTimes(1);
@@ -82,6 +84,7 @@ describe("a halting tool", () => {
     }
 
     expect(events.at(-1)).toBe("done");
+    expect(events.at(-2)).toBe("usage");
     expect(stream).toHaveBeenCalledTimes(3);
     expect(execute.mock.calls[1][2]).toEqual({ toolUseId: "tu_2", toolUseIdsInContext: ["tu_1"] });
   });
@@ -108,5 +111,40 @@ describe("a halting tool", () => {
     const { stream, client } = fakeClient(endTurn);
     await drain(streamToolConversation({ system: "cached", question: "q", tools: [], execute: async () => ({ content: "" }), client }));
     expect((stream.mock.calls[0][0] as { system: unknown[] }).system).toHaveLength(1);
+  });
+});
+
+
+describe("what a question cost", () => {
+  const withUsage = (final: Record<string, unknown>, usage: Record<string, number>) => ({ ...final, usage });
+
+  it("sums every pass's reported usage and reports it once, before done", async () => {
+    const { client } = fakeClient(
+      withUsage(toolUse("tu_1", "receivables", {}), { input_tokens: 5000, output_tokens: 40, cache_read_input_tokens: 4000, cache_creation_input_tokens: 0 }),
+      withUsage(endTurn, { input_tokens: 5200, output_tokens: 300, cache_read_input_tokens: 4000, cache_creation_input_tokens: 0 }),
+    );
+    const events: { type: string; usage?: unknown }[] = [];
+    for await (const event of streamToolConversation({ system: "s", question: "q", tools: [], execute: async () => ({ content: "{}" }), client })) {
+      events.push(event as { type: string; usage?: unknown });
+    }
+    const usageEvents = events.filter((e) => e.type === "usage");
+    expect(usageEvents).toHaveLength(1);
+    expect(usageEvents[0].usage).toEqual({ passes: 2, inputTokens: 10200, outputTokens: 340, cacheReadTokens: 8000, cacheWriteTokens: 0 });
+    expect(events.map((e) => e.type).slice(-2)).toEqual(["usage", "done"]);
+  });
+
+  it("reports the passes that completed even when the answer never came", async () => {
+    // A fake whose second turn has no text at all: the loop's no_text
+    // error, with the usage of both passes reported before it.
+    const { client } = fakeClient(
+      withUsage(toolUse("tu_1", "receivables", {}), { input_tokens: 100, output_tokens: 10 }),
+      withUsage({ stop_reason: "end_turn", content: [] }, { input_tokens: 120, output_tokens: 0 }),
+    );
+    const events: { type: string; usage?: unknown }[] = [];
+    for await (const event of streamToolConversation({ system: "s", question: "q", tools: [], execute: async () => ({ content: "{}" }), client })) {
+      events.push(event as { type: string; usage?: unknown });
+    }
+    expect(events.map((e) => e.type).slice(-2)).toEqual(["usage", "error"]);
+    expect(events.find((e) => e.type === "usage")?.usage).toMatchObject({ passes: 2, inputTokens: 220, outputTokens: 10 });
   });
 });

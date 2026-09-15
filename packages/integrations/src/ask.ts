@@ -39,6 +39,18 @@ export type AskToolOutcome<H = never> = { content: string; isError?: boolean; ha
 
 export type AskFailureReason = "refusal" | "no_text" | "exhausted" | "api";
 
+/** What one question cost, summed over every model pass it took. Read
+ * off `response.usage` after each pass; nothing here is estimated. */
+export type AskUsageTotals = {
+  /** Model calls: one for a plain answer, one per tool round plus one for
+   * the answer otherwise. A pass that threw is not counted. */
+  passes: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+};
+
 /** What the caller can render while the answer is being built.
  *
  * A multi-tool question takes 8-11 seconds against a real database, and a
@@ -60,6 +72,11 @@ export type AskEvent<H = never> =
    * preamble. Lets the caller stop styling streamed text as provisional. */
   | { type: "answering" }
   | { type: "text"; delta: string }
+  /** Sent ONCE, immediately before the terminal event (`halt`, `done` or
+   * `error`), with the tokens every pass of this question cost. The
+   * caller records it; nothing about it reaches the screen. Emitted before
+   * an error too, since the passes that ran were billed regardless. */
+  | { type: "usage"; usage: AskUsageTotals }
   | { type: "done"; toolsCalled: string[] }
   | { type: "error"; reason: AskFailureReason };
 
@@ -99,6 +116,46 @@ export function anthropicIsConfigured(): boolean {
   return Boolean(process.env.ANTHROPIC_API_KEY?.trim());
 }
 
+export type AnthropicConnection =
+  | { ok: true; model: string }
+  /** `type` is the API's own error type ("authentication_error",
+   * "not_found_error"…), "not_configured" when there is no key at all, or
+   * "connection_error" when the request never got an HTTP answer. */
+  | { ok: false; status: number | null; type: string | null };
+
+/**
+ * Does the key on this server work, and can its organization use the
+ * model the box runs on? Asks the Models endpoint for that one model: a
+ * request that validates both without a token billed. The screen half of
+ * the log line in the catch below — an owner can press a button instead of
+ * asking somebody to read runtime logs.
+ */
+export async function checkAnthropicConnection(
+  model: string = DEFAULT_MODEL,
+  client?: Pick<Anthropic, "models">,
+): Promise<AnthropicConnection> {
+  if (!anthropicIsConfigured()) return { ok: false, status: null, type: "not_configured" };
+  const api = client ?? new Anthropic();
+  try {
+    const info = await api.models.retrieve(model);
+    return { ok: true, model: info.id };
+  } catch (err) {
+    if (err instanceof Anthropic.APIConnectionError) return { ok: false, status: null, type: "connection_error" };
+    if (err instanceof Anthropic.APIError) return { ok: false, status: err.status ?? null, type: apiErrorType(err) };
+    throw err;
+  }
+}
+
+/** Adds one pass's reported usage to the running total. Every field is
+ * read defensively: a fake client in a test answers without `usage`. */
+function tally(total: AskUsageTotals, usage: Partial<Anthropic.Usage> | undefined): void {
+  total.passes += 1;
+  total.inputTokens += usage?.input_tokens ?? 0;
+  total.outputTokens += usage?.output_tokens ?? 0;
+  total.cacheReadTokens += usage?.cache_read_input_tokens ?? 0;
+  total.cacheWriteTokens += usage?.cache_creation_input_tokens ?? 0;
+}
+
 /** The `type` inside the API's error body ("authentication_error",
  * "not_found_error", "overloaded_error"...), which is the field that says
  * what to fix. Read defensively: the SDK types `error` as unknown. */
@@ -120,6 +177,7 @@ export async function* streamToolConversation<H = never>(
   // what the model can see when it makes its next call.
   const toolUseIdsInContext: string[] = [];
   const maxPasses = options.maxPasses ?? DEFAULT_MAX_PASSES;
+  const usage: AskUsageTotals = { passes: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
 
   // A breakpoint on the first system block covers everything before it in
   // the prefix, which is the tool list. The optional second block varies
@@ -167,10 +225,12 @@ export async function* streamToolConversation<H = never>(
       // tool_use blocks are read from one assembled message rather than
       // reconstructed from deltas.
       const response = await stream.finalMessage();
+      tally(usage, response.usage);
 
       // A safety decline arrives as a 200 with no useful content. Reported
       // as itself rather than rendered as a blank answer.
       if (response.stop_reason === "refusal") {
+        yield { type: "usage", usage };
         yield { type: "error", reason: "refusal" };
         return;
       }
@@ -223,6 +283,7 @@ export async function* streamToolConversation<H = never>(
         const halted = outcomes.find((entry) => entry.outcome.halt !== undefined);
         if (halted) {
           yield { type: "reset" };
+          yield { type: "usage", usage };
           yield { type: "halt", halt: halted.outcome.halt as H };
           return;
         }
@@ -250,9 +311,11 @@ export async function* streamToolConversation<H = never>(
         (block) => block.type === "text" && block.text.trim() !== "",
       );
       if (!hasText) {
+        yield { type: "usage", usage };
         yield { type: "error", reason: "no_text" };
         return;
       }
+      yield { type: "usage", usage };
       yield { type: "done", toolsCalled };
       return;
     }
@@ -260,6 +323,7 @@ export async function* streamToolConversation<H = never>(
     // Out of passes. Saying so beats leaving a half-formed turn on screen
     // as though it were the answer.
     yield { type: "reset" };
+    yield { type: "usage", usage };
     yield { type: "error", reason: "exhausted" };
   } catch (err) {
     // Whatever streamed so far is not an answer — clear it before saying
@@ -285,6 +349,8 @@ export async function* streamToolConversation<H = never>(
       });
       // Deliberately not err.message on screen — it can carry request
       // details, and the caller puts this in front of the person.
+      // The passes that completed were billed; say so before the error.
+      yield { type: "usage", usage };
       yield { type: "error", reason: "api" };
       return;
     }

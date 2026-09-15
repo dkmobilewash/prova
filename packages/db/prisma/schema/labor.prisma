@@ -31,7 +31,13 @@ model TimeEntry {
   lineItem   JobLineItem? @relation(fields: [lineItemId], references: [id])
 
   employeeUserId String
-  employeeUser   User   @relation(fields: [employeeUserId], references: [id])
+  /// Named only because this model now has TWO relations to User (the other
+  /// is lastCorrectedByUser below) and Prisma cannot disambiguate two
+  /// unnamed ones — same precedent as WorkerCertification's holder /
+  /// recordedBy pair. A relation NAME changes nothing in SQL: the foreign key
+  /// is still "TimeEntry_employeeUserId_fkey" on the same column, so this
+  /// carries no migration of its own.
+  employeeUser   User   @relation("TimeEntryEmployee", fields: [employeeUserId], references: [id])
 
   /// The crew member this entry is for, when the worker has no login. See
   /// crew.prisma. NULL on every row today and read by nothing — this ships
@@ -48,22 +54,32 @@ model TimeEntry {
   /// person's lane. The structural half lands first; the read paths and
   /// the NOT NULL come together, in one reviewable change.
   ///
-  /// WHAT THIS COLUMN IS *NOT* PROTECTED BY, stated here because an earlier
-  /// draft of the migration protected it and the promise outlived the code.
+  /// WHAT THIS COLUMN IS PROTECTED BY, AND IT CHANGED ON 2026-09-13.
   ///
-  /// There is NO database trigger stopping this column being reassigned.
-  /// 20260905183000_add_crew_members once created a BEFORE UPDATE trigger on
-  /// TimeEntry ("TimeEntry_crew_member_lock") refusing to repoint a row at a
-  /// different CrewMember once one was set. It was removed before the
-  /// migration ever ran, because TimeEntry is a live payroll table and that
-  /// trigger would have shipped onto real rows unclicked. The reason is
-  /// written out in full at the end of the migration file.
+  /// This block said the opposite for a week — "There is NO database trigger
+  /// stopping this column being reassigned", and that the guarantee rested on
+  /// there being no update path to TimeEntry at all. Both sentences were true
+  /// when written and are false now, which is the perishable-claim shape
+  /// CLAUDE.md records paying for twice: a claim about what the code does NOT
+  /// have expires exactly as fast as a claim about what it does.
   ///
-  /// The guarantee it made — an hour, once attributed, does not change hands
-  /// — now rests on there being no update path to TimeEntry at all, which
-  /// apps/web/lib/timeEntryWriteCensus.test.ts fails the build over. That is
-  /// a source census, not enforcement: it cannot stop a raw UPDATE. If you
-  /// are adding an update path here, read that test first.
+  /// THERE IS A DATABASE TRIGGER AGAIN. `prova_time_entry_identity_lock`, a
+  /// BEFORE UPDATE trigger installed by
+  /// 20260913120000_add_time_entry_correction, refuses any UPDATE that changes
+  /// jobId, employeeUserId or date, and refuses a crewMemberId that is already
+  /// set from becoming a different one (NULL -> an id is still allowed: that
+  /// is attribution, not reassignment). It is the trigger
+  /// 20260905183000_add_crew_members deliberately did not ship, and the reason
+  /// it held back — TimeEntry is live payroll and nothing would have exercised
+  /// the trigger before real rows met it — is the thing that stopped being
+  /// true: issue #63 added the first update path, a correction form, so the
+  /// ordinary act of fixing an hour now exercises the lock.
+  ///
+  /// apps/web/lib/timeEntryWriteCensus.test.ts is still the source census and
+  /// is still worth reading before you add a write, but what it asks has
+  /// changed with the trigger: not "does an update path exist" (one does) but
+  /// "does any update name a locked column". A source scan cannot see a raw
+  /// UPDATE and never could; the trigger can.
   ///
   /// There is also NO CHECK constraint forbidding an entry from naming both
   /// a User and a CrewMember. The XOR constraint is written out in the
@@ -92,11 +108,37 @@ model TimeEntry {
 
   createdAt DateTime @default(now())
 
+  /// WHEN this entry was last corrected and BY WHOM. Issue #63: until then a
+  /// logged hour could only be deleted and retyped, so a correction left no
+  /// trace of itself at all — on the rows a WH-347 is built from.
+  ///
+  /// Both NULL means nobody has corrected it, which is every row that existed
+  /// before the migration and every row logged right the first time. They are
+  /// not derived from anything and cannot disagree with anything: this is a
+  /// record of an event, the way createdAt is, which is also why
+  /// lastCorrectedAt is STAMPED rather than entered. The date that matters and
+  /// is entered by a human is `date` above, and that one is locked.
+  ///
+  /// WHAT THESE TWO COLUMNS DO NOT DO, so nobody reads more into them than is
+  /// there: they do not record what the figure USED to be. "Corrected on the
+  /// 13th by Cyrus" is three of the four things the issue asks for, and
+  /// recovering the previous hours needs the amendment row it suggests — a
+  /// locked original with a correction beside it, the way SubmittalRevision
+  /// handles a package going again. That is held back deliberately, not
+  /// forgotten: every read path (WH-347, certified payroll, apprentice ratio,
+  /// burdened labor cost, the job page totals) would have to learn to ignore a
+  /// superseded row, and one that missed the memo would DOUBLE the hours on a
+  /// signed filing. Half of that model is worse than none of it.
+  lastCorrectedAt       DateTime?
+  lastCorrectedByUserId String?
+  lastCorrectedByUser   User?     @relation("TimeEntryCorrectedBy", fields: [lastCorrectedByUserId], references: [id])
+
   @@index([jobId])
   @@index([lineItemId])
   @@index([employeeUserId])
   @@index([crewMemberId])
   @@index([craftClassificationId])
+  @@index([lastCorrectedByUserId])
 }
 
 /// A union hiring hall's dispatch of one worker to one job — the referral

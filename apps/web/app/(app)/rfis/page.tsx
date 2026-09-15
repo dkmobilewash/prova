@@ -6,7 +6,10 @@ import { AskDraftNotice } from "@/components/AskDraftNotice";
 import { loadRfiDraft } from "@/lib/ask/drafts";
 import { RfiForm } from "@/components/RfiForm";
 import { RfiRow } from "@/components/RfiRow";
-import { isOpen, isOverdue } from "@/components/rfiLabels";
+import { daysBetween, isOpen, isOverdue } from "@/components/rfiLabels";
+import { StatusLine } from "@/components/StatusLine";
+import { rfisStatus } from "@/lib/status-sentences";
+import { jobPickerLabel, toJobOption } from "@/components/jobLabels";
 
 /** Stored at UTC midnight, rendered in UTC — same rule as the safety log
  * and daily field reports. Local rendering shows the previous day to
@@ -33,11 +36,16 @@ export default async function RfisPage({
 
   const today = new Date().toISOString().slice(0, 10);
 
-  const jobs = await prisma.job.findMany({
-    where: { companyId: company.id },
-    orderBy: { createdAt: "desc" },
-    select: { id: true, name: true },
-  });
+  // status + contact, not just the name: issue #65 — fifteen jobs, seven of
+  // them called "Smith kitchen remodel", and this picker showed seven
+  // identical rows. See components/jobLabels.ts.
+  const jobs = (
+    await prisma.job.findMany({
+      where: { companyId: company.id },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, name: true, status: true, contact: { select: { name: true } } },
+    })
+  ).map(toJobOption);
   const activeJob = jobFilter && jobs.some((j) => j.id === jobFilter) ? jobFilter : null;
 
   const rfis = await prisma.rfi.findMany({
@@ -69,7 +77,9 @@ export default async function RfisPage({
   }));
 
   const openCount = rows.filter((r) => isOpen(r.status)).length;
-  const overdueCount = rows.filter((r) => isOverdue(r, today)).length;
+  const overdue = rows
+    .filter((r) => isOverdue(r, today))
+    .map((r) => ({ number: r.number, jobName: r.jobName, daysOverdue: daysBetween(r.dueBy as string, today) }));
 
   // Counted from the database rather than from `rows`, unlike the two
   // above. Open and overdue are properties of RFIs still in play, so the
@@ -84,6 +94,7 @@ export default async function RfisPage({
       OR: [{ costImpact: true }, { scheduleImpact: true }],
     },
   });
+  const status = rfisStatus({ overdue, open: openCount, impact: impactCount });
 
   const filterHref = (params: { job?: string | null; show?: string | null }) => {
     const next = new URLSearchParams();
@@ -122,22 +133,7 @@ export default async function RfisPage({
         />
       </section>
 
-      <div className="mb-4 grid gap-3 sm:grid-cols-3">
-        <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-          <p className="text-2xl font-semibold text-slate-100">{openCount}</p>
-          <p className="text-xs text-slate-400">Awaiting an answer</p>
-        </div>
-        <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-          <p className={`text-2xl font-semibold ${overdueCount > 0 ? "text-red-300" : "text-slate-100"}`}>
-            {overdueCount}
-          </p>
-          <p className="text-xs text-slate-400">Past the date we asked for</p>
-        </div>
-        <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-          <p className="text-2xl font-semibold text-amber-300">{impactCount}</p>
-          <p className="text-xs text-slate-400">Answers with cost or schedule impact</p>
-        </div>
-      </div>
+      <StatusLine report={status} />
 
       {jobs.length > 0 && (
         <div className="mb-4 flex flex-wrap gap-2">
@@ -146,7 +142,7 @@ export default async function RfisPage({
           </Link>
           {jobs.map((j) => (
             <Link key={j.id} href={filterHref({ job: j.id })} className={chip(activeJob === j.id)}>
-              {j.name}
+              {jobPickerLabel(j)}
             </Link>
           ))}
         </div>

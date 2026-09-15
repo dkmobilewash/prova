@@ -1,5 +1,12 @@
 import { prisma } from "@prova/db";
-import { reviewDays, type DayEntryInput, type PayType, type PrevailingWageRuleSetInput, type WeekReview } from "@/lib/prevailing-wage";
+import {
+  findEffectiveRuleSet,
+  reviewDays,
+  type DayEntryInput,
+  type PayType,
+  type PrevailingWageRuleSetInput,
+  type WeekReview,
+} from "@/lib/prevailing-wage";
 import { weekStart } from "@/components/fieldReportWeeks";
 import { payrollWorkerName } from "@/lib/worker-name";
 
@@ -138,6 +145,34 @@ export type EmployeeWeekReview = {
  * day, and pooling them would manufacture overtime that nobody worked —
  * the single most damaging thing this feature could get wrong.
  */
+function toRuleSetInput(raw: {
+  id: string;
+  name: string;
+  jurisdiction: string;
+  dailyOvertimeAfterHours: unknown;
+  dailyDoubleTimeAfterHours: unknown;
+  weeklyOvertimeAfterHours: unknown;
+  seventhDayOvertimeAfterHours: unknown;
+  seventhDayDoubleTimeAfterHours: unknown;
+  filingDueDays: number | null;
+  effectiveFrom: Date;
+  effectiveTo: Date | null;
+}): PrevailingWageRuleSetInput {
+  return {
+    id: raw.id,
+    name: raw.name,
+    jurisdiction: raw.jurisdiction,
+    dailyOvertimeAfterHours: numberOrNull(raw.dailyOvertimeAfterHours),
+    dailyDoubleTimeAfterHours: numberOrNull(raw.dailyDoubleTimeAfterHours),
+    weeklyOvertimeAfterHours: numberOrNull(raw.weeklyOvertimeAfterHours),
+    seventhDayOvertimeAfterHours: numberOrNull(raw.seventhDayOvertimeAfterHours),
+    seventhDayDoubleTimeAfterHours: numberOrNull(raw.seventhDayDoubleTimeAfterHours),
+    filingDueDays: raw.filingDueDays,
+    effectiveFrom: isoDate(raw.effectiveFrom) as string,
+    effectiveTo: isoDate(raw.effectiveTo),
+  };
+}
+
 export async function reviewJobWeek(
   companyId: string,
   jobId: string,
@@ -150,28 +185,60 @@ export async function reviewJobWeek(
       prevailingWageDeterminations: {
         orderBy: { createdAt: "desc" },
         take: 1,
-        select: { ruleSet: true },
+        select: { jurisdiction: true, ruleSet: true },
       },
     },
   });
   if (!job) return { jobName: null, ruleSetName: null, employees: [] };
 
-  const raw = job.prevailingWageDeterminations[0]?.ruleSet ?? null;
-  const ruleSet: PrevailingWageRuleSetInput | null = raw
-    ? {
-        id: raw.id,
-        name: raw.name,
-        jurisdiction: raw.jurisdiction,
-        dailyOvertimeAfterHours: numberOrNull(raw.dailyOvertimeAfterHours),
-        dailyDoubleTimeAfterHours: numberOrNull(raw.dailyDoubleTimeAfterHours),
-        weeklyOvertimeAfterHours: numberOrNull(raw.weeklyOvertimeAfterHours),
-        seventhDayOvertimeAfterHours: numberOrNull(raw.seventhDayOvertimeAfterHours),
-        seventhDayDoubleTimeAfterHours: numberOrNull(raw.seventhDayDoubleTimeAfterHours),
-        filingDueDays: raw.filingDueDays,
-        effectiveFrom: isoDate(raw.effectiveFrom) as string,
-        effectiveTo: isoDate(raw.effectiveTo),
-      }
-    : null;
+  // #104 finding 5: findEffectiveRuleSet existed, was documented, and had
+  // zero call sites. This used to trust the determination's `ruleSetId`
+  // FK directly — a single snapshot a person points at whatever rule set
+  // is CURRENT when they call setDeterminationRuleSet. When a jurisdiction
+  // updates its rates, the company records a NEW PrevailingWageRuleSet row
+  // (its own effective dates, exclusion-constraint-protected against
+  // overlapping the old one) and repoints the determination at it — at
+  // which point every review of a week from BEFORE that change silently
+  // started checking hours against the NEW thresholds, because nothing
+  // here ever asked whether the linked rule set was in force during the
+  // week being reviewed.
+  //
+  // The fix reads every rule set this company has recorded for the
+  // determination's own jurisdiction (not only the one the FK happens to
+  // point at) and lets findEffectiveRuleSet pick the one actually in force
+  // on `weekStartIso` — the same "which one applied back then" question
+  // FringeRateSchedule already answers for wages via
+  // findEffectiveFringeRateSchedule.
+  //
+  // The orderBy is for a READER's benefit — latest effectiveFrom first, id
+  // breaking a tie — so somebody debugging a week's classification sees a
+  // stable sequence. It does NOT provably match the function's own
+  // comparator and must not be read as doing so: SQL orders the raw
+  // `timestamp` and the text collation of `id`, while the function ties on
+  // the UTC CALENDAR DATE and on JS UTF-16 `>`. Two rows on the same UTC
+  // date at different times of day order strictly here and tie there, so
+  // `candidates[0]` need not be the row the function returns. Unreachable
+  // through the app (every date enters at UTC midnight) and reachable via
+  // seed or direct SQL.
+  // Determinism does NOT depend on it: findMany without an ORDER BY has no
+  // guaranteed order, so the pure function decides among the rows that
+  // match rather than trusting whichever came first. Belt and braces
+  // deliberately, because this is the first application call site
+  // findEffectiveRuleSet has ever had and the next one will copy it.
+  const determination = job.prevailingWageDeterminations[0] ?? null;
+  const candidates = determination
+    ? await prisma.prevailingWageRuleSet.findMany({
+        where: { companyId, jurisdiction: determination.jurisdiction },
+        orderBy: [{ effectiveFrom: "desc" }, { id: "desc" }],
+      })
+    : [];
+
+  const ruleSet: PrevailingWageRuleSetInput | null =
+    candidates.length > 0
+      ? findEffectiveRuleSet(candidates.map(toRuleSetInput), weekStartIso)
+      : determination?.ruleSet
+        ? toRuleSetInput(determination.ruleSet)
+        : null;
 
   const weekEnd = new Date(Date.parse(`${weekStartIso}T00:00:00.000Z`) + 6 * 86_400_000);
   const entries = await prisma.timeEntry.findMany({

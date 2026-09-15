@@ -47,6 +47,18 @@ describe("estimateBurdenedLaborCost", () => {
     );
   });
 
+  it("issue #104 finding 8: still prices on a schedule's last day at any time of day", () => {
+    // jobs/[id]/page.tsx calls laborRateDateFor(job, new Date()) when a job
+    // has no start date -- a bare "now", carrying whatever hour the
+    // request happens to land on, compared against effectiveFrom/To values
+    // that are always UTC midnight. The bug: any time after 00:00 UTC on a
+    // schedule's own LAST calendar day already read as later than
+    // effectiveTo, so the estimate silently stopped pricing hours before
+    // the setup screen's own "in force" badge said the schedule had ended.
+    const lateOnTheLastDay = new Date("2026-06-30T19:45:00.000Z");
+    expect(estimateBurdenedLaborCost(10, schedules, lateOnTheLastDay)).toBe(700);
+  });
+
   it("treats a missing fringe component as zero, not as no schedule", () => {
     const bare = [
       {

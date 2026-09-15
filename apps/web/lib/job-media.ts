@@ -546,6 +546,29 @@ export function formatCapturedAt(capturedAt: Date, timeZone: string): string {
 }
 
 /**
+ * The DAY a capture belongs to, in the viewer's zone, spelled out.
+ *
+ * The heading a printed photo report groups under. Same zone argument and
+ * the same reasoning as `formatCapturedAt` above — `capturedAt` is an
+ * instant, so the day it falls on is a question about somebody's calendar
+ * and not about UTC. A photo taken at 6pm in Nevada belongs on that day's
+ * page, and rendering it in UTC would file it under the next one.
+ *
+ * The weekday is in it because that is how a jobsite argument is had ("the
+ * Friday before the pour"), and the year because these documents are read
+ * long after the year is obvious.
+ */
+export function formatCapturedDay(capturedAt: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    timeZone,
+  }).format(capturedAt);
+}
+
+/**
  * The same instant as the `YYYY-MM-DDTHH:mm` a `datetime-local` input
  * wants, in the viewer's zone.
  *

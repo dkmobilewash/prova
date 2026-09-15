@@ -165,6 +165,14 @@ model DailyFieldReport {
   /// inspection no-show. Blank means the day ran clean.
   delays        String?
 
+  /// Offline sync fields. Null for web writes — a phone stamps these, the
+  /// web Server Action leaves them absent. clientOperationId is the
+  /// create-intent idempotency key (reused across a retried POST);
+  /// clientUpdatedAt is the last-write-wins conflict clock.
+  clientId            String?
+  clientOperationId   String?
+  clientUpdatedAt     DateTime?
+
   filedByUserId String?
   filedBy       User?   @relation(fields: [filedByUserId], references: [id])
 
@@ -176,6 +184,9 @@ model DailyFieldReport {
   /// happened, which is worse than one person having to edit an existing
   /// entry.
   @@unique([jobId, reportDate])
+  /// One row per create-intent. Postgres treats NULLs as distinct, so web
+  /// writes (NULL clientOperationId) never collide here.
+  @@unique([companyId, clientOperationId])
   @@index([companyId])
   @@index([jobId])
 }

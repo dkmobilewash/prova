@@ -56,7 +56,7 @@ vi.mock("@prova/db", () => ({
   },
 }));
 
-const { requireCompanyContext } = await import("./auth");
+const { requireCompanyContext, requireApiContext } = await import("./auth");
 
 /** A sign-in by someone whose Clerk account has (or has not) proved it
  * owns the address. Nothing else about the person differs between the two
@@ -118,5 +118,25 @@ describe("requireCompanyContext — the invite adoption path", () => {
     });
     // The invitation is single-use: consumed in the same transaction.
     expect(invites()).toEqual([]);
+  });
+});
+
+describe("requireApiContext — the mobile path", () => {
+  it("returns null when there is no session, instead of redirecting", async () => {
+    clerkUser = null;
+
+    await expect(requireApiContext()).resolves.toBeNull();
+  });
+
+  it("adopts the same user the web path does", async () => {
+    signInAs("owner@example.com", true);
+
+    const context = await requireApiContext();
+
+    expect(context).toMatchObject({
+      email: "owner@example.com",
+      role: "OWNER",
+      clerkId: "clerk_owner",
+    });
   });
 });

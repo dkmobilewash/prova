@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { UserButton } from "@clerk/nextjs";
 import { MobileNav } from "@/components/MobileNav";
+import { HelpButton } from "@/components/HelpButton";
+import { helpChannelFromEnv } from "@/lib/help-config";
 import type { Principal } from "@/lib/permissions";
 
 /** Chrome stays dark alongside the rail, so the frame is one thing and the
@@ -17,19 +19,25 @@ export function Topbar({
    * to appear when it does. */
   alertCount,
   principal,
-  showsSalesCrm = false,
+  showsInternal = false,
 }: {
   companyName: string;
   alertCount: number;
   principal: Principal;
   /** Prova's own operating company only -- see Company.isProvaOperator. */
-  showsSalesCrm?: boolean;
+  showsInternal?: boolean;
 }) {
   return (
     <div className="print:hidden flex h-14 shrink-0 items-center justify-between gap-3 border-b border-slate-800 bg-slate-900 px-4 sm:px-6">
       {/* Renders nothing above md — the desktop rail is always visible there. */}
-      <MobileNav companyName={companyName} principal={principal} showsSalesCrm={showsSalesCrm} />
+      <MobileNav companyName={companyName} principal={principal} showsInternal={showsInternal} />
       <div className="ml-auto flex items-center gap-3">
+        {/* The only way to reach a person from inside the app, and it is
+            here rather than on a page because a help link that exists on
+            one screen is not help — see HelpButton for the two shapes this
+            rejected. The channel is resolved server-side so the panel can
+            only offer what the action will accept. */}
+        <HelpButton companyName={companyName} channel={helpChannelFromEnv()} />
         <Link
           href="/alerts"
           aria-label={

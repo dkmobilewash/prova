@@ -13,6 +13,7 @@ import {
   weekLabel,
   weekSummaryText,
 } from "@/components/fieldReportWeeks";
+import { toJobOption } from "@/components/jobLabels";
 
 export const dynamic = "force-dynamic";
 
@@ -48,9 +49,11 @@ export default async function FieldReportsPage() {
       // below.
       take: REPORT_LIMIT + 1,
     }),
+    // status + contact, not just the name: issue #65 — seven jobs sharing
+    // one placeholder name made every picker seven identical rows.
     prisma.job.findMany({
       where: { companyId: company.id },
-      select: { id: true, name: true },
+      select: { id: true, name: true, status: true, contact: { select: { name: true } } },
       orderBy: { name: "asc" },
     }),
   ]);
@@ -102,7 +105,7 @@ export default async function FieldReportsPage() {
       </p>
 
       <div className="mb-8">
-        <FieldReportComposer jobs={jobs} />
+        <FieldReportComposer jobs={jobs.map(toJobOption)} />
       </div>
 
       {weeks.length === 0 ? (

@@ -9,7 +9,13 @@ Vercel deployment and repo settings). Each drives their own agent.
 
 ## The prime directive: verify by result, never by claim
 
-- Merged = `git log main..origin/<branch>` prints nothing. A PR exists =
+- Merged = `git log main..origin/<branch>` prints nothing — that is the
+  proof for a MERGE commit. This repo squashes PRs, which writes the
+  changes as a new commit with a new SHA, so the branch's original commit
+  never becomes an ancestor and that command still prints it after a
+  successful squash. Proof for a squash merge = `git log --oneline
+  origin/main` names the squash commit (PR title + `(#NNN)`) and
+  `git show <sha> --stat` lists the same files. A PR exists =
   its ref is in `git ls-remote origin 'refs/pull/*/head'`. Migrations
   exist = `prisma migrate status` NAMES them (it has printed "No
   migration found" and "up to date" in the same run).
@@ -131,8 +137,12 @@ scrollback gets broken by whoever didn't scroll far enough.
   `main` for eight hours, with every check green the whole time. #13
   merged at its then-head and left two commits behind, one a live
   money-display bug. So: delete the branch when you merge a stacked PR,
-  and after ANY merge run `git log origin/main..<branch>` — empty output
-  is the only proof it landed. "The PR says Merged" is not.
+  and after ANY merge confirm it landed. For a merge commit, `git log
+  origin/main..<branch>` is empty. For a squash merge (the default here)
+  the branch's commit is rewritten under a new SHA, so that command still
+  prints it — instead confirm `git log --oneline origin/main` names the
+  squash commit (PR title + `(#NNN)`) and `git show <sha> --stat` lists
+  the same files. "The PR says Merged" is not.
 - Scripts start with `set -e` AND `set -o pipefail` (a failed build
   piped to `tee` printed ALL GREEN once), and clear a stale index lock
   with `rm -f "$(git rev-parse --git-path index.lock)"`.
@@ -566,6 +576,31 @@ scrollback gets broken by whoever didn't scroll far enough.
   status` and prints `db: <n>s — still pending` each time, guarded by
   `pending && isProduction`. Previews skip the loop entirely. The prose
   above and the code now agree.
+- **A VERCEL ENVIRONMENT VARIABLE REACHES ONLY DEPLOYMENTS CREATED AFTER IT
+  WAS SAVED, and a running build does not count.** 2026-09-10:
+  `ANTHROPIC_API_KEY` was added to Preview while the branch's build was
+  already running. Every ask on that alias said "The assistant is
+  unavailable right now" for an hour, the runtime log had nothing — the
+  loop swallowed the SDK error — and the push that should have produced a
+  fresh build produced no Vercel deployment at all (cause not established;
+  the next push did). Read the deployment's `createdAt` against the moment
+  the variable was saved before reasoning about the key's value. After
+  changing a variable: push a commit or click Redeploy, then wait for the
+  alias to flip to a READY build created after the save.
+
+  Two things came out of it. The loop now logs status, error type and
+  request id on an API failure (`packages/integrations/src/ask.ts`), and
+  `/settings/assistant` has a **Check connection** button that asks the
+  Models endpoint for the model the box runs on — the screen half of that
+  log line, so an owner does not need an agent to read Vercel for them.
+
+  And the companion, established the same evening: a browser-agent run
+  that reports "finished" with ZERO requests in Vercel's runtime logs for
+  the deployment never touched the app. Two such reports arrived; both
+  described sessions that made no request. Group the runtime log by
+  `deploymentId` for the window of the run before reading a single
+  verdict, and treat "the paste came through empty" as a separate problem
+  from "the run happened".
 - **Do not promote a preview to production.** Merge to `main` instead, so
   the build actually runs. Previews are public (no deployment protection),
   carry the branch's latest commit at a stable alias, and are what browser

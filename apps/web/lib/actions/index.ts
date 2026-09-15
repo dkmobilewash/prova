@@ -11,6 +11,7 @@
 // which domain files import directly.
 
 export * from "./jobs";
+export * from "./jobDetails";
 export * from "./estimating";
 export * from "./billing";
 export * from "./labor";
@@ -45,3 +46,4 @@ export * from "./equipmentAssignments";
 export * from "./certifications";
 export * from "./jobMedia";
 export * from "./ask";
+export * from "./help";

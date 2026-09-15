@@ -9,6 +9,7 @@ import { putDocument } from "@/lib/blob";
 import { Prisma, prisma } from "@prova/db";
 import { createEstimateJob } from "@/lib/estimating/create-job";
 import { draftLinesFromScope } from "@/lib/estimating/draft-lines";
+import { END_BEFORE_START } from "@/lib/estimating/job-schedule";
 import {
   CONTRACT_NOT_EXECUTED_REFUSAL,
   parseExecutedSignedDate,
@@ -548,7 +549,9 @@ export async function updateJobSchedule(jobId: string, formData: FormData) {
   const endDate = endRaw ? new Date(endRaw) : null;
 
   if (startDate && endDate && endDate < startDate) {
-    throw new Error("End date can't be before the start date");
+    // The sentence the Ask card gets from lib/estimating/job-schedule.ts,
+    // so the page and the card refuse this in one voice.
+    throw new Error(END_BEFORE_START);
   }
 
   const operatingLocationId = String(formData.get("operatingLocationId") ?? "").trim() || null;

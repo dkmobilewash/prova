@@ -670,6 +670,12 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   drawings: () => import("./actions/drawings"),
   closeout: () => import("./actions/closeout"),
   closeoutSubmissions: () => import("./actions/closeoutSubmissions"),
+  // The Ask box. Only `checkAssistantConnection` lands in MUST_ASSERT: it
+  // is reachable from /settings/assistant alone, which demands
+  // MANAGE_COMPLIANCE. The card actions (confirm, cancel, settle, load)
+  // are reachable from the dashboard, which demands nothing, so their
+  // doors disagree and the derivation leaves them to their own guards.
+  ask: () => import("./actions/ask"),
 };
 
 /** The sentence both guard messages share. Asserting on this rather than on

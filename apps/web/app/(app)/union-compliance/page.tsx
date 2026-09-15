@@ -124,11 +124,22 @@ export default async function UnionCompliancePage({
           </p>
         ) : (
           <div className="space-y-4">
-            {remittance.locals.map((local) => (
+            {remittance.locals.map((local) => {
+              // #104 finding 2: isWhollyUnpriced already guarded every
+              // craft ROW below (that guard is why a row never prints
+              // $0.00 for hours nobody could price) but not this header —
+              // so a local whose every craft was unpriced still showed a
+              // confident "$0.00" total above a table of dashes, the exact
+              // false "nothing owed" statement the row-level guard exists
+              // to prevent. Same check, applied one level up.
+              const localBlank = isWhollyUnpriced(local);
+              return (
               <div key={local.unionLocalId} className="rounded-lg border border-slate-800 bg-slate-900 p-4">
                 <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
                   <p className="text-slate-100">{local.unionLocalLabel}</p>
-                  <p className="font-mono text-slate-100">{money(local.total)}</p>
+                  <p className="font-mono text-slate-100">
+                    {localBlank ? <span className="text-slate-600">— not yet priced</span> : money(local.total)}
+                  </p>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[34rem] text-sm">
@@ -177,7 +188,8 @@ export default async function UnionCompliancePage({
                   </table>
                 </div>
               </div>
-            ))}
+              );
+            })}
 
             <p className="text-sm text-slate-400">
               <span className="font-mono text-slate-200">{money(remittance.total)}</span> across{" "}

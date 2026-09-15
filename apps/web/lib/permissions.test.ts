@@ -254,6 +254,20 @@ const PAGE_ONLY_CAPABILITY: Record<string, Capability> = {
   // key nothing in the nav can match would be a decision recorded in the
   // wrong place.
   "/union-compliance/remittance": "MANAGE_COMPLIANCE",
+  // The site photo report — one job's captures as a printable document,
+  // with the marks drawn on them. MANAGE_FIELD, exactly what `/photos`,
+  // the job page's photo section and every action behind them take: this
+  // document shows strictly what those galleries show, minus the tags, the
+  // photographer and the coordinates, so a different capability would be
+  // an inconsistency rather than a tightening.
+  //
+  // HERE AND NOT IN ROUTE_CAPABILITY, for the reason this table's own
+  // header gives: a key with `[id]` in it can never match a real URL, and
+  // putting one in the map that FILTERS THE NAV would quietly teach
+  // `canReach` to answer "open" for a guarded page. Nothing in the nav
+  // links this — it is reached from the job's photo section and from
+  // `/photos`, the way wh-347 is reached from certified payroll.
+  "/jobs/[id]/photo-report": "MANAGE_FIELD",
 };
 
 /**
@@ -280,6 +294,8 @@ const OPEN_ROUTES: Record<string, string> = {
   "/sales":
     "Prova's OWN sales pipeline, not a tenant's. Guarded HARDER than any capability, on two things a Capability cannot express: the page refuses unless Company.isProvaOperator AND the person's role is OWNER. Mapping it to a capability would loosen it, since every owner holds all seven and a non-operator company holds isProvaOperator on nothing.",
   "/sales/[id]": "Same page, same two checks — isProvaOperator, then OWNER — with notFound() for a non-operator company.",
+  "/internal/usage":
+    "Prova's OWN usage instrument — who is still logging in, across every company. Guarded HARDER than any capability, on the same two things /sales is: Company.isProvaOperator AND role OWNER. A capability would LOOSEN it, since every owner holds all seven, and this is the one page in the app that reads across tenants. Listed open here only in the sense that ROUTE_CAPABILITY is the wrong home for it; the page refuses.",
   "/vendors":
     "The supplier directory. What each vendor has QUOTED is the sensitive half and it lives on /vendors/pricing, which is guarded.",
   "/jobs/[id]":

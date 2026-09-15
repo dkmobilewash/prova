@@ -1,6 +1,7 @@
 import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { cancelInvite, inviteTeamMember, removeTeamMember } from "@/lib/actions";
+import { Hint } from "@/components/Hint";
 import { SubmitButton } from "@/components/SubmitButton";
 import { JobFunctionPicker } from "@/components/JobFunctionPicker";
 import { capabilityCount, jobFunctionLabel } from "@/components/permissionLabels";
@@ -57,9 +58,14 @@ export default async function TeamPage() {
                 )}
                 {isOwner && member.role !== "OWNER" && (
                   <form action={removeTeamMember.bind(null, member.id)}>
-                    <SubmitButton type="submit" className="text-sm text-red-400 hover:underline">
-                      Remove
-                    </SubmitButton>
+                    {/* One click, no arming — that is a separate defect and
+                        not this branch's to fix. The description at least
+                        says what the click costs before it is made. */}
+                    <Hint text="Takes this person out of the company, so the app stops opening for them. Owners cannot be removed here. This one acts on a single click — there is no second step.">
+                      <SubmitButton type="submit" className="text-sm text-red-400 hover:underline">
+                        Remove
+                      </SubmitButton>
+                    </Hint>
                   </form>
                 )}
               </div>

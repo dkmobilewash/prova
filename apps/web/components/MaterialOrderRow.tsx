@@ -247,6 +247,7 @@ export function MaterialOrderRow({
                 as="span"
                 destructive={
                   <ConfirmDelete
+                    describe="Removes this delivery record, so the order shows that much less as arrived. Nothing is sent to the vendor."
                     label="Remove"
                     confirmLabel="Confirm remove"
                     pendingLabel="Removing…"
@@ -287,6 +288,7 @@ export function MaterialOrderRow({
         destructive={
           canDelete && order.deliveries.length === 0 ? (
             <ConfirmDelete
+              describe="Deletes the order from your record here, and only while no delivery is recorded against it. No cancellation reaches the vendor."
               pinned="end"
               label="Delete"
               confirmLabel="Confirm delete"

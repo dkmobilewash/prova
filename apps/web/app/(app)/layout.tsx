@@ -14,11 +14,16 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     role: currentUser.role,
     jobFunction: currentUser.jobFunction,
   };
-  // Prova's own sales pipeline, for exactly one company -- see
-  // Company.isProvaOperator. Not a lib/permissions.ts Capability: that map
-  // is about job function within a company, and an OWNER always holds
-  // every capability in it regardless, which cannot express "owner only."
-  const showsSalesCrm = company.isProvaOperator && currentUser.role === "OWNER";
+  // Prova's own pages, for exactly one company -- the sales pipeline and
+  // the usage instrument (/internal/usage). See Company.isProvaOperator.
+  // Not a lib/permissions.ts Capability: that map is about job function
+  // within a company, and an OWNER always holds every capability in it
+  // regardless, which cannot express "owner only."
+  //
+  // Renamed from showsSalesCrm 2026-09-13, when the Internal group stopped
+  // being one page: a flag named after one of the two it gates is a
+  // comment that disagrees with the code.
+  const showsInternal = company.isProvaOperator && currentUser.role === "OWNER";
 
   // The reader's own calendar day, not the server's UTC one. At 18:00 in
   // Los Angeles the UTC date is already tomorrow, so this badge counted a
@@ -49,13 +54,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       {/* Renders nothing. Parks the browser's IANA zone in a cookie so
           the server can work out what day it is where the reader is. */}
       <TimeZoneCookie />
-      <Sidebar companyName={company.name} principal={principal} showsSalesCrm={showsSalesCrm} />
+      <Sidebar companyName={company.name} principal={principal} showsInternal={showsInternal} />
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar
           companyName={company.name}
           alertCount={alertCount}
           principal={principal}
-          showsSalesCrm={showsSalesCrm}
+          showsInternal={showsInternal}
         />
         {/* No background of its own: each page brings its own ground, so a
             page still written against the dark theme keeps it and a
