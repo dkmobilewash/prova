@@ -1,238 +1,347 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
- * Every document upload must land at an UNGUESSABLE blob URL.
+ * THE TOKEN IS THE ENFORCEMENT NOW, so this is what this file tests.
  *
- * `@vercel/blob@2.8.0` defaults `addRandomSuffix` to false — its own
- * `dist/index.d.ts:459` says so — so `put("compliance/<companyId>/COI.pdf", …)`
- * with `access: "public"` produces a permanently public URL that anyone who
- * knows the company id can derive from a guessed filename. Certified payroll,
- * lien waivers, COIs and W-9s were all reachable that way, and the path itself
- * leaked the companyId to every GC and insurer the link was sent to.
+ * It used to drive the four `File`-carrying upload actions with
+ * `@vercel/blob`'s `put` faked and assert on the options each handed to
+ * it — specifically `addRandomSuffix: true`, because the SDK defaults it
+ * to FALSE (`dist/index.d.ts:459`) and every document therefore sat at a
+ * URL derivable from an id plus a filename. Certified payroll, lien
+ * waivers, COIs and W-9s were readable by anyone who guessed one.
  *
- * This suite drives the four REAL upload actions with `@vercel/blob` faked,
- * and asserts on the options each one actually hands to `put` — the VALUE of
- * `addRandomSuffix`, not merely that a key of that name exists. A guard that
- * walks an options object for a key it never reads is the shape of bug this
- * repo has already shipped once (see the companyId where-clause scar), so
- * each assertion below names the value it demands.
+ * Those actions no longer touch a file (#27): a Server Action body is
+ * capped at 1MB by Next, multipart file parts included, so the upload they
+ * performed could never have carried a real contract PDF in the first
+ * place. The browser uploads directly and `/api/documents/upload` decides
+ * the terms — which means every claim the old file made is now a claim
+ * about the TOKEN that route mints, and so is every claim that could not
+ * be made before: which pathname, which content type, which ceiling.
  *
- * The fake `put` also implements the two documented defaults that bite:
- * no random suffix, and a THROW when the pathname already exists. That is
- * what made `uploadContractDocument` — a function whose whole purpose is
- * versioning — unable to store version 2 of a same-named amendment.
+ * NOTHING IS FAKED EXCEPT THE SESSION AND THE DATABASE. `handleUpload`
+ * here is the real one; it signs locally from `BLOB_READ_WRITE_TOKEN` and
+ * makes no network call for this event type (dist/client.js:240-285). So
+ * these cases decode the token the route actually returns and read the
+ * terms out of it, rather than reading back an object a fake collected —
+ * what is asserted is what the store will be shown.
  */
 
-type PutOptions = {
-  access?: string;
-  addRandomSuffix?: boolean;
-  allowOverwrite?: boolean;
-  contentType?: string;
-};
-
-const putCalls: { pathname: string; options: PutOptions }[] = [];
-const storedPaths = new Set<string>();
-let suffixSeed = 0;
-
-/** Mirrors @vercel/blob@2.8.0 `put`: addRandomSuffix defaults false, and an
- * existing pathname throws unless allowOverwrite is set. */
-function fakePut(pathname: string, _body: unknown, options: PutOptions = {}) {
-  putCalls.push({ pathname, options });
-  suffixSeed += 1;
-  const finalPathname = options.addRandomSuffix
-    ? pathname.replace(/(\.[^./]+)?$/, (ext) => `-r4nd0m${suffixSeed}${ext}`)
-    : pathname;
-  if (storedPaths.has(finalPathname) && !options.allowOverwrite) {
-    throw new Error(
-      "Vercel Blob: This blob already exists, use `allowOverwrite: true` to overwrite it",
-    );
-  }
-  storedPaths.add(finalPathname);
-  return Promise.resolve({
-    url: `https://store123.public.blob.vercel-storage.com/${finalPathname}`,
-    pathname: finalPathname,
-    contentType: options.contentType ?? "application/octet-stream",
-    contentDisposition: `inline; filename="${finalPathname}"`,
-    downloadUrl: `https://store123.public.blob.vercel-storage.com/${finalPathname}?download=1`,
-  });
-}
+const OUR_STORE = "teststore1";
+process.env.BLOB_READ_WRITE_TOKEN = `vercel_blob_rw_${OUR_STORE}_s3cr3t`;
 
 const COMPANY_ID = "cmp_alpha";
+const OTHER_COMPANY_ID = "cmp_beta";
 const JOB_ID = "job_alpha";
+const OTHER_JOB_ID = "job_beta";
 
-const created: Record<string, Record<string, unknown>[]> = {};
+const principal = {
+  id: "usr_1",
+  companyId: COMPANY_ID,
+  company: { id: COMPANY_ID },
+  role: "OWNER" as string,
+  jobFunction: null as string | null,
+};
 
-function record(model: string) {
-  return async ({ data }: { data: Record<string, unknown> }) => {
-    (created[model] ??= []).push(data);
-    return { id: `${model}_${(created[model] as unknown[]).length}`, ...data };
+vi.mock("@/lib/auth", () => ({ requireCompanyContext: async () => principal }));
+
+vi.mock("@prova/db", () => ({
+  prisma: {
+    job: {
+      findUnique: async ({ where }: { where: { id: string } }) => {
+        if (where.id === JOB_ID) return { id: JOB_ID, companyId: COMPANY_ID };
+        if (where.id === OTHER_JOB_ID) return { id: OTHER_JOB_ID, companyId: OTHER_COMPANY_ID };
+        return null;
+      },
+    },
+  },
+}));
+
+const { POST } = await import("../app/api/documents/upload/route");
+
+type TokenRequest = {
+  purpose?: string;
+  ownerId?: string;
+  contentType?: string;
+  pathname: string;
+  clientPayload?: string;
+};
+
+function post({ pathname, clientPayload, purpose, ownerId, contentType }: TokenRequest) {
+  const payload =
+    clientPayload ?? JSON.stringify({ purpose, ownerId, contentType: contentType ?? "application/pdf" });
+  return POST(
+    new Request("https://app.test/api/documents/upload", {
+      method: "POST",
+      body: JSON.stringify({
+        type: "blob.generate-client-token",
+        payload: { pathname, callbackUrl: "https://app.test/api/documents/upload", clientPayload: payload, multipart: false },
+      }),
+    }),
+  );
+}
+
+/** The terms the STORE will enforce, read out of the token the route
+ * returned — `vercel_blob_client_<storeId>_<base64("<sig>.<base64 json>")>`
+ * (dist/client.js:491-493). Decoding it is the only way to assert on what
+ * was actually signed rather than on what we hoped was. */
+function signedTerms(clientToken: string) {
+  const encoded = clientToken.slice(`vercel_blob_client_${OUR_STORE}_`.length);
+  const [, payload] = Buffer.from(encoded, "base64").toString("utf8").split(".");
+  return JSON.parse(Buffer.from(payload, "base64").toString("utf8")) as {
+    pathname: string;
+    allowedContentTypes?: string[];
+    maximumSizeInBytes?: number;
+    addRandomSuffix?: boolean;
   };
 }
 
-// ContractDocumentVersionCounter, in memory — issue #106 finding 5 moved
-// `uploadContractDocument` off `MAX(versionNumber) + 1`, so this fake now
-// needs the counter model too, upserted the same way `issueInvoiceNumber`
-// and `issueContractDocumentVersion` do it against the real database.
-const contractDocumentVersionCounters: Record<string, number> = {};
-
-const prisma = {
-  job: { findUnique: async () => ({ id: JOB_ID, companyId: COMPANY_ID, status: "ESTIMATE" }) },
-  user: { findUnique: async () => ({ id: "usr_1", companyId: COMPANY_ID }) },
-  craftClassification: { findFirst: async () => null },
-  complianceDocument: { create: record("complianceDocument") },
-  dispatchSlip: { create: record("dispatchSlip") },
-  prevailingWageDetermination: { create: record("prevailingWageDetermination") },
-  contractDocument: {
-    create: record("contractDocument"),
-  },
-  contractDocumentVersionCounter: {
-    upsert: async ({ where }: { where: { jobId: string } }) => {
-      const next = (contractDocumentVersionCounters[where.jobId] ?? 0) + 1;
-      contractDocumentVersionCounters[where.jobId] = next;
-      return { lastNumber: next };
-    },
-  },
-  // `uploadContractDocument` runs the counter bump and the create inside
-  // `prisma.$transaction(async (tx) => ...)`. This fake has no real
-  // transaction semantics to offer — there's nothing here that can roll
-  // back — so it just hands the callback this same object, which is
-  // enough for these tests: they only care what ends up in `created` and
-  // `contractDocumentVersionCounters`, not isolation. `tx`'s type is left
-  // as `any` rather than `typeof prisma` — the object being typed can't
-  // refer to its own type in its own initializer.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  $transaction: async (fn: (tx: any) => Promise<unknown>) => fn(prisma),
-};
-
-vi.mock("@vercel/blob", () => ({
-  put: (pathname: string, body: unknown, options: PutOptions) => fakePut(pathname, body, options),
-}));
-vi.mock("@prova/db", () => ({ prisma }));
-vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
-vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
-vi.mock("@/lib/auth", () => ({
-  requireCompanyContext: async () => ({ id: "usr_1", role: "OWNER", company: { id: COMPANY_ID } }),
-}));
-vi.mock("@prova/integrations", () => ({
-  extractComplianceDocument: async () => ({
-    type: "CERTIFICATE_OF_INSURANCE",
-    partyName: "Acme Insurance",
-    amount: null,
-    periodStart: null,
-    periodEnd: null,
-    effectiveDate: null,
-    expiresAt: null,
-    notes: null,
-  }),
-  revokeToken: async () => {},
-  refreshTokens: async () => {},
-  getCompanyInfo: async () => ({}),
-  generateWipNarrative: async () => "",
-}));
-
-const { uploadComplianceDocument } = await import("./actions/compliance");
-const { uploadDispatchSlip, uploadPrevailingWageDetermination } = await import("./actions/labor");
-const { uploadContractDocument } = await import("./actions/billing");
-
-function pdf(name: string) {
-  return new File([new Uint8Array([37, 80, 68, 70])], name, { type: "application/pdf" });
-}
-
 beforeEach(() => {
-  putCalls.length = 0;
-  storedPaths.clear();
-  suffixSeed = 0;
-  for (const key of Object.keys(created)) delete created[key];
-  for (const key of Object.keys(contractDocumentVersionCounters)) delete contractDocumentVersionCounters[key];
+  principal.role = "OWNER";
+  principal.jobFunction = null;
 });
 
-/** The one assertion that matters, applied identically to all four sites. */
-function expectUnguessable(call: { pathname: string; options: PutOptions }) {
-  expect(call.options.addRandomSuffix, `put("${call.pathname}") must randomise the pathname`).toBe(
-    true,
-  );
-  expect(call.options.access).toBe("public");
-}
+describe("the terms a document upload token carries", () => {
+  it("signs the requested pathname, one content type, the 15MB ceiling and a random suffix", async () => {
+    const response = await post({
+      purpose: "contract-document",
+      ownerId: JOB_ID,
+      pathname: `contracts/${JOB_ID}/subcontract.pdf`,
+    });
 
-describe("every uploaded document gets an unguessable blob pathname", () => {
-  it("uploadComplianceDocument randomises the pathname and stores the URL it got back", async () => {
-    const form = new FormData();
-    form.set("file", pdf("COI.pdf"));
-    await uploadComplianceDocument(form);
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { clientToken: string };
+    const terms = signedTerms(body.clientToken);
 
-    expect(putCalls).toHaveLength(1);
-    expectUnguessable(putCalls[0]);
-    // The deterministic prefix still carries the companyId; the suffix is
-    // what stops the whole URL being derivable from it.
-    expect(putCalls[0].pathname).toBe(`compliance/${COMPANY_ID}/COI.pdf`);
-
-    const row = created.complianceDocument[0];
-    expect(row.fileUrl).toBe(
-      "https://store123.public.blob.vercel-storage.com/compliance/cmp_alpha/COI-r4nd0m1.pdf",
+    expect(terms.pathname).toBe(`contracts/${JOB_ID}/subcontract.pdf`);
+    // The property the deleted `putDocument` wrapper existed to guarantee,
+    // now guaranteed here instead: without it the URL of a lien waiver is
+    // derivable from a job id and a filename, permanently and publicly.
+    expect(terms.addRandomSuffix, "an unguessable URL is the only privacy these blobs have").toBe(
+      true,
     );
-    // Nothing may rebuild the URL from the requested pathname: the stored
-    // URL must be the one `put` returned, suffix and all.
-    expect(row.fileUrl).not.toContain("/COI.pdf");
+    // 15MB. The number five actions declared and none could enforce.
+    expect(terms.maximumSizeInBytes).toBe(15 * 1024 * 1024);
+    // ONE type, not the allowlist: a token minted for the whole list lets
+    // a caller send anything on it under the terms of anything else.
+    expect(terms.allowedContentTypes).toEqual(["application/pdf"]);
   });
 
-  it("uploadDispatchSlip randomises the pathname", async () => {
-    const form = new FormData();
-    form.set("employeeUserId", "usr_1");
-    form.set("dispatchDate", "2026-09-01");
-    form.set("file", pdf("dispatch.pdf"));
-    await uploadDispatchSlip(JOB_ID, form);
+  it("signs the type the client declared, not a fixed one", async () => {
+    const response = await post({
+      purpose: "dispatch-slip",
+      ownerId: JOB_ID,
+      contentType: "image/jpeg",
+      pathname: `dispatch-slips/${JOB_ID}/slip.jpg`,
+    });
 
-    expect(putCalls).toHaveLength(1);
-    expectUnguessable(putCalls[0]);
-    expect(created.dispatchSlip[0].fileUrl).toContain("r4nd0m");
-  });
-
-  it("uploadPrevailingWageDetermination randomises the pathname", async () => {
-    const form = new FormData();
-    form.set("jurisdiction", "California DIR");
-    form.set("file", pdf("determination.pdf"));
-    const result = await uploadPrevailingWageDetermination(JOB_ID, form);
-
-    expect(result).toEqual({ ok: true });
-    expect(putCalls).toHaveLength(1);
-    expectUnguessable(putCalls[0]);
-    expect(created.prevailingWageDetermination[0].fileUrl).toContain("r4nd0m");
-  });
-
-  it("uploadContractDocument randomises the pathname", async () => {
-    const form = new FormData();
-    form.set("file", pdf("subcontract.pdf"));
-    await uploadContractDocument(JOB_ID, form);
-
-    expect(putCalls).toHaveLength(1);
-    expectUnguessable(putCalls[0]);
-    expect(created.contractDocument[0].fileUrl).toContain("r4nd0m");
+    const body = (await response.json()) as { clientToken: string };
+    expect(signedTerms(body.clientToken).allowedContentTypes).toEqual(["image/jpeg"]);
   });
 });
 
-describe("contract documents can actually be versioned", () => {
+describe("the pathname check, which is the whole of the tenancy", () => {
+  // One store serves every tenant, so the folder is the only thing that
+  // says whose file a blob is. These are the cases that would hand a
+  // caller a signed token for somebody else's folder.
+  it("refuses a pathname under a DIFFERENT job than the one claimed", async () => {
+    const response = await post({
+      purpose: "contract-document",
+      ownerId: JOB_ID,
+      pathname: `contracts/${OTHER_JOB_ID}/subcontract.pdf`,
+    });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      error: "That upload path does not belong to this record",
+    });
+  });
+
+  it("refuses a pathname under the right job but the WRONG FOLDER", async () => {
+    // A dispatch-slip token must not be usable to write into the job's
+    // contracts folder, where a later contract-document record could pick
+    // the file up.
+    const response = await post({
+      purpose: "dispatch-slip",
+      ownerId: JOB_ID,
+      pathname: `contracts/${JOB_ID}/slip.pdf`,
+    });
+
+    expect(response.status).toBe(400);
+  });
+
+  it("refuses a second path segment, so nothing can climb out of the folder", async () => {
+    const response = await post({
+      purpose: "contract-document",
+      ownerId: JOB_ID,
+      pathname: `contracts/${JOB_ID}/nested/subcontract.pdf`,
+    });
+
+    expect(response.status).toBe(400);
+  });
+
+  it("refuses a percent-encoded separator, which URL parsing does not normalise", async () => {
+    const response = await post({
+      purpose: "contract-document",
+      ownerId: JOB_ID,
+      pathname: `contracts/${JOB_ID}/%2e%2e%2fescape.pdf`,
+    });
+
+    expect(response.status).toBe(400);
+  });
+
+  it("refuses a job that belongs to another company", async () => {
+    const response = await post({
+      purpose: "contract-document",
+      ownerId: OTHER_JOB_ID,
+      pathname: `contracts/${OTHER_JOB_ID}/subcontract.pdf`,
+    });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "Job not found" });
+  });
+
+  it("refuses a job that does not exist", async () => {
+    const response = await post({
+      purpose: "contract-document",
+      ownerId: "job_nowhere",
+      pathname: "contracts/job_nowhere/subcontract.pdf",
+    });
+
+    expect(response.status).toBe(400);
+  });
+});
+
+describe("a compliance document is owned by the COMPANY, and the id is never the client's", () => {
+  it("mints a token under the caller's own company folder", async () => {
+    const response = await post({
+      purpose: "compliance-document",
+      ownerId: COMPANY_ID,
+      pathname: `compliance/${COMPANY_ID}/COI.pdf`,
+    });
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { clientToken: string };
+    expect(signedTerms(body.clientToken).pathname).toBe(`compliance/${COMPANY_ID}/COI.pdf`);
+  });
+
+  it("REFUSES a path under another company's folder, however the payload is dressed", async () => {
+    // Both halves of the lie, together: the payload names the other
+    // company AND the pathname matches that claim. It still fails,
+    // because the prefix is built from the session and never from the
+    // request — there is no id here to be talked into being wrong.
+    const response = await post({
+      purpose: "compliance-document",
+      ownerId: OTHER_COMPANY_ID,
+      pathname: `compliance/${OTHER_COMPANY_ID}/COI.pdf`,
+    });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      error: "That upload path does not belong to this record",
+    });
+  });
+});
+
+describe("who may ask for a token", () => {
   /**
-   * The functional half of the same bug. `allowOverwrite` also defaults
-   * false, so the second upload of a same-named amendment threw at the blob
-   * store before any row was written — version 2 of "subcontract.pdf" was
-   * impossible, in a function that computes `versionNumber + 1`.
+   * MEMBER + a specific jobFunction, never `role: "MEMBER"` alone and
+   * never OWNER: an OWNER holds every capability by construction, so a
+   * refusal written against a role proves nothing (CLAUDE.md). ACCOUNTING
+   * holds MANAGE_BILLING, VIEW_COMPANY_FINANCIALS and VIEW_JOB_COSTS — no
+   * MANAGE_JOBS.
    */
-  it("stores a second upload of the SAME filename as version 2", async () => {
-    const first = new FormData();
-    first.set("file", pdf("subcontract.pdf"));
-    first.set("note", "original");
-    await uploadContractDocument(JOB_ID, first);
+  it("refuses an executed subcontract to someone whose job function does not manage jobs", async () => {
+    principal.role = "MEMBER";
+    principal.jobFunction = "ACCOUNTING";
 
-    const second = new FormData();
-    second.set("file", pdf("subcontract.pdf"));
-    second.set("note", "amendment 1");
-    await uploadContractDocument(JOB_ID, second);
+    const response = await post({
+      purpose: "executed-subcontract",
+      ownerId: JOB_ID,
+      pathname: `contracts/${JOB_ID}/executed.pdf`,
+    });
 
-    const rows = created.contractDocument;
-    expect(rows).toHaveLength(2);
-    expect(rows.map((r) => r.versionNumber)).toEqual([1, 2]);
-    // Both versions must remain retrievable — the schema comment promises
-    // "all kept, never overwritten", which a shared pathname would break.
-    expect(rows[0].fileUrl).not.toBe(rows[1].fileUrl);
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      error: "Managing jobs isn't part of your job function.",
+    });
+  });
+
+  it("allows it to a FIELD member, who does hold MANAGE_JOBS", async () => {
+    // The control. Without it the case above passes just as well against
+    // a route that refuses everybody.
+    principal.role = "MEMBER";
+    principal.jobFunction = "FIELD";
+
+    const response = await post({
+      purpose: "executed-subcontract",
+      ownerId: JOB_ID,
+      pathname: `contracts/${JOB_ID}/executed.pdf`,
+    });
+
+    expect(response.status).toBe(200);
+  });
+
+  it("allows the SAME refused person an ordinary contract document", async () => {
+    // The second control, and the reason the table is keyed on purpose
+    // rather than on folder: these two purposes share `contracts/<jobId>/`
+    // and do not share a guard, because the actions behind them do not.
+    // `uploadContractDocument` asserts nothing beyond company membership,
+    // so a token stricter than that would refuse somebody the recording
+    // step admits.
+    principal.role = "MEMBER";
+    principal.jobFunction = "ACCOUNTING";
+
+    const response = await post({
+      purpose: "contract-document",
+      ownerId: JOB_ID,
+      pathname: `contracts/${JOB_ID}/amendment.pdf`,
+    });
+
+    expect(response.status).toBe(200);
+  });
+});
+
+describe("what the route will not entertain at all", () => {
+  it("refuses an unknown purpose rather than guessing a folder", async () => {
+    const response = await post({
+      purpose: "invoice-attachment",
+      ownerId: JOB_ID,
+      pathname: `invoices/${JOB_ID}/x.pdf`,
+    });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      error: "That is not a kind of document this app files",
+    });
+  });
+
+  it("refuses a content type that is not one of the four", async () => {
+    const response = await post({
+      purpose: "contract-document",
+      ownerId: JOB_ID,
+      contentType: "application/x-msdownload",
+      pathname: `contracts/${JOB_ID}/contract.exe`,
+    });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "Upload a PDF, PNG, JPEG, or WEBP file" });
+  });
+
+  it("refuses a clientPayload that is not JSON, with a 400 rather than a framework 500", async () => {
+    const response = await post({
+      pathname: `contracts/${JOB_ID}/subcontract.pdf`,
+      clientPayload: "{not json",
+    });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "Malformed upload request" });
+  });
+
+  it("refuses a request body that is not JSON at all", async () => {
+    const response = await POST(
+      new Request("https://app.test/api/documents/upload", { method: "POST", body: "not json" }),
+    );
+
+    expect(response.status).toBe(400);
   });
 });

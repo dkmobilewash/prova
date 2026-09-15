@@ -1,8 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { putDocument } from "@/lib/blob";
 import { requireCompanyContext } from "@/lib/auth";
+import { documentDisplayFileName, documentUrlProblem } from "@/lib/document-uploads";
 import { prisma } from "@prova/db";
 import {
   actionFail,
@@ -212,51 +212,78 @@ export async function updateTimeEntry(timeEntryId: string, formData: FormData): 
   return actionOk;
 }
 
-const DISPATCH_SLIP_MEDIA_TYPES = ["application/pdf", "image/png", "image/jpeg", "image/webp"] as const;
-
-const DISPATCH_SLIP_MAX_BYTES = 15 * 1024 * 1024;
-
-/** Records a union hiring hall's dispatch of one worker to this job. The
+/**
+ * THE FILE NO LONGER PASSES THROUGH HERE — issue #27.
+ *
+ * This function used to take the scanned slip as a `File` in the
+ * `FormData` and refuse anything over its own `DISPATCH_SLIP_MAX_BYTES`
+ * of 15MB. That guard never once fired for the case it describes: Next
+ * caps a Server Action body at 1MB, multipart file parts included, so the
+ * framework rejected a real scan with an opaque error before this
+ * function ran at all. The browser now uploads to the blob store directly
+ * under a one-shot token (`app/api/documents/upload/route.ts`) and this
+ * action records the URL — which is where the 15MB and the four accepted
+ * types are now enforced, on the transfer itself rather than after it.
+ *
+ * `DISPATCH_SLIP_MEDIA_TYPES` and `DISPATCH_SLIP_MAX_BYTES` are gone
+ * rather than kept beside a URL they can no longer be applied to: a
+ * constant that nothing enforces is the shape this issue was about. Both
+ * live in lib/document-uploads.ts now, once, for all five uploads.
+ *
+ * IT RETURNS A RESULT NOW rather than throwing, and that is not tidying.
+ * Its form was a server-rendered `<form action={…}>`; it has to be a
+ * client component to upload a file before submitting, and a client
+ * component that renders a thrown Server Action message renders a
+ * redacted digest in production. Same change, same reason, as
+ * `uploadPrevailingWageDetermination` beneath it — see that function's own
+ * note about a refusal the person could not read.
+ *
+ * Records a union hiring hall's dispatch of one worker to this job. The
  * scanned slip is optional — some halls dispatch by phone with just a
- * referral number, no document to attach. */
-export async function uploadDispatchSlip(jobId: string, formData: FormData) {
+ * referral number, no document to attach.
+ */
+export async function uploadDispatchSlip(jobId: string, formData: FormData): Promise<ActionResult> {
   const { company } = await requireCompanyContext();
   await assertJobInCompany(jobId, company.id);
 
   const employeeUserId = String(formData.get("employeeUserId") ?? "");
   const employee = await prisma.user.findUnique({ where: { id: employeeUserId } });
   if (!employee || employee.companyId !== company.id) {
-    throw new Error("Employee not found");
+    return actionFail("That person isn't on your team.");
   }
 
   const craftClassificationId = await craftClassificationIdFromForm(formData, company.id);
 
   const dispatchDateRaw = String(formData.get("dispatchDate") ?? "").trim();
   if (!dispatchDateRaw) {
-    throw new Error("Dispatch date is required");
+    return actionFail("Name the date the hall dispatched this worker.");
   }
   const dispatchDate = new Date(dispatchDateRaw);
   if (Number.isNaN(dispatchDate.getTime())) {
-    throw new Error("Invalid dispatch date");
+    return actionFail("That dispatch date is not valid.");
   }
 
   const dispatchNumber = String(formData.get("dispatchNumber") ?? "").trim();
   const note = String(formData.get("note") ?? "").trim();
 
-  const file = formData.get("file");
+  // The browser has already finished the upload; what arrives here is the
+  // URL the store returned. Re-checked rather than trusted, because a
+  // Server Action is an endpoint anyone with a session can post to
+  // directly and is not entitled to assume the caller went through the
+  // token route: the URL must be OUR store's and must sit under THIS
+  // job's dispatch-slip folder. `jobId` was proved to belong to this
+  // company by `assertJobInCompany` above, so a blob under its prefix
+  // cannot be another company's file.
+  const submittedUrl = String(formData.get("fileUrl") ?? "").trim();
   let fileUrl: string | null = null;
   let fileName: string | null = null;
-  if (file instanceof File && file.size > 0) {
-    if (!(DISPATCH_SLIP_MEDIA_TYPES as readonly string[]).includes(file.type)) {
-      throw new Error("Upload a PDF, PNG, JPEG, or WEBP file");
+  if (submittedUrl) {
+    const problem = documentUrlProblem(submittedUrl, "dispatch-slip", jobId, process.env);
+    if (problem) {
+      return actionFail(problem);
     }
-    if (file.size > DISPATCH_SLIP_MAX_BYTES) {
-      throw new Error("File is too large (max 15MB)");
-    }
-    const buffer = await file.arrayBuffer().then(Buffer.from);
-    const blob = await putDocument(`dispatch-slips/${jobId}/${file.name}`, buffer, file.type);
-    fileUrl = blob.url;
-    fileName = file.name;
+    fileUrl = submittedUrl;
+    fileName = documentDisplayFileName(String(formData.get("fileName") ?? ""));
   }
 
   await prisma.dispatchSlip.create({
@@ -273,6 +300,7 @@ export async function uploadDispatchSlip(jobId: string, formData: FormData) {
   });
 
   revalidatePath(`/jobs/${jobId}`);
+  return actionOk;
 }
 
 export async function deleteDispatchSlip(jobId: string, dispatchSlipId: string) {
@@ -303,13 +331,14 @@ export async function deleteTimeEntry(jobId: string, timeEntryId: string) {
   revalidateJobLabor(jobId);
 }
 
-const PREVAILING_WAGE_DETERMINATION_MEDIA_TYPES = ["application/pdf", "image/png", "image/jpeg", "image/webp"] as const;
-
-const PREVAILING_WAGE_DETERMINATION_MAX_BYTES = 15 * 1024 * 1024;
-
 /** Attaches a government wage-determination document (or a link to one)
  * for a job's jurisdiction. This is attached storage, not a lookup --
- * there's no licensed prevailing-wage dataset in this app to query. */
+ * there's no licensed prevailing-wage dataset in this app to query.
+ *
+ * The document arrives as a URL the browser already uploaded to the blob
+ * store, not as bytes — see `uploadDispatchSlip` above for the whole of
+ * why (#27). Its two 15MB/media-type constants went with the change, to
+ * lib/document-uploads.ts, where they are enforced on the transfer. */
 export async function uploadPrevailingWageDetermination(
   jobId: string,
   formData: FormData,
@@ -325,20 +354,20 @@ export async function uploadPrevailingWageDetermination(
   const sourceUrl = String(formData.get("sourceUrl") ?? "").trim();
   const note = String(formData.get("note") ?? "").trim();
 
-  const file = formData.get("file");
+  // Already uploaded by the browser; the URL is re-checked here against
+  // our own store and this job's own folder. Returned rather than thrown,
+  // like every other refusal in this function — production redacts a
+  // thrown Server Action message.
+  const submittedUrl = String(formData.get("fileUrl") ?? "").trim();
   let fileUrl: string | null = null;
   let fileName: string | null = null;
-  if (file instanceof File && file.size > 0) {
-    if (!(PREVAILING_WAGE_DETERMINATION_MEDIA_TYPES as readonly string[]).includes(file.type)) {
-      return actionFail("That file type isn't supported — upload a PDF, PNG, JPEG, or WEBP.");
+  if (submittedUrl) {
+    const problem = documentUrlProblem(submittedUrl, "prevailing-wage", jobId, process.env);
+    if (problem) {
+      return actionFail(problem);
     }
-    if (file.size > PREVAILING_WAGE_DETERMINATION_MAX_BYTES) {
-      return actionFail("That file is over the 15MB limit. Link to it instead, or upload a smaller scan.");
-    }
-    const buffer = await file.arrayBuffer().then(Buffer.from);
-    const blob = await putDocument(`prevailing-wage/${jobId}/${file.name}`, buffer, file.type);
-    fileUrl = blob.url;
-    fileName = file.name;
+    fileUrl = submittedUrl;
+    fileName = documentDisplayFileName(String(formData.get("fileName") ?? ""));
   }
 
   // Both inputs are labelled optional because EITHER satisfies this -- but

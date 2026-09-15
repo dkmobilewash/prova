@@ -5,11 +5,10 @@ import { del } from "@vercel/blob";
 import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
+import { isBlobStorageUrl, isOurBlobStoreUrl } from "@/lib/blob-urls";
 import {
   isAllowedJobMediaType,
-  isBlobStorageUrl,
   isJobMediaBlobUrl,
-  isOurBlobStoreUrl,
   jobMediaKind,
   jobMediaMaxBytes,
 } from "@/lib/job-media";

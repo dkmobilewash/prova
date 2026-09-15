@@ -13,9 +13,11 @@ import {
   isIntakeBlobUrl,
 } from "@/lib/intake/upload";
 // The store-ownership check is generic to every blob this app records, and
-// it already lives here with the account of what it cost to be missing. A
-// second copy under lib/intake would be a second thing to keep right.
-import { isBlobStorageUrl, isOurBlobStoreUrl } from "@/lib/job-media";
+// a second copy under lib/intake would be a second thing to keep right.
+// #27 moved these out of lib/job-media into lib/blob-urls for exactly that
+// reason — the five document uploads needed the same three checks — so this
+// import follows them rather than reaching through their old home.
+import { isBlobStorageUrl, isOurBlobStoreUrl } from "@/lib/blob-urls";
 import { actionFail as fail, actionOk as ok, type ActionResult } from "./shared";
 
 /**

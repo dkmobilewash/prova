@@ -3,6 +3,7 @@
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { uploadPrevailingWageDetermination } from "@/lib/actions";
+import { singleFileFrom, uploadDocumentFile } from "@/lib/document-upload-client";
 
 const field =
   "rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none";
@@ -20,7 +21,16 @@ const field =
  * failure is RETURNED and rendered next to the field, and `throw` is kept
  * for genuine bugs. The error also clears the moment anything is edited --
  * a refusal that outlives the input it was about ends up contradicting
- * what the form now says. */
+ * what the form now says.
+ *
+ * THE DOCUMENT GOES STRAIGHT TO THE BLOB STORE, not through the action
+ * (#27). A wage determination is a government PDF and they run to several
+ * megabytes; a Server Action body is capped at 1MB, so attaching one used
+ * to fail in the framework with nothing this form could render. The file
+ * is uploaded first, and only its URL is sent to the action — which
+ * re-checks that URL against this job's own folder rather than trusting
+ * it. A failed upload is rendered in the same place as a failed save,
+ * because from where the person is standing it is the same failure. */
 export function PrevailingWageDeterminationForm({ jobId }: { jobId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -35,6 +45,22 @@ export function PrevailingWageDeterminationForm({ jobId }: { jobId: string }) {
         const formData = new FormData(event.currentTarget);
         setError(null);
         startTransition(async () => {
+          // The file first, then the row. The action is told the URL and
+          // never sees the bytes. `file` is deliberately REMOVED from the
+          // FormData afterwards: leaving it in would put the whole
+          // document back into the Server Action body and reinstate the
+          // exact 1MB failure this change exists to remove.
+          const file = singleFileFrom(formData, "file");
+          formData.delete("file");
+          if (file) {
+            const uploaded = await uploadDocumentFile("prevailing-wage", jobId, file);
+            if (!uploaded.ok) {
+              setError(uploaded.error);
+              return;
+            }
+            formData.set("fileUrl", uploaded.fileUrl);
+            if (uploaded.fileName) formData.set("fileName", uploaded.fileName);
+          }
           const result = await uploadPrevailingWageDetermination(jobId, formData);
           if (result.ok) {
             formRef.current?.reset();

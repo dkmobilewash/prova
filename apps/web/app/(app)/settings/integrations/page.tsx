@@ -8,7 +8,7 @@ import { IntegrationControls } from "@/components/IntegrationControls";
 import { PROVIDERS, isProviderVisible, type ProviderEntry } from "@/lib/integrations/registry";
 import { relativeTime } from "@/lib/integrations/relativeTime";
 import { CONNECTION_CARD_SELECT } from "@/lib/integrations/selects";
-import { blobStoreId } from "@/lib/job-media";
+import { blobStoreId } from "@/lib/blob-urls";
 
 /**
  * Settings → Integrations.
