@@ -59,6 +59,15 @@ const isProtectedRoute = createRouteMatcher([
   // fire, and nothing will say so — remove this line and rely on the
   // route's own checks at that point.
   "/api/job-media/upload(.*)",
+  // The same mechanism for DOCUMENTS — dispatch slips, wage
+  // determinations, contract documents, executed subcontracts and
+  // compliance documents (#27). Same reasoning as the line above, and the
+  // same consequence: it hands out a credential, so it is protected here
+  // as well as authenticating itself (requireCompanyContext, the purpose's
+  // own capability, an owner check and a pathname check inside
+  // `onBeforeGenerateToken`). It implements no `onUploadCompleted` either,
+  // so no session-less callback is being rejected by this entry.
+  "/api/documents/upload(.*)",
   "/deployment(.*)",
   // Prova's own usage instrument — who is still logging in, across every
   // company on the database. The page itself refuses anyone who is not the

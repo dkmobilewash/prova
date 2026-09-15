@@ -334,6 +334,6 @@ export const billingExclusions: Exclusion[] = [
   { action: "disconnectQuickBooks", reason: "Owner administration (T5): a connection an assistant could sever is not a connection." },
   { action: "testQuickBooksConnection", reason: "A diagnostic button on the settings page; returns company info, writes nothing worth a card." },
   { action: "generateJobWipNarrative", reason: "Already an AI feature with its own button on the job page; a command calling a model to call a model is noise." },
-  { action: "uploadContractDocument", reason: "Needs a real File; page only until a hand-off mode carries attachments." },
+  { action: "uploadContractDocument", reason: "Needs a document the browser has already uploaded to storage (#27); page only until a hand-off mode carries attachments." },
   { action: "deleteContractDocument", reason: "T5: deletes are never commands." },
 ];

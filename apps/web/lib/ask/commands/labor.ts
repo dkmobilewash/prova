@@ -231,7 +231,7 @@ export const laborCommands: DirectCommandDefinition[] = [logTimeEntryCommand];
 
 /** The rest of lib/actions/labor.ts, each with its reason. */
 export const laborExclusions: Exclusion[] = [
-  { action: "uploadDispatchSlip", reason: "Needs a real File from the hiring hall; page only until a hand-off mode carries attachments." },
+  { action: "uploadDispatchSlip", reason: "Needs the hall's slip, which a browser uploads to storage before calling this (#27); page only until a hand-off mode carries attachments." },
   { action: "deleteDispatchSlip", reason: "T5: deletes are never commands." },
   { action: "deleteTimeEntry", reason: "T5: deletes are never commands, and a time entry is payroll evidence." },
   {
@@ -244,6 +244,6 @@ export const laborExclusions: Exclusion[] = [
     // from correcting the wrong day's hours, and nothing would show it had.
     reason: "Corrections to payroll evidence are made on the row, in front of the current figure; page only.",
   },
-  { action: "uploadPrevailingWageDetermination", reason: "Needs a real File and is compliance configuration for a job; page only." },
+  { action: "uploadPrevailingWageDetermination", reason: "Needs a determination document the browser has already uploaded to storage (#27), and is compliance configuration for a job; page only." },
   { action: "deletePrevailingWageDetermination", reason: "T5: deletes are never commands." },
 ];

@@ -488,7 +488,7 @@ export const estimatingExclusions: Exclusion[] = [
   { action: "updateLineItemForecast", reason: "A cost forecast is job-costing money; phase 3 territory once natural keys exist." },
   { action: "deleteLineItem", reason: "Deletes are never commands (T5); the page's own two-step delete is the path." },
   { action: "markJobContracted", reason: "The transition that locks pricing behind change orders and requires a signed request; never offered (T5)." },
-  { action: "recordExecutedSubcontract", reason: "Needs a real File for the executed subcontract; nothing a prompt can supply." },
+  { action: "recordExecutedSubcontract", reason: "Needs the executed subcontract itself, which a browser now uploads to storage before calling this (#27) — a prompt has no file and no way to perform that upload." },
   { action: "setJobStatus", reason: "Status transitions gate billing and time; a page decision, not a prompt (T5)." },
   { action: "addCostEntry", reason: "Job-cost money with no natural key yet (#102); phase 3." },
   { action: "deleteCostEntry", reason: "Deletes are never commands (T5)." },

@@ -41,11 +41,16 @@ vi.mock("next/navigation", () => ({
     throw new Error(`NEXT_REDIRECT:${url}`);
   },
 }));
-// No blob token in the dbtest job, and this suite is about the row, not the
-// upload — lib/blob-uploads.test.ts already owns the pathname behaviour.
-vi.mock("@/lib/blob", () => ({
-  putDocument: async (pathname: string) => ({ url: `https://blob.test/${pathname}-r4nd0m` }),
-}));
+// NO BLOB MOCK, because since #27 the file does not pass through
+// `recordExecutedSubcontract` at all: a Server Action body is capped at
+// 1MB by Next, so it never could have carried an executed subcontract.
+// The browser uploads to the store and the action is given the URL, which
+// it checks against our own store and this job's own folder —
+// `isOurBlobStoreUrl` reads which store is ours out of the credentials, so
+// the suite supplies one. lib/blob-uploads.test.ts owns the token terms;
+// this suite owns what the row ends up holding.
+const OUR_STORE = "teststore1";
+process.env.BLOB_STORE_ID = OUR_STORE;
 
 const { createJob, markJobContracted, recordExecutedSubcontract, setJobStatus } = await import(
   "./jobs"
@@ -59,18 +64,25 @@ let turnerId = "";
 let outsiderContactId = "";
 let outsiderJobId = "";
 
-function pdf() {
-  return new File([new Uint8Array([37, 80, 68, 70])], "subcontract.pdf", {
-    type: "application/pdf",
-  });
-}
+let uploadSeq = 0;
 
-function executedForm(signedDate = "2026-07-04") {
+/** The URL the store hands back for a job's executed subcontract, random
+ * suffix and all, which is what the browser posts to the action. */
+function executedForm(signedDate = "2026-07-04", jobId = currentJobId) {
+  uploadSeq += 1;
   const fd = new FormData();
-  fd.set("file", pdf());
+  fd.set(
+    "fileUrl",
+    `https://${OUR_STORE}.public.blob.vercel-storage.com/contracts/${jobId}/subcontract-r4nd0m${uploadSeq}.pdf`,
+  );
+  fd.set("fileName", "subcontract.pdf");
   fd.set("executedSignedDate", signedDate);
   return fd;
 }
+
+/** The job the next `executedForm()` names in its URL. Set by `newJob`,
+ * because a URL under a different job is exactly what the action refuses. */
+let currentJobId = "";
 
 /** A fresh ESTIMATE job with one line item, ready to be contracted. */
 async function newJob(name: string) {
@@ -80,6 +92,7 @@ async function newJob(name: string) {
   await prisma.jobLineItem.create({
     data: { jobId: job.id, description: "Level 3 drywall", quantity: "1", unitPrice: "1000" },
   });
+  currentJobId = job.id;
   return job;
 }
 
@@ -273,7 +286,14 @@ describe("the job lifecycle against a real database", () => {
   });
 
   it("recordExecutedSubcontract refuses another tenant's job", async () => {
-    const result = await recordExecutedSubcontract(outsiderJobId, executedForm());
+    // The URL names the outsider's job too, so the ONLY thing wrong with
+    // this request is the tenancy — a form that also had a mismatched
+    // pathname would be refused for the wrong reason and prove nothing
+    // about the company check.
+    const result = await recordExecutedSubcontract(
+      outsiderJobId,
+      executedForm("2026-07-04", outsiderJobId),
+    );
     expect(result.ok).toBe(false);
     expect(await prisma.contractDocument.count({ where: { jobId: outsiderJobId } })).toBe(0);
   });
