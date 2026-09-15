@@ -10,13 +10,7 @@
 // what a report is allowed to be, and who is allowed to file one.
 
 import { prisma } from "@prova/db";
-import {
-  actionFail,
-  actionOk,
-  isUniqueConstraintError,
-  type ActionResult,
-  type ActionResultWith,
-} from "@/lib/actions/shared";
+import { isUniqueConstraintError, type ActionResultWith } from "@/lib/actions/shared";
 
 /** Deleting a filed daily report had NO guard of any kind — not owner,
  * not capability — while every other delete in this folder has at least
@@ -55,6 +49,21 @@ function asString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function asNullableString(value: unknown): string | null {
+  return asString(value) || null;
+}
+
+/** The client's edit clock. Null for web writes (which never send it);
+ * parsed to a Date only when a non-empty value arrives, so a phone's ISO
+ * string becomes a comparable instant for last-write-wins. */
+function clientUpdatedAtFrom(raw: unknown): Date | null {
+  const value = typeof raw === "string" ? raw.trim() : "";
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) throw new FieldReportInputError("clientUpdatedAt is not valid");
+  return date;
+}
+
 export type FieldReportFields = {
   workPerformed: string;
   crewPresent: string | null;
@@ -85,53 +94,35 @@ export type FieldReportInput = {
   crewPresent?: unknown;
   weather?: unknown;
   delays?: unknown;
+  clientId?: unknown;
+  clientOperationId?: unknown;
+  clientUpdatedAt?: unknown;
 };
 
-/**
- * Creates one report for a job, on behalf of a signed-in user of `company`.
- *
- * The job must belong to the caller's company — checked here, not in the
- * caller, because it is the difference between a typo'd job id and a
- * cross-tenant read, and a phone posts whatever id its screen shows. The
- * duplicate-date message is the one sentence a foreman has to be able to
- * read: a second report for the same day is an edit, not an add.
- */
-export async function createFieldReport(
-  company: { id: string },
-  filedByUserId: string,
-  input: FieldReportInput,
-): Promise<ActionResult> {
-  try {
-    const job = await prisma.job.findUnique({ where: { id: input.jobId } });
-    if (!job || job.companyId !== company.id) return actionFail("Job not found");
-
-    const data = {
-      companyId: company.id,
-      jobId: input.jobId,
-      reportDate: reportDateFromString(input.reportDate),
-      filedByUserId,
-      ...fieldReportFields(input),
-    };
-
-    try {
-      await prisma.dailyFieldReport.create({ data });
-    } catch (error) {
-      // P2002 = the one-per-job-per-day constraint. Checked by `code`, NOT
-      // by an instanceof against the Prisma error class — that instanceof
-      // is false at runtime here (measured 2026-08-28). See
-      // isUniqueConstraintError.
-      if (isUniqueConstraintError(error)) {
-        return actionFail("A report already exists for that date — edit it instead of adding a second one");
-      }
-      throw error;
-    }
-
-    return actionOk;
-  } catch (error) {
-    if (error instanceof FieldReportInputError) return actionFail(error.message);
-    throw error;
-  }
+/** The field-name array Prisma puts on a P2002 (`error.meta.target`), e.g.
+ * ["companyId", "clientOperationId"]. Tolerates the string form too, and
+ * returns null when the shape is unknown so callers fall back safely. */
+function uniqueConstraintTarget(error: unknown): string[] | null {
+  const target = (error as { meta?: { target?: unknown } }).meta?.target;
+  if (Array.isArray(target)) return target.map((t) => String(t));
+  if (typeof target === "string") return [target];
+  return null;
 }
+
+type FieldReportDbRow = {
+  id: string;
+  jobId: string;
+  reportDate: Date;
+  crewPresent: string | null;
+  workPerformed: string;
+  weather: string | null;
+  delays: string | null;
+  filedByUserId: string | null;
+  clientId: string | null;
+  clientUpdatedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
 
 export type FieldReportRow = {
   id: string;
@@ -142,9 +133,156 @@ export type FieldReportRow = {
   weather: string | null;
   delays: string | null;
   filedByUserId: string | null;
+  clientId: string | null;
+  clientUpdatedAt: string | null;
   createdAt: Date;
   updatedAt: Date;
 };
+
+/** JSON-ready row. clientOperationId is deliberately NOT exposed — it is a
+ * create-intent idempotency key, not something a client should render or
+ * echo back outside a retry. */
+function toFieldReportRow(row: FieldReportDbRow): FieldReportRow {
+  return {
+    id: row.id,
+    jobId: row.jobId,
+    reportDate: row.reportDate.toISOString().slice(0, 10),
+    crewPresent: row.crewPresent,
+    workPerformed: row.workPerformed,
+    weather: row.weather,
+    delays: row.delays,
+    filedByUserId: row.filedByUserId,
+    clientId: row.clientId,
+    clientUpdatedAt: row.clientUpdatedAt ? row.clientUpdatedAt.toISOString() : null,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+/**
+ * Creates one report for a job, on behalf of a signed-in user of `company`.
+ *
+ * The job must belong to the caller's company — checked here, not in the
+ * caller, because it is the difference between a typo'd job id and a
+ * cross-tenant read, and a phone posts whatever id its screen shows. The
+ * duplicate-date message is the one sentence a foreman has to be able to
+ * read: a second report for the same day is an edit, not an add.
+ *
+ * When `clientOperationId` is given (mobile), a retried POST replays
+ * instead of double-filing: the same key returns the row it already made,
+ * with `created: false`, so the route can answer 200 instead of 201.
+ */
+export async function createFieldReport(
+  company: { id: string },
+  filedByUserId: string,
+  input: FieldReportInput,
+): Promise<ActionResultWith<{ report: FieldReportRow; created: boolean }>> {
+  const clientId = asNullableString(input.clientId);
+  const clientOperationId = asNullableString(input.clientOperationId);
+  const clientUpdatedAt = clientUpdatedAtFrom(input.clientUpdatedAt);
+
+  try {
+    const job = await prisma.job.findUnique({ where: { id: input.jobId } });
+    if (!job || job.companyId !== company.id) return { ok: false, error: "Job not found" };
+
+    if (clientOperationId) {
+      const existing = await prisma.dailyFieldReport.findUnique({
+        where: { companyId_clientOperationId: { companyId: company.id, clientOperationId } },
+      });
+      if (existing) return { ok: true, value: { report: toFieldReportRow(existing), created: false } };
+    }
+
+    const data = {
+      companyId: company.id,
+      jobId: input.jobId,
+      reportDate: reportDateFromString(input.reportDate),
+      filedByUserId,
+      ...fieldReportFields(input),
+      clientId,
+      clientOperationId,
+      clientUpdatedAt,
+    };
+
+    try {
+      const created = await prisma.dailyFieldReport.create({ data });
+      return { ok: true, value: { report: toFieldReportRow(created), created: true } };
+    } catch (error) {
+      // P2002 = a unique constraint fired. Checked by `code`, NOT by an
+      // instanceof against the Prisma error class — that instanceof is
+      // false at runtime here (measured 2026-08-28). See
+      // isUniqueConstraintError.
+      if (isUniqueConstraintError(error)) {
+        // Two devices filed the same create-intent concurrently: the
+        // (companyId, clientOperationId) unique fired. Re-read the winner
+        // and return it — the retry is a replay, not a duplicate.
+        if (clientOperationId && uniqueConstraintTarget(error)?.includes("clientOperationId")) {
+          const existing = await prisma.dailyFieldReport.findUnique({
+            where: { companyId_clientOperationId: { companyId: company.id, clientOperationId } },
+          });
+          if (existing) return { ok: true, value: { report: toFieldReportRow(existing), created: false } };
+        }
+        // Otherwise (jobId, reportDate): the one-per-job-per-day sentence.
+        return { ok: false, error: "A report already exists for that date — edit it instead of adding a second one" };
+      }
+      throw error;
+    }
+  } catch (error) {
+    if (error instanceof FieldReportInputError) return { ok: false, error: error.message };
+    throw error;
+  }
+}
+
+export type UpdateFieldReportInput = {
+  workPerformed?: unknown;
+  crewPresent?: unknown;
+  weather?: unknown;
+  delays?: unknown;
+  clientId?: unknown;
+  clientUpdatedAt?: unknown;
+};
+
+/**
+ * Edits one report. Shared by the web action and the mobile PATCH route so
+ * they cannot drift.
+ *
+ * Last-write-wins: a phone replays edits it made while offline, and the
+ * client clock decides whose edit survives. A stale edit (older
+ * `clientUpdatedAt`) is dropped and the stored row returned with
+ * `applied: false` — never blocked, never clobbered. Web edits carry no
+ * `clientUpdatedAt`, so they always apply and the server `@updatedAt`
+ * stays authoritative for them.
+ */
+export async function updateFieldReport(
+  company: { id: string },
+  reportId: string,
+  input: UpdateFieldReportInput,
+): Promise<ActionResultWith<{ applied: boolean; report: FieldReportRow }>> {
+  const clientId = asNullableString(input.clientId);
+  const clientUpdatedAt = clientUpdatedAtFrom(input.clientUpdatedAt);
+
+  try {
+    const report = await prisma.dailyFieldReport.findUnique({ where: { id: reportId } });
+    if (!report || report.companyId !== company.id) return { ok: false, error: "Report not found" };
+
+    if (clientUpdatedAt && report.clientUpdatedAt && clientUpdatedAt < report.clientUpdatedAt) {
+      return { ok: true, value: { applied: false, report: toFieldReportRow(report) } };
+    }
+
+    const updated = await prisma.dailyFieldReport.update({
+      where: { id: reportId },
+      data: {
+        ...fieldReportFields(input),
+        ...(clientId ? { clientId } : {}),
+        ...(clientUpdatedAt ? { clientUpdatedAt } : {}),
+      },
+    });
+
+    return { ok: true, value: { applied: true, report: toFieldReportRow(updated) } };
+  } catch (error) {
+    if (error instanceof FieldReportInputError) return { ok: false, error: error.message };
+    throw error;
+  }
+}
 
 /**
  * The reports for one job, newest first, as plain JSON-ready rows. The job
@@ -162,8 +300,5 @@ export async function listFieldReportsForJob(
     orderBy: { reportDate: "desc" },
   });
 
-  return {
-    ok: true,
-    value: rows.map((row) => ({ ...row, reportDate: row.reportDate.toISOString().slice(0, 10) })),
-  };
+  return { ok: true, value: rows.map(toFieldReportRow) };
 }
