@@ -418,7 +418,7 @@ const MAX_DISPLAY_NAME_LENGTH = 200;
  */
 export function documentDisplayFileName(raw: string): string | null {
   const base = raw.split(/[\\/]/).pop() ?? "";
-  const cleaned = base.replace(/[ -]/g, "").trim().slice(0, MAX_DISPLAY_NAME_LENGTH);
+  const cleaned = base.replace(/[\x00-\x1f\x7f]/g, "").trim().slice(0, MAX_DISPLAY_NAME_LENGTH);
   return cleaned || null;
 }
 
