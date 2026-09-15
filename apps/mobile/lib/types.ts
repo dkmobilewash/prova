@@ -53,3 +53,15 @@ export type Job = {
   startDate: string | null;
   endDate: string | null;
 };
+
+export type Media = {
+  id: string;
+  blobUrl: string;
+  contentType: string;
+  byteSize: number;
+  caption: string | null;
+  capturedAt: string;
+  capturedLatitude: number | null;
+  capturedLongitude: number | null;
+  capturedAccuracyMeters: number | null;
+};

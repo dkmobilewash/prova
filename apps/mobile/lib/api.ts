@@ -2,6 +2,7 @@ import type {
   CreateFieldReportInput,
   FieldReportRow,
   Job,
+  Media,
   UpdateFieldReportInput,
 } from "./types";
 
@@ -58,4 +59,24 @@ export async function updateFieldReport(
 
 export async function listJobs(token: string): Promise<Job[]> {
   return request(`/api/v1/jobs`, { token });
+}
+
+export async function listMedia(jobId: string, token: string): Promise<Media[]> {
+  return request(`/api/v1/jobs/${encodeURIComponent(jobId)}/media`, { token });
+}
+
+/** Uploads a file as multipart form data. The `request` helper sends JSON,
+ * so this is a separate path — the body is a FormData, and fetch sets the
+ * multipart Content-Type (with boundary) itself. */
+export async function uploadMedia(jobId: string, formData: FormData, token: string): Promise<Media> {
+  const res = await fetch(`${BASE_URL}/api/v1/jobs/${encodeURIComponent(jobId)}/media`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: formData,
+  });
+  const data = (await res.json().catch(() => null)) as { error?: string } | null;
+  if (!res.ok) {
+    throw new ApiError(data?.error ?? `Upload failed (${res.status})`, res.status);
+  }
+  return data as Media;
 }

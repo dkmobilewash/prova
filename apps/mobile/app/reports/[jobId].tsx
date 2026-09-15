@@ -1,4 +1,4 @@
-import { useLocalSearchParams } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { useState } from "react";
 import { FlatList, Text, TextInput, View } from "react-native";
 import { Button } from "@/components/Button";
@@ -16,6 +16,9 @@ export default function ReportsScreen() {
     <View style={{ flex: 1, backgroundColor: colors.canvas, padding: 16, gap: 12 }}>
       <Text style={{ color: colors.inkMuted }}>Pending sync: {pending}</Text>
       {error ? <Text style={{ color: colors.tagRoseInk }}>{error}</Text> : null}
+      <Button variant="secondary" onPress={() => router.push(`/photos/${jobId}`)}>
+        Photos
+      </Button>
 
       <TextInput
         placeholder="Date (YYYY-MM-DD)"
