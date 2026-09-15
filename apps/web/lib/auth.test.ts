@@ -28,7 +28,7 @@ import { FakeDb } from "@/lib/fake-prisma";
 
 let db = new FakeDb();
 
-/** The Clerk user this sign-in presents. Set per test. */
+/** The Clerk user the web sign-in presents. Set per test. */
 let clerkUser: {
   id: string;
   firstName: string | null;
@@ -39,8 +39,29 @@ let clerkUser: {
   } | null;
 } | null = null;
 
+/** The userId `auth()` reports for a mobile call (null = no bearer token). */
+let apiUserId: string | null = null;
+/** The backend User `clerkClient().users.getUser()` returns for that id. */
+let backendUser: {
+  id: string;
+  firstName: string | null;
+  lastName: string | null;
+  primaryEmailAddressId: string | null;
+  emailAddresses: {
+    id: string;
+    emailAddress: string;
+    verification: { status: string } | null;
+  }[];
+} | null = null;
+
 vi.mock("@clerk/nextjs/server", () => ({
   currentUser: async () => clerkUser,
+  auth: async () => ({ userId: apiUserId }),
+  clerkClient: async () => ({
+    users: {
+      getUser: async () => backendUser,
+    },
+  }),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -73,6 +94,27 @@ function signInAs(email: string, verified: boolean) {
   };
 }
 
+/** The mobile-path sign-in: `auth()` returns a userId and the backend user
+ * lookup returns the same person, shaped as @clerk/backend returns it
+ * (emailAddresses + primaryEmailAddressId rather than primaryEmailAddress). */
+function signInViaApi(email: string, verified: boolean) {
+  const id = `clerk_${email.split("@")[0]}`;
+  apiUserId = id;
+  backendUser = {
+    id,
+    firstName: "Sam",
+    lastName: "Reyes",
+    primaryEmailAddressId: `email_${id}`,
+    emailAddresses: [
+      {
+        id: `email_${id}`,
+        emailAddress: email,
+        verification: verified ? { status: "verified" } : { status: "unverified" },
+      },
+    ],
+  };
+}
+
 /** The invitation the victim's company sent to their new estimator. */
 function pendingInviteFor(email: string) {
   db.seed("invite", { id: "invite_1", email, companyId: "co_victim" });
@@ -89,6 +131,8 @@ function invites() {
 beforeEach(() => {
   db = new FakeDb();
   clerkUser = null;
+  apiUserId = null;
+  backendUser = null;
 });
 
 describe("requireCompanyContext — the invite adoption path", () => {
@@ -122,14 +166,14 @@ describe("requireCompanyContext — the invite adoption path", () => {
 });
 
 describe("requireApiContext — the mobile path", () => {
-  it("returns null when there is no session, instead of redirecting", async () => {
-    clerkUser = null;
+  it("returns null when there is no bearer token, instead of redirecting", async () => {
+    apiUserId = null;
 
     await expect(requireApiContext()).resolves.toBeNull();
   });
 
-  it("adopts the same user the web path does", async () => {
-    signInAs("owner@example.com", true);
+  it("adopts the same user the web path does, from the bearer token", async () => {
+    signInViaApi("owner@example.com", true);
 
     const context = await requireApiContext();
 
