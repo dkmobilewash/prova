@@ -3,6 +3,7 @@
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { recordExecutedSubcontract } from "@/lib/actions";
+import { singleFileFrom, uploadDocumentFile } from "@/lib/document-upload-client";
 
 const field =
   "rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-600 focus:border-blue-500 focus:outline-none";
@@ -24,6 +25,14 @@ const field =
  * through it" produce a wrong date that looks exactly like a right one.
  * (It also sidesteps the hydration trap entirely, since nothing here is
  * computed at render.)
+ *
+ * THE SIGNED PDF GOES STRAIGHT TO THE BLOB STORE, not through the action
+ * (#27). This is the form that made the bug undeniable: the file is
+ * REQUIRED here, the file is a fully executed subcontract, and a Server
+ * Action body is capped at 1MB — so the one document this form exists to
+ * record was the one it could not accept. It is uploaded first and the
+ * action is given the URL, which it re-checks against this job's own
+ * folder.
  */
 export function RecordExecutedSubcontract({ jobId }: { jobId: string }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -52,6 +61,22 @@ export function RecordExecutedSubcontract({ jobId }: { jobId: string }) {
         const formData = new FormData(event.currentTarget);
         setError(null);
         startTransition(async () => {
+          // The file first, then the row. `file` is removed from the
+          // FormData either way — leaving it in would send the whole PDF
+          // through the Server Action body and reinstate the 1MB failure.
+          // A missing file is left to the action to refuse, so the
+          // required-file sentence is written in exactly one place.
+          const file = singleFileFrom(formData, "file");
+          formData.delete("file");
+          if (file) {
+            const uploaded = await uploadDocumentFile("executed-subcontract", jobId, file);
+            if (!uploaded.ok) {
+              setError(uploaded.error);
+              return;
+            }
+            formData.set("fileUrl", uploaded.fileUrl);
+            if (uploaded.fileName) formData.set("fileName", uploaded.fileName);
+          }
           const result = await recordExecutedSubcontract(jobId, formData);
           if (result.ok) {
             formRef.current?.reset();

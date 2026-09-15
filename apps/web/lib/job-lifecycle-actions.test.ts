@@ -106,24 +106,31 @@ vi.mock("next/navigation", () => ({
   },
 }));
 vi.mock("@/lib/auth", () => ({ requireCompanyContext: async () => context }));
-vi.mock("@/lib/blob", () => ({
-  putDocument: async (pathname: string) => ({
-    url: `https://blob.example/${pathname}-r4nd0m`,
-  }),
-}));
 vi.mock("@prova/integrations", () => ({ draftEstimateLineItems: async () => [] }));
+
+/**
+ * THE FILE NO LONGER PASSES THROUGH THE ACTION (#27), so there is no
+ * `@/lib/blob` mock here any more: `recordExecutedSubcontract` receives a
+ * URL the browser already uploaded to. What it does with that URL is the
+ * thing worth testing, and it needs to know which store is ours —
+ * `isOurBlobStoreUrl` reads that out of the credentials, so the test
+ * supplies one.
+ */
+const OUR_STORE = "teststore1";
+process.env.BLOB_STORE_ID = OUR_STORE;
+const storedUrl = (store: string, pathname: string) =>
+  `https://${store}.public.blob.vercel-storage.com/${pathname}`;
 
 const { createJob, markJobContracted, recordExecutedSubcontract, setJobStatus } = await import(
   "./actions/jobs"
 );
 
-function pdf(name = "subcontract.pdf") {
-  return new File([new Uint8Array([37, 80, 68, 70])], name, { type: "application/pdf" });
-}
-
-function executedForm(overrides: Record<string, string | File> = {}) {
+function executedForm(overrides: Record<string, string> = {}) {
   const fd = new FormData();
-  fd.set("file", pdf());
+  // What the browser sends after `upload()` has finished: the URL the
+  // store returned, suffix and all, plus the name to show on the row.
+  fd.set("fileUrl", storedUrl(OUR_STORE, `contracts/${JOB_ID}/subcontract-r4nd0m1.pdf`));
+  fd.set("fileName", "subcontract.pdf");
   fd.set("executedSignedDate", "2026-07-04");
   for (const [key, value] of Object.entries(overrides)) {
     if (value === "") fd.delete(key);
@@ -221,13 +228,18 @@ describe("recording a subcontract the GC executed off-platform", () => {
     const doc = db.contractDocuments.at(-1)!;
     expect((doc.executedSignedDate as Date).toISOString()).toBe("2026-07-04T00:00:00.000Z");
     expect(doc.uploadedByUserId, "who asserted it").toBe(USER_ID);
-    expect(doc.fileUrl, "must store the URL the blob store returned").toContain("r4nd0m");
+    expect(doc.fileUrl, "must store the URL the blob store returned").toBe(
+      storedUrl(OUR_STORE, `contracts/${JOB_ID}/subcontract-r4nd0m1.pdf`),
+    );
+    expect(doc.fileName, "the name the person picked, not the suffixed one").toBe(
+      "subcontract.pdf",
+    );
     expect(doc.versionNumber).toBe(1);
     expect(doc.jobId).toBe(JOB_ID);
   });
 
   it("REQUIRES the file — a bare assertion is not evidence", async () => {
-    const result = await recordExecutedSubcontract(JOB_ID, executedForm({ file: "" }));
+    const result = await recordExecutedSubcontract(JOB_ID, executedForm({ fileUrl: "" }));
 
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error("expected refusal");
@@ -260,13 +272,37 @@ describe("recording a subcontract the GC executed off-platform", () => {
     expect(db.contractDocuments).toHaveLength(0);
   });
 
-  it("refuses a file type that is not a document or a photo", async () => {
-    const fd = executedForm();
-    fd.set("file", new File(["x"], "contract.exe", { type: "application/x-msdownload" }));
+  // THE TWO CASES THAT REPLACED THE OLD FILE-TYPE CHECK, and they are not
+  // the same claim wearing different clothes. The type and the size are
+  // now bound into the signed upload token and enforced by the store on
+  // the transfer (see lib/document-uploads.ts), which is the only place
+  // they could ever be enforced — the action never sees the bytes. What
+  // the action must prove for itself is WHOSE FILE THIS IS, because it is
+  // an endpoint anyone with a session can post a URL to, and the URL it
+  // records is the one `deleteDocument` later hands to `del()`.
+  it("refuses a well-formed URL from somebody else's blob store", async () => {
+    const fd = executedForm({
+      fileUrl: storedUrl("attackerstore", `contracts/${JOB_ID}/subcontract-r4nd0m1.pdf`),
+    });
 
     const result = await recordExecutedSubcontract(JOB_ID, fd);
 
     expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected refusal");
+    expect(result.error).toContain("did not come from this app's storage");
+    expect(db.contractDocuments).toHaveLength(0);
+  });
+
+  it("refuses a URL in OUR store that belongs to a different job", async () => {
+    const fd = executedForm({
+      fileUrl: storedUrl(OUR_STORE, "contracts/job_somebody_else/subcontract-r4nd0m1.pdf"),
+    });
+
+    const result = await recordExecutedSubcontract(JOB_ID, fd);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected refusal");
+    expect(result.error).toContain("was not uploaded to this job");
     expect(db.contractDocuments).toHaveLength(0);
   });
 

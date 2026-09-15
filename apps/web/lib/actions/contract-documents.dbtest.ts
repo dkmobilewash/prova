@@ -9,10 +9,19 @@ import { prisma } from "@prova/db";
  *   - finding 3: deleting a ContractDocument row also deletes the blob
  *     behind it, and a storage-side failure doesn't block the row delete.
  *
- * `@vercel/blob`'s `put` and `del` are mocked — a real dbtest cannot hit
- * real Vercel Blob storage, and does not need to: everything worth
- * proving here is what the ROW-level logic does with what the SDK
- * returns, not the SDK itself.
+ * `@vercel/blob`'s `del` is mocked — a real dbtest cannot hit real Vercel
+ * Blob storage, and does not need to: everything worth proving here is
+ * what the ROW-level logic does, not the SDK itself.
+ *
+ * `put` USED TO BE MOCKED HERE TOO and no longer needs to be: since #27
+ * the file never passes through `uploadContractDocument` at all. A Server
+ * Action body is capped at 1MB by Next, multipart parts included, so the
+ * upload this action used to perform could not carry a real subcontract.
+ * The browser uploads to the store directly and the action is given the
+ * URL — which it re-checks against our own store and this job's own
+ * folder, so these forms now carry a URL of exactly the shape the store
+ * issues. `isOurBlobStoreUrl` reads which store is ours out of the
+ * credentials, hence `BLOB_STORE_ID` below.
  *
  * Named `.dbtest.ts` so the normal suite does not collect it — CI has no
  * database. Run it against a SCRATCH one, same invocation as
@@ -29,12 +38,13 @@ vi.mock("next/cache", () => ({
   revalidatePath: () => {},
 }));
 
+const OUR_STORE = "teststore1";
+process.env.BLOB_STORE_ID = OUR_STORE;
+
 const deletedUrls: string[] = [];
-let nextPutUrl = "https://blob.test/contracts/x";
 let failNextDelete = false;
 
 vi.mock("@vercel/blob", () => ({
-  put: async () => ({ url: nextPutUrl, pathname: "contracts/x" }),
   del: async (url: string) => {
     deletedUrls.push(url);
     if (failNextDelete) {
@@ -46,11 +56,27 @@ vi.mock("@vercel/blob", () => ({
 
 const { uploadContractDocument, deleteContractDocument } = await import("./billing");
 
-function fileForm(fileName: string) {
+/** What the browser sends once `upload()` has finished: the URL the store
+ * returned, with the random suffix the token asked for, and the name of
+ * the file the person actually picked. */
+function storedUrl(jobId: string, fileName: string) {
+  return `https://${OUR_STORE}.public.blob.vercel-storage.com/contracts/${jobId}/${fileName.replace(/\.pdf$/, "")}-r4nd0m${uploadSeq}.pdf`;
+}
+
+let uploadSeq = 0;
+
+function fileForm(fileName: string, jobId?: string) {
+  uploadSeq += 1;
   const fd = new FormData();
-  fd.set("file", new File([new Uint8Array([0x25, 0x50, 0x44, 0x46])], fileName, { type: "application/pdf" }));
+  fd.set("fileUrl", storedUrl(jobId ?? currentJobId, fileName));
+  fd.set("fileName", fileName);
   return fd;
 }
+
+/** The job the next `fileForm()` builds a URL for. Set by each block's
+ * own setup, because the URL has to name the job the upload is for —
+ * which is the point of the check the action now runs. */
+let currentJobId = "";
 
 describe("ContractDocument versions come from a counter, against a real database", () => {
   const ctx = { companyId: "", jobId: "" };
@@ -68,6 +94,7 @@ describe("ContractDocument versions come from a counter, against a real database
       data: { companyId: company.id, contactId: contact.id, name: "Doc Counter Job", status: "CONTRACTED" },
     });
     ctx.jobId = job.id;
+    currentJobId = job.id;
   });
 
   afterAll(async () => {
@@ -140,6 +167,7 @@ describe("ContractDocumentVersionCounter is a cleanup-script hazard, same shape 
       data: { companyId: company.id, contactId: contact.id, name: "Cleanup Job", status: "CONTRACTED" },
     });
     ctx.jobId = job.id;
+    currentJobId = job.id;
     await uploadContractDocument(ctx.jobId, fileForm("cleanup-test.pdf"));
   });
 
@@ -196,6 +224,7 @@ describe("deleteContractDocument also deletes the blob — issue #106 finding 3"
       data: { companyId: company.id, contactId: contact.id, name: "Doc Delete Job", status: "CONTRACTED" },
     });
     ctx.jobId = job.id;
+    currentJobId = job.id;
   });
 
   afterAll(async () => {
@@ -208,10 +237,14 @@ describe("deleteContractDocument also deletes the blob — issue #106 finding 3"
   });
 
   it("deletes the row and calls del() with the document's own fileUrl", async () => {
-    nextPutUrl = "https://blob.test/contracts/subcontract-DELETE-ME.pdf";
-    await uploadContractDocument(ctx.jobId, fileForm("subcontract.pdf"));
+    const form = fileForm("subcontract-DELETE-ME.pdf");
+    const uploadedUrl = String(form.get("fileUrl"));
+    await uploadContractDocument(ctx.jobId, form);
     const doc = await prisma.contractDocument.findFirstOrThrow({ where: { jobId: ctx.jobId } });
-    expect(doc.fileUrl).toBe(nextPutUrl);
+    // The URL the BROWSER got back from the store is the one stored —
+    // nothing rebuilds it from a requested path, which would drop the
+    // random suffix and name a blob that does not exist.
+    expect(doc.fileUrl).toBe(uploadedUrl);
 
     deletedUrls.length = 0;
     await deleteContractDocument(doc.id);
@@ -220,7 +253,7 @@ describe("deleteContractDocument also deletes the blob — issue #106 finding 3"
     // This is the whole defect: before the fix, `del` was never imported
     // from `@vercel/blob` anywhere in the repo, so the row went and the
     // file stayed public forever at this exact URL.
-    expect(deletedUrls).toEqual([nextPutUrl]);
+    expect(deletedUrls).toEqual([uploadedUrl]);
   });
 
   it("still deletes the row even when the blob delete fails", async () => {
@@ -228,10 +261,10 @@ describe("deleteContractDocument also deletes the blob — issue #106 finding 3"
     // trying to remove (often BECAUSE it should no longer be public)
     // stuck in the database. Best-effort by design — see
     // lib/blob.ts's `deleteDocument` comment.
-    nextPutUrl = "https://blob.test/contracts/subcontract-FAILS-TO-DELETE.pdf";
-    await uploadContractDocument(ctx.jobId, fileForm("subcontract.pdf"));
+    const form = fileForm("subcontract-FAILS-TO-DELETE.pdf");
+    await uploadContractDocument(ctx.jobId, form);
     const doc = await prisma.contractDocument.findFirstOrThrow({
-      where: { jobId: ctx.jobId, fileUrl: nextPutUrl },
+      where: { jobId: ctx.jobId, fileUrl: String(form.get("fileUrl")) },
     });
 
     failNextDelete = true;

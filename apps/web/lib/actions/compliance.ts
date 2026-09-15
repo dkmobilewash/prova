@@ -1,7 +1,13 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { putDocument } from "@/lib/blob";
+import {
+  DOCUMENT_UPLOAD_MAX_BYTES,
+  documentDisplayFileName,
+  documentUrlProblem,
+  isAllowedDocumentType,
+  type DocumentUploadContentType,
+} from "@/lib/document-uploads";
 import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@prova/db";
 import { extractComplianceDocument } from "@prova/integrations";
@@ -118,48 +124,81 @@ export async function deleteBond(bondId: string) {
   revalidatePath("/settings");
 }
 
-const COMPLIANCE_UPLOAD_MEDIA_TYPES = ["application/pdf", "image/png", "image/jpeg", "image/webp"] as const;
-
-const COMPLIANCE_UPLOAD_MAX_BYTES = 15 * 1024 * 1024;
-
 /** Uploads a compliance document (lien waiver, COI, certified payroll,
  * union fringe filing) and has Claude read it into structured fields —
  * see extractComplianceDocument in @prova/integrations. Not owner-gated:
  * any team member can log paperwork they receive from a sub or vendor,
  * same reasoning as addCostEntry. The extracted fields are saved as a
  * normal, editable row (aiExtracted just flags it for review, not a
- * lock) — a bad extraction is fixed the same way a typo would be. */
-export async function uploadComplianceDocument(formData: FormData) {
+ * lock) — a bad extraction is fixed the same way a typo would be.
+ *
+ * THE FILE NO LONGER PASSES THROUGH HERE — issue #27, and this is the one
+ * of the five that needed more than deleting a `File`. It used to refuse
+ * anything over `COMPLIANCE_UPLOAD_MAX_BYTES`, 15MB, a check that could
+ * never run behind Next's 1MB Server Action body cap; a scanned COI is
+ * several megabytes, so this feature was broken for its own normal case.
+ * The browser uploads to the blob store under a one-shot token now
+ * (`app/api/documents/upload/route.ts`) and this records the URL.
+ *
+ * BUT THE EXTRACTOR NEEDS THE BYTES, so they are READ BACK from the store
+ * here rather than carried through the action. That is a deliberate
+ * difference from the other four, which never look at the file at all:
+ *
+ *   - the read is server-to-server and the URL has already been proved to
+ *     be OUR store's and under THIS company's folder, so it is not a
+ *     fetch of anything a caller chose;
+ *   - the content type comes from the STORE'S OWN response header rather
+ *     than from the client, because the store serves the type the signed
+ *     token allowed. The old code trusted `file.type`, which was whatever
+ *     the browser said;
+ *   - the length is checked against the same 15MB ceiling before the body
+ *     is turned into base64. The token already bound the transfer to it;
+ *     this is the second look, on bytes this function is about to hold in
+ *     memory.
+ *
+ * RETURNS A RESULT NOW, and does not throw. It used to throw for every
+ * refusal, and production redacts a thrown Server Action message to a
+ * digest — so the sentence never arrived. That was survivable while the
+ * only failures were ones the file input prevented; it is not survivable
+ * now that "storage would not give the file back" is a real outcome a
+ * person needs told. `ComplianceUploadForm` renders `result.error`. */
+export async function uploadComplianceDocument(formData: FormData): Promise<ActionResult> {
   const { company, ...user } = await requireCompanyContext();
 
-  const file = formData.get("file");
-  if (!(file instanceof File) || file.size === 0) {
-    throw new Error("A file is required");
+  const fileUrl = String(formData.get("fileUrl") ?? "").trim();
+  if (!fileUrl) {
+    return actionFail("A file is required.");
   }
-  if (!(COMPLIANCE_UPLOAD_MEDIA_TYPES as readonly string[]).includes(file.type)) {
-    throw new Error("Upload a PDF, PNG, JPEG, or WEBP file");
+  // The owner of a compliance document is the COMPANY, and the company is
+  // the caller's own session — there is no id here that came from the
+  // request to be verified. A URL under another company's compliance
+  // folder therefore fails this check outright.
+  const problem = documentUrlProblem(fileUrl, "compliance-document", company.id, process.env);
+  if (problem) {
+    return actionFail(problem);
   }
-  if (file.size > COMPLIANCE_UPLOAD_MAX_BYTES) {
-    throw new Error("File is too large (max 15MB)");
-  }
+  const fileName = documentDisplayFileName(String(formData.get("fileName") ?? ""));
 
   const jobIdRaw = String(formData.get("jobId") ?? "").trim();
   let jobId: string | null = null;
   if (jobIdRaw) {
     const job = await prisma.job.findUnique({ where: { id: jobIdRaw } });
     if (!job || job.companyId !== company.id) {
-      throw new Error("Job not found");
+      return actionFail("Job not found.");
     }
     jobId = job.id;
   }
 
-  const buffer = Buffer.from(await file.arrayBuffer());
-  const mediaType = file.type as (typeof COMPLIANCE_UPLOAD_MEDIA_TYPES)[number];
+  const read = await readStoredDocument(fileUrl);
+  if (!read.ok) {
+    return actionFail(read.error);
+  }
 
-  const [blob, extraction] = await Promise.all([
-    putDocument(`compliance/${company.id}/${file.name}`, buffer, file.type),
-    extractComplianceDocument({ fileBase64: buffer.toString("base64"), mediaType, fileName: file.name }),
-  ]);
+  const extraction = await extractComplianceDocument({
+    fileBase64: read.buffer.toString("base64"),
+    mediaType: read.mediaType,
+    fileName: fileName ?? "document",
+  });
 
   await prisma.complianceDocument.create({
     data: {
@@ -173,14 +212,61 @@ export async function uploadComplianceDocument(formData: FormData) {
       effectiveDate: extraction.effectiveDate ? new Date(extraction.effectiveDate) : null,
       expiresAt: extraction.expiresAt ? new Date(extraction.expiresAt) : null,
       notes: extraction.notes,
-      fileUrl: blob.url,
-      fileName: file.name,
+      fileUrl,
+      fileName,
       aiExtracted: true,
       uploadedByUserId: user.id,
     },
   });
 
   revalidatePath("/compliance");
+  return actionOk;
+}
+
+/**
+ * Reads a document back out of the blob store so Claude can be shown it.
+ *
+ * ONLY EVER CALLED WITH A URL `documentUrlProblem` HAS ALREADY ACCEPTED,
+ * which is what makes it safe to fetch: the host is our own store and the
+ * path is under the caller's own company folder. Called with anything else
+ * it would be a server-side request to an address a caller chose, so the
+ * order of the two calls at the single call site above is load-bearing
+ * rather than stylistic.
+ *
+ * The type is taken from the STORE's response, not from the caller. A
+ * `content-type` may carry parameters (`application/pdf; charset=binary`),
+ * so only the media type itself is compared — and it is compared against
+ * the same allowlist the token was minted from, so a blob the store serves
+ * as something else is refused rather than handed to the extractor.
+ */
+async function readStoredDocument(
+  fileUrl: string,
+): Promise<
+  { ok: true; buffer: Buffer; mediaType: DocumentUploadContentType } | { ok: false; error: string }
+> {
+  let response: Response;
+  try {
+    response = await fetch(fileUrl);
+  } catch {
+    return { ok: false, error: "That file could not be read back from storage — try again." };
+  }
+  if (!response.ok) {
+    return { ok: false, error: "That file could not be read back from storage — try again." };
+  }
+
+  const served = (response.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
+  if (!isAllowedDocumentType(served)) {
+    return { ok: false, error: "Upload a PDF, PNG, JPEG, or WEBP file." };
+  }
+
+  const buffer = Buffer.from(await response.arrayBuffer());
+  // The signed token already bound the TRANSFER to this ceiling. This is
+  // the second look, taken before the bytes are base64'd and sent on.
+  if (buffer.byteLength === 0 || buffer.byteLength > DOCUMENT_UPLOAD_MAX_BYTES) {
+    return { ok: false, error: "That file is over the 15MB limit." };
+  }
+
+  return { ok: true, buffer, mediaType: served };
 }
 
 /** Edits a compliance document's fields — how a bad AI extraction gets

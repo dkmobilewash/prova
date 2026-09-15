@@ -60,7 +60,7 @@ export default async function CompliancePage() {
 
       <section className="mb-8 rounded-lg border border-slate-800 bg-slate-900 p-4">
         <h2 className="mb-3 text-sm font-semibold text-slate-300">Upload a document</h2>
-        <ComplianceUploadForm jobs={jobs.map(toJobOption)} />
+        <ComplianceUploadForm companyId={company.id} jobs={jobs.map(toJobOption)} />
       </section>
 
       <section>

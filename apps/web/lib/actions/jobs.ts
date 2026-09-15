@@ -5,7 +5,7 @@ import { takeoffCeiling, takeoffWall } from "@/lib/takeoff";
 import { redirect } from "next/navigation";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
-import { putDocument } from "@/lib/blob";
+import { documentDisplayFileName, documentUrlProblem } from "@/lib/document-uploads";
 import { Prisma, prisma } from "@prova/db";
 import { createEstimateJob } from "@/lib/estimating/create-job";
 import { draftLinesFromScope } from "@/lib/estimating/draft-lines";
@@ -295,17 +295,20 @@ export async function markJobContracted(jobId: string): Promise<ActionResult> {
 
 /* ------------------------------------------- the executed-subcontract route */
 
-// Mirrors the limits uploadContractDocument enforces in ./billing.ts.
-// Deliberately a second copy rather than a shared export: those constants
-// are in the billing lane, and this whole route is meant to be revertible
-// on its own without touching a line of that file.
-const EXECUTED_SUBCONTRACT_MEDIA_TYPES = [
-  "application/pdf",
-  "image/png",
-  "image/jpeg",
-  "image/webp",
-] as const;
-const EXECUTED_SUBCONTRACT_MAX_BYTES = 15 * 1024 * 1024;
+// THE SECOND COPY OF THE LIMITS IS GONE, and the note that used to defend
+// it is worth keeping rather than deleting. It said the media-type list
+// and the 15MB cap were deliberately duplicated from ./billing.ts so this
+// route stayed revertible on its own. That argument held right up until
+// the duplication turned out to be five copies of a number that had never
+// been enforced once (#27): a Server Action body is capped at 1MB by the
+// framework, multipart parts included, so nothing over that ever reached
+// either copy. The rule lives in lib/document-uploads.ts now, in one
+// place, and is applied by the store to the transfer itself.
+//
+// What did NOT move is the guard: this action still asserts MANAGE_JOBS
+// and `uploadContractDocument` still asserts nothing beyond company
+// membership, which is why the token route keys on the PURPOSE rather
+// than on the `contracts/` folder the two of them share.
 
 const JOBS_ONLY =
   "Managing jobs isn't part of your job function. The account owner sets who sees what, on the Team page.";
@@ -354,16 +357,22 @@ export async function recordExecutedSubcontract(
     return actionFail("Job not found.");
   }
 
-  const file = formData.get("file");
-  if (!(file instanceof File) || file.size === 0) {
+  // The browser uploaded the file to the blob store already; this is the
+  // URL it got back, and it is re-checked rather than trusted — a Server
+  // Action answers whoever posts to it, so it proves for itself that the
+  // URL is our own store's and sits under THIS job's contracts folder.
+  // `job` was proved to be this company's immediately above.
+  const fileUrl = String(formData.get("fileUrl") ?? "").trim();
+  if (!fileUrl) {
     return actionFail("Attach the executed subcontract the GC sent — a PDF or a photo of it.");
   }
-  if (!(EXECUTED_SUBCONTRACT_MEDIA_TYPES as readonly string[]).includes(file.type)) {
-    return actionFail("Upload a PDF, PNG, JPEG, or WEBP file.");
+  const fileProblem = documentUrlProblem(fileUrl, "executed-subcontract", jobId, process.env);
+  if (fileProblem) {
+    return actionFail(fileProblem);
   }
-  if (file.size > EXECUTED_SUBCONTRACT_MAX_BYTES) {
-    return actionFail("That file is too large (max 15MB).");
-  }
+  // NOT NULL on ContractDocument, so it falls back rather than being
+  // allowed to be absent — see the same line in uploadContractDocument.
+  const fileName = documentDisplayFileName(String(formData.get("fileName") ?? "")) ?? "document";
 
   const signedDate = parseExecutedSignedDate(
     String(formData.get("executedSignedDate") ?? ""),
@@ -375,19 +384,17 @@ export async function recordExecutedSubcontract(
 
   const note = String(formData.get("note") ?? "").trim();
 
-  const [buffer, lastVersion] = await Promise.all([
-    file.arrayBuffer().then(Buffer.from),
-    prisma.contractDocument.findFirst({ where: { jobId }, orderBy: { versionNumber: "desc" } }),
-  ]);
-
-  const blob = await putDocument(`contracts/${jobId}/${file.name}`, buffer, file.type);
+  const lastVersion = await prisma.contractDocument.findFirst({
+    where: { jobId },
+    orderBy: { versionNumber: "desc" },
+  });
 
   await prisma.contractDocument.create({
     data: {
       jobId,
       versionNumber: (lastVersion?.versionNumber ?? 0) + 1,
-      fileUrl: blob.url,
-      fileName: file.name,
+      fileUrl,
+      fileName,
       note: note || null,
       executedSignedDate: signedDate.value,
       uploadedByUserId: context.id,
