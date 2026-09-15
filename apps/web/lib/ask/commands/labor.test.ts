@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * The hours command against a fake Prisma and a faked action. Pinned: that
- * the date on the card is ctx.today and nothing the model supplied, that
+ * the date on the card is read from the person's own words by the app —
+ * ctx.today when they named no day, never anything the model supplied — that
  * hours are the person's digits or a question, that a pay type is only
  * what the person said (and straight time with a warning otherwise), that
  * a chip's person is re-asserted in-company, and the FormData the action
@@ -109,7 +110,7 @@ describe("log_time_entry", () => {
       note: null,
     });
     const line = (label: string) => result.preview.find((l) => l.label === label)?.value;
-    expect(line("Date")).toContain("2026-09-08");
+    expect(line("Date")).toBe("Sep 8, 2026 (Tuesday) — today, on your calendar");
     expect(line("Hours")).toBe("8 hours");
     expect(line("Pay type")).toBe("straight time");
     expect(result.warnings).toEqual([]);
@@ -197,5 +198,93 @@ describe("log_time_entry", () => {
       ok: false,
       error: "That looks like the same time entry submitted moments ago — check the list below before logging it again.",
     });
+  });
+});
+
+/**
+ * The day a foreman names, which is as often yesterday as today. ctx.today
+ * is Tuesday 8 September 2026, hand-derived from 1 January 2026 being a
+ * Thursday and pinned here rather than computed.
+ */
+describe("log_time_entry — the day", () => {
+  const ready = async (input: Record<string, string>) => {
+    fake.prisma.job.findMany.mockResolvedValue([riverside]);
+    fake.prisma.user.findMany.mockResolvedValue([mike]);
+    return logTimeEntryCommand.resolve(ctx, { jobName: "Riverside", employeeName: "Mike", hours: "8", ...input });
+  };
+  const dateLine = (result: Awaited<ReturnType<typeof ready>>) => {
+    if (result.kind !== "ready") throw new Error(`expected a card, got ${result.kind}`);
+    return result.preview.find((l) => l.label === "Date")?.value;
+  };
+
+  it("writes the day the person said, read backward, and says it with its weekday", async () => {
+    const yesterday = await ready({ date: "yesterday" });
+    expect(dateLine(yesterday)).toBe("Sep 7, 2026 (Monday)");
+    if (yesterday.kind !== "ready") throw new Error("unreachable");
+    expect(yesterday.resolved).toMatchObject({ date: "2026-09-07" });
+
+    // Tuesday 8 Sep: a bare weekday is the one just gone, not the next.
+    expect(dateLine(await ready({ date: "Friday" }))).toBe("Sep 4, 2026 (Friday)");
+    expect(dateLine(await ready({ date: "9/4" }))).toBe("Sep 4, 2026 (Friday)");
+    expect(dateLine(await ready({ date: "September 4" }))).toBe("Sep 4, 2026 (Friday)");
+    expect(dateLine(await ready({ date: "three days ago" }))).toBe("Sep 5, 2026 (Saturday)");
+  });
+
+  it("still says today, in those words, when the person named no day", async () => {
+    const result = await ready({});
+    expect(dateLine(result)).toBe("Sep 8, 2026 (Tuesday) — today, on your calendar");
+    if (result.kind !== "ready") throw new Error("unreachable");
+    expect(result.resolved).toMatchObject({ date: "2026-09-08" });
+    expect(result.warnings).toEqual([]);
+  });
+
+  it("refuses a day that has not happened, naming it, rather than asking again", async () => {
+    const result = await ready({ date: "tomorrow" });
+    expect(result.kind).toBe("refuse");
+    if (result.kind !== "refuse") throw new Error("unreachable");
+    expect(result.reason).toBe("Sep 9, 2026 (Wednesday) hasn't happened yet. Hours are logged after they are worked.");
+  });
+
+  it("asks for the day, quoting the words, when it cannot read them", async () => {
+    const result = await ready({ date: "sometime last month" });
+    expect(result.kind).toBe("need");
+    if (result.kind !== "need") throw new Error("unreachable");
+    expect(result.missing).toContain('"sometime last month"');
+    expect(result.missing).toContain("yesterday");
+  });
+
+  it("logs a day more than a fortnight back, with a warning rather than a refusal", async () => {
+    const result = await ready({ date: "8/3" });
+    expect(result.kind).toBe("ready");
+    if (result.kind !== "ready") throw new Error("unreachable");
+    expect(result.resolved).toMatchObject({ date: "2026-08-03" });
+    expect(result.warnings).toEqual([
+      "Aug 3, 2026 (Monday) is 36 days ago. Payroll for that week may already be filed — check the date before you tap.",
+    ]);
+    // The boundary itself is inside the window and says nothing.
+    const fortnight = await ready({ date: "2026-08-25" });
+    if (fortnight.kind !== "ready") throw new Error("unreachable");
+    expect(fortnight.warnings).toEqual([]);
+  });
+
+  it("passes the day it read to the action, not today", async () => {
+    fake.logTimeEntry.mockResolvedValue({ ok: true });
+    fake.prisma.timeEntry.findFirst.mockResolvedValue({ id: "te-9" });
+    const result = await logTimeEntryCommand.execute(ctx, {
+      jobId: "job-1",
+      jobName: "Riverside Plaza",
+      employeeUserId: "u-7",
+      employeeName: "Mike Rowe",
+      date: "2026-09-07",
+      hours: "8",
+      payType: "STRAIGHT",
+      note: null,
+    });
+    const posted = fake.logTimeEntry.mock.calls[0][1] as FormData;
+    expect(posted.get("date")).toBe("2026-09-07");
+    expect(fake.prisma.timeEntry.findFirst.mock.calls[0][0].where.date).toEqual(new Date("2026-09-07T00:00:00.000Z"));
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("unreachable");
+    expect(result.message).toBe("Logged 8 hours for Mike Rowe on Riverside Plaza, 2026-09-07.");
   });
 });

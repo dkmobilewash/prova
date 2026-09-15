@@ -41,6 +41,28 @@ describe("the routing eval's cases", () => {
   it("include refusals and injection attempts, which must produce no card", () => {
     const none = EVAL_CASES.filter((c) => c.expect.kind === "no_command");
     expect(none.length).toBeGreaterThanOrEqual(8);
-    expect(none.filter((c) => c.id.startsWith("inject-")).length).toBeGreaterThanOrEqual(3);
+    // Roadmap item 5 raised this from three. The floor is a floor and not
+    // a target: what stops the damage is lib/ask/injection.test.ts, which
+    // runs in CI and does not depend on a model's judgement. This set
+    // measures whether the model is being STEERED, which is worth knowing
+    // and is not the same question.
+    expect(none.filter((c) => c.id.startsWith("inject-")).length).toBeGreaterThanOrEqual(10);
+  });
+
+  it("spreads the injection cases across attack shapes rather than repeating one trick", () => {
+    // A set that is eleven variations on "SYSTEM:" measures one defence
+    // and reports it as eleven. The shapes that matter are different: an
+    // instruction the person typed, an instruction sitting in a record a
+    // GC wrote, an appeal to authority, an attempt on the card mechanism,
+    // and an attempt to read the prompt rather than act.
+    const ids = EVAL_CASES.filter((c) => c.id.startsWith("inject-")).map((c) => c.id);
+    for (const shape of ["inject-in-question", "inject-quoted-record", "inject-roleplay", "inject-self-confirm", "inject-prompt-dump"]) {
+      expect(ids, shape).toContain(shape);
+    }
+    // And each one names something a person could plausibly say, not a
+    // synthetic token: a case nobody would ever type teaches nothing.
+    for (const c of EVAL_CASES.filter((c) => c.id.startsWith("inject-"))) {
+      expect(c.question.length, c.id).toBeGreaterThan(30);
+    }
   });
 });

@@ -13,6 +13,12 @@ import type { AskUsageTotals } from "@prova/integrations";
  * question that fails is bounded exactly like one that answers — a loop
  * hammering the route with a bad key is the case this exists for.
  *
+ * The bound is not a PRECONDITION, though, and that distinction cost the
+ * whole assistant once (#257): when the rows cannot be read at all, the
+ * question goes through and the failure is shouted into the log and onto
+ * the settings page, rather than the box refusing everything behind a
+ * sentence that names nothing. See askAllowance.
+ *
  * THE LIMITS ARE A JUDGMENT CALL, not a derived fact. A foreman asks the
  * box a handful of times a day; an office manager on invoice day maybe
  * thirty. Sixty an hour per person is far above either and far below what
@@ -29,6 +35,32 @@ export const ASK_LIMITS = {
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
 
+/**
+ * The command that brings a database level with the code. Named in the
+ * log and on the settings page rather than left to be looked up: #257 was
+ * found by someone clicking a retainage command and being told
+ * "Something went wrong reading your data", which pointed at neither the
+ * schema nor the fix.
+ */
+export const MIGRATE_COMMAND = "pnpm --filter @prova/db run migrate:deploy";
+
+/** Prisma's code for "the table does not exist in the current database" —
+ * a database behind the code, as distinct from a query that is wrong. */
+function tableIsMissing(err: unknown): boolean {
+  return typeof err === "object" && err !== null && "code" in err && (err as { code?: unknown }).code === "P2021";
+}
+
+/**
+ * One log line for "the accounting could not be read", loud and naming the
+ * fix. Ids and causes only, never the question.
+ */
+function usageUnreadable(what: string, err: unknown): void {
+  const cause = tableIsMissing(err)
+    ? `the AskUsage table does not exist in this database, so it is behind the code. Run \`${MIGRATE_COMMAND}\` against it.`
+    : `AskUsage could not be read. If this database is behind the code, \`${MIGRATE_COMMAND}\` fixes it.`;
+  console.error(`[ask] ${what}: ${cause}`, err);
+}
+
 export type Allowance = { ok: true } | { ok: false; error: string };
 
 export async function askAllowance(companyId: string, userId: string, now: Date = new Date()): Promise<Allowance> {
@@ -42,14 +74,40 @@ export async function askAllowance(companyId: string, userId: string, now: Date 
   // Bounding those three is a real and separate problem: the audit that found
   // them put compliance extraction at $2.25-$4.50 a call, which a ROW count is
   // the wrong instrument for. That wants a spend ceiling, and it is not this.
-  const [person, company] = await Promise.all([
-    prisma.askUsage.count({
-      where: { userId, feature: "ask", createdAt: { gte: new Date(now.getTime() - HOUR) } },
-    }),
-    prisma.askUsage.count({
-      where: { companyId, feature: "ask", createdAt: { gte: new Date(now.getTime() - DAY) } },
-    }),
-  ]);
+  let person: number;
+  let company: number;
+  try {
+    [person, company] = await Promise.all([
+      prisma.askUsage.count({
+        where: { userId, feature: "ask", createdAt: { gte: new Date(now.getTime() - HOUR) } },
+      }),
+      prisma.askUsage.count({
+        where: { companyId, feature: "ask", createdAt: { gte: new Date(now.getTime() - DAY) } },
+      }),
+    ]);
+  } catch (err) {
+    // FAILS OPEN, and the reason is three functions down: recordAskUsage
+    // already swallows its own write failure, because the accounting must
+    // not cost the person their answer. The READ was not extended the
+    // same courtesy, so a database one migration behind took the whole
+    // assistant down behind a sentence that named nothing (#257) — every
+    // question calls this, so a missing table is not one broken command,
+    // it is the feature. Answering unbounded is the lesser fault: this is
+    // an internal accounting table, and the alternative is the product
+    // not working.
+    //
+    // Said plainly because it is a real cost, not a free win: while this
+    // is failing, NOTHING is bounding the model calls. That is why the
+    // line below is console.error rather than a warning, and why the
+    // settings page says so on screen instead of printing a reassuring
+    // zero.
+    //
+    // Note the two now compose: a database that has AskUsage but not yet
+    // its `feature` column lands here too, which is the correct outcome —
+    // the question is answered rather than refused by a schema gap.
+    usageUnreadable("the limit check could not run, so this question went to the model unbounded", err);
+    return { ok: true };
+  }
   if (person >= ASK_LIMITS.perPersonPerHour) {
     return {
       ok: false,
@@ -143,6 +201,15 @@ export async function recordAskUsage(record: AskUsageRecord): Promise<void> {
 }
 
 export type UsageSummary = {
+  /**
+   * False when AskUsage could not be read. Every figure is then zero —
+   * and zero is the dangerous answer here, because "0 questions sent to
+   * the model" is exactly what a quiet month looks like. Without this
+   * flag the page would report a broken table as a reassuring fact, which
+   * is the same shape as every vacuous check this repo has paid for. The
+   * page reads it and says which of the two it is looking at.
+   */
+  readable: boolean;
   questions: number;
   inputTokens: number;
   outputTokens: number;
@@ -153,12 +220,25 @@ export type UsageSummary = {
  * Counted in the database, named from the User rows that still exist. */
 export async function usageSummary(companyId: string, now: Date = new Date()): Promise<UsageSummary> {
   const since = new Date(now.getTime() - 30 * DAY);
-  const groups = await prisma.askUsage.groupBy({
-    by: ["userId"],
-    where: { companyId, createdAt: { gte: since } },
-    _count: { _all: true },
-    _sum: { inputTokens: true, outputTokens: true },
-  });
+  // `.catch` rather than a try/catch around an annotated variable:
+  // groupBy's return type is inferred from its argument, and annotating
+  // the binding to hoist it out of a try block breaks that inference.
+  // This also keeps the guard on exactly ONE call — a failure in the User
+  // lookup below is not this defect and must still throw, since an
+  // unreadable User means the person is not signed in and this page never
+  // rendered.
+  const groups = await prisma.askUsage
+    .groupBy({
+      by: ["userId"],
+      where: { companyId, createdAt: { gte: since } },
+      _count: { _all: true },
+      _sum: { inputTokens: true, outputTokens: true },
+    })
+    .catch((err: unknown) => {
+      usageUnreadable("the usage figures could not be read for the settings page", err);
+      return null;
+    });
+  if (groups === null) return { readable: false, questions: 0, inputTokens: 0, outputTokens: 0, byPerson: [] };
   const ids = groups.map((g) => g.userId).filter((id): id is string => id !== null);
   const users = ids.length
     ? await prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, name: true, email: true } })
@@ -172,6 +252,7 @@ export async function usageSummary(companyId: string, now: Date = new Date()): P
     }))
     .sort((a, b) => b.questions - a.questions);
   return {
+    readable: true,
     questions: groups.reduce((n, g) => n + g._count._all, 0),
     inputTokens: groups.reduce((n, g) => n + (g._sum.inputTokens ?? 0), 0),
     outputTokens: groups.reduce((n, g) => n + (g._sum.outputTokens ?? 0), 0),

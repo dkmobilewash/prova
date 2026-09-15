@@ -262,6 +262,22 @@ describe("read-tool capabilities match the pages they cite", () => {
     material_deliveries: ROUTE_CAPABILITY["/material-orders"],
     equipment_location: ROUTE_CAPABILITY["/equipment"],
     receivables: "MANAGE_BILLING",
+    // Roadmap item 4. Each one is the capability of the page whose figures
+    // it reproduces, not the capability that sounds right for the subject.
+    cash_flow_forecast: ROUTE_CAPABILITY["/cash-flow"],
+    // The retainage receivable table lives on /cash-flow, which is
+    // VIEW_COMPANY_FINANCIALS — but this tool is MANAGE_BILLING, and that
+    // is a deliberate disagreement rather than an oversight. Retainage is
+    // named in MANAGE_BILLING's own doc comment, a PROJECT_MANAGER holds
+    // billing and not company financials, and withheld-and-not-yet-released
+    // is a per-job billing fact before it is a company-wide one. Erring
+    // toward the narrower reading would leave the PM who chases it unable
+    // to ask.
+    retainage_held: "MANAGE_BILLING",
+    // Change orders render inside the job page's `showsJobMoney` branch.
+    change_order_status: "VIEW_JOB_COSTS",
+    job_labor_cost: "VIEW_JOB_COSTS",
+    safety_record: ROUTE_CAPABILITY["/safety"],
   };
 
   it.each(TOOLS.map((tool) => [tool.name, tool.capability] as const))("%s", (name, capability) => {

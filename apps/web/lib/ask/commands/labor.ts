@@ -1,5 +1,6 @@
 import { prisma } from "@prova/db";
 import { logTimeEntry } from "@/lib/actions/labor";
+import { dayLabel, daysBetween, parsePastDay } from "../dates";
 import { parseHours } from "../numbers";
 import { resolveEmployee } from "../resolve";
 import { formDataFrom, throughAction } from "./adapter";
@@ -21,8 +22,17 @@ import type {
  * `logTimeEntry` returns ActionResult for its duplicate guard and throws
  * only for malformed input a resolver never sends, so it is DIRECT.
  *
- * Today is `ctx.today`, the person's calendar day; yesterday's hours are
- * a page job. The pay type is straight time unless the person said
+ * The day is the person's own words, read backward by
+ * `parsePastDay` — "yesterday", "Tuesday", "9/8", "three days ago" — and
+ * `ctx.today`, their calendar day, when they said none. Backward because a
+ * timesheet records what happened: a bare "Tuesday" here is the Tuesday
+ * just gone, where the same word on the schedule command is the next one.
+ * The model never supplies the day itself, only the words. A day still
+ * ahead is refused by name rather than asked about again, and a day more
+ * than a fortnight back is logged with a warning rather than refused —
+ * hours turn up late, and refusing them is how they go unrecorded.
+ *
+ * The pay type is straight time unless the person said
  * otherwise, because the action falls back to STRAIGHT anyway and a card
  * should say what will be written rather than leave it to a default.
  * Cost code and craft classification are not offered: both are picks from
@@ -84,6 +94,25 @@ async function resolveLogTimeEntry(ctx: CommandContext, input: CommandInput): Pr
     person = { id: found.match.id, name: found.match.name };
   }
 
+  let day = ctx.today;
+  if (input.date) {
+    const parsed = parsePastDay(input.date, ctx.today);
+    if (!parsed) {
+      return {
+        kind: "need",
+        missing: `the day the hours were worked, as a calendar day — "${input.date}" isn't one this app can read. Say it like "yesterday", "Tuesday", "9/8" or "September 8"`,
+      };
+    }
+    if (parsed > ctx.today) {
+      return {
+        kind: "refuse",
+        reason: `${dayLabel(parsed)} hasn't happened yet. Hours are logged after they are worked.`,
+        href: `/jobs/${job.id}`,
+      };
+    }
+    day = parsed;
+  }
+
   const hours = parseHours(input.hours);
   if (!hours) {
     return {
@@ -97,7 +126,7 @@ async function resolveLogTimeEntry(ctx: CommandContext, input: CommandInput): Pr
   const preview: PreviewLine[] = [
     { label: "Job", value: job.name },
     { label: "Person", value: person.name },
-    { label: "Date", value: `${ctx.today} (today, on your calendar)` },
+    { label: "Date", value: day === ctx.today ? `${dayLabel(day)} — today, on your calendar` : dayLabel(day) },
     { label: "Hours", value: hours.display },
     { label: "Pay type", value: PAY_TYPES[payType] },
   ];
@@ -106,6 +135,13 @@ async function resolveLogTimeEntry(ctx: CommandContext, input: CommandInput): Pr
   const warnings: string[] = [];
   if (!recognised) warnings.push(`"${input.payType}" isn't a pay type this app knows; logged as straight time. Change it on the job page if that's wrong.`);
   if (Number(hours.value) > 12) warnings.push("More than 12 hours in one day. Check it before you tap.");
+  // A fortnight is the boundary because payroll for that week is likely
+  // filed; said as a warning rather than a refusal, since the hours were
+  // still worked and a refusal is how they stay unrecorded.
+  const daysBack = daysBetween(day, ctx.today);
+  if (daysBack > 14) {
+    warnings.push(`${dayLabel(day)} is ${daysBack} days ago. Payroll for that week may already be filed — check the date before you tap.`);
+  }
 
   return {
     kind: "ready",
@@ -114,7 +150,7 @@ async function resolveLogTimeEntry(ctx: CommandContext, input: CommandInput): Pr
       jobName: job.name,
       employeeUserId: person.id,
       employeeName: person.name,
-      date: ctx.today,
+      date: day,
       hours: hours.value,
       payType,
       note,
@@ -159,13 +195,13 @@ async function executeLogTimeEntry(_ctx: CommandContext, payload: ResolvedPayloa
 export const logTimeEntryCommand: DirectCommandDefinition = {
   name: "log_time_entry",
   description:
-    "Logs TODAY's hours for one person on one job: who, how many hours, straight time unless the person said overtime, double time or shift differential. Needs the job, the person's name and the hours as the person said them; ask for any that is missing and never estimate hours. Always for today on the person's own calendar — it does NOT log another day (that is done on the job page), does not pick a cost code or craft classification, and does not log several people at once: for a crew, propose the first and say the rest are next.",
+    "Logs one person's hours on one job for one day: who, how many hours, which day, straight time unless the person said overtime, double time or shift differential. Needs the job, the person's name and the hours as the person said them; ask for any that is missing and never estimate hours. The day is today unless they named another one, and their words for it are passed through exactly as said — never convert, compute or invent a date. Does not pick a cost code or craft classification, does not correct hours already logged (that is done on the job page), and does not log several people at once: for a crew, propose the first and say the rest are next.",
   capability: "MANAGE_FIELD",
   tier: "T3_MONEY_EVIDENCE",
   mode: "DIRECT",
   action: "logTimeEntry",
   core: "logTimeEntry",
-  title: "Log today's hours",
+  title: "Log hours",
   verb: "Preparing the time entry",
   button: "Log hours",
   input_schema: {
@@ -174,6 +210,11 @@ export const logTimeEntryCommand: DirectCommandDefinition = {
       jobName: { type: "string", description: "The job the hours are on, as the person named it. Required." },
       employeeName: { type: "string", description: "Who worked the hours, as the person named them. Required." },
       hours: { type: "string", description: "The hours exactly as the person said them, e.g. 8 or 7.5. Required; never estimate." },
+      date: {
+        type: "string",
+        description:
+          "The day the hours were worked, in the person's exact words — 'yesterday', 'Tuesday', 'last Friday', '9/8', 'September 8', 'three days ago'. Omit entirely when they did not name a day; it is then today. Never convert their words to a date and never supply a day they did not say.",
+      },
       payType: {
         type: "string",
         description: "Only if the person said it: overtime, double time, shift differential. Omit for ordinary hours.",
