@@ -70,8 +70,13 @@ export async function POST(request: NextRequest) {
     crewPresent: input.crewPresent,
     weather: input.weather,
     delays: input.delays,
+    clientId: input.clientId,
+    clientOperationId: input.clientOperationId,
+    clientUpdatedAt: input.clientUpdatedAt,
   });
 
   if (!result.ok) return jsonError(result.error, 400);
-  return NextResponse.json({ ok: true }, { status: 201 });
+  return NextResponse.json(result.value.report, {
+    status: result.value.created ? 201 : 200,
+  });
 }
