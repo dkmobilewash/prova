@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dayLabel, daysBetween, parseDateWords, relativeToToday } from "./dates";
+import { dayLabel, daysBetween, parseDateWords, parsePastDay, relativeToToday } from "./dates";
 
 /**
  * Every phrase the schedule command accepts, against fixed todays. A
@@ -181,5 +181,98 @@ describe("dayLabel, daysBetween and relativeToToday", () => {
     expect(relativeToToday("2026-09-12", FRIDAY)).toBe("in 1 day");
     expect(relativeToToday("2026-09-10", FRIDAY)).toBe("1 day ago");
     expect(relativeToToday(FRIDAY, FRIDAY)).toBe("today");
+  });
+});
+
+/**
+ * The backward reading, which the timesheet uses. Same fixed todays,
+ * weekdays still hand-derived from 1 January 2026 being a Thursday:
+ * FRIDAY is 11 Sep 2026, MONDAY is 14 Sep 2026.
+ *
+ * The pair of assertions that matters in each case is the one showing the
+ * two readings DISAGREE — a bare weekday forward is the next one, backward
+ * the one just gone. A test that only pinned the backward answer would
+ * pass if someone quietly pointed the timesheet at the forward parser on a
+ * day when the two happen to coincide.
+ */
+describe("parsePastDay — a day being recorded", () => {
+  it("reads the words a foreman says for a day just gone", () => {
+    expect(parsePastDay("yesterday", FRIDAY)).toBe("2026-09-10");
+    expect(parsePastDay("the day before yesterday", FRIDAY)).toBe("2026-09-09");
+    expect(parsePastDay("today", FRIDAY)).toBe(FRIDAY);
+    expect(parsePastDay("3 days ago", FRIDAY)).toBe("2026-09-08");
+    expect(parsePastDay("three days ago", FRIDAY)).toBe("2026-09-08");
+    expect(parsePastDay("a week ago", FRIDAY)).toBe("2026-09-04");
+    expect(parsePastDay("two weeks ago", FRIDAY)).toBe("2026-08-28");
+  });
+
+  it("reads a bare weekday backward, where the schedule reads it forward", () => {
+    // Friday 11 Sep: the Tuesday just gone is the 8th, the next one the 15th.
+    expect(parsePastDay("Tuesday", FRIDAY)).toBe("2026-09-08");
+    expect(parseDateWords("Tuesday", FRIDAY)).toEqual(on("2026-09-15"));
+
+    expect(parsePastDay("on Wednesday", FRIDAY)).toBe("2026-09-09");
+    expect(parsePastDay("thurs", FRIDAY)).toBe("2026-09-10");
+  });
+
+  it("gives today for the weekday it already is, and a week back when the person says last", () => {
+    // Monday 14 Sep. "Monday" is the day he is standing in; "last Monday"
+    // is the 7th. Forward, the same bare word is a week ahead.
+    expect(parsePastDay("Monday", MONDAY)).toBe(MONDAY);
+    expect(parsePastDay("last Monday", MONDAY)).toBe("2026-09-07");
+    expect(parsePastDay("past monday", MONDAY)).toBe("2026-09-07");
+    expect(parseDateWords("Monday", MONDAY)).toEqual(on("2026-09-21"));
+  });
+
+  it("takes a month and day with no year as this year, with no chips to pick from", () => {
+    // The schedule offers both years for a day already gone; a timesheet
+    // records what happened, so there is only one reading.
+    expect(parsePastDay("September 8", FRIDAY)).toBe("2026-09-08");
+    expect(parsePastDay("9/8", FRIDAY)).toBe("2026-09-08");
+    expect(parsePastDay("the 8th of September", FRIDAY)).toBe("2026-09-08");
+    expect(parseDateWords("September 8", FRIDAY)).toEqual({
+      kind: "which-year",
+      thisYear: "2026-09-08",
+      nextYear: "2027-09-08",
+    });
+  });
+
+  it("reads an explicit year and a full date exactly as written", () => {
+    expect(parsePastDay("2026-08-03", FRIDAY)).toBe("2026-08-03");
+    expect(parsePastDay("8/3/2025", FRIDAY)).toBe("2025-08-03");
+    expect(parsePastDay("August 3, 2025", FRIDAY)).toBe("2025-08-03");
+  });
+
+  it("returns a future day rather than null, so the caller can refuse it by name", () => {
+    // "Tomorrow" is a date this app can read and will not accept. Asking
+    // for it again, as it does for words it cannot read, would tell the
+    // person nothing about why.
+    expect(parsePastDay("tomorrow", FRIDAY)).toBe("2026-09-12");
+    expect(parsePastDay("12/25", FRIDAY)).toBe("2026-12-25");
+  });
+
+  it("is null for anything it cannot read, including the forward-only phrases", () => {
+    for (const text of [
+      "next Monday",
+      "sometime next month",
+      "last week",
+      "the week before",
+      "a week later",
+      "back a week",
+      "in three days",
+      "February 30",
+      "bananas",
+      "",
+      undefined,
+    ]) {
+      expect(parsePastDay(text, FRIDAY), `"${text}" should not parse`).toBeNull();
+    }
+  });
+
+  it("counts a weekend day and a year boundary the same way", () => {
+    // Sunday 20 Dec 2026: "Sunday" is that day, "last Sunday" the 13th.
+    expect(parsePastDay("Sunday", SUNDAY_IN_DECEMBER)).toBe(SUNDAY_IN_DECEMBER);
+    expect(parsePastDay("last Sunday", SUNDAY_IN_DECEMBER)).toBe("2026-12-13");
+    expect(parsePastDay("three weeks ago", "2027-01-05")).toBe("2026-12-15");
   });
 });

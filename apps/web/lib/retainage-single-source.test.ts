@@ -79,6 +79,8 @@ const RETAINAGE_COLUMN_FILES: Record<string, string> = {
     "Assembles one pay application. PR #156 moved this out of the page so the G702 arithmetic could be tested without a database; the page now renders what this returns.",
   "lib/pay-application-query.test.ts": "Pins that assembly, including the removed-line close-out.",
   "lib/alerts-query.ts": "RETAINAGE_RELEASE alerts — one alert per job, with its name.",
+  "lib/ask/handlers.ts":
+    "TWO read tools, both per-job by necessity. retainage_held builds the per-job rows the way /cash-flow builds its table and takes the COMPANY-WIDE total from loadRetainageHeld rather than summing them — the rows carry job names, which a scalar cannot; cash_flow_forecast feeds calculateRetainageSummary per job into the forecast the same way that page does. Neither derives a company total from this column. Arrived with roadmap item 4 of the Ask build.",
   "lib/closeout-query.ts": "Retainage at stake on one job's closeout row.",
 
   // ----------------------------------- writes, exports, documentation ---
@@ -103,6 +105,10 @@ const RETAINAGE_COLUMN_FILES: Record<string, string> = {
   "lib/ask/commands/billing.test.ts": "Fakes the lifted core's result, snapshot included, to pin what the invoice card hands back.",
   "lib/billing/retainage-release.test.ts": "Fakes the invoice rows the lifted release core sums, snapshot included, to pin its cents and its two refusals.",
   "lib/ask/commands/retainage.test.ts": "Fakes the invoice rows the release card is made from, so the card's figures run through the real per-job read.",
+  "lib/ask/handlers.retainageHeld.test.ts":
+    "Fakes the invoice rows retainage_held sums per job, and makes loadRetainageHeld disagree with them on purpose — the only way to prove which of the two the company figure is read from.",
+  "lib/ask/handlers.cashFlowForecast.test.ts":
+    "Fakes the invoice rows the forecast's retainage half is built from, including one job with no substantial completion date.",
   "lib/actions/ask.dbtest.ts": "Asserts the snapshot on the invoice a tapped card created, and seeds the snapshots a release card is made from, against real rows.",
 };
 

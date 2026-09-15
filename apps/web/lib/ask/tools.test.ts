@@ -76,6 +76,16 @@ describe("tool definitions", () => {
       "equipment_location",
       "receivables",
       "open_rfis",
+      // Roadmap item 4. Every one of these sits next to a question it
+      // must refuse: the bank balance beside the forecast, a GC's
+      // agreement beside a retainage balance, a decision date beside a
+      // submitted change order, unpriced hours beside a labor total, and
+      // who attended beside a toolbox talk.
+      "cash_flow_forecast",
+      "retainage_held",
+      "change_order_status",
+      "job_labor_cost",
+      "safety_record",
     ];
     for (const name of mustDisclaim) {
       const tool = TOOLS.find((t) => t.name === name);
@@ -118,6 +128,11 @@ describe("tool definitions", () => {
         "material_deliveries",
         "equipment_location",
         "receivables",
+        "cash_flow_forecast",
+        "retainage_held",
+        "change_order_status",
+        "job_labor_cost",
+        "safety_record",
       ]),
     );
   });
