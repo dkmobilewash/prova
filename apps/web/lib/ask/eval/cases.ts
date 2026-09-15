@@ -74,6 +74,26 @@ export const EVAL_CASES: EvalCase[] = [
   tool("read-drawings", "are the drawings we're working from on Riverside still current?", "drawing_currency", { jobName: "Riverside" }),
   tool("read-bids", "what bids do we have out?", "bid_status"),
   tool("read-field-scope", "any open RFIs on Riverside?", "open_rfis", { jobName: "Riverside" }, FIELD),
+  // Roadmap item 4's five. Each is phrased the way the question actually
+  // arrives — "what's coming in", "what is the GC sitting on" — rather than
+  // in the tool's own vocabulary, since routing from the words a
+  // contractor uses is the whole thing being graded.
+  tool("read-cash-forecast", "what's coming in next month?", "cash_flow_forecast"),
+  tool("read-cash-forecast-accounting", "when do we get paid on the invoices that are out?", "cash_flow_forecast", undefined, ACCOUNTING),
+  tool("read-retainage", "how much retainage is being held on us?", "retainage_held"),
+  tool("read-retainage-job", "how much is Turner still holding on Riverside?", "retainage_held", { jobName: "Riverside" }),
+  // PENDING rather than SUBMITTED: "not come back on" spans the ones we
+  // have not sent and the ones they have not answered, which is the
+  // distinction the filter exists to make.
+  tool("read-change-orders", "which change orders has the GC not come back on?", "change_order_status", { status: "PENDING" }),
+  tool("read-change-orders-job", "what change orders are on Riverside?", "change_order_status", { jobName: "Riverside" }),
+  tool("read-labor-cost", "what has labor cost us on Riverside?", "job_labor_cost", { jobName: "Riverside" }),
+  // The year is the person's word for it, passed through — the same rule
+  // every date in this registry follows. A model that resolves "last year"
+  // to a number itself is the failure, since the tool decides what the
+  // current year is.
+  tool("read-safety", "how many recordable injuries have we had this year?", "safety_record"),
+  tool("read-safety-field", "what is on the OSHA log for 2025?", "safety_record", { year: "2025" }, FIELD),
 
   // ------------------------------------------------------- commands
   command("cmd-create-estimate", "create an estimate for Riverside Plaza for Turner", "create_estimate_job", { jobName: "Riverside Plaza", gcName: "Turner" }),
