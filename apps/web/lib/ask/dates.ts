@@ -30,6 +30,15 @@ import { addDays } from "./numbers";
  *             chips. A month-day still ahead this year is taken as this
  *             year, which is the one reading nobody disputes.
  *
+ * TWO ENTRY POINTS, and which one a command uses is a statement about
+ * what it is recording. `parseDateWords` below reads FORWARD, for a date
+ * being planned; `parsePastDay` at the foot of this file reads BACKWARD,
+ * for a day being recorded, and returns one day or nothing rather than
+ * these four answers. A bare "Tuesday" is the next one to the first and
+ * the last one to the second, and neither reading is wrong for the
+ * other's question — which is why this is two functions rather than one
+ * with a flag.
+ *
  * Not supported on purpose, each returning null: months as a unit ("in a
  * month" — Oct 31 plus a month has no agreed answer), "next week" (which
  * day?), "this Monday" (the past one or the coming one?), day-first
@@ -93,6 +102,15 @@ const DIRECTION_THEN_COUNT = new RegExp(`^(${LATER}|${EARLIER}|${EITHER})\\s+(?:
 const IS_LATER = new RegExp(`^(?:${LATER})$`);
 const IS_EARLIER = new RegExp(`^(?:${EARLIER})$`);
 
+/** The backward reading's own patterns. "Last Tuesday" is always the one
+ * before today; a bare "Tuesday" is today when the names match, because a
+ * foreman saying "Tuesday" on a Tuesday means the day he is standing in.
+ * "Next Monday" is deliberately absent: a timesheet cannot record a day
+ * that has not happened, so it falls through and the caller asks. */
+const AGO = new RegExp(`^${COUNT}\\s+${UNIT}\\s+ago$`);
+const LAST_WEEKDAY = new RegExp(`^(?:last|past|this past)\\s+(${Object.keys(WEEKDAYS).join("|")})$`);
+const BARE_WEEKDAY = new RegExp(`^(${Object.keys(WEEKDAYS).join("|")})$`);
+
 /** Leading words that place a date without changing it: "to October 6",
  * "by a week", "the 6th of October". Stripped one at a time so "by" on a
  * shift and "on" on a day both fall away. "in" is deliberately absent —
@@ -128,6 +146,18 @@ function monthDay(month: number, day: number, today: string): ParsedDate | null 
   return { kind: "which-year", thisYear, nextYear };
 }
 
+/** A month and day with no year on a record of something that HAPPENED:
+ * this year, always, with no chips. A timesheet's "September 8" is the one
+ * that has just gone; one still ahead of today is a slip the caller
+ * refuses by name rather than a plan for next year. That is the opposite
+ * of `monthDay` above, where both years are live readings — same words,
+ * different question, which is the whole reason this file has two entry
+ * points rather than a flag. */
+function monthDayThisYear(month: number, day: number, today: string): ParsedDate | null {
+  const thisYear = calendarDay(Number(today.slice(0, 4)), month, day);
+  return thisYear ? { kind: "on", day: thisYear } : null;
+}
+
 function shift(n: number, unit: string, direction: string | undefined): ParsedDate | null {
   if (!Number.isFinite(n) || n <= 0) return null;
   const days = daysFor(n, unit);
@@ -137,8 +167,11 @@ function shift(n: number, unit: string, direction: string | undefined): ParsedDa
   return { kind: "shift-either-way", days };
 }
 
-export function parseDateWords(text: string | undefined, today: string): ParsedDate | null {
-  if (!text) return null;
+/** Lower-cased, de-quoted, and with the placing words stripped. Shared,
+ * so the two entry points below cannot disagree about what a person's
+ * words are before either of them reads a date out of them. */
+function normaliseWords(text: string | undefined): string {
+  if (!text) return "";
   let words = text
     .trim()
     .toLowerCase()
@@ -149,39 +182,64 @@ export function parseDateWords(text: string | undefined, today: string): ParsedD
   for (let stripped = words.replace(LEAD_IN, ""); stripped !== words; stripped = words.replace(LEAD_IN, "")) {
     words = stripped;
   }
-  if (!words) return null;
+  return words;
+}
 
+/** The four ways a person writes an actual calendar day — ISO, `10/6`,
+ * "October 6", "6 October".
+ *
+ * `matched` and `value` are separate on purpose: "February 30" MATCHES the
+ * month-day shape and is not a day, and a caller that could not tell the
+ * two apart would fall through to the weekday and shift patterns and read
+ * it as something else entirely. Matched-but-null stops there.
+ *
+ * `bareMonthDay` is the one thing the two readings differ on, and it is a
+ * parameter rather than a boolean so each caller names its own rule. */
+type AbsoluteRead = { matched: false } | { matched: true; value: ParsedDate | null };
+
+function readAbsoluteDay(
+  words: string,
+  today: string,
+  bareMonthDay: (month: number, day: number, today: string) => ParsedDate | null,
+): AbsoluteRead {
+  const dayOr = (day: string | null): AbsoluteRead => ({ matched: true, value: day ? { kind: "on", day } : null });
+  const fullYear = (text: string) => (text.length === 2 ? 2000 + Number(text) : Number(text));
   let m: RegExpMatchArray | null;
 
-  if ((m = words.match(ISO))) {
-    const day = calendarDay(Number(m[1]), Number(m[2]), Number(m[3]));
-    return day ? { kind: "on", day } : null;
-  }
+  if ((m = words.match(ISO))) return dayOr(calendarDay(Number(m[1]), Number(m[2]), Number(m[3])));
 
   if ((m = words.match(US_NUMERIC))) {
     const month = Number(m[1]);
     const dayOfMonth = Number(m[2]);
-    if (!m[3]) return monthDay(month, dayOfMonth, today);
-    const year = m[3].length === 2 ? 2000 + Number(m[3]) : Number(m[3]);
-    const day = calendarDay(year, month, dayOfMonth);
-    return day ? { kind: "on", day } : null;
+    if (!m[3]) return { matched: true, value: bareMonthDay(month, dayOfMonth, today) };
+    return dayOr(calendarDay(fullYear(m[3]), month, dayOfMonth));
   }
 
   if ((m = words.match(MONTH_DAY))) {
     const month = MONTHS[m[1]];
     const dayOfMonth = Number(m[2]);
-    if (!m[3]) return monthDay(month, dayOfMonth, today);
-    const day = calendarDay(Number(m[3]), month, dayOfMonth);
-    return day ? { kind: "on", day } : null;
+    if (!m[3]) return { matched: true, value: bareMonthDay(month, dayOfMonth, today) };
+    return dayOr(calendarDay(Number(m[3]), month, dayOfMonth));
   }
 
   if ((m = words.match(DAY_MONTH))) {
     const dayOfMonth = Number(m[1]);
     const month = MONTHS[m[2]];
-    if (!m[3]) return monthDay(month, dayOfMonth, today);
-    const day = calendarDay(Number(m[3]), month, dayOfMonth);
-    return day ? { kind: "on", day } : null;
+    if (!m[3]) return { matched: true, value: bareMonthDay(month, dayOfMonth, today) };
+    return dayOr(calendarDay(Number(m[3]), month, dayOfMonth));
   }
+
+  return { matched: false };
+}
+
+export function parseDateWords(text: string | undefined, today: string): ParsedDate | null {
+  const words = normaliseWords(text);
+  if (!words) return null;
+
+  const absolute = readAbsoluteDay(words, today, monthDay);
+  if (absolute.matched) return absolute.value;
+
+  let m: RegExpMatchArray | null;
 
   if (words === "today") return { kind: "on", day: today };
   if (words === "tomorrow") return { kind: "on", day: addDays(today, 1) };
@@ -206,6 +264,57 @@ export function parseDateWords(text: string | undefined, today: string): ParsedD
   if ((m = words.match(DIRECTION_THEN_COUNT))) {
     return shift(count(m[2]), m[3], m[1]);
   }
+
+  return null;
+}
+
+/** The most recent such weekday, as a day. Today itself when the names
+ * match and `includeToday`; otherwise the one a week back. */
+function previousWeekday(wanted: number, today: string, includeToday: boolean): string {
+  const back = (utcMidnight(today).getUTCDay() - wanted + 7) % 7;
+  return addDays(today, -(back === 0 && !includeToday ? 7 : back));
+}
+
+/**
+ * A day a person is RECORDING rather than planning: "yesterday", "Tuesday",
+ * "9/8", "September 8", "three days ago". One ISO day or null, never a
+ * shift and never chips — the row it feeds has one date column and the
+ * thing it records already happened.
+ *
+ * It reads BACKWARD where `parseDateWords` reads forward, and that is the
+ * whole reason it exists rather than a flag on the other one. A schedule
+ * moves into the future, so a bare weekday there is the next one; a
+ * timesheet looks at the week just worked, so "Tuesday" is the Tuesday
+ * behind you. Same words, opposite day, and neither reading is wrong for
+ * the other's question.
+ *
+ * A day in the FUTURE still parses and is returned. Refusing it here would
+ * make "tomorrow" and "bananas" the same answer, and they are not: one is
+ * a date this app can read and will not accept, which the caller can say
+ * in a sentence naming the day, and the other is a question back.
+ */
+export function parsePastDay(text: string | undefined, today: string): string | null {
+  const words = normaliseWords(text);
+  if (!words) return null;
+
+  if (words === "today") return today;
+  if (words === "yesterday") return addDays(today, -1);
+  if (words === "day before yesterday") return addDays(today, -2);
+  if (words === "tomorrow") return addDays(today, 1);
+
+  let m: RegExpMatchArray | null;
+
+  if ((m = words.match(AGO))) {
+    const n = count(m[1]);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    return addDays(today, -daysFor(n, m[2]));
+  }
+
+  if ((m = words.match(LAST_WEEKDAY))) return previousWeekday(WEEKDAYS[m[1]], today, false);
+  if ((m = words.match(BARE_WEEKDAY))) return previousWeekday(WEEKDAYS[m[1]], today, true);
+
+  const absolute = readAbsoluteDay(words, today, monthDayThisYear);
+  if (absolute.matched) return absolute.value?.kind === "on" ? absolute.value.day : null;
 
   return null;
 }

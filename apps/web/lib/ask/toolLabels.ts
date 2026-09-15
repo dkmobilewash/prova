@@ -18,6 +18,11 @@ const LABELS: Record<ToolName, string> = {
   material_deliveries: "material orders",
   equipment_location: "equipment",
   receivables: "your invoices",
+  cash_flow_forecast: "what is coming in",
+  retainage_held: "retainage",
+  change_order_status: "change orders",
+  job_labor_cost: "labor cost",
+  safety_record: "your safety log",
 };
 
 export function toolLabel(name: ToolName): string {

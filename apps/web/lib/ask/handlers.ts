@@ -13,7 +13,20 @@ import {
 import { renewalAlerts, renewalCoverage, renewalCoverageMessage, renewalTiming } from "@/lib/compliance-expiry";
 import { renewalSourcesForCompany } from "@/lib/renewals";
 import { serverToday } from "@/lib/serverToday";
-import { daysPastDueFor, effectiveDueDateFor } from "@/lib/cash-flow";
+import { daysBetween } from "./dates";
+import {
+  calculateArAgingInvoice,
+  calculateCashFlowForecast,
+  daysPastDueFor,
+  effectiveDueDateFor,
+  summarizeArAging,
+  type RetainageReceivableInput,
+} from "@/lib/cash-flow";
+import { calculateRetainageSummary } from "@/lib/retainage";
+import { loadRetainageHeld } from "@/lib/retainage-query";
+import { changeOrderValueDelta, countUnbookable, PENDING_CHANGE_ORDER_STATUSES } from "@/lib/change-order";
+import { calculateTimeEntryLaborCost, findEffectiveFringeRateSchedule } from "@/lib/labor-cost";
+import { classificationLabel, isRecordable, outcomeLabel } from "@/components/safetyLabels";
 import {
   currentRevision,
   daysToReachUs,
@@ -42,7 +55,7 @@ import { matchesJobName, TOOLS, type ToolName, type ToolResult } from "./tools";
  * All read-only.
  */
 
-type Input = { jobName?: string; status?: string };
+type Input = { jobName?: string; status?: string; year?: string };
 
 const iso = (date: Date | null) => (date ? date.toISOString().slice(0, 10) : null);
 
@@ -92,6 +105,11 @@ export const HANDLERS: Record<
   material_deliveries: materialDeliveries,
   equipment_location: (companyId) => equipmentLocation(companyId),
   receivables: (companyId) => receivables(companyId),
+  cash_flow_forecast: (companyId) => cashFlowForecast(companyId),
+  retainage_held: retainageHeld,
+  change_order_status: changeOrderStatus,
+  job_labor_cost: jobLaborCost,
+  safety_record: safetyRecord,
 };
 
 /** Who is asking: the company, and the person's role and job function.
@@ -743,5 +761,531 @@ async function receivables(companyId: string): Promise<ToolResult> {
     ],
     unavailable:
       outstanding.length === 0 ? "Every invoice raised has been paid in full." : undefined,
+  };
+}
+
+// ---------------------------------------------------------------------
+// Roadmap item 4: the six questions the box could not answer. Five here;
+// the company-wide WIP roll-up is deliberately absent — see the note on
+// job_margin in tools.ts and the PR body. job_margin already returns
+// per-job over/under billing, and the ROLL-UP of it belongs to
+// lib/wip-schedule.ts on #254. A second summation of the same figure is
+// the "two surfaces computing the same number separately" bug this file's
+// own header names.
+// ---------------------------------------------------------------------
+
+/**
+ * When the money already invoiced is expected to arrive.
+ *
+ * Every figure comes from the same three calls /cash-flow makes, in the
+ * same order, over the same rows: calculateArAgingInvoice per invoice,
+ * calculateRetainageSummary per job, then calculateCashFlowForecast over
+ * both. Re-deriving a due date here rather than going through
+ * `calculateArAgingInvoice` is exactly how the dashboard and the aging
+ * table came to disagree about which invoices were overdue, twice.
+ */
+async function cashFlowForecast(companyId: string): Promise<ToolResult> {
+  const jobs = await prisma.job.findMany({
+    where: { companyId },
+    select: {
+      id: true,
+      name: true,
+      substantialCompletionDate: true,
+      contact: { select: { name: true, paymentTermsDays: true } },
+      invoices: {
+        select: {
+          id: true,
+          amount: true,
+          issuedAt: true,
+          dueAt: true,
+          retainageWithheld: true,
+          payments: { select: { amount: true } },
+        },
+      },
+      retainageReleases: { select: { amount: true } },
+    },
+  });
+
+  const asOf = new Date();
+  const arInvoices = jobs
+    .flatMap((job) =>
+      job.invoices.map((invoice) =>
+        calculateArAgingInvoice(
+          {
+            invoiceId: invoice.id,
+            jobId: job.id,
+            jobName: job.name,
+            contactName: job.contact.name,
+            amount: Number(invoice.amount),
+            paidAmount: invoice.payments.reduce((sum, p) => sum + Number(p.amount), 0),
+            issuedAt: invoice.issuedAt,
+            dueAt: invoice.dueAt,
+            paymentTermsDays: job.contact.paymentTermsDays,
+          },
+          asOf,
+        ),
+      ),
+    )
+    .filter((row) => row != null);
+
+  const retainageByJob: RetainageReceivableInput[] = jobs.map((job) => {
+    const summary = calculateRetainageSummary({
+      invoiceRetainageWithheld: job.invoices.map((inv) =>
+        inv.retainageWithheld != null ? Number(inv.retainageWithheld) : null,
+      ),
+      releaseAmounts: job.retainageReleases.map((r) => Number(r.amount)),
+      substantialCompletionDate: job.substantialCompletionDate,
+    });
+    return {
+      jobId: job.id,
+      jobName: job.name,
+      outstandingBalance: summary.balance,
+      substantialCompletionDate: summary.substantialCompletionDate,
+    };
+  });
+
+  // Six months, the same window the page renders. Not a parameter: a model
+  // choosing the horizon would make two runs of the same question return
+  // different totals for the last bucket, which collapses everything
+  // beyond the window into itself.
+  const forecast = calculateCashFlowForecast(arInvoices, retainageByJob, asOf, 6);
+  const aging = summarizeArAging(arInvoices);
+
+  return {
+    data: {
+      months: forecast.months,
+      agingByBucket: aging.byBucket,
+      // Named, not silently dropped into a month. Real money owed with no
+      // basis for when — the page shows it as its own line for the same
+      // reason.
+      retainageWithNoCompletionDate: forecast.retainageNoTargetDate,
+    },
+    summary: {
+      arOutstanding: forecast.totalArOutstanding,
+      retainageOutstanding: forecast.totalRetainageOutstanding,
+      overdueNow: forecast.months[0]?.arExpected ?? 0,
+    },
+    citations: [{ label: "Cash flow", href: "/cash-flow" }],
+    unavailable:
+      forecast.totalArOutstanding === 0 && forecast.totalRetainageOutstanding === 0
+        ? "Nothing is outstanding: every invoice is paid and no retainage is held."
+        : undefined,
+  };
+}
+
+/**
+ * Retainage withheld across the company and not yet released.
+ *
+ * TWO reads on purpose, and the pairing is the point. The company total is
+ * `loadRetainageHeld` — the single source #97 exists to enforce, which
+ * counts EVERY job because retainage is collected at closeout and a
+ * status filter drops exactly the completed jobs whose money is owed. The
+ * rows are built per job the way /cash-flow builds its table, because a
+ * scalar cannot carry job names.
+ *
+ * The two agree by construction: `calculateRetainageSummary` returns
+ * `withheld − released` with no per-job clamp, so a sum of differences is
+ * the difference of sums. `companyTotal` is reported from the loader
+ * rather than from summing these rows, so that if a per-job floor is ever
+ * introduced the two disagree visibly instead of one quietly becoming the
+ * other.
+ */
+async function retainageHeld(companyId: string, input: Input): Promise<ToolResult> {
+  const mismatch = await jobNameMismatch(companyId, input.jobName);
+  if (mismatch) return { data: [], citations: [{ label: "Cash flow", href: "/cash-flow" }], unavailable: mismatch };
+
+  const [jobs, companyTotal] = await Promise.all([
+    prisma.job.findMany({
+      where: { companyId },
+      select: {
+        id: true,
+        name: true,
+        status: true,
+        substantialCompletionDate: true,
+        contact: { select: { name: true } },
+        invoices: { select: { retainageWithheld: true } },
+        retainageReleases: { select: { amount: true } },
+      },
+    }),
+    loadRetainageHeld(companyId),
+  ]);
+
+  const rows = jobs
+    .filter((job) => matchesJobName(job.name, input.jobName))
+    .map((job) => {
+      const summary = calculateRetainageSummary({
+        invoiceRetainageWithheld: job.invoices.map((inv) =>
+          inv.retainageWithheld != null ? Number(inv.retainageWithheld) : null,
+        ),
+        releaseAmounts: job.retainageReleases.map((r) => Number(r.amount)),
+        substantialCompletionDate: job.substantialCompletionDate,
+      });
+      return {
+        job: job.name,
+        gc: job.contact.name,
+        jobStatus: job.status,
+        withheldToDate: summary.totalWithheld,
+        releasedToDate: summary.totalReleased,
+        stillHeld: summary.balance,
+        // Whether there is anything to collect against. A balance with no
+        // completion date is owed with no date to chase it on, which is
+        // the distinction /cash-flow draws and the reason it is here.
+        substantialCompletionDate: iso(summary.substantialCompletionDate),
+      };
+    })
+    .filter((row) => Math.abs(row.stillHeld) > 0.005)
+    .sort((a, b) => b.stillHeld - a.stillHeld);
+
+  return {
+    data: rows,
+    summary: {
+      // From the loader, never from the rows above — see the note above.
+      companyWideStillHeld: companyTotal,
+      jobsHoldingRetainage: rows.length,
+      jobsWithNoCompletionDate: rows.filter((row) => row.substantialCompletionDate === null).length,
+    },
+    citations: [
+      { label: "Cash flow", href: "/cash-flow" },
+      { label: "Today", href: "/dashboard" },
+    ],
+    unavailable:
+      rows.length === 0
+        ? input.jobName
+          ? "No retainage is held on that job."
+          : "No retainage is being held: nothing has been withheld, or all of it has been released."
+        : undefined,
+  };
+}
+
+/** DRAFT and SUBMITTED, the two the GC has not decided — the app's own
+ * constant rather than a second list, so "pending" here and on the job
+ * page can never come to mean different things. */
+const PENDING_CHANGE_ORDERS: readonly string[] = PENDING_CHANGE_ORDER_STATUSES;
+
+/** No filter means every change order; PENDING means the two undecided
+ * ones; anything else is that exact status. Written out rather than as a
+ * nested ternary — the compressed form typechecked and was unreadable,
+ * which is how the wrong branch survives a review. */
+function changeOrderMatches(status: string, wanted: string | undefined): boolean {
+  if (!wanted) return true;
+  if (wanted === "PENDING") return PENDING_CHANGE_ORDERS.includes(status);
+  return status === wanted;
+}
+
+/**
+ * Change orders by job and status, with what each is worth.
+ *
+ * `changeOrderValueDelta` is the job page's own function, and the target
+ * map is built from the same UNFILTERED line-item read that page uses.
+ *
+ * Being exact about why, because the obvious reason is wrong: filtering
+ * `isDeleted: false` would NOT change a single figure here today. A
+ * proposal whose target is missing and one whose target is soft-deleted are
+ * both unbookable, and `proposalValueDelta` returns zero for either. The
+ * read is unfiltered because that is the shape `changeOrderValueDelta`
+ * documents for `targets` and because the distinction is real to
+ * `proposalIsBookable` — a map narrowed to live rows would make this handler
+ * agree with the page by luck rather than by construction, and would start
+ * disagreeing the moment a deleted target stops meaning the same as an
+ * absent one.
+ *
+ * What DOES have to be said out loud is the count: a value that silently
+ * drops unbookable proposals is a floor presented as a total (#105 finding
+ * 5), which is why every row carries proposalsThatCannotBeBooked.
+ */
+async function changeOrderStatus(companyId: string, input: Input): Promise<ToolResult> {
+  const mismatch = await jobNameMismatch(companyId, input.jobName);
+  if (mismatch) return { data: [], citations: [], unavailable: mismatch };
+
+  const jobs = await prisma.job.findMany({
+    where: { companyId },
+    select: {
+      id: true,
+      name: true,
+      contact: { select: { name: true } },
+      // Unfiltered: see above. Soft-deleted rows are load-bearing here.
+      lineItems: { select: { id: true, description: true, quantity: true, unitPrice: true, isDeleted: true } },
+      changeOrders: {
+        orderBy: { number: "asc" },
+        select: {
+          number: true,
+          title: true,
+          status: true,
+          submittedOn: true,
+          decidedOn: true,
+          proposals: {
+            select: {
+              changeType: true,
+              lineItemId: true,
+              quantity: true,
+              unitPrice: true,
+              previousQuantity: true,
+              previousUnitPrice: true,
+              previousIsDeleted: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  const today = serverToday();
+  const wanted = input.status?.toUpperCase();
+  const rows = jobs
+    .filter((job) => matchesJobName(job.name, input.jobName))
+    .flatMap((job) => {
+      const targets = new Map(job.lineItems.map((item) => [item.id, item]));
+      return job.changeOrders
+        .filter((co) => changeOrderMatches(co.status, wanted))
+        .map((co) => {
+          const unbookable = countUnbookable(co.proposals, targets);
+          return {
+            job: job.name,
+            gc: job.contact.name,
+            changeOrder: `CO #${co.number}`,
+            title: co.title,
+            status: co.status,
+            value: Number(changeOrderValueDelta(co.proposals, targets)),
+            submittedOn: iso(co.submittedOn),
+            decidedOn: iso(co.decidedOn),
+            // Days since it went to the GC. NOT "days late": nothing
+            // records an agreed response time for a change order, unlike an
+            // RFI's contractual response date, so this is elapsed time and
+            // the description says so. `daysBetween` rather than
+            // `daysPastDueFor`: the arithmetic is identical and the second
+            // name would plant "overdue" in the one tool that must not
+            // imply it.
+            daysAwaitingDecision:
+              co.status === "SUBMITTED" && co.submittedOn
+                ? Math.max(0, daysBetween(iso(co.submittedOn)!, today))
+                : null,
+            // Reported rather than folded away: a pending proposal against
+            // scope an earlier approved change order deleted can never be
+            // booked, so a value that silently included it would read as a
+            // total when it is a floor (#105 finding 5).
+            proposalsThatCannotBeBooked: unbookable,
+          };
+        });
+    })
+    .sort((a, b) => (b.daysAwaitingDecision ?? -1) - (a.daysAwaitingDecision ?? -1));
+
+  const submitted = rows.filter((row) => row.status === "SUBMITTED");
+  return {
+    data: rows,
+    summary: {
+      changeOrderCount: rows.length,
+      pendingCount: rows.filter((row) => PENDING_CHANGE_ORDERS.includes(row.status)).length,
+      awaitingGcCount: submitted.length,
+      // Exposure, never revenue: this is precisely the money that is not
+      // yet ours to count, and the description says so too.
+      valueAwaitingGcDecision: submitted.reduce((sum, row) => sum + row.value, 0),
+    },
+    citations: [{ label: "Jobs", href: "/jobs" }],
+    unavailable:
+      rows.length === 0
+        ? wanted && wanted !== "PENDING"
+          ? `No change order is ${wanted.toLowerCase()}.`
+          : "No change orders have been raised."
+        : undefined,
+  };
+}
+
+/**
+ * Burdened labor cost booked to a job, priced the way /jobs/[id] prices it.
+ *
+ * THE COVERAGE FIGURE IS NOT OPTIONAL. `calculateTimeEntryLaborCost`
+ * returns null when an entry has no craft tag or no rate schedule covers
+ * its date — it never guesses a rate — so on a half-configured company the
+ * total is real and partial at once. Reporting the money without the share
+ * of hours it was drawn from is the same failure job_margin's two coverage
+ * ratios exist to prevent: a number that reads as the answer while most of
+ * the work is missing from it.
+ */
+async function jobLaborCost(companyId: string, input: Input): Promise<ToolResult> {
+  const mismatch = await jobNameMismatch(companyId, input.jobName);
+  if (mismatch) return { data: [], citations: [], unavailable: mismatch };
+
+  const jobs = await prisma.job.findMany({
+    where: { companyId },
+    select: {
+      id: true,
+      name: true,
+      contact: { select: { name: true } },
+      timeEntries: {
+        select: {
+          hours: true,
+          payType: true,
+          date: true,
+          craftClassificationId: true,
+        },
+      },
+    },
+  });
+
+  const crafts = await prisma.craftClassification.findMany({
+    where: { companyId },
+    select: {
+      id: true,
+      fringeRateSchedules: {
+        select: {
+          baseWage: true,
+          pensionRate: true,
+          vacationRate: true,
+          healthWelfareRate: true,
+          trainingRate: true,
+          effectiveFrom: true,
+          effectiveTo: true,
+        },
+      },
+    },
+  });
+  const schedulesByCraft = new Map(
+    crafts.map((craft) => [
+      craft.id,
+      craft.fringeRateSchedules.map((s) => ({
+        baseWage: Number(s.baseWage),
+        pensionRate: s.pensionRate != null ? Number(s.pensionRate) : null,
+        vacationRate: s.vacationRate != null ? Number(s.vacationRate) : null,
+        healthWelfareRate: s.healthWelfareRate != null ? Number(s.healthWelfareRate) : null,
+        trainingRate: s.trainingRate != null ? Number(s.trainingRate) : null,
+        effectiveFrom: s.effectiveFrom,
+        effectiveTo: s.effectiveTo,
+      })),
+    ]),
+  );
+
+  const rows = jobs
+    .filter((job) => matchesJobName(job.name, input.jobName))
+    .filter((job) => job.timeEntries.length > 0)
+    .map((job) => {
+      let cost = 0;
+      let hours = 0;
+      let pricedHours = 0;
+      for (const entry of job.timeEntries) {
+        const entryHours = Number(entry.hours);
+        hours += entryHours;
+        const schedule = entry.craftClassificationId
+          ? findEffectiveFringeRateSchedule(schedulesByCraft.get(entry.craftClassificationId) ?? [], entry.date)
+          : null;
+        const entryCost = calculateTimeEntryLaborCost(
+          { hours: entryHours, payType: entry.payType, date: entry.date },
+          schedule,
+        );
+        if (entryCost !== null) {
+          cost += entryCost;
+          pricedHours += entryHours;
+        }
+      }
+      return {
+        job: job.name,
+        gc: job.contact.name,
+        hoursLogged: hours,
+        hoursPriced: pricedHours,
+        // Null, not zero, when nothing could be priced: "we cannot price
+        // these hours" and "these hours cost nothing" are different
+        // answers and only one of them is true.
+        burdenedLaborCost: pricedHours > 0 ? cost : null,
+        // A fraction would be read as a percentage or multiplied — the
+        // 100x mistake issue #103 caught on percentComplete. Formatted here.
+        shareOfHoursPriced: hours > 0 ? `${Math.round((pricedHours / hours) * 100)}%` : "0%",
+      };
+    })
+    .sort((a, b) => (b.burdenedLaborCost ?? 0) - (a.burdenedLaborCost ?? 0));
+
+  const unpriced = rows.reduce((sum, row) => sum + (row.hoursLogged - row.hoursPriced), 0);
+  return {
+    data: rows,
+    summary: {
+      jobsWithHours: rows.length,
+      hoursLogged: rows.reduce((sum, row) => sum + row.hoursLogged, 0),
+      hoursNotPriced: unpriced,
+      burdenedLaborCost: rows.reduce((sum, row) => sum + (row.burdenedLaborCost ?? 0), 0),
+    },
+    citations: [{ label: "Jobs", href: "/jobs" }],
+    unavailable:
+      rows.length === 0
+        ? input.jobName
+          ? "No hours have been logged on that job."
+          : "No hours have been logged on any job."
+        : undefined,
+  };
+}
+
+/**
+ * One year of the OSHA case log, plus the toolbox talks held.
+ *
+ * `isRecordable` is the log's own derivation — from the outcome, never
+ * stored — so this and /safety cannot disagree about which cases are on
+ * the 300. The year is the person's word for it resolved here, not by the
+ * model: an unqualified question means the current year, which is what the
+ * page defaults to.
+ */
+async function safetyRecord(companyId: string, input: Input): Promise<ToolResult> {
+  const today = serverToday();
+  const thisYear = Number(today.slice(0, 4));
+  const asked = Number((input.year ?? "").trim());
+  const year = Number.isInteger(asked) && asked > 1970 && asked <= thisYear + 1 ? asked : thisYear;
+
+  const [incidents, talks] = await Promise.all([
+    prisma.safetyIncident.findMany({
+      where: { companyId, caseYear: year },
+      orderBy: { caseNumber: "desc" },
+      select: {
+        caseNumber: true,
+        caseYear: true,
+        occurredAt: true,
+        employeeName: true,
+        classification: true,
+        outcome: true,
+        daysAway: true,
+        daysRestricted: true,
+        job: { select: { name: true } },
+      },
+    }),
+    prisma.toolboxTalk.findMany({
+      where: { companyId, heldOn: { gte: new Date(Date.UTC(year, 0, 1)), lt: new Date(Date.UTC(year + 1, 0, 1)) } },
+      orderBy: { heldOn: "desc" },
+      select: { topic: true, heldOn: true, job: { select: { name: true } } },
+    }),
+  ]);
+
+  const cases = incidents.map((incident) => ({
+    case: `${incident.caseYear}-${incident.caseNumber}`,
+    occurredOn: iso(incident.occurredAt),
+    person: incident.employeeName,
+    job: incident.job?.name ?? null,
+    classification: classificationLabel(incident.classification),
+    outcome: outcomeLabel(incident.outcome),
+    recordable: isRecordable(incident.outcome),
+    daysAway: incident.daysAway,
+    daysRestricted: incident.daysRestricted,
+  }));
+
+  return {
+    data: {
+      year,
+      cases,
+      // Topic and date only. The attendee roster is free text and the
+      // signature sheet is a photo, so naming who was there would be a
+      // claim this data cannot support — see KNOWN_GAPS.
+      toolboxTalks: talks.map((talk) => ({
+        topic: talk.topic,
+        heldOn: iso(talk.heldOn),
+        job: talk.job?.name ?? null,
+      })),
+    },
+    summary: {
+      cases: cases.length,
+      recordableCases: cases.filter((row) => row.recordable).length,
+      casesWithDaysAway: cases.filter((row) => row.outcome === outcomeLabel("DAYS_AWAY")).length,
+      daysAwayTotal: cases.reduce((sum, row) => sum + (row.daysAway ?? 0), 0),
+      daysRestrictedTotal: cases.reduce((sum, row) => sum + (row.daysRestricted ?? 0), 0),
+      toolboxTalks: talks.length,
+    },
+    citations: [{ label: "Safety", href: "/safety" }],
+    unavailable:
+      cases.length === 0 && talks.length === 0
+        ? `Nothing is recorded for ${year}: no cases and no toolbox talks.`
+        : undefined,
   };
 }
