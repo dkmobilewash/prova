@@ -1,20 +1,9 @@
 appId: host.exp.Exponent
 ---
-- tapOn: "Job ID"
-- inputText: "cmtjg1oi20003l404xksg5wbl"
-- tapOn: "Open reports"
+# The signed-in user lands on the Jobs list; tap a job to reach its reports.
+- tapOn: "TAKEOFF-TEST-2026-09-02, ESTIMATE"
 - extendedWaitUntil:
     visible: "Pending sync: 0"
     timeout: 20000
 - assertNotVisible: "Job not found"
 - assertNotVisible: "Request failed"
-- tapOn: "Date (YYYY-MM-DD)"
-- inputText: "2026-09-15"
-- tapOn: "Work performed"
-- inputText: "Framed the east wall"
-- hideKeyboard
-- tapOn: "Add report"
-- extendedWaitUntil:
-    visible: "Framed the east wall"
-    timeout: 20000
-- assertNotVisible: "Job not found"

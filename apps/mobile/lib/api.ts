@@ -1,6 +1,7 @@
 import type {
   CreateFieldReportInput,
   FieldReportRow,
+  Job,
   UpdateFieldReportInput,
 } from "./types";
 
@@ -53,4 +54,8 @@ export async function updateFieldReport(
     token,
     body: input,
   });
+}
+
+export async function listJobs(token: string): Promise<Job[]> {
+  return request(`/api/v1/jobs`, { token });
 }

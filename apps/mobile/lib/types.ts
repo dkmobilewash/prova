@@ -45,3 +45,11 @@ export type UpdateFieldReportInput = {
   clientId?: string | null;
   clientUpdatedAt?: string | null;
 };
+
+export type Job = {
+  id: string;
+  name: string;
+  status: "ESTIMATE" | "CONTRACTED" | "IN_PROGRESS" | "COMPLETE";
+  startDate: string | null;
+  endDate: string | null;
+};
