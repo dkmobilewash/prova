@@ -46,6 +46,7 @@ import { can } from "@/lib/permissions";
 import { countJobMedia, loadJobMedia, loadJobMediaTags } from "@/lib/job-media-query";
 import { viewerTimeZone } from "@/lib/viewerToday";
 import { formatCalendarDate, formatInstant } from "@/lib/render-date";
+import { cashReceived } from "@/lib/billing/payment-entry";
 import { money } from "@/lib/money";
 import {
   calculateLineItemWip,
@@ -1510,11 +1511,33 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                         {invoice.payments.map((payment) => (
                           <li key={payment.id} className="flex items-center justify-between text-sm">
                             <span className="text-ink-label">
-                              {formatInstant(payment.receivedAt, timeZone, "dayMonth")}
+                              {/* `formatCalendarDate`, not `formatInstant`:
+                                  receivedAt is a date a person types now, so
+                                  it is stored at UTC midnight and reads back
+                                  in UTC. Rendered in the viewer's zone it
+                                  would show the day before for everyone west
+                                  of UTC. Payments recorded before this field
+                                  existed hold the timestamp of the click
+                                  instead, and one logged late in the evening
+                                  can therefore now read a day later. */}
+                              {formatCalendarDate(payment.receivedAt, "dayMonth")}
                               {payment.method ? ` · ${payment.method}` : ""}
                               {payment.note ? ` · ${payment.note}` : ""}
                             </span>
                             <span className="flex items-center gap-2">
+                              {/* What a platform took in transit, and what
+                                  therefore reached the bank — derived, never
+                                  stored (lib/billing/payment-entry.ts). The
+                                  amount beside it is what was APPLIED to the
+                                  invoice, which is what the balance above
+                                  subtracts. */}
+                              {payment.feeAmount != null && (
+                                <span className="text-xs text-ink-muted">
+                                  {money(Number(payment.feeAmount))} fee
+                                  {payment.feeSource ? ` (${payment.feeSource})` : ""} ·{" "}
+                                  {money(cashReceived(Number(payment.amount), Number(payment.feeAmount)))} banked
+                                </span>
+                              )}
                               <span className="text-ink">{money(Number(payment.amount))}</span>
                               {/* The QuickBooks push is `children`, not a
                                   sibling: this is money received, the worst

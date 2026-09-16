@@ -18,6 +18,7 @@ import { issueInvoiceNumber } from "@/lib/billing/invoice-number";
 // exactly how that action came to keep its own MAX(versionNumber) + 1.
 import { issueContractDocumentVersion } from "@/lib/billing/contract-document-version";
 import { createRetainageReleaseRecord } from "@/lib/billing/retainage-release";
+import { readPaymentEntry } from "@/lib/billing/payment-entry";
 import { MIN_EARNED_COVERAGE } from "@/lib/company-financials";
 import { payAppEntryError } from "@/lib/pay-application";
 import { recordAskUsage } from "@/lib/ask/usage";
@@ -528,7 +529,15 @@ export async function updateInvoiceStatus(jobId: string, invoiceId: string, form
  * Returns an ActionResult, unlike most of this module's create actions —
  * production redacts thrown Server Action messages, and the overpayment
  * guard below is a real refusal a normal user action can trigger, not a
- * bug. It needs to reach the person who tried to log it. */
+ * bug. It needs to reach the person who tried to log it. The received-date
+ * and platform-fee refusals from `readPaymentEntry` arrive the same way,
+ * for the same reason.
+ *
+ * `amount` is what was APPLIED to the invoice, gross, before any platform
+ * fee — see Payment.amount in billing.prisma, and the header of
+ * lib/billing/payment-entry.ts for why that has to be the convention and
+ * where the repo says otherwise. Cash actually received is derived from
+ * `amount - feeAmount` at read time and never stored. */
 export async function logPayment(jobId: string, invoiceId: string, formData: FormData): Promise<ActionResult> {
   const { company } = await requireCompanyContext();
   await assertJobInCompany(jobId, company.id);
@@ -590,8 +599,37 @@ export async function logPayment(jobId: string, invoiceId: string, formData: For
     );
   }
 
+  // The received date and the platform fee, both read AFTER the ceiling
+  // guard above so a typo in either cannot mask an overpayment. `amount`
+  // is unchanged in meaning by the fee — see readPaymentEntry's header and
+  // Payment.amount in billing.prisma — so the ceiling is still checked
+  // against what was applied to the invoice, gross.
+  const entry = readPaymentEntry({
+    receivedAtRaw: String(formData.get("receivedAt") ?? ""),
+    feeRaw: String(formData.get("feeAmount") ?? ""),
+    feeSourceRaw: String(formData.get("feeSource") ?? ""),
+    amountCents: newAmountCents,
+    now: new Date(),
+  });
+  if (!entry.ok) {
+    return actionFail(entry.error);
+  }
+
   await prisma.payment.create({
-    data: { invoiceId, amount, method: method || null, note: note || null },
+    data: {
+      invoiceId,
+      amount,
+      method: method || null,
+      note: note || null,
+      // Entered, not stamped. This was `@default(now())` doing the work of
+      // a decision: the timestamp of the click is what QuickBooks then
+      // received as `TxnDate`, so Prova and QuickBooks disagreed by
+      // however long the cheque sat in the mail and the reconciliation
+      // report flagged a discrepancy that was never real.
+      receivedAt: entry.value.receivedAt,
+      feeAmount: entry.value.feeAmount,
+      feeSource: entry.value.feeSource,
+    },
   });
 
   revalidatePath(`/jobs/${jobId}`);
