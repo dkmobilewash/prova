@@ -120,8 +120,11 @@ export default async function Wh347Page({
   const wh347Entries: Wh347TimeEntryInput[] = entries.map((entry) => ({
     employeeUserId: timeEntryWorkerId(entry),
     // The identity, not a pre-formatted name: lib/wh347.ts owns the
-    // "never an email on a filing" decision so both pages cannot drift.
-    employee: { name: timeEntryWorkerName(entry).label, email: entry.employeeUser?.email ?? "" },
+    // "never an email on a filing" decision so both pages cannot drift. A
+    // crew member has no email, so their name is passed directly.
+    employee: entry.employeeUser
+      ? { name: entry.employeeUser.name, email: entry.employeeUser.email }
+      : { name: timeEntryWorkerName(entry).label, email: "" },
     craftClassificationId: entry.craftClassificationId,
     craftLabel: entry.craftClassification
       ? `${entry.craftClassification.unionLocal.parentInternational} ${entry.craftClassification.unionLocal.localNumber} — ${entry.craftClassification.name}`
