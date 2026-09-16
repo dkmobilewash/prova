@@ -1,0 +1,23 @@
+{
+  "expo": {
+    "name": "Prova",
+    "slug": "prova",
+    "scheme": "prova",
+    "version": "0.0.1",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "plugins": ["expo-router", "expo-secure-store"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.cstream.prova"
+    },
+    "android": {
+      "package": "com.cstream.prova"
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static"
+    }
+  }
+}

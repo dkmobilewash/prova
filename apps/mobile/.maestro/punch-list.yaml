@@ -1,0 +1,24 @@
+appId: host.exp.Exponent
+---
+# Open a job's field reports, then its punch list, add an item and tick it off.
+- tapOn: "TAKEOFF-TEST-2026-09-02, Estimate"
+- extendedWaitUntil:
+    visible: "Pending sync: 0"
+    timeout: 20000
+- tapOn: "Punch list"
+- extendedWaitUntil:
+    visible: "Nothing outstanding on this job."
+    timeout: 20000
+- tapOn: "Add item"
+- tapOn: "What needs fixing"
+- inputText: "ZZ-VERIFY ceiling grid out of level"
+- tapOn: "Save item"
+- extendedWaitUntil:
+    visible: "ZZ-VERIFY ceiling grid out of level"
+    timeout: 20000
+- tapOn: "Mark as done"
+- extendedWaitUntil:
+    visible: "Mark as not done"
+    timeout: 20000
+- assertNotVisible: "Request failed"
+- assertNotVisible: "Failed to add item"

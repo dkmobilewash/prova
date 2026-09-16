@@ -1,0 +1,6 @@
+appId: host.exp.Exponent
+---
+- tapOn: "Prova"
+- extendedWaitUntil:
+    visible: "Continue with Google"
+    timeout: 30000
