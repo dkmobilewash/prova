@@ -5,8 +5,11 @@ import {
   certifiedPayrollAlerts,
   closeoutAlerts,
   contactFollowUpAlerts,
+  drawingRevisionAlerts,
   partitionAlerts,
   renewalAlert,
+  rfiAlerts,
+  submittalAlerts,
   visibleToPrincipal,
   retainageAlerts,
   wipAlerts,
@@ -62,8 +65,18 @@ export async function loadAlerts(
   // rather than a window of our own choosing.
   const currentMonth = todayIso.slice(0, 7);
 
-  const [renewalSources, backcharges, jobs, acknowledgements, ratioReviews, followUps, intakeTray] =
-    await Promise.all([
+  const [
+    renewalSources,
+    backcharges,
+    jobs,
+    acknowledgements,
+    ratioReviews,
+    followUps,
+    intakeTray,
+    rfis,
+    submittals,
+    drawingSets,
+  ] = await Promise.all([
     renewalSourcesForCompany(companyId),
 
     prisma.backcharge.findMany({
@@ -160,6 +173,67 @@ export async function loadAlerts(
         status: true,
         jobHint: true,
         jobId: true,
+      },
+    }),
+
+    // Correspondence, all three kinds. Each one is narrowed here only where
+    // the database can do it without deciding anything: `status: "SENT"` is
+    // rfiLabels.isOpen's population expressed as a where-clause, and
+    // rfiAlerts still applies `isOpen` itself so that definition stays in
+    // one place — the same belt-and-braces lib/moneyRail.ts uses for
+    // `isLive`. Submittals and drawing sets cannot be narrowed at all: what
+    // makes them worth chasing is a property of the LATEST revision, and
+    // submittalState / unreceivedRevisions are what decide it.
+    prisma.rfi.findMany({
+      where: { companyId, status: "SENT" },
+      select: {
+        id: true,
+        number: true,
+        subject: true,
+        status: true,
+        sentOn: true,
+        dueBy: true,
+        job: { select: { name: true } },
+      },
+    }),
+
+    prisma.submittal.findMany({
+      where: { companyId },
+      select: {
+        id: true,
+        number: true,
+        title: true,
+        job: { select: { name: true } },
+        revisions: {
+          select: {
+            revisionNumber: true,
+            sentOn: true,
+            dueBack: true,
+            returnedOn: true,
+            outcome: true,
+            responseNotes: true,
+          },
+        },
+      },
+    }),
+
+    prisma.drawingSet.findMany({
+      where: { companyId },
+      select: {
+        id: true,
+        name: true,
+        job: { select: { name: true } },
+        revisions: {
+          select: {
+            id: true,
+            label: true,
+            issuedOn: true,
+            receivedOn: true,
+            description: true,
+            fileUrl: true,
+            fileName: true,
+          },
+        },
       },
     }),
   ]);
@@ -334,6 +408,65 @@ export async function loadAlerts(
         contactName: f.contact.name,
         followUpOn: isoDate(f.followUpOn) as string,
         assignedToName: f.followUpAssignedToUser?.name ?? f.followUpAssignedToUser?.email ?? null,
+      })),
+      todayIso,
+    ),
+  );
+
+  alerts.push(
+    ...rfiAlerts(
+      rfis.map((rfi) => ({
+        id: rfi.id,
+        number: rfi.number,
+        subject: rfi.subject,
+        jobName: rfi.job.name,
+        status: rfi.status as string,
+        sentOn: isoDate(rfi.sentOn),
+        dueBy: isoDate(rfi.dueBy),
+      })),
+      todayIso,
+    ),
+  );
+
+  alerts.push(
+    ...submittalAlerts(
+      submittals.map((submittal) => ({
+        submittalId: submittal.id,
+        number: submittal.number,
+        title: submittal.title,
+        jobName: submittal.job.name,
+        revisions: submittal.revisions.map((rev) => ({
+          revisionNumber: rev.revisionNumber,
+          // sentOn is required on SubmittalRevision, so this cast is the
+          // shape of the column rather than an assumption about the data.
+          sentOn: isoDate(rev.sentOn) as string,
+          dueBack: isoDate(rev.dueBack),
+          returnedOn: isoDate(rev.returnedOn),
+          outcome: rev.outcome,
+          responseNotes: rev.responseNotes,
+        })),
+      })),
+      todayIso,
+    ),
+  );
+
+  alerts.push(
+    ...drawingRevisionAlerts(
+      drawingSets.map((set) => ({
+        setId: set.id,
+        setName: set.name,
+        jobName: set.job.name,
+        revisions: set.revisions.map((rev) => ({
+          id: rev.id,
+          label: rev.label,
+          // issuedOn is required on DrawingRevision; receivedOn is the
+          // nullable one, and its absence is the whole alert.
+          issuedOn: isoDate(rev.issuedOn) as string,
+          receivedOn: isoDate(rev.receivedOn),
+          description: rev.description,
+          fileUrl: rev.fileUrl,
+          fileName: rev.fileName,
+        })),
       })),
       todayIso,
     ),
