@@ -70,6 +70,7 @@ const LABELLED_PICKERS: Record<string, number> = {
   // ---- filter chip rows: which job a log is narrowed to
   "app/(app)/backcharges/page.tsx": 1,
   "app/(app)/drawings/page.tsx": 1,
+  "app/(app)/field-reports/page.tsx": 1,
   "app/(app)/material-orders/page.tsx": 1,
   "app/(app)/photos/page.tsx": 1,
   "app/(app)/punch-lists/page.tsx": 1,
@@ -169,7 +170,12 @@ describe("the job-picker census", () => {
     // bare `job.name` and was caught by the rule below rather than by a
     // reviewer. Moving this number is meant to be a decision, which is why
     // it is a literal and not derived.
-    expect(expected).toEqual(23);
+    //
+    // 23 -> 24 on 2026-09-16: /field-reports gained the job filter chips
+    // that /punch-lists and /photos already had. It is the log a GC asks
+    // for by job, and reading it meant picking rows out of a company-wide
+    // week by eye.
+    expect(expected).toEqual(24);
     expect(actual).toEqual(expected);
   });
 
