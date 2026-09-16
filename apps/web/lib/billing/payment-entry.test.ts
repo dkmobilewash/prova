@@ -155,6 +155,14 @@ describe("the recorded fee and lib/gc-reliability.ts", () => {
     dueAt: new Date("2026-08-31T00:00:00.000Z"),
     paidAmount: 100_000,
     feesDeducted: 0,
+    // Null, not 0, and the distinction is the point: this fixture is a job
+    // with NO retainage terms, so there is nothing to withhold. A 0 would
+    // say "terms that withheld nothing this period", which is a different
+    // claim and would make these fee assertions read as a statement about
+    // retainage behaviour that they are not making. Added when #288 made
+    // the field required on this type — the two branches were each green
+    // alone and only disagreed once merged.
+    retainageWithheld: null,
     lastPaymentAt: new Date("2026-08-20T00:00:00.000Z"),
   };
 

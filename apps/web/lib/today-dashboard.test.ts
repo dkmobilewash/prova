@@ -76,6 +76,20 @@ vi.mock("@prova/db", async (importOriginal) => ({
 
 vi.mock("./retainage-query", () => ({ loadRetainageHeld: async () => RETAINAGE_HELD }));
 
+// #287 added burdened labor to this page's job-cost read, which means
+// today-dashboard.ts now loads fringe schedules too. Stubbed at the module
+// boundary the same way retainage-query is, rather than by adding a
+// fringeRateSchedule table to the prisma fake: these tests are about
+// arithmetic over receivables and none of their jobs carry time entries, so
+// an empty schedule map is the honest fixture rather than a convenient one.
+// Without this the whole file died on `Cannot read properties of undefined
+// (reading 'findMany')` — and it only died once #287 and #288 were merged
+// together, since each was green against its own branch.
+vi.mock("./fringe-schedules-query", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./fringe-schedules-query")>()),
+  loadFringeSchedulesByCraft: async () => new Map(),
+}));
+
 async function load() {
   const { loadTodayDashboard } = await import("./today-dashboard");
   return loadTodayDashboard("company-1", new Date("2026-09-16T12:00:00.000Z"));
