@@ -26,18 +26,22 @@ export function Row({
     <Pressable
       onPress={onPress}
       disabled={!onPress}
+      accessibilityRole={onPress ? "button" : undefined}
+      accessibilityLabel={subtitle ? `${title}, ${subtitle}` : title}
       style={({ pressed }) => [
         styles.row,
         pressed && onPress && styles.pressed,
       ]}
     >
-      {icon ? <View style={styles.icon}>{icon}</View> : null}
+      {icon ? <View style={styles.icon} importantForAccessibility="no">{icon}</View> : null}
       <View style={styles.body}>
         <Text style={styles.title}>{title}</Text>
         {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
       </View>
       {value ? <Text style={styles.value}>{value}</Text> : null}
-      {chevron && onPress ? <Text style={styles.chevron}>›</Text> : null}
+      {chevron && onPress ? (
+        <Text style={styles.chevron} importantForAccessibility="no">›</Text>
+      ) : null}
     </Pressable>
   );
 }
