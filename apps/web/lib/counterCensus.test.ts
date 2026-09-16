@@ -137,3 +137,103 @@ describe("the sequence counter census", () => {
     ).toEqual([]);
   });
 });
+
+/**
+ * Which table each counter numbers, and the helper that must issue that
+ * number. Issue #279.
+ *
+ * THE CENSUS ABOVE CANNOT SEE THE DEFECT THIS CATCHES, and was green
+ * throughout it. It asks whether each counter is bumped, and inside a
+ * transaction. `ContractDocumentVersionCounter` passed both: one of the two
+ * writers of `ContractDocument` bumped it, correctly, in a transaction. The
+ * other never touched it and computed `MAX(versionNumber) + 1` instead, so
+ * the counter and the table disagreed and the counter-issued insert
+ * collided on `@@unique([jobId, versionNumber])` — deterministically, on
+ * the ordinary order of events, not as a race.
+ *
+ * So this asks the question from the other end: does every writer of a
+ * NUMBERED TABLE go through the counter? "Is the counter used" and "is the
+ * counter the only source of the number" are different claims, and only the
+ * second one is the rule.
+ *
+ * The map is not derived, because nothing in the schema says which table a
+ * counter numbers — `SafetyCaseCounter` numbers `SafetyIncident`, and no
+ * naming rule gets you there. It does not need to be derived to be safe:
+ * the first test pins its keys to the schema's own counter list, so a new
+ * counter FAILS until somebody writes down what it numbers. That is the
+ * point rather than a formality — the declaring is the review.
+ */
+const NUMBERED_TABLES: Record<string, { accessor: string; helper: string }> = {
+  BackchargeCounter: { accessor: "backcharge", helper: "issueBackchargeNumber" },
+  ChangeOrderCounter: { accessor: "changeOrder", helper: "issueChangeOrderNumber" },
+  CloseoutSubmissionCounter: { accessor: "closeoutSubmission", helper: "issueAttemptNumber" },
+  ContractDocumentVersionCounter: {
+    accessor: "contractDocument",
+    helper: "issueContractDocumentVersion",
+  },
+  // #289, added by #290 while this census was in review — the first counter
+  // this file has ever been asked to admit, and it worked as designed: the
+  // build went red on the merge naming exactly this model, rather than the
+  // counter quietly sitting outside every assertion below.
+  EstimateVersionCounter: { accessor: "estimateVersion", helper: "issueEstimateVersionNumber" },
+  InvoiceCounter: { accessor: "invoice", helper: "issueInvoiceNumber" },
+  MaterialOrderCounter: { accessor: "materialOrder", helper: "issueOrderNumber" },
+  RfiCounter: { accessor: "rfi", helper: "issueRfiNumber" },
+  SafetyCaseCounter: { accessor: "safetyIncident", helper: "issueCaseNumber" },
+  SubmittalCounter: { accessor: "submittal", helper: "issueSubmittalNumber" },
+};
+
+/** `tx.contractDocument.create(` but never
+ * `tx.contractDocumentVersionCounter.upsert(` — the negative lookahead is
+ * what keeps a counter's own accessor from matching the table it numbers,
+ * since one is a prefix of the other. */
+function insertPattern(accessor: string) {
+  return new RegExp(`\\.\\s*${accessor}(?![A-Za-z0-9_])\\s*\\.\\s*(create|createMany)\\s*\\(`, "g");
+}
+
+describe("the numbered-table census — every writer goes through the counter", () => {
+  it("declares what every counter in the schema numbers", () => {
+    // A new counter with no entry here fails, rather than silently being
+    // exempt from every assertion below. Same reason the size checks above
+    // come first: an unasked question passes.
+    expect([...Object.keys(NUMBERED_TABLES)].sort()).toEqual([...counterModels].sort());
+  });
+
+  it("issues the number from the counter in every file that inserts a numbered row", () => {
+    const offenders: string[] = [];
+    for (const [counter, { accessor, helper }] of Object.entries(NUMBERED_TABLES)) {
+      for (const file of sources) {
+        if (!insertPattern(accessor).test(file.source)) continue;
+        if (file.source.includes(helper)) continue;
+        offenders.push(`${file.path} inserts ${accessor} without calling ${helper} (${counter})`);
+      }
+    }
+    expect(
+      offenders,
+      `A writer of a numbered table that never calls its counter's issuing helper is computing ` +
+        `the number itself, which is issue #279 exactly: ${offenders.join("; ")}`,
+    ).toEqual([]);
+  });
+
+  it("issues a number at least as often as it inserts a numbered row", () => {
+    // Catches the case the file-level check above cannot: a file that calls
+    // the helper once and then inserts twice, the second insert carrying a
+    // number from somewhere else.
+    const offenders: string[] = [];
+    for (const { accessor, helper } of Object.values(NUMBERED_TABLES)) {
+      const inserts = sources.reduce(
+        (n, f) => n + (f.source.match(insertPattern(accessor)) ?? []).length,
+        0,
+      );
+      const issues = sources.reduce(
+        (n, f) =>
+          n + (f.source.match(new RegExp(`\\b${helper}\\s*\\(`, "g")) ?? []).length,
+        0,
+      );
+      if (issues < inserts) {
+        offenders.push(`${accessor}: ${inserts} insert(s) but only ${issues} call(s) to ${helper}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+});

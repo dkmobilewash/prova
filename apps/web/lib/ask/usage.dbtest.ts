@@ -42,7 +42,62 @@ describe("ask usage against a real database", () => {
     expect(rows[0]).toMatchObject({ userId, passes: 1, inputTokens: 100, outputTokens: 10, outcome: "answered" });
 
     const summary = await usageSummary(companyId);
-    expect(summary).toEqual({ readable: true, questions: 1, inputTokens: 100, outputTokens: 10, byPerson: [{ who: "Usage Tester", questions: 1, tokens: 110 }] });
+    expect(summary).toEqual({
+      readable: true,
+      questions: 1,
+      calls: 1,
+      inputTokens: 100,
+      outputTokens: 10,
+      byFeature: [{ feature: "ask", label: "Ask", calls: 1, tokens: 110 }],
+      byPerson: [{ who: "Usage Tester", calls: 1, tokens: 110 }],
+    });
+  });
+
+  /**
+   * The same split as usage.test.ts, but against real rows and a real
+   * `groupBy` — the half a fake cannot answer for, since it is Postgres
+   * that has to group by two columns and Prisma that has to type it.
+   *
+   * The assertion that matters is `calls: 3` beside `questions: 1`: the
+   * extraction and the narrative ARE part of the bill and are NOT part of
+   * the ceiling, and `askAllowance` agreeing on the second half is what
+   * keeps the two surfaces honest with each other.
+   */
+  it("bills every feature and bounds only the questions, read back from real rows", async () => {
+    // This suite has beforeAll/afterAll and no per-test reset, so rows
+    // carry between cases. Clear at both ends rather than counting on the
+    // order: the figures below are exact, and an exact assertion over
+    // shared state is a test that passes until somebody inserts a case
+    // above it.
+    await prisma.askUsage.deleteMany({ where: { companyId } });
+
+    await recordAskUsage({ companyId, userId, model: "claude-opus-5", usage: totals, outcome: "answered" });
+    await recordAskUsage({
+      companyId, userId, model: "claude-opus-5", usage: totals,
+      outcome: "answered", feature: "compliance-extract",
+    });
+    await recordAskUsage({
+      companyId, userId, model: "claude-opus-5", usage: totals,
+      outcome: "answered", feature: "wip-narrative",
+    });
+
+    const summary = await usageSummary(companyId);
+    expect(summary.calls).toBe(3);
+    expect(summary.questions).toBe(1);
+    expect(summary.byFeature.map((f) => f.feature).sort()).toEqual([
+      "ask",
+      "compliance-extract",
+      "wip-narrative",
+    ]);
+    // One person, three features, one row on screen.
+    expect(summary.byPerson).toEqual([{ who: "Usage Tester", calls: 3, tokens: 330 }]);
+
+    // And the ceiling counted exactly one of them — the same filter, read
+    // from the other side, so a change to either is caught here.
+    const asked = await prisma.askUsage.count({ where: { companyId, feature: "ask" } });
+    expect(asked).toBe(1);
+
+    await prisma.askUsage.deleteMany({ where: { companyId } });
   });
 
   it("refuses the person at the hourly limit and not before, counting only the last hour", async () => {

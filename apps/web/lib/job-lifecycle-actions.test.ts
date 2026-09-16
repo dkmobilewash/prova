@@ -83,7 +83,20 @@ const prisma = {
       )[0];
     },
     create: async ({ data }: { data: Row }) => {
-      const doc = { id: `doc_${db.contractDocuments.length + 1}`, ...data };
+      const doc: Row = { id: `doc_${db.contractDocuments.length + 1}`, ...data };
+      // @@unique([jobId, versionNumber]) is the constraint the whole of
+      // #280 turns on, so the fake REFUSES a duplicate the way Postgres
+      // would rather than accepting it. Without this the fake is free to
+      // agree with a reintroduced defect: the MAX path could reissue a
+      // number, the push would succeed, and the only thing to notice it
+      // would be an assertion somebody remembered to write.
+      if (
+        db.contractDocuments.some(
+          (d) => d.jobId === doc.jobId && d.versionNumber === doc.versionNumber,
+        )
+      ) {
+        throw new Error("Unique constraint failed on the fields: (`jobId`,`versionNumber`)");
+      }
       db.contractDocuments.push(doc);
       return doc;
     },

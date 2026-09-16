@@ -101,11 +101,20 @@ export default async function AssistantAuditPage() {
       <section className="mb-6 rounded-lg border border-line-card bg-surface p-4" data-ask="usage">
         <h2 className="mb-1 text-sm font-semibold text-ink">Usage, last 30 days</h2>
         {usage.readable ? (
+          <>
           <p className="mb-3 text-sm text-ink-body">
-            {usage.questions} questions sent to the model · {usage.inputTokens.toLocaleString("en-US")} tokens in,{" "}
-            {usage.outputTokens.toLocaleString("en-US")} out. Limits: {ASK_LIMITS.perPersonPerHour} questions per person per hour,{" "}
-            {ASK_LIMITS.perCompanyPerDay} per company per day; past either, the box says so and sends nothing to the model.
+            {usage.calls} model {usage.calls === 1 ? "call" : "calls"} ·{" "}
+            {usage.inputTokens.toLocaleString("en-US")} tokens in, {usage.outputTokens.toLocaleString("en-US")} out
+            — every feature that talks to the model, which is what the bill is.
           </p>
+          <p className="mb-3 text-sm text-ink-body">
+            {usage.questions} of those {usage.questions === 1 ? "was an Ask question" : "were Ask questions"}. Limits:{" "}
+            {ASK_LIMITS.perPersonPerHour} questions per person per hour, {ASK_LIMITS.perCompanyPerDay} per company per
+            day; past either, the box says so and sends nothing to the model. The other features are not counted
+            against those limits — a document extraction costs many times what a question does, so a row count is the
+            wrong instrument for it.
+          </p>
+          </>
         ) : (
           <p className="mb-3 text-sm text-red-300" data-ask="usage-unreadable">
             Usage can&apos;t be read on this deployment — the <code>AskUsage</code> table is missing or unreadable,
@@ -115,13 +124,28 @@ export default async function AssistantAuditPage() {
             this database — or, on a preview, the <strong>Migrate demo database</strong> workflow.
           </p>
         )}
+        {/* By feature before by person: the question this page is opened
+            with is "what is the bill made of", and until the `feature`
+            column was read nothing here could answer it. */}
+        {usage.readable && usage.byFeature.length > 0 && (
+          <ul className="mb-3 divide-y divide-line-row text-sm" data-ask="usage-by-feature">
+            {usage.byFeature.map((row) => (
+              <li key={row.feature} className="flex justify-between gap-3 py-1">
+                <span className="text-ink-label">{row.label}</span>
+                <span className="text-ink-muted">
+                  {row.calls} {row.calls === 1 ? "call" : "calls"} · {row.tokens.toLocaleString("en-US")} tokens
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
         {usage.readable && usage.byPerson.length > 0 && (
           <ul className="divide-y divide-line-row text-sm">
             {usage.byPerson.map((row) => (
               <li key={row.who} className="flex justify-between gap-3 py-1">
                 <span className="text-ink-label">{row.who}</span>
                 <span className="text-ink-muted">
-                  {row.questions} {row.questions === 1 ? "question" : "questions"} · {row.tokens.toLocaleString("en-US")} tokens
+                  {row.calls} {row.calls === 1 ? "call" : "calls"} · {row.tokens.toLocaleString("en-US")} tokens
                 </span>
               </li>
             ))}
