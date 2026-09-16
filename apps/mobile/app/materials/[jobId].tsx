@@ -10,6 +10,9 @@ import { List } from "@/components/List";
 import { Sheet } from "@/components/Sheet";
 import { colors, typography } from "@/lib/theme";
 import * as api from "@/lib/api";
+import { uuid } from "@/lib/id";
+import { enqueue } from "@/lib/sync-queue";
+import { useSync } from "@/lib/use-sync";
 import type { MaterialOrder, Vendor } from "@/lib/types";
 
 export default function MaterialsScreen() {
@@ -46,32 +49,29 @@ export default function MaterialsScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobId]);
 
+  const { pending, sync } = useSync(load);
+
   const submit = async () => {
-    const token = await getToken();
-    if (!token || !jobId || !description || !orderedOn || !vendorId) return;
-    try {
-      await api.createMaterialOrder(
-        jobId,
-        {
-          description,
-          orderedOn,
-          vendorId,
-          ...(promisedFor ? { promisedFor } : {}),
-        },
-        token,
-      );
-      setDescription("");
-      setOrderedOn("");
-      setPromisedFor("");
-      setShowForm(false);
-      await load();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to add order");
-    }
+    if (!jobId || !description || !orderedOn || !vendorId) return;
+    setDescription("");
+    setOrderedOn("");
+    setPromisedFor("");
+    setShowForm(false);
+    await enqueue({
+      type: "material:create",
+      jobId,
+      clientOperationId: uuid(),
+      description,
+      orderedOn,
+      promisedFor: promisedFor || undefined,
+      vendorId,
+    });
+    await sync();
   };
 
   return (
     <View style={styles.screen}>
+      {pending > 0 ? <Text style={styles.pending}>Pending sync: {pending}</Text> : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
       <List
         data={orders}
@@ -122,6 +122,7 @@ export default function MaterialsScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.canvas },
+  pending: { color: colors.link, padding: 16, paddingBottom: 0, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
   error: { color: colors.tagRoseInk, padding: 16, paddingBottom: 0, fontSize: typography.size.sm },
   orderHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   number: { color: colors.ink, fontSize: typography.size.md, fontWeight: typography.weight.bold },

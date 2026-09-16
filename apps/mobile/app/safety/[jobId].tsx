@@ -10,6 +10,9 @@ import { Field } from "@/components/Field";
 import { Sheet } from "@/components/Sheet";
 import { colors, typography } from "@/lib/theme";
 import * as api from "@/lib/api";
+import { uuid } from "@/lib/id";
+import { enqueue } from "@/lib/sync-queue";
+import { useSync } from "@/lib/use-sync";
 import type { SafetyIncident, ToolboxTalk } from "@/lib/types";
 
 const CLASSIFICATIONS = ["INJURY", "SKIN_DISORDER", "RESPIRATORY_CONDITION", "POISONING", "HEARING_LOSS", "OTHER_ILLNESS"];
@@ -52,37 +55,39 @@ export default function SafetyScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobId]);
 
+  const { pending, sync } = useSync(load);
+
   const submitTalk = async () => {
-    const token = await getToken();
-    if (!token || !jobId || !topic || !heldOn) return;
-    try {
-      await api.createToolboxTalk(jobId, { topic, heldOn }, token);
-      setTopic("");
-      setHeldOn("");
-      setShowTalkForm(false);
-      await load();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to add talk");
-    }
+    if (!jobId || !topic || !heldOn) return;
+    setTopic("");
+    setHeldOn("");
+    setShowTalkForm(false);
+    await enqueue({ type: "toolbox-talk:create", jobId, clientOperationId: uuid(), topic, heldOn });
+    await sync();
   };
 
   const submitIncident = async () => {
-    const token = await getToken();
-    if (!token || !jobId || !employeeName || !description || !occurredAt) return;
-    try {
-      await api.createIncident(jobId, { employeeName, description, occurredAt, classification, outcome }, token);
-      setEmployeeName("");
-      setDescription("");
-      setOccurredAt("");
-      setShowIncidentForm(false);
-      await load();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to add incident");
-    }
+    if (!jobId || !employeeName || !description || !occurredAt) return;
+    setEmployeeName("");
+    setDescription("");
+    setOccurredAt("");
+    setShowIncidentForm(false);
+    await enqueue({
+      type: "incident:create",
+      jobId,
+      clientOperationId: uuid(),
+      employeeName,
+      description,
+      occurredAt,
+      classification,
+      outcome,
+    });
+    await sync();
   };
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+      {pending > 0 ? <Text style={styles.pending}>Pending sync: {pending}</Text> : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
       <View style={styles.sectionHead}>
@@ -163,6 +168,7 @@ export default function SafetyScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.canvas },
   content: { padding: 16, gap: 12 },
+  pending: { color: colors.link, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
   error: { color: colors.tagRoseInk, fontSize: typography.size.sm },
   sectionHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   sectionHeadGap: { marginTop: 12 },

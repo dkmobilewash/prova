@@ -9,6 +9,9 @@ import { List } from "@/components/List";
 import { Sheet } from "@/components/Sheet";
 import { colors, typography } from "@/lib/theme";
 import * as api from "@/lib/api";
+import { uuid } from "@/lib/id";
+import { enqueue } from "@/lib/sync-queue";
+import { useSync } from "@/lib/use-sync";
 import type { PunchListItem } from "@/lib/types";
 
 export default function PunchListScreen() {
@@ -37,17 +40,15 @@ export default function PunchListScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobId]);
 
+  const { pending, sync } = useSync(load);
+
   const submit = async () => {
-    const token = await getToken();
-    if (!token || !jobId || !description.trim()) return;
-    try {
-      await api.createPunchListItem(jobId, { description: description.trim() }, token);
-      setDescription("");
-      setShowForm(false);
-      await load();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to add item");
-    }
+    if (!jobId || !description.trim()) return;
+    const text = description.trim();
+    setDescription("");
+    setShowForm(false);
+    await enqueue({ type: "punch-list:create", jobId, clientOperationId: uuid(), description: text });
+    await sync();
   };
 
   const toggle = async (item: PunchListItem) => {
@@ -63,6 +64,7 @@ export default function PunchListScreen() {
 
   return (
     <View style={styles.screen}>
+      {pending > 0 ? <Text style={styles.pending}>Pending sync: {pending}</Text> : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
       <List
         data={items}
@@ -116,6 +118,7 @@ export default function PunchListScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.canvas },
+  pending: { color: colors.link, padding: 16, paddingBottom: 0, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
   error: { color: colors.tagRoseInk, padding: 16, paddingBottom: 0, fontSize: typography.size.sm },
   itemCard: { padding: 0 },
   itemRow: { flexDirection: "row", alignItems: "flex-start", gap: 12, padding: 16 },

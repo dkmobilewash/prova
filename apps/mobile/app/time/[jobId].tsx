@@ -10,6 +10,9 @@ import { List } from "@/components/List";
 import { Sheet } from "@/components/Sheet";
 import { colors, typography } from "@/lib/theme";
 import * as api from "@/lib/api";
+import { uuid } from "@/lib/id";
+import { enqueue } from "@/lib/sync-queue";
+import { useSync } from "@/lib/use-sync";
 import type { TimeEntry, TimeEntryPayType } from "@/lib/types";
 
 const PAY_TYPES: TimeEntryPayType[] = ["STRAIGHT", "OVERTIME", "DOUBLE_TIME", "SHIFT_DIFFERENTIAL"];
@@ -44,23 +47,29 @@ export default function TimeScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobId]);
 
+  const { pending, sync } = useSync(load);
+
   const submit = async () => {
-    const token = await getToken();
-    if (!token || !jobId || !date || !hours) return;
-    try {
-      await api.createTimeEntry(jobId, { date, hours, payType, note }, token);
-      setDate("");
-      setHours("");
-      setNote("");
-      setShowForm(false);
-      await load();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to log time");
-    }
+    if (!jobId || !date || !hours) return;
+    setDate("");
+    setHours("");
+    setNote("");
+    setShowForm(false);
+    await enqueue({
+      type: "time:create",
+      jobId,
+      clientOperationId: uuid(),
+      date,
+      hours,
+      payType,
+      note: note || undefined,
+    });
+    await sync();
   };
 
   return (
     <View style={styles.screen}>
+      {pending > 0 ? <Text style={styles.pending}>Pending sync: {pending}</Text> : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
       <List
         data={entries}
@@ -110,6 +119,7 @@ export default function TimeScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.canvas },
+  pending: { color: colors.link, padding: 16, paddingBottom: 0, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
   error: { color: colors.tagRoseInk, padding: 16, paddingBottom: 0, fontSize: typography.size.sm },
   entryHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   date: { color: colors.ink, fontSize: typography.size.md, fontWeight: typography.weight.semibold },

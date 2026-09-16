@@ -2,21 +2,70 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as api from "./api";
 import type { FieldReportFields } from "./types";
 
-const KEY = "prova.field-report-queue";
+const KEY = "prova.field-queue";
 
-type CreateOp = {
-  type: "create";
-  localId: string;
-  jobId: string;
-  reportDate: string;
-  clientOperationId: string;
-  clientId: string;
-  clientUpdatedAt: string;
-  fields: FieldReportFields;
-};
+// One variant per create, carrying everything the dispatcher needs to replay
+// it. `clientOperationId` is the idempotency key: a retried POST with the
+// same key replays instead of duplicating (the server dedupes on it).
+export type CreateOp =
+  | {
+      type: "field-report:create";
+      jobId: string;
+      reportDate: string;
+      clientOperationId: string;
+      clientId: string;
+      clientUpdatedAt: string;
+      fields: FieldReportFields;
+    }
+  | {
+      type: "time:create";
+      jobId: string;
+      clientOperationId: string;
+      date: string;
+      hours: string;
+      payType: string;
+      note?: string;
+    }
+  | {
+      type: "material:create";
+      jobId: string;
+      clientOperationId: string;
+      description: string;
+      orderedOn: string;
+      promisedFor?: string;
+      vendorId: string;
+      vendorReference?: string;
+      notes?: string;
+    }
+  | {
+      type: "toolbox-talk:create";
+      jobId: string;
+      clientOperationId: string;
+      topic: string;
+      heldOn: string;
+      presenter?: string;
+      attendees?: string;
+      notes?: string;
+    }
+  | {
+      type: "incident:create";
+      jobId: string;
+      clientOperationId: string;
+      employeeName: string;
+      description: string;
+      occurredAt: string;
+      classification: string;
+      outcome: string;
+    }
+  | {
+      type: "punch-list:create";
+      jobId: string;
+      clientOperationId: string;
+      description: string;
+    };
 
-type UpdateOp = {
-  type: "update";
+export type UpdateOp = {
+  type: "field-report:update";
   reportId: string;
   clientId: string;
   clientUpdatedAt: string;
@@ -49,9 +98,9 @@ export async function pendingCount(): Promise<number> {
   return (await read()).length;
 }
 
-/** Drains the queue in order. A create reuses its clientOperationId, so a
- * retried POST replays idempotently; an update carries clientUpdatedAt, so
- * the server's last-write-wins drops a stale edit. On a 401 it throws
+/** Drains the queue in order. Every create carries a clientOperationId, so
+ * a retried POST replays idempotently; the field-report update carries
+ * clientUpdatedAt, so last-write-wins drops a stale edit. On a 401 it throws
  * (caller re-auths, queue left intact); on any other error it stops and
  * leaves the rest queued for the next attempt. */
 export async function flushQueue(token: string): Promise<void> {
@@ -70,23 +119,75 @@ export async function flushQueue(token: string): Promise<void> {
 }
 
 async function runOp(op: PendingOp, token: string): Promise<void> {
-  if (op.type === "create") {
-    await api.createFieldReport(
-      {
-        jobId: op.jobId,
-        reportDate: op.reportDate,
-        ...op.fields,
-        clientId: op.clientId,
-        clientOperationId: op.clientOperationId,
-        clientUpdatedAt: op.clientUpdatedAt,
-      },
-      token,
-    );
-  } else {
-    await api.updateFieldReport(
-      op.reportId,
-      { ...op.fields, clientId: op.clientId, clientUpdatedAt: op.clientUpdatedAt },
-      token,
-    );
+  switch (op.type) {
+    case "field-report:create":
+      await api.createFieldReport(
+        {
+          jobId: op.jobId,
+          reportDate: op.reportDate,
+          ...op.fields,
+          clientId: op.clientId,
+          clientOperationId: op.clientOperationId,
+          clientUpdatedAt: op.clientUpdatedAt,
+        },
+        token,
+      );
+      return;
+    case "field-report:update":
+      await api.updateFieldReport(op.reportId, { ...op.fields, clientId: op.clientId, clientUpdatedAt: op.clientUpdatedAt }, token);
+      return;
+    case "time:create":
+      await api.createTimeEntry(
+        op.jobId,
+        { date: op.date, hours: op.hours, payType: op.payType, note: op.note, clientOperationId: op.clientOperationId },
+        token,
+      );
+      return;
+    case "material:create":
+      await api.createMaterialOrder(
+        op.jobId,
+        {
+          description: op.description,
+          orderedOn: op.orderedOn,
+          promisedFor: op.promisedFor,
+          vendorId: op.vendorId,
+          vendorReference: op.vendorReference,
+          notes: op.notes,
+          clientOperationId: op.clientOperationId,
+        },
+        token,
+      );
+      return;
+    case "toolbox-talk:create":
+      await api.createToolboxTalk(
+        op.jobId,
+        {
+          topic: op.topic,
+          heldOn: op.heldOn,
+          presenter: op.presenter,
+          attendees: op.attendees,
+          notes: op.notes,
+          clientOperationId: op.clientOperationId,
+        },
+        token,
+      );
+      return;
+    case "incident:create":
+      await api.createIncident(
+        op.jobId,
+        {
+          employeeName: op.employeeName,
+          description: op.description,
+          occurredAt: op.occurredAt,
+          classification: op.classification,
+          outcome: op.outcome,
+          clientOperationId: op.clientOperationId,
+        },
+        token,
+      );
+      return;
+    case "punch-list:create":
+      await api.createPunchListItem(op.jobId, { description: op.description, clientOperationId: op.clientOperationId }, token);
+      return;
   }
 }
