@@ -503,7 +503,13 @@ export const estimatingExclusions: Exclusion[] = [
   { action: "createLineItemCatalogEntry", reason: "A catalog entry carries a typed default price, a number the model would be supplying." },
   { action: "deleteLineItemCatalogEntry", reason: "Deletes are never commands (T5)." },
   { action: "saveLineItemAsCatalogEntry", reason: "Promoting a line to the catalog is done from the line on the job page." },
-  { action: "saveEstimateVersion", reason: "versionNumber is max+1 outside a transaction (estimating.ts); not exposed to a retrying caller until it has a counter." },
+  // The counter landed in #289, so the technical blocker this line used to
+  // name is gone — it said "not exposed to a retrying caller until it has
+  // a counter", and leaving that sentence here would point the next reader
+  // at a defect that no longer exists. Whether the box should save a
+  // checkpoint at all is a product call nobody has made, so it stays
+  // excluded for the honest reason rather than the stale one.
+  { action: "saveEstimateVersion", reason: "A checkpoint is \"remember what we priced this at\" about the lines currently on screen; taking it from the job page is the point. Safe to expose now that #289 gave it a counter — not exposed because nobody has decided it should be." },
   { action: "updateCatalogDefaultsFromActuals", reason: "Owner-only pricing change with its own margin arithmetic; page only." },
   { action: "importCatalogEntries", reason: "Owner-only bulk import of pasted CSV; page only." },
 ];

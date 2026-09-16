@@ -1534,6 +1534,12 @@ async function undo(companyId) {
     await del("estimateVersion", () =>
       prisma.estimateVersion.deleteMany({ where: { jobId: { in: jobIds } } }),
     );
+    // EstimateVersionCounter, same shape as the two counters above (#289):
+    // deleting the versions does not reach it, so it outlives them and
+    // blocks the job delete on its own.
+    await del("estimateVersionCounter", () =>
+      prisma.estimateVersionCounter.deleteMany({ where: { jobId: { in: jobIds } } }),
+    );
     await del("dispatchSlip", () =>
       prisma.dispatchSlip.deleteMany({ where: { jobId: { in: jobIds } } }),
     );

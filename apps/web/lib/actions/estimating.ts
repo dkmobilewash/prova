@@ -8,6 +8,7 @@ import { ActionResult, actionFail, actionOk, BID_INVITATION_STATUSES, assertEdit
 import { catalogActuals, repriceDecision, type JobStatusForActuals } from "@/lib/catalog-actuals";
 import { addCatalogLine } from "@/lib/estimating/catalog-line";
 import { createBidInvitationRecord } from "@/lib/estimating/bid-invitation";
+import { issueEstimateVersionNumber } from "@/lib/estimating/estimate-version";
 
 /** Logs a GC inviting this company to bid — tracked independent of Job,
  * since most invitations are declined or lost and never become one.
@@ -225,27 +226,44 @@ export async function saveEstimateVersion(jobId: string, formData: FormData) {
 
   const note = String(formData.get("note") ?? "").trim();
 
-  const [lineItems, lastVersion] = await Promise.all([
-    prisma.jobLineItem.findMany({ where: { jobId, isDeleted: false }, orderBy: { sortOrder: "asc" } }),
-    prisma.estimateVersion.findFirst({ where: { jobId }, orderBy: { versionNumber: "desc" } }),
-  ]);
+  const lineItems = await prisma.jobLineItem.findMany({
+    where: { jobId, isDeleted: false },
+    orderBy: { sortOrder: "asc" },
+  });
 
-  await prisma.estimateVersion.create({
-    data: {
-      jobId,
-      versionNumber: (lastVersion?.versionNumber ?? 0) + 1,
-      note: note || null,
-      snapshot: lineItems.map((item) => ({
-        description: item.description,
-        quantity: item.quantity.toString(),
-        unit: item.unit,
-        tradeScope: item.tradeScope,
-        unitPrice: item.unitPrice?.toString() ?? null,
-        budgetedUnitCost: item.budgetedUnitCost?.toString() ?? null,
-        laborHours: item.laborHours?.toString() ?? null,
-      })),
-      createdByUserId: user.id,
-    },
+  // THE VERSION NUMBER COMES FROM THE COUNTER, in the same transaction as
+  // the insert — issue #289. This used to read MAX(versionNumber) off the
+  // surviving rows and add one, outside any transaction, which meant two
+  // people saving a checkpoint on the same job at once both read the same
+  // max and the second lost their save to
+  // @@unique([jobId, versionNumber]) — a throw this action does not catch,
+  // so a redacted digest in production and no checkpoint. 49 of 50 rounds
+  // at two concurrent saves, measured. SubmitButton (#19) already stopped
+  // the single-tab double-click; two tabs and two people were what got
+  // through.
+  //
+  // The snapshot is read before the transaction deliberately: it is the
+  // line items as the person sees them, and holding a transaction open
+  // across that read would buy nothing — nothing here depends on the two
+  // being atomic with each other, only on the bump and the insert being so.
+  await prisma.$transaction(async (tx) => {
+    await tx.estimateVersion.create({
+      data: {
+        jobId,
+        versionNumber: await issueEstimateVersionNumber(tx, jobId),
+        note: note || null,
+        snapshot: lineItems.map((item) => ({
+          description: item.description,
+          quantity: item.quantity.toString(),
+          unit: item.unit,
+          tradeScope: item.tradeScope,
+          unitPrice: item.unitPrice?.toString() ?? null,
+          budgetedUnitCost: item.budgetedUnitCost?.toString() ?? null,
+          laborHours: item.laborHours?.toString() ?? null,
+        })),
+        createdByUserId: user.id,
+      },
+    });
   });
 
   revalidatePath(`/jobs/${jobId}`);

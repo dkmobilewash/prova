@@ -67,6 +67,39 @@ model EstimateVersion {
   @@index([jobId])
 }
 
+/// Issues EstimateVersion numbers per job. Same shape and same reasoning as
+/// ContractDocumentVersionCounter and InvoiceCounter — issue #289, and the
+/// last sequence in the product that was still `MAX(versionNumber) + 1`.
+///
+/// WHAT THIS REPLACED, and which half of it was actually reachable.
+/// `saveEstimateVersion` read the highest surviving version outside any
+/// transaction and added one. Two people saving a checkpoint on the same
+/// job at once — an estimator and whoever is checking the numbers with
+/// them, or simply two tabs — both read the same max and the second
+/// violated `@@unique([jobId, versionNumber])`. Measured against a real
+/// Postgres 16 before the fix: 49 of 50 rounds at two concurrent saves.
+/// The action returns void and does not catch, so that throw reached the
+/// person as a redacted production digest and their checkpoint was gone.
+///
+/// The reissue-after-delete failure the counter rule usually warns about
+/// was NOT reachable here and is recorded so nobody re-argues it: nothing
+/// in the product deletes an EstimateVersion. The only `deleteMany` calls
+/// are in clean-scratch-data.mjs and seed-demo.mjs, both teardown. The
+/// counter is still correct to have — it removes the race, and it means a
+/// delete path added later cannot quietly reintroduce the other half.
+///
+/// BACKFILLED from MAX(versionNumber) per job when created, for the same
+/// reason InvoiceCounter and ContractDocumentVersionCounter were: starting
+/// at zero would make every job with saved versions collide with its own
+/// history on the first save after the migration.
+model EstimateVersionCounter {
+  jobId      String @id
+  job        Job    @relation(fields: [jobId], references: [id])
+  lastNumber Int    @default(0)
+
+  updatedAt DateTime @updatedAt
+}
+
 /// The five WWCCA trade families a wall-and-ceiling specialty subcontractor
 /// self-performs. A flat categorization tag, not a hierarchy — a company
 /// may hold several of these in-house and job costing needs to separate
