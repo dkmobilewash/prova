@@ -70,6 +70,7 @@ export const HANDLED_MODELS = [
   "InvoiceCounter",
   "RetainageRelease",
   "TimeEntry",
+  "TmTicket",
   "JobAssignment",
   "EquipmentAssignment",
   "EstimateVersion",
