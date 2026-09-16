@@ -8,6 +8,7 @@ import { daysBetween, isOverdue, latestRevision, submittalState } from "@/compon
 import { StatusLine } from "@/components/StatusLine";
 import { submittalsStatus } from "@/lib/status-sentences";
 import { jobPickerLabel, toJobOption } from "@/components/jobLabels";
+import { viewerToday } from "@/lib/viewerToday";
 
 /** Stored at UTC midnight, rendered in UTC — same rule as RFIs, the
  * safety log and daily field reports. */
@@ -26,7 +27,13 @@ export default async function SubmittalsPage({
   const { job: jobFilter, show } = await searchParams;
   const showApproved = show === "all";
 
-  const today = new Date().toISOString().slice(0, 10);
+  // The READER'S calendar day, not the server's UTC one — see /rfis for the
+  // full argument. `dueBack` is the date we asked the GC for, and measuring
+  // it against UTC told a Pacific viewer after 5pm that the GC had blown a
+  // deadline that had not passed yet. The zone arrives as request data from
+  // the timezone cookie (lib/viewerToday.ts), so nothing is computed in the
+  // browser during render and hydration is untouched.
+  const today = await viewerToday();
 
   // status + contact, not just the name: issue #65 — fifteen jobs, seven of
   // them called "Smith kitchen remodel", and this picker showed seven
