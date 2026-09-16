@@ -885,7 +885,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                 >
                   {contractExecution.document.fileName}
                 </a>{" "}
-                — an off-platform signature Prova did not witness. The file is the record.
+                — an off-platform signature C Stream did not witness. The file is the record.
               </p>
             )}
             {!isContractExecuted && showsJobManagement && (
@@ -2127,7 +2127,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
               ) : (
                 <p className="text-sm text-amber-400">
                   This job has no executed contract yet. Either send the GC a signing link above and
-                  wait for them to sign it in Prova, or — if they already sent you the executed
+                  wait for them to sign it in C Stream, or — if they already sent you the executed
                   subcontract — record it above under Contract signature.
                 </p>
               )}

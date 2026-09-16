@@ -50,7 +50,7 @@ export default async function PayApplicationPage({
           G702 header carries an APPLICATION DATE and a PERIOD TO, and a
           bare date under a G702-style heading is taken for the period —
           which is the date a GC's accounting department keys on. This one
-          is `issuedAt`, the moment of submission, so it says so. Prova has
+          is `issuedAt`, the moment of submission, so it says so. C Stream has
           no column for a period-ending date; see the note below, which is
           deliberately on screen only. */}
       <p className="mt-1 text-sm text-ink-muted">
@@ -62,7 +62,7 @@ export default async function PayApplicationPage({
         not formatted as the AIA G702/G703 forms themselves.
       </p>
       <p className="mt-2 max-w-2xl text-xs text-amber-300 print:hidden">
-        No PERIOD TO date. A G702 states the period this application covers, and Prova does not yet record one — so
+        No PERIOD TO date. A G702 states the period this application covers, and C Stream does not yet record one — so
         this document prints the application date and nothing that could be mistaken for the period. Write the period
         ending date on whatever cover sheet this GC wants before you send it.
       </p>

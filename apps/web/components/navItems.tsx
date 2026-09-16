@@ -675,7 +675,7 @@ export function activeGroupHeading(groups: NavGroup[], pathname: string): string
  * Prova's own operator, and this person is its OWNER). */
 const INTERNAL_NAV_GROUP: NavGroup = {
   heading: "Internal",
-  description: "Prova's own sales pipeline — selling Prova itself. Only visible to the operating company.",
+  description: "C Stream's own sales pipeline — selling C Stream itself. Only visible to the operating company.",
   icon: item("/sales").icon,
   items: [item("/sales"), item("/internal/usage")],
 };
