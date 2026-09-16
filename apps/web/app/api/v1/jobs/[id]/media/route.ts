@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireApiContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { prisma } from "@prova/db";
-import { putDocument } from "@/lib/blob";
+import { put } from "@vercel/blob";
 import {
   isAllowedJobMediaType,
   jobMediaMaxBytes,
@@ -126,7 +126,11 @@ export async function POST(
   const caption = String(formData.get("caption") ?? "").trim();
 
   const body = Buffer.from(await file.arrayBuffer());
-  const result = await putDocument(pathname, body, contentType);
+  const result = await put(pathname, body, {
+    access: "public",
+    addRandomSuffix: true,
+    contentType,
+  });
 
   const media = await prisma.jobMedia.create({
     data: {
