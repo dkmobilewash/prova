@@ -1,5 +1,7 @@
 import { prisma } from "@prova/db";
 import { calculateJobWip, calculateLineItemWip, type WipJobResult } from "./wip";
+import { lineItemCostToDate, unassignedLaborCost } from "./labor-job-cost";
+import { loadFringeSchedulesByCraft, TIME_ENTRY_COST_SELECT } from "./fringe-schedules-query";
 import { loadRetainageHeld } from "./retainage-query";
 import { calculatePaymentReliability, type PaymentReliability } from "./gc-reliability";
 import { arBalanceFor, daysPastDueFor, effectiveDueDateFor } from "./cash-flow";
@@ -60,7 +62,8 @@ export type GcReliabilityRow = {
 
 
 export async function loadTodayDashboard(companyId: string, now: Date) {
-  const [invoices, activeJobs, retainageHeld, contacts] = await Promise.all([
+  const [invoices, activeJobs, retainageHeld, contacts, fringeSchedulesByCraft] =
+    await Promise.all([
     prisma.invoice.findMany({
       where: { job: { companyId } },
       select: {
@@ -101,6 +104,7 @@ export async function loadTodayDashboard(companyId: string, now: Date) {
         lineItems: {
           where: { isDeleted: false },
           select: {
+            id: true,
             quantity: true,
             unitPrice: true,
             budgetedUnitCost: true,
@@ -115,6 +119,10 @@ export async function loadTodayDashboard(companyId: string, now: Date) {
         // job list gathered for one question sitting one line away from
         // the columns for a different one.
         invoices: { select: { amount: true } },
+        // Hours are job cost (issue #287). Without these, this page's job
+        // health read materials-only cost while /jobs/[id] read the whole
+        // thing -- two screens disagreeing about the same job.
+        timeEntries: { select: TIME_ENTRY_COST_SELECT },
       },
       orderBy: { createdAt: "desc" },
     }),
@@ -146,6 +154,7 @@ export async function loadTodayDashboard(companyId: string, now: Date) {
         },
       },
     }),
+    loadFringeSchedulesByCraft(companyId),
   ]);
 
   /* -------------------------------------------------- receivables ---- */
@@ -224,11 +233,15 @@ export async function loadTodayDashboard(companyId: string, now: Date) {
           line.currentEstimatedUnitCost === null ? null : Number(line.currentEstimatedUnitCost),
         estimatedCostToComplete:
           line.estimatedCostToComplete === null ? null : Number(line.estimatedCostToComplete),
-        actualCostToDate: line.costEntries.reduce((sum, cost) => sum + Number(cost.amount), 0),
+        ...lineItemCostToDate(line.id, line.costEntries, job.timeEntries, fringeSchedulesByCraft),
       }),
     );
     const billed = job.invoices.reduce((sum, invoice) => sum + Number(invoice.amount), 0);
-    const wip = calculateJobWip(lineItems, billed);
+    const wip = calculateJobWip(
+      lineItems,
+      billed,
+      unassignedLaborCost(job.timeEntries, fringeSchedulesByCraft),
+    );
 
     // What share of this job's contract value sits on lines that actually
     // carry a cost estimate. A job budgeted on one line out of seven is

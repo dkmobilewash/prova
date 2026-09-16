@@ -5,6 +5,8 @@ import {
   formatCoveragePercent,
   formatPercentComplete,
 } from "@/lib/wip";
+import { lineItemCostToDate, unassignedLaborCost } from "@/lib/labor-job-cost";
+import { loadFringeSchedulesByCraft, TIME_ENTRY_COST_SELECT } from "@/lib/fringe-schedules-query";
 import {
   jobCostVariance,
   jobEarnedRevenue,
@@ -331,7 +333,8 @@ async function drawingCurrency(companyId: string, input: Input): Promise<ToolRes
 }
 
 async function jobMargin(companyId: string, input: Input): Promise<ToolResult> {
-  const jobs = await prisma.job.findMany({
+  const [jobs, fringeSchedulesByCraft] = await Promise.all([
+    prisma.job.findMany({
     where: { companyId, status: { in: ["CONTRACTED", "IN_PROGRESS"] } },
     select: {
       id: true,
@@ -340,6 +343,7 @@ async function jobMargin(companyId: string, input: Input): Promise<ToolResult> {
       lineItems: {
         where: { isDeleted: false },
         select: {
+          id: true,
           description: true,
           quantity: true,
           unitPrice: true,
@@ -350,8 +354,14 @@ async function jobMargin(companyId: string, input: Input): Promise<ToolResult> {
         },
       },
       invoices: { select: { amount: true } },
+      // Hours are job cost (issue #287). Without them this tool answered
+      // "what is our margin" from materials alone, in prose, with the
+      // model forbidden from questioning the figure it was handed.
+      timeEntries: { select: TIME_ENTRY_COST_SELECT },
     },
-  });
+    }),
+    loadFringeSchedulesByCraft(companyId),
+  ]);
 
   const filtered = jobs.filter((job) => matchesJobName(job.name, input.jobName));
 
@@ -366,11 +376,15 @@ async function jobMargin(companyId: string, input: Input): Promise<ToolResult> {
             line.currentEstimatedUnitCost === null ? null : Number(line.currentEstimatedUnitCost),
           estimatedCostToComplete:
             line.estimatedCostToComplete === null ? null : Number(line.estimatedCostToComplete),
-          actualCostToDate: line.costEntries.reduce((sum, cost) => sum + Number(cost.amount), 0),
+          ...lineItemCostToDate(line.id, line.costEntries, job.timeEntries, fringeSchedulesByCraft),
         }),
       );
       const billed = job.invoices.reduce((sum, invoice) => sum + Number(invoice.amount), 0);
-      const wip = calculateJobWip(lines, billed);
+      const wip = calculateJobWip(
+        lines,
+        billed,
+        unassignedLaborCost(job.timeEntries, fringeSchedulesByCraft),
+      );
 
       return {
         job: job.name,

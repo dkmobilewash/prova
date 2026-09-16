@@ -22,6 +22,8 @@ import { renewalSourcesForCompany } from "@/lib/renewals";
 import { renewalAlerts as rankRenewals } from "@/lib/compliance-expiry";
 import { calculateRetainageSummary } from "@/lib/retainage";
 import { calculateJobWip, calculateLineItemWip } from "@/lib/wip";
+import { lineItemCostToDate, unassignedLaborCost } from "@/lib/labor-job-cost";
+import { loadFringeSchedulesByCraft, TIME_ENTRY_COST_SELECT } from "@/lib/fringe-schedules-query";
 import { jobIsOverBudget } from "@/lib/company-financials";
 import { certifiedPayrollWeekStart } from "@/lib/certified-payroll-week";
 import { can, type Principal } from "@/lib/permissions";
@@ -76,6 +78,7 @@ export async function loadAlerts(
     rfis,
     submittals,
     drawingSets,
+    fringeSchedulesByCraft,
   ] = await Promise.all([
     renewalSourcesForCompany(companyId),
 
@@ -119,7 +122,13 @@ export async function loadAlerts(
           // assumes WEEKLY, both jobs certifiedPayrollAlerts already does.
           select: { id: true, ruleSet: { select: { filingDueDays: true, filingFrequency: true } } },
         },
-        timeEntries: { select: { date: true } },
+        // `date` is what certifiedPayrollAlerts needs; the rest is burdened
+        // job cost (issue #287), which the WIP variance alert below reads
+        // through the same helper /jobs/[id] does.
+        // TIME_ENTRY_COST_SELECT already carries `date`, which is the only
+        // column certifiedPayrollAlerts wanted; the rest is burdened job
+        // cost (issue #287), read through the same helper /jobs/[id] uses.
+        timeEntries: { select: TIME_ENTRY_COST_SELECT },
         complianceDocuments: {
           where: { type: "CERTIFIED_PAYROLL" },
           select: { periodStart: true, periodEnd: true },
@@ -128,6 +137,7 @@ export async function loadAlerts(
         lineItems: {
           where: { isDeleted: false },
           select: {
+            id: true,
             quantity: true,
             unitPrice: true,
             budgetedUnitCost: true,
@@ -236,6 +246,7 @@ export async function loadAlerts(
         },
       },
     }),
+    loadFringeSchedulesByCraft(companyId),
   ]);
 
   const alerts: Alert[] = [];
@@ -362,11 +373,15 @@ export async function loadAlerts(
             item.currentEstimatedUnitCost != null ? Number(item.currentEstimatedUnitCost) : null,
           estimatedCostToComplete:
             item.estimatedCostToComplete != null ? Number(item.estimatedCostToComplete) : null,
-          actualCostToDate: item.costEntries.reduce((sum, e) => sum + Number(e.amount), 0),
+          ...lineItemCostToDate(item.id, item.costEntries, job.timeEntries, fringeSchedulesByCraft),
         }),
       );
       const billedToDate = job.invoices.reduce((sum, i) => sum + Number(i.amount), 0);
-      const wip = calculateJobWip(lineItems, billedToDate);
+      const wip = calculateJobWip(
+        lineItems,
+        billedToDate,
+        unassignedLaborCost(job.timeEntries, fringeSchedulesByCraft),
+      );
 
       // jobIsOverBudget already encodes when this question has an answer
       // at all — it returns null for a job with no forecast and for one
