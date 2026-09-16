@@ -210,10 +210,41 @@ export type UsageSummary = {
    * page reads it and says which of the two it is looking at.
    */
   readable: boolean;
+  /**
+   * Ask questions only — the rows `askAllowance` counts, and therefore the
+   * only figure the hourly and daily limits are about.
+   *
+   * SPLIT FROM `calls` BECAUSE THE PAGE PRINTED ONE AND MEANT THE OTHER.
+   * The `feature` column arrived so the three non-Ask callers would stop
+   * spending invisibly; the limit side was filtered to `ask` the same day
+   * and the reading side was not. So the settings page summed all four
+   * features, called the total "questions sent to the model", and printed
+   * the Ask-only limits in the next clause — two numbers over different
+   * row sets, touching, with nothing to say they were different. A company
+   * running document extractions saw a question count it could not
+   * reconcile against a limit those rows never counted toward.
+   */
   questions: number;
+  /** Every model call in the window, all features. This is the one that
+   * maps to the Anthropic invoice, which is what the column was for. */
+  calls: number;
   inputTokens: number;
   outputTokens: number;
-  byPerson: { who: string; questions: number; tokens: number }[];
+  /** Per feature, so the bill can be attributed rather than just totalled.
+   * An unrecognised feature keeps its raw name instead of being dropped —
+   * a set that silently shrinks is this repo's most expensive shape. */
+  byFeature: { feature: string; label: string; calls: number; tokens: number }[];
+  byPerson: { who: string; calls: number; tokens: number }[];
+};
+
+/** Display names for the four known callers. Deliberately a lookup with a
+ * fallback rather than an exhaustive Record: a feature added later must
+ * still appear on the page, under its own name, rather than vanish. */
+const FEATURE_LABELS: Record<string, string> = {
+  ask: "Ask",
+  "wip-narrative": "WIP narrative",
+  "compliance-extract": "Document extraction",
+  "draft-estimate-lines": "Estimate drafting",
 };
 
 /** The last thirty days for the settings page, grouped by who asked.
@@ -229,7 +260,7 @@ export async function usageSummary(companyId: string, now: Date = new Date()): P
   // rendered.
   const groups = await prisma.askUsage
     .groupBy({
-      by: ["userId"],
+      by: ["userId", "feature"],
       where: { companyId, createdAt: { gte: since } },
       _count: { _all: true },
       _sum: { inputTokens: true, outputTokens: true },
@@ -238,24 +269,54 @@ export async function usageSummary(companyId: string, now: Date = new Date()): P
       usageUnreadable("the usage figures could not be read for the settings page", err);
       return null;
     });
-  if (groups === null) return { readable: false, questions: 0, inputTokens: 0, outputTokens: 0, byPerson: [] };
+  if (groups === null) {
+    return {
+      readable: false,
+      questions: 0,
+      calls: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      byFeature: [],
+      byPerson: [],
+    };
+  }
   const ids = groups.map((g) => g.userId).filter((id): id is string => id !== null);
   const users = ids.length
     ? await prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, name: true, email: true } })
     : [];
   const nameOf = new Map(users.map((u) => [u.id, u.name ?? u.email]));
-  const byPerson = groups
-    .map((g) => ({
-      who: (g.userId && nameOf.get(g.userId)) || "a removed account",
-      questions: g._count._all,
-      tokens: (g._sum.inputTokens ?? 0) + (g._sum.outputTokens ?? 0),
-    }))
-    .sort((a, b) => b.questions - a.questions);
+  const tokensOf = (g: (typeof groups)[number]) =>
+    (g._sum.inputTokens ?? 0) + (g._sum.outputTokens ?? 0);
+
+  // One row per person and per feature comes back, so both breakdowns fold
+  // out of the same query rather than a second one.
+  const perPerson = new Map<string, { who: string; calls: number; tokens: number }>();
+  const perFeature = new Map<string, { feature: string; label: string; calls: number; tokens: number }>();
+  for (const g of groups) {
+    const who = (g.userId && nameOf.get(g.userId)) || "a removed account";
+    const person = perPerson.get(who) ?? { who, calls: 0, tokens: 0 };
+    person.calls += g._count._all;
+    person.tokens += tokensOf(g);
+    perPerson.set(who, person);
+
+    const feature = perFeature.get(g.feature) ?? {
+      feature: g.feature,
+      label: FEATURE_LABELS[g.feature] ?? g.feature,
+      calls: 0,
+      tokens: 0,
+    };
+    feature.calls += g._count._all;
+    feature.tokens += tokensOf(g);
+    perFeature.set(g.feature, feature);
+  }
+
   return {
     readable: true,
-    questions: groups.reduce((n, g) => n + g._count._all, 0),
+    questions: groups.reduce((n, g) => n + (g.feature === "ask" ? g._count._all : 0), 0),
+    calls: groups.reduce((n, g) => n + g._count._all, 0),
     inputTokens: groups.reduce((n, g) => n + (g._sum.inputTokens ?? 0), 0),
     outputTokens: groups.reduce((n, g) => n + (g._sum.outputTokens ?? 0), 0),
-    byPerson,
+    byFeature: [...perFeature.values()].sort((a, b) => b.calls - a.calls),
+    byPerson: [...perPerson.values()].sort((a, b) => b.calls - a.calls),
   };
 }

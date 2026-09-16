@@ -100,11 +100,26 @@ describe("recordAskUsage", () => {
 });
 
 describe("usageSummary", () => {
-  it("totals thirty days and names each person, most questions first", async () => {
+  /**
+   * The fixture deliberately mixes features on ONE person. Dana has six Ask
+   * questions and four document extractions, and the two figures the page
+   * prints side by side have to disagree about her: every call is part of
+   * the bill, only the questions are part of the limit.
+   *
+   * WHAT THIS PINS. `askAllowance` filters `feature: "ask"`; `usageSummary`
+   * did not, and the page rendered its unfiltered total as "questions sent
+   * to the model" with the Ask-only limits in the next clause. Two numbers
+   * over different row sets, touching, with nothing to say so. A fixture
+   * with one feature in it — which is what this test had — cannot tell the
+   * two apart, and that is exactly why the drift survived the change that
+   * introduced it.
+   */
+  it("separates the bill from the limit: every call is billed, only Ask questions are bounded", async () => {
     fake.prisma.askUsage.groupBy.mockResolvedValue([
-      { userId: "u-2", _count: { _all: 3 }, _sum: { inputTokens: 300, outputTokens: 30 } },
-      { userId: "u-1", _count: { _all: 10 }, _sum: { inputTokens: 1000, outputTokens: 100 } },
-      { userId: null, _count: { _all: 1 }, _sum: { inputTokens: 50, outputTokens: 5 } },
+      { userId: "u-1", feature: "ask", _count: { _all: 6 }, _sum: { inputTokens: 600, outputTokens: 60 } },
+      { userId: "u-1", feature: "compliance-extract", _count: { _all: 4 }, _sum: { inputTokens: 400, outputTokens: 40 } },
+      { userId: "u-2", feature: "ask", _count: { _all: 3 }, _sum: { inputTokens: 300, outputTokens: 30 } },
+      { userId: null, feature: "wip-narrative", _count: { _all: 1 }, _sum: { inputTokens: 50, outputTokens: 5 } },
     ]);
     fake.prisma.user.findMany.mockResolvedValue([
       { id: "u-1", name: "Dana", email: "dana@example.test" },
@@ -112,19 +127,44 @@ describe("usageSummary", () => {
     ]);
     const summary = await usageSummary("co-1", now);
     expect(fake.prisma.askUsage.groupBy.mock.calls[0][0]).toMatchObject({
+      by: ["userId", "feature"],
       where: { companyId: "co-1", createdAt: { gte: new Date("2026-08-12T12:00:00.000Z") } },
     });
-    expect(summary).toEqual({
-      readable: true,
-      questions: 14,
-      inputTokens: 1350,
-      outputTokens: 135,
-      byPerson: [
-        { who: "Dana", questions: 10, tokens: 1100 },
-        { who: "mike@example.test", questions: 3, tokens: 330 },
-        { who: "a removed account", questions: 1, tokens: 55 },
-      ],
-    });
+
+    // 14 calls, but only 9 of them are questions — the whole point.
+    expect(summary.calls).toBe(14);
+    expect(summary.questions).toBe(9);
+    expect(summary.inputTokens).toBe(1350);
+    expect(summary.outputTokens).toBe(135);
+
+    expect(summary.byFeature).toEqual([
+      { feature: "ask", label: "Ask", calls: 9, tokens: 990 },
+      { feature: "compliance-extract", label: "Document extraction", calls: 4, tokens: 440 },
+      { feature: "wip-narrative", label: "WIP narrative", calls: 1, tokens: 55 },
+    ]);
+
+    // Dana's two feature rows fold into one person row.
+    expect(summary.byPerson).toEqual([
+      { who: "Dana", calls: 10, tokens: 1100 },
+      { who: "mike@example.test", calls: 3, tokens: 330 },
+      { who: "a removed account", calls: 1, tokens: 55 },
+    ]);
+  });
+
+  it("shows a feature nobody has labelled under its own name rather than dropping it", async () => {
+    // A set that silently shrinks is the shape this repo has paid for
+    // repeatedly. A fifth caller added later must appear on the page the
+    // day it ships, not the day somebody remembers to add a label.
+    fake.prisma.askUsage.groupBy.mockResolvedValue([
+      { userId: "u-1", feature: "takeoff-vision", _count: { _all: 2 }, _sum: { inputTokens: 10, outputTokens: 1 } },
+    ]);
+    fake.prisma.user.findMany.mockResolvedValue([{ id: "u-1", name: "Dana", email: "d@example.test" }]);
+    const summary = await usageSummary("co-1", now);
+    expect(summary.byFeature).toEqual([
+      { feature: "takeoff-vision", label: "takeoff-vision", calls: 2, tokens: 11 },
+    ]);
+    expect(summary.calls).toBe(2);
+    expect(summary.questions).toBe(0);
   });
 });
 
@@ -217,7 +257,15 @@ describe("usageSummary when AskUsage cannot be read", () => {
     // readable:false is the whole point — the zeros beside it are
     // indistinguishable from a quiet month, and the page must not print
     // them as if they were one.
-    expect(summary).toEqual({ readable: false, questions: 0, inputTokens: 0, outputTokens: 0, byPerson: [] });
+    expect(summary).toEqual({
+      readable: false,
+      questions: 0,
+      calls: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      byFeature: [],
+      byPerson: [],
+    });
     expect(error).toHaveBeenCalledTimes(1);
     expect(String(error.mock.calls[0][0])).toContain(MIGRATE_COMMAND);
     error.mockRestore();
