@@ -30,7 +30,7 @@ export async function loadCertifiedPayrollWeekEntries(
   const { gte, lte } = certifiedPayrollWeekWindow(weekStart);
   return prisma.timeEntry.findMany({
     where: { jobId, job: { companyId }, date: { gte, lte } },
-    include: { employeeUser: true, craftClassification: { include: { unionLocal: true } } },
+    include: { employeeUser: true, crewMember: true, craftClassification: { include: { unionLocal: true } } },
     orderBy: { date: "asc" },
   });
 }

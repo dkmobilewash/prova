@@ -14,7 +14,7 @@ import {
   type RemittanceReport,
 } from "@/lib/fringe-remittance";
 import type { FringeRateScheduleInput } from "@/lib/labor-cost";
-import { payrollWorkerName } from "@/lib/worker-name";
+import { timeEntryWorkerName, timeEntryWorkerId } from "@/lib/worker-name";
 
 /**
  * Fetching and normalising for the union compliance page.
@@ -103,6 +103,8 @@ export async function loadRemittance(companyId: string, month: string): Promise<
       craftClassification: { select: { name: true, unionLocalId: true, unionLocal: true } },
       employeeUserId: true,
       employeeUser: { select: { name: true, email: true } },
+      crewMemberId: true,
+      crewMember: { select: { legalFirstName: true, legalMiddleName: true, legalLastName: true } },
       job: { select: { name: true } },
     },
   });
@@ -149,7 +151,7 @@ export async function loadRemittance(companyId: string, month: string): Promise<
       // `employeeFilingName` carries `nameMissing` through to the member
       // line on the printed sheet; `employeeName` is the flat string
       // feeding `uncomputedNames`, the chase-list on /union-compliance.
-      const filingName = payrollWorkerName(e.employeeUser);
+      const filingName = timeEntryWorkerName(e);
       return {
         date: e.date,
         hours: Number(e.hours),
@@ -158,7 +160,7 @@ export async function loadRemittance(companyId: string, month: string): Promise<
         unionLocalId: e.craftClassification?.unionLocalId ?? null,
         unionLocalLabel: e.craftClassification ? localLabel(e.craftClassification.unionLocal) : null,
         payType: e.payType,
-        employeeUserId: e.employeeUserId,
+        employeeUserId: timeEntryWorkerId(e),
         employeeFilingName: filingName,
         employeeName: filingName.label,
         jobName: e.job.name,
@@ -222,6 +224,7 @@ export async function loadRatioReviews(companyId: string, month: string): Promis
         select: { tier: true, unionLocalId: true, unionLocal: true },
       },
       employeeUser: { select: { name: true, email: true } },
+      crewMember: { select: { legalFirstName: true, legalMiddleName: true, legalLastName: true } },
     },
   });
 
@@ -258,7 +261,7 @@ export async function loadRatioReviews(companyId: string, month: string): Promis
       hours: Number(e.hours),
       tier: (e.craftClassification?.tier as CraftTier | null) ?? null,
       // The apprentice ratio names people to an inspector. Same rule.
-      employeeName: payrollWorkerName(e.employeeUser).label,
+      employeeName: timeEntryWorkerName(e).label,
     };
 
     if (e.craftClassification) {

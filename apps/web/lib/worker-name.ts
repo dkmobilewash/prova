@@ -43,3 +43,46 @@ export function payrollWorkerName(user: WorkerIdentity): PayrollWorkerName {
   if (name) return { label: name, nameMissing: false };
   return { label: NAME_NOT_RECORDED, nameMissing: true };
 }
+
+/** The name a crew member (a worker with no login) is called on a filing.
+ * Same rule as `payrollWorkerName`: a real name or the placeholder, never
+ * an email and never an empty cell. */
+export function crewMemberName(crew: {
+  legalFirstName: string;
+  legalMiddleName: string | null;
+  legalLastName: string;
+}): PayrollWorkerName {
+  const name = [crew.legalFirstName, crew.legalMiddleName, crew.legalLastName]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+  if (name) return { label: name, nameMissing: false };
+  return { label: NAME_NOT_RECORDED, nameMissing: true };
+}
+
+/** The name for a time entry, whether it names a User or a crew member.
+ * The entry is one or the other (the XOR constraint enforces it), so this
+ * is exhaustive: employeeUser wins when set, else the crew member. */
+export function timeEntryWorkerName(entry: {
+  employeeUser: WorkerIdentity | null;
+  crewMember: {
+    legalFirstName: string;
+    legalMiddleName: string | null;
+    legalLastName: string;
+  } | null;
+}): PayrollWorkerName {
+  if (entry.employeeUser) return payrollWorkerName(entry.employeeUser);
+  if (entry.crewMember) return crewMemberName(entry.crewMember);
+  return { label: NAME_NOT_RECORDED, nameMissing: true };
+}
+
+/** The stable id a payroll document groups a time entry's worker by. A User
+ * id for an employee, a crew-member id for a no-login worker. Exactly one is
+ * always set (the XOR constraint), so the `""` fallback is unreachable but
+ * keeps the type non-null for callers that key a Map. */
+export function timeEntryWorkerId(entry: {
+  employeeUserId: string | null;
+  crewMemberId: string | null;
+}): string {
+  return entry.employeeUserId ?? entry.crewMemberId ?? "";
+}

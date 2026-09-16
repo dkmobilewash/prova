@@ -233,7 +233,7 @@ export function timeEntryCorrectionUpdateData(
  */
 export function submittedLockedFieldChanges(
   formData: FormData,
-  stored: { employeeUserId: string; date: Date },
+  stored: { employeeUserId: string | null; date: Date },
 ): string[] {
   const changed: string[] = [];
 

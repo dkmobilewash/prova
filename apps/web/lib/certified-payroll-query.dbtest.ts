@@ -175,8 +175,8 @@ describe("loadCertifiedPayrollWeekEntries against real rows", () => {
 
     const summaries = buildCertifiedPayrollSummary(
       entries.map((e) => ({
-        employeeUserId: e.employeeUserId,
-        employeeName: e.employeeUser.name ?? e.employeeUser.email,
+        employeeUserId: e.employeeUserId ?? "",
+        employeeName: e.employeeUser?.name ?? e.employeeUser?.email ?? "",
         craftClassificationId: e.craftClassificationId,
         craftLabel: "Carpenters 405 — Journeyman",
         date: e.date,

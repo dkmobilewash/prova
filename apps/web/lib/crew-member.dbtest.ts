@@ -312,7 +312,6 @@ describe("a crew member with hours on the record cannot be deleted", () => {
     const entry = await prisma.timeEntry.create({
       data: {
         jobId,
-        employeeUserId: officeUserId,
         crewMemberId: crew.id,
         craftClassificationId: craftId,
         date: utc("2026-08-27"),
@@ -334,7 +333,6 @@ describe("a crew member with hours on the record cannot be deleted", () => {
     const entry = await prisma.timeEntry.create({
       data: {
         jobId,
-        employeeUserId: officeUserId,
         crewMemberId: crew.id,
         date: utc("2026-08-28"),
         hours: "8",
@@ -398,7 +396,7 @@ describe("every existing time-entry path is unchanged", () => {
     // The include still yields a non-null User. This is the dereference
     // every read path does without a null check.
     for (const e of entries) {
-      expect(e.employeeUser.name ?? e.employeeUser.email).toBe("Office Alice");
+      expect(e.employeeUser?.name ?? e.employeeUser?.email).toBe("Office Alice");
     }
   });
 
@@ -424,8 +422,8 @@ describe("every existing time-entry path is unchanged", () => {
 
     const summaries = buildCertifiedPayrollSummary(
       entries.map((e) => ({
-        employeeUserId: e.employeeUserId,
-        employeeName: e.employeeUser.name ?? e.employeeUser.email,
+        employeeUserId: e.employeeUserId ?? "",
+        employeeName: e.employeeUser?.name ?? e.employeeUser?.email ?? "",
         craftClassificationId: e.craftClassificationId,
         craftLabel: "Carpenters — Journeyman",
         date: e.date,

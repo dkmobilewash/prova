@@ -30,14 +30,14 @@ model TimeEntry {
   lineItemId String?
   lineItem   JobLineItem? @relation(fields: [lineItemId], references: [id])
 
-  employeeUserId String
+  employeeUserId String?
   /// Named only because this model now has TWO relations to User (the other
   /// is lastCorrectedByUser below) and Prisma cannot disambiguate two
   /// unnamed ones — same precedent as WorkerCertification's holder /
   /// recordedBy pair. A relation NAME changes nothing in SQL: the foreign key
   /// is still "TimeEntry_employeeUserId_fkey" on the same column, so this
   /// carries no migration of its own.
-  employeeUser   User   @relation("TimeEntryEmployee", fields: [employeeUserId], references: [id])
+  employeeUser   User?  @relation("TimeEntryEmployee", fields: [employeeUserId], references: [id], onDelete: Restrict)
 
   /// The crew member this entry is for, when the worker has no login. See
   /// crew.prisma. NULL on every row today and read by nothing — this ships
@@ -45,14 +45,10 @@ model TimeEntry {
   /// that it is not mistaken for the "written, documented, never called"
   /// defect CLAUDE.md warns about.
   ///
-  /// employeeUserId above stays REQUIRED in this change. Relaxing it is a
-  /// one-line, additive follow-up migration
-  /// (ALTER COLUMN "employeeUserId" DROP NOT NULL), deliberately held back
-  /// because the moment the Prisma type becomes `User | null` every module
-  /// that prints `entry.employeeUser.name ?? entry.employeeUser.email`
-  /// stops compiling — including jobs/[id]/page.tsx:1054, which is another
-  /// person's lane. The structural half lands first; the read paths and
-  /// the NOT NULL come together, in one reviewable change.
+  /// employeeUserId is now NULLABLE — the relaxation this comment held back.
+  /// An entry names a User (employeeUserId) OR a crew member (crewMemberId),
+  /// never both and never neither; the XOR CHECK constraint in the migration
+  /// enforces it.
   ///
   /// WHAT THIS COLUMN IS PROTECTED BY, AND IT CHANGED ON 2026-09-13.
   ///
@@ -81,10 +77,8 @@ model TimeEntry {
   /// "does any update name a locked column". A source scan cannot see a raw
   /// UPDATE and never could; the trigger can.
   ///
-  /// There is also NO CHECK constraint forbidding an entry from naming both
-  /// a User and a CrewMember. The XOR constraint is written out in the
-  /// migration's header as the deliberately-held-back follow-up, because it
-  /// can only land in the same commit that makes employeeUserId nullable.
+  /// The XOR CHECK constraint (an entry names a User OR a crew member, not
+  /// both) landed in the same commit that made employeeUserId nullable.
   ///
   /// onDelete: Restrict IS real — the database refuses to orphan the
   /// identity behind an hour that may already have been certified.

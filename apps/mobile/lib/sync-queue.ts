@@ -25,6 +25,9 @@ export type CreateOp =
       hours: string;
       payType: string;
       note?: string;
+      crewMemberId?: string;
+      lineItemId?: string;
+      craftClassificationId?: string;
     }
   | {
       type: "material:create";
@@ -139,7 +142,16 @@ async function runOp(op: PendingOp, token: string): Promise<void> {
     case "time:create":
       await api.createTimeEntry(
         op.jobId,
-        { date: op.date, hours: op.hours, payType: op.payType, note: op.note, clientOperationId: op.clientOperationId },
+        {
+          date: op.date,
+          hours: op.hours,
+          payType: op.payType,
+          note: op.note,
+          clientOperationId: op.clientOperationId,
+          crewMemberId: op.crewMemberId,
+          lineItemId: op.lineItemId,
+          craftClassificationId: op.craftClassificationId,
+        },
         token,
       );
       return;

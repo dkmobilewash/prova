@@ -115,6 +115,23 @@ export type TimeEntry = {
   payType: TimeEntryPayType;
   note: string | null;
   employeeName: string;
+  lineItemDescription: string | null;
+  craftLabel: string | null;
+};
+
+export type CrewMember = {
+  id: string;
+  name: string;
+};
+
+export type LineItem = {
+  id: string;
+  description: string;
+};
+
+export type Craft = {
+  id: string;
+  name: string;
 };
 
 export type Vendor = {

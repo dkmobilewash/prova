@@ -8,7 +8,7 @@ import {
   type WeekReview,
 } from "@/lib/prevailing-wage";
 import { weekStart } from "@/components/fieldReportWeeks";
-import { payrollWorkerName } from "@/lib/worker-name";
+import { timeEntryWorkerName, timeEntryWorkerId } from "@/lib/worker-name";
 
 /**
  * Fetching and normalising for the prevailing wage page.
@@ -252,16 +252,19 @@ export async function reviewJobWeek(
       payType: true,
       employeeUserId: true,
       employeeUser: { select: { name: true, email: true } },
+      crewMemberId: true,
+      crewMember: { select: { legalFirstName: true, legalMiddleName: true, legalLastName: true } },
     },
     orderBy: { date: "asc" },
   });
 
   const byEmployee = new Map<string, { name: string; entries: DayEntryInput[] }>();
   for (const entry of entries) {
-    const bucket = byEmployee.get(entry.employeeUserId) ?? {
+    const workerId = timeEntryWorkerId(entry);
+    const bucket = byEmployee.get(workerId) ?? {
       // Prevailing-wage review feeds a certified payroll filing, so the
       // email fallback is not available here. See lib/worker-name.ts.
-      name: payrollWorkerName(entry.employeeUser).label,
+      name: timeEntryWorkerName(entry).label,
       entries: [],
     };
     bucket.entries.push({
@@ -269,7 +272,7 @@ export async function reviewJobWeek(
       hours: Number(entry.hours),
       payType: entry.payType as PayType,
     });
-    byEmployee.set(entry.employeeUserId, bucket);
+    byEmployee.set(workerId, bucket);
   }
 
   const employees = [...byEmployee.entries()]

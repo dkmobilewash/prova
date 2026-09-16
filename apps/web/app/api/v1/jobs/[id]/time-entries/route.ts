@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiContext } from "@/lib/auth";
 import { prisma, TimeEntryPayType } from "@prova/db";
+import { crewMemberName } from "@/lib/worker-name";
 
 export const dynamic = "force-dynamic";
 
@@ -10,13 +11,28 @@ function jsonError(error: string, status: number) {
   return NextResponse.json({ error }, { status });
 }
 
+const entrySelect = {
+  id: true,
+  date: true,
+  hours: true,
+  payType: true,
+  note: true,
+  employeeUser: { select: { name: true, email: true } },
+  crewMember: { select: { legalFirstName: true, legalMiddleName: true, legalLastName: true } },
+  lineItem: { select: { description: true } },
+  craftClassification: { select: { name: true } },
+} as const;
+
 function toJson(e: {
   id: string;
   date: Date;
   hours: unknown;
   payType: string;
   note: string | null;
-  employeeUser: { name: string | null; email: string };
+  employeeUser: { name: string | null; email: string } | null;
+  crewMember: { legalFirstName: string; legalMiddleName: string | null; legalLastName: string } | null;
+  lineItem: { description: string } | null;
+  craftClassification: { name: string } | null;
 }) {
   return {
     id: e.id,
@@ -24,7 +40,14 @@ function toJson(e: {
     hours: String(e.hours),
     payType: e.payType,
     note: e.note,
-    employeeName: e.employeeUser.name ?? e.employeeUser.email,
+    // The worker the hours are for: an employee (User) or a crew member.
+    employeeName: e.employeeUser
+      ? e.employeeUser.name ?? e.employeeUser.email
+      : e.crewMember
+        ? crewMemberName(e.crewMember).label
+        : "Name not recorded",
+    lineItemDescription: e.lineItem?.description ?? null,
+    craftLabel: e.craftClassification?.name ?? null,
   };
 }
 
@@ -53,14 +76,7 @@ export async function GET(
   const entries = await prisma.timeEntry.findMany({
     where: { jobId: id },
     orderBy: { date: "desc" },
-    select: {
-      id: true,
-      date: true,
-      hours: true,
-      payType: true,
-      note: true,
-      employeeUser: { select: { name: true, email: true } },
-    },
+    select: entrySelect,
   });
 
   return NextResponse.json(entries.map(toJson));
@@ -96,19 +112,44 @@ export async function POST(
   const payTypeRaw = String(input.payType ?? "STRAIGHT");
   const payType = (PAY_TYPES.includes(payTypeRaw) ? payTypeRaw : "STRAIGHT") as TimeEntryPayType;
 
+  // Who the hours are for — the caller, or a crew member they name. Exactly
+  // one (the XOR constraint on TimeEntry enforces it). A crew entry leaves
+  // employeeUserId null.
+  let employeeUserId: string | null = context.id;
+  let crewMemberId: string | null = null;
+  const crewMemberIdRaw = String(input.crewMemberId ?? "").trim();
+  if (crewMemberIdRaw) {
+    const crewMember = await prisma.crewMember.findUnique({ where: { id: crewMemberIdRaw } });
+    if (!crewMember || crewMember.companyId !== context.companyId) return jsonError("Crew member not found", 400);
+    if (crewMember.archivedAt) return jsonError("That crew member is archived", 400);
+    employeeUserId = null;
+    crewMemberId = crewMember.id;
+  }
+
+  // Cost code (SOV line) — attribution only, and only on this job.
+  let lineItemId: string | null = null;
+  const lineItemIdRaw = String(input.lineItemId ?? "").trim();
+  if (lineItemIdRaw) {
+    const lineItem = await prisma.jobLineItem.findUnique({ where: { id: lineItemIdRaw } });
+    if (!lineItem || lineItem.jobId !== job.id || lineItem.isDeleted) return jsonError("Cost code not found", 400);
+    lineItemId = lineItem.id;
+  }
+
+  // Craft — must be this company's.
+  let craftClassificationId: string | null = null;
+  const craftClassificationIdRaw = String(input.craftClassificationId ?? "").trim();
+  if (craftClassificationIdRaw) {
+    const craft = await prisma.craftClassification.findUnique({ where: { id: craftClassificationIdRaw } });
+    if (!craft || craft.companyId !== context.companyId) return jsonError("Craft not found", 400);
+    craftClassificationId = craft.id;
+  }
+
   // Idempotent create: a retried offline POST replays instead of duplicating.
   const clientOperationId = String(input.clientOperationId ?? "").trim() || undefined;
   if (clientOperationId) {
     const existing = await prisma.timeEntry.findUnique({
       where: { jobId_clientOperationId: { jobId: job.id, clientOperationId } },
-      select: {
-        id: true,
-        date: true,
-        hours: true,
-        payType: true,
-        note: true,
-        employeeUser: { select: { name: true, email: true } },
-      },
+      select: entrySelect,
     });
     if (existing) return NextResponse.json(toJson(existing), { status: 200 });
   }
@@ -116,21 +157,17 @@ export async function POST(
   const entry = await prisma.timeEntry.create({
     data: {
       jobId: job.id,
-      employeeUserId: context.id,
+      employeeUserId,
+      crewMemberId,
+      lineItemId,
+      craftClassificationId,
       date,
       hours,
       payType,
       note: String(input.note ?? "").trim() || null,
       clientOperationId,
     },
-    select: {
-      id: true,
-      date: true,
-      hours: true,
-      payType: true,
-      note: true,
-      employeeUser: { select: { name: true, email: true } },
-    },
+    select: entrySelect,
   });
 
   return NextResponse.json(toJson(entry), { status: 201 });
