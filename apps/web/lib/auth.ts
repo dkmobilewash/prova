@@ -1,4 +1,4 @@
-import { currentUser } from "@clerk/nextjs/server";
+import { auth, clerkClient, currentUser } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { Prisma, prisma } from "@prova/db";
 import { recordLastSeen } from "@/lib/last-seen-stamp";
@@ -36,7 +36,7 @@ export async function requireCompanyContext() {
   if (!clerkUser) {
     redirect("/sign-in");
   }
-  const context = await adoptCompanyContext(clerkUser);
+  const context = await adoptCompanyContext(identityFromWebUser(clerkUser));
   await recordLastSeen(context);
   return context;
 }
@@ -46,16 +46,52 @@ export async function requireCompanyContext() {
  * session is redirected to /sign-in; a phone has no page to be redirected
  * to, so this returns null and the caller answers 401. The adoption logic
  * is identical — see adoptCompanyContext.
+ *
+ * A phone sends `Authorization: Bearer <jwt>` with no cookie, so this reads
+ * the session via `auth()` (which sees the bearer token) rather than
+ * `currentUser()` (which reads only the `__session` cookie). It then fetches
+ * the full Clerk user by id and hands the same identity to
+ * adoptCompanyContext the web path does.
  */
 export async function requireApiContext() {
-  const clerkUser = await currentUser();
-  if (!clerkUser) return null;
-  const context = await adoptCompanyContext(clerkUser);
+  const { userId } = await auth();
+  if (!userId) return null;
+  const client = await clerkClient();
+  const clerkUser = await client.users.getUser(userId);
+  const primary = clerkUser.emailAddresses.find((e) => e.id === clerkUser.primaryEmailAddressId) ?? null;
+  const context = await adoptCompanyContext({
+    id: clerkUser.id,
+    email: primary?.emailAddress ?? null,
+    emailVerified: primary?.verification?.status === "verified",
+    firstName: clerkUser.firstName,
+    lastName: clerkUser.lastName,
+  });
   await recordLastSeen(context);
   return context;
 }
 
 type ClerkUser = NonNullable<Awaited<ReturnType<typeof currentUser>>>;
+
+/** The five fields the adoption logic needs, in the one shape both the web
+ * cookie session (`currentUser`) and a phone's bearer token (`auth()` →
+ * `clerkClient.users.getUser`) can be mapped into. */
+type ClerkIdentity = {
+  id: string;
+  email: string | null;
+  emailVerified: boolean;
+  firstName: string | null;
+  lastName: string | null;
+};
+
+function identityFromWebUser(u: ClerkUser): ClerkIdentity {
+  return {
+    id: u.id,
+    email: u.primaryEmailAddress?.emailAddress ?? null,
+    emailVerified: u.primaryEmailAddress?.verification?.status === "verified",
+    firstName: u.firstName,
+    lastName: u.lastName,
+  };
+}
 
 /**
  * The sign-in adoption logic, shared by requireCompanyContext (web) and
@@ -63,20 +99,19 @@ type ClerkUser = NonNullable<Awaited<ReturnType<typeof currentUser>>>;
  * verified-email gate, invite consumption, company creation, and the Prisma
  * concurrency re-read all stay exactly as they were.
  */
-export async function adoptCompanyContext(clerkUser: ClerkUser) {
+export async function adoptCompanyContext(identity: ClerkIdentity) {
   const existing = await prisma.user.findUnique({
-    where: { clerkId: clerkUser.id },
+    where: { clerkId: identity.id },
     include: { company: true },
   });
   if (existing) {
     return existing;
   }
 
-  const email = clerkUser.primaryEmailAddress?.emailAddress ?? `${clerkUser.id}@unknown.local`;
+  const email = identity.email ?? `${identity.id}@unknown.local`;
   const normalizedEmail = email.toLowerCase();
-  const name = [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(" ") || null;
-  const emailIsVerified =
-    clerkUser.primaryEmailAddress?.verification?.status === "verified";
+  const name = [identity.firstName, identity.lastName].filter(Boolean).join(" ") || null;
+  const emailIsVerified = identity.emailVerified;
 
   // The same person arriving with a NEW clerkId. Both clerkId and email are
   // unique on User, so without this the create below fails on the email and
@@ -103,7 +138,7 @@ export async function adoptCompanyContext(clerkUser: ClerkUser) {
     }
     return prisma.user.update({
       where: { id: sameEmail.id },
-      data: { clerkId: clerkUser.id, name: name ?? sameEmail.name },
+      data: { clerkId: identity.id, name: name ?? sameEmail.name },
       include: { company: true },
     });
   }
@@ -134,7 +169,7 @@ export async function adoptCompanyContext(clerkUser: ClerkUser) {
         prisma.invite.delete({ where: { id: invite.id } }),
         prisma.user.create({
           data: {
-            clerkId: clerkUser.id,
+            clerkId: identity.id,
             email,
             name,
             role: "MEMBER",
@@ -149,7 +184,7 @@ export async function adoptCompanyContext(clerkUser: ClerkUser) {
     const companyName = name ? `${name}'s Company` : "My Company";
     const created = await prisma.user.create({
       data: {
-        clerkId: clerkUser.id,
+        clerkId: identity.id,
         email,
         name,
         role: "OWNER",
@@ -173,7 +208,7 @@ export async function adoptCompanyContext(clerkUser: ClerkUser) {
     // both keys, and only give up when neither finds anything.
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
       const byClerkId = await prisma.user.findUnique({
-        where: { clerkId: clerkUser.id },
+        where: { clerkId: identity.id },
         include: { company: true },
       });
       if (byClerkId) return byClerkId;
@@ -185,7 +220,7 @@ export async function adoptCompanyContext(clerkUser: ClerkUser) {
       if (byEmail && emailIsVerified) {
         return prisma.user.update({
           where: { id: byEmail.id },
-          data: { clerkId: clerkUser.id, name: name ?? byEmail.name },
+          data: { clerkId: identity.id, name: name ?? byEmail.name },
           include: { company: true },
         });
       }

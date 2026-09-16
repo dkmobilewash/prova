@@ -3,6 +3,8 @@ node_modules
 .turbo
 dist
 .next
+.expo
+expo-env.d.ts
 out
 build
 
