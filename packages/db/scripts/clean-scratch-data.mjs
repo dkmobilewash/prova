@@ -289,6 +289,10 @@ async function main() {
     await del("contractDocumentVersionCounter", () => prisma.contractDocumentVersionCounter.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("retainageRelease", () => prisma.retainageRelease.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("estimateVersion", () => prisma.estimateVersion.deleteMany({ where: { jobId: { in: jobIds } } }));
+    // EstimateVersionCounter, same shape as the two counters above (#289):
+    // deleting the versions does not reach it, so it outlives them and
+    // blocks the job delete on its own.
+    await del("estimateVersionCounter", () => prisma.estimateVersionCounter.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("dispatchSlip", () => prisma.dispatchSlip.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("prevailingWageDetermination", () => prisma.prevailingWageDetermination.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("jobAssignment", () => prisma.jobAssignment.deleteMany({ where: { jobId: { in: jobIds } } }));

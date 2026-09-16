@@ -1,11 +1,18 @@
 import { useAuth } from "@clerk/expo";
 import { useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
-import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
-import { colors } from "@/lib/theme";
+import { Chip } from "@/components/Chip";
+import { EmptyState } from "@/components/EmptyState";
+import { Field } from "@/components/Field";
+import { Sheet } from "@/components/Sheet";
+import { colors, typography } from "@/lib/theme";
 import * as api from "@/lib/api";
+import { uuid } from "@/lib/id";
+import { enqueue } from "@/lib/sync-queue";
+import { useSync } from "@/lib/use-sync";
 import type { SafetyIncident, ToolboxTalk } from "@/lib/types";
 
 const CLASSIFICATIONS = ["INJURY", "SKIN_DISORDER", "RESPIRATORY_CONDITION", "POISONING", "HEARING_LOSS", "OTHER_ILLNESS"];
@@ -48,117 +55,127 @@ export default function SafetyScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobId]);
 
+  const { pending, sync } = useSync(load);
+
   const submitTalk = async () => {
-    const token = await getToken();
-    if (!token || !jobId || !topic || !heldOn) return;
-    try {
-      await api.createToolboxTalk(jobId, { topic, heldOn }, token);
-      setTopic("");
-      setHeldOn("");
-      setShowTalkForm(false);
-      await load();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to add talk");
-    }
+    if (!jobId || !topic || !heldOn) return;
+    setTopic("");
+    setHeldOn("");
+    setShowTalkForm(false);
+    await enqueue({ type: "toolbox-talk:create", jobId, clientOperationId: uuid(), topic, heldOn });
+    await sync();
   };
 
   const submitIncident = async () => {
-    const token = await getToken();
-    if (!token || !jobId || !employeeName || !description || !occurredAt) return;
-    try {
-      await api.createIncident(jobId, { employeeName, description, occurredAt, classification, outcome }, token);
-      setEmployeeName("");
-      setDescription("");
-      setOccurredAt("");
-      setShowIncidentForm(false);
-      await load();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to add incident");
-    }
+    if (!jobId || !employeeName || !description || !occurredAt) return;
+    setEmployeeName("");
+    setDescription("");
+    setOccurredAt("");
+    setShowIncidentForm(false);
+    await enqueue({
+      type: "incident:create",
+      jobId,
+      clientOperationId: uuid(),
+      employeeName,
+      description,
+      occurredAt,
+      classification,
+      outcome,
+    });
+    await sync();
   };
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: colors.canvas, padding: 16 }}>
-      {error ? <Text style={{ color: colors.tagRoseInk, marginBottom: 12 }}>{error}</Text> : null}
+    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+      {pending > 0 ? <Text style={styles.pending}>Pending sync: {pending}</Text> : null}
+      {error ? <Text style={styles.error}>{error}</Text> : null}
 
-      <Text style={{ color: colors.ink, fontWeight: "600", fontSize: 18, marginBottom: 8 }}>Toolbox talks</Text>
-      <Button variant="secondary" onPress={() => setShowTalkForm((v) => !v)}>
-        {showTalkForm ? "Cancel" : "Add talk"}
-      </Button>
-      {showTalkForm ? (
-        <View style={{ gap: 8, marginBottom: 12 }}>
-          <TextInput placeholder="Topic" placeholderTextColor={colors.inkMuted} value={topic} onChangeText={setTopic} style={inputStyle} />
-          <TextInput placeholder="Date (YYYY-MM-DD)" placeholderTextColor={colors.inkMuted} value={heldOn} onChangeText={setHeldOn} style={inputStyle} />
-          <Button variant="primary" onPress={submitTalk}>Save talk</Button>
-        </View>
-      ) : null}
-      {talks.map((t) => (
-        <Card key={t.id} style={{ marginBottom: 8 }}>
-          <Text style={{ color: colors.ink, fontWeight: "600" }}>{t.topic}</Text>
-          <Text style={{ color: colors.inkMuted }}>{t.heldOn}</Text>
-        </Card>
-      ))}
+      <View style={styles.sectionHead}>
+        <Text style={styles.sectionTitle}>Toolbox talks</Text>
+        <Button variant="secondary" onPress={() => setShowTalkForm(true)}>
+          Add talk
+        </Button>
+      </View>
+      {talks.length === 0 ? (
+        <EmptyState title="No talks logged" />
+      ) : (
+        talks.map((t) => (
+          <Card key={t.id}>
+            <Text style={styles.cardTitle}>{t.topic}</Text>
+            <Text style={styles.cardMeta}>{t.heldOn}</Text>
+          </Card>
+        ))
+      )}
 
-      <Text style={{ color: colors.ink, fontWeight: "600", fontSize: 18, marginBottom: 8, marginTop: 20 }}>Incidents</Text>
-      <Button variant="secondary" onPress={() => setShowIncidentForm((v) => !v)}>
-        {showIncidentForm ? "Cancel" : "Add incident"}
-      </Button>
-      {showIncidentForm ? (
-        <View style={{ gap: 8, marginBottom: 12 }}>
-          <TextInput placeholder="Employee name" placeholderTextColor={colors.inkMuted} value={employeeName} onChangeText={setEmployeeName} style={inputStyle} />
-          <TextInput placeholder="Description" placeholderTextColor={colors.inkMuted} value={description} onChangeText={setDescription} multiline style={[inputStyle, { minHeight: 60, textAlignVertical: "top" }]} />
-          <TextInput placeholder="Date (YYYY-MM-DD)" placeholderTextColor={colors.inkMuted} value={occurredAt} onChangeText={setOccurredAt} style={inputStyle} />
-          <Text style={{ color: colors.inkLabel }}>Classification</Text>
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-            {CLASSIFICATIONS.map((c) => (
-              <Chip key={c} label={c} selected={classification === c} onPress={() => setClassification(c)} />
-            ))}
-          </View>
-          <Text style={{ color: colors.inkLabel }}>Outcome</Text>
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-            {OUTCOMES.map((o) => (
-              <Chip key={o} label={o} selected={outcome === o} onPress={() => setOutcome(o)} />
-            ))}
-          </View>
-          <Button variant="primary" onPress={submitIncident}>Save incident</Button>
+      <View style={[styles.sectionHead, styles.sectionHeadGap]}>
+        <Text style={styles.sectionTitle}>Incidents</Text>
+        <Button variant="secondary" onPress={() => setShowIncidentForm(true)}>
+          Add incident
+        </Button>
+      </View>
+      {incidents.length === 0 ? (
+        <EmptyState title="No incidents" />
+      ) : (
+        incidents.map((i) => (
+          <Card key={i.id}>
+            <Text style={styles.cardTitle}>{i.employeeName}</Text>
+            <Text style={styles.cardBody}>{i.description}</Text>
+            <Text style={styles.cardMeta}>
+              #{i.caseNumber} · {i.outcome.replace(/_/g, " ")}
+            </Text>
+          </Card>
+        ))
+      )}
+
+      <Sheet
+        visible={showTalkForm}
+        onClose={() => setShowTalkForm(false)}
+        title="Add toolbox talk"
+        primaryLabel="Save talk"
+        onPrimary={submitTalk}
+      >
+        <Field label="Topic" placeholder="e.g. Fall protection" value={topic} onChangeText={setTopic} />
+        <Field label="Date" placeholder="YYYY-MM-DD" value={heldOn} onChangeText={setHeldOn} />
+      </Sheet>
+
+      <Sheet
+        visible={showIncidentForm}
+        onClose={() => setShowIncidentForm(false)}
+        title="Add incident"
+        primaryLabel="Save incident"
+        onPrimary={submitIncident}
+      >
+        <Field label="Employee name" value={employeeName} onChangeText={setEmployeeName} />
+        <Field label="Description" placeholder="What happened" value={description} onChangeText={setDescription} multiline />
+        <Field label="Date" placeholder="YYYY-MM-DD" value={occurredAt} onChangeText={setOccurredAt} />
+        <Text style={styles.chipLabel}>Classification</Text>
+        <View style={styles.chips}>
+          {CLASSIFICATIONS.map((c) => (
+            <Chip key={c} label={c.replace(/_/g, " ")} selected={classification === c} onPress={() => setClassification(c)} />
+          ))}
         </View>
-      ) : null}
-      {incidents.map((i) => (
-        <Card key={i.id} style={{ marginBottom: 8 }}>
-          <Text style={{ color: colors.ink, fontWeight: "600" }}>{i.employeeName}</Text>
-          <Text style={{ color: colors.inkBody }}>{i.description}</Text>
-          <Text style={{ color: colors.inkMuted }}>
-            #{i.caseNumber} · {i.outcome.replace(/_/g, " ")}
-          </Text>
-        </Card>
-      ))}
+        <Text style={styles.chipLabel}>Outcome</Text>
+        <View style={styles.chips}>
+          {OUTCOMES.map((o) => (
+            <Chip key={o} label={o.replace(/_/g, " ")} selected={outcome === o} onPress={() => setOutcome(o)} />
+          ))}
+        </View>
+      </Sheet>
     </ScrollView>
   );
 }
 
-function Chip({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
-  return (
-    <Pressable
-      onPress={onPress}
-      style={{
-        paddingHorizontal: 10,
-        paddingVertical: 6,
-        borderRadius: 6,
-        backgroundColor: selected ? colors.brand : colors.surface,
-        borderWidth: 1,
-        borderColor: colors.lineCard,
-      }}
-    >
-      <Text style={{ color: selected ? "#ffffff" : colors.inkBody }}>{label}</Text>
-    </Pressable>
-  );
-}
-
-const inputStyle = {
-  borderWidth: 1,
-  borderColor: colors.lineCard,
-  backgroundColor: colors.surface,
-  borderRadius: 6,
-  padding: 10,
-  color: colors.ink,
-};
+const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: colors.canvas },
+  content: { padding: 16, gap: 12 },
+  pending: { color: colors.link, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
+  error: { color: colors.tagRoseInk, fontSize: typography.size.sm },
+  sectionHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  sectionHeadGap: { marginTop: 12 },
+  sectionTitle: { color: colors.ink, fontSize: typography.size.lg, fontWeight: typography.weight.bold },
+  cardTitle: { color: colors.ink, fontSize: typography.size.md, fontWeight: typography.weight.semibold },
+  cardBody: { color: colors.inkBody, fontSize: typography.size.md, marginTop: 4 },
+  cardMeta: { color: colors.inkMuted, fontSize: typography.size.sm, marginTop: 4 },
+  chipLabel: { color: colors.inkLabel, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
+  chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+});

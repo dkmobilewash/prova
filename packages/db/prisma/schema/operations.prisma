@@ -132,9 +132,14 @@ model PunchListItem {
   isDone      Boolean   @default(false)
   completedAt DateTime?
 
+  /// Idempotency key from the phone, so a retried offline POST replays
+  /// instead of duplicating. Null for web writes.
+  clientOperationId String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@unique([companyId, clientOperationId])
   @@index([companyId])
   @@index([jobId])
 }
@@ -272,10 +277,15 @@ model SafetyIncident {
   reportedByUserId String?
   reportedBy       User?   @relation(fields: [reportedByUserId], references: [id])
 
+  /// Idempotency key from the phone, so a retried offline POST replays
+  /// instead of duplicating. Null for web writes.
+  clientOperationId String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@unique([companyId, caseYear, caseNumber])
+  @@unique([companyId, clientOperationId])
   @@index([companyId])
   @@index([jobId])
 }
@@ -301,9 +311,14 @@ model ToolboxTalk {
   recordedByUserId String?
   recordedBy       User?   @relation(fields: [recordedByUserId], references: [id])
 
+  /// Idempotency key from the phone, so a retried offline POST replays
+  /// instead of duplicating. Null for web writes.
+  clientOperationId String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@unique([companyId, clientOperationId])
   @@index([companyId])
   @@index([jobId])
 }
@@ -554,10 +569,15 @@ model MaterialOrder {
 
   deliveries MaterialOrderDelivery[]
 
+  /// Idempotency key from the phone, so a retried offline POST replays
+  /// instead of duplicating. Null for web writes.
+  clientOperationId String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@unique([jobId, number])
+  @@unique([companyId, clientOperationId])
   @@index([companyId])
   @@index([jobId])
   @@index([vendorId])

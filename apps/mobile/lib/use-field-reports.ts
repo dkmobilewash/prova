@@ -71,8 +71,7 @@ export function useFieldReports(jobId: string) {
       };
       setReports((prev) => [optimistic, ...prev]);
       await enqueue({
-        type: "create",
-        localId: optimistic.id,
+        type: "field-report:create",
         jobId,
         reportDate: fields.reportDate,
         clientOperationId,
@@ -97,7 +96,7 @@ export function useFieldReports(jobId: string) {
       setReports((prev) =>
         prev.map((r) => (r.id === reportId ? { ...r, ...fields, clientUpdatedAt } : r)),
       );
-      await enqueue({ type: "update", reportId, clientId, clientUpdatedAt, fields });
+      await enqueue({ type: "field-report:update", reportId, clientId, clientUpdatedAt, fields });
       await sync();
     },
     [sync],

@@ -2,10 +2,11 @@ import { useAuth } from "@clerk/expo";
 import { useLocalSearchParams } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import { useEffect, useState } from "react";
-import { FlatList, Image, Text, View } from "react-native";
+import { Image, StyleSheet, Text, View } from "react-native";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
-import { colors } from "@/lib/theme";
+import { List } from "@/components/List";
+import { colors, typography } from "@/lib/theme";
 import * as api from "@/lib/api";
 import type { Media } from "@/lib/types";
 
@@ -64,30 +65,40 @@ export default function PhotosScreen() {
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.canvas, padding: 16, gap: 12 }}>
-      <Button variant="primary" onPress={pick}>
-        Add photo
-      </Button>
-      {error ? <Text style={{ color: colors.tagRoseInk }}>{error}</Text> : null}
-      <FlatList
+    <View style={styles.screen}>
+      {error ? <Text style={styles.error}>{error}</Text> : null}
+      <List
         data={media}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={{ gap: 12 }}
         renderItem={({ item }) => (
           <Card>
             {item.blobUrl ? (
-              <Image
-                source={{ uri: item.blobUrl }}
-                style={{ width: "100%", height: 200, borderRadius: 6, marginBottom: 8 }}
-              />
+              <Image source={{ uri: item.blobUrl }} style={styles.image} />
             ) : null}
-            {item.caption ? <Text style={{ color: colors.ink, marginBottom: 4 }}>{item.caption}</Text> : null}
-            <Text style={{ color: colors.inkMuted }}>
+            {item.caption ? <Text style={styles.caption}>{item.caption}</Text> : null}
+            <Text style={styles.timestamp}>
               {new Date(item.capturedAt).toLocaleString()}
             </Text>
           </Card>
         )}
+        emptyTitle="No photos yet"
+        emptyDescription="Tap “Add photo” to capture or upload one."
       />
+
+      <View style={styles.footer}>
+        <Button fullWidth onPress={pick}>
+          Add photo
+        </Button>
+      </View>
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: colors.canvas },
+  error: { color: colors.tagRoseInk, padding: 16, paddingBottom: 0, fontSize: typography.size.sm },
+  image: { width: "100%", height: 200, borderRadius: 8, marginBottom: 8 },
+  caption: { color: colors.ink, fontSize: typography.size.md, marginBottom: 4 },
+  timestamp: { color: colors.inkMuted, fontSize: typography.size.sm },
+  footer: { padding: 16, paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.lineRow },
+});

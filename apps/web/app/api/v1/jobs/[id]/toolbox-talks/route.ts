@@ -78,6 +78,15 @@ export async function POST(
   const heldOn = heldOnRaw ? new Date(`${heldOnRaw}T00:00:00.000Z`) : new Date();
   if (Number.isNaN(heldOn.getTime())) return jsonError("Date is not valid", 400);
 
+  // Idempotent create: a retried offline POST replays instead of duplicating.
+  const clientOperationId = String(input.clientOperationId ?? "").trim() || undefined;
+  if (clientOperationId) {
+    const existing = await prisma.toolboxTalk.findUnique({
+      where: { companyId_clientOperationId: { companyId: context.companyId, clientOperationId } },
+    });
+    if (existing) return NextResponse.json(toJson(existing), { status: 200 });
+  }
+
   const talk = await prisma.toolboxTalk.create({
     data: {
       companyId: context.companyId,
@@ -88,6 +97,7 @@ export async function POST(
       attendees: String(input.attendees ?? "").trim() || null,
       notes: String(input.notes ?? "").trim() || null,
       recordedByUserId: context.id,
+      clientOperationId,
     },
   });
 

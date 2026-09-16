@@ -1,11 +1,12 @@
 import { useAuth } from "@clerk/expo";
 import { Redirect, router } from "expo-router";
 import { useEffect, useState } from "react";
-import { FlatList, Pressable, Text, View } from "react-native";
-import * as api from "@/lib/api";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Card } from "@/components/Card";
+import { List } from "@/components/List";
 import { StatusBadge } from "@/components/StatusBadge";
-import { colors } from "@/lib/theme";
+import { colors, typography } from "@/lib/theme";
+import * as api from "@/lib/api";
 import type { Job } from "@/lib/types";
 
 export default function JobsScreen() {
@@ -27,25 +28,45 @@ export default function JobsScreen() {
     })();
   }, [isSignedIn, getToken]);
 
-  if (!isLoaded) return <Text style={{ color: colors.ink }}>Loading…</Text>;
+  if (!isLoaded) return <Text style={styles.loading}>Loading…</Text>;
   if (!isSignedIn) return <Redirect href="/sign-in" />;
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.canvas, padding: 16 }}>
-      {error ? <Text style={{ color: colors.tagRoseInk, marginBottom: 12 }}>{error}</Text> : null}
-      <FlatList
+    <View style={styles.screen}>
+      {error ? <Text style={styles.error}>{error}</Text> : null}
+      <List
         data={jobs}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={{ gap: 12 }}
         renderItem={({ item }) => (
-          <Pressable onPress={() => router.push(`/reports/${item.id}`)}>
+          <Pressable
+            onPress={() =>
+              router.push({
+                pathname: "/job/[jobId]",
+                params: { jobId: item.id, name: item.name, status: item.status },
+              })
+            }
+          >
             <Card>
-              <Text style={{ fontWeight: "600", color: colors.ink, marginBottom: 6 }}>{item.name}</Text>
+              <Text style={styles.jobName}>{item.name}</Text>
               <StatusBadge status={item.status} />
             </Card>
           </Pressable>
         )}
+        emptyTitle="No jobs yet"
+        emptyDescription="Jobs appear here once they're created in the office."
       />
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: colors.canvas },
+  loading: { color: colors.ink, fontSize: typography.size.md, padding: 16 },
+  error: { color: colors.tagRoseInk, padding: 16, paddingBottom: 0, fontSize: typography.size.sm },
+  jobName: {
+    color: colors.ink,
+    fontSize: typography.size.md,
+    fontWeight: typography.weight.semibold,
+    marginBottom: 8,
+  },
+});

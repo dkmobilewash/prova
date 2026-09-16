@@ -87,6 +87,10 @@ export const HANDLED_MODELS = [
   // isn't evidence, it's just the number sequence, so it goes with the
   // other per-job counters instead.
   "ContractDocumentVersionCounter",
+  // EstimateVersionCounter, the same shape again (#289): keyed on jobId,
+  // RESTRICT on Job, and deleting the job's estimate versions does not
+  // reach it.
+  "EstimateVersionCounter",
   // `DocumentIntake` does NOT block a Job delete: its `jobId` is optional,
   // so Postgres holds ON DELETE SET NULL and the delete would succeed
   // without this entry. It is in this list anyway, and the distinction is

@@ -1,11 +1,18 @@
 import { useAuth } from "@clerk/expo";
 import { useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
-import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
-import { colors } from "@/lib/theme";
+import { Chip } from "@/components/Chip";
+import { Field } from "@/components/Field";
+import { List } from "@/components/List";
+import { Sheet } from "@/components/Sheet";
+import { colors, typography } from "@/lib/theme";
 import * as api from "@/lib/api";
+import { uuid } from "@/lib/id";
+import { enqueue } from "@/lib/sync-queue";
+import { useSync } from "@/lib/use-sync";
 import type { TimeEntry, TimeEntryPayType } from "@/lib/types";
 
 const PAY_TYPES: TimeEntryPayType[] = ["STRAIGHT", "OVERTIME", "DOUBLE_TIME", "SHIFT_DIFFERENTIAL"];
@@ -40,76 +47,86 @@ export default function TimeScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobId]);
 
+  const { pending, sync } = useSync(load);
+
   const submit = async () => {
-    const token = await getToken();
-    if (!token || !jobId || !date || !hours) return;
-    try {
-      await api.createTimeEntry(jobId, { date, hours, payType, note }, token);
-      setDate("");
-      setHours("");
-      setNote("");
-      setShowForm(false);
-      await load();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to log time");
-    }
+    if (!jobId || !date || !hours) return;
+    setDate("");
+    setHours("");
+    setNote("");
+    setShowForm(false);
+    await enqueue({
+      type: "time:create",
+      jobId,
+      clientOperationId: uuid(),
+      date,
+      hours,
+      payType,
+      note: note || undefined,
+    });
+    await sync();
   };
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: colors.canvas, padding: 16 }}>
-      {error ? <Text style={{ color: colors.tagRoseInk, marginBottom: 12 }}>{error}</Text> : null}
+    <View style={styles.screen}>
+      {pending > 0 ? <Text style={styles.pending}>Pending sync: {pending}</Text> : null}
+      {error ? <Text style={styles.error}>{error}</Text> : null}
+      <List
+        data={entries}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) => (
+          <Card>
+            <View style={styles.entryHead}>
+              <Text style={styles.date}>{item.date}</Text>
+              <Text style={styles.hours}>{item.hours}h</Text>
+            </View>
+            <Text style={styles.meta}>
+              {item.employeeName} · {item.payType.replace(/_/g, " ")}
+            </Text>
+            {item.note ? <Text style={styles.note}>{item.note}</Text> : null}
+          </Card>
+        )}
+        emptyTitle="No time logged"
+        emptyDescription="Tap “Log time” to record the day's hours."
+      />
 
-      <Button variant="secondary" onPress={() => setShowForm((v) => !v)}>
-        {showForm ? "Cancel" : "Log time"}
-      </Button>
-      {showForm ? (
-        <View style={{ gap: 8, marginBottom: 12 }}>
-          <TextInput placeholder="Date (YYYY-MM-DD)" placeholderTextColor={colors.inkMuted} value={date} onChangeText={setDate} style={inputStyle} />
-          <TextInput placeholder="Hours (e.g. 8 or 8.5)" placeholderTextColor={colors.inkMuted} value={hours} onChangeText={setHours} keyboardType="decimal-pad" style={inputStyle} />
-          <TextInput placeholder="Note" placeholderTextColor={colors.inkMuted} value={note} onChangeText={setNote} style={inputStyle} />
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-            {PAY_TYPES.map((p) => (
-              <Pressable
-                key={p}
-                onPress={() => setPayType(p)}
-                style={{
-                  paddingHorizontal: 10,
-                  paddingVertical: 6,
-                  borderRadius: 6,
-                  backgroundColor: payType === p ? colors.brand : colors.surface,
-                  borderWidth: 1,
-                  borderColor: colors.lineCard,
-                }}
-              >
-                <Text style={{ color: payType === p ? "#ffffff" : colors.inkBody }}>{p.replace(/_/g, " ")}</Text>
-              </Pressable>
-            ))}
-          </View>
-          <Button variant="primary" onPress={submit}>Save entry</Button>
+      <View style={styles.footer}>
+        <Button fullWidth onPress={() => setShowForm(true)}>
+          Log time
+        </Button>
+      </View>
+
+      <Sheet
+        visible={showForm}
+        onClose={() => setShowForm(false)}
+        title="Log time"
+        primaryLabel="Save entry"
+        onPrimary={submit}
+      >
+        <Field label="Date" placeholder="YYYY-MM-DD" value={date} onChangeText={setDate} />
+        <Field label="Hours" placeholder="e.g. 8 or 8.5" value={hours} onChangeText={setHours} keyboardType="decimal-pad" />
+        <Field label="Note" placeholder="Optional" value={note} onChangeText={setNote} />
+        <Text style={styles.payLabel}>Pay type</Text>
+        <View style={styles.chips}>
+          {PAY_TYPES.map((p) => (
+            <Chip key={p} label={p.replace(/_/g, " ")} selected={payType === p} onPress={() => setPayType(p)} />
+          ))}
         </View>
-      ) : null}
-
-      {entries.map((e) => (
-        <Card key={e.id} style={{ marginBottom: 8 }}>
-          <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-            <Text style={{ color: colors.ink, fontWeight: "600" }}>{e.date}</Text>
-            <Text style={{ color: colors.ink }}>{e.hours}h</Text>
-          </View>
-          <Text style={{ color: colors.inkMuted }}>
-            {e.employeeName} · {e.payType.replace(/_/g, " ")}
-          </Text>
-          {e.note ? <Text style={{ color: colors.inkBody }}>{e.note}</Text> : null}
-        </Card>
-      ))}
-    </ScrollView>
+      </Sheet>
+    </View>
   );
 }
 
-const inputStyle = {
-  borderWidth: 1,
-  borderColor: colors.lineCard,
-  backgroundColor: colors.surface,
-  borderRadius: 6,
-  padding: 10,
-  color: colors.ink,
-};
+const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: colors.canvas },
+  pending: { color: colors.link, padding: 16, paddingBottom: 0, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
+  error: { color: colors.tagRoseInk, padding: 16, paddingBottom: 0, fontSize: typography.size.sm },
+  entryHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  date: { color: colors.ink, fontSize: typography.size.md, fontWeight: typography.weight.semibold },
+  hours: { color: colors.ink, fontSize: typography.size.lg, fontWeight: typography.weight.bold },
+  meta: { color: colors.inkMuted, fontSize: typography.size.sm },
+  note: { color: colors.inkBody, fontSize: typography.size.md, marginTop: 4 },
+  payLabel: { color: colors.inkLabel, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
+  chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  footer: { padding: 16, paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.lineRow },
+});

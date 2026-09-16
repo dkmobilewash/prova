@@ -1,11 +1,18 @@
 import { useAuth } from "@clerk/expo";
 import { useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
-import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
-import { colors } from "@/lib/theme";
+import { Chip } from "@/components/Chip";
+import { Field } from "@/components/Field";
+import { List } from "@/components/List";
+import { Sheet } from "@/components/Sheet";
+import { colors, typography } from "@/lib/theme";
 import * as api from "@/lib/api";
+import { uuid } from "@/lib/id";
+import { enqueue } from "@/lib/sync-queue";
+import { useSync } from "@/lib/use-sync";
 import type { MaterialOrder, Vendor } from "@/lib/types";
 
 export default function MaterialsScreen() {
@@ -42,87 +49,87 @@ export default function MaterialsScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobId]);
 
+  const { pending, sync } = useSync(load);
+
   const submit = async () => {
-    const token = await getToken();
-    if (!token || !jobId || !description || !orderedOn || !vendorId) return;
-    try {
-      await api.createMaterialOrder(
-        jobId,
-        {
-          description,
-          orderedOn,
-          vendorId,
-          ...(promisedFor ? { promisedFor } : {}),
-        },
-        token,
-      );
-      setDescription("");
-      setOrderedOn("");
-      setPromisedFor("");
-      setShowForm(false);
-      await load();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to add order");
-    }
+    if (!jobId || !description || !orderedOn || !vendorId) return;
+    setDescription("");
+    setOrderedOn("");
+    setPromisedFor("");
+    setShowForm(false);
+    await enqueue({
+      type: "material:create",
+      jobId,
+      clientOperationId: uuid(),
+      description,
+      orderedOn,
+      promisedFor: promisedFor || undefined,
+      vendorId,
+    });
+    await sync();
   };
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: colors.canvas, padding: 16 }}>
-      {error ? <Text style={{ color: colors.tagRoseInk, marginBottom: 12 }}>{error}</Text> : null}
+    <View style={styles.screen}>
+      {pending > 0 ? <Text style={styles.pending}>Pending sync: {pending}</Text> : null}
+      {error ? <Text style={styles.error}>{error}</Text> : null}
+      <List
+        data={orders}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) => (
+          <Card>
+            <View style={styles.orderHead}>
+              <Text style={styles.number}>#{item.number}</Text>
+              <Text style={styles.vendor}>{item.vendorName}</Text>
+            </View>
+            <Text style={styles.description}>{item.description}</Text>
+            <Text style={styles.meta}>
+              Ordered {item.orderedOn}
+              {item.promisedFor ? ` · due ${item.promisedFor}` : ""}
+            </Text>
+          </Card>
+        )}
+        emptyTitle="Nothing on order"
+        emptyDescription="Tap “Add order” to log a material delivery."
+      />
 
-      <Button variant="secondary" onPress={() => setShowForm((v) => !v)}>
-        {showForm ? "Cancel" : "Add order"}
-      </Button>
-      {showForm ? (
-        <View style={{ gap: 8, marginBottom: 12 }}>
-          <TextInput placeholder="What was ordered" placeholderTextColor={colors.inkMuted} value={description} onChangeText={setDescription} style={inputStyle} />
-          <TextInput placeholder="Date ordered (YYYY-MM-DD)" placeholderTextColor={colors.inkMuted} value={orderedOn} onChangeText={setOrderedOn} style={inputStyle} />
-          <TextInput placeholder="Promised for (YYYY-MM-DD)" placeholderTextColor={colors.inkMuted} value={promisedFor} onChangeText={setPromisedFor} style={inputStyle} />
-          <Text style={{ color: colors.inkLabel }}>Vendor</Text>
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-            {vendors.map((v) => (
-              <Pressable
-                key={v.id}
-                onPress={() => setVendorId(v.id)}
-                style={{
-                  paddingHorizontal: 10,
-                  paddingVertical: 6,
-                  borderRadius: 6,
-                  backgroundColor: vendorId === v.id ? colors.brand : colors.surface,
-                  borderWidth: 1,
-                  borderColor: colors.lineCard,
-                }}
-              >
-                <Text style={{ color: vendorId === v.id ? "#ffffff" : colors.inkBody }}>{v.name}</Text>
-              </Pressable>
-            ))}
-          </View>
-          <Button variant="primary" onPress={submit}>Save order</Button>
+      <View style={styles.footer}>
+        <Button fullWidth onPress={() => setShowForm(true)}>
+          Add order
+        </Button>
+      </View>
+
+      <Sheet
+        visible={showForm}
+        onClose={() => setShowForm(false)}
+        title="Add material order"
+        primaryLabel="Save order"
+        onPrimary={submit}
+      >
+        <Field label="What was ordered" placeholder="e.g. 2x4 lumber" value={description} onChangeText={setDescription} />
+        <Field label="Date ordered" placeholder="YYYY-MM-DD" value={orderedOn} onChangeText={setOrderedOn} />
+        <Field label="Promised for" placeholder="YYYY-MM-DD (optional)" value={promisedFor} onChangeText={setPromisedFor} />
+        <Text style={styles.vendorLabel}>Vendor</Text>
+        <View style={styles.chips}>
+          {vendors.map((v) => (
+            <Chip key={v.id} label={v.name} selected={vendorId === v.id} onPress={() => setVendorId(v.id)} />
+          ))}
         </View>
-      ) : null}
-
-      {orders.map((o) => (
-        <Card key={o.id} style={{ marginBottom: 8 }}>
-          <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-            <Text style={{ color: colors.ink, fontWeight: "600" }}>#{o.number}</Text>
-            <Text style={{ color: colors.inkMuted }}>{o.vendorName}</Text>
-          </View>
-          <Text style={{ color: colors.ink }}>{o.description}</Text>
-          <Text style={{ color: colors.inkMuted }}>
-            Ordered {o.orderedOn}
-            {o.promisedFor ? ` · due ${o.promisedFor}` : ""}
-          </Text>
-        </Card>
-      ))}
-    </ScrollView>
+      </Sheet>
+    </View>
   );
 }
 
-const inputStyle = {
-  borderWidth: 1,
-  borderColor: colors.lineCard,
-  backgroundColor: colors.surface,
-  borderRadius: 6,
-  padding: 10,
-  color: colors.ink,
-};
+const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: colors.canvas },
+  pending: { color: colors.link, padding: 16, paddingBottom: 0, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
+  error: { color: colors.tagRoseInk, padding: 16, paddingBottom: 0, fontSize: typography.size.sm },
+  orderHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  number: { color: colors.ink, fontSize: typography.size.md, fontWeight: typography.weight.bold },
+  vendor: { color: colors.inkMuted, fontSize: typography.size.sm },
+  description: { color: colors.ink, fontSize: typography.size.md, marginTop: 4 },
+  meta: { color: colors.inkBody, fontSize: typography.size.sm, marginTop: 4 },
+  vendorLabel: { color: colors.inkLabel, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
+  chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  footer: { padding: 16, paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.lineRow },
+});

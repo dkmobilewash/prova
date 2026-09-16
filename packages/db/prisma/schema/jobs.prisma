@@ -66,6 +66,7 @@ model Job {
   equipment                    Equipment[]
   equipmentAssignments         EquipmentAssignment[]
   estimateVersions             EstimateVersion[]
+  estimateVersionCounter       EstimateVersionCounter?
   contractDocuments            ContractDocument[]
   timeEntries                  TimeEntry[]
   dispatchSlips                DispatchSlip[]
