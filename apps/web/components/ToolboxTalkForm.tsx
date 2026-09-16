@@ -34,13 +34,15 @@ export function ToolboxTalkForm({ jobs, today }: { jobs: JobOption[]; today: str
         setError(null);
         const formData = new FormData(event.currentTarget);
         startTransition(async () => {
-          try {
-            await createToolboxTalk(formData);
+          // The returned result, not a caught throw — production redacts a
+          // thrown Server Action message to a digest.
+          const result = await createToolboxTalk(formData);
+          if (result.ok) {
             draft.clear();
             draft.resetForm();
             setIsOpen(false);
-          } catch (err) {
-            setError(err instanceof Error ? err.message : "Could not log the toolbox talk");
+          } else {
+            setError(result.error);
           }
         });
       }}
