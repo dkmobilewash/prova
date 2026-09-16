@@ -8,6 +8,7 @@ import { setState, unreceivedRevisions } from "@/components/drawingLabels";
 import { StatusLine } from "@/components/StatusLine";
 import { drawingsStatus } from "@/lib/status-sentences";
 import { jobPickerLabel, toJobOption } from "@/components/jobLabels";
+import { viewerToday } from "@/lib/viewerToday";
 
 /** Stored at UTC midnight, rendered in UTC — same rule as every other
  * dated record in this app. */
@@ -25,7 +26,12 @@ export default async function DrawingsPage({
   const { company, ...currentUser } = context;
   const { job: jobFilter } = await searchParams;
 
-  const today = new Date().toISOString().slice(0, 10);
+  // The READER'S calendar day, not the server's UTC one — see /rfis. There
+  // is no overdue comparison on this page: `today` ends up in
+  // `daysToReachUs`, so measuring it in UTC added a day to "waiting N days"
+  // every Pacific afternoon. That is the number somebody quotes at the GC
+  // about a revision that never arrived, so it does not get to be a day out.
+  const today = await viewerToday();
 
   // status + contact, not just the name: issue #65 — fifteen jobs, seven of
   // them called "Smith kitchen remodel", and this picker showed seven

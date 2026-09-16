@@ -11,12 +11,10 @@ import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
 export function RfiForm({
   jobs,
   defaultJobId,
-  today,
   draft,
 }: {
   jobs: JobOption[];
   defaultJobId?: string;
-  today: string;
   /** A card from the Ask box: the form opens with these filled in, and
    * tells the card it saved. The sent date is NOT part of it — it stays
    * the form's own default below. */
