@@ -1,15 +1,15 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireCapabilityForAction } from "@/lib/authz";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { Prisma, prisma } from "@prova/db";
 import {
   actionFail,
   actionOk,
-  assertOwner,
+  InputError,
   ownerRefusal,
+  runAction,
   type ActionResult,
 } from "./shared";
 // The one definition of what OSHA counts as recordable, shared with the log
@@ -19,8 +19,34 @@ import { isRecordable } from "@/components/safetyLabels";
 /** Every entry point to these records is a page guarded by MANAGE_FIELD,
  * so every write here answers to the same capability. A guarded page
  * in front of an open action is not a guard: the action is its own
- * endpoint and answers whoever posts to it. */
+ * endpoint and answers whoever posts to it.
+ *
+ * RETURNED, never thrown — see the module note below. */
 const FIELD_ONLY = "Field records aren't part of your job function. The account owner sets who sees what, on the Team page.";
+
+/**
+ * EVERY ACTION IN THIS MODULE RETURNS ITS FAILURES INSTEAD OF THROWING.
+ *
+ * Production REDACTS the message of anything thrown out of a Server Action
+ * (CLAUDE.md, verified 2026-08-27 against a real production build). Four of
+ * the five actions here used to refuse by throwing, and the forms rendered
+ * `err.message` — which reads perfectly in dev and degrades to an opaque
+ * digest for the person actually filing.
+ *
+ * The one that hurts is `createSafetyIncident`. That form is how an injury
+ * gets onto the OSHA 300 log. Leave the employee's name blank and the
+ * thrown "Employee name is required" never arrived: the person got a digest
+ * beside a Save button that had apparently done nothing, on the report they
+ * are legally required to keep. `deleteSafetyIncident` argued this case in
+ * its own docstring (#148) and was the only action in the file that acted
+ * on it.
+ *
+ * So: expected, user-readable failures come back as `{ ok: false, error }`
+ * and the form renders `error`. `throw` is reserved for genuine bugs, which
+ * SHOULD be redacted. The parsers below throw `InputError`, which
+ * `runAction` converts at each action's boundary — parsing stays terse and
+ * the wire stays honest. `lib/actions/submittals.ts` is the reference.
+ */
 
 const OUTCOMES = [
   "DEATH",
@@ -39,19 +65,28 @@ const CLASSIFICATIONS = [
   "OTHER_ILLNESS",
 ] as const;
 
+/** Every parser here throws `InputError` and never a bare `Error`: these are
+ * things the person filling the form can fix, so they must reach them as a
+ * sentence rather than as a redacted digest. */
 function pick<T extends readonly string[]>(formData: FormData, key: string, allowed: T): T[number] {
   const raw = String(formData.get(key) ?? "");
   if (!allowed.includes(raw as T[number])) {
-    throw new Error(`"${key}" must be one of: ${allowed.join(", ")}`);
+    throw new InputError(`"${key}" must be one of: ${allowed.join(", ")}`);
   }
   return raw as T[number];
 }
 
+function required(formData: FormData, key: string, label: string): string {
+  const value = String(formData.get(key) ?? "").trim();
+  if (!value) throw new InputError(`${label} is required`);
+  return value;
+}
+
 function dateFromForm(formData: FormData, key: string): Date {
   const raw = String(formData.get(key) ?? "").trim();
-  if (!raw) throw new Error("Date is required");
+  if (!raw) throw new InputError("Date is required");
   const date = new Date(`${raw}T00:00:00.000Z`);
-  if (Number.isNaN(date.getTime())) throw new Error("Date is not valid");
+  if (Number.isNaN(date.getTime())) throw new InputError("Date is not valid");
   return date;
 }
 
@@ -59,7 +94,7 @@ function countFromForm(formData: FormData, key: string): number | null {
   const raw = String(formData.get(key) ?? "").trim();
   if (!raw) return null;
   const n = Number(raw);
-  if (!Number.isInteger(n) || n < 0) throw new Error(`"${key}" must be a whole number of days`);
+  if (!Number.isInteger(n) || n < 0) throw new InputError(`"${key}" must be a whole number of days`);
   return n;
 }
 
@@ -80,7 +115,7 @@ async function optionalJobId(formData: FormData, companyId: string) {
   const raw = String(formData.get("jobId") ?? "").trim();
   if (!raw) return null;
   const job = await prisma.job.findUnique({ where: { id: raw } });
-  if (!job || job.companyId !== companyId) throw new Error("Job not found");
+  if (!job || job.companyId !== companyId) throw new InputError("Job not found");
   return job.id;
 }
 
@@ -159,97 +194,109 @@ async function alreadyFiled(
   });
 }
 
-export async function createSafetyIncident(formData: FormData) {
-  const { company, ...user } = await requireCapabilityForAction("MANAGE_FIELD", FIELD_ONLY);
+export async function createSafetyIncident(formData: FormData): Promise<ActionResult> {
+  // OUTSIDE runAction on purpose: it redirects an unauthenticated caller,
+  // and a redirect is a thrown control signal rather than a failure a form
+  // can render.
+  const context = await requireCompanyContext();
+  const { company, ...user } = context;
+  return runAction(async () => {
+    if (!can(context, "MANAGE_FIELD")) return actionFail(FIELD_ONLY);
 
-  const employeeName = String(formData.get("employeeName") ?? "").trim();
-  if (!employeeName) throw new Error("Employee name is required");
-  const description = String(formData.get("description") ?? "").trim();
-  if (!description) throw new Error("Description is required");
+    const employeeName = required(formData, "employeeName", "Employee name");
+    const description = required(formData, "description", "Description");
 
-  const occurredAt = dateFromForm(formData, "occurredAt");
-  const caseYear = occurredAt.getUTCFullYear();
-  const jobTitle = String(formData.get("jobTitle") ?? "").trim();
-  const location = String(formData.get("location") ?? "").trim();
+    const occurredAt = dateFromForm(formData, "occurredAt");
+    const caseYear = occurredAt.getUTCFullYear();
+    const jobTitle = String(formData.get("jobTitle") ?? "").trim();
+    const location = String(formData.get("location") ?? "").trim();
 
-  const jobId = await optionalJobId(formData, company.id);
-  const classification = pick(formData, "classification", CLASSIFICATIONS);
-  const outcome = pick(formData, "outcome", OUTCOMES);
-  const days = daysForOutcome(
-    outcome,
-    countFromForm(formData, "daysAway"),
-    countFromForm(formData, "daysRestricted"),
-  );
+    const jobId = await optionalJobId(formData, company.id);
+    const classification = pick(formData, "classification", CLASSIFICATIONS);
+    const outcome = pick(formData, "outcome", OUTCOMES);
+    const days = daysForOutcome(
+      outcome,
+      countFromForm(formData, "daysAway"),
+      countFromForm(formData, "daysRestricted"),
+    );
 
-  await prisma.$transaction(async (tx) => {
-    // Silent on purpose. This runs when somebody's report did not appear
-    // to go through and they sent it again, and the truthful outcome of
-    // that is the one case that is already filed — the page revalidates
-    // below and shows it. An error would report a failure that did not
-    // happen, about a record that exists, and in production the message
-    // would be redacted to a digest anyway.
-    if (await alreadyFiled(tx, company.id, { occurredAt, employeeName, description })) {
-      return;
-    }
+    await prisma.$transaction(async (tx) => {
+      // Silent on purpose. This runs when somebody's report did not appear
+      // to go through and they sent it again, and the truthful outcome of
+      // that is the one case that is already filed — the page revalidates
+      // below and shows it. An error would report a failure that did not
+      // happen, about a record that exists.
+      if (await alreadyFiled(tx, company.id, { occurredAt, employeeName, description })) {
+        return;
+      }
 
-    await tx.safetyIncident.create({
+      await tx.safetyIncident.create({
+        data: {
+          companyId: company.id,
+          jobId,
+          caseYear,
+          caseNumber: await issueCaseNumber(tx, company.id, caseYear),
+          occurredAt,
+          employeeName,
+          jobTitle: jobTitle || null,
+          location: location || null,
+          description,
+          classification,
+          outcome,
+          ...days,
+          reportedByUserId: user.id,
+        },
+      });
+    });
+
+    revalidatePath("/safety");
+    return actionOk;
+  });
+}
+
+export async function updateSafetyIncident(
+  incidentId: string,
+  formData: FormData,
+): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  const { company } = context;
+  return runAction(async () => {
+    if (!can(context, "MANAGE_FIELD")) return actionFail(FIELD_ONLY);
+
+    const incident = await prisma.safetyIncident.findUnique({ where: { id: incidentId } });
+    if (!incident || incident.companyId !== company.id)
+      return actionFail("That safety case no longer exists.");
+
+    const employeeName = required(formData, "employeeName", "Employee name");
+    const description = required(formData, "description", "Description");
+    const jobTitle = String(formData.get("jobTitle") ?? "").trim();
+    const location = String(formData.get("location") ?? "").trim();
+
+    const updatedOutcome = pick(formData, "outcome", OUTCOMES);
+
+    // caseNumber/caseYear are deliberately not editable: they identify the
+    // case on a filed log.
+    await prisma.safetyIncident.update({
+      where: { id: incidentId },
       data: {
-        companyId: company.id,
-        jobId,
-        caseYear,
-        caseNumber: await issueCaseNumber(tx, company.id, caseYear),
-        occurredAt,
+        jobId: await optionalJobId(formData, company.id),
         employeeName,
         jobTitle: jobTitle || null,
         location: location || null,
         description,
-        classification,
-        outcome,
-        ...days,
-        reportedByUserId: user.id,
+        classification: pick(formData, "classification", CLASSIFICATIONS),
+        outcome: updatedOutcome,
+        ...daysForOutcome(
+          updatedOutcome,
+          countFromForm(formData, "daysAway"),
+          countFromForm(formData, "daysRestricted"),
+        ),
       },
     });
+
+    revalidatePath("/safety");
+    return actionOk;
   });
-
-  revalidatePath("/safety");
-}
-
-export async function updateSafetyIncident(incidentId: string, formData: FormData) {
-  const { company } = await requireCapabilityForAction("MANAGE_FIELD", FIELD_ONLY);
-
-  const incident = await prisma.safetyIncident.findUnique({ where: { id: incidentId } });
-  if (!incident || incident.companyId !== company.id) throw new Error("Incident not found");
-
-  const employeeName = String(formData.get("employeeName") ?? "").trim();
-  if (!employeeName) throw new Error("Employee name is required");
-  const description = String(formData.get("description") ?? "").trim();
-  if (!description) throw new Error("Description is required");
-  const jobTitle = String(formData.get("jobTitle") ?? "").trim();
-  const location = String(formData.get("location") ?? "").trim();
-
-  const updatedOutcome = pick(formData, "outcome", OUTCOMES);
-
-  // caseNumber/caseYear are deliberately not editable: they identify the
-  // case on a filed log.
-  await prisma.safetyIncident.update({
-    where: { id: incidentId },
-    data: {
-      jobId: await optionalJobId(formData, company.id),
-      employeeName,
-      jobTitle: jobTitle || null,
-      location: location || null,
-      description,
-      classification: pick(formData, "classification", CLASSIFICATIONS),
-      outcome: updatedOutcome,
-      ...daysForOutcome(
-        updatedOutcome,
-        countFromForm(formData, "daysAway"),
-        countFromForm(formData, "daysRestricted"),
-      ),
-    },
-  });
-
-  revalidatePath("/safety");
 }
 
 /**
@@ -277,12 +324,10 @@ export async function updateSafetyIncident(incidentId: string, formData: FormDat
 export async function deleteSafetyIncident(
   incidentId: string,
 ): Promise<ActionResult> {
-  // The capability check is RETURNED here, not thrown via
-  // requireCapabilityForAction like its siblings above. That helper throws,
-  // and this function's whole contract — see the note above — is that its
-  // reasons survive a production build. A thrown message is redacted to a
-  // digest, so throwing here would produce exactly the unreadable guard the
-  // docstring argues against.
+  // The capability check is RETURNED here. This used to be the one action
+  // in the file that did so, while its four siblings threw via
+  // requireCapabilityForAction; the argument in the docstring above applied
+  // to all five and they now all return.
   const context = await requireCompanyContext();
   if (!can(context, "MANAGE_FIELD")) return actionFail(FIELD_ONLY);
   const refusal = ownerRefusal(context, "Only the account owner can remove a safety case");
@@ -305,39 +350,53 @@ export async function deleteSafetyIncident(
   return actionOk;
 }
 
-export async function createToolboxTalk(formData: FormData) {
-  const { company, ...user } = await requireCapabilityForAction("MANAGE_FIELD", FIELD_ONLY);
+export async function createToolboxTalk(formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  const { company, ...user } = context;
+  return runAction(async () => {
+    if (!can(context, "MANAGE_FIELD")) return actionFail(FIELD_ONLY);
 
-  const topic = String(formData.get("topic") ?? "").trim();
-  if (!topic) throw new Error("Topic is required");
-  const presenter = String(formData.get("presenter") ?? "").trim();
-  const attendees = String(formData.get("attendees") ?? "").trim();
-  const notes = String(formData.get("notes") ?? "").trim();
+    const topic = required(formData, "topic", "Topic");
+    const presenter = String(formData.get("presenter") ?? "").trim();
+    const attendees = String(formData.get("attendees") ?? "").trim();
+    const notes = String(formData.get("notes") ?? "").trim();
+    // Parsed BEFORE the insert rather than inside its `data` object: a bad
+    // date must not be discovered halfway through building a write.
+    const heldOn = dateFromForm(formData, "heldOn");
+    const jobId = await optionalJobId(formData, company.id);
 
-  await prisma.toolboxTalk.create({
-    data: {
-      companyId: company.id,
-      jobId: await optionalJobId(formData, company.id),
-      heldOn: dateFromForm(formData, "heldOn"),
-      topic,
-      presenter: presenter || null,
-      attendees: attendees || null,
-      notes: notes || null,
-      recordedByUserId: user.id,
-    },
+    await prisma.toolboxTalk.create({
+      data: {
+        companyId: company.id,
+        jobId,
+        heldOn,
+        topic,
+        presenter: presenter || null,
+        attendees: attendees || null,
+        notes: notes || null,
+        recordedByUserId: user.id,
+      },
+    });
+
+    revalidatePath("/safety");
+    return actionOk;
   });
-
-  revalidatePath("/safety");
 }
 
-export async function deleteToolboxTalk(talkId: string) {
-  const context = await requireCapabilityForAction("MANAGE_FIELD", FIELD_ONLY);
-  assertOwner(context, "Only the account owner can remove a toolbox talk");
+export async function deleteToolboxTalk(talkId: string): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_FIELD")) return actionFail(FIELD_ONLY);
+  // `ownerRefusal`, not `assertOwner`: this function's declared type promises
+  // the caller a sentence it can render, and a thrown one is redacted.
+  const refusal = ownerRefusal(context, "Only the account owner can remove a toolbox talk");
+  if (refusal) return refusal;
   const { company } = context;
 
   const talk = await prisma.toolboxTalk.findUnique({ where: { id: talkId } });
-  if (!talk || talk.companyId !== company.id) throw new Error("Toolbox talk not found");
+  if (!talk || talk.companyId !== company.id)
+    return actionFail("That toolbox talk no longer exists.");
 
   await prisma.toolboxTalk.delete({ where: { id: talkId } });
   revalidatePath("/safety");
+  return actionOk;
 }

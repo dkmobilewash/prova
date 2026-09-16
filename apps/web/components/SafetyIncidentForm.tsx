@@ -36,13 +36,18 @@ export function SafetyIncidentForm({ jobs, today }: { jobs: JobOption[]; today: 
         setError(null);
         const formData = new FormData(event.currentTarget);
         startTransition(async () => {
-          try {
-            await createSafetyIncident(formData);
+          // Reads the RETURNED result. This used to be a try/catch around a
+          // throwing action, which works in dev and not in production —
+          // Next redacts a thrown Server Action message to a digest, so the
+          // sentence naming the missing field never reached the person
+          // filing an injury report.
+          const result = await createSafetyIncident(formData);
+          if (result.ok) {
             draft.clear();
             draft.resetForm();
             setIsOpen(false);
-          } catch (err) {
-            setError(err instanceof Error ? err.message : "Could not record the incident");
+          } else {
+            setError(result.error);
           }
         });
       }}
