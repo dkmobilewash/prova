@@ -13,6 +13,10 @@ import { revokeToken, refreshTokens, getCompanyInfo, generateWipNarrative, type 
 import { calculateLineItemWip, calculateJobWip } from "@/lib/wip";
 import { createInvoiceRecord } from "@/lib/billing/create-invoice";
 import { issueInvoiceNumber } from "@/lib/billing/invoice-number";
+// Shared with recordExecutedSubcontract in lib/actions/jobs.ts, the other
+// writer of this table — issue #280. It was private to this file, which is
+// exactly how that action came to keep its own MAX(versionNumber) + 1.
+import { issueContractDocumentVersion } from "@/lib/billing/contract-document-version";
 import { createRetainageReleaseRecord } from "@/lib/billing/retainage-release";
 import { MIN_EARNED_COVERAGE } from "@/lib/company-financials";
 import { payAppEntryError } from "@/lib/pay-application";
@@ -813,29 +817,6 @@ export async function generateJobWipNarrative(
 // --- Company profile: insurance/bonding and locations ---------------------
 // All OWNER-gated, same as team/QuickBooks management: these are company-
 // wide compliance and identity records, not per-job data.
-
-/**
- * The next ContractDocument version number for a job, from a counter row
- * that only ever increments — same shape as `issueInvoiceNumber` above.
- *
- * WHAT THIS REPLACED. `versionNumber` was `MAX(versionNumber) + 1` off the
- * surviving rows for the job, read outside any transaction — issue #106
- * finding 5. Delete version 2 and upload again and the new upload is ALSO
- * "Version 2", so two different legal documents end up sharing a version
- * label on a document a GC may treat as the version of record. Two
- * concurrent uploads for the same job (an amendment landing while someone
- * else is also uploading) could additionally read the same max and
- * collide on `@@unique([jobId, versionNumber])`.
- */
-async function issueContractDocumentVersion(tx: Prisma.TransactionClient, jobId: string) {
-  const counter = await tx.contractDocumentVersionCounter.upsert({
-    where: { jobId },
-    create: { jobId, lastNumber: 1 },
-    update: { lastNumber: { increment: 1 } },
-    select: { lastNumber: true },
-  });
-  return counter.lastNumber;
-}
 
 /** Uploads the actual subcontract agreement file (or a later amendment) —
  * distinct from SignatureRequest.snapshot, which is Prova's own line-item

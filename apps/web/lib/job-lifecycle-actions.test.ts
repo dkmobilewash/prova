@@ -25,6 +25,11 @@ const db = {
   jobs: [] as Row[],
   contacts: [] as Row[],
   contractDocuments: [] as Row[],
+  // recordExecutedSubcontract issues its versionNumber from this counter
+  // now rather than from MAX(versionNumber) + 1 — issue #280. Modelled
+  // here because a fake missing the table the action reads does not fail
+  // as "unsupported", it fails as a crash inside the action.
+  contractDocumentVersionCounters: [] as Row[],
   signatureRequests: [] as Row[],
   lineItems: [] as Row[],
 };
@@ -81,6 +86,22 @@ const prisma = {
       const doc = { id: `doc_${db.contractDocuments.length + 1}`, ...data };
       db.contractDocuments.push(doc);
       return doc;
+    },
+  },
+  contractDocumentVersionCounter: {
+    // Only ever increments, exactly like the real row: the point of the
+    // counter is that a number it has issued is never issued again, so a
+    // fake that recomputed from the surviving documents would quietly
+    // restore the behaviour #280 removed.
+    upsert: async ({ where, create }: { where: Row; create: Row }) => {
+      const existing = db.contractDocumentVersionCounters.find((c) => c.jobId === where.jobId);
+      if (existing) {
+        existing.lastNumber = Number(existing.lastNumber) + 1;
+        return existing;
+      }
+      const row = { jobId: where.jobId, lastNumber: Number(create.lastNumber) };
+      db.contractDocumentVersionCounters.push(row);
+      return row;
     },
   },
   signatureRequest: {
@@ -146,6 +167,11 @@ beforeEach(() => {
     { id: "con_outsider", companyId: OTHER_COMPANY_ID, name: "Someone else's GC", email: null },
   ];
   db.contractDocuments = [];
+  // Cleared WITH the documents, not separately: a counter left standing
+  // while its rows are wiped is a state the real database cannot be in
+  // (the counter is a RESTRICT child of the job), and it would make each
+  // test's version numbers depend on how many ran before it.
+  db.contractDocumentVersionCounters = [];
   db.signatureRequests = [];
   db.lineItems = [{ id: "li_1", jobId: JOB_ID, isDeleted: false }];
   jobUpdates.length = 0;

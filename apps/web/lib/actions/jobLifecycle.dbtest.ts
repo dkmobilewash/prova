@@ -143,6 +143,12 @@ describe("the job lifecycle against a real database", () => {
       await prisma.contractDocument.deleteMany({ where: { jobId: { in: jobIds } } });
       await prisma.jobLineItem.deleteMany({ where: { jobId: { in: jobIds } } });
       await prisma.signatureRequest.deleteMany({ where: { jobId: { in: jobIds } } });
+      // ContractDocumentVersionCounter is a RESTRICT child of Job that
+      // deleting the documents does NOT reach — the #227 InvoiceCounter
+      // shape. recordExecutedSubcontract creates one of these now that it
+      // issues from the counter (#280), so these fixtures grow a row they
+      // never used to have and the job delete below fails without this.
+      await prisma.contractDocumentVersionCounter.deleteMany({ where: { jobId: { in: jobIds } } });
       await prisma.job.deleteMany({ where: { companyId: id } });
       await prisma.contact.deleteMany({ where: { companyId: id } });
       await prisma.user.deleteMany({ where: { companyId: id } });
