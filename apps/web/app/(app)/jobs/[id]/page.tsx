@@ -52,9 +52,11 @@ import {
   calculateJobWip,
   formatPercentComplete,
   formatCoveragePercent,
+  formatLoggedHours,
 } from "@/lib/wip";
 import { jobEarnedRevenue, jobOverUnderBilling } from "@/lib/company-financials";
 import { calculateTimeEntryLaborCost, findEffectiveFringeRateSchedule } from "@/lib/labor-cost";
+import { lineItemCostToDate, unassignedLaborCost } from "@/lib/labor-job-cost";
 import { burdenedHourlyRate, estimateBurdenedLaborCost, laborRateDateFor } from "@/lib/estimate-labor-cost";
 import { LaborHoursField } from "@/components/LaborHoursField";
 import { calculateRetainageSummary } from "@/lib/retainage";
@@ -356,7 +358,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
         item.currentEstimatedUnitCost != null ? Number(item.currentEstimatedUnitCost) : null,
       estimatedCostToComplete:
         item.estimatedCostToComplete != null ? Number(item.estimatedCostToComplete) : null,
-      actualCostToDate: item.costEntries.reduce((s, entry) => s + Number(entry.amount), 0),
+      ...lineItemCostToDate(item.id, item.costEntries, job.timeEntries, schedulesByCraft),
     }),
   }));
   // Burdened labor cost per time entry, using the FringeRateSchedule
@@ -485,6 +487,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
   const jobWip = calculateJobWip(
     lineItemWip.map((l) => l.wip),
     billedToDate,
+    unassignedLaborCost(job.timeEntries, schedulesByCraft),
   );
   // Null when too little of the job's value has an earned-revenue figure for
   // the position to mean anything — see MIN_EARNED_COVERAGE.
@@ -1059,6 +1062,21 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             <div>
               <p className="text-xs text-ink-muted">Actual cost to date</p>
               <p className="text-ink">{money(jobWip.actualCostToDate)}</p>
+              {/* Logged hours are IN this figure since #287 -- but only the
+                  ones a fringe rate schedule could price. The rest are in it
+                  at zero, because lib/labor-cost.ts refuses to guess a wage,
+                  and "refused to guess" is indistinguishable from "cost
+                  nothing" unless the screen says which. Same sentence the
+                  certified payroll report already uses for the same hours. */}
+              {jobWip.unpricedLaborHours > 0 && (
+                <p className="mt-1 text-xs text-amber-400">
+                  {formatLoggedHours(jobWip.unpricedLaborHours)} of{" "}
+                  {formatLoggedHours(jobWip.pricedLaborHours + jobWip.unpricedLaborHours)} logged
+                  hours have no craft tag or no effective fringe rate schedule, so they are in this
+                  figure at $0 of wages ({formatCoveragePercent(jobWip.laborHourCoverage)} of hours
+                  priced).
+                </p>
+              )}
             </div>
             <div>
               <p className="text-xs text-ink-muted">% complete</p>

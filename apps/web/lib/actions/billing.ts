@@ -11,6 +11,8 @@ import { money as formatMoney } from "@/lib/money";
 import { prisma, Prisma } from "@prova/db";
 import { revokeToken, refreshTokens, getCompanyInfo, generateWipNarrative, type QuickBooksCompanyInfo } from "@prova/integrations";
 import { calculateLineItemWip, calculateJobWip } from "@/lib/wip";
+import { lineItemCostToDate, unassignedLaborCost } from "@/lib/labor-job-cost";
+import { loadFringeSchedulesByCraft, TIME_ENTRY_COST_SELECT } from "@/lib/fringe-schedules-query";
 import { createInvoiceRecord } from "@/lib/billing/create-invoice";
 import { issueInvoiceNumber } from "@/lib/billing/invoice-number";
 // Shared with recordExecutedSubcontract in lib/actions/jobs.ts, the other
@@ -745,6 +747,15 @@ export async function generateJobWipNarrative(
     include: { costEntries: true },
   });
   const invoices = await prisma.invoice.findMany({ where: { jobId } });
+  // Hours are job cost (issue #287). This action hands its figures to a
+  // model whose system prompt tells it they are exact and final, so a
+  // materials-only cost here became confident prose about a job's billing
+  // position drawn from a fraction of its spend.
+  const timeEntries = await prisma.timeEntry.findMany({
+    where: { jobId },
+    select: TIME_ENTRY_COST_SELECT,
+  });
+  const fringeSchedulesByCraft = await loadFringeSchedulesByCraft(company.id);
 
   const lineItemWip = lineItems.map((item) => ({
     item,
@@ -756,13 +767,14 @@ export async function generateJobWipNarrative(
         item.currentEstimatedUnitCost != null ? Number(item.currentEstimatedUnitCost) : null,
       estimatedCostToComplete:
         item.estimatedCostToComplete != null ? Number(item.estimatedCostToComplete) : null,
-      actualCostToDate: item.costEntries.reduce((s, entry) => s + Number(entry.amount), 0),
+      ...lineItemCostToDate(item.id, item.costEntries, timeEntries, fringeSchedulesByCraft),
     }),
   }));
   const billedToDate = invoices.reduce((sum, invoice) => sum + Number(invoice.amount), 0);
   const jobWip = calculateJobWip(
     lineItemWip.map((l) => l.wip),
     billedToDate,
+    unassignedLaborCost(timeEntries, fringeSchedulesByCraft),
   );
 
   // The model's system prompt tells it every figure it receives is exact and
