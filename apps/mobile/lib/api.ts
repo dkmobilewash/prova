@@ -10,6 +10,7 @@ import type {
   PunchListItem,
   SafetyIncident,
   TimeEntry,
+  TmTicket,
   ToolboxTalk,
   UpdateFieldReportInput,
   Vendor,
@@ -144,6 +145,27 @@ export async function listLineItems(jobId: string, token: string): Promise<LineI
 
 export async function listCrafts(token: string): Promise<Craft[]> {
   return request(`/api/v1/crafts`, { token });
+}
+
+export async function listTmTickets(jobId: string, token: string): Promise<TmTicket[]> {
+  return request(`/api/v1/jobs/${encodeURIComponent(jobId)}/tickets`, { token });
+}
+
+export async function createTmTicket(
+  jobId: string,
+  input: {
+    workDate: string;
+    workDescription: string;
+    signerName: string;
+    clientOperationId?: string;
+  },
+  token: string,
+): Promise<TmTicket> {
+  return request(`/api/v1/jobs/${encodeURIComponent(jobId)}/tickets`, {
+    method: "POST",
+    token,
+    body: input,
+  });
 }
 
 export async function listVendors(token: string): Promise<Vendor[]> {

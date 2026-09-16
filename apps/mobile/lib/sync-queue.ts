@@ -65,6 +65,14 @@ export type CreateOp =
       jobId: string;
       clientOperationId: string;
       description: string;
+    }
+  | {
+      type: "ticket:create";
+      jobId: string;
+      clientOperationId: string;
+      workDate: string;
+      workDescription: string;
+      signerName: string;
     };
 
 export type UpdateOp = {
@@ -200,6 +208,18 @@ async function runOp(op: PendingOp, token: string): Promise<void> {
       return;
     case "punch-list:create":
       await api.createPunchListItem(op.jobId, { description: op.description, clientOperationId: op.clientOperationId }, token);
+      return;
+    case "ticket:create":
+      await api.createTmTicket(
+        op.jobId,
+        {
+          workDate: op.workDate,
+          workDescription: op.workDescription,
+          signerName: op.signerName,
+          clientOperationId: op.clientOperationId,
+        },
+        token,
+      );
       return;
   }
 }

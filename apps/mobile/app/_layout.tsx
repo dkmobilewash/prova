@@ -32,6 +32,7 @@ export default function RootLayout() {
         <Stack.Screen name="time/[jobId]" options={{ title: "Time" }} />
         <Stack.Screen name="materials/[jobId]" options={{ title: "Materials" }} />
         <Stack.Screen name="punch-list/[jobId]" options={{ title: "Punch list" }} />
+        <Stack.Screen name="ticket/[jobId]" options={{ title: "T&M ticket" }} />
       </Stack>
     </ClerkProvider>
   );

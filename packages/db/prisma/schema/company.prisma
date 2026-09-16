@@ -56,6 +56,7 @@ model Company {
   equipment               Equipment[]
   lineItemCatalogEntries  LineItemCatalogEntry[]
   punchListItems          PunchListItem[]
+  tmTickets               TmTicket[]
   dailyFieldReports       DailyFieldReport[]
   jobMedia                JobMedia[]
   jobMediaTags            JobMediaTag[]
@@ -162,6 +163,7 @@ model User {
   uploadedPrevailingWageDeterminations PrevailingWageDetermination[]
   createdRetainageReleases             RetainageRelease[]
   raisedPunchListItems                 PunchListItem[]
+  createdTmTickets                     TmTicket[]
   filedDailyFieldReports               DailyFieldReport[]
   capturedJobMedia                     JobMedia[]              @relation("JobMediaCapturedBy")
   uploadedDocumentIntakes              DocumentIntake[]        @relation("DocumentIntakeUploadedBy")

@@ -134,6 +134,28 @@ export type Craft = {
   name: string;
 };
 
+export type TmTicket = {
+  id: string;
+  workDate: string;
+  workDescription: string;
+  snapshot: {
+    labor: {
+      workerName: string;
+      hours: string;
+      payType: string;
+      craftLabel: string | null;
+      lineItemDescription: string | null;
+    }[];
+    materials: {
+      description: string;
+      vendorName: string;
+      orderedOn: string;
+    }[];
+  } | null;
+  signerName: string;
+  signedAt: string;
+};
+
 export type Vendor = {
   id: string;
   name: string;

@@ -196,6 +196,47 @@ model DailyFieldReport {
   @@index([jobId])
 }
 
+/// A time-and-materials ticket: the extra work done on a day, the labor and
+/// material entries it aggregates, and the client/GC's on-site signature.
+model TmTicket {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+  jobId     String
+  job       Job     @relation(fields: [jobId], references: [id])
+
+  /// The day whose time + material entries this ticket covers. UTC midnight,
+  /// like every other date that matters.
+  workDate DateTime
+
+  /// What was done — the foreman's description of the extra work.
+  workDescription String
+
+  /// Frozen at signing: the aggregated labor + material lines, so a later
+  /// edit to the underlying entries cannot change what was signed. Same
+  /// rationale as SignatureRequest.snapshot.
+  snapshot Json
+
+  /// The on-site signature — a typed name + timestamp (the same shape as the
+  /// client e-sign SignatureRequest; no raster).
+  signerName String
+  signedAt   DateTime
+
+  createdByUserId String?
+  createdBy       User?   @relation(fields: [createdByUserId], references: [id])
+
+  /// Idempotency key from the phone, so a retried offline POST replays
+  /// instead of duplicating. Null for web writes.
+  clientOperationId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, clientOperationId])
+  @@index([companyId])
+  @@index([jobId])
+}
+
 /// OSHA's recordability ladder, most severe first. Anything above
 /// FIRST_AID_ONLY is recordable on the 300 log; FIRST_AID_ONLY is not.
 /// Storing the outcome and deriving recordability from it beats a
