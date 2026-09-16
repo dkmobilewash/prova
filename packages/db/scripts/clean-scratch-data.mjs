@@ -295,6 +295,15 @@ async function main() {
     await del("jobLineItem", () => prisma.jobLineItem.deleteMany({ where: { jobId: { in: jobIds } } }));
   }
   await del("safetyIncident", () => prisma.safetyIncident.deleteMany({ where: { companyId: company.id } }));
+  // COMPANY-SCOPED, not job-scoped, and deliberately outside the `jobIds`
+  // block above — a DocumentIntake row's job is OPTIONAL and is null until
+  // somebody files it, so half a scratch tray has no job to be found by.
+  // `where: { jobId: { in: jobIds } }` would leave exactly the rows this
+  // script exists to remove: the ones nobody got round to filing, which are
+  // the ones still sitting on screen. Same reasoning as safetyIncident
+  // above. Like jobMedia, this removes the ROWS and not the blobs they
+  // point at.
+  await del("documentIntake", () => prisma.documentIntake.deleteMany({ where: { companyId: company.id } }));
   // SafetyCaseCounter is NOT deleted, for the same reason seed-demo's undo
   // no longer deletes it (issue #148). It is a high-water mark rather than
   // data: resetting it to zero makes the next real case REISSUE a number

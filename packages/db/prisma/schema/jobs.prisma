@@ -74,6 +74,10 @@ model Job {
   punchListItems               PunchListItem[]
   dailyFieldReports            DailyFieldReport[]
   media                        JobMedia[]
+  /// Documents dropped into `/intake` and filed against this job. Optional
+  /// on that side, so this is SET NULL rather than a blocker — see
+  /// intake.prisma.
+  documentIntakes              DocumentIntake[]
   safetyIncidents              SafetyIncident[]
   toolboxTalks                 ToolboxTalk[]
   rfis                         Rfi[]

@@ -174,6 +174,40 @@ export function jobOverUnderBilling(job: WipJobResult): number | null {
   return job.overUnderBilling;
 }
 
+/**
+ * How much of a job's SPEND the percent-complete figure was computed over,
+ * before that percentage is worth stating.
+ *
+ * A THIRD constant at the same value, for the reason the second one gives:
+ * these three ratios have three different predicates, and one name would
+ * invite someone to answer all three questions with one ratio. This one
+ * guards `costCoverage`, which is the only one of the three that answers
+ * "was the percentage drawn from most of the money" — `estimatedCoverage`
+ * and `earnedCoverage` are both weighted by CONTRACT VALUE and say nothing
+ * about how much of the actual spend fell on forecast lines.
+ *
+ * The threshold exists because of a sentence already in lib/wip.ts, which
+ * names the reader this matters to: a job with $306k of spend whose
+ * percentage is drawn from $96k of it "is not 30% complete in any sense a
+ * surety would recognise". That was a comment; on a WIP schedule leaving
+ * the building it has to be behaviour.
+ */
+export const MIN_COST_COVERAGE = 0.8;
+
+/**
+ * Percent complete, or null for "we don't know" — same convention as the
+ * accessors around it.
+ *
+ * Guarded on costCoverage rather than either of the other two ratios: this
+ * figure is SUM(actual) / SUM(forecast) over the lines carrying a forecast,
+ * so the question that decides whether it means anything is what share of
+ * the real spend those lines hold.
+ */
+export function jobPercentComplete(job: WipJobResult): number | null {
+  if (job.costCoverage < MIN_COST_COVERAGE) return null;
+  return job.percentComplete;
+}
+
 /** Earned revenue, or null on the same grounds. The per-line rows on the job
  * page already render "—" for a line with no earned revenue; this makes the
  * job total behave the way its own rows do. */

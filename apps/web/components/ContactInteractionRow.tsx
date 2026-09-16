@@ -25,7 +25,7 @@ export type ContactInteractionRowData = {
 };
 
 const btn =
-  "rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:border-slate-500 disabled:opacity-50";
+  "rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-neutral-800 disabled:opacity-50";
 
 export function ContactInteractionRow({
   interaction,
@@ -71,7 +71,7 @@ export function ContactInteractionRow({
             <button
               type="submit"
               disabled={isPending}
-              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+              className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
             >
               {isPending ? "Saving…" : "Save changes"}
             </button>
@@ -89,23 +89,23 @@ export function ContactInteractionRow({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded bg-slate-800 px-1.5 py-0.5 text-xs text-slate-400">
+            <span className="rounded bg-neutral-800 px-1.5 py-0.5 text-xs text-ink-body">
               {INTERACTION_TYPE_OPTIONS.find((o) => o.value === interaction.type)?.label ?? interaction.type}
             </span>
-            <span className="text-xs text-slate-500">{interaction.occurredOn}</span>
+            <span className="text-xs text-ink-muted">{interaction.occurredOn}</span>
             {interaction.contactPersonName && (
-              <span className="text-xs text-slate-500">with {interaction.contactPersonName}</span>
+              <span className="text-xs text-ink-muted">with {interaction.contactPersonName}</span>
             )}
           </div>
-          <p className="mt-1 text-sm text-slate-300">{interaction.summary}</p>
+          <p className="mt-1 text-sm text-ink-label">{interaction.summary}</p>
           {interaction.followUpOn && (
-            <p className="mt-1 text-xs text-amber-300">
+            <p className="mt-1 text-xs text-tag-amber-ink">
               Follow up {interaction.followUpOn}
               {interaction.followUpAssignedToUserName && ` — ${interaction.followUpAssignedToUserName}`}
             </p>
           )}
           {interaction.loggedByUserName && (
-            <p className="mt-1 text-xs text-slate-500">logged by {interaction.loggedByUserName}</p>
+            <p className="mt-1 text-xs text-ink-muted">logged by {interaction.loggedByUserName}</p>
           )}
           {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
         </div>
@@ -139,7 +139,7 @@ export function ContactInteractionRow({
               }}
               deleteClassName={btn}
               cancelClassName={btn}
-              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-xs text-red-400 hover:bg-tag-rose disabled:opacity-50"
             />
           }
         >

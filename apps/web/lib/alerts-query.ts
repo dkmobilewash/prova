@@ -13,6 +13,7 @@ import {
   type Alert,
   type Acknowledgement,
   type PartitionedAlerts,
+  intakeAlerts,
 } from "@/lib/alerts";
 import { renewalSourcesForCompany } from "@/lib/renewals";
 import { renewalAlerts as rankRenewals } from "@/lib/compliance-expiry";
@@ -22,6 +23,7 @@ import { jobIsOverBudget } from "@/lib/company-financials";
 import { certifiedPayrollWeekStart } from "@/lib/certified-payroll-week";
 import { can, type Principal } from "@/lib/permissions";
 import { loadRatioReviews } from "@/lib/union-compliance-query";
+import { intakeTraySummary } from "@/lib/intake/review";
 
 /**
  * Every alert one company currently has, assembled from the rows that
@@ -60,7 +62,8 @@ export async function loadAlerts(
   // rather than a window of our own choosing.
   const currentMonth = todayIso.slice(0, 7);
 
-  const [renewalSources, backcharges, jobs, acknowledgements, ratioReviews, followUps] = await Promise.all([
+  const [renewalSources, backcharges, jobs, acknowledgements, ratioReviews, followUps, intakeTray] =
+    await Promise.all([
     renewalSourcesForCompany(companyId),
 
     prisma.backcharge.findMany({
@@ -142,6 +145,21 @@ export async function loadAlerts(
         contactId: true,
         contact: { select: { name: true } },
         followUpAssignedToUser: { select: { name: true, email: true } },
+      },
+    }),
+
+    // The document tray, for the "what should I do with this folder"
+    // suggestions. Only the PROPOSED rows — a filed document is not
+    // something anybody has to be told about, and a dismissed one is a
+    // person having already answered.
+    prisma.documentIntake.findMany({
+      where: { companyId, status: "PROPOSED" },
+      select: {
+        proposedKind: true,
+        proposedConfidence: true,
+        status: true,
+        jobHint: true,
+        jobId: true,
       },
     }),
   ]);
@@ -307,6 +325,7 @@ export async function loadAlerts(
     ),
   );
   alerts.push(...wipAlerts(wipSources));
+  alerts.push(...intakeAlerts(intakeTraySummary(intakeTray, jobs.map((job) => job.name))));
   alerts.push(
     ...contactFollowUpAlerts(
       followUps.map((f) => ({

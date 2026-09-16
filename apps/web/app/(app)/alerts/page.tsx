@@ -47,21 +47,29 @@ export default async function AlertsPage({
 
   const rows = showSilenced ? silenced : visible;
 
+  // Nothing derived at all, in either list. Four tiles reading 0, 0, 0 and
+  // $0.00 are a summary of nothing, and this page's own point is that it
+  // stores nothing — so on a new account they describe an engine that has
+  // not been given anything to watch yet. Kept the moment a single alert
+  // exists anywhere, because then the zeros are load-bearing: "0 past due"
+  // beside "3 coming up" is the reassuring half of the answer.
+  const nothingDerived = visible.length === 0 && silenced.length === 0;
+
   return (
     <div className="mx-auto max-w-4xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-slate-100">Alerts</h1>
-      <p className="mb-2 text-sm text-slate-400">
+      <h1 className="mb-2 text-xl font-semibold text-ink">Alerts</h1>
+      <p className="mb-2 text-sm text-ink-body">
         Everything with a date on it that nobody has dealt with, in one place:
         cover about to lapse, a backcharge nobody has answered, retainage that
         has become collectable, a closeout package the GC is sitting on,
         certified payroll owed on a prevailing-wage week, a job forecast past
         its contract value. Worst first, and within that, most money first.
       </p>
-      <p className="mb-6 text-xs text-slate-500">
+      <p className="mb-6 text-xs text-ink-muted">
         Nothing here is stored. Every line is derived from the record it is
         about, every time this page loads — so fixing the thing removes the
         alert, and no alert can go stale against the data underneath it.{" "}
-        <span className="text-slate-400">These can now be emailed to you</span>,
+        <span className="text-ink-body">These can now be emailed to you</span>,
         once per thing per stage — not once a day until you deal with it. Fixing
         the thing is what stops the reminders.
       </p>
@@ -78,12 +86,12 @@ export default async function AlertsPage({
       )}
 
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-slate-300">
+        <h2 className="text-sm font-semibold text-ink-label">
           {rows.length} {showSilenced ? "silenced" : "needing attention"}
         </h2>
         <Link
           href={showSilenced ? "/alerts" : "/alerts?show=silenced"}
-          className="text-sm text-blue-400"
+          className="text-sm text-link"
         >
           {showSilenced
             ? "Back to open alerts"
@@ -92,13 +100,35 @@ export default async function AlertsPage({
       </div>
 
       {rows.length === 0 ? (
-        <p className="text-slate-400">
-          {showSilenced
-            ? "Nothing silenced. Anything you mark as seen shows up here so you can put it back."
-            : "Nothing needs attention. Worth knowing this list only sees what has been recorded — a licence with no expiry date entered, or a backcharge with no deadline looked up, raises nothing rather than raising a guess."}
-        </p>
+        showSilenced ? (
+          <p className="text-ink-body">
+            Nothing silenced. Anything you mark as seen shows up here so you can put it back.
+          </p>
+        ) : (
+          <div className="rounded-lg border border-line-card bg-surface p-6">
+            <p className="text-ink-label">Nothing needs attention.</p>
+            <p className="mt-2 max-w-2xl text-sm text-ink-body">
+              This list only sees what has been recorded — a licence with no expiry date entered, or a
+              backcharge with no deadline looked up, raises nothing rather than raising a guess. So on a
+              quiet day this page is right, and on day one it is empty because there are no dates in yet.
+            </p>
+            {/* A way out, which this branch never had. These are the two
+                places a brand-new account can put a date that this page will
+                watch: cover and licences need no job, and everything else —
+                retainage, closeout, backcharges, certified payroll — hangs
+                off one. */}
+            <p className="mt-3 flex flex-wrap gap-x-4 text-sm">
+              <Link href="/settings" className="text-link hover:text-brand">
+                Record your cover and licence dates
+              </Link>
+              <Link href="/jobs" className="text-link hover:text-brand">
+                Go to your jobs
+              </Link>
+            </p>
+          </div>
+        )
       ) : (
-        <ul className="divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900">
+        <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
           {rows.map((alert) => (
             <AlertRow key={alert.key} alert={alert} silenced={showSilenced} />
           ))}

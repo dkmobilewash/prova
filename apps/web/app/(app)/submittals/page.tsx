@@ -107,13 +107,13 @@ export default async function SubmittalsPage({
 
   const chip = (active: boolean) =>
     `rounded-md border px-3 py-1.5 text-sm ${
-      active ? "border-blue-500 text-blue-400" : "border-slate-700 text-slate-300 hover:border-slate-500"
+      active ? "border-brand text-link" : "border-line-card text-ink-label hover:bg-neutral-800"
     }`;
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-slate-100">Submittals</h1>
-      <p className="mb-6 text-sm text-slate-400">
+      <h1 className="mb-2 text-xl font-semibold text-ink">Submittals</h1>
+      <p className="mb-6 text-sm text-ink-body">
         Shop drawings and product data sent for approval, and what came back. The one question this
         page answers is &ldquo;which revision is it legal to build from?&rdquo; — work built from a
         superseded or unapproved drawing is rework, and &ldquo;the GC sat on it for five weeks&rdquo;
@@ -140,21 +140,21 @@ export default async function SubmittalsPage({
       )}
 
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-slate-300">
+        <h2 className="text-sm font-semibold text-ink-label">
           {rows.length} {showApproved ? "total" : "in play"}
         </h2>
-        <Link href={filterHref({ show: showApproved ? null : "all" })} className="text-sm text-blue-400">
+        <Link href={filterHref({ show: showApproved ? null : "all" })} className="text-sm text-link">
           {showApproved ? "Hide approved" : "Show approved"}
         </Link>
       </div>
 
       {rows.length === 0 ? (
-        <p className="text-slate-400">
+        <p className="text-ink-body">
           Nothing here yet. Log a package the day it goes out — the gap between the date you sent it
           and the date it came back is the whole value of the record.
         </p>
       ) : (
-        <ul className="divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900">
+        <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
           {rows.map((submittal) => (
             <SubmittalRow
               key={submittal.id}

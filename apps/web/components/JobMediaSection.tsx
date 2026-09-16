@@ -37,7 +37,7 @@ export function JobMediaSection({
   return (
     <section className="mb-10">
       <div className="mb-1 flex flex-wrap items-baseline justify-between gap-3">
-        <h2 className="text-lg font-semibold text-slate-100">Site photos</h2>
+        <h2 className="text-lg font-semibold text-ink">Site photos</h2>
         {/* THE ONLY ENTRY POINT TO THE REPORT FROM A JOB, and it is here
             rather than in the nav on purpose: the report is one job's
             document, so it hangs off the job the way wh-347 hangs off
@@ -46,25 +46,25 @@ export function JobMediaSection({
             selection, which is more useful than a link that vanishes. */}
         <Link
           href={photoReportHref(jobId)}
-          className="text-sm text-blue-400 hover:text-blue-300"
+          className="text-sm text-link hover:text-link-hover"
         >
           Photo report →
         </Link>
       </div>
-      <p className="mb-4 text-sm text-slate-400">
+      <p className="mb-4 text-sm text-ink-body">
         What this job actually looked like, on the day.
       </p>
 
       <JobMediaTagDatalist names={tagNames} />
 
-      <div className="mb-4 rounded-lg border border-slate-800 bg-slate-900 p-4">
+      <div className="mb-4 rounded-lg border border-line-card bg-surface p-4">
         <JobMediaCapture jobId={jobId} />
       </div>
 
       {media.length === 0 ? (
-        <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-          <p className="text-sm text-slate-300">No photos on this job yet.</p>
-          <p className="mt-1 text-sm text-slate-400">
+        <div className="rounded-lg border border-line-card bg-surface p-4">
+          <p className="text-sm text-ink-label">No photos on this job yet.</p>
+          <p className="mt-1 text-sm text-ink-body">
             Existing conditions before you start is the one people wish they had.
           </p>
         </div>
@@ -76,9 +76,9 @@ export function JobMediaSection({
             ))}
           </ul>
           {total > limit && (
-            <p className="mt-3 text-sm text-slate-400">
+            <p className="mt-3 text-sm text-ink-body">
               Showing the {limit} most recent of {total}.{" "}
-              <Link href={`/photos?job=${jobId}`} className="text-blue-400 hover:text-blue-300">
+              <Link href={`/photos?job=${jobId}`} className="text-link hover:text-link-hover">
                 See all photos on this job
               </Link>
               .

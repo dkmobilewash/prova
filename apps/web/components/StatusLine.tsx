@@ -19,17 +19,22 @@ import type { StatusReport } from "@/lib/status-sentences";
 export function StatusLine({ report }: { report: StatusReport }) {
   if (report.problems.length === 0) {
     return (
-      <p data-status="quiet" className="mb-4 text-sm text-slate-400">
+      <p data-status="quiet" className="mb-4 text-sm text-ink-body">
         {report.quiet}
       </p>
     );
   }
 
+  // The dark-ground tag pairs rather than raw red-500/amber-500 tints: the
+  // ONLY palette in this app whose ink/ground contrast is asserted
+  // (theme-contrast.test.ts), and a /10 tint of a mid utility colour on a
+  // #0f0f0f canvas is very nearly the canvas. Tone still comes from the
+  // worst problem, and still leaves data-status as the thing to assert.
   const tone = report.problems.some((p) => p.tone === "red") ? "red" : "amber";
   const box =
     tone === "red"
-      ? "border-red-500 bg-red-500/10 text-red-100"
-      : "border-amber-500 bg-amber-500/10 text-amber-100";
+      ? "border-bar-rose bg-tag-rose text-tag-rose-ink"
+      : "border-bar-amber bg-tag-amber text-tag-amber-ink";
 
   return (
     <div role="status" data-status={tone} className={`mb-4 rounded-md border-l-4 px-4 py-3 text-sm ${box}`}>

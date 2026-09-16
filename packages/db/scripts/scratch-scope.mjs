@@ -87,6 +87,28 @@ export const HANDLED_MODELS = [
   // isn't evidence, it's just the number sequence, so it goes with the
   // other per-job counters instead.
   "ContractDocumentVersionCounter",
+  // `DocumentIntake` does NOT block a Job delete: its `jobId` is optional,
+  // so Postgres holds ON DELETE SET NULL and the delete would succeed
+  // without this entry. It is in this list anyway, and the distinction is
+  // worth stating because the two lists answer two different questions.
+  // `scratch-cleanup-order.test.ts` asks "what would REFUSE the delete";
+  // this list asks "what belongs to the job", and a scratch job's intake
+  // rows belong to it whether or not the database would object.
+  //
+  // It is not the only non-blocker here, and an earlier draft of this
+  // comment claimed it was the first — checked rather than asserted, and it
+  // is wrong: deriving the RESTRICT/NO ACTION foreign keys that point at
+  // `Job` out of the migration SQL and subtracting them from this list
+  // leaves seven entries, `CostEntry`, `InvoiceLineItem`, `Payment`,
+  // `SafetyIncident`, `ComplianceDocument` and `OutboundMessage` alongside
+  // this one. So membership here has never meant "blocks a job delete", and
+  // nobody should read it that way on the strength of a sentence in a
+  // comment.
+  // Leaving it out would not fail a delete — it would leave rows pointing at
+  // no job in a tray somebody then demos, and `clean-test-jobs.mjs` would
+  // refuse the whole run by name (`blockingTables`), which is the other way
+  // this omission shows up.
+  "DocumentIntake",
 ];
 
 /**

@@ -3,9 +3,10 @@
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { uploadPrevailingWageDetermination } from "@/lib/actions";
+import { singleFileFrom, uploadDocumentFile } from "@/lib/document-upload-client";
 
 const field =
-  "rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-600 focus:border-blue-500 focus:outline-none";
+  "rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none";
 
 /** Attaches a wage determination -- a document, or a link to one.
  *
@@ -20,7 +21,16 @@ const field =
  * failure is RETURNED and rendered next to the field, and `throw` is kept
  * for genuine bugs. The error also clears the moment anything is edited --
  * a refusal that outlives the input it was about ends up contradicting
- * what the form now says. */
+ * what the form now says.
+ *
+ * THE DOCUMENT GOES STRAIGHT TO THE BLOB STORE, not through the action
+ * (#27). A wage determination is a government PDF and they run to several
+ * megabytes; a Server Action body is capped at 1MB, so attaching one used
+ * to fail in the framework with nothing this form could render. The file
+ * is uploaded first, and only its URL is sent to the action — which
+ * re-checks that URL against this job's own folder rather than trusting
+ * it. A failed upload is rendered in the same place as a failed save,
+ * because from where the person is standing it is the same failure. */
 export function PrevailingWageDeterminationForm({ jobId }: { jobId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -35,6 +45,22 @@ export function PrevailingWageDeterminationForm({ jobId }: { jobId: string }) {
         const formData = new FormData(event.currentTarget);
         setError(null);
         startTransition(async () => {
+          // The file first, then the row. The action is told the URL and
+          // never sees the bytes. `file` is deliberately REMOVED from the
+          // FormData afterwards: leaving it in would put the whole
+          // document back into the Server Action body and reinstate the
+          // exact 1MB failure this change exists to remove.
+          const file = singleFileFrom(formData, "file");
+          formData.delete("file");
+          if (file) {
+            const uploaded = await uploadDocumentFile("prevailing-wage", jobId, file);
+            if (!uploaded.ok) {
+              setError(uploaded.error);
+              return;
+            }
+            formData.set("fileUrl", uploaded.fileUrl);
+            if (uploaded.fileName) formData.set("fileName", uploaded.fileName);
+          }
           const result = await uploadPrevailingWageDetermination(jobId, formData);
           if (result.ok) {
             formRef.current?.reset();
@@ -48,10 +74,10 @@ export function PrevailingWageDeterminationForm({ jobId }: { jobId: string }) {
       // a red sentence sitting under a field that no longer says what it
       // was complaining about.
       onInput={() => setError(null)}
-      className="flex flex-col gap-2 rounded-lg border border-slate-800 bg-slate-900 p-3"
+      className="flex flex-col gap-2 rounded-lg border border-line-card bg-surface p-3"
     >
       <div className="flex flex-wrap items-end gap-2">
-        <label className="flex flex-col gap-1 text-xs text-slate-400">
+        <label className="flex flex-col gap-1 text-xs text-ink-body">
           Jurisdiction
           <input
             name="jurisdiction"
@@ -59,16 +85,16 @@ export function PrevailingWageDeterminationForm({ jobId }: { jobId: string }) {
             className={`w-56 ${field}`}
           />
         </label>
-        <label className="flex flex-col gap-1 text-xs text-slate-400">
+        <label className="flex flex-col gap-1 text-xs text-ink-body">
           Document
           <input
             type="file"
             name="file"
             accept="application/pdf,image/png,image/jpeg,image/webp"
-            className={`${field} file:mr-2 file:rounded file:border-0 file:bg-slate-800 file:px-2 file:py-1 file:text-slate-200`}
+            className={`${field} file:mr-2 file:rounded file:border-0 file:bg-neutral-800 file:px-2 file:py-1 file:text-ink-label`}
           />
         </label>
-        <label className="flex flex-col gap-1 text-xs text-slate-400">
+        <label className="flex flex-col gap-1 text-xs text-ink-body">
           Or source link
           <input name="sourceUrl" placeholder="https://sam.gov/..." className={`w-48 ${field}`} />
         </label>
@@ -76,18 +102,18 @@ export function PrevailingWageDeterminationForm({ jobId }: { jobId: string }) {
         <button
           type="submit"
           disabled={isPending}
-          className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+          className="rounded-md bg-brand px-3 py-1.5 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {isPending ? "Attaching…" : "Attach"}
         </button>
       </div>
 
-      <p className="text-xs text-slate-500">
+      <p className="text-xs text-ink-muted">
         A document or a link — either one is enough, but one of them is needed.
       </p>
 
       {error && (
-        <p role="alert" className="text-xs text-red-300">
+        <p role="alert" className="text-xs text-tag-rose-ink">
           {error}
         </p>
       )}

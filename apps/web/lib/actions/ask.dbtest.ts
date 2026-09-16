@@ -364,6 +364,62 @@ describe("confirmAskProposal against a real database", () => {
     const row = await prisma.askProposal.findUniqueOrThrow({ where: { id } });
     expect(row.targetType).toBe("TimeEntry");
     expect(row.targetId).toBe(entries[0].id);
+
+    // Phase 4e let the card carry a day other than today, which puts the
+    // action's own two rules about days in reach of the box for the first
+    // time. A second DAY for the same person on the same job is an
+    // ordinary second row. Tapping the SAME card twice inside ten seconds
+    // is the double-click the action refuses — and note what it is NOT: a
+    // per-day uniqueness rule. Several entries for one person on one day
+    // are deliberately allowed (different craft or cost codes), so the
+    // guard matches on every field including the hours. Written this way
+    // because the first version of this test assumed the day was unique,
+    // passed a different figure, and went green against a rule that does
+    // not exist.
+    const earlier = await cardFor("log_time_entry", {
+      jobId: job.id,
+      jobName: job.name,
+      employeeUserId: ownerId,
+      employeeName: "Owner",
+      date: "2026-09-04",
+      hours: "6",
+      payType: "STRAIGHT",
+      note: null,
+    });
+    expect((await confirmAskProposal(earlier)).ok).toBe(true);
+    const bothDays = await prisma.timeEntry.findMany({ where: { jobId: job.id }, orderBy: { date: "asc" } });
+    expect(bothDays.map((e) => e.date.toISOString().slice(0, 10))).toEqual(["2026-09-04", "2026-09-08"]);
+
+    const identical = await cardFor("log_time_entry", {
+      jobId: job.id,
+      jobName: job.name,
+      employeeUserId: ownerId,
+      employeeName: "Owner",
+      date: "2026-09-04",
+      hours: "6",
+      payType: "STRAIGHT",
+      note: null,
+    });
+    const duplicate = await confirmAskProposal(identical);
+    expect(duplicate.ok).toBe(false);
+    if (!duplicate.ok) expect(duplicate.error).toMatch(/same time entry submitted moments ago/);
+    expect(await prisma.timeEntry.count({ where: { jobId: job.id } })).toBe(2);
+
+    // A different figure on the same day is not that double-click, and is
+    // logged: the third row proves the refusal above was the guard rather
+    // than a day this app will not write twice.
+    const third = await cardFor("log_time_entry", {
+      jobId: job.id,
+      jobName: job.name,
+      employeeUserId: ownerId,
+      employeeName: "Owner",
+      date: "2026-09-04",
+      hours: "2",
+      payType: "STRAIGHT",
+      note: null,
+    });
+    expect((await confirmAskProposal(third)).ok).toBe(true);
+    expect(await prisma.timeEntry.count({ where: { jobId: job.id } })).toBe(3);
   });
 
   it("a reschedule card moves the job's dates through the lifted core, refuses a member without MANAGE_JOBS in a sentence, and refuses once the row moved under it", async () => {

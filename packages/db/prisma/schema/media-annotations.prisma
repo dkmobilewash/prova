@@ -79,14 +79,33 @@ model JobMediaAnnotation {
 
   kind JobMediaAnnotationKind
 
-  /// WHERE, IN FRACTIONS OF THE IMAGE, never in pixels.
+  /// WHERE, IN FRACTIONS OF THE 4:3 PRESENTATION BOX, never in pixels.
   ///
-  /// 0..1 on each axis, relative to the image's own intrinsic size. A photo
-  /// is rendered at whatever width the card, the gallery, the portal or a
-  /// phone in landscape happens to give it, and a pixel coordinate is only
-  /// meaningful next to the size it was captured at — which would mean
-  /// storing that size too and trusting it forever. A fraction survives
-  /// every one of those without a second column to disagree with.
+  /// 0..1 on each axis. A photo is rendered at whatever width the card, the
+  /// gallery, the portal or a phone in landscape happens to give it, and a
+  /// pixel coordinate is only meaningful next to the size it was captured
+  /// at — which would mean storing that size too and trusting it forever.
+  /// A fraction survives every one of those without a second column to
+  /// disagree with.
+  ///
+  /// THIS SAID "RELATIVE TO THE IMAGE'S OWN INTRINSIC SIZE" UNTIL
+  /// 2026-09-15 AND IT WAS NEVER TRUE. Corrected with issue #256. What the
+  /// editor measures is its own 4:3 `<div>`, with the photograph
+  /// letterboxed inside it, so the fraction written here is a fraction of
+  /// THAT BOX — identical to an image fraction for a 4:3 photograph, and
+  /// different for every other one. The sentence mattered: two of the four
+  /// surfaces rendering these rows cropped the photo to fill the box
+  /// instead, and a GC was shown an arrow pointing at the wrong part of a
+  /// picture while every comment in the codebase said the geometry was
+  /// handled.
+  ///
+  /// It is also why the fix was NOT to start storing image fractions. There
+  /// is no stored intrinsic size to convert the existing rows with, so
+  /// reinterpreting them would silently move every mark ever drawn — on
+  /// records this schema treats as evidence. The presentation box is the
+  /// space these numbers were written in; the renderers were brought to it.
+  /// `JOB_MEDIA_MARK_BOX_ASPECT` in `components/JobMediaMarks.tsx` is the
+  /// one definition of that box, and a test holds every surface to it.
   ///
   /// `x2`/`y2` are the far end of a line or the opposite corner of a box,
   /// and are NULL for `TEXT`, which is a point. Nullable rather than

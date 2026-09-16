@@ -49,13 +49,13 @@ export default async function PortalPage({ params }: { params: Promise<{ token: 
 
   return (
     <main className="mx-auto max-w-2xl px-6 py-12">
-      <p className="text-sm font-medium text-slate-500">{contact.company.name}</p>
-      <h1 className="mb-6 text-xl font-semibold text-slate-100">Hi, {contact.name}</h1>
+      <p className="text-sm font-medium text-ink-muted">{contact.company.name}</p>
+      <h1 className="mb-6 text-xl font-semibold text-ink">Hi, {contact.name}</h1>
 
       {contact.jobs.length === 0 ? (
-        <p className="text-slate-400">No jobs yet.</p>
+        <p className="text-ink-body">No jobs yet.</p>
       ) : (
-        <ul className="divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900">
+        <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
           {contact.jobs.map((job) => {
             const total = job.lineItems.reduce(
               (sum, item) => sum + Number(item.quantity) * Number(item.unitPrice),
@@ -69,18 +69,18 @@ export default async function PortalPage({ params }: { params: Promise<{ token: 
                   className="flex items-center justify-between gap-3"
                 >
                   <div className="flex items-center gap-2">
-                    <p className="font-medium text-slate-100">{job.name}</p>
+                    <p className="font-medium text-ink">{job.name}</p>
                     <StatusBadge status={job.status} />
                   </div>
-                  <p className="text-sm font-medium text-slate-100">{money(total)}</p>
+                  <p className="text-sm font-medium text-ink">{money(total)}</p>
                 </Link>
                 {/* Only when there is something to open. A "0 photos" line
                     on every job would be noise on most of them and, on a job
                     where the sub simply has not shared any yet, reads as a
-                    complaint. slate-400 rather than slate-500 on this ground
+                    complaint. ink-body rather than ink-muted on this ground
                     (#89). */}
                 {photoCount > 0 && (
-                  <p className="mt-1 text-sm text-slate-400">
+                  <p className="mt-1 text-sm text-ink-body">
                     {photoCount} {photoCount === 1 ? "photo" : "photos"}
                   </p>
                 )}

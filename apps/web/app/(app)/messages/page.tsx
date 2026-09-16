@@ -105,23 +105,23 @@ export default async function MessagesPage({
 
   const chip = (active: boolean) =>
     `rounded-md border px-3 py-1.5 text-sm ${
-      active ? "border-blue-500 text-blue-400" : "border-slate-700 text-slate-300 hover:border-slate-500"
+      active ? "border-brand text-link" : "border-line-card text-ink-label hover:bg-neutral-800"
     }`;
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-slate-100">Messages</h1>
-      <p className="mb-6 text-sm text-slate-400">
+      <h1 className="mb-2 text-xl font-semibold text-ink">Messages</h1>
+      <p className="mb-6 text-sm text-ink-body">
         Everything this company has sent, and whether it actually arrived. Mail that silently never
         lands is the failure nobody catches — you find out when the GC says they never heard from
         you, on a date that matters.
       </p>
 
       {setupProblem && (
-        <div className="mb-6 rounded-lg border border-amber-700/60 bg-amber-500/10 p-4">
-          <p className="text-sm font-medium text-amber-200">Sending isn&apos;t set up yet</p>
-          <p className="mt-1 text-sm text-amber-100/80">{setupProblem}</p>
-          <p className="mt-2 text-xs text-amber-100/60">
+        <div className="mb-6 rounded-lg border border-amber-700 bg-tag-amber p-4">
+          <p className="text-sm font-medium text-tag-amber-ink">Sending isn&apos;t set up yet</p>
+          <p className="mt-1 text-sm text-tag-amber-ink/80">{setupProblem}</p>
+          <p className="mt-2 text-xs text-tag-amber-ink/60">
             It needs <span className="font-mono">RESEND_API_KEY</span> and{" "}
             <span className="font-mono">OUTBOUND_EMAIL_FROM</span> set to an address on your own
             domain, verified with the provider — plus{" "}
@@ -138,7 +138,7 @@ export default async function MessagesPage({
       </div>
 
       {truncated && (
-        <p className="mb-2 text-xs text-slate-500">
+        <p className="mb-2 text-xs text-ink-muted">
           Showing the most recent {MESSAGE_LIMIT} messages. The line below is counted over those{" "}
           {MESSAGE_LIMIT}, not over everything ever sent.
         </p>
@@ -155,18 +155,18 @@ export default async function MessagesPage({
         </Link>
       </div>
 
-      <h2 className="mb-3 text-sm font-semibold text-slate-300">
+      <h2 className="mb-3 text-sm font-semibold text-ink-label">
         {visible.length} {visible.length === 1 ? "message" : "messages"}
       </h2>
 
       {visible.length === 0 ? (
-        <p className="text-slate-400">
+        <p className="text-ink-body">
           {rows.length === 0
             ? "Nothing sent yet. Once sending is set up, anything the app sends on your behalf is recorded here with what the provider said happened to it."
             : "Nothing needs attention — everything sent has either been delivered or is still in flight."}
         </p>
       ) : (
-        <ul className="divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900">
+        <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
           {visible.map((message) => (
             <MessageRow
               key={message.id}

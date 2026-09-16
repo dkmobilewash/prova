@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { CloseoutJobCard } from "@/components/CloseoutJobCard";
@@ -67,8 +68,8 @@ export default async function CloseoutPage() {
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-slate-100">Closeout &amp; warranty</h1>
-      <p className="mb-6 text-sm text-slate-400">
+      <h1 className="mb-2 text-xl font-semibold text-ink">Closeout &amp; warranty</h1>
+      <p className="mb-6 text-sm text-ink-body">
         What&apos;s still owed before final payment, and what you&apos;re still on the hook for after
         it. Retainage is usually released against a closeout package, so a missing lien waiver is
         money sitting with the GC — and a callback logged after the warranty ran out is the
@@ -78,31 +79,31 @@ export default async function CloseoutPage() {
       <StatusLine report={status} />
 
       {attention.length > 0 && (
-        <section className="mb-6 rounded-lg border border-slate-800 bg-slate-900 p-4">
-          <h2 className="mb-1 text-sm font-semibold text-slate-300">What to do next</h2>
-          <p className="mb-3 text-xs text-slate-500">
+        <section className="mb-6 rounded-lg border border-line-card bg-surface p-4">
+          <h2 className="mb-1 text-sm font-semibold text-ink-label">What to do next</h2>
+          <p className="mb-3 text-xs text-ink-muted">
             Most money first. A job is only off this list once the GC has accepted its package —
             &ldquo;the checklist is ticked&rdquo; and &ldquo;they took it&rdquo; are different
             claims, and only the second one releases retainage.
           </p>
           <ul className="flex flex-col gap-2">
             {attention.map((job) => (
-              <li key={job.id} className="text-sm text-slate-300">
-                <span className="text-slate-100">{job.name}</span>
-                <span className="text-slate-500"> — {stageLabel(job.readiness.stage).toLowerCase()}</span>
+              <li key={job.id} className="text-sm text-ink-label">
+                <span className="text-ink">{job.name}</span>
+                <span className="text-ink-muted"> — {stageLabel(job.readiness.stage).toLowerCase()}</span>
                 {job.readiness.blockers.length > 0 && (
-                  <span className="text-slate-400">
+                  <span className="text-ink-body">
                     : {job.readiness.blockers.map(blockerLabel).join(", ")}
                   </span>
                 )}
                 {showsMoney && job.readiness.retainageAtStake > 0 && (
-                  <span className="font-mono text-slate-400">
+                  <span className="font-mono text-ink-body">
                     {" "}
                     · {money(job.readiness.retainageAtStake)} held
                   </span>
                 )}
                 {job.readiness.stage === "AWAITING_GC" && job.readiness.daysWithGc !== null && (
-                  <span className="text-slate-500">
+                  <span className="text-ink-muted">
                     {" "}
                     · {plural(job.readiness.daysWithGc, "day", "days")} with them
                   </span>
@@ -114,11 +115,25 @@ export default async function CloseoutPage() {
       )}
 
       {rows.length === 0 ? (
-        <p className="text-slate-400">
-          No jobs yet. Closeout and warranty both hang off a job — create one and it will appear here.
-        </p>
+        <div className="rounded-lg border border-line-card bg-surface p-6">
+          <p className="text-ink-label">
+            No jobs yet. Closeout and warranty both hang off a job.
+          </p>
+          <p className="mt-2 max-w-2xl text-sm text-ink-body">
+            Each job gets a checklist of what the GC wants before final payment — lien waivers, as-built
+            drawings, O&amp;M manuals, warranty letters — and this page ranks the jobs by what is holding
+            the most retainage. After the package is accepted the warranty clock starts here too, so a
+            callback that arrives eleven months later can be checked against it instead of guessed at.
+          </p>
+          <Link
+            href="/jobs/new"
+            className="mt-4 inline-flex min-h-11 items-center rounded-md bg-brand px-4 text-sm font-medium text-neutral-900 hover:bg-yellow-500"
+          >
+            Create a job
+          </Link>
+        </div>
       ) : (
-        <ul className="divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900">
+        <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
           {withReadiness.map((job) => (
             <CloseoutJobCard
               key={job.id}

@@ -201,9 +201,12 @@ export function TimeEntryRow({
             /* `describe`, not `hint`, and the comment below is exactly why
                the two are not interchangeable: `hint` is a flex item of this
                shrink-0 cluster and widens the row, while `describe` wraps the
-               delete button in a `<Hint>` — `display: contents` on the wrapper
-               and `position: fixed` on the tooltip — so it adds no box and
-               nothing here is measured differently. */
+               delete button in a `<Hint>` — `display: contents` on the
+               wrapper and `position: fixed` on the tooltip, so it adds no box
+               and nothing here is measured differently. It was missing
+               because #261 made it required and #63 landed after, without CI
+               ever running on the two together; `main` has been red on this
+               one assertion since. */
             describe="Takes these hours off the job for good, so they come off certified payroll for that week. To fix a wrong number, use Edit instead — a correction is recorded, a removal is not."
             deleteClassName="text-xs text-red-400 hover:underline disabled:opacity-50"
             cancelClassName={btn}

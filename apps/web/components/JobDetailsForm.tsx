@@ -117,9 +117,30 @@ export function JobDetailsForm({
             An estimate nobody has worked can be removed. Once anything is filed against it — an
             invoice, hours, an RFI — it stays.
           </p>
+          {/* "Remove", not "Remove this estimate", and this is geometry
+              rather than copy. CLAUDE.md's rule 2 for an armed delete —
+              "Cancel inherits the Delete pixel" — was measured against
+              clusters whose delete button is one short word. A 147px label
+              makes the armed pair NARROWER than the button it replaces, so
+              the pair no longer covers the same span: measured in the
+              running app, a second click at the exact centre of where
+              "Remove this estimate" had been landed on "Remove it", the
+              confirm. That is the precise failure the rule exists to
+              prevent, arriving through the label rather than through the
+              order.
+
+              The sentence above already says what is removed, and
+              `describe` says what it costs on hover, so the long label was
+              carrying nothing the screen did not already say twice. */}
           <ConfirmDeleteButton
-            label="Remove this estimate"
+            label="Remove"
             confirmLabel="Remove it"
+            // Required since #261. #265 landed this call site without one,
+            // and main went red at typecheck the moment both were in the
+            // same tree — each PR was green against its own base, which is
+            // CLAUDE.md's "the check is the SHA" gap arriving from the
+            // other direction: CI answered about two commits that never
+            // existed together.
             describe="Removes the estimate and its line items for good. It can only happen while nothing has been filed against the job — no invoice, no hours, no RFI — so there is no history to lose."
             hint={name}
             action={async () => {

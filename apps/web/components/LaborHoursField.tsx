@@ -26,7 +26,7 @@ export type CraftOption = {
 };
 
 const inputClass =
-  "rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none";
+  "rounded-md border border-line-card bg-surface px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none";
 
 export function LaborHoursField({ crafts }: { crafts: CraftOption[] }) {
   const [hours, setHours] = useState("");
@@ -50,7 +50,7 @@ export function LaborHoursField({ crafts }: { crafts: CraftOption[] }) {
 
   return (
     <>
-      <label className="flex flex-col gap-1 text-sm text-slate-300">
+      <label className="flex flex-col gap-1 text-sm text-ink-label">
         Labor hrs
         <input
           name="laborHours"
@@ -61,7 +61,7 @@ export function LaborHoursField({ crafts }: { crafts: CraftOption[] }) {
           className={`w-20 ${inputClass}`}
         />
       </label>
-      <label className="flex flex-col gap-1 text-sm text-slate-300">
+      <label className="flex flex-col gap-1 text-sm text-ink-label">
         Craft
         <select
           name="craftClassificationId"
@@ -79,7 +79,7 @@ export function LaborHoursField({ crafts }: { crafts: CraftOption[] }) {
       </label>
       {hint && (
         <p
-          className="self-end pb-2 text-xs text-slate-400"
+          className="self-end pb-2 text-xs text-ink-body"
           title="Burdened labor: base wage plus fringes, at straight time. An estimate only — it is never written into the line's budgeted cost."
         >
           {hint}

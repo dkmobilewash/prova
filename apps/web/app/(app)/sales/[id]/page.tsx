@@ -30,8 +30,8 @@ export default async function SalesLeadPage({ params }: { params: Promise<{ id: 
   if (currentUser.role !== "OWNER") {
     return (
       <div className="mx-auto max-w-2xl px-6 py-16">
-        <h1 className="mb-2 text-xl font-semibold text-slate-100">Owner only</h1>
-        <p className="text-sm text-slate-400">
+        <h1 className="mb-2 text-xl font-semibold text-ink">Owner only</h1>
+        <p className="text-sm text-ink-body">
           The sales CRM is restricted to the account owner, same as Team management and billing
           settings.
         </p>
@@ -125,8 +125,8 @@ export default async function SalesLeadPage({ params }: { params: Promise<{ id: 
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-8">
-      <section className="mb-10 rounded-lg border border-slate-800 bg-slate-900 p-6">
-        <h1 className="mb-4 text-lg font-semibold text-slate-100">Edit lead</h1>
+      <section className="mb-10 rounded-lg border border-line-card bg-surface p-6">
+        <h1 className="mb-4 text-lg font-semibold text-ink">Edit lead</h1>
         <SalesLeadEditForm
           leadId={lead.id}
           defaults={{
@@ -140,11 +140,11 @@ export default async function SalesLeadPage({ params }: { params: Promise<{ id: 
       </section>
 
       <section>
-        <h2 className="mb-3 text-lg font-semibold text-slate-100">Opportunities</h2>
+        <h2 className="mb-3 text-lg font-semibold text-ink">Opportunities</h2>
         {lead.opportunities.length === 0 ? (
-          <p className="mb-4 text-sm text-slate-400">No opportunities logged with {lead.companyName} yet.</p>
+          <p className="mb-4 text-sm text-ink-body">No opportunities logged with {lead.companyName} yet.</p>
         ) : (
-          <ul className="mb-4 divide-y divide-slate-800 border-y border-slate-800">
+          <ul className="mb-4 divide-y divide-line-row border-y border-line-row">
             {lead.opportunities.map((opportunity) => (
               <SalesOpportunityRow
                 key={opportunity.id}
@@ -172,20 +172,20 @@ export default async function SalesLeadPage({ params }: { params: Promise<{ id: 
       </section>
 
       <section className="mt-10">
-        <h2 className="mb-1 text-lg font-semibold text-slate-100">Activity</h2>
-        <p className="mb-3 text-sm text-slate-400">
+        <h2 className="mb-1 text-lg font-semibold text-ink">Activity</h2>
+        <p className="mb-3 text-sm text-ink-body">
           Every call, email, demo and meeting on record. The follow-up on the most recent entry is
           what {lead.companyName} owes — an older entry&apos;s follow-up was superseded when the
           next activity was logged.
         </p>
         {activityRows.length === 0 ? (
-          <p className="mb-4 text-sm text-slate-400">
+          <p className="mb-4 text-sm text-ink-body">
             Nothing logged with {lead.companyName} yet. Until something is, this lead reads &ldquo;No
             contact logged&rdquo; on the list — which means nobody wrote it down, not that nobody
             called.
           </p>
         ) : (
-          <ul className="mb-4 divide-y divide-slate-800 border-y border-slate-800">
+          <ul className="mb-4 divide-y divide-line-row border-y border-line-row">
             {activityRows.map((activity) => (
               <SalesActivityRow
                 key={activity.id}

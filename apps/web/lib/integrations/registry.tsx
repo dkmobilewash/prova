@@ -42,7 +42,34 @@ export type ProviderEntry = {
   description: string;
   icon: ReactNode;
   implementation: ProviderImplementation;
+  /** A test fixture rather than a service anyone connects. Hidden outside
+   * development — see `isProviderVisible`. */
+  devOnly?: true;
 };
+
+/**
+ * Whether a card belongs on a given company's Integrations page.
+ *
+ * The Sandbox connector is a test connection to nothing, and it held the
+ * only working Connect button on the page — so the first thing a new
+ * contractor was offered was the one integration that does nothing. It
+ * stays in the registry because the sync log and the connect/disconnect
+ * path still have to be exercisable; it just stops being shown to people
+ * with real work to do.
+ *
+ * A company that HAS a connection row for it keeps seeing the card
+ * whatever the environment: hiding a card whose Disconnect button is the
+ * only way to undo it would strand the row instead of tidying it away.
+ *
+ * Takes the environment as an argument rather than reading NODE_ENV, so
+ * this is a pure function with a test.
+ */
+export function isProviderVisible(
+  entry: ProviderEntry,
+  where: { isDevelopment: boolean; hasConnection: boolean },
+): boolean {
+  return !entry.devOnly || where.isDevelopment || where.hasConnection;
+}
 
 const iconClass = "h-5 w-5";
 
@@ -53,6 +80,7 @@ export const PROVIDERS: ProviderEntry[] = [
     description:
       "A test connection to nothing. It exists so this page and its sync log can be exercised end to end without a real provider — connect and disconnect it freely.",
     implementation: { kind: "builtin" },
+    devOnly: true,
     icon: (
       <svg viewBox="0 0 20 20" fill="none" className={iconClass} aria-hidden="true">
         <path
@@ -70,7 +98,7 @@ export const PROVIDERS: ProviderEntry[] = [
     provider: "QUICKBOOKS",
     name: "QuickBooks Online",
     description:
-      "Invoices push to QuickBooks, the record is read back to confirm what landed, and reconciliation reports where the two disagree. One direction only — Prova does not pull QuickBooks edits back.",
+      "Invoices push to QuickBooks, the record is read back to confirm what landed, and reconciliation reports where the two disagree. One direction only — C Stream does not pull QuickBooks edits back.",
     implementation: { kind: "external", href: "/settings", managedAt: "Settings" },
     icon: (
       <svg viewBox="0 0 20 20" fill="none" className={iconClass} aria-hidden="true">
@@ -88,7 +116,7 @@ export const PROVIDERS: ProviderEntry[] = [
     provider: "DOCUSIGN",
     name: "DocuSign",
     description:
-      "Send subcontracts and change orders for signature through DocuSign. Prova signs contracts with its own e-sign links today; this would cover every document type.",
+      "Send subcontracts and change orders for signature through DocuSign. C Stream signs contracts with its own e-sign links today; this would cover every document type.",
     implementation: { kind: "planned" },
     icon: (
       <svg viewBox="0 0 20 20" fill="none" className={iconClass} aria-hidden="true">

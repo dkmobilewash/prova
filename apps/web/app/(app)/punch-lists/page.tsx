@@ -2,8 +2,6 @@ import Link from "next/link";
 import { prisma } from "@prova/db";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
-import { AskDraftNotice } from "@/components/AskDraftNotice";
-import { loadPunchDraft } from "@/lib/ask/drafts";
 import { PunchListForm } from "@/components/PunchListForm";
 import { PunchListRow } from "@/components/PunchListRow";
 import { jobPickerLabel, toJobOption } from "@/components/jobLabels";
@@ -11,18 +9,17 @@ import { jobPickerLabel, toJobOption } from "@/components/jobLabels";
 export default async function PunchListsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ job?: string; show?: string; draft?: string }>;
+  searchParams: Promise<{ job?: string; show?: string }>;
 }) {
   const { context, allowed } = await requireCapability("MANAGE_FIELD");
   if (!allowed) return <NoAccess capability="MANAGE_FIELD" />;
   const { company, ...currentUser } = context;
-  const { job: jobFilter, show, draft } = await searchParams;
+  const { job: jobFilter, show } = await searchParams;
   const showDone = show === "all";
 
-  // A card from the Ask box (lib/ask/drafts.ts): the form opens prefilled
-  // from the server-held row, and its own Add is the write.
-  const askDraft = await loadPunchDraft(context, draft);
-  const punchDraft = askDraft.kind === "draft" ? askDraft.draft : undefined;
+  // No ?draft= here any more: the Ask box's punch command is DIRECT and
+  // writes every item itself (lib/ask/commands/punchLists.ts), so there is
+  // no card left for this page to open a prefilled form from.
 
   // The GC's name, for the pickers: issue #65 — seven jobs sharing one
   // placeholder name made every picker seven identical rows.
@@ -63,26 +60,21 @@ export default async function PunchListsPage({
   // on the page.
   const chip = (active: boolean) =>
     `inline-flex min-h-11 items-center rounded-md border px-3 py-2 text-sm ${
-      active ? "border-blue-500 text-blue-400" : "border-slate-700 text-slate-300 hover:border-slate-500"
+      active ? "border-brand text-link" : "border-line-card text-ink-label hover:bg-neutral-800"
     }`;
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-slate-100">Punch lists</h1>
-      <p className="mb-6 text-sm text-slate-400">
+      <h1 className="mb-2 text-xl font-semibold text-ink">Punch lists</h1>
+      <p className="mb-6 text-sm text-ink-body">
         What still has to be fixed before a job closes out. Jobs currently go straight from in-progress to
         complete with nothing tracking the walkthrough, so this is the list that used to live on someone&apos;s
         memory.
       </p>
 
-      {askDraft.kind === "gone" && <AskDraftNotice what="punch item" />}
-      <section className="mb-8 rounded-lg border border-slate-800 bg-slate-900 p-4">
-        <h2 className="mb-3 text-sm font-semibold text-slate-300">Add an item</h2>
-        <PunchListForm
-          jobs={jobOptions}
-          defaultJobId={punchDraft?.jobId ?? activeJob ?? undefined}
-          draft={punchDraft}
-        />
+      <section className="mb-8 rounded-lg border border-line-card bg-surface p-4">
+        <h2 className="mb-3 text-sm font-semibold text-ink-label">Add an item</h2>
+        <PunchListForm jobs={jobOptions} defaultJobId={activeJob ?? undefined} />
       </section>
 
       {jobOptions.length > 0 && (
@@ -100,25 +92,25 @@ export default async function PunchListsPage({
 
       <section>
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-slate-300">
+          <h2 className="text-sm font-semibold text-ink-label">
             {openCount} open{activeJob ? " on this job" : ""}
           </h2>
           <Link
             href={filterHref({ show: showDone ? null : "all" })}
-            className="inline-flex min-h-11 items-center text-sm text-blue-400"
+            className="inline-flex min-h-11 items-center text-sm text-link"
           >
             {showDone ? "Hide completed" : "Show completed"}
           </Link>
         </div>
 
         {items.length === 0 ? (
-          <p className="text-slate-400">
+          <p className="text-ink-body">
             {showDone || openCount > 0
               ? "Nothing here."
               : "Nothing open. Add what you find on the walkthrough — grid out of level, missing corner bead, touch-up paint."}
           </p>
         ) : (
-          <ul className="divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900">
+          <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
             {items.map((item) => (
               <PunchListRow
                 key={item.id}

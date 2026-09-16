@@ -5,10 +5,10 @@ import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { connectSandboxIntegration, disconnectSandboxIntegration } from "@/lib/actions";
 import { IntegrationControls } from "@/components/IntegrationControls";
-import { PROVIDERS, type ProviderEntry } from "@/lib/integrations/registry";
+import { PROVIDERS, isProviderVisible, type ProviderEntry } from "@/lib/integrations/registry";
 import { relativeTime } from "@/lib/integrations/relativeTime";
 import { CONNECTION_CARD_SELECT } from "@/lib/integrations/selects";
-import { blobStoreId } from "@/lib/job-media";
+import { blobStoreId } from "@/lib/blob-urls";
 
 /**
  * Settings → Integrations.
@@ -89,6 +89,16 @@ export default async function IntegrationsPage() {
   };
   const now = new Date();
 
+  // The page still knows nothing about any particular provider — the
+  // registry says which entries are fixtures and the predicate lives with
+  // it. This is the whole of the environment decision, in one place.
+  const visibleProviders = PROVIDERS.filter((entry) =>
+    isProviderVisible(entry, {
+      isDevelopment: process.env.NODE_ENV === "development",
+      hasConnection: byProvider.has(entry.provider),
+    }),
+  );
+
   function renderCard(entry: ProviderEntry) {
     const impl = entry.implementation;
     const planned = impl.kind === "planned";
@@ -123,7 +133,7 @@ export default async function IntegrationsPage() {
               <div className="flex flex-wrap items-center gap-2">
                 <h2 className="text-sm font-semibold text-ink">{entry.name}</h2>
                 {planned ? (
-                  <span className="inline-flex items-center rounded-full bg-tag-slate px-2.5 py-0.5 text-xs font-medium text-tag-slate-ink">
+                  <span className="inline-flex items-center rounded-full border border-line-card bg-tag-slate px-2.5 py-0.5 text-xs font-medium text-tag-slate-ink">
                     Coming soon
                   </span>
                 ) : (
@@ -146,7 +156,7 @@ export default async function IntegrationsPage() {
             {impl.kind === "external" && (
               <Link
                 href={impl.href}
-                className="inline-flex items-center justify-center rounded-md border border-line-card bg-surface px-4 py-2 text-sm font-medium text-ink-label hover:bg-tag-slate"
+                className="inline-flex items-center justify-center rounded-md border border-line-card bg-surface px-4 py-2 text-sm font-medium text-ink-label hover:bg-neutral-800"
               >
                 Manage in {impl.managedAt}
               </Link>
@@ -233,7 +243,7 @@ export default async function IntegrationsPage() {
         </p>
       </div>
 
-      <div className="flex flex-col gap-4">{PROVIDERS.map(renderCard)}</div>
+      <div className="flex flex-col gap-4">{visibleProviders.map(renderCard)}</div>
 
       {/* Not a provider card: photo storage is infrastructure this deployment
           holds, not something a company connects. It is here because the

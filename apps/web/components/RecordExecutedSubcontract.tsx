@@ -3,9 +3,10 @@
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { recordExecutedSubcontract } from "@/lib/actions";
+import { singleFileFrom, uploadDocumentFile } from "@/lib/document-upload-client";
 
 const field =
-  "rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-600 focus:border-blue-500 focus:outline-none";
+  "rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none";
 
 /**
  * The second route to an executed contract: the GC issued the subcontract,
@@ -24,6 +25,14 @@ const field =
  * through it" produce a wrong date that looks exactly like a right one.
  * (It also sidesteps the hydration trap entirely, since nothing here is
  * computed at render.)
+ *
+ * THE SIGNED PDF GOES STRAIGHT TO THE BLOB STORE, not through the action
+ * (#27). This is the form that made the bug undeniable: the file is
+ * REQUIRED here, the file is a fully executed subcontract, and a Server
+ * Action body is capped at 1MB — so the one document this form exists to
+ * record was the one it could not accept. It is uploaded first and the
+ * action is given the URL, which it re-checks against this job's own
+ * folder.
  */
 export function RecordExecutedSubcontract({ jobId }: { jobId: string }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -37,7 +46,7 @@ export function RecordExecutedSubcontract({ jobId }: { jobId: string }) {
       <button
         type="button"
         onClick={() => setIsOpen(true)}
-        className="rounded-md border border-slate-700 px-3 py-2 text-sm font-medium text-slate-200 hover:bg-slate-800"
+        className="rounded-md border border-line-card px-3 py-2 text-sm font-medium text-ink-label hover:bg-neutral-800"
       >
         The GC already sent the executed subcontract
       </button>
@@ -52,6 +61,22 @@ export function RecordExecutedSubcontract({ jobId }: { jobId: string }) {
         const formData = new FormData(event.currentTarget);
         setError(null);
         startTransition(async () => {
+          // The file first, then the row. `file` is removed from the
+          // FormData either way — leaving it in would send the whole PDF
+          // through the Server Action body and reinstate the 1MB failure.
+          // A missing file is left to the action to refuse, so the
+          // required-file sentence is written in exactly one place.
+          const file = singleFileFrom(formData, "file");
+          formData.delete("file");
+          if (file) {
+            const uploaded = await uploadDocumentFile("executed-subcontract", jobId, file);
+            if (!uploaded.ok) {
+              setError(uploaded.error);
+              return;
+            }
+            formData.set("fileUrl", uploaded.fileUrl);
+            if (uploaded.fileName) formData.set("fileName", uploaded.fileName);
+          }
           const result = await recordExecutedSubcontract(jobId, formData);
           if (result.ok) {
             formRef.current?.reset();
@@ -65,45 +90,45 @@ export function RecordExecutedSubcontract({ jobId }: { jobId: string }) {
       // Any edit invalidates the last refusal — a red sentence that outlives
       // the input it was about ends up contradicting what the form now says.
       onInput={() => setError(null)}
-      className="flex flex-col gap-3 rounded-lg border border-slate-800 bg-slate-900 p-4"
+      className="flex flex-col gap-3 rounded-lg border border-line-card bg-surface p-4"
     >
-      <p className="text-sm text-slate-300">
+      <p className="text-sm text-ink-label">
         Record a subcontract the GC issued and signed off-platform. The signed file is required —
         this is the evidence that lets this job be invoiced, so it has to be something a person can
         go and look at.
       </p>
 
       <div className="flex flex-wrap items-end gap-3">
-        <label className="flex flex-col gap-1 text-xs text-slate-400">
+        <label className="flex flex-col gap-1 text-xs text-ink-body">
           Signed subcontract (PDF or photo)
           <input
             type="file"
             name="file"
             required
             accept=".pdf,.png,.jpg,.jpeg,.webp"
-            className={`${field} file:mr-2 file:rounded file:border-0 file:bg-slate-800 file:px-2 file:py-1 file:text-slate-200`}
+            className={`${field} file:mr-2 file:rounded file:border-0 file:bg-neutral-800 file:px-2 file:py-1 file:text-ink-label`}
           />
         </label>
-        <label className="flex flex-col gap-1 text-xs text-slate-400">
+        <label className="flex flex-col gap-1 text-xs text-ink-body">
           Date the GC signed it
           <input type="date" name="executedSignedDate" required className={field} />
         </label>
-        <label className="flex flex-1 min-w-[160px] flex-col gap-1 text-xs text-slate-400">
+        <label className="flex flex-1 min-w-[160px] flex-col gap-1 text-xs text-ink-body">
           Note (optional)
           <input name="note" placeholder="e.g. Fully executed copy from Turner" className={field} />
         </label>
       </div>
 
-      <p className="text-xs text-slate-500">
+      <p className="text-xs text-ink-muted">
         Use the date printed on the contract, not today&apos;s date — lien deadlines and retainage
-        are counted from it. Prova records who entered this and when, separately.
+        are counted from it. C Stream records who entered this and when, separately.
       </p>
 
       <div className="flex items-center gap-3">
         <button
           type="submit"
           disabled={isPending}
-          className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+          className="rounded-md bg-brand px-3 py-1.5 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {isPending ? "Recording…" : "Record executed subcontract"}
         </button>
@@ -113,14 +138,14 @@ export function RecordExecutedSubcontract({ jobId }: { jobId: string }) {
             setIsOpen(false);
             setError(null);
           }}
-          className="text-sm text-slate-400 hover:text-slate-200"
+          className="text-sm text-ink-body hover:text-ink-label"
         >
           Cancel
         </button>
       </div>
 
       {error && (
-        <p role="alert" className="text-sm text-red-300">
+        <p role="alert" className="text-sm text-tag-rose-ink">
           {error}
         </p>
       )}

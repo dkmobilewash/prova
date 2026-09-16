@@ -2,7 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
-import { putDocument, deleteDocument } from "@/lib/blob";
+import { deleteDocument } from "@/lib/blob";
+import { documentDisplayFileName, documentUrlProblem } from "@/lib/document-uploads";
 import { isSignatureLinkDead } from "@/lib/access-tokens";
 import { linkToken } from "@/lib/tokens";
 import { requireCompanyContext } from "@/lib/auth";
@@ -15,6 +16,8 @@ import { issueInvoiceNumber } from "@/lib/billing/invoice-number";
 import { createRetainageReleaseRecord } from "@/lib/billing/retainage-release";
 import { MIN_EARNED_COVERAGE } from "@/lib/company-financials";
 import { payAppEntryError } from "@/lib/pay-application";
+import { recordAskUsage } from "@/lib/ask/usage";
+import { ASK_DEFAULT_MODEL } from "@prova/integrations";
 import {
   actionFail,
   actionOk,
@@ -729,7 +732,7 @@ export async function testQuickBooksConnection(): Promise<QuickBooksCompanyInfo>
 export async function generateJobWipNarrative(
   jobId: string,
 ): Promise<ActionResultWith<string>> {
-  const { company } = await requireCompanyContext();
+  const { company, ...user } = await requireCompanyContext();
   const job = await assertJobInCompany(jobId, company.id);
 
   const lineItems = await prisma.jobLineItem.findMany({
@@ -789,7 +792,20 @@ export async function generateJobWipNarrative(
       currentEstimatedCost: wip.currentEstimatedCost,
       actualCostToDate: wip.actualCostToDate,
     })),
-  });
+  },
+  // Metered since 2026-09-14. This button caches nothing and re-bills on
+  // every click, and the UI relabels itself "Regenerate analysis" — so it
+  // invites the repeat and, until now, reported none of it.
+  (usage) =>
+    recordAskUsage({
+      companyId: company.id,
+      userId: user.id,
+      model: ASK_DEFAULT_MODEL,
+      usage,
+      outcome: "answered",
+      feature: "wip-narrative",
+    }),
+  );
 
   return { ok: true, value: narrative };
 }
@@ -797,10 +813,6 @@ export async function generateJobWipNarrative(
 // --- Company profile: insurance/bonding and locations ---------------------
 // All OWNER-gated, same as team/QuickBooks management: these are company-
 // wide compliance and identity records, not per-job data.
-
-const CONTRACT_DOCUMENT_MEDIA_TYPES = ["application/pdf", "image/png", "image/jpeg", "image/webp"] as const;
-
-const CONTRACT_DOCUMENT_MAX_BYTES = 15 * 1024 * 1024;
 
 /**
  * The next ContractDocument version number for a job, from a counter row
@@ -831,38 +843,61 @@ async function issueContractDocumentVersion(tx: Prisma.TransactionClient, jobId:
  * Each upload is a new, numbered version (original = 1); nothing is ever
  * overwritten, so the full amendment history stays visible. Not gated by
  * job status: a GC can send an amendment at any point in the job's life,
- * not just pre-award. */
-export async function uploadContractDocument(jobId: string, formData: FormData) {
+ * not just pre-award.
+ *
+ * THE FILE NO LONGER PASSES THROUGH HERE — issue #27. It used to arrive as
+ * a `File` and be refused over `CONTRACT_DOCUMENT_MAX_BYTES`, 15MB, a
+ * check that could never run: Next caps a Server Action body at 1MB
+ * including multipart file parts, so an actual subcontract PDF — which is
+ * the only thing this function is for — was rejected by the framework
+ * first, with an opaque error. The browser uploads to the blob store under
+ * a one-shot token now (`app/api/documents/upload/route.ts`) and this
+ * records the URL. The type and size rules moved to
+ * lib/document-uploads.ts, where the token makes them enforceable.
+ *
+ * The version counter is untouched and still bumped inside the same
+ * transaction as the insert.
+ *
+ * IT RETURNS A RESULT NOW rather than throwing, for the same reason as
+ * `uploadDispatchSlip`: its form was a server-rendered
+ * `<form action={…}>`, it has to be a client component to upload the file
+ * before submitting, and a client component rendering a thrown Server
+ * Action message renders a production digest. */
+export async function uploadContractDocument(
+  jobId: string,
+  formData: FormData,
+): Promise<ActionResult> {
   const { company, ...user } = await requireCompanyContext();
   await assertJobInCompany(jobId, company.id);
 
-  const file = formData.get("file");
-  if (!(file instanceof File) || file.size === 0) {
-    throw new Error("A file is required");
+  // Re-checked rather than trusted: a Server Action is an endpoint anyone
+  // with a session can post to directly, so this must prove the URL is
+  // our own store's and sits under THIS job's contracts folder. `jobId`
+  // was proved to be this company's by `assertJobInCompany` above.
+  const fileUrl = String(formData.get("fileUrl") ?? "").trim();
+  if (!fileUrl) {
+    return actionFail("Attach the agreement — a PDF or a photo of it.");
   }
-  if (!(CONTRACT_DOCUMENT_MEDIA_TYPES as readonly string[]).includes(file.type)) {
-    throw new Error("Upload a PDF, PNG, JPEG, or WEBP file");
+  const problem = documentUrlProblem(fileUrl, "contract-document", jobId, process.env);
+  if (problem) {
+    return actionFail(problem);
   }
-  if (file.size > CONTRACT_DOCUMENT_MAX_BYTES) {
-    throw new Error("File is too large (max 15MB)");
-  }
+  // `ContractDocument.fileName` is NOT NULL — unlike the dispatch slip and
+  // the wage determination, where the file itself is optional — so the
+  // display name falls back rather than being allowed to be absent. Only
+  // reachable by a caller that is not the form; the form always sends the
+  // name of the file the person picked.
+  const fileName = documentDisplayFileName(String(formData.get("fileName") ?? "")) ?? "document";
 
   const note = String(formData.get("note") ?? "").trim();
-
-  // Uploading to blob storage is a network call and stays OUTSIDE the
-  // transaction below, same reasoning as everywhere else this app mixes
-  // a blob write with a DB write: a long-running external call has no
-  // business holding a database transaction open.
-  const buffer = await file.arrayBuffer().then(Buffer.from);
-  const blob = await putDocument(`contracts/${jobId}/${file.name}`, buffer, file.type);
 
   await prisma.$transaction(async (tx) => {
     await tx.contractDocument.create({
       data: {
         jobId,
         versionNumber: await issueContractDocumentVersion(tx, jobId),
-        fileUrl: blob.url,
-        fileName: file.name,
+        fileUrl,
+        fileName,
         note: note || null,
         uploadedByUserId: user.id,
       },
@@ -870,6 +905,7 @@ export async function uploadContractDocument(jobId: string, formData: FormData) 
   });
 
   revalidatePath(`/jobs/${jobId}`);
+  return actionOk;
 }
 
 /**

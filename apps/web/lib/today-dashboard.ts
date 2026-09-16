@@ -298,6 +298,12 @@ export async function loadTodayDashboard(companyId: string, now: Date) {
 
   return {
     receivables: receivables.sort((a, b) => b.daysOverdue - a.daysOverdue),
+    // How many invoices EXIST, not how many are outstanding. An empty
+    // receivables list has two causes that read identically and deserve
+    // opposite sentences — every invoice paid, or no invoice ever raised —
+    // and the list alone cannot tell them apart. Free: the rows are already
+    // fetched above.
+    invoicesRaised: invoices.length,
     overdue,
     overdueTotal: overdue.reduce((sum, row) => sum + row.outstanding, 0),
     jobHealth,

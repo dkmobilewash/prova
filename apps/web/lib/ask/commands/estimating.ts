@@ -183,7 +183,7 @@ async function executeCreateJob(ctx: CommandContext, payload: ResolvedPayload) {
     : `Created ${resolved.jobName} for ${resolved.contact.name}.`;
 
   if (resolved.draftLines && resolved.scope) {
-    const drafted = await draftLinesFromScope(ctx.companyId, { jobId, scopeText: resolved.scope });
+    const drafted = await draftLinesFromScope(ctx.companyId, { jobId, scopeText: resolved.scope }, ctx.userId);
     message += drafted.ok
       ? ` Drafted ${drafted.value.count} line ${drafted.value.count === 1 ? "item" : "items"} from the scope, flagged for review.`
       : ` Line items could not be drafted (${drafted.error}). Use "Draft line items" on the job page.`;
@@ -297,7 +297,7 @@ async function executeDraftLines(ctx: CommandContext, payload: ResolvedPayload) 
   if (!jobId || !jobName || !scopeText) {
     return { ok: false as const, error: "That card can't be executed. Ask again." };
   }
-  const drafted = await draftLinesFromScope(ctx.companyId, { jobId, scopeText });
+  const drafted = await draftLinesFromScope(ctx.companyId, { jobId, scopeText }, ctx.userId);
   if (!drafted.ok) return { ok: false as const, error: drafted.error };
   const n = drafted.value.count;
   return {
@@ -488,7 +488,7 @@ export const estimatingExclusions: Exclusion[] = [
   { action: "updateLineItemForecast", reason: "A cost forecast is job-costing money; phase 3 territory once natural keys exist." },
   { action: "deleteLineItem", reason: "Deletes are never commands (T5); the page's own two-step delete is the path." },
   { action: "markJobContracted", reason: "The transition that locks pricing behind change orders and requires a signed request; never offered (T5)." },
-  { action: "recordExecutedSubcontract", reason: "Needs a real File for the executed subcontract; nothing a prompt can supply." },
+  { action: "recordExecutedSubcontract", reason: "Needs the executed subcontract itself, which a browser now uploads to storage before calling this (#27) — a prompt has no file and no way to perform that upload." },
   { action: "setJobStatus", reason: "Status transitions gate billing and time; a page decision, not a prompt (T5)." },
   { action: "addCostEntry", reason: "Job-cost money with no natural key yet (#102); phase 3." },
   { action: "deleteCostEntry", reason: "Deletes are never commands (T5)." },

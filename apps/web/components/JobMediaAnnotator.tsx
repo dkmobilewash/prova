@@ -39,9 +39,13 @@ import {
  * tries on a phone scrolls the page instead of drawing — which reads as the
  * feature being broken.
  *
- * EVERY MARK IS A FRACTION OF THE IMAGE, converted at the moment of the
- * pointer event from the element's own box. Nothing here knows the photo's
- * pixel size and nothing needs to: see the schema comment on `x1`.
+ * EVERY MARK IS A FRACTION OF THE 4:3 SURFACE, converted at the moment of
+ * the pointer event from that element's own box. Nothing here knows the
+ * photo's pixel size and nothing needs to: see the schema comment on `x1`.
+ *
+ * It said "a fraction of the image" until 2026-09-15, which is one of the
+ * sentences issue #256 had to correct. The distinction is invisible on a 4:3
+ * photograph and is the entire bug on any other.
  */
 
 type Draft = JobMediaAnnotationInput & { id: string };
@@ -87,19 +91,32 @@ export function JobMediaAnnotator({
   const surfaceRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
-  /** The image's width/height as it sits on screen, which for an
-   *  `object-contain` box is the photo's own ratio. Read at draw time
-   *  rather than stored: the arrow head needs it and nothing else does. */
-  function aspect(): number {
-    const box = surfaceRef.current?.getBoundingClientRect();
-    if (!box || box.height === 0) return 1;
-    return box.width / box.height;
-  }
+  /* THERE WAS AN `aspect()` HERE AND IT MEASURED THE WRONG THING. Deleted
+     2026-09-15 with issue #256. Its comment said it returned "the image's
+     width/height as it sits on screen, which for an `object-contain` box is
+     the photo's own ratio" — it did not. `surfaceRef` points at the 4:3 div
+     below, not at the `<img>`, so it returned 4/3 for every photograph ever
+     taken. The value was then passed to `JobMediaMarks` as the `aspect`
+     prop, where three other callers were passing the literal `4 / 3`, and
+     the four agreeing hid the fact that the sentence explaining the
+     agreement was false. The constant lives in `JobMediaMarks` now and
+     there is no prop to get wrong. */
 
-  /** A pointer event as a fraction of the photo, clamped to it. Clamping
-   *  HERE is right even though the validator refuses out-of-range marks:
-   *  a finger that slides off the edge mid-drag meant the edge, and the
-   *  validator's job is to refuse a payload, not to interpret a gesture. */
+  /** A pointer event as a fraction of THE 4:3 SURFACE BELOW, clamped to it.
+   *
+   *  Not of the photo — the photo is letterboxed inside that surface, so on
+   *  anything but a 4:3 photograph the two are different. This doc said
+   *  "a fraction of the photo" and the div below called itself "the photo at
+   *  its own ratio"; both were corrected by #256. Every renderer owes this
+   *  same box and the same `object-contain` fit, and that contract is
+   *  written out on `JOB_MEDIA_MARK_BOX_ASPECT`.
+   *
+   *  Clamping HERE is right even though the validator refuses out-of-range
+   *  marks: a finger that slides off the edge mid-drag meant the edge, and
+   *  the validator's job is to refuse a payload, not to interpret a
+   *  gesture. It also means a mark may legitimately sit on the letterbox
+   *  bar beside a portrait photo, which is a fine place to put a label and
+   *  renders identically everywhere. */
   function pointAt(event: React.PointerEvent): { x: number; y: number } {
     const box = surfaceRef.current!.getBoundingClientRect();
     return {
@@ -191,16 +208,28 @@ export function JobMediaAnnotator({
 
   return (
     <div className="flex flex-col gap-3">
-      {/* The photo at its own ratio rather than the card's 4:3 crop — you
-          cannot mark up a picture whose edges you cannot see. */}
+      {/* THE 4:3 BOX, WITH THE WHOLE PHOTOGRAPH LETTERBOXED INSIDE IT. You
+          cannot mark up a picture whose edges you cannot see, which is what
+          `object-contain` is for — but the box itself is 4:3 and the photo
+          is not, so the two are not the same thing.
+
+          This comment said "the photo at its own ratio rather than the
+          card's 4:3 crop" until 2026-09-15, and that was false on both
+          halves: the div is hard-coded 4:3, and the card's crop was the
+          problem rather than the thing being avoided here. Issue #256.
+
+          IT IS ALSO THE DEFINITION OF THE STORED COORDINATE SPACE. `pointAt`
+          measures this element, so whatever ratio this box has is the ratio
+          every surface in the app must reproduce to put a mark back where
+          it was drawn. Changing it silently moves every mark already
+          saved — see `JOB_MEDIA_MARK_BOX_ASPECT`. */}
       <div
         ref={surfaceRef}
         onPointerDown={begin}
         onPointerMove={move}
         onPointerUp={end}
         onPointerCancel={end}
-        className="relative w-full touch-none select-none overflow-hidden rounded-md bg-black"
-        style={{ aspectRatio: "4 / 3" }}
+        className="relative aspect-[4/3] w-full touch-none select-none overflow-hidden rounded-md bg-black"
       >
         {/* A plain <img>, not next/image: this one is measured by
             `getBoundingClientRect` and sized by `object-contain`, and the
@@ -208,10 +237,10 @@ export function JobMediaAnnotator({
             picture for these blobs anyway. */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={blobUrl} alt={alt} className="h-full w-full object-contain" draggable={false} />
-        <JobMediaMarks marks={preview} aspect={aspect()} />
+        <JobMediaMarks marks={preview} />
       </div>
 
-      <p className="text-sm text-slate-400">{TOOL_HINT[tool]}</p>
+      <p className="text-sm text-ink-body">{TOOL_HINT[tool]}</p>
 
       <div className="flex flex-wrap gap-2">
         {JOB_MEDIA_ANNOTATION_KINDS.map((kind) => (
@@ -225,8 +254,8 @@ export function JobMediaAnnotator({
             aria-pressed={tool === kind}
             className={`min-h-11 rounded-md border px-3 text-sm ${
               tool === kind
-                ? "border-blue-500 text-blue-400"
-                : "border-slate-700 text-slate-300 hover:border-slate-500"
+                ? "border-brand text-link"
+                : "border-line-card text-ink-label hover:bg-neutral-800"
             }`}
           >
             {TOOL_LABEL[kind]}
@@ -235,8 +264,8 @@ export function JobMediaAnnotator({
       </div>
 
       {pendingLabel && (
-        <div className="flex flex-col gap-2 rounded-md border border-slate-700 p-3">
-          <label className="text-sm text-slate-300" htmlFor={`label-${mediaId}`}>
+        <div className="flex flex-col gap-2 rounded-md border border-line-card p-3">
+          <label className="text-sm text-ink-label" htmlFor={`label-${mediaId}`}>
             {pendingLabel.kind === "MEASURE"
               ? "What does it measure? Type it as you would write it — the app does not measure anything itself."
               : "What does it say?"}
@@ -254,13 +283,13 @@ export function JobMediaAnnotator({
               }
             }}
             placeholder={pendingLabel.kind === "MEASURE" ? "3 ft 6 in" : "Rework this joint"}
-            className="min-h-11 rounded-md border border-slate-700 bg-slate-950 px-3 text-base text-slate-100"
+            className="min-h-11 rounded-md border border-line-card bg-canvas px-3 text-base text-ink"
           />
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
               onClick={commitLabel}
-              className="min-h-11 rounded-md bg-blue-600 px-4 text-sm font-medium text-white hover:bg-blue-500"
+              className="min-h-11 rounded-md bg-brand px-4 text-sm font-semibold text-neutral-900 hover:bg-yellow-500"
             >
               Add it
             </button>
@@ -271,7 +300,7 @@ export function JobMediaAnnotator({
                 setLabelText("");
                 setError(null);
               }}
-              className="min-h-11 rounded-md border border-slate-700 px-3 text-sm text-slate-300"
+              className="min-h-11 rounded-md border border-line-card px-3 text-sm text-ink-label"
             >
               Cancel
             </button>
@@ -281,7 +310,7 @@ export function JobMediaAnnotator({
 
       {error && <p className="text-sm text-red-400">{error}</p>}
 
-      <p className="text-sm text-slate-400">
+      <p className="text-sm text-ink-body">
         {drafts.length} of {JOB_MEDIA_ANNOTATIONS_MAX} marks.{" "}
         {drafts.length > 0 && "Undo removes the last one."}
       </p>
@@ -309,7 +338,7 @@ export function JobMediaAnnotator({
               }
             });
           }}
-          className="min-h-11 rounded-md bg-blue-600 px-4 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+          className="min-h-11 rounded-md bg-brand px-4 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
         >
           {isPending ? "Saving…" : "Save marks"}
         </button>
@@ -320,7 +349,7 @@ export function JobMediaAnnotator({
             setDrafts((current) => current.slice(0, -1));
             setError(null);
           }}
-          className="min-h-11 rounded-md border border-slate-700 px-3 text-sm text-slate-300 disabled:opacity-50"
+          className="min-h-11 rounded-md border border-line-card px-3 text-sm text-ink-label disabled:opacity-50"
         >
           Undo
         </button>
@@ -331,7 +360,7 @@ export function JobMediaAnnotator({
             setDrafts([]);
             setError(null);
           }}
-          className="min-h-11 rounded-md border border-slate-700 px-3 text-sm text-slate-300 disabled:opacity-50"
+          className="min-h-11 rounded-md border border-line-card px-3 text-sm text-ink-label disabled:opacity-50"
         >
           Clear all
         </button>
@@ -339,7 +368,7 @@ export function JobMediaAnnotator({
           type="button"
           disabled={isPending}
           onClick={onDone}
-          className="min-h-11 rounded-md border border-slate-700 px-3 text-sm text-slate-300 disabled:opacity-50"
+          className="min-h-11 rounded-md border border-line-card px-3 text-sm text-ink-label disabled:opacity-50"
         >
           Cancel
         </button>
@@ -347,7 +376,7 @@ export function JobMediaAnnotator({
 
       {/* Said here, at the moment somebody is deciding to draw, rather than
           only in a schema comment nobody on a roof will read. */}
-      <p className="text-sm text-slate-400">
+      <p className="text-sm text-ink-body">
         Marks are saved beside the photo, not burned into it — the original file is never changed,
         and anyone who downloads it gets the picture without the markup.
       </p>

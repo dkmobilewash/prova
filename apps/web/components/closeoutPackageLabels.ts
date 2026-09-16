@@ -28,13 +28,13 @@ export function stageBadgeClass(stage: CloseoutStage) {
   switch (stage) {
     case "READY_TO_SUBMIT":
     case "REJECTED":
-      return "bg-amber-500/15 text-amber-300";
+      return "bg-tag-amber text-tag-amber-ink";
     case "AWAITING_GC":
-      return "bg-blue-500/15 text-blue-300";
+      return "bg-tag-blue text-tag-blue-ink";
     case "ACCEPTED":
-      return "bg-green-500/15 text-green-300";
+      return "bg-tag-green text-tag-green-ink";
     default:
-      return "bg-slate-800 text-slate-400";
+      return "border border-line-card bg-tag-slate text-tag-slate-ink";
   }
 }
 
@@ -112,7 +112,7 @@ export function closeoutChip(
   // grey — a finished CHECKLIST, said plainly, which is what the sentence
   // below always claimed this did.
   if (blockers.length === 0 && stage === "ACCEPTED") {
-    return { label: "Closeout complete", className: "bg-green-500/15 text-green-300" };
+    return { label: "Closeout complete", className: "bg-tag-green text-tag-green-ink" };
   }
 
   const label =
@@ -130,7 +130,9 @@ export function closeoutChip(
   return {
     label,
     className:
-      outstanding > 0 ? "bg-amber-500/15 text-amber-300" : "bg-slate-800 text-slate-400",
+      outstanding > 0
+        ? "bg-tag-amber text-tag-amber-ink"
+        : "border border-line-card bg-tag-slate text-tag-slate-ink",
   };
 }
 

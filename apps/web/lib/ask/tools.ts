@@ -84,7 +84,12 @@ export type ToolName =
   | "open_rfis"
   | "material_deliveries"
   | "equipment_location"
-  | "receivables";
+  | "receivables"
+  | "cash_flow_forecast"
+  | "retainage_held"
+  | "change_order_status"
+  | "job_labor_cost"
+  | "safety_record";
 
 export type ToolDefinition = {
   name: ToolName;
@@ -145,6 +150,37 @@ const materialDeliveryFilter = {
       enum: ["OUTSTANDING"],
       description:
         "Optional. OUTSTANDING narrows to orders that have not fully arrived — nothing delivered yet, or only partly delivered. Omit to cover every order, most recently promised first.",
+    },
+  },
+};
+
+/** change_order_status: PENDING is the two undecided statuses together —
+ * "what has the GC not come back on" is the question actually asked, and
+ * it spans DRAFT and SUBMITTED for different reasons (one is ours to send,
+ * one is theirs to answer), which is why the result labels them apart. */
+const changeOrderFilter = {
+  type: "object" as const,
+  properties: {
+    jobName: jobFilter.properties.jobName,
+    status: {
+      type: "string",
+      enum: ["PENDING", "DRAFT", "SUBMITTED", "APPROVED", "REJECTED"],
+      description:
+        "Optional. PENDING means drafted-or-submitted — not yet decided by the GC — and is what 'which change orders are outstanding' means. Omit to cover every change order.",
+    },
+  },
+};
+
+/** safety_record: a YEAR, because an OSHA case number is scoped to one and
+ * the 300 log is filed per year. A four-digit year the person said, never a
+ * range: "last year" is resolved by the app, not narrowed by the model. */
+const safetyYearFilter = {
+  type: "object" as const,
+  properties: {
+    year: {
+      type: "string",
+      description:
+        "Optional. The four-digit calendar year to report, e.g. 2026. Omit for the current year, which is what an unqualified question means.",
     },
   },
 };
@@ -229,6 +265,46 @@ export const TOOLS: ToolDefinition[] = [
     description:
       "Unpaid invoices with amounts outstanding and days overdue, using the same due-date rule as the AR aging page. Answers 'who owes us and how late are they'. Does NOT know the bank balance or upcoming payroll — neither is recorded, so it cannot answer whether there is cash to cover a specific bill.",
     input_schema: noInput,
+  },
+  {
+    name: "cash_flow_forecast",
+    // /cash-flow
+    capability: "VIEW_COMPANY_FINANCIALS",
+    description:
+      "When money already invoiced is expected to arrive: a month-by-month projection of receivables and retainage, plus an overdue bucket and the AR aging split. Answers 'what is coming in next month'. Built ONLY from due dates, payment terms and substantial completion dates already on file — it is not a statistical forecast and it does not predict work not yet invoiced. It does NOT know the bank balance or any money going out, so it cannot say whether a specific bill can be paid. Retainage with no substantial completion date on file is reported as an explicit unscheduled total rather than being assigned a month.",
+    input_schema: noInput,
+  },
+  {
+    name: "retainage_held",
+    // /cash-flow's retainage receivable section, and each job's Retainage panel
+    capability: "MANAGE_BILLING",
+    description:
+      "Retainage withheld across the whole company and not yet released, with the balance per job and whether a job has a substantial completion date to collect against. Answers 'how much of our money is the GC still holding'. Counts EVERY job including completed ones, because retainage is collected at closeout — it is not limited to active work. A balance is what has been withheld less what has been released; it does not mean the GC has agreed to pay it.",
+    input_schema: jobFilter,
+  },
+  {
+    name: "change_order_status",
+    // the job page's Change orders section
+    capability: "VIEW_JOB_COSTS",
+    description:
+      "Change orders by job and status — draft, submitted and awaiting the GC, approved, rejected — with each one's value and how long a submitted one has been waiting. Answers 'what have we asked the GC for and what have they not answered'. Submitted value is EXPOSURE, not revenue: it is deliberately not part of contract value until approved. It does not know what the GC will decide or when, and it cannot tell you a change order is late — there is no agreed response time recorded for one, unlike an RFI.",
+    input_schema: changeOrderFilter,
+  },
+  {
+    name: "job_labor_cost",
+    // the job page's time entries, priced the way that page prices them
+    capability: "VIEW_JOB_COSTS",
+    description:
+      "Burdened labor cost booked to a job from logged hours — base wage times the pay-type multiplier plus fringes, using the rate schedule in force on each entry's own date. Answers 'what has the crew cost us on this job'. ALWAYS read the priced-hours share beside the total: hours on a craft with no rate schedule covering their date are NOT priced and are excluded from the money, so on a half-configured company the total is real but partial. It does NOT include material, equipment or subcontract cost — those reach a job as cost entries, and job_margin is the tool for total cost.",
+    input_schema: jobFilter,
+  },
+  {
+    name: "safety_record",
+    // /safety
+    capability: "MANAGE_FIELD",
+    description:
+      "The OSHA case log for one year: every incident with its classification and outcome, which cases are recordable on the 300 log, days away and days restricted, and the toolbox talks held. Answers 'what is our safety record this year'. Recordability is derived from the outcome, not stored. It CANNOT confirm that any individual signed a toolbox talk — the attendee roster is free text and the signature sheet is a photo — so it can say a talk was held and never that a named person attended it.",
+    input_schema: safetyYearFilter,
   },
 ];
 

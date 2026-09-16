@@ -118,6 +118,25 @@ model AskUsage {
   userId    String?
   user      User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
 
+  /// WHICH MODEL CALLER THIS ROW IS. "ask" for the Ask box; "wip-narrative",
+  /// "compliance-extract" and "draft-estimate-lines" for the three callers in
+  /// packages/integrations/src/anthropic.ts.
+  ///
+  /// Added 2026-09-14. This table recorded Ask and nothing else, so three of
+  /// the app's four model callers spent money invisibly — /settings/assistant
+  /// showed a number that was not the bill, and reconciling it against the
+  /// Anthropic invoice would have shown a gap with nothing to attribute it to.
+  ///
+  /// A STRING, NOT AN ENUM, and defaulted so the migration is additive: every
+  /// existing row IS an Ask row, and a new caller should not need a migration
+  /// to start reporting. Same reasoning as `outcome` directly below.
+  ///
+  /// `askAllowance` counts ONLY feature="ask" rows, deliberately — the Ask
+  /// row limits are about how many questions a person may ask, and a
+  /// compliance upload is not a question. Bounding the other three is a
+  /// separate decision and wants a spend ceiling rather than a row count.
+  feature          String  @default("ask")
+
   /// The model id the passes ran on, so a row can be priced later.
   model            String
   /// Model calls this question took: one for a plain answer, one per tool
@@ -135,4 +154,7 @@ model AskUsage {
 
   @@index([companyId, createdAt])
   @@index([userId, createdAt])
+  /// "What has this company spent on <feature> lately" — the read the usage
+  /// page needs once it stops showing only Ask.
+  @@index([companyId, feature, createdAt])
 }

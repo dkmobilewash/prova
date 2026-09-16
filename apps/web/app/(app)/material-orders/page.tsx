@@ -122,13 +122,13 @@ export default async function MaterialOrdersPage({
 
   const chip = (active: boolean) =>
     `rounded-md border px-3 py-1.5 text-sm ${
-      active ? "border-blue-500 text-blue-400" : "border-slate-700 text-slate-300 hover:border-slate-500"
+      active ? "border-brand text-link" : "border-line-card text-ink-label hover:bg-neutral-800"
     }`;
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-slate-100">Material orders</h1>
-      <p className="mb-6 text-sm text-slate-400">
+      <h1 className="mb-2 text-xl font-semibold text-ink">Material orders</h1>
+      <p className="mb-6 text-sm text-ink-body">
         What&apos;s on order, who owes it, and whether it actually showed up. Material that
         doesn&apos;t arrive is a crew standing around, and &ldquo;the studs were three weeks
         late&rdquo; is worth nothing in a delay conversation without the date you ordered them and
@@ -160,22 +160,22 @@ export default async function MaterialOrdersPage({
       )}
 
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-slate-300">
+        <h2 className="text-sm font-semibold text-ink-label">
           {rows.length} {showDelivered ? "total" : "outstanding"}
         </h2>
-        <Link href={filterHref({ show: showDelivered ? null : "all" })} className="text-sm text-blue-400">
+        <Link href={filterHref({ show: showDelivered ? null : "all" })} className="text-sm text-link">
           {showDelivered ? "Hide delivered" : "Show delivered"}
         </Link>
       </div>
 
       {rows.length === 0 ? (
-        <p className="text-slate-400">
+        <p className="text-ink-body">
           {allRows.length === 0
             ? "Nothing on order. Log a package the day you place it — the gap between the date you ordered it and the date it turned up is the whole value of the record."
             : `Nothing outstanding — every order on this job has been delivered. ${deliveredCount} delivered order${deliveredCount === 1 ? "" : "s"} hidden.`}
         </p>
       ) : (
-        <ul className="divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900">
+        <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
           {rows.map((order) => (
             <MaterialOrderRow
               key={order.id}

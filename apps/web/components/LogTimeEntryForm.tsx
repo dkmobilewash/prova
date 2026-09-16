@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
+import type { JobLineItem } from "@prova/db";
 import { logTimeEntry } from "@/lib/actions";
 import {
   TimeEntryFields,
@@ -67,14 +68,14 @@ export function LogTimeEntryForm({
           }
         });
       }}
-      className="flex flex-col gap-2 rounded-lg border border-slate-800 bg-slate-900 p-3"
+      className="flex flex-col gap-2 rounded-lg border border-line-card bg-surface p-3"
     >
       <div className="flex flex-wrap items-end gap-2">
         <TimeEntryFields employees={employees} lineItems={lineItems} craftOptions={craftOptions} />
         <button
           type="submit"
           disabled={isPending}
-          className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-100 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+          className="rounded-md bg-neutral-800 px-3 py-1.5 text-sm font-medium text-ink hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {isPending ? "Logging…" : "Log time"}
         </button>

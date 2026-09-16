@@ -64,13 +64,13 @@ export function PortalJobPhotos({
           notes, and a heading that says photos over a video player is the
           kind of small wrongness a GC reads as carelessness about the rest
           of it. */}
-      <h2 className="mb-3 text-lg font-semibold text-slate-100">Site photos and videos</h2>
+      <h2 className="mb-3 text-lg font-semibold text-ink">Site photos and videos</h2>
 
       <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {photos.map((photo) => (
           <li
             key={photo.id}
-            className="flex flex-col overflow-hidden rounded-lg border border-slate-800 bg-slate-900"
+            className="flex flex-col overflow-hidden rounded-lg border border-line-card bg-surface"
           >
             {/* Same posture as the internal card: the blob URL is the only
                 src, and `unoptimized` keeps Next's optimizer — and the
@@ -82,7 +82,7 @@ export function PortalJobPhotos({
                 the same reason: only the photo is wrapped in a link,
                 because a player inside an anchor navigates away on every
                 tap of play or scrub. The GC gets controls instead. */}
-            <div className="relative block aspect-[4/3] bg-slate-950">
+            <div className="relative block aspect-[4/3] bg-canvas">
               {photo.kind === "photo" ? (
                 <a
                   href={photo.blobUrl}
@@ -90,12 +90,22 @@ export function PortalJobPhotos({
                   rel="noopener noreferrer"
                   className="absolute inset-0"
                 >
+                  {/* `object-contain`, and on this surface it is the
+                      correctness fix rather than a presentation one. Issue
+                      #256: a mark is a fraction of the 4:3 box the sub drew
+                      on, with the photograph letterboxed inside it, so a
+                      `cover` crop here put the GC's arrow over a different
+                      part of the picture than the one the sub aimed at —
+                      measured at up to 89px on a portrait phone photo. The
+                      one thing this whole feature has to guarantee is that
+                      the GC's screen agrees with the sub's; a centre crop
+                      on the client-facing page was the place it did not. */}
                   <Image
                     src={photo.blobUrl}
                     alt={photo.caption ?? "Site photo"}
                     fill
                     unoptimized
-                    className="object-cover"
+                    className="object-contain"
                   />
                 </a>
               ) : photo.kind === "video" ? (
@@ -109,7 +119,7 @@ export function PortalJobPhotos({
               ) : (
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-4">
                   <span aria-hidden className="text-3xl">🎙️</span>
-                  <p className="text-sm text-slate-400">Voice note</p>
+                  <p className="text-sm text-ink-body">Voice note</p>
                   <audio src={photo.blobUrl} controls preload="metadata" className="w-full" />
                 </div>
               )}
@@ -118,17 +128,17 @@ export function PortalJobPhotos({
                   convenient: an arrow drawn to show the GC where the damage
                   is has to land in the same place on their screen as it did
                   on the screen where somebody decided to show it. */}
-              <JobMediaMarks marks={photo.marks} aspect={4 / 3} />
+              <JobMediaMarks marks={photo.marks} />
             </div>
             <div className="flex flex-col gap-1 p-3">
-              <p className="text-sm text-slate-200">
-                {photo.caption ?? <span className="text-slate-400">No caption</span>}
+              <p className="text-sm text-ink-label">
+                {photo.caption ?? <span className="text-ink-body">No caption</span>}
               </p>
-              {/* slate-400 on slate-900, never slate-500 — #89 measured that
+              {/* ink-body, never ink-muted — #89 measured that
                   pair at 3.83:1, under the 4.5 floor. A GC reading this on a
                   phone in a site trailer is the same eye in the same light
                   as the crew reading the internal gallery. */}
-              <p className="text-sm text-slate-400">{photo.capturedAtLabel}</p>
+              <p className="text-sm text-ink-body">{photo.capturedAtLabel}</p>
               {/* SAID PLAINLY, because the alternative is a GC opening the
                   file, seeing no arrows, and reasonably concluding the
                   markup was added to a copy. The marks live beside the
@@ -136,7 +146,7 @@ export function PortalJobPhotos({
                   original genuinely is unmarked — that is a property of the
                   photograph being left alone, not a trick. */}
               {photo.marks.length > 0 && (
-                <p className="text-sm text-slate-400">
+                <p className="text-sm text-ink-body">
                   Opening the image gives you the original, without the markup.
                 </p>
               )}
@@ -146,7 +156,7 @@ export function PortalJobPhotos({
       </ul>
 
       {total > limit && (
-        <p className="mt-3 text-sm text-slate-400">
+        <p className="mt-3 text-sm text-ink-body">
           Showing the {limit} most recent of {total}.
         </p>
       )}

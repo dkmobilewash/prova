@@ -44,7 +44,17 @@ const BIDS = [
   },
 ];
 
-vi.mock("@prova/db", () => ({
+// `Prisma` (the namespace, for Decimal) is taken from the REAL module while
+// `prisma` below stays faked.
+//
+// These mocks named one export and stood for the whole module, which held
+// only while nothing handlers.ts imports used another. lib/change-order.ts
+// builds a `new Prisma.Decimal(0)` at MODULE SCOPE, so the moment
+// change_order_status pulled it in, every test in this file failed at import
+// time with an error about the mock rather than about the code. Partial-mock
+// the module instead of re-describing it.
+vi.mock("@prova/db", async (importOriginal) => ({
+  Prisma: (await importOriginal<typeof import("@prova/db")>()).Prisma,
   prisma: {
     bidInvitation: {
       findMany: vi.fn(async ({ where }: { where: { status?: { in: string[] } } }) =>

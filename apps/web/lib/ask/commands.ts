@@ -53,7 +53,7 @@ export type CommandName =
   | "send_equipment_to_job"
   | "bring_equipment_back"
   | "raise_rfi"
-  | "add_punch_item"
+  | "add_punch_items"
   | "draft_invoice"
   | "log_payment"
   | "release_retainage"
@@ -250,7 +250,12 @@ export function toToolDefinition(command: CommandDefinition): AskToolDefinition 
   };
 }
 
-const MAX_MODEL_VALUE = 1000;
+/** The longest single value the model may supply. Exported because a
+ * command that takes a LIST in one string (`add_punch_items`) is the one
+ * place where hitting this ceiling is invisible rather than harmless: the
+ * slice below would cut the last line in half, so that command warns on the
+ * card when its value arrives at exactly this length. */
+export const MAX_MODEL_VALUE = 1000;
 const MAX_CONTINUATION_VALUE = 200;
 
 /**

@@ -131,21 +131,21 @@ export default async function JobPhotoReportPage({
   const chip = (active: boolean) =>
     `inline-flex min-h-11 items-center rounded-md border px-3 py-2 text-sm ${
       active
-        ? "border-blue-500 text-blue-400"
-        : "border-slate-700 text-slate-300 hover:border-slate-500"
+        ? "border-brand text-link"
+        : "border-line-card text-ink-label hover:bg-neutral-800"
     }`;
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8 print:max-w-none print:px-0 print:py-0">
       {/* Everything above the sheet is the app, not the document. */}
       <div className="print:hidden">
-        <Link href={`/jobs/${job.id}`} className="text-sm text-blue-400 hover:underline">
+        <Link href={`/jobs/${job.id}`} className="text-sm text-link hover:text-link-hover">
           ← Back to job
         </Link>
         <div className="mt-3 flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-semibold text-slate-100">Site photo report</h1>
-            <p className="mt-1 text-sm text-slate-400">
+            <h1 className="text-2xl font-semibold text-ink">Site photo report</h1>
+            <p className="mt-1 text-sm text-ink-body">
               {job.name} · the marks are drawn on the photos, so the printed page carries them.
             </p>
           </div>
@@ -198,7 +198,7 @@ export default async function JobPhotoReportPage({
           </div>
         )}
 
-        <p className="mt-4 max-w-2xl text-xs text-slate-500">
+        <p className="mt-4 max-w-2xl text-xs text-ink-muted">
           Print / Save as PDF produces the document. Video and voice notes cannot print and are
           listed at the end rather than dropped, so nobody reads this as the whole record.
         </p>
@@ -300,10 +300,17 @@ export default async function JobPhotoReportPage({
                           be a third answer to "what does an arrow look
                           like", and the one that matters is that the paper
                           agrees with the screen the sub was looking at when
-                          they decided to print it. `aspect` is 4/3 because
-                          that is this box, exactly as the annotator's own
-                          `aspect()` reads 4/3 off its surface. */}
-                      <JobMediaMarks marks={capture.marks} aspect={4 / 3} />
+                          they decided to print it.
+
+                          It used to pass `aspect={4 / 3}` and say so. The
+                          prop is gone with issue #256 — the number is
+                          `JOB_MEDIA_MARK_BOX_ASPECT` and the component owns
+                          it, because four callers agreeing about a constant
+                          is four chances to disagree about one. This page
+                          was already correct and needed no geometry change;
+                          the gallery and the portal were the two that
+                          cropped. */}
+                      <JobMediaMarks marks={capture.marks} />
                     </div>
 
                     <figcaption className="mx-auto mt-1 max-w-xl text-[11px] print:max-w-[5in]">

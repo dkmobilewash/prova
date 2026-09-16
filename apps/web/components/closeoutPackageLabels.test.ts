@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { closeoutChip, plural } from "@/components/closeoutPackageLabels";
 import type { CloseoutBlocker } from "@/lib/closeout-readiness";
 
-const AMBER = "bg-amber-500/15 text-amber-300";
-const GREEN = "bg-green-500/15 text-green-300";
-const QUIET = "bg-slate-800 text-slate-400";
+const AMBER = "bg-tag-amber text-tag-amber-ink";
+const GREEN = "bg-tag-green text-tag-green-ink";
+const QUIET = "border border-line-card bg-tag-slate text-tag-slate-ink";
 
 const noChecklist: CloseoutBlocker = { kind: "NO_CHECKLIST", count: 0 };
 const required = (count: number): CloseoutBlocker => ({ kind: "REQUIRED_ITEMS", count });
