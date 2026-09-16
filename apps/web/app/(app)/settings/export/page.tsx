@@ -1,6 +1,11 @@
 import Link from "next/link";
 import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
+import {
+  ExportCoverageIntro,
+  ExportOmissionsPanel,
+  exportAllLabel,
+} from "@/components/ExportCoverage";
 import { EXPORT_DATASETS } from "@/lib/export";
 
 /**
@@ -12,9 +17,17 @@ import { EXPORT_DATASETS } from "@/lib/export";
  * difference between an export and a promise of one.
  *
  * It also says what is NOT in the file. An export that quietly omits
- * something is worse than one that admits a gap, and the omissions here are
- * deliberate: connection tokens and portal links are live keys rather than
- * records, and copying them into a spreadsheet is how a key leaks.
+ * something is worse than one that admits a gap.
+ *
+ * WHAT CHANGED, AND WHY THE COPY LIVES SOMEWHERE ELSE NOW. This page used to
+ * say "Everything <company> has put into C Stream" above a button reading
+ * "Download everything", and name three omissions — all three about keys and
+ * files, none about records. It is 18 tables out of a 93-model schema, and
+ * the missing ones include licences, bonds, retainage releases, wage tables
+ * and photos. Every claim about coverage now comes from
+ * `components/ExportCoverage.tsx`, which counts `EXPORT_DATASETS` at render
+ * and reads the omissions out of the registry beside it, so the sentence and
+ * the code cannot drift apart the way the old one did.
  */
 
 export const dynamic = "force-dynamic";
@@ -28,7 +41,7 @@ export default async function ExportPage() {
   if (context.role !== "OWNER") {
     return (
       <div className="mx-auto max-w-3xl px-6 py-8">
-        <h1 className="mb-2 text-xl font-semibold text-ink">Export your data</h1>
+        <h1 className="mb-2 text-xl font-semibold text-ink">Export core records</h1>
         <p className="text-sm text-ink-body">
           Only the account owner can export company data. One file holding every job, every
           price and every employee&rsquo;s hours is a different thing from any single page.
@@ -50,15 +63,10 @@ export default async function ExportPage() {
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-ink">Export your data</h1>
-      <p className="mb-6 text-sm text-ink-body">
-        Everything {company.name} has put into C Stream, on demand, in a format you can open or
-        load somewhere else. No request, no waiting, and it stays available whether or not
-        you keep paying us.
-      </p>
+      <ExportCoverageIntro companyName={company.name} />
 
       <section className="mb-8 rounded-lg border border-line-card bg-surface p-4">
-        <h2 className="mb-1 text-sm font-semibold text-ink-label">Everything, as one file</h2>
+        <h2 className="mb-1 text-sm font-semibold text-ink-label">All of them, as one file</h2>
         <p className="mb-3 text-xs text-ink-muted">
           JSON, every table below, exactly as stored. This is the copy to hand to another
           system — the CSVs are for reading, this one is for moving.
@@ -67,7 +75,7 @@ export default async function ExportPage() {
           href="/api/export"
           className="inline-flex items-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500"
         >
-          Download everything ({total.toLocaleString()} rows)
+          {exportAllLabel(total)}
         </a>
       </section>
 
@@ -113,24 +121,7 @@ export default async function ExportPage() {
         ))}
       </ul>
 
-      <section className="mb-8 rounded-lg border border-line-row bg-canvas p-4">
-        <h2 className="mb-2 text-sm font-semibold text-ink-label">What is deliberately not in it</h2>
-        <ul className="flex flex-col gap-2 text-xs text-ink-muted">
-          <li>
-            <span className="text-ink-body">Integration credentials.</span> QuickBooks and
-            other connection tokens. They are keys to another system, not a record of your
-            work, and a copy in a downloaded file is a copy that can leak.
-          </li>
-          <li>
-            <span className="text-ink-body">Client portal and signing links.</span> Same
-            reason — anyone holding one can open a portal or sign a contract.
-          </li>
-          <li>
-            <span className="text-ink-body">Uploaded files themselves.</span> Documents
-            appear as their metadata rows here; the files are still in storage.
-          </li>
-        </ul>
-      </section>
+      <ExportOmissionsPanel />
 
       <p className="text-sm text-ink-body">
         <Link href="/settings" className="text-link hover:text-link-hover">
