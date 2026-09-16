@@ -105,3 +105,14 @@ export type SafetyIncident = {
   daysAway: number | null;
   daysRestricted: number | null;
 };
+
+export type TimeEntryPayType = "STRAIGHT" | "OVERTIME" | "DOUBLE_TIME" | "SHIFT_DIFFERENTIAL";
+
+export type TimeEntry = {
+  id: string;
+  date: string;
+  hours: string;
+  payType: TimeEntryPayType;
+  note: string | null;
+  employeeName: string;
+};

@@ -4,6 +4,7 @@ import type {
   Job,
   Media,
   SafetyIncident,
+  TimeEntry,
   ToolboxTalk,
   UpdateFieldReportInput,
 } from "./types";
@@ -95,6 +96,22 @@ export async function createIncident(
   token: string,
 ): Promise<SafetyIncident> {
   return request(`/api/v1/jobs/${encodeURIComponent(jobId)}/incidents`, {
+    method: "POST",
+    token,
+    body: input,
+  });
+}
+
+export async function listTimeEntries(jobId: string, token: string): Promise<TimeEntry[]> {
+  return request(`/api/v1/jobs/${encodeURIComponent(jobId)}/time-entries`, { token });
+}
+
+export async function createTimeEntry(
+  jobId: string,
+  input: { date: string; hours: string; payType: string; note?: string },
+  token: string,
+): Promise<TimeEntry> {
+  return request(`/api/v1/jobs/${encodeURIComponent(jobId)}/time-entries`, {
     method: "POST",
     token,
     body: input,

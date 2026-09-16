@@ -23,6 +23,9 @@ export default function ReportsScreen() {
         <Button variant="secondary" onPress={() => router.push(`/safety/${jobId}`)}>
           Safety
         </Button>
+        <Button variant="secondary" onPress={() => router.push(`/time/${jobId}`)}>
+          Time
+        </Button>
       </View>
 
       <TextInput
