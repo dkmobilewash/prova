@@ -35,6 +35,7 @@ import {
   formatUtcDate,
 } from "@/lib/contract-execution";
 import type { JobStatusValue } from "@/lib/job-status-transitions";
+import { timeEntryWorkerName } from "@/lib/worker-name";
 import { ChangeOrders, type ChangeOrderView } from "@/components/ChangeOrders";
 import {
   changeOrderValueDelta,
@@ -239,6 +240,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
         orderBy: { date: "desc" },
         include: {
           employeeUser: true,
+          crewMember: true,
           lineItem: true,
           craftClassification: { include: { unionLocal: true } },
           // Who corrected this hour, for the "corrected <date> by <name>"
@@ -1250,7 +1252,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                   entry={{
                     id: entry.id,
                     dateLabel: formatCalendarDate(entry.date),
-                    employeeLabel: entry.employeeUser.name ?? entry.employeeUser.email,
+                    employeeLabel: entry.employeeUser ? entry.employeeUser.name ?? entry.employeeUser.email : timeEntryWorkerName(entry).label,
                     hours: String(Number(entry.hours)),
                     payType: entry.payType,
                     note: entry.note,

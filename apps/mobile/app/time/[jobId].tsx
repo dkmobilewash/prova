@@ -13,7 +13,7 @@ import * as api from "@/lib/api";
 import { uuid } from "@/lib/id";
 import { enqueue } from "@/lib/sync-queue";
 import { useSync } from "@/lib/use-sync";
-import type { TimeEntry, TimeEntryPayType } from "@/lib/types";
+import type { Craft, CrewMember, LineItem, TimeEntry, TimeEntryPayType } from "@/lib/types";
 
 const PAY_TYPES: TimeEntryPayType[] = ["STRAIGHT", "OVERTIME", "DOUBLE_TIME", "SHIFT_DIFFERENTIAL"];
 
@@ -21,6 +21,9 @@ export default function TimeScreen() {
   const { jobId } = useLocalSearchParams<{ jobId: string }>();
   const { getToken } = useAuth();
   const [entries, setEntries] = useState<TimeEntry[]>([]);
+  const [crew, setCrew] = useState<CrewMember[]>([]);
+  const [lineItems, setLineItems] = useState<LineItem[]>([]);
+  const [crafts, setCrafts] = useState<Craft[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const [showForm, setShowForm] = useState(false);
@@ -28,12 +31,24 @@ export default function TimeScreen() {
   const [hours, setHours] = useState("");
   const [payType, setPayType] = useState<TimeEntryPayType>("STRAIGHT");
   const [note, setNote] = useState("");
+  const [crewMemberId, setCrewMemberId] = useState<string | null>(null);
+  const [lineItemId, setLineItemId] = useState<string | null>(null);
+  const [craftClassificationId, setCraftClassificationId] = useState<string | null>(null);
 
   const load = async () => {
     const token = await getToken();
     if (!token || !jobId) return;
     try {
-      setEntries(await api.listTimeEntries(jobId, token));
+      const [es, cs, ls, cts] = await Promise.all([
+        api.listTimeEntries(jobId, token),
+        api.listCrew(token),
+        api.listLineItems(jobId, token),
+        api.listCrafts(token),
+      ]);
+      setEntries(es);
+      setCrew(cs);
+      setLineItems(ls);
+      setCrafts(cts);
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load time");
@@ -63,6 +78,9 @@ export default function TimeScreen() {
       hours,
       payType,
       note: note || undefined,
+      crewMemberId: crewMemberId || undefined,
+      lineItemId: lineItemId || undefined,
+      craftClassificationId: craftClassificationId || undefined,
     });
     await sync();
   };
@@ -82,7 +100,9 @@ export default function TimeScreen() {
             </View>
             <Text style={styles.meta}>
               {item.employeeName} · {item.payType.replace(/_/g, " ")}
+              {item.craftLabel ? ` · ${item.craftLabel}` : ""}
             </Text>
+            {item.lineItemDescription ? <Text style={styles.note}>{item.lineItemDescription}</Text> : null}
             {item.note ? <Text style={styles.note}>{item.note}</Text> : null}
           </Card>
         )}
@@ -106,10 +126,35 @@ export default function TimeScreen() {
         <Field label="Date" placeholder="YYYY-MM-DD" value={date} onChangeText={setDate} />
         <Field label="Hours" placeholder="e.g. 8 or 8.5" value={hours} onChangeText={setHours} keyboardType="decimal-pad" />
         <Field label="Note" placeholder="Optional" value={note} onChangeText={setNote} />
-        <Text style={styles.payLabel}>Pay type</Text>
+
+        <Text style={styles.chipLabel}>Who</Text>
+        <View style={styles.chips}>
+          <Chip label="Me" selected={crewMemberId === null} onPress={() => setCrewMemberId(null)} />
+          {crew.map((c) => (
+            <Chip key={c.id} label={c.name} selected={crewMemberId === c.id} onPress={() => setCrewMemberId(c.id)} />
+          ))}
+        </View>
+
+        <Text style={styles.chipLabel}>Pay type</Text>
         <View style={styles.chips}>
           {PAY_TYPES.map((p) => (
             <Chip key={p} label={p.replace(/_/g, " ")} selected={payType === p} onPress={() => setPayType(p)} />
+          ))}
+        </View>
+
+        <Text style={styles.chipLabel}>Cost code</Text>
+        <View style={styles.chips}>
+          <Chip label="No specific line" selected={lineItemId === null} onPress={() => setLineItemId(null)} />
+          {lineItems.map((l) => (
+            <Chip key={l.id} label={l.description} selected={lineItemId === l.id} onPress={() => setLineItemId(l.id)} />
+          ))}
+        </View>
+
+        <Text style={styles.chipLabel}>Craft</Text>
+        <View style={styles.chips}>
+          <Chip label="No craft" selected={craftClassificationId === null} onPress={() => setCraftClassificationId(null)} />
+          {crafts.map((c) => (
+            <Chip key={c.id} label={c.name} selected={craftClassificationId === c.id} onPress={() => setCraftClassificationId(c.id)} />
           ))}
         </View>
       </Sheet>
@@ -126,7 +171,7 @@ const styles = StyleSheet.create({
   hours: { color: colors.ink, fontSize: typography.size.lg, fontWeight: typography.weight.bold },
   meta: { color: colors.inkMuted, fontSize: typography.size.sm },
   note: { color: colors.inkBody, fontSize: typography.size.md, marginTop: 4 },
-  payLabel: { color: colors.inkLabel, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
+  chipLabel: { color: colors.inkLabel, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   footer: { padding: 16, paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.lineRow },
 });

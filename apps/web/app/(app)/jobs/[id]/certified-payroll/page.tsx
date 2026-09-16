@@ -12,7 +12,7 @@ import {
 } from "@/lib/certified-payroll-week";
 import { loadCertifiedPayrollWeekEntries } from "@/lib/certified-payroll-query";
 import type { FringeRateScheduleInput } from "@/lib/labor-cost";
-import { payrollWorkerName } from "@/lib/worker-name";
+import { timeEntryWorkerName, timeEntryWorkerId } from "@/lib/worker-name";
 
 const PAY_TYPE_COLUMNS = [
   { value: "STRAIGHT", label: "ST" },
@@ -114,16 +114,16 @@ export default async function CertifiedPayrollPage({
   // the rows come back out.
   const missingName = new Map<string, string>();
   for (const entry of entries) {
-    if (payrollWorkerName(entry.employeeUser).nameMissing) {
-      missingName.set(entry.employeeUserId, entry.employeeUser.email);
+    if (timeEntryWorkerName(entry).nameMissing) {
+      missingName.set(timeEntryWorkerId(entry), entry.employeeUser?.email ?? "");
     }
   }
 
   const summaryInputs: CertifiedPayrollTimeEntryInput[] = entries.map((entry) => ({
-    employeeUserId: entry.employeeUserId,
+    employeeUserId: timeEntryWorkerId(entry),
     // NOT `name ?? email`. See lib/worker-name.ts — this column is a
     // statement to a government agency about who did the work.
-    employeeName: payrollWorkerName(entry.employeeUser).label,
+    employeeName: timeEntryWorkerName(entry).label,
     craftClassificationId: entry.craftClassificationId,
     craftLabel: entry.craftClassification
       ? `${entry.craftClassification.unionLocal.parentInternational} ${entry.craftClassification.unionLocal.localNumber} — ${entry.craftClassification.name}`

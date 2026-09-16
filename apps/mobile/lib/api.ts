@@ -1,7 +1,10 @@
 import type {
   CreateFieldReportInput,
+  Craft,
+  CrewMember,
   FieldReportRow,
   Job,
+  LineItem,
   MaterialOrder,
   Media,
   PunchListItem,
@@ -112,7 +115,16 @@ export async function listTimeEntries(jobId: string, token: string): Promise<Tim
 
 export async function createTimeEntry(
   jobId: string,
-  input: { date: string; hours: string; payType: string; note?: string; clientOperationId?: string },
+  input: {
+    date: string;
+    hours: string;
+    payType: string;
+    note?: string;
+    clientOperationId?: string;
+    crewMemberId?: string;
+    lineItemId?: string;
+    craftClassificationId?: string;
+  },
   token: string,
 ): Promise<TimeEntry> {
   return request(`/api/v1/jobs/${encodeURIComponent(jobId)}/time-entries`, {
@@ -120,6 +132,18 @@ export async function createTimeEntry(
     token,
     body: input,
   });
+}
+
+export async function listCrew(token: string): Promise<CrewMember[]> {
+  return request(`/api/v1/crew`, { token });
+}
+
+export async function listLineItems(jobId: string, token: string): Promise<LineItem[]> {
+  return request(`/api/v1/jobs/${encodeURIComponent(jobId)}/line-items`, { token });
+}
+
+export async function listCrafts(token: string): Promise<Craft[]> {
+  return request(`/api/v1/crafts`, { token });
 }
 
 export async function listVendors(token: string): Promise<Vendor[]> {

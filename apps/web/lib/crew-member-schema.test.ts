@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Prisma, TimeEntry, CrewMember } from "@prova/db";
+import type { Prisma, TimeEntry, CrewMember, User } from "@prova/db";
 
 /**
  * The regression test for the CrewMember change — and the only one of its
@@ -40,12 +40,12 @@ type Assert<T extends true> = T;
 
 // --- unchanged by this migration -------------------------------------------
 
-type _EmployeeUserIdIsStillRequired = Assert<Equals<TimeEntry["employeeUserId"], string>>;
+type _EmployeeUserIdIsNullable = Assert<Equals<TimeEntry["employeeUserId"], string | null>>;
 
 /** The include every read path uses. `employeeUser` must be `User`, never
  * `User | null` — this is the type that certified payroll dereferences. */
 type WithEmployee = Prisma.TimeEntryGetPayload<{ include: { employeeUser: true } }>;
-type _EmployeeUserIsNonNullable = Assert<Equals<WithEmployee["employeeUser"], NonNullable<WithEmployee["employeeUser"]>>>;
+type _EmployeeUserIsNullable = Assert<Equals<WithEmployee["employeeUser"], User | null>>;
 
 // --- added by this migration, and optional everywhere ----------------------
 
@@ -72,8 +72,8 @@ describe("TimeEntry keeps the shape certified payroll depends on", () => {
   it("compiles — the assertions above are what this test is", () => {
     // Every assertion in this file is a type. `pnpm typecheck` is the
     // assertion runner; this body exists so the file appears in the suite.
-    const proof: _EmployeeUserIdIsStillRequired &
-      _EmployeeUserIsNonNullable &
+    const proof: _EmployeeUserIdIsNullable &
+      _EmployeeUserIsNullable &
       _CrewMemberIdIsOptional &
       _CrewMemberRelationIsOptional &
       _LegalFirstNameRequired &

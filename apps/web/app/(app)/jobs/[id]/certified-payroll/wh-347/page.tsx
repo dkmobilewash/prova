@@ -24,6 +24,7 @@ import { NoAccess } from "@/components/NoAccess";
 import { PrintButton } from "@/components/PrintButton";
 import { money } from "@/lib/money";
 import { certifiedPayrollWeekStart } from "@/lib/certified-payroll-week";
+import { timeEntryWorkerName, timeEntryWorkerId } from "@/lib/worker-name";
 import { loadCertifiedPayrollWeekEntries } from "@/lib/certified-payroll-query";
 import type { FringeRateScheduleInput } from "@/lib/labor-cost";
 import {
@@ -117,10 +118,10 @@ export default async function Wh347Page({
   );
 
   const wh347Entries: Wh347TimeEntryInput[] = entries.map((entry) => ({
-    employeeUserId: entry.employeeUserId,
+    employeeUserId: timeEntryWorkerId(entry),
     // The identity, not a pre-formatted name: lib/wh347.ts owns the
     // "never an email on a filing" decision so both pages cannot drift.
-    employee: { name: entry.employeeUser.name, email: entry.employeeUser.email },
+    employee: { name: timeEntryWorkerName(entry).label, email: entry.employeeUser?.email ?? "" },
     craftClassificationId: entry.craftClassificationId,
     craftLabel: entry.craftClassification
       ? `${entry.craftClassification.unionLocal.parentInternational} ${entry.craftClassification.unionLocal.localNumber} — ${entry.craftClassification.name}`
