@@ -312,7 +312,6 @@ describe("a crew member with hours on the record cannot be deleted", () => {
     const entry = await prisma.timeEntry.create({
       data: {
         jobId,
-        employeeUserId: officeUserId,
         crewMemberId: crew.id,
         craftClassificationId: craftId,
         date: utc("2026-08-27"),
@@ -334,7 +333,6 @@ describe("a crew member with hours on the record cannot be deleted", () => {
     const entry = await prisma.timeEntry.create({
       data: {
         jobId,
-        employeeUserId: officeUserId,
         crewMemberId: crew.id,
         date: utc("2026-08-28"),
         hours: "8",
