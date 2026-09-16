@@ -73,7 +73,7 @@ export async function listToolboxTalks(jobId: string, token: string): Promise<To
 
 export async function createToolboxTalk(
   jobId: string,
-  input: { topic: string; heldOn: string; presenter?: string; attendees?: string; notes?: string },
+  input: { topic: string; heldOn: string; presenter?: string; attendees?: string; notes?: string; clientOperationId?: string },
   token: string,
 ): Promise<ToolboxTalk> {
   return request(`/api/v1/jobs/${encodeURIComponent(jobId)}/toolbox-talks`, {
@@ -95,6 +95,7 @@ export async function createIncident(
     occurredAt: string;
     classification: string;
     outcome: string;
+    clientOperationId?: string;
   },
   token: string,
 ): Promise<SafetyIncident> {
@@ -111,7 +112,7 @@ export async function listTimeEntries(jobId: string, token: string): Promise<Tim
 
 export async function createTimeEntry(
   jobId: string,
-  input: { date: string; hours: string; payType: string; note?: string },
+  input: { date: string; hours: string; payType: string; note?: string; clientOperationId?: string },
   token: string,
 ): Promise<TimeEntry> {
   return request(`/api/v1/jobs/${encodeURIComponent(jobId)}/time-entries`, {
@@ -138,6 +139,7 @@ export async function createMaterialOrder(
     vendorId: string;
     vendorReference?: string;
     notes?: string;
+    clientOperationId?: string;
   },
   token: string,
 ): Promise<MaterialOrder> {
@@ -174,7 +176,7 @@ export async function listPunchListItems(jobId: string, token: string): Promise<
 
 export async function createPunchListItem(
   jobId: string,
-  input: { description: string },
+  input: { description: string; clientOperationId?: string },
   token: string,
 ): Promise<PunchListItem> {
   return request(`/api/v1/jobs/${encodeURIComponent(jobId)}/punch-list`, {

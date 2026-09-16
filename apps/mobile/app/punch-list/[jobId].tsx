@@ -1,11 +1,17 @@
 import { useAuth } from "@clerk/expo";
 import { useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
-import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
-import { colors } from "@/lib/theme";
+import { Field } from "@/components/Field";
+import { List } from "@/components/List";
+import { Sheet } from "@/components/Sheet";
+import { colors, typography } from "@/lib/theme";
 import * as api from "@/lib/api";
+import { uuid } from "@/lib/id";
+import { enqueue } from "@/lib/sync-queue";
+import { useSync } from "@/lib/use-sync";
 import type { PunchListItem } from "@/lib/types";
 
 export default function PunchListScreen() {
@@ -13,7 +19,6 @@ export default function PunchListScreen() {
   const { getToken } = useAuth();
   const [items, setItems] = useState<PunchListItem[]>([]);
   const [error, setError] = useState<string | null>(null);
-
   const [showForm, setShowForm] = useState(false);
   const [description, setDescription] = useState("");
 
@@ -35,17 +40,15 @@ export default function PunchListScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobId]);
 
+  const { pending, sync } = useSync(load);
+
   const submit = async () => {
-    const token = await getToken();
-    if (!token || !jobId || !description.trim()) return;
-    try {
-      await api.createPunchListItem(jobId, { description: description.trim() }, token);
-      setDescription("");
-      setShowForm(false);
-      await load();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to add item");
-    }
+    if (!jobId || !description.trim()) return;
+    const text = description.trim();
+    setDescription("");
+    setShowForm(false);
+    await enqueue({ type: "punch-list:create", jobId, clientOperationId: uuid(), description: text });
+    await sync();
   };
 
   const toggle = async (item: PunchListItem) => {
@@ -60,77 +63,79 @@ export default function PunchListScreen() {
   };
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: colors.canvas, padding: 16 }}>
-      {error ? <Text style={{ color: colors.tagRoseInk, marginBottom: 12 }}>{error}</Text> : null}
-
-      <Button variant="secondary" onPress={() => setShowForm((v) => !v)}>
-        {showForm ? "Cancel" : "Add item"}
-      </Button>
-      {showForm ? (
-        <View style={{ gap: 8, marginBottom: 12 }}>
-          <TextInput
-            placeholder="What needs fixing"
-            placeholderTextColor={colors.inkMuted}
-            value={description}
-            onChangeText={setDescription}
-            multiline
-            style={[inputStyle, { minHeight: 60, textAlignVertical: "top" }]}
-          />
-          <Button variant="primary" onPress={submit}>
-            Save item
-          </Button>
-        </View>
-      ) : null}
-
-      {items.length === 0 ? (
-        <Text style={{ color: colors.inkMuted, marginTop: 16 }}>
-          Nothing outstanding on this job.
-        </Text>
-      ) : (
-        items.map((item) => (
-          <Card key={item.id} style={{ marginBottom: 8 }}>
-            <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10 }}>
-              <Pressable
-                onPress={() => toggle(item)}
-                accessibilityRole="checkbox"
-                accessibilityState={{ checked: item.isDone }}
-                accessibilityLabel={item.isDone ? "Mark as not done" : "Mark as done"}
-                style={{
-                  width: 24,
-                  height: 24,
-                  borderRadius: 4,
-                  borderWidth: 1,
-                  borderColor: item.isDone ? colors.brand : colors.lineCard,
-                  backgroundColor: item.isDone ? colors.brand : colors.surface,
-                  alignItems: "center",
-                  justifyContent: "center",
-                  marginTop: 1,
-                }}
-              >
-                {item.isDone ? <Text style={{ color: "#ffffff", lineHeight: 18 }}>✓</Text> : null}
-              </Pressable>
-              <Text
-                style={{
-                  color: item.isDone ? colors.inkMuted : colors.ink,
-                  textDecorationLine: item.isDone ? "line-through" : "none",
-                  flex: 1,
-                }}
-              >
+    <View style={styles.screen}>
+      {pending > 0 ? <Text style={styles.pending}>Pending sync: {pending}</Text> : null}
+      {error ? <Text style={styles.error}>{error}</Text> : null}
+      <List
+        data={items}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) => (
+          <Card style={styles.itemCard}>
+            <Pressable
+              onPress={() => toggle(item)}
+              style={styles.itemRow}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: item.isDone }}
+              accessibilityLabel={item.isDone ? "Mark as not done" : "Mark as done"}
+            >
+              <View style={[styles.box, item.isDone && styles.boxDone]}>
+                {item.isDone ? <Text style={styles.check}>✓</Text> : null}
+              </View>
+              <Text style={[styles.description, item.isDone && styles.descriptionDone]}>
                 {item.description}
               </Text>
-            </View>
+            </Pressable>
           </Card>
-        ))
-      )}
-    </ScrollView>
+        )}
+        emptyTitle="Nothing outstanding on this job."
+        emptyDescription="Tap “Add item” to log what still needs fixing."
+      />
+
+      <View style={styles.footer}>
+        <Button fullWidth onPress={() => setShowForm(true)}>
+          Add item
+        </Button>
+      </View>
+
+      <Sheet
+        visible={showForm}
+        onClose={() => setShowForm(false)}
+        title="Add punch list item"
+        primaryLabel="Save item"
+        onPrimary={submit}
+      >
+        <Field
+          label="What needs fixing"
+          placeholder="e.g. Ceiling grid out of level"
+          value={description}
+          onChangeText={setDescription}
+          multiline
+        />
+      </Sheet>
+    </View>
   );
 }
 
-const inputStyle = {
-  borderWidth: 1,
-  borderColor: colors.lineCard,
-  backgroundColor: colors.surface,
-  borderRadius: 6,
-  padding: 10,
-  color: colors.ink,
-};
+const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: colors.canvas },
+  pending: { color: colors.link, padding: 16, paddingBottom: 0, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
+  error: { color: colors.tagRoseInk, padding: 16, paddingBottom: 0, fontSize: typography.size.sm },
+  itemCard: { padding: 0 },
+  itemRow: { flexDirection: "row", alignItems: "flex-start", gap: 12, padding: 16 },
+  box: {
+    width: 28,
+    height: 28,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: colors.lineCard,
+    backgroundColor: colors.surface,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 1,
+  },
+  boxDone: { backgroundColor: colors.brand, borderColor: colors.brand },
+  check: { color: colors.brandInk, fontSize: 18, fontWeight: typography.weight.bold, lineHeight: 22 },
+  description: { color: colors.ink, fontSize: typography.size.md, flex: 1 },
+  descriptionDone: { color: colors.inkMuted, textDecorationLine: "line-through" },
+  footer: { padding: 16, paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.lineRow },
+});

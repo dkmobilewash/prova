@@ -106,6 +106,10 @@ model TimeEntry {
 
   note String?
 
+  /// Idempotency key from the phone, so a retried offline POST replays
+  /// instead of duplicating. Null for web writes.
+  clientOperationId String?
+
   createdAt DateTime @default(now())
 
   /// WHEN this entry was last corrected and BY WHOM. Issue #63: until then a
@@ -133,6 +137,7 @@ model TimeEntry {
   lastCorrectedByUserId String?
   lastCorrectedByUser   User?     @relation("TimeEntryCorrectedBy", fields: [lastCorrectedByUserId], references: [id])
 
+  @@unique([jobId, clientOperationId])
   @@index([jobId])
   @@index([lineItemId])
   @@index([employeeUserId])

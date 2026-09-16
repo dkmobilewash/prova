@@ -15,9 +15,9 @@ const ACCENT_BAR: Record<Accent, string> = {
 };
 
 /**
- * A surface, mirroring the web Card: light ground, hairline border, no
- * shadow. `accent` draws the 3px bar down the left edge, for summary
- * tiles only.
+ * A surface — white on white, hairline border, no shadow. `accent` draws a
+ * 4px bar down the left edge, for summary tiles only (a colour on
+ * everything is a colour that says nothing).
  */
 export function Card({
   accent,
@@ -40,7 +40,7 @@ export function Card({
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: 8,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: colors.lineCard,
     backgroundColor: colors.surface,
@@ -51,8 +51,8 @@ const styles = StyleSheet.create({
     left: 0,
     top: 0,
     bottom: 0,
-    width: 3,
-    borderTopLeftRadius: 8,
-    borderBottomLeftRadius: 8,
+    width: 4,
+    borderTopLeftRadius: 12,
+    borderBottomLeftRadius: 12,
   },
 });

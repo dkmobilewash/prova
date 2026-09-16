@@ -68,8 +68,17 @@ export async function POST(
   const description = String(input.description ?? "").trim();
   if (!description) return jsonError("Description is required", 400);
 
+  // Idempotent create: a retried offline POST replays instead of duplicating.
+  const clientOperationId = String(input.clientOperationId ?? "").trim() || undefined;
+  if (clientOperationId) {
+    const existing = await prisma.punchListItem.findUnique({
+      where: { companyId_clientOperationId: { companyId: context.companyId, clientOperationId } },
+    });
+    if (existing) return NextResponse.json(toJson(existing), { status: 200 });
+  }
+
   const item = await prisma.punchListItem.create({
-    data: { companyId: context.companyId, jobId: job.id, description, raisedByUserId: context.id },
+    data: { companyId: context.companyId, jobId: job.id, description, raisedByUserId: context.id, clientOperationId },
   });
 
   return NextResponse.json(toJson(item), { status: 201 });

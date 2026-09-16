@@ -1,22 +1,26 @@
 import type { ReactNode } from "react";
 import { Pressable, StyleSheet, Text } from "react-native";
-import { colors } from "@/lib/theme";
+import { colors, typography } from "@/lib/theme";
 
 type Variant = "primary" | "secondary" | "ghost";
 
 /**
- * The web Button (packages/ui/src/Button.tsx), reimplemented natively:
- * primary = brand fill, secondary = hairline on surface, ghost = body text.
+ * Primary = the brand yellow fill with a DARK label (yellow is a fill, never
+ * text on a light canvas). Secondary = hairline on surface. Ghost = a link.
+ * Min height 52pt, comfortably above the 44pt floor, and the label is 17pt
+ * semibold — a gloved thumb hits it without aiming.
  */
 export function Button({
   variant = "primary",
   onPress,
   disabled,
+  fullWidth,
   children,
 }: {
   variant?: Variant;
   onPress?: () => void;
   disabled?: boolean;
+  fullWidth?: boolean;
   children: ReactNode;
 }) {
   return (
@@ -26,6 +30,7 @@ export function Button({
       style={({ pressed }) => [
         styles.base,
         variantStyles[variant],
+        fullWidth && styles.fullWidth,
         disabled && styles.disabled,
         pressed && styles.pressed,
       ]}
@@ -39,23 +44,32 @@ const styles = StyleSheet.create({
   base: {
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 6,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    borderRadius: 12,
+    minHeight: 52,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
   },
-  disabled: { opacity: 0.5 },
+  fullWidth: { alignSelf: "stretch" },
+  disabled: { opacity: 0.4 },
   pressed: { opacity: 0.85 },
-  label: { fontSize: 14, fontWeight: "500" },
+  label: {
+    fontSize: typography.size.md,
+    fontWeight: typography.weight.semibold,
+  },
 });
 
 const variantStyles: Record<Variant, object> = {
   primary: { backgroundColor: colors.brand },
-  secondary: { borderWidth: 1, borderColor: colors.lineCard, backgroundColor: colors.surface },
+  secondary: {
+    borderWidth: 1,
+    borderColor: colors.lineCard,
+    backgroundColor: colors.surface,
+  },
   ghost: {},
 };
 
 const labelStyles: Record<Variant, object> = {
-  primary: { color: "#ffffff" },
-  secondary: { color: colors.inkLabel },
-  ghost: { color: colors.inkBody },
+  primary: { color: colors.brandInk },
+  secondary: { color: colors.ink },
+  ghost: { color: colors.link },
 };

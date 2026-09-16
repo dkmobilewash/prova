@@ -108,6 +108,16 @@ export async function POST(
     return jsonError("The promised date can't be before the order was placed", 400);
   }
 
+  // Idempotent create: a retried offline POST replays instead of duplicating.
+  const clientOperationId = String(input.clientOperationId ?? "").trim() || undefined;
+  if (clientOperationId) {
+    const existing = await prisma.materialOrder.findUnique({
+      where: { companyId_clientOperationId: { companyId: context.companyId, clientOperationId } },
+      select: orderSelect,
+    });
+    if (existing) return NextResponse.json(toJson(existing), { status: 200 });
+  }
+
   const order = await prisma.$transaction(async (tx) => {
     const counter = await tx.materialOrderCounter.upsert({
       where: { jobId: job.id },
@@ -128,6 +138,7 @@ export async function POST(
         orderedOn,
         promisedFor,
         orderedByUserId: context.id,
+        clientOperationId,
       },
       select: orderSelect,
     });
