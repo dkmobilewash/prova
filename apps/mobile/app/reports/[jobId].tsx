@@ -16,7 +16,7 @@ export default function ReportsScreen() {
     <View style={{ flex: 1, backgroundColor: colors.canvas, padding: 16, gap: 12 }}>
       <Text style={{ color: colors.inkMuted }}>Pending sync: {pending}</Text>
       {error ? <Text style={{ color: colors.tagRoseInk }}>{error}</Text> : null}
-      <View style={{ flexDirection: "row", gap: 8 }}>
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
         <Button variant="secondary" onPress={() => router.push(`/photos/${jobId}`)}>
           Photos
         </Button>
@@ -25,6 +25,9 @@ export default function ReportsScreen() {
         </Button>
         <Button variant="secondary" onPress={() => router.push(`/time/${jobId}`)}>
           Time
+        </Button>
+        <Button variant="secondary" onPress={() => router.push(`/materials/${jobId}`)}>
+          Materials
         </Button>
       </View>
 

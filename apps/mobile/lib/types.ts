@@ -116,3 +116,19 @@ export type TimeEntry = {
   note: string | null;
   employeeName: string;
 };
+
+export type Vendor = {
+  id: string;
+  name: string;
+};
+
+export type MaterialOrder = {
+  id: string;
+  number: number;
+  description: string;
+  vendorReference: string | null;
+  notes: string | null;
+  orderedOn: string;
+  promisedFor: string | null;
+  vendorName: string;
+};

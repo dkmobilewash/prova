@@ -2,11 +2,13 @@ import type {
   CreateFieldReportInput,
   FieldReportRow,
   Job,
+  MaterialOrder,
   Media,
   SafetyIncident,
   TimeEntry,
   ToolboxTalk,
   UpdateFieldReportInput,
+  Vendor,
 } from "./types";
 
 const BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
@@ -112,6 +114,33 @@ export async function createTimeEntry(
   token: string,
 ): Promise<TimeEntry> {
   return request(`/api/v1/jobs/${encodeURIComponent(jobId)}/time-entries`, {
+    method: "POST",
+    token,
+    body: input,
+  });
+}
+
+export async function listVendors(token: string): Promise<Vendor[]> {
+  return request(`/api/v1/vendors`, { token });
+}
+
+export async function listMaterialOrders(jobId: string, token: string): Promise<MaterialOrder[]> {
+  return request(`/api/v1/jobs/${encodeURIComponent(jobId)}/material-orders`, { token });
+}
+
+export async function createMaterialOrder(
+  jobId: string,
+  input: {
+    description: string;
+    orderedOn: string;
+    promisedFor?: string;
+    vendorId: string;
+    vendorReference?: string;
+    notes?: string;
+  },
+  token: string,
+): Promise<MaterialOrder> {
+  return request(`/api/v1/jobs/${encodeURIComponent(jobId)}/material-orders`, {
     method: "POST",
     token,
     body: input,
