@@ -29,6 +29,9 @@ export default function ReportsScreen() {
         <Button variant="secondary" onPress={() => router.push(`/materials/${jobId}`)}>
           Materials
         </Button>
+        <Button variant="secondary" onPress={() => router.push(`/punch-list/${jobId}`)}>
+          Punch list
+        </Button>
       </View>
 
       <TextInput

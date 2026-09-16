@@ -132,3 +132,10 @@ export type MaterialOrder = {
   promisedFor: string | null;
   vendorName: string;
 };
+
+export type PunchListItem = {
+  id: string;
+  description: string;
+  isDone: boolean;
+  completedAt: string | null;
+};

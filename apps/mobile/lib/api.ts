@@ -4,6 +4,7 @@ import type {
   Job,
   MaterialOrder,
   Media,
+  PunchListItem,
   SafetyIncident,
   TimeEntry,
   ToolboxTalk,
@@ -165,4 +166,33 @@ export async function uploadMedia(jobId: string, formData: FormData, token: stri
     throw new ApiError(data?.error ?? `Upload failed (${res.status})`, res.status);
   }
   return data as Media;
+}
+
+export async function listPunchListItems(jobId: string, token: string): Promise<PunchListItem[]> {
+  return request(`/api/v1/jobs/${encodeURIComponent(jobId)}/punch-list`, { token });
+}
+
+export async function createPunchListItem(
+  jobId: string,
+  input: { description: string },
+  token: string,
+): Promise<PunchListItem> {
+  return request(`/api/v1/jobs/${encodeURIComponent(jobId)}/punch-list`, {
+    method: "POST",
+    token,
+    body: input,
+  });
+}
+
+export async function setPunchListItemDone(
+  jobId: string,
+  itemId: string,
+  isDone: boolean,
+  token: string,
+): Promise<PunchListItem> {
+  return request(`/api/v1/jobs/${encodeURIComponent(jobId)}/punch-list/${encodeURIComponent(itemId)}`, {
+    method: "PATCH",
+    token,
+    body: { isDone },
+  });
 }
