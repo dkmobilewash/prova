@@ -2,7 +2,7 @@ import { prisma } from "@prova/db";
 import { calculateJobWip, calculateLineItemWip, type WipJobResult } from "./wip";
 import { loadRetainageHeld } from "./retainage-query";
 import { calculatePaymentReliability, type PaymentReliability } from "./gc-reliability";
-import { daysPastDueFor, effectiveDueDateFor } from "./cash-flow";
+import { arBalanceFor, daysPastDueFor, effectiveDueDateFor } from "./cash-flow";
 import { MIN_ESTIMATE_COVERAGE, jobHealthSentence, jobIsOverBudget } from "./company-financials";
 
 /**
@@ -67,6 +67,12 @@ export async function loadTodayDashboard(companyId: string, now: Date) {
         id: true,
         number: true,
         amount: true,
+        // READ, not a dead over-select — contrast the job-health list
+        // below, which deliberately takes `amount` only. The receivables
+        // tile nets this out of what it calls outstanding, because
+        // retainage is not due until substantial completion and this tile
+        // has to say the same thing /cash-flow says. Issue #288.
+        retainageWithheld: true,
         dueAt: true,
         issuedAt: true,
         jobId: true,
@@ -127,6 +133,10 @@ export async function loadTodayDashboard(companyId: string, now: Date) {
             invoices: {
               select: {
                 amount: true,
+                // Also read, by isSettled: without it no invoice with
+                // retainage on it could ever settle and this column's two
+                // timing figures were blank for every GC. Issue #288.
+                retainageWithheld: true,
                 issuedAt: true,
                 dueAt: true,
                 payments: { select: { amount: true, receivedAt: true, feeAmount: true } },
@@ -144,7 +154,22 @@ export async function loadTodayDashboard(companyId: string, now: Date) {
     .map((invoice) => {
       const amount = Number(invoice.amount);
       const paid = invoice.payments.reduce((sum, payment) => sum + Number(payment.amount), 0);
-      return { invoice, amount, paid, outstanding: amount - paid };
+      // The one AR rule, imported rather than mirrored — the same reason
+      // effectiveDueDateFor is imported two lines below. Retainage is not
+      // due until substantial completion, so it is not outstanding here;
+      // /cash-flow reports it as retainage receivable. Mirroring the rule
+      // by hand is how this tile and that page disagreed about overdue
+      // invoices twice already.
+      return {
+        invoice,
+        amount,
+        paid,
+        outstanding: arBalanceFor({
+          amount,
+          paidAmount: paid,
+          retainageWithheld: invoice.retainageWithheld != null ? Number(invoice.retainageWithheld) : null,
+        }),
+      };
     })
     // A rounding cent should not appear as an unpaid invoice.
     .filter((row) => row.outstanding > 0.005);
@@ -275,6 +300,10 @@ export async function loadTodayDashboard(companyId: string, now: Date) {
           );
           return {
             amount: Number(invoice.amount),
+            // Held back by contract, not paid late — see
+            // lib/gc-reliability.ts and issue #288.
+            retainageWithheld:
+              invoice.retainageWithheld != null ? Number(invoice.retainageWithheld) : null,
             issuedAt: invoice.issuedAt,
             dueAt: invoice.dueAt,
             paidAmount: payments.reduce((sum, payment) => sum + Number(payment.amount), 0),

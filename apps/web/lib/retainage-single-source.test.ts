@@ -74,6 +74,10 @@ const RETAINAGE_COLUMN_FILES: Record<string, string> = {
 
   // ------------------------------ per-job / per-invoice, by necessity ---
   "app/(app)/cash-flow/page.tsx": "Retainage receivable TABLE — needs job rows, not a total.",
+  "app/(app)/contacts/[id]/page.tsx":
+    "One invoice's snapshot, fed to calculatePaymentReliability so a retainage-bearing invoice can settle. Per-invoice by necessity; never a total. Arrived with #288.",
+  "lib/today-dashboard.ts":
+    "TWO per-invoice reads, both arrived with #288: the receivables tile nets it out of `outstanding` via arBalanceFor, and the GC reliability column passes it to calculatePaymentReliability. The COMPANY-WIDE retainage figure on this page is still loadRetainageHeld and is asserted below — these are per-invoice rows, never summed into a total here.",
   "app/(app)/jobs/[id]/page.tsx": "One job's own retainage panel.",
   "lib/pay-application-query.ts":
     "Assembles one pay application. PR #156 moved this out of the page so the G702 arithmetic could be tested without a database; the page now renders what this returns.",
@@ -94,6 +98,10 @@ const RETAINAGE_COLUMN_FILES: Record<string, string> = {
   "lib/export.ts": "Names the column in the Invoice CSV export.",
   "lib/pay-application.ts": "Pure G702 arithmetic — documentation only, no query.",
   "lib/retainage.ts": "Per-job arithmetic — documentation only, no query.",
+  "lib/cash-flow.ts":
+    "Pure arithmetic, no query — names the column as an INPUT FIELD so the AR balance can be net of it (#288). `arBalanceFor` is the one place that subtraction happens; every AR surface imports it rather than mirroring it.",
+  "lib/gc-reliability.ts":
+    "Pure arithmetic, no query — names the column as an input field so `isSettled` can compare cash against what was CERTIFIED DUE rather than gross (#288).",
 
   // ------------------------------------------------------------ tests ---
   "lib/retainage-query.dbtest.ts": "Proves the figure against real rows.",
@@ -110,6 +118,17 @@ const RETAINAGE_COLUMN_FILES: Record<string, string> = {
   "lib/ask/handlers.cashFlowForecast.test.ts":
     "Fakes the invoice rows the forecast's retainage half is built from, including one job with no substantial completion date.",
   "lib/actions/ask.dbtest.ts": "Asserts the snapshot on the invoice a tapped card created, and seeds the snapshots a release card is made from, against real rows.",
+  "app/(app)/cash-flow/page.test.ts":
+    "Renders the page with money on it — the assembly rather than the arithmetic, which is where #288 actually lived.",
+  "lib/cash-flow.test.ts":
+    "Pins the AR balance as net of retainage, and the forecast identity that no dollar is in both halves (#288).",
+  "lib/gc-reliability.test.ts": "Pins that a retainage-bearing invoice can settle, and that a genuine shortfall still cannot (#288).",
+  "lib/ask/handlers.receivables.test.ts":
+    "Fakes the invoice rows the receivables tool sums, snapshot included — the first behavioural test that tool's arithmetic has ever had (#288).",
+  "lib/today-dashboard.test.ts":
+    "Fakes the invoice rows the receivables tile and the GC reliability column are built from, snapshot included — and asserts that the COMPANY-WIDE retainage figure is still whatever loadRetainageHeld returns, which is the #97 guarantee that grep used to provide for that file.",
+  "lib/actions/billing.dbtest.ts":
+    "Reads the snapshot off the real invoice row it feeds to calculateArAgingInvoice, so the #102 boundary assertion stays honest if that fixture ever gains a retainage rate.",
 };
 
 /** Case-sensitive, and not matched inside a longer identifier: this is the
@@ -146,14 +165,63 @@ describe("every file that reads the retainage column is accounted for", () => {
 
 describe("the two callers that render a company-wide total", () => {
   // These are the two that disagreed in #97 — the metric bar via the app
-  // layout, and the Today card. Neither may name the column at all now:
-  // the list above would fail if they did. What is asserted here is the
-  // positive side, that they ask the one loader.
+  // layout, and the Today card. What is asserted here is the positive
+  // side, that both ask the one loader for the COMPANY-WIDE figure.
   for (const path of ["lib/company-financials-query.ts", "lib/today-dashboard.ts"]) {
     it(`${path} asks lib/retainage-query.ts rather than the database`, () => {
       const source = readFileSync(join(WEB, path), "utf8");
       expect(source).toContain("loadRetainageHeld");
-      expect(source).not.toMatch(COLUMN);
     });
   }
+
+  // BOTH halves used to be asserted for BOTH files: the negative one said
+  // neither may name the column at all. #288 ended that for
+  // today-dashboard.ts, which now reads the column per invoice twice — the
+  // receivables tile nets it out of `outstanding`, and the GC reliability
+  // column needs it for `isSettled`. Both are per-invoice reads; neither
+  // sums anything.
+  //
+  // SAY PLAINLY WHAT IS NO LONGER CHECKED, rather than letting the loss
+  // hide in a passing suite: nothing here now stops someone summing the
+  // column in today-dashboard.ts and rendering that as the company total,
+  // which is #97 exactly. The remaining defences are the assertion above,
+  // the allowlist entry that had to be written by hand to add this file,
+  // and `retainage-query.dbtest.ts`, which compares the bar against the
+  // card and is indifferent to which side drifts.
+  //
+  // company-financials-query.ts keeps the strict form. It has no per-invoice
+  // question to ask, so naming the column there is still a defect on sight.
+  it("lib/company-financials-query.ts does not name the column at all", () => {
+    expect(readFileSync(join(WEB, "lib/company-financials-query.ts"), "utf8")).not.toMatch(COLUMN);
+  });
+});
+
+/**
+ * The one #288 call site with no render test behind it.
+ *
+ * BE HONEST ABOUT WHAT THIS PROVES, the same way page-money-guards.test.ts
+ * is: it is a static check that the contact page still hands the column to
+ * `calculatePaymentReliability`. It renders nothing and cannot tell you the
+ * value is right. The arithmetic is proven behaviourally in
+ * gc-reliability.test.ts, and the same wiring is proven by a real render in
+ * today-dashboard.test.ts for the OTHER caller of that function.
+ *
+ * What it catches is the realistic regression and the one this repo keeps
+ * paying for — "written, documented, and never called": somebody tidying
+ * the object literal, the field going missing, and every timing figure on
+ * that page silently reverting to gross with the suite still green. The
+ * allowlist above would not notice, because the file would still name the
+ * column in its Prisma include.
+ */
+describe("the contact page hands the column to the calculator", () => {
+  const source = readFileSync(join(WEB, "app/(app)/contacts/[id]/page.tsx"), "utf8");
+
+  it("passes retainageWithheld into calculatePaymentReliability's input", () => {
+    expect(source).toContain("calculatePaymentReliability");
+    expect(source).toMatch(/retainageWithheld:\s*invoice\.retainageWithheld/);
+  });
+
+  it("says on screen what the timing figures left out", () => {
+    expect(source).toContain("reliability.retainageExcluded");
+  });
 });
