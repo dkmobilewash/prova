@@ -117,6 +117,15 @@ export async function POST(
 
   const caseYear = occurredAt.getUTCFullYear();
 
+  // Idempotent create: a retried offline POST replays instead of duplicating.
+  const clientOperationId = String(input.clientOperationId ?? "").trim() || undefined;
+  if (clientOperationId) {
+    const existing = await prisma.safetyIncident.findUnique({
+      where: { companyId_clientOperationId: { companyId: context.companyId, clientOperationId } },
+    });
+    if (existing) return NextResponse.json(toJson(existing), { status: 200 });
+  }
+
   // One transaction: duplicate check first, then the counter increment, then
   // the row — so a resubmission files nothing new and a number is never burned.
   const incident = await prisma.$transaction(async (tx) => {
@@ -149,6 +158,7 @@ export async function POST(
         daysAway,
         daysRestricted,
         reportedByUserId: context.id,
+        clientOperationId,
       },
     });
   });

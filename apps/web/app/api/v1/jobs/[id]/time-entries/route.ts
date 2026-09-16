@@ -96,6 +96,23 @@ export async function POST(
   const payTypeRaw = String(input.payType ?? "STRAIGHT");
   const payType = (PAY_TYPES.includes(payTypeRaw) ? payTypeRaw : "STRAIGHT") as TimeEntryPayType;
 
+  // Idempotent create: a retried offline POST replays instead of duplicating.
+  const clientOperationId = String(input.clientOperationId ?? "").trim() || undefined;
+  if (clientOperationId) {
+    const existing = await prisma.timeEntry.findUnique({
+      where: { jobId_clientOperationId: { jobId: job.id, clientOperationId } },
+      select: {
+        id: true,
+        date: true,
+        hours: true,
+        payType: true,
+        note: true,
+        employeeUser: { select: { name: true, email: true } },
+      },
+    });
+    if (existing) return NextResponse.json(toJson(existing), { status: 200 });
+  }
+
   const entry = await prisma.timeEntry.create({
     data: {
       jobId: job.id,
@@ -104,6 +121,7 @@ export async function POST(
       hours,
       payType,
       note: String(input.note ?? "").trim() || null,
+      clientOperationId,
     },
     select: {
       id: true,
