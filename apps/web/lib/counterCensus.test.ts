@@ -171,6 +171,11 @@ const NUMBERED_TABLES: Record<string, { accessor: string; helper: string }> = {
     accessor: "contractDocument",
     helper: "issueContractDocumentVersion",
   },
+  // #289, added by #290 while this census was in review — the first counter
+  // this file has ever been asked to admit, and it worked as designed: the
+  // build went red on the merge naming exactly this model, rather than the
+  // counter quietly sitting outside every assertion below.
+  EstimateVersionCounter: { accessor: "estimateVersion", helper: "issueEstimateVersionNumber" },
   InvoiceCounter: { accessor: "invoice", helper: "issueInvoiceNumber" },
   MaterialOrderCounter: { accessor: "materialOrder", helper: "issueOrderNumber" },
   RfiCounter: { accessor: "rfi", helper: "issueRfiNumber" },
