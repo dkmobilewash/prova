@@ -25,11 +25,13 @@ export default function RootLayout() {
       <Stack>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="sign-in" options={{ title: "Sign in" }} />
+        <Stack.Screen name="job/[jobId]" options={{ title: "Job" }} />
         <Stack.Screen name="reports/[jobId]" options={{ title: "Field reports" }} />
         <Stack.Screen name="photos/[jobId]" options={{ title: "Photos" }} />
         <Stack.Screen name="safety/[jobId]" options={{ title: "Safety" }} />
         <Stack.Screen name="time/[jobId]" options={{ title: "Time" }} />
         <Stack.Screen name="materials/[jobId]" options={{ title: "Materials" }} />
+        <Stack.Screen name="punch-list/[jobId]" options={{ title: "Punch list" }} />
       </Stack>
     </ClerkProvider>
   );

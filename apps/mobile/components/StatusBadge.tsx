@@ -1,10 +1,9 @@
 import { StyleSheet, Text, View } from "react-native";
-import { colors } from "@/lib/theme";
+import { colors, typography } from "@/lib/theme";
 
 /**
- * Job status (and integration state) as a tag, mirroring the web
- * StatusBadge: a translucent ground under a saturated ink, never a solid
- * fill.
+ * Job status (and integration state) as a tag — a light ground under a dark
+ * saturated ink, so the meaning survives on a sunlit white canvas.
  */
 const STYLES: Record<string, { bg: string; ink: string }> = {
   ESTIMATE: { bg: colors.tagSlate, ink: colors.tagSlateInk },
@@ -45,8 +44,8 @@ const styles = StyleSheet.create({
   badge: {
     alignSelf: "flex-start",
     borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 2,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
   },
-  label: { fontSize: 12, fontWeight: "500" },
+  label: { fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
 });
