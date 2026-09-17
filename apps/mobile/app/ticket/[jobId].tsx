@@ -1,0 +1,140 @@
+import { useAuth } from "@clerk/expo";
+import { useLocalSearchParams } from "expo-router";
+import { useEffect, useState } from "react";
+import { StyleSheet, Text, View } from "react-native";
+import { Button } from "@/components/Button";
+import { Card } from "@/components/Card";
+import { Field } from "@/components/Field";
+import { List } from "@/components/List";
+import { Sheet } from "@/components/Sheet";
+import { colors, typography } from "@/lib/theme";
+import * as api from "@/lib/api";
+import { uuid } from "@/lib/id";
+import { enqueue } from "@/lib/sync-queue";
+import { useSync } from "@/lib/use-sync";
+import type { TmTicket } from "@/lib/types";
+
+/** The user's calendar date — the day the work was done, not the UTC day. */
+function localToday(): string {
+  const d = new Date();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
+export default function TicketScreen() {
+  const { jobId } = useLocalSearchParams<{ jobId: string }>();
+  const { getToken } = useAuth();
+  const [tickets, setTickets] = useState<TmTicket[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  const [showForm, setShowForm] = useState(false);
+  const [workDate, setWorkDate] = useState(localToday());
+  const [workDescription, setWorkDescription] = useState("");
+  const [signerName, setSignerName] = useState("");
+
+  const load = async () => {
+    const token = await getToken();
+    if (!token || !jobId) return;
+    try {
+      setTickets(await api.listTmTickets(jobId, token));
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load tickets");
+    }
+  };
+
+  useEffect(() => {
+    (async () => {
+      await load();
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobId]);
+
+  const { pending, sync } = useSync(load);
+
+  const submit = async () => {
+    if (!jobId || !workDate || !workDescription.trim() || !signerName.trim()) return;
+    setWorkDescription("");
+    setSignerName("");
+    setShowForm(false);
+    await enqueue({
+      type: "ticket:create",
+      jobId,
+      clientOperationId: uuid(),
+      workDate,
+      workDescription: workDescription.trim(),
+      signerName: signerName.trim(),
+    });
+    await sync();
+  };
+
+  return (
+    <View style={styles.screen}>
+      {pending > 0 ? <Text style={styles.pending}>Pending sync: {pending}</Text> : null}
+      {error ? <Text style={styles.error}>{error}</Text> : null}
+      <List
+        data={tickets}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) => (
+          <Card>
+            <View style={styles.head}>
+              <Text style={styles.date}>{item.workDate}</Text>
+              <Text style={styles.signer}>Signed: {item.signerName}</Text>
+            </View>
+            <Text style={styles.description}>{item.workDescription}</Text>
+            {item.snapshot ? (
+              <Text style={styles.summary}>
+                {item.snapshot.labor.length} labour entr{item.snapshot.labor.length === 1 ? "y" : "ies"} ·{" "}
+                {item.snapshot.materials.length} material{item.snapshot.materials.length === 1 ? "" : "s"}
+              </Text>
+            ) : null}
+          </Card>
+        )}
+        emptyTitle="No T&M tickets"
+        emptyDescription="Tap “New ticket” to document and sign the day's extra work."
+      />
+
+      <View style={styles.footer}>
+        <Button fullWidth onPress={() => setShowForm(true)}>
+          New ticket
+        </Button>
+      </View>
+
+      <Sheet
+        visible={showForm}
+        onClose={() => setShowForm(false)}
+        title="New T&M ticket"
+        primaryLabel="Sign & save"
+        onPrimary={submit}
+      >
+        <Field label="Date" placeholder="YYYY-MM-DD" value={workDate} onChangeText={setWorkDate} />
+        <Field
+          label="What was done"
+          placeholder="Describe the extra work"
+          value={workDescription}
+          onChangeText={setWorkDescription}
+          multiline
+        />
+        <Field
+          label="Client's name"
+          placeholder="Their typed name is the signature"
+          value={signerName}
+          onChangeText={setSignerName}
+        />
+      </Sheet>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: colors.canvas },
+  pending: { color: colors.link, padding: 16, paddingBottom: 0, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
+  error: { color: colors.tagRoseInk, padding: 16, paddingBottom: 0, fontSize: typography.size.sm },
+  head: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  date: { color: colors.ink, fontSize: typography.size.md, fontWeight: typography.weight.semibold },
+  signer: { color: colors.inkMuted, fontSize: typography.size.sm },
+  description: { color: colors.inkBody, fontSize: typography.size.md, marginTop: 4 },
+  summary: { color: colors.inkMuted, fontSize: typography.size.sm, marginTop: 4 },
+  footer: { padding: 16, paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.lineRow },
+});

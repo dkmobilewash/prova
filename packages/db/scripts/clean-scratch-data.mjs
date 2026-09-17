@@ -228,6 +228,7 @@ async function main() {
     await del("equipmentAssignment", () => prisma.equipmentAssignment.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("timeEntry", () => prisma.timeEntry.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("dailyFieldReport", () => prisma.dailyFieldReport.deleteMany({ where: { jobId: { in: jobIds } } }));
+    await del("tmTicket", () => prisma.tmTicket.deleteMany({ where: { jobId: { in: jobIds } } }));
     // JobMedia is RESTRICT on Job, so this has to precede the job delete.
     // NOTE: this removes the ROWS, not the blobs they point at — the
     // files stay in the store, orphaned. Deleting them needs a blob call

@@ -1371,6 +1371,7 @@ async function undo(companyId) {
     await del("dailyFieldReport", () =>
       prisma.dailyFieldReport.deleteMany({ where: { jobId: { in: jobIds } } }),
     );
+    await del("tmTicket", () => prisma.tmTicket.deleteMany({ where: { jobId: { in: jobIds } } }));
     // RESTRICT on Job — see the note in clean-scratch-data.mjs about the
     // blobs these rows point at, which this does not remove.
     await del("jobMedia", () => prisma.jobMedia.deleteMany({ where: { jobId: { in: jobIds } } }));

@@ -73,6 +73,7 @@ model Job {
   prevailingWageDeterminations PrevailingWageDetermination[]
   retainageReleases            RetainageRelease[]
   punchListItems               PunchListItem[]
+  tmTickets                    TmTicket[]
   dailyFieldReports            DailyFieldReport[]
   media                        JobMedia[]
   /// Documents dropped into `/intake` and filed against this job. Optional
