@@ -169,6 +169,17 @@ export function isRestricted(user: Principal): boolean {
  */
 export const ROUTE_CAPABILITY: Record<string, Capability> = {
   "/cash-flow": "VIEW_COMPANY_FINANCIALS",
+  // Budget against actual for every phase code, summed across every job —
+  // the whole book of cost, grouped by phase instead of by job. Gated like
+  // `/cash-flow` rather than on VIEW_JOB_COSTS, whose own comment above
+  // scopes it to "a job": PROJECT_MANAGER is excluded from company-wide
+  // money on the stated ground that "a PM needs their own jobs rather than
+  // the whole book", and this page IS the whole book. Arguable, and the
+  // cost of the call is that an ESTIMATOR — who holds VIEW_JOB_COSTS and
+  // would use cost history to price the next job — does not reach it. They
+  // still read cost job by job. Widening this is one line later; a page
+  // that has already shown the whole book cannot be un-shown.
+  "/phase-codes": "VIEW_COMPANY_FINANCIALS",
   "/catalog": "MANAGE_ESTIMATING",
   "/bids": "MANAGE_ESTIMATING",
   "/pipeline": "MANAGE_ESTIMATING",

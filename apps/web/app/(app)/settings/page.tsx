@@ -19,6 +19,7 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { ConfirmDeleteButton } from "@/components/ConfirmDeleteButton";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { CompanyLicenses } from "@/components/CompanyLicenses";
+import { PhaseCodes } from "@/components/PhaseCodes";
 import { CompanyProfileForm } from "@/components/CompanyProfileForm";
 import { companyProfileGaps, type CompanyProfile } from "@/lib/company-profile";
 import { QuickBooksMapping, QuickBooksSyncLog } from "@/components/QuickBooksMapping";
@@ -135,7 +136,7 @@ export default async function SettingsPage({
     );
   }
 
-  const [connection, locations, insurancePolicies, bonds, licences, accountMappings, rawSyncAttempts, classifications] = await Promise.all([
+  const [connection, locations, insurancePolicies, bonds, licences, accountMappings, rawSyncAttempts, classifications, phaseCodes] = await Promise.all([
     prisma.quickBooksConnection.findUnique({
       where: { companyId: company.id },
       include: { connectedByUser: true },
@@ -165,6 +166,15 @@ export default async function SettingsPage({
     prisma.licenseClassificationReference.findMany({
       orderBy: [{ jurisdictionName: "asc" }, { code: "asc" }],
       select: { jurisdictionName: true, code: true, label: true },
+    }),
+    // Phase codes, in the company's own reading order — which is neither
+    // alphabetical nor code order, hence sortOrder first. The line count
+    // comes back with them so the Retire button can say what it is about
+    // to leave behind rather than the reader having to guess.
+    prisma.phaseCode.findMany({
+      where: { companyId: company.id },
+      orderBy: [{ sortOrder: "asc" }, { code: "asc" }],
+      include: { _count: { select: { lineItems: true } } },
     }),
   ]);
 
@@ -485,6 +495,37 @@ export default async function SettingsPage({
           // Passed down rather than computed in the browser: the client
           // deciding what day it is would disagree with this render.
           today={serverToday()}
+          canManage={currentUser.role === "OWNER"}
+        />
+      </section>
+
+      {/* Phase codes sit here, after the licences and before the insurance,
+          because this is where the company's own reference data lives. The
+          report they feed is its own page — this section is the vocabulary,
+          not the numbers. */}
+      <section id="phase-codes" className="mb-10">
+        <h2 className="mb-3 text-sm font-semibold text-ink-label">Phase codes</h2>
+        <p className="mb-4 text-sm text-ink-body">
+          Your own cost codes, exactly as you write them on your own budget — a number and a name,
+          like <span className="text-ink-label">04112 — Plywood - SF</span>. Free text on purpose:
+          nothing here is checked against MasterFormat or any other standard list, so your reports
+          read the way your budget already does. Coding a line item to one of these is what lets{" "}
+          <Link href="/phase-codes" className="text-link hover:text-link-hover">
+            Phase codes
+          </Link>{" "}
+          total budget against actual for the same phase across every job.
+        </p>
+        <PhaseCodes
+          phaseCodes={phaseCodes.map((phaseCode) => ({
+            id: phaseCode.id,
+            code: phaseCode.code,
+            name: phaseCode.name,
+            unit: phaseCode.unit,
+            tracksLabor: phaseCode.tracksLabor,
+            isActive: phaseCode.isActive,
+            sortOrder: phaseCode.sortOrder,
+            lineItemCount: phaseCode._count.lineItems,
+          }))}
           canManage={currentUser.role === "OWNER"}
         />
       </section>
