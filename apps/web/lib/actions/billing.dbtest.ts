@@ -165,10 +165,23 @@ describe("submitPayApplication against a real database", () => {
     await prisma.$disconnect();
   });
 
+  /** The period every pay application below is submitted for. A fixed date
+   * rather than anything derived from the clock: the point of the column is
+   * that the period is ENTERED, so a test that computed it from `now()`
+   * would be asserting the very behaviour the column exists to end. */
+  const PERIOD_TO = "2026-08-31";
+
   // formData.getAll needs repeated keys, which FormData.set can't express
   // via the plain form() helper above — build this one directly.
+  //
+  // `periodTo` is required by submitPayApplication since the PERIOD TO work:
+  // a G702 states the period it covers and the action refuses without one.
+  // These four tests are the only thing that runs the whole path —
+  // formData → parse → builder → `prisma.invoice.create` — against a real
+  // database, so they are also where a stamped date would be caught.
   function multiForm(values: { lineItemId: string; thisPeriodBilled: string; materialsStoredValue: string }[]) {
     const fd = new FormData();
+    fd.append("periodTo", PERIOD_TO);
     for (const row of values) {
       fd.append("lineItemId", row.lineItemId);
       fd.append("thisPeriodBilled", row.thisPeriodBilled);
@@ -184,6 +197,34 @@ describe("submitPayApplication against a real database", () => {
     );
     expect(result).toEqual({ ok: true });
     expect(await prisma.invoice.count({ where: { jobId } })).toBe(1);
+  });
+
+  it("STORES THE ENTERED PERIOD, and it is not the moment of the click", async () => {
+    // The whole reason the column exists. `issuedAt` is the submission
+    // timestamp and was rejected as a stand-in precisely because a G702's
+    // PERIOD TO is a different fact — so the assertion that matters is not
+    // only "a period was stored" but "it is not `issuedAt` wearing a new
+    // name". Replacing the parsed value with `new Date()` at the call site
+    // compiles and passes every unit test; this is the one place that
+    // catches it.
+    const invoice = await prisma.invoice.findFirstOrThrow({ where: { jobId }, orderBy: { number: "asc" } });
+    expect(invoice.periodTo).not.toBeNull();
+    expect(invoice.periodTo?.toISOString().slice(0, 10)).toBe(PERIOD_TO);
+    expect(invoice.periodTo?.getTime()).not.toBe(invoice.issuedAt.getTime());
+  });
+
+  it("refuses a pay application with no period at all", async () => {
+    // A G702 states PERIOD TO at the top and it is the field a GC's
+    // accounting department keys on. Submitting without one is refused —
+    // returned as a sentence, never thrown, because production redacts a
+    // thrown Server Action message into a dead button.
+    const fd = new FormData();
+    fd.append("lineItemId", lineItemId);
+    fd.append("thisPeriodBilled", "10000");
+    fd.append("materialsStoredValue", "0");
+    const result = await submitPayApplication(jobId, fd);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/period/i);
   });
 
   it("refuses an identical resubmission moments later — the #102 double-bill case", async () => {
