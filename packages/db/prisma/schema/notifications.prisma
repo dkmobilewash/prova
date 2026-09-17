@@ -175,3 +175,28 @@ model NotificationDispatch {
   @@index([alertKey])
   @@index([messageId])
 }
+
+/// One device a user has push notifications on. Registered by the phone the
+/// moment it gets an Expo push token, refreshed on every app open, so a
+/// real-time event can reach the person at the device rather than only by
+/// email.
+model DeviceToken {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+  userId    String
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// The Expo push token for this device — the address a push is sent to.
+  expoToken String
+
+  /// "ios" | "android". Expo needs it to format the push.
+  platform String
+
+  createdAt DateTime @default(now())
+  lastSeenAt DateTime @default(now())
+
+  @@unique([expoToken])
+  @@index([userId])
+  @@index([companyId])
+}
