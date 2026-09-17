@@ -25,6 +25,8 @@ const LABELS: Record<ToolName, string> = {
   safety_record: "your safety log",
   open_submittals: "open submittals",
   certification_expiry: "certifications",
+  apprentice_ratio: "the apprentice ratio",
+  closeout_status: "closeout",
 };
 
 export function toolLabel(name: ToolName): string {

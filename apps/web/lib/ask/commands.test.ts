@@ -283,6 +283,8 @@ describe("read-tool capabilities match the pages they cite", () => {
     // than a compliance one: the question this answers is "who can start on
     // Monday", which a foreman asks and a compliance manager does not.
     certification_expiry: ROUTE_CAPABILITY["/certifications"],
+    apprentice_ratio: ROUTE_CAPABILITY["/union-compliance"],
+    closeout_status: ROUTE_CAPABILITY["/closeout"],
   };
 
   it.each(TOOLS.map((tool) => [tool.name, tool.capability] as const))("%s", (name, capability) => {

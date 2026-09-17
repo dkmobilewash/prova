@@ -91,7 +91,9 @@ export type ToolName =
   | "job_labor_cost"
   | "safety_record"
   | "open_submittals"
-  | "certification_expiry";
+  | "certification_expiry"
+  | "apprentice_ratio"
+  | "closeout_status";
 
 export type ToolDefinition = {
   name: ToolName;
@@ -187,6 +189,20 @@ const expiryWindowFilter = {
       type: "string",
       description:
         "Optional. How many days ahead to count as expiring soon, e.g. 30. Omit for 60, which is what an unqualified question means. Anything already expired is always included.",
+    },
+  },
+};
+
+/** A calendar month, because the ratio rule binds per day inside one and
+ * the remittance that follows it is monthly. Resolved by the app when
+ * omitted: "this month" is not a thing to let a model compute. */
+const monthFilter = {
+  type: "object" as const,
+  properties: {
+    month: {
+      type: "string",
+      description:
+        "Optional. The month to review as YYYY-MM, e.g. 2026-09. Omit for the current month, which is what an unqualified question means.",
     },
   },
 };
@@ -338,6 +354,22 @@ export const TOOLS: ToolDefinition[] = [
     description:
       "Worker certifications — OSHA 10 and 30, scaffold, aerial lift, fall protection, respirator fit test, first aid and the rest — that are EXPIRED or expiring soon, worst first, with whose they are and the date. Answers 'who is going to be turned away at the gate'. A certification with no expiry date recorded is reported as undated rather than as current, because an unknown date is not the same as a good one. It knows only what has been filed here: it cannot confirm that somebody holds a card nobody entered, and it does not know any GC's own site-access rules.",
     input_schema: expiryWindowFilter,
+  },
+  {
+    name: "apprentice_ratio",
+    // /union-compliance
+    capability: "MANAGE_COMPLIANCE",
+    description:
+      "Whether each job stayed inside its apprentice-to-journeyman ratio for a month, per union local, with the days it went over and the worst single day's excess hours. Answers 'are we in ratio'. The ratio is checked PER DAY against the journeyman hours actually worked, not averaged across the month — a week of compliance does not buy a day over. A day with hours nobody has classified is reported as INCOMPLETE rather than compliant, because a day cannot honestly be certified while somebody on site is unaccounted for. It reports what the logged hours show; it does not know who was physically on site, and it cannot tell you whether a local has granted a variance.",
+    input_schema: monthFilter,
+  },
+  {
+    name: "closeout_status",
+    // /closeout
+    capability: "MANAGE_JOBS",
+    description:
+      "How close each job is to closing out: the stage it has reached, what is blocking it in the order that matters, the retainage the GC is still holding on it, and how long the GC has had the current closeout package. Answers 'what is stopping us getting paid the last of it'. Retainage outstanding is reported ALONGSIDE the blockers and is never itself one — it is what the blockers are costing. It does not know a GC's internal approval steps, and it cannot say when they will release.",
+    input_schema: jobFilter,
   },
 ];
 

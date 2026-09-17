@@ -1,8 +1,8 @@
-### Two more things the assistant can look up
+### Four more things the assistant can look up
 
-`open_submittals` and `certification_expiry`, taking the read surface from
-thirteen tools to fifteen. Both are reads — nothing new can be written, and
-no command was added.
+`open_submittals`, `certification_expiry`, `apprentice_ratio` and
+`closeout_status`, taking the read surface from fifteen tools to nineteen.
+All four are reads — nothing new can be written, and no command was added.
 
 **`open_submittals` — "what is the GC still sitting on?"** Submittals sent
 and not returned, with days outstanding, the date back, and whether it has
@@ -45,9 +45,45 @@ An `OTHER` card is named by whatever was typed into `otherLabel`, and says
 "Unnamed certification" when nothing was — never the literal word "Other" as
 if that were the name of a card.
 
+**`apprentice_ratio` — "are we in ratio?"** Per job, per union local, for a
+month, from `loadRatioReviews` — the same function /union-compliance
+renders, so the page and the assistant cannot report a different number of
+days over.
+
+This is the only tool in the registry whose answer could be quoted into a
+certified-payroll conversation, so the interesting question about it is what
+it says when it does not know. **A month containing days nobody could
+classify is not a compliant month; it is a month nobody can certify.**
+`daysOver === 0` is true of such a month and means nothing, so the verdict
+is false when any day is incomplete — and null, not true, where no ratio
+rule is on file for that local at all. A verdict from a rule that does not
+exist is worse than no verdict.
+
+The rule is rendered as the page's own phrase, "1 apprentice per 3
+journeymen", so the model cannot print the ratio upside down. An unreadable
+month falls back to the current one, because an empty review reads as "you
+were in ratio" about a month nobody checked.
+
+**`closeout_status` — "what is stopping us getting the last of it?"** Stage,
+blockers, retainage at stake and how long the GC has had the package, from
+`loadCloseoutJobs`.
+
+Two things a reasonable implementation gets wrong here. **Blocker order is
+data** — `closeoutReadiness` returns them most-binding-first so a caller
+showing one shows the thing to do next, and sorting them replaces that
+judgement with an arbitrary one. And **retainage is not a blocker**; it
+rides alongside. Folding it in puts an item nobody can action on a list
+titled "what is stopping us", and loses the sentence that makes the real
+ones matter — this is what they are costing.
+
+Stage and blocker text come from `closeoutPackageLabels`, which /closeout
+renders. "No closeout checklist yet, so nothing has been asserted" is worth
+preserving exactly: it is not the same claim as "nothing is wrong".
+
 **Capabilities follow the page each cites**, which is the rule `tools.ts`
 already states: `/submittals` is `MANAGE_JOBS`, `/certifications` is
-`MANAGE_FIELD`. The second is worth naming — the question is "who can start
+`MANAGE_FIELD`, `/union-compliance` is `MANAGE_COMPLIANCE`, `/closeout` is
+`MANAGE_JOBS`. The second is worth naming — the question is "who can start
 on Monday", which a foreman asks and a compliance manager does not.
 
 **What adding a tool actually costs here, recorded because it is the good
@@ -57,12 +93,15 @@ censuses — one asserting every tool's capability matches its citation page,
 one asserting every tool has at least one routing eval case. Nothing shipped
 half-wired, and none of it needed remembering.
 
-17 new tests. Four mutations watched RED and restored: counting never-sent
+33 new tests. Eight mutations watched RED and restored: counting never-sent
 drafts as open, reporting `pastDue: false` where no date was agreed, dropping
-undated certifications, and returning nothing on an unreadable window.
+undated certifications, returning nothing on an unreadable window, reading the
+ratio verdict off `daysOver` alone, giving a verdict where no rule exists,
+passing an unreadable month straight through, and sorting the closeout
+blockers.
 
-**Not verified, and not claimed:** neither tool has been asked a real question
-through the box. The tests fake the rows, so they prove the rules and not the
+**Not verified, and not claimed:** none of the four has been asked a real
+question through the box. The tests fake the rows, so they prove the rules and not the
 Prisma queries that feed them — in particular the `orderBy revisionNumber
 desc, take 1` that selects a submittal's latest revision is asserted by
 nothing here, because the fixture holds what that query would return.

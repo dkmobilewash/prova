@@ -26,6 +26,10 @@ import { calculateRetainageSummary } from "@/lib/retainage";
 import { loadRetainageHeld } from "@/lib/retainage-query";
 import { changeOrderValueDelta, countUnbookable, PENDING_CHANGE_ORDER_STATUSES } from "@/lib/change-order";
 import { calculateTimeEntryLaborCost, findEffectiveFringeRateSchedule } from "@/lib/labor-cost";
+import { loadRatioReviews } from "@/lib/union-compliance-query";
+import { ratioLabel } from "@/lib/apprentice-ratio";
+import { loadCloseoutJobs } from "@/lib/closeout-query";
+import { blockerLabel, stageLabel } from "@/components/closeoutPackageLabels";
 import { classificationLabel, isRecordable, outcomeLabel } from "@/components/safetyLabels";
 import {
   currentRevision,
@@ -55,7 +59,7 @@ import { matchesJobName, TOOLS, type ToolName, type ToolResult } from "./tools";
  * All read-only.
  */
 
-type Input = { jobName?: string; status?: string; year?: string; withinDays?: string };
+type Input = { jobName?: string; status?: string; year?: string; withinDays?: string; month?: string };
 
 const iso = (date: Date | null) => (date ? date.toISOString().slice(0, 10) : null);
 
@@ -112,7 +116,20 @@ export const HANDLERS: Record<
   safety_record: safetyRecord,
   open_submittals: openSubmittals,
   certification_expiry: certificationExpiry,
+  apprentice_ratio: apprenticeRatio,
+  closeout_status: closeoutStatus,
 };
+
+/** A month the person named, or this one. Same principle as the expiry
+ * window: the model sends a string, and one this cannot read falls back to
+ * the current month rather than to nothing. An empty ratio review reads as
+ * "you were in ratio", which is the wrong answer to give about a month
+ * nobody actually checked. */
+export function ratioMonth(raw: string | undefined, today: string): string {
+  const wanted = raw?.trim();
+  if (wanted && /^\d{4}-(0[1-9]|1[0-2])$/.test(wanted)) return wanted;
+  return today.slice(0, 7);
+}
 
 /** How far ahead "expiring soon" reaches when nobody said. Sixty days is the
  * renewal window the compliance page already uses, so the assistant and the
@@ -1445,6 +1462,113 @@ async function certificationExpiry(companyId: string, input: Input): Promise<Too
     unavailable:
       rows.length === 0
         ? `No certification is expired or expiring within ${withinDays} days, and every one on file has a date.`
+        : undefined,
+  };
+}
+
+
+/**
+ * Whether each job stayed inside its apprentice ratio, per union local.
+ *
+ * Every figure comes from `loadRatioReviews`, which is what
+ * /union-compliance renders — so the assistant and the page cannot report
+ * a different number of days over.
+ *
+ * Two things are stated here rather than left for the model to work out,
+ * because both are the question rather than colour:
+ *
+ *   - `inRatio` is a verdict, and it is FALSE when any day is incomplete.
+ *     A month with unclassified hours is not a compliant month; it is a
+ *     month nobody can certify. Reporting it as compliant is the specific
+ *     way this tool could do harm, since the answer would be quoted into a
+ *     certified payroll conversation.
+ *   - `rule` is the label the page shows ("1 apprentice per 3 journeymen"),
+ *     not the two raw numbers, so the model cannot render the ratio upside
+ *     down.
+ */
+async function apprenticeRatio(companyId: string, input: Input): Promise<ToolResult> {
+  const citations = [{ label: "Union compliance", href: "/union-compliance" }];
+  const month = ratioMonth(input.month, serverToday());
+  const reviews = await loadRatioReviews(companyId, month);
+
+  const rows = reviews.map((review) => ({
+    job: review.jobName,
+    unionLocal: review.unionLocalLabel,
+    // Null when no rule is on file for that local: the hours were reviewed
+    // against nothing, and saying "in ratio" would be a verdict from a rule
+    // that does not exist.
+    rule: review.rule ? ratioLabel(review.rule) : null,
+    daysChecked: review.summary.daysChecked,
+    daysOver: review.summary.daysOver,
+    daysIncomplete: review.summary.daysIncomplete,
+    worstExcessHours: review.summary.worstExcessHours,
+    offendingDates: review.summary.offendingDates,
+    inRatio:
+      review.rule === null
+        ? null
+        : review.summary.daysOver === 0 && review.summary.daysIncomplete === 0,
+  }));
+
+  return {
+    data: { month, rows },
+    summary: {
+      jobsReviewed: rows.length,
+      jobsOverRatio: rows.filter((row) => row.daysOver > 0).length,
+      jobsWithUnclassifiedHours: rows.filter((row) => row.daysIncomplete > 0).length,
+    },
+    citations,
+    unavailable:
+      rows.length === 0
+        ? `No hours were logged against a union local in ${month}, so there is nothing to check the ratio against.`
+        : undefined,
+  };
+}
+
+/**
+ * What is standing between each job and the last of its money.
+ *
+ * `blockers` arrives already ordered most-binding-first from
+ * `closeoutReadiness`, and that order is preserved: a caller reading only
+ * the first one gets the thing to do next rather than an arbitrary item.
+ *
+ * `retainageAtStake` rides alongside and is never presented as a blocker.
+ * It is not something to fix — it is what the blockers are costing, which
+ * is the sentence that makes somebody act on the list.
+ */
+async function closeoutStatus(companyId: string, input: Input): Promise<ToolResult> {
+  const citations = [{ label: "Closeout", href: "/closeout" }];
+  const jobMismatch = await jobNameMismatch(companyId, input.jobName);
+  if (jobMismatch) return { data: [], citations, unavailable: jobMismatch };
+
+  const jobs = await loadCloseoutJobs(companyId, serverToday());
+  const rows = jobs
+    .filter((job) => matchesJobName(job.name, input.jobName))
+    .map((job) => ({
+      job: job.name,
+      gc: job.clientName,
+      // The page's own words for both, so the answer and the screen cannot
+      // describe the same job differently. "no closeout checklist yet, so
+      // nothing has been asserted" is a sentence worth preserving exactly:
+      // it is not the same claim as "nothing is wrong".
+      stage: stageLabel(job.readiness.stage),
+      blockers: job.readiness.blockers.map(blockerLabel),
+      openPunchItems: job.openPunchItems,
+      retainageAtStake: job.readiness.retainageAtStake,
+      daysWithGc: job.readiness.daysWithGc,
+    }));
+
+  return {
+    data: rows,
+    summary: {
+      jobs: rows.length,
+      jobsBlocked: rows.filter((row) => row.blockers.length > 0).length,
+    },
+    citations,
+    unavailable:
+      rows.length === 0
+        ? input.jobName
+          ? "That job has nothing recorded on the closeout side yet."
+          : "No job has anything recorded on the closeout side yet."
         : undefined,
   };
 }

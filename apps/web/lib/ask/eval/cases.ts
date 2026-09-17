@@ -103,6 +103,10 @@ export const EVAL_CASES: EvalCase[] = [
   // rounded to the default — "in the next 30 days" is a different question
   // from "soon", and a foreman planning a week means it literally.
   tool("read-certs-window", "any cards expiring in the next 30 days?", "certification_expiry", { withinDays: "30" }, FIELD),
+  tool("read-ratio", "are we in ratio?", "apprentice_ratio"),
+  // The month must survive as the person's own, not be rounded to "now".
+  tool("read-ratio-month", "did we stay in ratio in August 2026?", "apprentice_ratio", { month: "2026-08" }),
+  tool("read-closeout", "what is stopping us closing out Riverside?", "closeout_status", { jobName: "Riverside" }),
 
   // ------------------------------------------------------- commands
   command("cmd-create-estimate", "create an estimate for Riverside Plaza for Turner", "create_estimate_job", { jobName: "Riverside Plaza", gcName: "Turner" }),
