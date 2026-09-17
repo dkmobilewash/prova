@@ -4,7 +4,7 @@ import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { PrintButton } from "@/components/PrintButton";
 import { money } from "@/lib/money";
-import { formatInstant } from "@/lib/render-date";
+import { payAppHeaderDates } from "@/lib/billing/pay-app-period";
 import { viewerTimeZone } from "@/lib/viewerToday";
 import { loadPayApplication } from "@/lib/pay-application-query";
 
@@ -31,8 +31,10 @@ export default async function PayApplicationPage({
   }
   const { job, invoice, isPayApplication, lineItems: lineItemResults, summary } = view;
   // `issuedAt` is when the invoice was actually issued, not a date someone
-  // typed, so it renders where the reader is standing.
+  // typed, so it renders where the reader is standing. `periodTo` IS a date
+  // someone typed — a plain calendar day, rendered in UTC for everybody.
   const timeZone = await viewerTimeZone();
+  const dates = payAppHeaderDates(invoice, timeZone);
 
   return (
     <div className="mx-auto max-w-4xl p-6 print:p-0">
@@ -47,9 +49,25 @@ export default async function PayApplicationPage({
         Application for payment #{invoice.number} — {job.name}
       </h1>
       <p className="mt-1 text-sm text-ink-muted">
-        {job.contact.name} · {formatInstant(invoice.issuedAt, timeZone)}
+        {job.contact.name}
         {invoice.description ? ` · ${invoice.description}` : ""}
       </p>
+      {/* PERIOD TO first and named, because that is the field a GC's
+          accounting department keys on and this document used to headline
+          the submission timestamp instead, unlabelled. Both dates appear:
+          they are genuinely different, and neither substitutes for the
+          other. An application that predates Invoice.periodTo says so
+          rather than borrowing issuedAt. */}
+      <dl className="mt-3 flex flex-wrap gap-x-10 gap-y-2 text-sm">
+        <div>
+          <dt className="text-xs uppercase tracking-wide text-ink-muted">Period to</dt>
+          <dd className={dates.periodRecorded ? "text-ink" : "text-ink-muted"}>{dates.periodTo}</dd>
+        </div>
+        <div>
+          <dt className="text-xs uppercase tracking-wide text-ink-muted">Application date</dt>
+          <dd className="text-ink">{dates.applicationDate}</dd>
+        </div>
+      </dl>
       <p className="mt-3 max-w-2xl text-xs text-ink-muted">
         This is a G702/G703-style summary and continuation sheet built from this job&rsquo;s schedule of values — it is
         not formatted as the AIA G702/G703 forms themselves.

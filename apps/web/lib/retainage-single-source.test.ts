@@ -90,6 +90,8 @@ const RETAINAGE_COLUMN_FILES: Record<string, string> = {
     "WRITES the snapshot for a plain invoice: createInvoice's body, lifted so the form and the draft_invoice card share one write and one formula. Never reads a total.",
   "lib/billing/retainage-release.ts":
     "READS one job's snapshots to sum them the way the job page does — the same calculateRetainageSummary call over the same rows — for the release_retainage card's three figures and for the ceiling and the stale-card check on its tap. Per-job by necessity; never a total. Arrived with phase 4d of the Ask build.",
+  "lib/billing/pay-app-invoice-data.ts":
+    "CARRIES the snapshot submitPayApplication already computed into the insert — it is the shape of that one write, lifted out so the G702 PERIOD TO date it also carries can be executed by a test. Computes nothing and reads nothing.",
   "lib/actions/quickbooks.ts": "Maps one invoice's snapshot into a QuickBooks memo.",
   "lib/export.ts": "Names the column in the Invoice CSV export.",
   "lib/pay-application.ts": "Pure G702 arithmetic — documentation only, no query.",
@@ -104,6 +106,8 @@ const RETAINAGE_COLUMN_FILES: Record<string, string> = {
     "Pins the invoice-push idempotency path, which asserts on the retainage snapshot it sends. Arrived with #160.",
   "lib/ask/commands/billing.test.ts": "Fakes the lifted core's result, snapshot included, to pin what the invoice card hands back.",
   "lib/billing/retainage-release.test.ts": "Fakes the invoice rows the lifted release core sums, snapshot included, to pin its cents and its two refusals.",
+  "lib/billing/pay-app-period.test.ts":
+    "Names the column only as one field of the pay-application insert it holds, to prove the rest of the application still rides along beside the new periodTo. No retainage arithmetic.",
   "lib/ask/commands/retainage.test.ts": "Fakes the invoice rows the release card is made from, so the card's figures run through the real per-job read.",
   "lib/ask/handlers.retainageHeld.test.ts":
     "Fakes the invoice rows retainage_held sums per job, and makes loadRetainageHeld disagree with them on purpose — the only way to prove which of the two the company figure is read from.",

@@ -13,6 +13,8 @@ import { revokeToken, refreshTokens, getCompanyInfo, generateWipNarrative, type 
 import { calculateLineItemWip, calculateJobWip } from "@/lib/wip";
 import { createInvoiceRecord } from "@/lib/billing/create-invoice";
 import { issueInvoiceNumber } from "@/lib/billing/invoice-number";
+import { parsePayAppPeriodTo } from "@/lib/billing/pay-app-period";
+import { payApplicationInvoiceData } from "@/lib/billing/pay-app-invoice-data";
 // Shared with recordExecutedSubcontract in lib/actions/jobs.ts, the other
 // writer of this table — issue #280. It was private to this file, which is
 // exactly how that action came to keep its own MAX(versionNumber) + 1.
@@ -332,7 +334,12 @@ export async function createInvoice(jobId: string, formData: FormData) {
  * Returns an ActionResult rather than throwing its guard messages —
  * production REDACTS thrown Server Action messages, so a refusal that
  * throws shows the user an opaque digest while the $140,000 application
- * they were trying to submit is simply not created, with no explanation. */
+ * they were trying to submit is simply not created, with no explanation.
+ *
+ * REQUIRES a period ending date, which is the G702 PERIOD TO field and is
+ * entered, not stamped. See lib/billing/pay-app-period.ts for why it is
+ * refused rather than defaulted here, and why `issuedAt` cannot stand in
+ * for it. */
 export async function submitPayApplication(jobId: string, formData: FormData): Promise<ActionResult> {
   const { company } = await requireCompanyContext();
   const job = await assertJobInCompany(jobId, company.id);
@@ -408,6 +415,16 @@ export async function submitPayApplication(jobId: string, formData: FormData): P
   const dueRaw = String(formData.get("dueAt") ?? "").trim();
   const dueAt = dueRaw ? new Date(dueRaw) : null;
 
+  // The G702 PERIOD TO date, typed by the person submitting. Refused
+  // rather than defaulted here: a default computed on the server is a
+  // stamped date wearing an entered date's clothes, and this is the field
+  // a GC keys on. The form pre-fills the end of last month from the USER'S
+  // calendar (components/localToday.ts) — see PayApplications.tsx.
+  const period = parsePayAppPeriodTo(String(formData.get("periodTo") ?? ""));
+  if (!period.ok) {
+    return actionFail(period.error);
+  }
+
   const amount = rows.reduce((sum, row) => sum + row.thisPeriodBilled + row.materialsStoredValue, 0);
   const retainageWithheld =
     job.retainagePercent != null ? ((amount * Number(job.retainagePercent)) / 100).toFixed(2) : null;
@@ -416,10 +433,17 @@ export async function submitPayApplication(jobId: string, formData: FormData): P
   // invoice number, and retainageWithheld is snapshotted at creation and
   // deliberately never recomputed (see the field comment on Invoice) — so a
   // duplicate here isn't just a second document, it's a second retainage
-  // figure nothing ever reconciles against the first. There is no period
-  // field on Invoice to use as a natural key (see billing.prisma), so this
-  // checks the job's single most recent invoice for an identical amount and
-  // per-line breakdown submitted in the last 10 seconds — long enough to
+  // figure nothing ever reconciles against the first.
+  //
+  // `Invoice.periodTo` EXISTS now and this guard still does not use it as a
+  // natural key — the older version of this comment said no period field
+  // existed, which was true when it was written. A period is not a unique
+  // key by intent: a GC rejects an application and the sub re-sends a
+  // corrected one for the SAME period, which is routine, and refusing it
+  // would be a worse bug than the one being prevented. So this stays what
+  // it was — a check of the job's single most recent invoice for an
+  // identical amount and per-line breakdown submitted in the last 10
+  // seconds, long enough to
   // catch a double-click or retried request, short enough that a genuine
   // correction re-sent minutes later still goes through. `issuedAt`, not a
   // separate `createdAt` (Invoice has none — see billing.prisma), doubles
@@ -455,21 +479,16 @@ export async function submitPayApplication(jobId: string, formData: FormData): P
 
   await prisma.$transaction(async (tx) => {
     await tx.invoice.create({
-      data: {
+      data: payApplicationInvoiceData({
         jobId,
         number: await issueInvoiceNumber(tx, jobId),
         description: description || null,
         amount: amount.toFixed(2),
         dueAt,
+        periodTo: period.value,
         retainageWithheld,
-        lineItems: {
-          create: rows.map((row) => ({
-            lineItemId: row.lineItemId,
-            thisPeriodBilled: row.thisPeriodBilled.toFixed(2),
-            materialsStoredValue: row.materialsStoredValue.toFixed(2),
-          })),
-        },
-      },
+        rows,
+      }),
     });
   });
 

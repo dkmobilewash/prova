@@ -114,8 +114,14 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     key: "invoices",
     model: "invoice",
     label: "Invoices / pay applications",
-    columns: ["id", "jobId", "number", "description", "amount", "issuedAt", "dueAt", "retainageWithheld"],
-    note: "retainageWithheld is what was held on that application, not a running balance.",
+    columns: [
+      "id", "jobId", "number", "description", "amount", "periodTo", "issuedAt", "dueAt",
+      "retainageWithheld",
+    ],
+    note:
+      "periodTo is the G702 PERIOD TO the person entered and is blank on applications submitted " +
+      "before that field existed; issuedAt is when Submit was clicked. retainageWithheld is what " +
+      "was held on that application, not a running balance.",
     scope: byJob,
   },
   {

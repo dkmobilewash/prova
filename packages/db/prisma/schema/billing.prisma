@@ -166,6 +166,27 @@ model Invoice {
   dueAt       DateTime?
   status      InvoiceStatus @default(SUBMITTED)
 
+  /// The last day of the billing period this application covers — the
+  /// G702 field printed as PERIOD TO, and the one a GC's accounting
+  /// department keys on. ENTERED by the person submitting, never
+  /// stamped, stored at UTC midnight like every other calendar day here.
+  ///
+  /// `issuedAt` is NOT this, and cannot stand in for it. It is
+  /// `@default(now())` — the moment of the click. It is what the
+  /// 10-second duplicate-submission guard in submitPayApplication reads
+  /// as a timestamp, and what `findFirst` orders by. An application for
+  /// August typed up on 4 September has an `issuedAt` in September and a
+  /// period ending 31 August; printing the first under PERIOD TO is how a
+  /// pay application gets rejected and a job waits another cycle.
+  ///
+  /// NULL on every invoice submitted before this column existed, and
+  /// deliberately NOT backfilled: nothing in the row records what period
+  /// those covered, so any backfill would be a guess printed on a
+  /// document a GC keys off. It renders as "Not recorded" — see
+  /// apps/web/lib/billing/pay-app-period.ts. Null also on a plain
+  /// lump-sum invoice, which is not a G702 and has no period.
+  periodTo DateTime?
+
   /// Retainage withheld from this specific invoice — snapshotted at
   /// creation from Job.retainagePercent × amount, not recomputed live.
   /// Null when the job has no retainage rate set. This is the per-invoice

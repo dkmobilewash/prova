@@ -503,6 +503,9 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
       status: invoice.status,
       amount: Number(invoice.amount),
       issuedAt: invoice.issuedAt.toISOString(),
+      // Null on applications submitted before Invoice.periodTo existed —
+      // they read as "Not recorded", never as issuedAt.
+      periodTo: invoice.periodTo ? invoice.periodTo.toISOString() : null,
     }));
   const payApplicationLineItemOptions = job.lineItems.map((item) => ({
     id: item.id,

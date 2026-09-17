@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { useRef, useState, useTransition } from "react";
 import { Hint } from "@/components/Hint";
+import { localToday } from "@/components/localToday";
 import { submitPayApplication, updateInvoiceStatus } from "@/lib/actions";
-import { formatInstant } from "@/lib/render-date";
+import { payAppHeaderDates, previousMonthEnd } from "@/lib/billing/pay-app-period";
 
 const inputClass =
   "w-28 rounded-md border border-line-card bg-canvas px-2 py-1 text-right text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none";
@@ -36,6 +37,10 @@ export type PayAppInvoice = {
   status: string;
   amount: number;
   issuedAt: string;
+  /** ISO string, or null on an application submitted before
+   * `Invoice.periodTo` existed — those read as "Not recorded" rather than
+   * borrowing `issuedAt`. See lib/billing/pay-app-period.ts. */
+  periodTo: string | null;
 };
 
 export function StatusForm({ jobId, invoiceId, status }: { jobId: string; invoiceId: string; status: string }) {
@@ -154,6 +159,23 @@ export function PayApplications({
               />
             </label>
             <label className="flex flex-col gap-1 text-sm text-ink-label">
+              Period to
+              {/* The G702 PERIOD TO field. Defaulted from localToday() —
+                  the USER'S calendar date, not the server's — and safe to
+                  compute during render ONLY because this form is mounted
+                  by a click (isOpen), never server-rendered markup. The
+                  person can change it; the action refuses a blank one
+                  rather than stamping anything. */}
+              <input
+                type="date"
+                name="periodTo"
+                required
+                defaultValue={previousMonthEnd(localToday())}
+                className="rounded-md border border-line-card bg-canvas px-3 py-2 text-ink focus:border-link focus:outline-none"
+              />
+              <span className="text-xs text-ink-muted">Last day this application bills through</span>
+            </label>
+            <label className="flex flex-col gap-1 text-sm text-ink-label">
               Due date
               <input
                 type="date"
@@ -250,24 +272,37 @@ export function PayApplications({
         <p className="text-sm text-ink-body">No pay applications submitted yet.</p>
       ) : (
         <ul className="flex flex-col gap-2">
-          {payApplications.map((app) => (
-            <li
-              key={app.id}
-              className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-line-card bg-surface p-3 text-sm"
-            >
-              <div>
-                <Link href={`/jobs/${jobId}/pay-applications/${app.id}`} className="text-link hover:underline">
-                  Application #{app.number}
-                </Link>
-                <span className="ml-2 text-ink-muted">
-                  {formatInstant(new Date(app.issuedAt), timeZone)}
-                  {" · "}
-                  {app.amount.toLocaleString("en-US", { style: "currency", currency: "USD" })}
-                </span>
-              </div>
-              <StatusForm jobId={jobId} invoiceId={app.id} status={app.status} />
-            </li>
-          ))}
+          {payApplications.map((app) => {
+            // Both dates, each named. They are different dates and the
+            // list used to show only the unlabelled submission timestamp.
+            const dates = payAppHeaderDates(
+              {
+                issuedAt: new Date(app.issuedAt),
+                periodTo: app.periodTo ? new Date(app.periodTo) : null,
+              },
+              timeZone,
+            );
+            return (
+              <li
+                key={app.id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-line-card bg-surface p-3 text-sm"
+              >
+                <div>
+                  <Link href={`/jobs/${jobId}/pay-applications/${app.id}`} className="text-link hover:underline">
+                    Application #{app.number}
+                  </Link>
+                  <span className="ml-2 text-ink-muted">
+                    Period to {dates.periodTo}
+                    {" · submitted "}
+                    {dates.applicationDate}
+                    {" · "}
+                    {app.amount.toLocaleString("en-US", { style: "currency", currency: "USD" })}
+                  </span>
+                </div>
+                <StatusForm jobId={jobId} invoiceId={app.id} status={app.status} />
+              </li>
+            );
+          })}
         </ul>
       )}
     </section>
