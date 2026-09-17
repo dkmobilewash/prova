@@ -1412,11 +1412,16 @@ async function openSubmittals(companyId: string, input: Input): Promise<ToolResu
     data: open,
     citations,
     unavailable:
-      open.length === 0
-        ? input.jobName
-          ? "Nothing is out with the GC on that job — every submittal sent has come back."
-          : "Nothing is out with the GC. Every submittal sent has come back."
-        : undefined,
+      // Same distinction as certification_expiry. "Every submittal sent has
+      // come back" is true of a company that has never sent one, and that
+      // reads as being on top of things.
+      submittals.length === 0
+        ? "No submittal has been raised at all. Nothing has been sent, so nothing is outstanding."
+        : open.length === 0
+          ? input.jobName
+            ? "Nothing is out with the GC on that job — every submittal sent has come back."
+            : "Nothing is out with the GC. Every submittal sent has come back."
+          : undefined,
   };
 }
 
@@ -1472,9 +1477,16 @@ async function certificationExpiry(companyId: string, input: Input): Promise<Too
     data: { withinDays, rows },
     citations,
     unavailable:
-      rows.length === 0
-        ? `No certification is expired or expiring within ${withinDays} days, and every one on file has a date.`
-        : undefined,
+      // TWO different answers, and conflating them is how a reassuring
+      // sentence gets said about an empty register. "Every one on file has
+      // a date" is TRUE of no certifications at all, and for a union sub
+      // "nobody has any cards recorded" is the bigger finding by far —
+      // found by asking the live box on a database with none.
+      certifications.length === 0
+        ? "No certification is recorded for anyone. That is a gap in the records rather than a clean bill — nothing has been filed to expire."
+        : rows.length === 0
+          ? `No certification is expired or expiring within ${withinDays} days, and every one on file has a date.`
+          : undefined,
   };
 }
 

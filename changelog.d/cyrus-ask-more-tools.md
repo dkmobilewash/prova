@@ -273,8 +273,42 @@ T&M ticket on a phone and nobody can see it on a laptop. No tool was written
 for it, because every tool here cites a page and that citation would have
 been a dead link. It wants a page before it wants an assistant.
 
-**Not verified, and not claimed:** none of the fifteen has been asked a real
-question through the box. The tests fake the rows, so they prove the rules and not the
+**A defect found by asking the live box, which is the only way it could
+have been found.** `certification_expiry` was asked "whose certifications
+are about to expire?" against a database with ZERO certifications, and
+answered:
+
+> Nothing expiring — no expired or soon-to-expire certifications, and every
+> one on file has a date.
+
+Every clause of that is true, and the whole of it is misleading. *"Every one
+on file has a date"* is true of an empty set — the same vacuous truth this
+branch kept catching in its own tests, shipped this time in a sentence a
+person reads. And for a union sub, **"nobody has any cards recorded" is a
+compliance gap, not a clean bill.**
+
+Both tools that had a reassuring empty state now distinguish "nothing to
+report" from "nothing on file": certifications, and `open_submittals`, whose
+*"every submittal sent has come back"* was true of a company that has never
+sent one. The tools that already said it properly —
+`warranty_obligations`' *"that is not the same as being clear, nothing was
+entered"* and `daily_field_reports`' *"nobody wrote one up, not that nothing
+happened"* — were right because somebody thought about them, which is
+exactly why these two were not.
+
+Verified live afterwards: the same question now answers *"No certification
+is recorded for anyone — nothing filed, so nothing to expire. That's a
+records gap, not a clean bill."*
+
+**What IS now verified by result**, on a dev server against `ep-icy-hat`:
+`apprentice_ratio` and `certification_expiry` were asked real questions and
+answered correctly. The ratio answer is the one worth quoting, because the
+naive answer was available and it refused it — zero days over ratio, and it
+still said *"Can't certify — the one job reviewed has unclassified hours…
+No days over ratio, but a day with unclassified hours can't be called
+compliant."*
+
+**Still not verified:** the other thirteen tools. The tests fake the rows, so they prove the rules and not the
 Prisma queries that feed them — in particular the `orderBy revisionNumber
 desc, take 1` that selects a submittal's latest revision is asserted by
 nothing here, because the fixture holds what that query would return.
