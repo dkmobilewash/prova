@@ -56,49 +56,49 @@ model Job {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  lineItems                    JobLineItem[]
-  changeOrders                 ChangeOrder[]
-  changeOrderCounter           ChangeOrderCounter?
-  assignments                  JobAssignment[]
-  signatureRequests            SignatureRequest[]
-  invoices                     Invoice[]
-  complianceDocuments          ComplianceDocument[]
-  equipment                    Equipment[]
-  equipmentAssignments         EquipmentAssignment[]
-  estimateVersions             EstimateVersion[]
-  estimateVersionCounter       EstimateVersionCounter?
-  contractDocuments            ContractDocument[]
-  timeEntries                  TimeEntry[]
-  dispatchSlips                DispatchSlip[]
-  prevailingWageDeterminations PrevailingWageDetermination[]
-  retainageReleases            RetainageRelease[]
-  punchListItems               PunchListItem[]
-  tmTickets                    TmTicket[]
-  dailyFieldReports            DailyFieldReport[]
-  media                        JobMedia[]
+  lineItems                      JobLineItem[]
+  changeOrders                   ChangeOrder[]
+  changeOrderCounter             ChangeOrderCounter?
+  assignments                    JobAssignment[]
+  signatureRequests              SignatureRequest[]
+  invoices                       Invoice[]
+  complianceDocuments            ComplianceDocument[]
+  equipment                      Equipment[]
+  equipmentAssignments           EquipmentAssignment[]
+  estimateVersions               EstimateVersion[]
+  estimateVersionCounter         EstimateVersionCounter?
+  contractDocuments              ContractDocument[]
+  timeEntries                    TimeEntry[]
+  dispatchSlips                  DispatchSlip[]
+  prevailingWageDeterminations   PrevailingWageDetermination[]
+  retainageReleases              RetainageRelease[]
+  punchListItems                 PunchListItem[]
+  tmTickets                      TmTicket[]
+  dailyFieldReports              DailyFieldReport[]
+  media                          JobMedia[]
   /// Documents dropped into `/intake` and filed against this job. Optional
   /// on that side, so this is SET NULL rather than a blocker — see
   /// intake.prisma.
-  documentIntakes              DocumentIntake[]
-  safetyIncidents              SafetyIncident[]
-  toolboxTalks                 ToolboxTalk[]
-  rfis                         Rfi[]
-  invoiceCounter               InvoiceCounter?
+  documentIntakes                DocumentIntake[]
+  safetyIncidents                SafetyIncident[]
+  toolboxTalks                   ToolboxTalk[]
+  rfis                           Rfi[]
+  invoiceCounter                 InvoiceCounter?
   contractDocumentVersionCounter ContractDocumentVersionCounter?
-  rfiCounter                   RfiCounter?
-  submittals                   Submittal[]
-  submittalCounter             SubmittalCounter?
-  materialOrders               MaterialOrder[]
-  materialOrderCounter         MaterialOrderCounter?
-  drawingSets                  DrawingSet[]
-  closeoutItems                CloseoutItem[]
-  warrantyPeriod               WarrantyPeriod?
-  warrantyServiceRequests      WarrantyServiceRequest[]
-  backcharges                  Backcharge[]
-  backchargeCounter            BackchargeCounter?
-  closeoutSubmissions          CloseoutSubmission[]
-  closeoutSubmissionCounter    CloseoutSubmissionCounter?
-  outboundMessages             OutboundMessage[]
+  rfiCounter                     RfiCounter?
+  submittals                     Submittal[]
+  submittalCounter               SubmittalCounter?
+  materialOrders                 MaterialOrder[]
+  materialOrderCounter           MaterialOrderCounter?
+  drawingSets                    DrawingSet[]
+  closeoutItems                  CloseoutItem[]
+  warrantyPeriod                 WarrantyPeriod?
+  warrantyServiceRequests        WarrantyServiceRequest[]
+  backcharges                    Backcharge[]
+  backchargeCounter              BackchargeCounter?
+  closeoutSubmissions            CloseoutSubmission[]
+  closeoutSubmissionCounter      CloseoutSubmissionCounter?
+  outboundMessages               OutboundMessage[]
 
   @@index([companyId])
   @@index([contactId])
@@ -128,6 +128,14 @@ model JobLineItem {
   laborHours            Decimal?             @db.Decimal(8, 2)
   craftClassificationId String?
   craftClassification   CraftClassification? @relation(fields: [craftClassificationId], references: [id])
+
+  /// The company's own cost code for this line. Nullable with NO backfill,
+  /// for the same reason craftClassificationId above is: inferring a phase
+  /// from a description string is exactly the guess this column exists to
+  /// replace, and a line nobody has coded must read as uncoded rather than
+  /// be quietly filed under whatever matched.
+  phaseCodeId String?
+  phaseCode   PhaseCode? @relation(fields: [phaseCodeId], references: [id])
 
   /// Nullable: a cost-only budget line (general conditions, overhead,
   /// contingency) has no client-facing sale price. Contract value /
@@ -209,6 +217,7 @@ model JobLineItem {
   @@index([originChangeOrderId])
   @@index([craftClassificationId])
   @@index([sourceCatalogEntryId])
+  @@index([phaseCodeId])
 }
 
 /// A change order groups: (a) newly added JobLineItems (via
@@ -412,6 +421,66 @@ model ChangeOrderLineItemEdit {
 
   @@index([changeOrderId])
   @@index([lineItemId])
+}
+
+/// A company's own cost-coding vocabulary — what a contractor calls a phase
+/// code or a cost code, and what its budget report is grouped by.
+///
+/// THIS IS NOT A SECOND COPY OF LINE-ITEM DATA, which ARCHITECTURE.md
+/// forbids. It is a CLASSIFICATION that the one line-item table points at,
+/// exactly like CraftClassification — company-scoped, nullable FK, no
+/// backfill. JobLineItem remains the single place a line item lives.
+///
+/// Why it exists: every document a real contractor produces is organised by
+/// this code. The change-order request prices labour under it, the weekly
+/// budget report groups by it, and a purchase order codes each line to it —
+/// the same code reconciling across three documents that have to agree.
+/// Without it, "what did we make on 04112 across every job this year" has
+/// no answer, because a JobLineItem's description is free text and belongs
+/// to one job.
+///
+/// `code` is FREE TEXT and deliberately not validated against MasterFormat.
+/// Contractors rename these so their reports match what they already read —
+/// "we can rename our phase codes just so the way they appear in our budget,
+/// they look the same". A product that refuses a code for not being in a
+/// standard list is a product nobody can enter their own budget into.
+model PhaseCode {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  /// As the company writes it on its own paperwork — "04112".
+  code String
+
+  /// What it is, in their words — "Plywood - SF".
+  name String
+
+  /// How the phase is measured: SF, LF, EA, HR. Nullable, because a phase
+  /// can be a dollar bucket with no natural unit (general conditions).
+  unit String?
+
+  /// Whether hours are coded to this phase at all, or only dollars. A real
+  /// budget report has both: "some of these have labor codes, some are just
+  /// cost codes". Nothing is inferred from it yet; it is recorded here so a
+  /// labour report can tell an unphased hour from one that never takes any.
+  tracksLabor Boolean @default(true)
+
+  /// Retired rather than deleted. A phase code that has priced work is
+  /// evidence of how that work was coded, and deleting it would rewrite the
+  /// history of a job that is already invoiced.
+  isActive Boolean @default(true)
+
+  /// The order the company reads them in, which is not alphabetical and is
+  /// not the code order either.
+  sortOrder Int @default(0)
+
+  lineItems JobLineItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, code])
+  @@index([companyId, isActive])
 }
 
 enum CostCategory {

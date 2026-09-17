@@ -62,7 +62,7 @@ model JobMediaTag {
 /// leaving the link behind would be a row pointing at nothing.
 model JobMediaTagAssignment {
   mediaId String
-  media   JobMedia @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+  media   JobMedia    @relation(fields: [mediaId], references: [id], onDelete: Cascade)
   tagId   String
   tag     JobMediaTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
 
@@ -70,7 +70,7 @@ model JobMediaTagAssignment {
   /// what a photo shows, and on a disputed photo the useful question is
   /// who said so — the same reason `JobMedia.capturedBy` exists.
   taggedByUserId String?
-  taggedBy       User?   @relation(fields: [taggedByUserId], references: [id])
+  taggedBy       User?    @relation(fields: [taggedByUserId], references: [id])
   createdAt      DateTime @default(now())
 
   /// The pair IS the identity — one tag on one photo, once.

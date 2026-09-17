@@ -107,7 +107,7 @@ model SalesActivity {
   leadId    String
   lead      SalesLead @relation(fields: [leadId], references: [id])
 
-  type SalesActivityType
+  type       SalesActivityType
   /// Entered, not stamped -- logging Monday's call on Wednesday must record
   /// Monday. Same rule as every other date in this schema.
   occurredOn DateTime
