@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { headers } from "next/headers";
 import Link from "next/link";
-import { prisma } from "@prova/db";
+import { Prisma, prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { PrintButton } from "@/components/PrintButton";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
@@ -48,6 +48,12 @@ import {
   overheadAndProfitBlock,
   overheadAndProfitLineLabel,
 } from "@/lib/overhead-and-profit";
+import {
+  foremanOutOfStep,
+  hasDefensiveScope,
+  laborBreakout,
+  scopeSections,
+} from "@/lib/change-order-scope";
 import { can } from "@/lib/permissions";
 import { countJobMedia, loadJobMedia, loadJobMediaTags } from "@/lib/job-media-query";
 import { viewerTimeZone } from "@/lib/viewerToday";
@@ -222,6 +228,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
         include: {
           edits: true,
           proposals: { orderBy: { createdAt: "asc" } },
+          scopeNotes: true,
           supersedes: { select: { number: true } },
           revisions: { select: { number: true }, orderBy: { number: "asc" } },
         },
@@ -620,6 +627,40 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
       oldValue: edit.oldValue,
       newValue: edit.newValue,
     })),
+    // Split by kind HERE rather than in the component, so there is no code
+    // path on the client that could render an exclusion inside the scope of
+    // work — see lib/change-order-scope.ts.
+    scopeSections: scopeSections(co.scopeNotes).map((section) => ({
+      kind: section.kind,
+      heading: section.heading,
+      hint: section.hint,
+      notes: section.notes.map((note) => ({ id: note.id, kind: note.kind, text: note.text })),
+    })),
+    breakout: (() => {
+      const breakout = laborBreakout(co.proposals, changeOrderTargetsById);
+      const signed = (value: Prisma.Decimal) =>
+        `${Number(value) < 0 ? "−" : ""}${money(Math.abs(Number(value)))}`;
+      return {
+        laborBase: signed(breakout.laborBase),
+        foremanLines: breakout.foremanLines.map((line) => ({
+          id: line.id,
+          description: line.description,
+          percent: line.percent.toString(),
+          amount: signed(line.amount),
+          figuredAt: signed(line.figuredAt),
+        })),
+        foreman: signed(breakout.foreman),
+        labor: signed(breakout.labor),
+        material: signed(breakout.material),
+        subcontractor: signed(breakout.subcontractor),
+        other: signed(breakout.other),
+        uncategorized: signed(breakout.uncategorized),
+        adjustments: signed(breakout.adjustments),
+        total: signed(breakout.total),
+        foremanOutOfStep: foremanOutOfStep(breakout),
+      };
+    })(),
+    missingDefence: !hasDefensiveScope(co.scopeNotes),
   }));
 
   const pendingExposure = Number(

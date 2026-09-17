@@ -16,8 +16,13 @@ import {
   submitChangeOrder,
   voidChangeOrder,
 } from "@/lib/actions";
-import { TRADE_SCOPES, type ActionResult } from "@/lib/actions/shared";
+import { COST_CATEGORIES, TRADE_SCOPES, type ActionResult } from "@/lib/actions/shared";
 import { OVERHEAD_AND_PROFIT_UNSET_NOTE } from "@/lib/overhead-and-profit";
+import {
+  ChangeOrderScope,
+  type LaborBreakoutView,
+  type ScopeSectionView,
+} from "@/components/ChangeOrderScope";
 
 const inputClass =
   "rounded-md border border-line-card bg-canvas px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none";
@@ -105,6 +110,14 @@ export type ChangeOrderView = {
   revisedByLabels: string[];
   proposals: ProposalView[];
   edits: { id: string; field: string; oldValue: string; newValue: string }[];
+  /** What the price covers, what it excludes, what it assumes — already
+   *  split by kind on the server by `scopeSections()`, so nothing here can
+   *  render an exclusion inside the scope of work. */
+  scopeSections: ScopeSectionView[];
+  /** Labour against materials, with the foreman as a percentage. */
+  breakout: LaborBreakoutView;
+  /** No exclusions and no assumptions — worth saying on a draft. */
+  missingDefence: boolean;
 };
 
 export type LineItemChoice = { id: string; description: string };
@@ -140,6 +153,15 @@ function formatEditValue(field: string, value: string) {
   }
   return value;
 }
+
+/** "Labour", not "LABOR" — the enum is the schema's spelling, this is the
+ *  one on the document a GC reads. */
+const COST_CATEGORY_LABEL: Record<(typeof COST_CATEGORIES)[number], string> = {
+  LABOR: "Labour",
+  MATERIAL: "Material",
+  SUBCONTRACTOR: "Subcontractor",
+  OTHER: "Other",
+};
 
 const STATUS_STYLE: Record<ChangeOrderView["status"], string> = {
   DRAFT: "border-neutral-400 bg-neutral-800 text-ink-label",
@@ -230,9 +252,40 @@ function ProposalForms({ changeOrder, lineItems }: { changeOrder: ChangeOrderVie
               ))}
             </select>
           </label>
+          {/* The labour/material split a priced change order is read line by
+              line against. Blank is a real answer — a lump-sum line has not
+              said — and is stored as null rather than folded into "Other". */}
+          <label className={labelClass}>
+            Cost
+            <select name="costCategory" className={`${inputClass} w-40`} defaultValue="">
+              <option value="">not broken out</option>
+              {COST_CATEGORIES.map((category) => (
+                <option key={category} value={category}>
+                  {COST_CATEGORY_LABEL[category]}
+                </option>
+              ))}
+            </select>
+          </label>
+          {/* Set only on a foreman line. The PRICE still goes in the fields
+              above — this records what it was figured at, so the breakout
+              can show the two together and say when they stop agreeing. */}
+          <label className={labelClass}>
+            Foreman %
+            <input
+              name="foremanPercent"
+              type="number"
+              step="0.01"
+              className={`${inputClass} w-24`}
+              placeholder="10"
+            />
+          </label>
           <button type="submit" disabled={isPending} className={primaryBtn}>
             {isPending ? "Adding…" : "Add to CO"}
           </button>
+          <p className="w-full text-xs text-ink-muted">
+            Foreman % goes on the foreman&apos;s own labour line, next to its price — it says the
+            line was figured at that share of the crew labour.
+          </p>
           {error && <p className="w-full text-xs text-tag-rose-ink">{error}</p>}
         </form>
       )}
@@ -736,15 +789,33 @@ export function ChangeOrders({
               </p>
 
               {co.proposals.length > 0 && (
-                <ul className="mt-2 flex flex-col gap-1">
-                  {co.proposals.map((proposal) => (
-                    <ProposalRow key={proposal.id} proposal={proposal} canRemove={co.status === "DRAFT"} />
-                  ))}
-                </ul>
+                <>
+                  <h4 className="mt-3 text-xs font-semibold uppercase tracking-wide text-ink-label">
+                    Scope of work
+                  </h4>
+                  <ul className="mt-1 flex flex-col gap-1">
+                    {co.proposals.map((proposal) => (
+                      <ProposalRow key={proposal.id} proposal={proposal} canRemove={co.status === "DRAFT"} />
+                    ))}
+                  </ul>
+                </>
               )}
 
+              {/* Everything the priced lines above do NOT say. Rendered as
+                  its own component with its own headings rather than as more
+                  text under the scope of work — see ChangeOrderScope.tsx. */}
+              <ChangeOrderScope
+                changeOrderId={co.id}
+                sections={co.scopeSections}
+                breakout={co.breakout}
+                editable={co.status === "DRAFT"}
+                missingDefence={co.missingDefence}
+              />
               {/* The money block goes under the scope it totals, the way a
-                  change-order request reads on paper. */}
+                  change-order request reads on paper. That ordering is this
+                  branch's own, and the exclusions arriving from
+                  change-order-scope land above it for the same reason —
+                  a total is read after what it does and does not cover. */}
               {co.proposals.length > 0 && <MoneyBlock changeOrder={co} />}
 
               {/* Audit trail of what actually landed, written on approval. */}

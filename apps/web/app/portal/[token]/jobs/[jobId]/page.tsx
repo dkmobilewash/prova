@@ -13,6 +13,8 @@ import { PortalJobPhotos } from "@/components/PortalJobPhotos";
 import { countJobMedia, loadSharedJobMediaForClient } from "@/lib/job-media-query";
 import { viewerTimeZone } from "@/lib/viewerToday";
 import { isPortalAccessRevoked, CLIENT_VISIBLE_CHANGE_ORDER_STATUS } from "@/lib/access-tokens";
+import { scopeSections } from "@/lib/change-order-scope";
+import { ScopeSectionList } from "@/components/ScopeSectionList";
 
 /** The photo cap, matching `/photos`. A GC scrolling a job's history wants
  * the same generous page the sub gets, and this section is at the bottom of
@@ -57,12 +59,20 @@ export default async function PortalJobPage({
       changeOrders: {
         where: { status: CLIENT_VISIBLE_CHANGE_ORDER_STATUS },
         orderBy: { number: "asc" },
-        // `proposals` joins the read so this page can print the same
+        // Both joins are here because the GC's copy is one document, and
+        // the two halves are worthless apart. `proposals` carries the
         // subtotal / overhead-and-profit / total block the sub sees on
-        // /jobs/[id]. The GC was previously shown a change order's title
-        // and nothing else about what it was worth — on the one page built
-        // for them to read the money on.
-        include: { edits: true, proposals: { orderBy: { createdAt: "asc" } } },
+        // /jobs/[id]; `scopeNotes` carries what the price does and does not
+        // cover. A price with no scope is a number to argue with, and an
+        // exclusion with no price is a note to self — the GC was previously
+        // shown neither, just a title, on the one page built for them to
+        // read the money on. Locked by the time it gets here: notes are
+        // draft-only to edit, and this query is APPROVED-only.
+        include: {
+          edits: true,
+          proposals: { orderBy: { createdAt: "asc" } },
+          scopeNotes: true,
+        },
       },
       // `revokedAt: null` and the `expiresAt` clause: don't hand the GC a
       // "Review and sign" link to a request that will 404 the moment they
@@ -191,6 +201,17 @@ export default async function PortalJobPage({
                     CO #{co.number}: {co.title}
                   </p>
                   {co.description && <p className="text-ink-body">{co.description}</p>}
+                  {/* Scope BEFORE the money, deliberately, and this is the one
+                      ordering decision in this merge that is not a union of
+                      two sides. A total read before its exclusions is a number
+                      to argue with; read after them it is a priced scope. The
+                      split is by kind AND rendered by a shared component,
+                      which is the half that used to be missing: the splitter
+                      was shared and the markup was hand-rolled here, so
+                      deleting the headings on the GC's copy passed every test
+                      in the repo. ScopeSectionList is mounted and asserted
+                      against. */}
+                  <ScopeSectionList sections={scopeSections(co.scopeNotes)} />
                   <dl className="mt-2 flex flex-col gap-1 border-t border-line-row pt-2">
                     <div className="flex items-baseline justify-between gap-3">
                       <dt className="text-ink-body">Subtotal</dt>

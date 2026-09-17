@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@prova/db";
 import { changeOrderValueDelta, reopenBlockers } from "@/lib/change-order";
+import { SCOPE_NOTE_KINDS } from "@/lib/change-order-scope";
 import {
   overheadAndProfitBlock,
   overheadAndProfitLineDescription,
@@ -11,6 +12,7 @@ import {
 } from "@/lib/overhead-and-profit";
 import { Prisma } from "@prova/db";
 import {
+  COST_CATEGORIES,
   actionFail as fail,
   actionOk as ok,
   assertEditableViaChangeOrder,
@@ -81,6 +83,28 @@ function nullableDecimal(formData: FormData, key: string): string | null {
   } catch (err) {
     throw new InputError(err instanceof Error ? err.message : `"${key}" must be a number`);
   }
+}
+
+/** Which side of the price a proposed line sits on. Empty means "not broken
+ * out", which is a real answer on a lump-sum line and is stored as null —
+ * never quietly coerced to OTHER, since OTHER is a bucket somebody chose. */
+function costCategoryFromForm(formData: FormData): (typeof COST_CATEGORIES)[number] | null {
+  const raw = text(formData, "costCategory");
+  return COST_CATEGORIES.includes(raw as (typeof COST_CATEGORIES)[number])
+    ? (raw as (typeof COST_CATEGORIES)[number])
+    : null;
+}
+
+/** One of the four kinds of sentence a change order carries around its
+ * priced lines. An unrecognised value is refused rather than defaulted: a
+ * note filed under the wrong heading is worse than no note, because an
+ * exclusion that lands under "Included" says the opposite of what it means. */
+function scopeNoteKindFromForm(formData: FormData): (typeof SCOPE_NOTE_KINDS)[number] {
+  const raw = text(formData, "kind");
+  if (!SCOPE_NOTE_KINDS.includes(raw as (typeof SCOPE_NOTE_KINDS)[number])) {
+    throw new InputError("Say whether this is included, excluded, an assumption, or how it was priced.");
+  }
+  return raw as (typeof SCOPE_NOTE_KINDS)[number];
 }
 
 /** Dates are stored at UTC midnight so comparisons are between calendar
@@ -285,6 +309,18 @@ export async function proposeAddedScope(
     const description = required(formData, "itemDescription", "Line item description");
     const unit = text(formData, "unit");
     const budgetedUnitCost = nullableDecimal(formData, "budgetedUnitCost");
+    const costCategory = costCategoryFromForm(formData);
+    const foremanPercent = nullableDecimal(formData, "foremanPercent");
+
+    // A foreman allowance is a percentage OF THE LABOUR, so a percentage on
+    // anything else has nothing to be a percentage of. Refused rather than
+    // silently dropped: a number the estimator typed and the document then
+    // ignores is the worst of the three outcomes.
+    if (foremanPercent !== null && costCategory !== "LABOR") {
+      throw new InputError(
+        "A foreman percentage only belongs on a labour line — set this line's cost to Labour, or leave the percentage blank.",
+      );
+    }
 
     await prisma.changeOrderProposal.create({
       data: {
@@ -297,6 +333,8 @@ export async function proposeAddedScope(
         budgetedUnitCost,
         currentEstimatedUnitCost: nullableDecimal(formData, "currentEstimatedUnitCost") ?? budgetedUnitCost,
         tradeScope: tradeScopeFromForm(formData),
+        costCategory,
+        foremanPercent,
       },
     });
 
@@ -388,6 +426,103 @@ export async function removeProposal(proposalId: string): Promise<ActionResult> 
 
     await prisma.changeOrderProposal.delete({ where: { id: proposalId } });
     revalidatePath(`/jobs/${proposal.changeOrder.jobId}`);
+  });
+}
+
+/* ------------------------------------------------------------------ */
+/* What the price does and does not cover                              */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Adds one sentence of scope to a draft — an inclusion, an EXCLUSION, an
+ * assumption, or what the number was figured on.
+ *
+ * Draft-only, exactly like the priced lines. An exclusion is a TERM of the
+ * document: adding "temporary dance floor by others" after the GC already
+ * holds a copy without it would mean the two copies say different things
+ * about who owes what, which is the one thing a change order exists to
+ * prevent. Correcting a sent one goes through void-and-reissue like
+ * everything else here.
+ */
+export async function addChangeOrderScopeNote(
+  changeOrderId: string,
+  formData: FormData,
+): Promise<ActionResult> {
+  return runAction(async () => {
+    const { company } = await requireCompanyContext();
+    const changeOrder = await assertChangeOrder(changeOrderId, company.id);
+    assertDraft(changeOrder);
+
+    const kind = scopeNoteKindFromForm(formData);
+    const noteText = required(formData, "text", "The note");
+
+    // Position within its kind, so the clauses keep the order the estimator
+    // wrote them in. NOT a sequence number and deliberately not issued from
+    // a counter row: the counter rule exists because a reissued IDENTITY
+    // makes two documents both "CO #3". Nothing quotes a scope note's
+    // position back at you, and two notes sharing one still sort stably —
+    // scopeSections() breaks the tie on id.
+    const sortOrder = await prisma.changeOrderScopeNote.count({
+      where: { changeOrderId, kind },
+    });
+
+    await prisma.changeOrderScopeNote.create({
+      data: { changeOrderId, kind, text: noteText, sortOrder },
+    });
+
+    revalidatePath(`/jobs/${changeOrder.jobId}`);
+  });
+}
+
+/**
+ * Rewrites a note in place, including moving it between headings.
+ *
+ * Moving one is the edit worth having: the sentence that gets typed under
+ * "Included" and belongs under "Excluded" is the whole failure this feature
+ * is about, and re-typing it to fix a heading is how it ends up not fixed.
+ */
+export async function updateChangeOrderScopeNote(
+  noteId: string,
+  formData: FormData,
+): Promise<ActionResult> {
+  return runAction(async () => {
+    const { company } = await requireCompanyContext();
+    const note = await prisma.changeOrderScopeNote.findUnique({
+      where: { id: noteId },
+      include: { changeOrder: { include: { job: true } } },
+    });
+    if (!note || note.changeOrder.job.companyId !== company.id) {
+      throw new InputError("That note no longer exists.");
+    }
+    assertDraft(note.changeOrder);
+
+    await prisma.changeOrderScopeNote.update({
+      where: { id: noteId },
+      data: {
+        kind: scopeNoteKindFromForm(formData),
+        text: required(formData, "text", "The note"),
+      },
+    });
+
+    revalidatePath(`/jobs/${note.changeOrder.jobId}`);
+  });
+}
+
+/** Takes a sentence back off a draft. Same draft-only rule as adding one. */
+export async function removeChangeOrderScopeNote(noteId: string): Promise<ActionResult> {
+  return runAction(async () => {
+    const { company } = await requireCompanyContext();
+    const note = await prisma.changeOrderScopeNote.findUnique({
+      where: { id: noteId },
+      include: { changeOrder: { include: { job: true } } },
+    });
+    if (!note || note.changeOrder.job.companyId !== company.id) {
+      throw new InputError("That note no longer exists.");
+    }
+    assertDraft(note.changeOrder);
+
+    await prisma.changeOrderScopeNote.delete({ where: { id: noteId } });
+    revalidatePath(`/jobs/${note.changeOrder.jobId}`);
   });
 }
 
