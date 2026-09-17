@@ -93,7 +93,9 @@ export type ToolName =
   | "open_submittals"
   | "certification_expiry"
   | "apprentice_ratio"
-  | "closeout_status";
+  | "closeout_status"
+  | "fringe_remittance"
+  | "backcharge_exposure";
 
 export type ToolDefinition = {
   name: ToolName;
@@ -369,6 +371,22 @@ export const TOOLS: ToolDefinition[] = [
     capability: "MANAGE_JOBS",
     description:
       "How close each job is to closing out: the stage it has reached, what is blocking it in the order that matters, the retainage the GC is still holding on it, and how long the GC has had the current closeout package. Answers 'what is stopping us getting paid the last of it'. Retainage outstanding is reported ALONGSIDE the blockers and is never itself one — it is what the blockers are costing. It does not know a GC's internal approval steps, and it cannot say when they will release.",
+    input_schema: jobFilter,
+  },
+  {
+    name: "fringe_remittance",
+    // /union-compliance/remittance
+    capability: "MANAGE_COMPLIANCE",
+    description:
+      "What is owed to each union local's trust funds for a month — hours, and the pension, vacation, health-and-welfare and training components priced from the fringe schedule in force on each day worked — and whether the month has been filed. Answers 'what do we owe the funds'. Hours that could NOT be priced are reported separately with the names behind them and are never valued at zero: an unpriced hour is a hole in the remittance, not a free one. It prices what the logged hours and the schedules on file say; it does not know what a fund has actually received or credited.",
+    input_schema: monthFilter,
+  },
+  {
+    name: "backcharge_exposure",
+    // /backcharges
+    capability: "MANAGE_BILLING",
+    description:
+      "Backcharges a GC has issued against this company — what is claimed, on which job, its status, and the date by which we must object, with whether that date has passed. Answers 'what is being charged back to us and what have we not answered'. A backcharge with no respond-by date recorded is reported as undated rather than as having time left. The claimed amount is what the GC asserts, never an agreed figure, and this cannot tell you whether the claim is valid.",
     input_schema: jobFilter,
   },
 ];

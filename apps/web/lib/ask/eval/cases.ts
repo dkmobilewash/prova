@@ -107,6 +107,9 @@ export const EVAL_CASES: EvalCase[] = [
   // The month must survive as the person's own, not be rounded to "now".
   tool("read-ratio-month", "did we stay in ratio in August 2026?", "apprentice_ratio", { month: "2026-08" }),
   tool("read-closeout", "what is stopping us closing out Riverside?", "closeout_status", { jobName: "Riverside" }),
+  tool("read-remittance", "what do we owe the funds this month?", "fringe_remittance"),
+  tool("read-remittance-month", "what were the fringes for July 2026?", "fringe_remittance", { month: "2026-07" }),
+  tool("read-backcharges", "what is Turner charging back to us?", "backcharge_exposure"),
 
   // ------------------------------------------------------- commands
   command("cmd-create-estimate", "create an estimate for Riverside Plaza for Turner", "create_estimate_job", { jobName: "Riverside Plaza", gcName: "Turner" }),

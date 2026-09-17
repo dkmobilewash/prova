@@ -1,8 +1,9 @@
-### Four more things the assistant can look up
+### Six more things the assistant can look up
 
-`open_submittals`, `certification_expiry`, `apprentice_ratio` and
-`closeout_status`, taking the read surface from fifteen tools to nineteen.
-All four are reads — nothing new can be written, and no command was added.
+`open_submittals`, `certification_expiry`, `apprentice_ratio`,
+`closeout_status`, `fringe_remittance` and `backcharge_exposure`, taking the
+read surface from fifteen tools to twenty-one. All six are reads — nothing
+new can be written, and no command was added.
 
 **`open_submittals` — "what is the GC still sitting on?"** Submittals sent
 and not returned, with days outstanding, the date back, and whether it has
@@ -80,10 +81,34 @@ Stage and blocker text come from `closeoutPackageLabels`, which /closeout
 renders. "No closeout checklist yet, so nothing has been asserted" is worth
 preserving exactly: it is not the same claim as "nothing is wrong".
 
+**`fringe_remittance` — "what do we owe the funds?"** Per local, per month,
+priced from `loadRemittance` — the schedule in force on each DAY worked, not
+the one in force today, which is why that module exists rather than a
+multiplication here. Broken out by pension, vacation, health-and-welfare and
+training, with whether the month has been filed.
+
+**The hours nobody could price are lifted to the top of the result, with the
+names behind them.** An unpriced hour is a hole in the remittance — no craft
+tag, or no schedule effective on that date — and valuing it at zero produces
+a total that looks like an answer and underpays a fund. That is the one
+mistake in this registry that costs a member their benefits rather than
+costing the company a correction. Buried in a per-local detail row, an answer
+can be written that never mentions it.
+
+**`backcharge_exposure` — "what is being charged back, and what have we not
+answered?"** What the GC claims, on which job, its status, and **the date by
+which we must object** — stated as past or not, never left as two dates to
+subtract. A backcharge sits in an email thread until it is simply deducted,
+and the window to dispute it is contractual. `claimedAmount` is what the GC
+ASSERTS and is never an agreed figure; `pastRespondBy` is null, not false,
+where no date was recorded.
+
 **Capabilities follow the page each cites**, which is the rule `tools.ts`
 already states: `/submittals` is `MANAGE_JOBS`, `/certifications` is
-`MANAGE_FIELD`, `/union-compliance` is `MANAGE_COMPLIANCE`, `/closeout` is
-`MANAGE_JOBS`. The second is worth naming — the question is "who can start
+`MANAGE_FIELD`, `/union-compliance` is `MANAGE_COMPLIANCE` (for both the ratio and the
+remittance), `/closeout` is `MANAGE_JOBS`, `/backcharges` is
+`MANAGE_BILLING` — a backcharge is money coming off the next cheque, so it
+sits with whoever chases the cheque rather than with compliance. The second is worth naming — the question is "who can start
 on Monday", which a foreman asks and a compliance manager does not.
 
 **What adding a tool actually costs here, recorded because it is the good
@@ -93,14 +118,24 @@ censuses — one asserting every tool's capability matches its citation page,
 one asserting every tool has at least one routing eval case. Nothing shipped
 half-wired, and none of it needed remembering.
 
-33 new tests. Eight mutations watched RED and restored: counting never-sent
+44 new tests. Eleven mutations watched RED and restored: counting never-sent
 drafts as open, reporting `pastDue: false` where no date was agreed, dropping
 undated certifications, returning nothing on an unreadable window, reading the
 ratio verdict off `daysOver` alone, giving a verdict where no rule exists,
-passing an unreadable month straight through, and sorting the closeout
-blockers.
+passing an unreadable month straight through, sorting the closeout blockers,
+burying the unpriced remittance hours, counting settled backcharges as
+exposure, and reporting `pastRespondBy: false` where no date was recorded.
 
-**Not verified, and not claimed:** none of the four has been asked a real
+**Two things writing the tests found, rather than the tests confirming what
+was already right.** The backcharge summary counted `pastRespondBy` across
+every row including SETTLED ones — a closed backcharge whose window lapsed
+months ago is not something anyone can act on, and counting it inflates the
+one number meant to make somebody move today. It counts the open ones now.
+And the first version of the remittance total test computed a figure and
+asserted it differed from another, which was a tautology that passed on
+nothing; it asserts the loader's figures pass through untouched instead.
+
+**Not verified, and not claimed:** none of the six has been asked a real
 question through the box. The tests fake the rows, so they prove the rules and not the
 Prisma queries that feed them — in particular the `orderBy revisionNumber
 desc, take 1` that selects a submittal's latest revision is asserted by

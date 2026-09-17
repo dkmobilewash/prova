@@ -285,6 +285,11 @@ describe("read-tool capabilities match the pages they cite", () => {
     certification_expiry: ROUTE_CAPABILITY["/certifications"],
     apprentice_ratio: ROUTE_CAPABILITY["/union-compliance"],
     closeout_status: ROUTE_CAPABILITY["/closeout"],
+    fringe_remittance: ROUTE_CAPABILITY["/union-compliance"],
+    // /backcharges is MANAGE_BILLING. A backcharge is money the GC is
+    // taking off the next cheque, so it sits with whoever chases the
+    // cheque rather than with compliance.
+    backcharge_exposure: ROUTE_CAPABILITY["/backcharges"],
   };
 
   it.each(TOOLS.map((tool) => [tool.name, tool.capability] as const))("%s", (name, capability) => {

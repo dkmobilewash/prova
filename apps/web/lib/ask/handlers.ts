@@ -26,7 +26,7 @@ import { calculateRetainageSummary } from "@/lib/retainage";
 import { loadRetainageHeld } from "@/lib/retainage-query";
 import { changeOrderValueDelta, countUnbookable, PENDING_CHANGE_ORDER_STATUSES } from "@/lib/change-order";
 import { calculateTimeEntryLaborCost, findEffectiveFringeRateSchedule } from "@/lib/labor-cost";
-import { loadRatioReviews } from "@/lib/union-compliance-query";
+import { loadRatioReviews, loadRemittance } from "@/lib/union-compliance-query";
 import { ratioLabel } from "@/lib/apprentice-ratio";
 import { loadCloseoutJobs } from "@/lib/closeout-query";
 import { blockerLabel, stageLabel } from "@/components/closeoutPackageLabels";
@@ -118,6 +118,8 @@ export const HANDLERS: Record<
   certification_expiry: certificationExpiry,
   apprentice_ratio: apprenticeRatio,
   closeout_status: closeoutStatus,
+  fringe_remittance: fringeRemittance,
+  backcharge_exposure: backchargeExposure,
 };
 
 /** A month the person named, or this one. Same principle as the expiry
@@ -1569,6 +1571,138 @@ async function closeoutStatus(companyId: string, input: Input): Promise<ToolResu
         ? input.jobName
           ? "That job has nothing recorded on the closeout side yet."
           : "No job has anything recorded on the closeout side yet."
+        : undefined,
+  };
+}
+
+
+/**
+ * What is owed to each local's trust funds for a month.
+ *
+ * Every figure comes from `loadRemittance`, which is what
+ * /union-compliance/remittance renders — the fringe schedule in force on
+ * each DAY worked, not the one in force today, which is the whole reason
+ * that module exists rather than a multiplication here.
+ *
+ * `uncomputedHours` is lifted to the top of the result rather than left in
+ * the detail, and the names come with it. An hour nobody could price is a
+ * HOLE in the remittance: no craft tag, or no schedule effective on that
+ * date. Valuing it at zero produces a total that looks like an answer and
+ * underpays a fund, which is the one mistake here that costs a member
+ * their benefits rather than costing the company a correction.
+ */
+async function fringeRemittance(companyId: string, input: Input): Promise<ToolResult> {
+  const citations = [{ label: "Remittance", href: "/union-compliance/remittance" }];
+  const month = ratioMonth(input.month, serverToday());
+  const report = await loadRemittance(companyId, month);
+
+  return {
+    data: {
+      month,
+      filed: report.filed,
+      periodStart: report.periodStart,
+      periodEnd: report.periodEnd,
+      locals: report.locals.map((local) => ({
+        unionLocal: local.unionLocalLabel,
+        hours: local.hours,
+        pension: local.components.pension,
+        vacation: local.components.vacation,
+        healthWelfare: local.components.healthWelfare,
+        training: local.components.training,
+        total: local.total,
+        uncomputedHours: local.uncomputedHours,
+      })),
+      // Named at the top level so an answer cannot be written without
+      // meeting it.
+      unpriced: {
+        hours: report.uncomputedHours,
+        people: report.uncomputedNames,
+      },
+    },
+    summary: {
+      totalHours: report.totalHours,
+      total: report.total,
+      unpricedHours: report.uncomputedHours,
+      locals: report.locals.length,
+    },
+    citations,
+    unavailable:
+      report.locals.length === 0 && report.uncomputedHours === 0
+        ? `No union hours were logged in ${month}, so there is nothing to remit.`
+        : undefined,
+  };
+}
+
+/**
+ * What the GC is taking off the next cheque, and what we have not answered.
+ *
+ * The date to object by is the point of this one. A backcharge sits in an
+ * email thread until it is simply deducted, and the window to dispute it is
+ * contractual — so `pastRespondBy` is STATED, the same way open_submittals
+ * states pastDue, rather than left as two dates for the model to subtract.
+ *
+ * `claimedAmount` is what the GC ASSERTS. It is never an agreed figure, and
+ * the field name says so on the way through so an answer cannot quietly
+ * present it as settled.
+ */
+async function backchargeExposure(companyId: string, input: Input): Promise<ToolResult> {
+  const citations = [{ label: "Backcharges", href: "/backcharges" }];
+  const jobMismatch = await jobNameMismatch(companyId, input.jobName);
+  if (jobMismatch) return { data: [], citations, unavailable: jobMismatch };
+
+  const backcharges = await prisma.backcharge.findMany({
+    where: { companyId },
+    select: {
+      number: true,
+      description: true,
+      claimedAmount: true,
+      status: true,
+      issuedOn: true,
+      respondByDate: true,
+      job: { select: { name: true } },
+    },
+    orderBy: { issuedOn: "desc" },
+  });
+
+  const today = serverToday();
+  const rows = backcharges
+    .filter((backcharge) => matchesJobName(backcharge.job.name, input.jobName))
+    .map((backcharge) => {
+      const respondBy = iso(backcharge.respondByDate);
+      return {
+        job: backcharge.job.name,
+        backcharge: `#${backcharge.number} ${backcharge.description}`,
+        claimedAmount: Number(backcharge.claimedAmount),
+        status: backcharge.status,
+        issuedOn: iso(backcharge.issuedOn),
+        respondBy,
+        // Null, not false, when no date was recorded — false would claim
+        // there is still time, which nobody knows.
+        pastRespondBy: respondBy === null ? null : daysBetween(respondBy, today) > 0,
+      };
+    });
+
+  // Still ours to answer. SETTLED, ACCEPTED and WITHDRAWN are closed, and
+  // an answered backcharge is not exposure even while the money moves.
+  const open = rows.filter((row) => row.status === "RECEIVED" || row.status === "DISPUTED");
+
+  return {
+    data: rows,
+    summary: {
+      backcharges: rows.length,
+      openBackcharges: open.length,
+      openClaimedTotal: open.reduce((sum, row) => sum + row.claimedAmount, 0),
+      // Over the OPEN ones only. A settled backcharge whose window lapsed
+      // months ago is not a thing anyone can still act on, and counting it
+      // inflates the one number here meant to make somebody move today.
+      pastRespondBy: open.filter((row) => row.pastRespondBy === true).length,
+    },
+    citations,
+    unavailable:
+      rows.length === 0
+        ? input.jobName
+          ? "No backcharge has been issued against that job."
+          : "No backcharge has been issued against this company."
         : undefined,
   };
 }

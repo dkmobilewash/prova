@@ -27,6 +27,8 @@ const LABELS: Record<ToolName, string> = {
   certification_expiry: "certifications",
   apprentice_ratio: "the apprentice ratio",
   closeout_status: "closeout",
+  fringe_remittance: "what you owe the funds",
+  backcharge_exposure: "backcharges",
 };
 
 export function toolLabel(name: ToolName): string {
