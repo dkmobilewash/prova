@@ -14,7 +14,11 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.cstream.prova"
+      "bundleIdentifier": "com.cstream.prova",
+      "deploymentTarget": "17.0",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "com.cstream.prova"
