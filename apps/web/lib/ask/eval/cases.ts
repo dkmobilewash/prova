@@ -69,7 +69,13 @@ export const EVAL_CASES: EvalCase[] = [
   tool("read-punch", "what's left on the punch list at Riverside?", "open_punch_list", { jobName: "Riverside" }),
   tool("read-equipment", "where is the scissor lift?", "equipment_location"),
   tool("read-compliance", "are we current on our GL certificate?", "compliance_status"),
-  tool("read-crew", "who is on Riverside tomorrow?", "crew_assignments", { jobName: "Riverside" }),
+  // MOVED OFF crew_assignments, and the old expectation was wrong rather
+  // than merely outdated: a roster carries no date, so this case graded the
+  // model correct for answering a DAY question from a list of everyone
+  // attached to the job. There is a per-day schedule now.
+  tool("read-crew-day", "who is on Riverside tomorrow?", "crew_schedule", { jobName: "Riverside" }),
+  tool("read-crew", "who is assigned to Riverside?", "crew_assignments"),
+  tool("read-missing-hours", "whose hours haven't been turned in?", "crew_schedule"),
   tool("read-deliveries", "did the drywall delivery show up at Maple yet?", "material_deliveries", { jobName: "Maple" }),
   tool("read-drawings", "are the drawings we're working from on Riverside still current?", "drawing_currency", { jobName: "Riverside" }),
   tool("read-bids", "what bids do we have out?", "bid_status"),

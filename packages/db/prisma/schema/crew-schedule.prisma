@@ -1,0 +1,100 @@
+// Who is PLANNED to be on which job, on which day.
+//
+// Its own file, like crew.prisma, certifications.prisma and
+// backcharges.prisma, so this lane's migrations do not collide with
+// anyone else's schema edits.
+//
+// WHY THIS MODEL EXISTS, AND WHY JobAssignment IS NOT IT.
+//
+// `JobAssignment` is `jobId + userId + createdAt`. There is no date on it.
+// It is a ROSTER — everyone attached to a job — and the Ask box's
+// `crew_assignments` tool says so in its own description. That distinction
+// was invisible until a hundred-question census put real questions next to
+// the registry, and it found two that nothing could answer:
+//
+//   - "who is on Riverside tomorrow?" The roster answers in exactly the
+//     right SHAPE, which is what makes it dangerous rather than merely
+//     unhelpful: a foreman reads a list of names as tomorrow's crew.
+//   - "whose hours haven't been turned in for last week?" `TimeEntry` has
+//     no submitted or approved state, so nothing separates a man who did
+//     not hand his hours in from a man who did not work.
+//
+// One model answers both, and the second one only because of what is NOT
+// stored here — see `attended` below.
+
+/// One person, one job, one day, PLANNED.
+///
+/// A person can legitimately appear twice on a day: mornings at one job and
+/// afternoons at another is ordinary in this trade. So the unique key is
+/// (job, worker, date) rather than (worker, date), and nothing here stops a
+/// second job on the same day.
+model CrewScheduleDay {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  jobId String
+  job   Job    @relation(fields: [jobId], references: [id])
+
+  /// The day planned. UTC midnight and rendered in UTC, like every other
+  /// date that matters here — and ENTERED, never stamped. A schedule is a
+  /// statement about a future day; `now()` would be a statement about when
+  /// somebody typed.
+  workDate DateTime
+
+  /// The worker, as a User with a login.
+  ///
+  /// EXACTLY ONE OF THIS AND `crewMemberId` IS SET, enforced by a CHECK in
+  /// the migration — the same XOR `TimeEntry` took in
+  /// 20260916130010_allow_crew_time_entries, and taken here for the same
+  /// reason rather than by imitation. A schedule keyed on `User` alone
+  /// could not schedule the no-login crew, and for a union sub that is most
+  /// of the field. Half a workforce you cannot put on the schedule is a
+  /// schedule nobody uses.
+  scheduledUserId String?
+  scheduledUser   User?   @relation("CrewScheduleDayUser", fields: [scheduledUserId], references: [id], onDelete: Restrict)
+
+  /// The worker, as a crew member with no login. See crew.prisma.
+  crewMemberId String?
+  crewMember   CrewMember? @relation(fields: [crewMemberId], references: [id], onDelete: Restrict)
+
+  /// What they are planned to work AS, when somebody has said.
+  ///
+  /// Optional and deliberately not required. Its value is planning the
+  /// apprentice ratio before the week rather than reviewing it after —
+  /// `apprentice_ratio` can only tell you a month went over once the hours
+  /// exist. Null means nobody said, which is the truth about most rows.
+  craftClassificationId String?
+  craftClassification   CraftClassification? @relation(fields: [craftClassificationId], references: [id], onDelete: SetNull)
+
+  /// "Half day", "starts at the hoist", "needs a lift". Free text because
+  /// it is a note to a person, not a field anything computes on.
+  note String?
+
+  createdByUserId String?
+  createdBy       User?   @relation("CrewScheduleDayCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// THERE IS NO `attended` COLUMN, AND ITS ABSENCE IS THE FEATURE.
+  ///
+  /// Whether somebody actually worked a planned day is DERIVED by asking
+  /// whether a TimeEntry exists for that job, that worker and that date.
+  /// This schema's standing rule is that derived state is never stored,
+  /// because a stored flag can disagree with what it was derived from — and
+  /// here the disagreement would be the whole answer: a planned day with no
+  /// hours against it IS the missing timecard, and an `attended` boolean
+  /// somebody forgot to tick would manufacture one.
+  ///
+  /// It also means this model needs no write path of its own once the day
+  /// passes. The schedule is only ever a plan; the hours are the record.
+  @@unique([jobId, scheduledUserId, workDate])
+  @@unique([jobId, crewMemberId, workDate])
+  @@index([companyId])
+  @@index([jobId, workDate])
+  @@index([workDate])
+  @@index([scheduledUserId])
+  @@index([crewMemberId])
+  @@index([craftClassificationId])
+}

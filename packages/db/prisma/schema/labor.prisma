@@ -334,6 +334,7 @@ model CraftClassification {
   catalogEntries      LineItemCatalogEntry[]
   timeEntries         TimeEntry[]
   dispatchSlips       DispatchSlip[]
+  crewScheduleDays    CrewScheduleDay[]
 
   @@unique([unionLocalId, name])
   @@index([unionLocalId])

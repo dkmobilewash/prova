@@ -3,15 +3,41 @@ import { StatusBadge } from "@prova/ui";
 import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { formatCalendarDate } from "@/lib/render-date";
+import { can } from "@/lib/permissions";
+import { serverToday } from "@/lib/serverToday";
+import {
+  loadPlannedDaysMissingHours,
+  loadUpcomingSchedule,
+  scheduledWorkerName,
+} from "@/lib/crew-schedule-query";
+import { CrewScheduleBoard, type ScheduleDay } from "@/components/CrewScheduleBoard";
+import { toJobOption } from "@/components/jobLabels";
 
 function formatDate(date: Date) {
   return formatCalendarDate(date);
 }
 
-export default async function SchedulePage() {
-  const { company } = await requireCompanyContext();
+/** The two shapes the board renders, built here so the page and the Ask
+ * tool cannot label the same row differently — `scheduledWorkerName` is the
+ * one place a worker's name is decided. */
+function toDay(row: Awaited<ReturnType<typeof loadUpcomingSchedule>>[number]): ScheduleDay {
+  return {
+    id: row.id,
+    workDate: row.workDate.toISOString().slice(0, 10),
+    jobId: row.jobId,
+    jobName: row.job.name,
+    worker: scheduledWorkerName(row),
+    craft: row.craftClassification?.name ?? null,
+    note: row.note,
+  };
+}
 
-  const [scheduled, unscheduled] = await Promise.all([
+export default async function SchedulePage() {
+  const { company, ...user } = await requireCompanyContext();
+  const today = serverToday();
+  const canWrite = can(user, "MANAGE_FIELD");
+
+  const [scheduled, unscheduled, upcoming, missing, people, crew, crafts] = await Promise.all([
     prisma.job.findMany({
       where: { companyId: company.id, startDate: { not: null } },
       orderBy: { startDate: "asc" },
@@ -22,7 +48,37 @@ export default async function SchedulePage() {
       orderBy: { createdAt: "desc" },
       include: { contact: true },
     }),
+    loadUpcomingSchedule(company.id, today),
+    loadPlannedDaysMissingHours(company.id, today),
+    prisma.user.findMany({
+      where: { companyId: company.id },
+      select: { id: true, name: true, email: true },
+      orderBy: [{ name: "asc" }, { email: "asc" }],
+    }),
+    // Archived crew members are left out: somebody off the books should not
+    // be offered for next Tuesday.
+    prisma.crewMember.findMany({
+      where: { companyId: company.id, archivedAt: null },
+      select: { id: true, legalFirstName: true, legalLastName: true },
+      orderBy: [{ legalLastName: "asc" }, { legalFirstName: "asc" }],
+    }),
+    prisma.craftClassification.findMany({
+      where: { companyId: company.id },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
   ]);
+
+  // One control, two kinds of worker. The prefix is what the action splits
+  // on, and it re-reads the row through this company rather than trusting
+  // which kind the browser said it was.
+  const workers = [
+    ...people.map((person) => ({ value: `user:${person.id}`, label: person.name ?? person.email })),
+    ...crew.map((member) => ({
+      value: `crew:${member.id}`,
+      label: `${member.legalFirstName} ${member.legalLastName}`,
+    })),
+  ];
 
   // Nothing at all, rather than nothing scheduled. The page's only previous
   // empty state said "No jobs scheduled yet", which on a new account reads
@@ -53,8 +109,23 @@ export default async function SchedulePage() {
     <div className="mx-auto max-w-3xl px-6 py-8">
       <h1 className="mb-6 text-xl font-semibold text-ink">Schedule</h1>
 
+      {/* The crew board goes FIRST. This page's own empty state has always
+          promised "you can see the week a second job wants the same three
+          hangers as the first" — and until there was a per-day schedule it
+          could not, because JobAssignment carries no date. The job list
+          below is the start-date view and stays exactly as it was. */}
+      <CrewScheduleBoard
+        upcoming={upcoming.map(toDay)}
+        missingHours={missing.map(toDay)}
+        jobs={[...scheduled, ...unscheduled].map(toJobOption)}
+        workers={workers}
+        crafts={crafts}
+        canWrite={canWrite && workers.length > 0 && scheduled.length + unscheduled.length > 0}
+        today={today}
+      />
+
       <section className="mb-10">
-        <h2 className="mb-3 text-sm font-semibold text-ink-label">Scheduled</h2>
+        <h2 className="mb-3 text-sm font-semibold text-ink-label">Job start dates</h2>
         {scheduled.length === 0 ? (
           <p className="text-ink-body">
             Nothing has a start date yet. Open a job below and set one in its Schedule section — until

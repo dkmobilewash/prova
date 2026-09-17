@@ -76,6 +76,7 @@ export type ToolResult = {
 
 export type ToolName =
   | "crew_assignments"
+  | "crew_schedule"
   | "open_punch_list"
   | "compliance_status"
   | "drawing_currency"
@@ -188,10 +189,16 @@ const safetyYearFilter = {
 export const TOOLS: ToolDefinition[] = [
   {
     name: "crew_assignments",
-    // /schedule is open to every member; so is this
+    // /schedule is open to every member; so is this.
+    //
+    // This description used to end "there is no per-day crew schedule".
+    // There is one now — CrewScheduleDay, and the crew_schedule tool below
+    // — so the sentence was corrected rather than left to go quietly false.
+    // A claim about what the app does NOT have expires exactly as fast as a
+    // claim about what it does, which this repo has paid for twice.
     capability: null,
     description:
-      "Jobs currently in progress, who is ASSIGNED to each, the job's scheduled start and end, and the GC contact. An assignment is a roster, not an attendance record: there is no per-day crew schedule and nothing records who actually showed up, so never state or imply that someone is on site today — say who is assigned. Does NOT know travel time, addresses, or what tools to bring; none of those are recorded.",
+      "Jobs currently in progress, who is ASSIGNED to each, the job's scheduled start and end, and the GC contact. An assignment is a ROSTER and carries no date at all — it is everyone attached to the job, not who is there on a given day. For a question about a DAY, use crew_schedule; this tool cannot answer one and must never state or imply that somebody is on site today. It is still not an attendance record either: nothing here records who actually showed up. Does NOT know travel time, addresses, or what tools to bring; none of those are recorded.",
     input_schema: noInput,
   },
   {
@@ -306,6 +313,17 @@ export const TOOLS: ToolDefinition[] = [
       "The OSHA case log for one year: every incident with its classification and outcome, which cases are recordable on the 300 log, days away and days restricted, and the toolbox talks held. Answers 'what is our safety record this year'. Recordability is derived from the outcome, not stored. It CANNOT confirm that any individual signed a toolbox talk — the attendee roster is free text and the signature sheet is a photo — so it can say a talk was held and never that a named person attended it.",
     input_schema: safetyYearFilter,
   },
+  {
+    name: "crew_schedule",
+    // /schedule, which lib/permissions.test.ts records as open: "Job start
+    // dates and who is assigned. No money on it, and everyone needs to know
+    // where they are working." Writing the schedule is MANAGE_FIELD; reading
+    // it takes the page's own gate, per the rule every row here follows.
+    capability: null,
+    description:
+      "Who is PLANNED to be on which job on which day, for the next two weeks — and, separately, planned days in the last eight weeks that nobody logged hours against. Answers 'who is on Riverside tomorrow', which crew_assignments CANNOT: that tool is a roster of everyone attached to a job and carries no date at all. A planned day with no hours is a claim about PAPERWORK and never about a person — it means nobody logged that day, not that the person did not work, and it must never be reported as the second. It also only sees days somebody actually put on the schedule, so an empty missing-hours list is not proof that every hour was logged.",
+    input_schema: jobFilter,
+  },
 ];
 
 /**
@@ -320,6 +338,10 @@ export const KNOWN_GAPS: { topic: string; why: string }[] = [
   {
     topic: "cash in the bank, and whether it covers payroll",
     why: "no bank balance and no payroll liability are recorded. The cash-flow page forecasts money coming IN from invoices; it does not know what is going out or what is on hand.",
+  },
+  {
+    topic: "who ACTUALLY showed up on a day, as opposed to who was planned",
+    why: "attendance is not recorded anywhere. crew_schedule holds who was PLANNED and TimeEntry holds hours somebody logged; neither is a register. A planned day with no hours means nobody logged it — never that the person was absent, which is a claim about a man rather than about paperwork.",
   },
   {
     topic: "where a machine physically is",

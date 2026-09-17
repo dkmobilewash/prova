@@ -1439,6 +1439,7 @@ async function undo(companyId) {
       prisma.drawingRevision.deleteMany({ where: { set: { jobId: { in: jobIds } } } }),
     );
     await del("drawingSet", () => prisma.drawingSet.deleteMany({ where: { jobId: { in: jobIds } } }));
+    await del("crewScheduleDay", () => prisma.crewScheduleDay.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("timeEntry", () => prisma.timeEntry.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("safetyIncident", () =>
       prisma.safetyIncident.deleteMany({ where: { jobId: { in: jobIds } } }),

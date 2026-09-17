@@ -60,6 +60,7 @@ model Job {
   changeOrders                 ChangeOrder[]
   changeOrderCounter           ChangeOrderCounter?
   assignments                  JobAssignment[]
+  crewScheduleDays             CrewScheduleDay[]
   signatureRequests            SignatureRequest[]
   invoices                     Invoice[]
   complianceDocuments          ComplianceDocument[]

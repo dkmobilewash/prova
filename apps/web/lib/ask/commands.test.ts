@@ -253,6 +253,11 @@ describe("read-tool capabilities match the pages they cite", () => {
   // The rule tools.ts states: a tool answers what its citation page shows.
   const expected: Record<string, string | null> = {
     crew_assignments: null, // /schedule is open
+    // Same page, same gate. Reading who is planned where is open; WRITING the
+    // schedule is MANAGE_FIELD in lib/actions/crewSchedule.ts, which is the
+    // right way round — a tool stricter than the screen beside it refuses
+    // what the person can already read.
+    crew_schedule: null,
     open_punch_list: ROUTE_CAPABILITY["/punch-lists"],
     compliance_status: ROUTE_CAPABILITY["/compliance"],
     drawing_currency: ROUTE_CAPABILITY["/drawings"],
