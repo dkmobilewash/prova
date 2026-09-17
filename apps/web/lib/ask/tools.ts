@@ -98,7 +98,10 @@ export type ToolName =
   | "backcharge_exposure"
   | "apprenticeship_standing"
   | "daily_field_reports"
-  | "wage_determinations";
+  | "wage_determinations"
+  | "job_photos"
+  | "vendor_pricing"
+  | "gc_relationship";
 
 export type ToolDefinition = {
   name: ToolName;
@@ -415,6 +418,36 @@ export const TOOLS: ToolDefinition[] = [
     description:
       "The prevailing-wage determinations filed against each job, with the jurisdiction and whether the actual document is attached or linked. Answers 'do we have the determination for this job on file'. A determination row with NEITHER a file nor a source link is flagged: it is a determination in name only, and it cannot be produced in an audit. It does not know whether a job is public works, so it cannot tell you a determination is MISSING — only what has been filed.",
     input_schema: jobFilter,
+  },
+  {
+    name: "job_photos",
+    // /photos
+    capability: "MANAGE_FIELD",
+    description:
+      "Site photos on each job: how many there are, when the most recent was TAKEN, how many carry a caption, and how many have been shared with the GC by link. Answers 'do we have pictures of that'. The date reported is when the photo was taken, not when somebody uploaded it, because that is the date a dispute turns on. A count is not proof of coverage — it cannot tell you whether the thing you need a picture OF was photographed, only how many exist.",
+    input_schema: jobFilter,
+  },
+  {
+    name: "vendor_pricing",
+    // /vendors/pricing
+    capability: "MANAGE_ESTIMATING",
+    description:
+      "Prices vendors have quoted, per material, with who quoted it, when, and whether the quote is still inside its validity date. Answers 'what did we get quoted for that' and 'is that price still good'. A quote PAST its validity date is flagged as expired rather than listed as a current price — an expired quote carried into a bid is how a job is mis-priced. A quote with NO validity date recorded is reported as undated, never as valid indefinitely.",
+    input_schema: noInput,
+  },
+  {
+    name: "gc_relationship",
+    // /contacts, which lib/permissions.test.ts records as deliberately open:
+    // "the address book — names and phone numbers are not a tier". This tool
+    // takes that page's gate, which is the rule this file states. Worth a
+    // reviewer's eye all the same: an MSA expiry is a commercial term rather
+    // than a phone number, and if a tighter gate is right here then the page
+    // needs it first — a tool must not be stricter than the screen beside it,
+    // or the box refuses what the person can already read.
+    capability: null,
+    description:
+      "For each GC and client: whether the master service agreement has lapsed, whether prequalification has expired, and whether their portal link is live or revoked. Answers 'can we still bid this GC' and 'who can see our portal right now'. A date that was never recorded is reported as unrecorded rather than as current. It knows only what is filed here — it does not know a GC's own approved-bidder list, and an in-date MSA is not the same as being invited to bid.",
+    input_schema: noInput,
   },
 ];
 

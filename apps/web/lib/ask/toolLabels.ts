@@ -32,6 +32,9 @@ const LABELS: Record<ToolName, string> = {
   apprenticeship_standing: "your apprentices",
   daily_field_reports: "the field reports",
   wage_determinations: "wage determinations",
+  job_photos: "site photos",
+  vendor_pricing: "vendor prices",
+  gc_relationship: "your GCs",
 };
 
 export function toolLabel(name: ToolName): string {

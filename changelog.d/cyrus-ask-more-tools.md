@@ -1,10 +1,11 @@
-### Nine more things the assistant can look up
+### Twelve more things the assistant can look up
 
 `open_submittals`, `certification_expiry`, `apprentice_ratio`,
 `closeout_status`, `fringe_remittance`, `backcharge_exposure`, `apprenticeship_standing`,
-`daily_field_reports` and `wage_determinations`, taking the read surface from
-fifteen tools to twenty-four. All nine are reads — nothing new can be
-written, and no command was added.
+`daily_field_reports`, `wage_determinations`, `job_photos`, `vendor_pricing`
+and `gc_relationship`, taking the read surface from fifteen tools to
+twenty-seven. All twelve are reads — nothing new can be written, and no
+command was added.
 
 **`open_submittals` — "what is the GC still sitting on?"** Submittals sent
 and not returned, with days outstanding, the date back, and whether it has
@@ -139,14 +140,47 @@ coverage — because it exists, so a count says the job is covered.
 schema records whether a job is public works, so "this job has no
 determination" is not evidence of a gap; it may simply be private work.
 
+**`job_photos` — "do we have pictures of that?"** Per job: how many, when
+the most recent was **taken**, how many carry a caption, how many are shared
+with the GC by link. The date is `capturedAt`, never `createdAt` — a dispute
+turns on when the photo was taken, and the two can be weeks apart when a
+foreman clears his phone at the end of a month. A count is not proof of
+coverage, and the description says so: nothing here can know whether the
+thing you need a picture OF was photographed.
+
+**`vendor_pricing` — "is that price still good?"** Quotes with the vendor,
+the date and the validity window. **A quote past its validity date is
+flagged expired rather than listed as a current price** — an expired quote
+carried into a bid is how a job gets mis-priced. A quote with no validity
+date is null, not false: "not expired" would claim the price still stands,
+and nobody recorded anything that says so. Counted apart from expired ones,
+because one is a stale price and the other is a vendor who never gave terms.
+
+**`gc_relationship` — "can we still bid this GC?"** Three independent
+things, none of which implies another: the MSA, the prequalification, and
+**whether the portal link they hold still works**. A GC whose MSA lapsed in
+March can still have a live link into your job. Every unrecorded date reads
+as unrecorded, never as current — "the MSA is fine" is the sentence somebody
+repeats to a GC before finding out.
+
 **Capabilities follow the page each cites**, which is the rule `tools.ts`
 already states: `/submittals` is `MANAGE_JOBS`, `/certifications` is
 `MANAGE_FIELD`, `/union-compliance` is `MANAGE_COMPLIANCE` (for both the ratio and the
 remittance), `/closeout` is `MANAGE_JOBS`, `/backcharges` is
 `MANAGE_BILLING` — a backcharge is money coming off the next cheque, so it
 sits with whoever chases the cheque rather than with compliance —
-`/field-reports` is `MANAGE_FIELD`, and `/prevailing-wage` is
-`MANAGE_COMPLIANCE`. The second is worth naming — the question is "who can start
+`/field-reports` is `MANAGE_FIELD`, `/prevailing-wage` is
+`MANAGE_COMPLIANCE`, `/photos` is `MANAGE_FIELD` and `/vendors/pricing` is
+`MANAGE_ESTIMATING`.
+
+**One capability is worth a reviewer's eye rather than a nod.**
+`gc_relationship` takes `null`, because `/contacts` is on
+`lib/permissions.test.ts`'s open list — *"the address book: names and phone
+numbers are not a tier"*. That is the rule this file states, applied
+straight. But an MSA expiry is a commercial term rather than a phone
+number, and if a tighter gate is right here then **the page needs it
+first**: a tool stricter than its own screen refuses what the person can
+already read, which is worse than either answer. The second is worth naming — the question is "who can start
 on Monday", which a foreman asks and a compliance manager does not.
 
 **What adding a tool actually costs here, recorded because it is the good
@@ -156,7 +190,7 @@ censuses — one asserting every tool's capability matches its citation page,
 one asserting every tool has at least one routing eval case. Nothing shipped
 half-wired, and none of it needed remembering.
 
-56 new tests. Fourteen mutations watched RED and restored: counting never-sent
+67 new tests. Eighteen mutations watched RED and restored: counting never-sent
 drafts as open, reporting `pastDue: false` where no date was agreed, dropping
 undated certifications, returning nothing on an unreadable window, reading the
 ratio verdict off `daysOver` alone, giving a verdict where no rule exists,
@@ -164,7 +198,10 @@ passing an unreadable month straight through, sorting the closeout blockers,
 burying the unpriced remittance hours, counting settled backcharges as
 exposure, reporting `pastRespondBy: false` where no date was recorded, folding
 NOT_RECORDED hours into "short", counting a whitespace-only delay as a
-delay, and calling a determination with no file and no link producible.
+delay, calling a determination with no file and no link producible,
+reporting a photo's share date instead of its capture date, treating an
+undated vendor quote as current, reading an unrecorded MSA date as current,
+and reporting a revoked portal link as live.
 
 **Two things writing the tests found, rather than the tests confirming what
 was already right.** The backcharge summary counted `pastRespondBy` across
@@ -175,7 +212,17 @@ And the first version of the remittance total test computed a figure and
 asserted it differed from another, which was a tautology that passed on
 nothing; it asserts the loader's figures pass through untouched instead.
 
-**Not verified, and not claimed:** none of the nine has been asked a real
+**A third vacuous test, caught the same way and worth naming because the
+method is the point.** The `job_photos` test claimed to pin "reports when
+the photo was TAKEN" — and the mutation swapping `capturedAt` for the share
+date PASSED it. In that fixture the newest-captured photo also had the
+newest share date, so the two answers were identical and the assertion
+could not see the difference it claimed to guard. The fixture now shares an
+older photo LATER than the newest capture, so the mutation produces a
+different date and fails. Running the mutation is what found it; the test
+was green and meaningless until then.
+
+**Not verified, and not claimed:** none of the twelve has been asked a real
 question through the box. The tests fake the rows, so they prove the rules and not the
 Prisma queries that feed them — in particular the `orderBy revisionNumber
 desc, take 1` that selects a submittal's latest revision is asserted by

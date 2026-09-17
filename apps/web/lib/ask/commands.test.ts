@@ -295,6 +295,13 @@ describe("read-tool capabilities match the pages they cite", () => {
     apprenticeship_standing: ROUTE_CAPABILITY["/union-compliance"],
     daily_field_reports: ROUTE_CAPABILITY["/field-reports"],
     wage_determinations: ROUTE_CAPABILITY["/prevailing-wage"],
+    job_photos: ROUTE_CAPABILITY["/photos"],
+    vendor_pricing: ROUTE_CAPABILITY["/vendors/pricing"],
+    // /contacts is on lib/permissions.test.ts's open list, so this is null
+    // by the same rule every other row here follows: a tool takes the gate
+    // of the page it cites. A tool stricter than its own screen refuses
+    // what the person can already read.
+    gc_relationship: null,
   };
 
   it.each(TOOLS.map((tool) => [tool.name, tool.capability] as const))("%s", (name, capability) => {

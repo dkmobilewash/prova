@@ -124,6 +124,9 @@ export const HANDLERS: Record<
   apprenticeship_standing: apprenticeshipStanding,
   daily_field_reports: dailyFieldReports,
   wage_determinations: wageDeterminations,
+  job_photos: jobPhotos,
+  vendor_pricing: vendorPricing,
+  gc_relationship: gcRelationship,
 };
 
 /** A month the person named, or this one. Same principle as the expiry
@@ -1890,5 +1893,178 @@ async function wageDeterminations(companyId: string, input: Input): Promise<Tool
           ? "No wage determination has been filed against that job. Whether one is required is not recorded anywhere here."
           : "No wage determination has been filed against any job. Whether any of them are public works is not recorded anywhere here."
         : undefined,
+  };
+}
+
+
+/**
+ * What has been photographed on each job.
+ *
+ * The date reported is `capturedAt` — when the photo was TAKEN — not
+ * `createdAt`, when somebody got round to uploading it. A dispute turns on
+ * the first and never the second, and they can be weeks apart when a
+ * foreman clears his phone at the end of a month.
+ *
+ * A count is not proof of coverage, which the tool description says out
+ * loud. Nothing here can know whether the thing somebody needs a picture OF
+ * was photographed — only how many exist.
+ */
+async function jobPhotos(companyId: string, input: Input): Promise<ToolResult> {
+  const citations = [{ label: "Site photos", href: "/photos" }];
+  const jobMismatch = await jobNameMismatch(companyId, input.jobName);
+  if (jobMismatch) return { data: [], citations, unavailable: jobMismatch };
+
+  const media = await prisma.jobMedia.findMany({
+    where: { companyId },
+    select: {
+      capturedAt: true,
+      caption: true,
+      sharedWithClientAt: true,
+      job: { select: { name: true } },
+    },
+  });
+
+  const byJob = new Map<string, { captures: number; captioned: number; shared: number; latest: string | null }>();
+  for (const item of media) {
+    if (!matchesJobName(item.job.name, input.jobName)) continue;
+    const row = byJob.get(item.job.name) ?? { captures: 0, captioned: 0, shared: 0, latest: null };
+    row.captures += 1;
+    if (item.caption?.trim()) row.captioned += 1;
+    if (item.sharedWithClientAt) row.shared += 1;
+    const taken = iso(item.capturedAt);
+    if (taken && (row.latest === null || taken > row.latest)) row.latest = taken;
+    byJob.set(item.job.name, row);
+  }
+
+  const rows = [...byJob.entries()]
+    .map(([job, row]) => ({ job, ...row, latestCapturedOn: row.latest }))
+    .sort((a, b) => (b.latestCapturedOn ?? "").localeCompare(a.latestCapturedOn ?? ""));
+
+  return {
+    data: rows.map(({ latest: _latest, ...row }) => row),
+    summary: {
+      jobsWithPhotos: rows.length,
+      captures: rows.reduce((sum, row) => sum + row.captures, 0),
+      sharedWithTheGc: rows.reduce((sum, row) => sum + row.shared, 0),
+    },
+    citations,
+    unavailable:
+      rows.length === 0
+        ? input.jobName
+          ? "No photo has been captured on that job."
+          : "No photo has been captured on any job."
+        : undefined,
+  };
+}
+
+/**
+ * What vendors have quoted, and whether it is still good.
+ *
+ * The validity date is the point. An expired quote carried into a bid is
+ * how a job gets mis-priced, so `expired` is STATED rather than left as two
+ * dates for the model to compare — the same rule open_submittals and
+ * backcharge_exposure follow.
+ *
+ * A quote with NO validity date is `null`, not `false`. "Not expired" would
+ * be a claim that the price still stands, and nobody recorded anything that
+ * says so.
+ */
+async function vendorPricing(companyId: string): Promise<ToolResult> {
+  const citations = [{ label: "Vendor pricing", href: "/vendors/pricing" }];
+  const quotes = await prisma.vendorPriceQuote.findMany({
+    where: { companyId },
+    select: {
+      description: true,
+      unit: true,
+      unitPrice: true,
+      quotedOn: true,
+      validUntil: true,
+      vendor: { select: { name: true } },
+    },
+    orderBy: { quotedOn: "desc" },
+  });
+
+  const today = serverToday();
+  const rows = quotes.map((quote) => {
+    const validUntil = iso(quote.validUntil);
+    return {
+      material: quote.description,
+      vendor: quote.vendor?.name ?? null,
+      unit: quote.unit,
+      unitPrice: Number(quote.unitPrice),
+      quotedOn: iso(quote.quotedOn),
+      validUntil,
+      expired: validUntil === null ? null : daysBetween(validUntil, today) > 0,
+    };
+  });
+
+  return {
+    data: rows,
+    summary: {
+      quotes: rows.length,
+      expired: rows.filter((row) => row.expired === true).length,
+      // Counted apart from expired: an undated quote is a records gap, not
+      // a stale price, and the fix is to ask the vendor for terms.
+      withoutAValidityDate: rows.filter((row) => row.expired === null).length,
+    },
+    citations,
+    unavailable: rows.length === 0 ? "No vendor price has been recorded." : undefined,
+  };
+}
+
+/**
+ * Whether each GC relationship is still in force.
+ *
+ * Three independent things, none of which implies another: the MSA, the
+ * prequalification, and whether the portal link they hold still works.
+ *
+ * Every date here is reported as UNRECORDED when null rather than as
+ * current. That is the same rule certification_expiry follows and it
+ * matters more here, because "the MSA is fine" is the sentence somebody
+ * repeats to a GC before finding out it lapsed in March.
+ */
+async function gcRelationship(companyId: string): Promise<ToolResult> {
+  const citations = [{ label: "Contacts", href: "/contacts" }];
+  const contacts = await prisma.contact.findMany({
+    where: { companyId },
+    select: {
+      name: true,
+      msaExpirationDate: true,
+      prequalificationExpiresAt: true,
+      portalToken: true,
+      portalRevokedAt: true,
+    },
+    orderBy: { name: "asc" },
+  });
+
+  const today = serverToday();
+  const state = (date: string | null) =>
+    date === null ? ("unrecorded" as const) : daysBetween(date, today) > 0 ? ("expired" as const) : ("current" as const);
+
+  const rows = contacts.map((contact) => {
+    const msa = iso(contact.msaExpirationDate);
+    const prequal = iso(contact.prequalificationExpiresAt);
+    return {
+      contact: contact.name,
+      msaExpiresOn: msa,
+      msa: state(msa),
+      prequalificationExpiresOn: prequal,
+      prequalification: state(prequal),
+      // Separate from the two above on purpose: a live portal link is a
+      // thing somebody can still open, whatever the paperwork says.
+      portalLink: contact.portalToken === null ? ("never issued" as const) : contact.portalRevokedAt ? ("revoked" as const) : ("live" as const),
+    };
+  });
+
+  return {
+    data: rows,
+    summary: {
+      contacts: rows.length,
+      msaExpired: rows.filter((row) => row.msa === "expired").length,
+      prequalificationExpired: rows.filter((row) => row.prequalification === "expired").length,
+      livePortalLinks: rows.filter((row) => row.portalLink === "live").length,
+    },
+    citations,
+    unavailable: rows.length === 0 ? "No GC or client is on file." : undefined,
   };
 }
