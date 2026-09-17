@@ -4,6 +4,13 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { boundTurns, type AskTurn } from "@/lib/ask/turns";
+import {
+  answeredAgo,
+  boundTranscript,
+  staleIndices,
+  stalenessNote,
+  type TranscriptEntry,
+} from "@/lib/ask/transcript";
 import { EXAMPLES } from "@/components/askExamples";
 import type { AskRequest, AskStreamEvent, ClarifyView, ProposalView } from "@/lib/ask/answer";
 import type { Citation } from "@/lib/ask/tools";
@@ -74,6 +81,33 @@ function rememberCard(id: string | null) {
  * server bounds them (lib/ask/turns.ts) — memory carries the conversation,
  * never the facts, so there is nothing here worth persisting beyond the tab.
  */
+/** The scrollback a person reads. A SECOND key beside askTurns on purpose:
+ * that one is the wire format and every byte of it is prompt weight paid on
+ * every question, while this never leaves the browser and holds what the
+ * screen needs — when it was asked, what it cited. See lib/ask/transcript.ts
+ * for the argument. sessionStorage for the same reason the card id is:
+ * a conversation dies with the tab. */
+const TRANSCRIPT_KEY = "askTranscript";
+
+function rememberTranscript(entries: TranscriptEntry[]) {
+  try {
+    if (entries.length) sessionStorage.setItem(TRANSCRIPT_KEY, JSON.stringify(entries));
+    else sessionStorage.removeItem(TRANSCRIPT_KEY);
+  } catch {
+    // Private window, blocked storage. The panel renders without a
+    // scrollback rather than not rendering.
+  }
+}
+
+function rememberedTranscript(): TranscriptEntry[] {
+  try {
+    const raw = sessionStorage.getItem(TRANSCRIPT_KEY);
+    return raw ? boundTranscript(JSON.parse(raw)) : [];
+  } catch {
+    return [];
+  }
+}
+
 const TURNS_KEY = "askTurns";
 
 function rememberTurns(turns: AskTurn[]) {
@@ -154,6 +188,33 @@ export function AskPanel() {
   const [clarify, setClarify] = useState<ClarifyView | null>(null);
   const [outcome, setOutcome] = useState<ProposalOutcome | null>(null);
   const [tapError, setTapError] = useState<string | null>(null);
+
+  // The scrollback, and the clock the staleness marks are measured against.
+  // Both start empty and are filled in an effect: the server renders no
+  // transcript and no timestamp, so there is nothing for hydration to
+  // disagree about — the same rule this repo applies to every other date.
+  const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
+  const [now, setNow] = useState(0);
+  const citationsRef = useRef<Citation[]>([]);
+  const scrollbackRef = useRef<HTMLDivElement>(null);
+
+  // Open at the BOTTOM, which is where the newest prior exchange is. A
+  // scrollback that opens at the top shows the oldest thing first and cuts
+  // the one most likely to be wanted off below the fold — which is what the
+  // first click test of this showed. Older is what you scroll UP for.
+  useEffect(() => {
+    const box = scrollbackRef.current;
+    if (box) box.scrollTop = box.scrollHeight;
+  }, [transcript]);
+
+  useEffect(() => {
+    setTranscript(rememberedTranscript());
+    setNow(Date.now());
+    // Ages are coarse ("3 hours ago"), so a minute is plenty — and without
+    // it a panel left open all afternoon keeps claiming "just now".
+    const tick = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(tick);
+  }, []);
   const [isConfirming, startConfirm] = useTransition();
 
   // Asking something else, or leaving, must stop the request in flight —
@@ -209,6 +270,7 @@ export function AskPanel() {
         break;
       case "done":
         setCitations(event.citations);
+        citationsRef.current = event.citations;
         setStatus(null);
         // An answer that called no tool at all — a refusal, a clarifying
         // question — never gets `answering`, so everything it said is
@@ -232,6 +294,22 @@ export function AskPanel() {
               { role: "assistant", content: answerRef.current.trim() },
             ]),
           );
+          // And the person's copy, which keeps what the model has no use
+          // for: when it was asked, and the pages the figures came from.
+          // The citations are the real remedy for a stale figure — not
+          // hiding the number, but leaving the live one one tap away.
+          const recorded = boundTranscript([
+            ...rememberedTranscript(),
+            {
+              question: askedRef.current,
+              answer: answerRef.current.trim(),
+              citations: citationsRef.current,
+              askedAt: Date.now(),
+            },
+          ]);
+          rememberTranscript(recorded);
+          setTranscript(recorded);
+          setNow(Date.now());
         }
         break;
       case "proposal":
@@ -267,6 +345,7 @@ export function AskPanel() {
     rememberCard(null);
     setAnswer("");
     setCitations([]);
+    citationsRef.current = [];
     setError(null);
     setProposal(null);
     setClarify(null);
@@ -401,12 +480,38 @@ export function AskPanel() {
   const hasResult =
     answer !== "" || error !== null || proposal !== null || clarify !== null || outcome !== null;
 
+  /**
+   * The scrollback shows what came BEFORE the answer on screen, never the
+   * answer on screen.
+   *
+   * Without this the newest exchange renders twice — once in the box and
+   * again in the live block below it — which is what the first click test
+   * of this feature showed. Matching on the question rather than on a
+   * count is what makes the two other cases right: after a reload there is
+   * no live answer, so every entry belongs in the box; and while a NEW
+   * question is in flight the last entry is the previous one, which also
+   * belongs in the box.
+   *
+   * The index is carried through because staleness is a fact about a
+   * position in the whole transcript, not in this filtered view.
+   */
+  const priorExchanges = transcript
+    .map((entry, index) => ({ entry, index }))
+    .filter(({ entry, index }) => !(hasResult && index === transcript.length - 1 && entry.question === asked));
+
   return (
     <section className="rounded-lg border border-line-card bg-surface p-4">
       <form
         onSubmit={(event) => {
           event.preventDefault();
           ask(question);
+          // Clear the box on send. Harmless while this was one question at
+          // a time — you could edit and re-ask — and a real defect now that
+          // it is a conversation: a follow-up typed into a box still
+          // holding the last question APPENDS to it, and the person sends
+          // "which invoices are overdue?raise an RFI on that job". Found on
+          // the first two-question click test.
+          setQuestion("");
         }}
         className="flex gap-2"
       >
@@ -426,10 +531,14 @@ export function AskPanel() {
           // one writes nothing, so a repeat is only a wasted call — but a
           // button that looks live during a slow answer invites the click
           // that makes it slower.
-          disabled={question.trim() === "" || (isAsking && question.trim() === asked)}
+          // Was `isAsking && question.trim() === asked`, which read the box
+          // to decide whether ITS OWN question was in flight. Clearing the
+          // box on send makes that comparison always false, so it asks
+          // `isAsking` directly — which is what it meant.
+          disabled={question.trim() === "" || isAsking}
           className="shrink-0 rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {isAsking && question.trim() === asked ? "Looking…" : "Ask"}
+          {isAsking ? "Looking…" : "Ask"}
         </button>
       </form>
 
@@ -451,6 +560,71 @@ export function AskPanel() {
             </li>
           ))}
         </ul>
+      )}
+
+      {/* THE SCROLLBACK. Everything already answered in this sitting, oldest
+          at the top — so older is UP, which is where a person reaches for it.
+          Capped in height and scrolled on its own, because this panel sits
+          above the rest of the dashboard and must not push it down the page
+          as a conversation grows.
+
+          Every entry here except the newest carries a mark. The argument for
+          it is in lib/ask/transcript.ts and it is the answer to this
+          component's own original refusal: a scrollback IS a place for a
+          number to be read after it stopped being true — unless the screen
+          says so. The model was already told (PRIOR_TURNS_RULE); this is the
+          half that tells the person. */}
+      {priorExchanges.length > 0 && (
+        <div
+          ref={scrollbackRef}
+          className="mt-3 max-h-80 overflow-y-auto rounded-md border border-line-row"
+          data-ask="transcript"
+        >
+          <ol className="divide-y divide-line-row">
+            {priorExchanges.map(({ entry, index }) => {
+              const stale = staleIndices(transcript).includes(index);
+              return (
+                <li key={`${entry.askedAt}-${index}`} className="px-3 py-2">
+                  <p className="text-xs text-ink-body">{entry.question}</p>
+                  {entry.answer && (
+                    <p
+                      className={`mt-1 whitespace-pre-line text-sm ${stale ? "text-ink-muted" : "text-ink"}`}
+                    >
+                      {entry.answer}
+                    </p>
+                  )}
+                  {entry.citations.length > 0 && (
+                    <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-ink-body">
+                      <span>Read from</span>
+                      {entry.citations.map((citation) => (
+                        <Link key={citation.href} href={citation.href} className="underline hover:text-link">
+                          {citation.label}
+                        </Link>
+                      ))}
+                    </p>
+                  )}
+                  {stale ? (
+                    <p className="mt-1 text-xs text-amber-400">
+                      {stalenessNote(entry.askedAt, now)}{" "}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setQuestion(entry.question);
+                          ask(entry.question);
+                        }}
+                        className="underline hover:text-link"
+                      >
+                        Ask again
+                      </button>
+                    </p>
+                  ) : (
+                    <p className="mt-1 text-xs text-ink-muted">Answered {answeredAgo(entry.askedAt, now)}</p>
+                  )}
+                </li>
+              );
+            })}
+          </ol>
+        </div>
       )}
 
       {(hasResult || isAsking) && (
@@ -564,6 +738,12 @@ export function AskPanel() {
                 // result — otherwise "the same" would reach back across a
                 // boundary the person drew deliberately.
                 rememberTurns([]);
+                // The scrollback goes with them. "Something else" has
+                // always promised a clean start, and a transcript that
+                // survives it is the boundary the person drew being
+                // ignored on screen while it is honoured in the prompt.
+                rememberTranscript([]);
+                setTranscript([]);
                 askedRef.current = "";
                 answerRef.current = "";
                 setAsked("");
