@@ -1,11 +1,12 @@
-### Twelve more things the assistant can look up
+### Fifteen more things the assistant can look up
 
 `open_submittals`, `certification_expiry`, `apprentice_ratio`,
 `closeout_status`, `fringe_remittance`, `backcharge_exposure`, `apprenticeship_standing`,
 `daily_field_reports`, `wage_determinations`, `job_photos`, `vendor_pricing`
-and `gc_relationship`, taking the read surface from fifteen tools to
-twenty-seven. All twelve are reads — nothing new can be written, and no
-command was added.
+`gc_relationship`, `pay_application_status`, `warranty_obligations` and
+`outbound_messages`, taking the read surface from fifteen tools to thirty.
+All fifteen are reads — nothing new can be written, and no command was
+added.
 
 **`open_submittals` — "what is the GC still sitting on?"** Submittals sent
 and not returned, with days outstanding, the date back, and whether it has
@@ -163,6 +164,40 @@ March can still have a live link into your job. Every unrecorded date reads
 as unrecorded, never as current — "the MSA is fine" is the sentence somebody
 repeats to a GC before finding out.
 
+**`pay_application_status` — "has the GC approved it yet?"** Where each
+application sits in the GC's process, and how long it has sat there.
+Deliberately not the same question as `receivables`, which answers who owes
+what and how overdue: this is the question asked the week **before** the
+money is late.
+
+**A DISPUTED application is counted apart from a slow one**, because it
+changes what somebody does. Everything else on the list gets chased; a
+dispute is a conversation, and chasing it as though it were slow is how a
+fortnight goes.
+
+**`warranty_obligations` — "are we still on the hook?"** The end date is
+derived from the start and the months, never stored. Callbacks are split
+open from resolved, with the oldest open one dated.
+
+**A job with no warranty period recorded reads as UNRECORDED, not as out of
+warranty.** Nothing here knows what a subcontract obliges; it knows what
+somebody typed. "You're clear" read off an empty field is the one answer
+this tool must never give — and a job with nothing recorded at all is left
+out of the list rather than reported as clear.
+
+**`outbound_messages` — "did that actually reach them?"** The vocabulary is
+already written down in `MessageEventType` and this tool carries it rather
+than flattening it: SENT is handed to the provider and is **not** the same
+as arrived; DELIVERED is the only status that means the receiving server
+took it; BOUNCED carries the reason, which is what makes it fixable.
+
+**The LATEST event is what counts** — a message that bounced after being
+sent is bounced, and reading the first event calls it sent while somebody
+waits for a reply to an email that never arrived. A message with nothing
+back yet is null, not "sent". And opens are reported but **nothing is ever
+concluded from their absence**, because image-blocking makes a missing open
+meaningless — there is deliberately no "unopened" figure in the summary.
+
 **Capabilities follow the page each cites**, which is the rule `tools.ts`
 already states: `/submittals` is `MANAGE_JOBS`, `/certifications` is
 `MANAGE_FIELD`, `/union-compliance` is `MANAGE_COMPLIANCE` (for both the ratio and the
@@ -170,10 +205,16 @@ remittance), `/closeout` is `MANAGE_JOBS`, `/backcharges` is
 `MANAGE_BILLING` — a backcharge is money coming off the next cheque, so it
 sits with whoever chases the cheque rather than with compliance —
 `/field-reports` is `MANAGE_FIELD`, `/prevailing-wage` is
-`MANAGE_COMPLIANCE`, `/photos` is `MANAGE_FIELD` and `/vendors/pricing` is
-`MANAGE_ESTIMATING`.
+`MANAGE_COMPLIANCE`, `/photos` is `MANAGE_FIELD`, `/vendors/pricing` is
+`MANAGE_ESTIMATING`, `/closeout` is `MANAGE_JOBS` for warranty, and
+`pay_application_status` takes the `MANAGE_BILLING` literal that
+`receivables` already uses — the pay applications section renders inside
+the job page's money branch rather than on its own route.
 
-**One capability is worth a reviewer's eye rather than a nod.**
+**Two capabilities are worth a reviewer's eye rather than a nod**, and both
+for the same reason. `outbound_messages` takes `null` because `/messages` is
+on the open list — the delivery log is open to every signed-in person and
+sending is the action's problem rather than the page's. And
 `gc_relationship` takes `null`, because `/contacts` is on
 `lib/permissions.test.ts`'s open list — *"the address book: names and phone
 numbers are not a tier"*. That is the rule this file states, applied
@@ -190,7 +231,7 @@ censuses — one asserting every tool's capability matches its citation page,
 one asserting every tool has at least one routing eval case. Nothing shipped
 half-wired, and none of it needed remembering.
 
-67 new tests. Eighteen mutations watched RED and restored: counting never-sent
+79 new tests. Twenty-two mutations watched RED and restored: counting never-sent
 drafts as open, reporting `pastDue: false` where no date was agreed, dropping
 undated certifications, returning nothing on an unreadable window, reading the
 ratio verdict off `daysOver` alone, giving a verdict where no rule exists,
@@ -201,7 +242,10 @@ NOT_RECORDED hours into "short", counting a whitespace-only delay as a
 delay, calling a determination with no file and no link producible,
 reporting a photo's share date instead of its capture date, treating an
 undated vendor quote as current, reading an unrecorded MSA date as current,
-and reporting a revoked portal link as live.
+reporting a revoked portal link as live, folding DISPUTED in with awaiting
+approval, reading an unrecorded warranty as expired, reading the FIRST
+delivery event instead of the latest, and reporting a message with no event
+as sent.
 
 **Two things writing the tests found, rather than the tests confirming what
 was already right.** The backcharge summary counted `pastRespondBy` across
@@ -222,7 +266,14 @@ older photo LATER than the newest capture, so the mutation produces a
 different date and fails. Running the mutation is what found it; the test
 was green and meaningless until then.
 
-**Not verified, and not claimed:** none of the twelve has been asked a real
+**A gap found on the way, and left as a gap rather than papered over.**
+`TmTicket` — the T&M ticket with an on-site signature — has **no web page at
+all**, only `app/api/v1/jobs/[id]/tickets`. A foreman can capture a signed
+T&M ticket on a phone and nobody can see it on a laptop. No tool was written
+for it, because every tool here cites a page and that citation would have
+been a dead link. It wants a page before it wants an assistant.
+
+**Not verified, and not claimed:** none of the fifteen has been asked a real
 question through the box. The tests fake the rows, so they prove the rules and not the
 Prisma queries that feed them — in particular the `orderBy revisionNumber
 desc, take 1` that selects a submittal's latest revision is asserted by

@@ -116,6 +116,9 @@ export const EVAL_CASES: EvalCase[] = [
   tool("read-photos", "do we have pictures of the Riverside deck?", "job_photos", { jobName: "Riverside" }, FIELD),
   tool("read-vendor-prices", "what did we get quoted for 5/8 type X?", "vendor_pricing", undefined, ESTIMATOR),
   tool("read-gc-status", "is our MSA with Turner still good?", "gc_relationship"),
+  tool("read-payapps", "has Turner approved our last pay application?", "pay_application_status", undefined, ACCOUNTING),
+  tool("read-warranty", "are we still on the hook for Cedar Park?", "warranty_obligations", { jobName: "Cedar Park" }),
+  tool("read-messages", "did that lien waiver email actually reach them?", "outbound_messages"),
 
   // ------------------------------------------------------- commands
   command("cmd-create-estimate", "create an estimate for Riverside Plaza for Turner", "create_estimate_job", { jobName: "Riverside Plaza", gcName: "Turner" }),

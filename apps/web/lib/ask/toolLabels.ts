@@ -35,6 +35,9 @@ const LABELS: Record<ToolName, string> = {
   job_photos: "site photos",
   vendor_pricing: "vendor prices",
   gc_relationship: "your GCs",
+  pay_application_status: "your pay applications",
+  warranty_obligations: "warranty",
+  outbound_messages: "what you have sent",
 };
 
 export function toolLabel(name: ToolName): string {

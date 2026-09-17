@@ -127,6 +127,9 @@ export const HANDLERS: Record<
   job_photos: jobPhotos,
   vendor_pricing: vendorPricing,
   gc_relationship: gcRelationship,
+  pay_application_status: payApplicationStatus,
+  warranty_obligations: warrantyObligations,
+  outbound_messages: outboundMessages,
 };
 
 /** A month the person named, or this one. Same principle as the expiry
@@ -2066,5 +2069,222 @@ async function gcRelationship(companyId: string): Promise<ToolResult> {
     },
     citations,
     unavailable: rows.length === 0 ? "No GC or client is on file." : undefined,
+  };
+}
+
+
+/**
+ * Where each pay application sits in the GC's process.
+ *
+ * Deliberately NOT the same question as `receivables`, which answers who
+ * owes what and how overdue. This answers whether the GC has moved it
+ * along, which is the question asked the week before the money is late
+ * rather than the week after.
+ *
+ * DISPUTED is pulled out because it changes what somebody does. Everything
+ * else on this list is a timing problem and gets chased; a disputed
+ * application is a conversation, and chasing it as though it were slow is
+ * how a fortnight is lost.
+ */
+async function payApplicationStatus(companyId: string, input: Input): Promise<ToolResult> {
+  const citations = [{ label: "Jobs", href: "/jobs" }];
+  const jobMismatch = await jobNameMismatch(companyId, input.jobName);
+  if (jobMismatch) return { data: [], citations, unavailable: jobMismatch };
+
+  const invoices = await prisma.invoice.findMany({
+    where: { job: { companyId } },
+    select: {
+      number: true,
+      description: true,
+      amount: true,
+      status: true,
+      issuedAt: true,
+      job: { select: { name: true } },
+    },
+    orderBy: { issuedAt: "desc" },
+  });
+
+  const today = serverToday();
+  const rows = invoices
+    .filter((invoice) => matchesJobName(invoice.job.name, input.jobName))
+    .map((invoice) => {
+      const issuedOn = iso(invoice.issuedAt);
+      return {
+        job: invoice.job.name,
+        application: `#${invoice.number}${invoice.description ? ` ${invoice.description}` : ""}`,
+        amount: Number(invoice.amount),
+        status: invoice.status,
+        issuedOn,
+        daysSinceIssued: issuedOn ? daysBetween(issuedOn, today) : null,
+      };
+    });
+
+  const awaiting = rows.filter((row) => row.status === "SUBMITTED");
+  const disputed = rows.filter((row) => row.status === "DISPUTED");
+
+  return {
+    data: rows,
+    summary: {
+      applications: rows.length,
+      awaitingApproval: awaiting.length,
+      awaitingApprovalTotal: awaiting.reduce((sum, row) => sum + row.amount, 0),
+      // Its own line. A disputed application is not a slow one.
+      disputed: disputed.length,
+      disputedTotal: disputed.reduce((sum, row) => sum + row.amount, 0),
+    },
+    citations,
+    unavailable:
+      rows.length === 0
+        ? input.jobName
+          ? "Nothing has been billed on that job yet."
+          : "Nothing has been billed yet."
+        : undefined,
+  };
+}
+
+/**
+ * What is still coming back on us after the job finished.
+ *
+ * The end date is DERIVED from the start date and the number of months,
+ * never stored — the rule this schema follows everywhere, and the reason a
+ * stored flag cannot disagree with what it was derived from.
+ *
+ * A job with NO warranty period recorded is reported as unrecorded, not as
+ * out of warranty. Nothing here knows what a subcontract actually obliges;
+ * it knows what somebody typed. Saying "you are clear" from an empty field
+ * is the one answer this tool must not give.
+ */
+async function warrantyObligations(companyId: string, input: Input): Promise<ToolResult> {
+  const citations = [{ label: "Closeout", href: "/closeout" }];
+  const jobMismatch = await jobNameMismatch(companyId, input.jobName);
+  if (jobMismatch) return { data: [], citations, unavailable: jobMismatch };
+
+  const jobs = await prisma.job.findMany({
+    where: { companyId },
+    select: {
+      name: true,
+      warrantyPeriod: { select: { startsOn: true, months: true } },
+      warrantyServiceRequests: { select: { reportedOn: true, resolvedOn: true, description: true } },
+    },
+  });
+
+  const today = serverToday();
+  const rows = jobs
+    .filter((job) => matchesJobName(job.name, input.jobName))
+    .filter((job) => job.warrantyPeriod !== null || job.warrantyServiceRequests.length > 0)
+    .map((job) => {
+      const startsOn = iso(job.warrantyPeriod?.startsOn ?? null);
+      let endsOn: string | null = null;
+      if (startsOn && job.warrantyPeriod) {
+        const end = new Date(`${startsOn}T00:00:00.000Z`);
+        end.setUTCMonth(end.getUTCMonth() + job.warrantyPeriod.months);
+        endsOn = end.toISOString().slice(0, 10);
+      }
+      const open = job.warrantyServiceRequests.filter((request) => request.resolvedOn === null);
+      return {
+        job: job.name,
+        warrantyStartsOn: startsOn,
+        warrantyMonths: job.warrantyPeriod?.months ?? null,
+        warrantyEndsOn: endsOn,
+        // "unrecorded" rather than "out of warranty" when nothing is on file.
+        warranty: endsOn === null ? ("unrecorded" as const) : daysBetween(endsOn, today) > 0 ? ("expired" as const) : ("in force" as const),
+        callbacks: job.warrantyServiceRequests.length,
+        openCallbacks: open.length,
+        oldestOpenCallbackReportedOn: open
+          .map((request) => iso(request.reportedOn))
+          .filter((date): date is string => date !== null)
+          .sort()[0] ?? null,
+      };
+    })
+    .sort((a, b) => b.openCallbacks - a.openCallbacks);
+
+  return {
+    data: rows,
+    summary: {
+      jobs: rows.length,
+      inForce: rows.filter((row) => row.warranty === "in force").length,
+      withoutAWarrantyRecorded: rows.filter((row) => row.warranty === "unrecorded").length,
+      openCallbacks: rows.reduce((sum, row) => sum + row.openCallbacks, 0),
+    },
+    citations,
+    unavailable:
+      rows.length === 0
+        ? input.jobName
+          ? "No warranty period or callback is recorded against that job. That is not the same as being out of warranty — nothing was entered."
+          : "No warranty period or callback is recorded against any job. That is not the same as being clear — nothing was entered."
+        : undefined,
+  };
+}
+
+/**
+ * What was sent, and whether it actually arrived.
+ *
+ * The delivery vocabulary is already written down in `MessageEventType` and
+ * this tool exists to carry it faithfully rather than flatten it:
+ *
+ *   SENT      handed to the provider. NOT the same as arrived.
+ *   DELIVERED the receiving server took it. The only status that means
+ *             anything.
+ *   BOUNCED   rejected, and `detail` carries the reason, which is what
+ *             makes it fixable.
+ *   OPENED    the weakest signal here. Image-blocking makes its ABSENCE
+ *             meaningless, so this reports opens and never concludes
+ *             anything from not having one.
+ *
+ * The latest event per message is what is reported: a message that bounced
+ * after being sent is bounced, and reading the first event would call it
+ * sent.
+ */
+async function outboundMessages(companyId: string): Promise<ToolResult> {
+  const citations = [{ label: "Messages", href: "/messages" }];
+  const messages = await prisma.outboundMessage.findMany({
+    where: { companyId },
+    select: {
+      toAddress: true,
+      toName: true,
+      subject: true,
+      createdAt: true,
+      job: { select: { name: true } },
+      events: { orderBy: { occurredAt: "desc" }, select: { type: true, occurredAt: true, detail: true } },
+    },
+    orderBy: { createdAt: "desc" },
+    take: 50,
+  });
+
+  const rows = messages.map((message) => {
+    // The LATEST event, not the first. A message that bounced after being
+    // sent is bounced.
+    const latest = message.events[0] ?? null;
+    const failure = message.events.find(
+      (event) => event.type === "BOUNCED" || event.type === "FAILED" || event.type === "COMPLAINED",
+    );
+    return {
+      to: message.toName ? `${message.toName} <${message.toAddress}>` : message.toAddress,
+      subject: message.subject,
+      job: message.job?.name ?? null,
+      sentOn: iso(message.createdAt),
+      // Null when nothing has come back yet — not "sent", which would be a
+      // claim the provider confirmed something it has not.
+      latestEvent: latest?.type ?? null,
+      latestEventOn: iso(latest?.occurredAt ?? null),
+      failureReason: failure?.detail ?? null,
+      opened: message.events.some((event) => event.type === "OPENED"),
+    };
+  });
+
+  return {
+    data: rows,
+    summary: {
+      messages: rows.length,
+      delivered: rows.filter((row) => row.latestEvent === "DELIVERED").length,
+      // The three that need somebody. Counted together because the action is
+      // the same — look at the reason — and apart from everything else.
+      needingAttention: rows.filter(
+        (row) => row.latestEvent === "BOUNCED" || row.latestEvent === "FAILED" || row.latestEvent === "COMPLAINED",
+      ).length,
+      noEventYet: rows.filter((row) => row.latestEvent === null).length,
+    },
+    citations,
+    unavailable: rows.length === 0 ? "No email has been sent from here." : undefined,
   };
 }

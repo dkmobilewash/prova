@@ -101,7 +101,10 @@ export type ToolName =
   | "wage_determinations"
   | "job_photos"
   | "vendor_pricing"
-  | "gc_relationship";
+  | "gc_relationship"
+  | "pay_application_status"
+  | "warranty_obligations"
+  | "outbound_messages";
 
 export type ToolDefinition = {
   name: ToolName;
@@ -447,6 +450,32 @@ export const TOOLS: ToolDefinition[] = [
     capability: null,
     description:
       "For each GC and client: whether the master service agreement has lapsed, whether prequalification has expired, and whether their portal link is live or revoked. Answers 'can we still bid this GC' and 'who can see our portal right now'. A date that was never recorded is reported as unrecorded rather than as current. It knows only what is filed here — it does not know a GC's own approved-bidder list, and an in-date MSA is not the same as being invited to bid.",
+    input_schema: noInput,
+  },
+  {
+    name: "pay_application_status",
+    // the job page's pay applications section
+    capability: "MANAGE_BILLING",
+    description:
+      "Where each pay application and invoice sits in the GC's process — submitted, approved, partly paid, paid or DISPUTED — with its amount, the job, and how long it has been sitting at that status. Answers 'has the GC approved it yet'. This is about the GC's PROCESS, not about whether the money arrived: `receivables` answers who owes what and how overdue. A disputed application is called out because it stops being a timing problem and becomes a conversation. It reports the status recorded here; it cannot see the GC's own accounting system.",
+    input_schema: jobFilter,
+  },
+  {
+    name: "warranty_obligations",
+    // /closeout
+    capability: "MANAGE_JOBS",
+    description:
+      "Jobs still inside their warranty period, when each period ends, and the callbacks reported against them — open and resolved. Answers 'are we still on the hook for that' and 'what has come back on us'. The end date is derived from the start date and the number of months, never stored. A job with no warranty period recorded is reported as unrecorded rather than as out of warranty: nothing here knows what a subcontract actually obliges, only what somebody entered.",
+    input_schema: jobFilter,
+  },
+  {
+    name: "outbound_messages",
+    // /messages, which lib/permissions.test.ts records as open: the delivery
+    // log is open to every signed-in person, and sending is the action's
+    // problem rather than the page's.
+    capability: null,
+    description:
+      "Email this company has sent, with the latest delivery event for each — queued, sent, delivered, bounced, complained or failed — and the reason on the ones that failed. Answers 'did that actually reach them'. SENT means handed to the provider and is NOT the same as arrived; DELIVERED is the only status that means the receiving server took it. Absence of an OPEN is never evidence of anything, because image-blocking makes it meaningless, so this reports opens and never concludes from their absence.",
     input_schema: noInput,
   },
 ];

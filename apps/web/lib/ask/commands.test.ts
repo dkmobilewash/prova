@@ -302,6 +302,13 @@ describe("read-tool capabilities match the pages they cite", () => {
     // of the page it cites. A tool stricter than its own screen refuses
     // what the person can already read.
     gc_relationship: null,
+    // Same literal as `receivables`: the pay applications section renders
+    // inside the job page's money branch, which is not its own route.
+    pay_application_status: "MANAGE_BILLING",
+    warranty_obligations: ROUTE_CAPABILITY["/closeout"],
+    // /messages is on the open list too — the delivery log is open and
+    // sending is the action's problem, not the page's.
+    outbound_messages: null,
   };
 
   it.each(TOOLS.map((tool) => [tool.name, tool.capability] as const))("%s", (name, capability) => {
