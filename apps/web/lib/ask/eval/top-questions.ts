@@ -263,7 +263,23 @@ export const TOP_QUESTIONS: TopQuestion[] = [
     "whose timecard is missing",
     "`TimeEntry` has no submitted, approved or locked state — an hour is either recorded or it does not exist — so nothing can tell a missing timecard from a man who did not work. `certified_payroll` reports what a week's payroll is MISSING, which is the nearest thing and is about the hours that were logged, not the ones that were not.",
   ),
-  t("q-team-rate", "what is Mike on an hour?", "team_roster"),
+  // THE SECOND CASE THE MODEL EVAL FAILED, AND AGAIN THE QUESTION WAS
+  // WRONG. This was routed to `team_roster` — whose own description says,
+  // in capitals, that there is no per-person pay rate in this app and it
+  // does not report one. The model read that and called NOTHING, which is
+  // the correct reading of a tool that disclaims the question. A question
+  // routed to a tool that refuses it is not covered; it is a gap wearing a
+  // route, and the eval is what found that twice now.
+  gap(
+    "q-team-rate",
+    "what is Mike on an hour?",
+    "team_roster",
+    "what a person is paid an hour",
+    "There is no per-person pay rate in this app, by design: a rate belongs to a craft classification and the fringe schedule in force on a given date, which is why `job_labor_cost` prices an HOUR rather than a person. `team_roster` is the near-miss and knows it — it reports which crafts somebody has worked under and refuses the rate.",
+  ),
+  // What team_roster is actually for, and a question that gets asked before
+  // every site orientation.
+  t("q-team-certs-missing", "who on the crew has nothing on file at all?", "team_roster", FIELD),
 
   // ══════════════════════════════════ union compliance
   t("q-ratio-now", "are we in ratio?", "apprentice_ratio", PAYROLL),
@@ -287,7 +303,6 @@ export const TOP_QUESTIONS: TopQuestion[] = [
   // ══════════════════════════════════ safety
   t("q-recordables", "how many recordable injuries have we had this year?", "safety_record", FIELD),
   t("q-days-away", "how many days away have we lost this year?", "safety_record", FIELD),
-  t("q-toolbox", "when was the last toolbox talk?", "safety_record", FIELD),
   t("q-dispatch", "have we got dispatch slips on file for everybody on Riverside?", "dispatch_slips", PAYROLL),
   gap(
     "q-emr",
@@ -372,7 +387,7 @@ export const TOP_QUESTIONS: TopQuestion[] = [
  * It goes DOWN when a gap is closed. It going UP is a decision, not an
  * accident.
  */
-export const CENSUS_GAPS = 7;
+export const CENSUS_GAPS = 8;
 
 /** Questions the registry deliberately refuses. Counted APART from the
  * gaps and asserted separately, because the two must never be added

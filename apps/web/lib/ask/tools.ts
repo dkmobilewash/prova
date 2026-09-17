@@ -628,6 +628,10 @@ export const KNOWN_GAPS: { topic: string; why: string }[] = [
     why: "nothing forecasts a date. `schedule_status` says where a job stands against the dates somebody entered, which is as far as the data goes. Percent complete is COST-based — money spent against money expected — and a job can be 80% through its budget and nowhere near 80% through its programme.",
   },
   {
+    topic: "what a person is paid an hour",
+    why: "there is no per-person pay rate here, by design. A rate belongs to a CRAFT CLASSIFICATION and the fringe schedule in force on a given date — which is why job_labor_cost prices an hour rather than a person, and why the same man on two crafts in one week costs two different amounts. Say that, and name the crafts he has worked under (team_roster has them) rather than refusing flat: the classification and its schedule are where the number actually lives.",
+  },
+  {
     topic: "our own sales pipeline — work being chased before anyone invites us to bid",
     why: "a subcontractor's pre-bid pipeline is not modelled. `bid_status` starts at the bid INVITATION, so it knows about work a GC has already asked us to price and nothing about what is being chased. (The SalesLead model in this database is Prova's own CRM for selling this product and is not your data.)",
   },

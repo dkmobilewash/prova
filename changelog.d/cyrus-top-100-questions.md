@@ -80,9 +80,32 @@ rather than confirming the tests:
   deleted the guard against it **passed all thirty tests** — zero
   contributes nothing to a sum, so the filter was doing no work and the
   *row* was the lie.
-- **The 100-question eval failed one case and the question was wrong, not
-  the model.** It asked to create a catalog item at a price;
-  `add_catalog_line` puts a line on a job *from* the catalog and "does NOT
-  invent an item or a price". The model called nothing, correctly. The
-  question is fixed, and creating a catalog entry is now recorded as a
-  `refused` — a decision, not a hole.
+- **The eval failed two cases and BOTH TIMES THE QUESTION WAS WRONG, NOT
+  THE MODEL.** That is the eval earning its keep, and it is the same
+  mistake twice: *a question routed to a tool that disclaims it is not
+  covered — it is a gap wearing a route.*
+  - *"add 5/8 type X to our catalog at 14.20"* → `add_catalog_line`, which
+    puts a line on a job **from** the catalog and "does NOT invent an item
+    or a price". The model called nothing, correctly. Creating a catalog
+    entry is now a `refused`.
+  - *"what is Mike on an hour?"* → `team_roster`, whose own description
+    says **in capitals** that there is no per-person rate and it does not
+    report one. The model read that and called nothing. It is a gap now,
+    with `team_roster` named as the near-miss — and its `KNOWN_GAPS` entry
+    tells the model to name the crafts he has worked under rather than
+    refuse flat, because the classification and its schedule are where the
+    number actually lives.
+
+  Eight of eight new tools were then verified against the real model. The
+  run was scoped to the changed cases — about 18 calls rather than 200 —
+  after the full run twice over emptied the account's credit balance.
+
+## The eval's own headline lied, and that is fixed too
+
+A run that died partway printed **"50/50 passed of 100 cases"**. That reads
+as a clean sweep and means half the suite never ran; only the count
+assertion failed it. `reportVerdicts` now announces the shortfall FIRST and
+refuses to print a ratio against a denominator it did not reach — the cause
+that day was an Anthropic credit balance at zero, and the eval cannot tell
+that apart from a rate limit or a bad tool schema, because the ask loop
+deliberately never yields the API's own message.

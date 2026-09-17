@@ -104,6 +104,30 @@ export function grade(c: EvalCase, calls: Call[]): Verdict {
  */
 export function reportVerdicts(label: string, verdicts: Verdict[], expected: number): void {
   const passed = verdicts.filter((v) => v.pass).length;
-  console.log(`\n${label}: ${passed}/${verdicts.length} passed of ${expected} cases`);
+  const missing = expected - verdicts.length;
+
+  // THE SHORTFALL GOES FIRST, AND THIS LINE WAS WRITTEN AFTER IT BIT.
+  //
+  // A run that died on case 51 printed "50/50 passed of 100 cases", which
+  // reads as a clean sweep and means half the suite never ran. The count
+  // assertion below failed the run, so nothing was actually believed — but
+  // the HEADLINE is what gets copied into a message, and that one said the
+  // opposite of what happened. (The cause was an Anthropic credit balance
+  // at zero: every case from 51 on returned 400 invalid_request_error, and
+  // the eval cannot tell that apart from a rate limit or a bad schema,
+  // because the ask loop deliberately never yields the API's message.)
+  //
+  // So a shortfall is announced before any ratio is printed, and the ratio
+  // itself names the denominator it is out of. CLAUDE.md: absence of a
+  // failure is not a pass, and a missing verdict is its own failure state.
+  if (missing > 0) {
+    console.log(
+      `\n${label}: DID NOT RUN — ${missing} of ${expected} cases returned no verdict at all. ` +
+        `The ${passed} that passed are ${passed} of ${verdicts.length} that ran, NOT of ${expected}. ` +
+        `Read this as a broken run, not as a result.`,
+    );
+  } else {
+    console.log(`\n${label}: ${passed}/${expected} passed`);
+  }
   for (const v of verdicts) console.log(`${v.pass ? "PASS" : "FAIL"}  ${v.id}  ${v.note}`);
 }
