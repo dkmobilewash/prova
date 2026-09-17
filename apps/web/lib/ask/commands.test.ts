@@ -309,6 +309,42 @@ describe("read-tool capabilities match the pages they cite", () => {
     // /messages is on the open list too — the delivery log is open and
     // sending is the action's problem, not the page's.
     outbound_messages: null,
+
+    /* ───────── the eight the assistant could not see ───────── */
+
+    // The certified-payroll page calls requireCapability("MANAGE_COMPLIANCE")
+    // directly — it is a dynamic route under /jobs/[id], so it is guarded at
+    // the page rather than in ROUTE_CAPABILITY, and that literal is read off
+    // the page itself rather than guessed from the subject.
+    certified_payroll: "MANAGE_COMPLIANCE",
+    // NO PAGE EXISTS FOR T&M TICKETS AT ALL, so this row cannot take a gate
+    // from the page it cites and is the one place the rule above has nothing
+    // to read. MANAGE_FIELD is the argued answer: a T&M ticket is field
+    // paperwork — the foreman describes the extra work and gets it signed on
+    // site, and the phone app that writes them is the field app. When the
+    // page is built it must be guarded to match, and this line is the thing
+    // that will disagree loudly if it is not.
+    tm_tickets: "MANAGE_FIELD",
+    // Same literal as change_order_status, for the same reason: change
+    // orders render inside the job page's `showsJobMoney` branch.
+    unbilled_change_orders: "VIEW_JOB_COSTS",
+    // /schedule is open, and lib/permissions.test.ts gives the reason this
+    // tool is shaped by — "No money on it". The first draft of this tool
+    // carried cost percent complete and would have put money on an open
+    // surface; the figure was removed rather than the gate tightened,
+    // because tightening it locks a foreman out of a question about his own
+    // dates.
+    schedule_status: null,
+    // Line items with prices on them. The job page renders them inside the
+    // money branch, same as change orders.
+    estimate_detail: "VIEW_JOB_COSTS",
+    document_intake: ROUTE_CAPABILITY["/intake"],
+    // /team is on the open list: "The roster. Everyone should be able to see
+    // who they work with; changing it is owner-only in the actions." This
+    // tool reads and never changes, so it takes the page's gate.
+    team_roster: null,
+    // Dispatch slips are union paperwork and render on /union-compliance.
+    dispatch_slips: ROUTE_CAPABILITY["/union-compliance"],
   };
 
   it.each(TOOLS.map((tool) => [tool.name, tool.capability] as const))("%s", (name, capability) => {

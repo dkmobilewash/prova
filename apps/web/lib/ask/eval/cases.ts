@@ -119,6 +119,17 @@ export const EVAL_CASES: EvalCase[] = [
   tool("read-payapps", "has Turner approved our last pay application?", "pay_application_status", undefined, ACCOUNTING),
   tool("read-warranty", "are we still on the hook for Cedar Park?", "warranty_obligations", { jobName: "Cedar Park" }),
   tool("read-messages", "did that lien waiver email actually reach them?", "outbound_messages"),
+  // The eight the hundred-question census found unreachable. Each is
+  // phrased the way the question arrives rather than in the tool's own
+  // words — see lib/ask/eval/top-questions.ts for where they came from.
+  tool("read-certified-payroll", "could we produce certified payroll for last week on Riverside?", "certified_payroll", { jobName: "Riverside" }),
+  tool("read-tm-tickets", "what T&M tickets have we got signed on Riverside?", "tm_tickets", { jobName: "Riverside" }, FIELD),
+  tool("read-unbilled-cos", "which approved change orders have we not invoiced yet?", "unbilled_change_orders"),
+  tool("read-schedule", "how many days have we got left on Riverside?", "schedule_status", { jobName: "Riverside" }, FIELD),
+  tool("read-estimate", "what lines are on the Riverside estimate?", "estimate_detail", { jobName: "Riverside" }, ESTIMATOR),
+  tool("read-intake", "what came in that nobody has filed yet?", "document_intake"),
+  tool("read-team", "who have we got on the books?", "team_roster", undefined, FIELD),
+  tool("read-dispatch", "have we got dispatch on file for everybody on Riverside?", "dispatch_slips", { jobName: "Riverside" }),
 
   // ------------------------------------------------------- commands
   command("cmd-create-estimate", "create an estimate for Riverside Plaza for Turner", "create_estimate_job", { jobName: "Riverside Plaza", gcName: "Turner" }),

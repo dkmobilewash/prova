@@ -38,6 +38,14 @@ const LABELS: Record<ToolName, string> = {
   pay_application_status: "your pay applications",
   warranty_obligations: "warranty",
   outbound_messages: "what you have sent",
+  certified_payroll: "certified payroll",
+  tm_tickets: "T&M tickets",
+  unbilled_change_orders: "change orders against your billing",
+  schedule_status: "your job dates",
+  estimate_detail: "the estimate",
+  document_intake: "the intake tray",
+  team_roster: "your people",
+  dispatch_slips: "dispatch slips",
 };
 
 export function toolLabel(name: ToolName): string {

@@ -43,6 +43,8 @@ import { orderState, stateLabel as orderStateLabel, daysLate } from "@/component
 import { currentAssignment } from "@/components/equipmentDeployment";
 import { can, type Principal } from "@/lib/permissions";
 import { refusalFor } from "./access";
+import { certifiedPayrollWeekStart } from "@/lib/certified-payroll-week";
+import { timeEntryWorkerId, timeEntryWorkerName } from "@/lib/worker-name";
 import { matchesJobName, TOOLS, type ToolName, type ToolResult } from "./tools";
 
 /**
@@ -130,6 +132,14 @@ export const HANDLERS: Record<
   pay_application_status: payApplicationStatus,
   warranty_obligations: warrantyObligations,
   outbound_messages: outboundMessages,
+  certified_payroll: certifiedPayroll,
+  tm_tickets: tmTickets,
+  unbilled_change_orders: unbilledChangeOrders,
+  schedule_status: scheduleStatus,
+  estimate_detail: estimateDetail,
+  document_intake: (companyId) => documentIntake(companyId),
+  team_roster: (companyId) => teamRoster(companyId),
+  dispatch_slips: dispatchSlips,
 };
 
 /**
@@ -2337,5 +2347,853 @@ async function outboundMessages(companyId: string): Promise<ToolResult> {
     },
     citations,
     unavailable: rows.length === 0 ? "No email has been sent from here." : undefined,
+  };
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+ * THE EIGHT THE ASSISTANT COULD NOT SEE
+ *
+ * Every one of these reads a screen this app already has. They came out of
+ * the hundred-question census (lib/ask/eval/top-questions.ts), which asked
+ * what a contractor says on a Tuesday rather than what the registry was
+ * built to serve — and found that eight of the thirteen unanswerable
+ * questions were about features already built. Not missing features:
+ * BUILT SCREENS THE ASSISTANT COULD NOT SEE, which is a much cheaper
+ * problem and was invisible until the questions sat next to the registry.
+ *
+ * One question the census raised is deliberately NOT here. "What's in the
+ * pipeline we haven't bid?" looked like a tool over SalesLead — and
+ * sales.prisma's first line says that model is PROVA'S OWN CRM, for
+ * selling this product, populated only on the operator company. A tool
+ * over it would have handed every tenant the vendor's sales pipeline. It
+ * stays a gap, with a corrected reason, and the near-miss is recorded in
+ * tools.ts KNOWN_GAPS so the model refuses it rather than reaching for
+ * bid_status.
+ * ══════════════════════════════════════════════════════════════════════ */
+
+/** How many weeks of payroll `certified_payroll` looks back over. Eight is
+ * two months — long enough that a week somebody forgot is still in view,
+ * short enough that the answer is readable. */
+const CERTIFIED_PAYROLL_WEEKS = 8;
+
+/**
+ * Whether each recent week's payroll could actually PRODUCE a WH-347, and
+ * what would be blank on it if it did.
+ *
+ * WHAT THIS DOES NOT SAY, and it is the first thing the tool says: nothing
+ * in this app records that a week was FILED. There is no submission model —
+ * the page computes a week live from TimeEntry every time it is opened — so
+ * "is certified payroll in?" cannot be answered as asked, and this tool
+ * must not let that read as a yes. What it answers instead is the question
+ * underneath: is the week's data complete enough that the form would come
+ * out right.
+ *
+ * Three ways it comes out wrong, and each is counted separately because
+ * each sends a different person to do a different thing:
+ *
+ *   - HOURS THAT CANNOT BE PRICED. No fringe rate schedule in force for
+ *     that craft on that day, so the wage column is blank. Somebody has to
+ *     enter a rate schedule.
+ *   - A WORKER WITH NO CRAFT TAG. The classification column is blank and
+ *     the ratio review cannot see them either. Somebody has to tag them.
+ *   - A WORKER WITH NO NAME ON THEIR ACCOUNT. The name column is blank,
+ *     and lib/worker-name.ts is emphatic about why that matters: this
+ *     column is a statement to a government agency about who did the work.
+ *
+ * The stakes are why this tool is first in this block. The certification
+ * on a WH-347 is criminal, and debarment under 29 CFR 5.12 reaches the
+ * owner personally for three years.
+ */
+async function certifiedPayroll(companyId: string, input: Input): Promise<ToolResult> {
+  const mismatch = await jobNameMismatch(companyId, input.jobName);
+  const citations = [{ label: "Certified payroll", href: "/jobs" }];
+  if (mismatch) return { data: null, citations, unavailable: mismatch };
+
+  const today = serverToday();
+  // Back to the start of the week containing the day CERTIFIED_PAYROLL_WEEKS
+  // weeks ago, so the oldest week in range is whole rather than clipped.
+  const earliest = certifiedPayrollWeekStart(
+    new Date(new Date(`${today}T00:00:00.000Z`).getTime() - CERTIFIED_PAYROLL_WEEKS * 7 * 86_400_000),
+  );
+
+  const [entries, crafts] = await Promise.all([
+    prisma.timeEntry.findMany({
+      // Scoped through the job to this company, and filtered in the QUERY
+      // rather than afterwards — the defect that shipped in daily_field_reports
+      // was a company-wide `take` running before an in-memory job filter.
+      where: {
+        job: {
+          companyId,
+          ...(input.jobName?.trim()
+            ? { name: { contains: input.jobName.trim(), mode: "insensitive" as const } }
+            : {}),
+        },
+        date: { gte: earliest },
+      },
+      select: {
+        date: true,
+        hours: true,
+        payType: true,
+        employeeUserId: true,
+        crewMemberId: true,
+        craftClassificationId: true,
+        job: { select: { name: true } },
+        employeeUser: { select: { name: true, email: true } },
+        // The three legal-name parts, because lib/worker-name.ts builds the
+        // payroll name from them and a `name` column does not exist here —
+        // a crew member is a no-login worker recorded for exactly this form.
+        crewMember: { select: { legalFirstName: true, legalMiddleName: true, legalLastName: true } },
+      },
+      orderBy: { date: "desc" },
+    }),
+    prisma.craftClassification.findMany({
+      where: { companyId },
+      select: { id: true, fringeRateSchedules: { orderBy: { effectiveFrom: "desc" } } },
+    }),
+  ]);
+
+  const schedulesByCraft = new Map(
+    crafts.map((craft) => [
+      craft.id,
+      craft.fringeRateSchedules.map((s) => ({
+        baseWage: Number(s.baseWage),
+        pensionRate: s.pensionRate != null ? Number(s.pensionRate) : null,
+        vacationRate: s.vacationRate != null ? Number(s.vacationRate) : null,
+        healthWelfareRate: s.healthWelfareRate != null ? Number(s.healthWelfareRate) : null,
+        trainingRate: s.trainingRate != null ? Number(s.trainingRate) : null,
+        effectiveFrom: s.effectiveFrom,
+        effectiveTo: s.effectiveTo,
+      })),
+    ]),
+  );
+
+  type Week = {
+    job: string;
+    weekEnding: string;
+    workers: Set<string>;
+    hours: number;
+    unpricedHours: number;
+    noCraft: Set<string>;
+    noName: Set<string>;
+  };
+  const weeks = new Map<string, Week>();
+
+  for (const entry of entries) {
+    const start = certifiedPayrollWeekStart(entry.date);
+    // The week ENDING date, because that is what a payroll week is called
+    // and what goes in the box on the form.
+    const ending = iso(new Date(start.getTime() + 6 * 86_400_000))!;
+    const key = `${entry.job.name}::${ending}`;
+    let week = weeks.get(key);
+    if (!week) {
+      week = {
+        job: entry.job.name,
+        weekEnding: ending,
+        workers: new Set(),
+        hours: 0,
+        unpricedHours: 0,
+        noCraft: new Set(),
+        noName: new Set(),
+      };
+      weeks.set(key, week);
+    }
+
+    const who = timeEntryWorkerId(entry);
+    const hours = Number(entry.hours);
+    week.workers.add(who);
+    week.hours += hours;
+
+    if (!entry.craftClassificationId) {
+      week.noCraft.add(who);
+    }
+    if (timeEntryWorkerName(entry).nameMissing) {
+      week.noName.add(who);
+    }
+
+    // Priced with the schedule in force on the ENTRY'S OWN DATE, the same
+    // rule job_labor_cost and the page both use. A week straddling a rate
+    // change must not be priced at one rate throughout.
+    const schedule = findEffectiveFringeRateSchedule(
+      entry.craftClassificationId ? (schedulesByCraft.get(entry.craftClassificationId) ?? []) : [],
+      entry.date,
+    );
+    const cost = calculateTimeEntryLaborCost(
+      { hours, payType: entry.payType, date: entry.date },
+      schedule,
+    );
+    // ONLY when a craft WAS assigned. An entry with no craft is already
+    // counted under `workersWithNoCraft`, and it cannot be priced either —
+    // so counting it here too put the same worker under two holes and
+    // undid the point of separating them. The three counts exist because
+    // each sends a different person to do a different thing, and "10 hours
+    // need a rate schedule" stops being actionable the moment it silently
+    // includes hours that need a craft tag instead. Found by the test
+    // asserting 10 and getting 16.
+    if (cost == null && entry.craftClassificationId) week.unpricedHours += hours;
+  }
+
+  const rows = [...weeks.values()]
+    .sort((a, b) => (a.weekEnding === b.weekEnding ? a.job.localeCompare(b.job) : b.weekEnding.localeCompare(a.weekEnding)))
+    .map((week) => ({
+      job: week.job,
+      weekEnding: week.weekEnding,
+      workers: week.workers.size,
+      hours: Number(week.hours.toFixed(2)),
+      // The three ways the form comes out with holes in it.
+      hoursWithNoRate: Number(week.unpricedHours.toFixed(2)),
+      workersWithNoCraft: week.noCraft.size,
+      workersWithNoName: week.noName.size,
+      readyToProduce: week.unpricedHours === 0 && week.noCraft.size === 0 && week.noName.size === 0,
+      // Said on EVERY row rather than once in a note, because a row is what
+      // gets quoted back and a caveat that only exists in the preamble is a
+      // caveat that gets dropped.
+      filed: "not recorded — this app does not track a payroll submission",
+    }));
+
+  return {
+    data: rows,
+    summary: {
+      weeks: rows.length,
+      weeksReadyToProduce: rows.filter((row) => row.readyToProduce).length,
+      weeksWithHoles: rows.filter((row) => !row.readyToProduce).length,
+    },
+    citations,
+    unavailable:
+      rows.length === 0
+        ? input.jobName
+          ? `No hours have been logged on that job in the last ${CERTIFIED_PAYROLL_WEEKS} weeks, so there is no payroll week to produce. That is a gap in the records rather than a clean bill.`
+          : `No hours have been logged anywhere in the last ${CERTIFIED_PAYROLL_WEEKS} weeks, so there is no payroll week to produce. That is a gap in the records rather than a clean bill.`
+        : undefined,
+  };
+}
+
+/**
+ * Time-and-material tickets, and whether anybody signed them.
+ *
+ * `TmTicket` is written by the phone app and had no web page and no tool at
+ * all, which made this the most expensive unanswerable question on the
+ * census: an unsigned T&M ticket is extra work performed and never paid
+ * for, and nobody finds out until the job closes.
+ *
+ * `signerName` and `signedAt` are non-null on the model, so every row here
+ * IS signed — which sounds like there is nothing to report and is exactly
+ * backwards. What the ticket does not carry is any link to a change order
+ * or an invoice, so a signed ticket can sit there unbilled forever. This
+ * reports the tickets, their age, and says plainly that whether one was
+ * billed is not recorded rather than implying a signed ticket is a settled
+ * one.
+ */
+async function tmTickets(companyId: string, input: Input): Promise<ToolResult> {
+  const mismatch = await jobNameMismatch(companyId, input.jobName);
+  const citations = [{ label: "Jobs", href: "/jobs" }];
+  if (mismatch) return { data: null, citations, unavailable: mismatch };
+
+  const today = serverToday();
+  const tickets = await prisma.tmTicket.findMany({
+    where: {
+      companyId,
+      ...(input.jobName?.trim()
+        ? { job: { name: { contains: input.jobName.trim(), mode: "insensitive" as const } } }
+        : {}),
+    },
+    select: {
+      workDate: true,
+      workDescription: true,
+      signerName: true,
+      signedAt: true,
+      job: { select: { name: true } },
+      createdBy: { select: { name: true, email: true } },
+    },
+    orderBy: { workDate: "desc" },
+  });
+
+  const rows = tickets.map((ticket) => ({
+    job: ticket.job.name,
+    workDate: iso(ticket.workDate),
+    work: ticket.workDescription,
+    signedBy: ticket.signerName,
+    signedOn: iso(ticket.signedAt),
+    daysSinceSigned: daysBetween(iso(ticket.signedAt)!, today),
+    raisedBy: ticket.createdBy?.name ?? ticket.createdBy?.email ?? null,
+    // NOT a status. Nothing joins a ticket to a change order or an invoice,
+    // and a field called `billed: false` would be a claim this app cannot
+    // make. Saying so on the row is the honest form.
+    billed: "not recorded — nothing links a ticket to a change order or an invoice",
+  }));
+
+  return {
+    data: rows,
+    summary: {
+      tickets: rows.length,
+      // The ones old enough that somebody should have chased them. Thirty
+      // days is the ordinary pay-application cycle in this trade.
+      olderThan30Days: rows.filter((row) => row.daysSinceSigned > 30).length,
+    },
+    citations,
+    unavailable:
+      rows.length === 0
+        ? input.jobName
+          ? "No time-and-material ticket has been raised on that job. Nothing was written up, which is not the same as no extra work having been done."
+          : "No time-and-material ticket has been raised at all. Nothing was written up, which is not the same as no extra work having been done."
+        : undefined,
+  };
+}
+
+/**
+ * Approved change orders and how much of each has actually been billed.
+ *
+ * The census called this a gap and it was WRONG about why: the join does
+ * exist. An approved change order writes its added scope onto
+ * `JobLineItem` (relation "OriginChangeOrder"), and `InvoiceLineItem`
+ * points at `JobLineItem` — so added value and billed value are both
+ * reachable. Recorded here rather than quietly fixed, because a gap list
+ * that is wrong in this direction is worse than one that is wrong the
+ * other way: it stops anybody looking.
+ *
+ * TWO BLIND SPOTS, BOTH REPORTED RATHER THAN PAPERED OVER.
+ *
+ * `InvoiceLineItem` exists only for invoices submitted as a full AIA-style
+ * pay application — billing.prisma says so in terms. A change order billed
+ * on a plain lump-sum invoice has no line rows at all and would read here
+ * as unbilled, so `lumpSumInvoicesOnJob` counts the invoices on that job
+ * carrying no breakdown. A non-zero count means this tool cannot see part
+ * of the billing and the row says as much.
+ *
+ * And a change order that EDITS an existing line's value rather than adding
+ * one (`ChangeOrderLineItemEdit`) raises a line that was already being
+ * billed; nothing distinguishes the original value from the uplift once the
+ * edit lands. Those change orders are counted apart under `editsOnly`
+ * rather than reported as fully unbilled, which is what folding them in
+ * would do.
+ */
+async function unbilledChangeOrders(companyId: string, input: Input): Promise<ToolResult> {
+  const mismatch = await jobNameMismatch(companyId, input.jobName);
+  const citations = [
+    { label: "Change orders", href: "/jobs" },
+    { label: "Cash flow", href: "/cash-flow" },
+  ];
+  if (mismatch) return { data: null, citations, unavailable: mismatch };
+
+  const changeOrders = await prisma.changeOrder.findMany({
+    where: {
+      status: "APPROVED",
+      job: {
+        companyId,
+        ...(input.jobName?.trim()
+          ? { name: { contains: input.jobName.trim(), mode: "insensitive" as const } }
+          : {}),
+      },
+    },
+    select: {
+      number: true,
+      title: true,
+      decidedOn: true,
+      job: {
+        select: {
+          name: true,
+          // Every invoice on the job, so a lump-sum one (no line rows) can
+          // be COUNTED rather than silently making a change order look
+          // unbilled.
+          invoices: { select: { lineItems: { select: { lineItemId: true } } } },
+        },
+      },
+      addedLineItems: {
+        where: { isDeleted: false },
+        select: {
+          id: true,
+          quantity: true,
+          unitPrice: true,
+          invoiceLineItems: { select: { thisPeriodBilled: true } },
+        },
+      },
+      edits: { select: { id: true } },
+    },
+    orderBy: [{ job: { name: "asc" } }, { number: "asc" }],
+  });
+
+  const today = serverToday();
+  const rows = changeOrders.map((co) => {
+    const addedValue = co.addedLineItems.reduce(
+      (sum, line) => sum + Number(line.quantity) * Number(line.unitPrice ?? 0),
+      0,
+    );
+    const billed = co.addedLineItems.reduce(
+      (sum, line) => sum + line.invoiceLineItems.reduce((n, row) => n + Number(row.thisPeriodBilled), 0),
+      0,
+    );
+    const lumpSum = co.job.invoices.filter((invoice) => invoice.lineItems.length === 0).length;
+    // A change order with no added lines only EDITED existing ones, and
+    // nothing separates its uplift from the line's original value once the
+    // edit has landed.
+    const editsOnly = co.addedLineItems.length === 0 && co.edits.length > 0;
+    return {
+      job: co.job.name,
+      changeOrder: `#${co.number} ${co.title}`,
+      approvedOn: iso(co.decidedOn),
+      daysSinceApproved: co.decidedOn ? daysBetween(iso(co.decidedOn)!, today) : null,
+      // NULL, NOT ZERO, on an edits-only change order — and this is the
+      // correction that matters more than the filter below it.
+      //
+      // Reporting `unbilled: 0` there says "nothing outstanding on this
+      // change order", which is the false clean bill this whole tool is
+      // supposed to be the cure for: the uplift may well be unbilled and
+      // nothing here can tell. Zero is an answer. Null is the absence of
+      // one, and only the second is true.
+      //
+      // Found by mutation: deleting the `measurable` filter below changed
+      // nothing, because an edits-only row already contributed 0 to every
+      // total. The filter was doing no work — the ROW was the lie.
+      addedValue: editsOnly ? null : Number(addedValue.toFixed(2)),
+      billedToDate: editsOnly ? null : Number(billed.toFixed(2)),
+      unbilled: editsOnly ? null : Number((addedValue - billed).toFixed(2)),
+      editsOnly,
+      lumpSumInvoicesOnJob: lumpSum,
+      billingVisible: lumpSum === 0,
+    };
+  });
+
+  // Only the ones carrying a figure at all. Now load-bearing rather than
+  // decorative: the rows it drops have null where a number would be, so
+  // including them is a type error rather than a silently wrong total.
+  const measurable = rows.filter((row): row is typeof row & { unbilled: number } => row.unbilled !== null);
+  return {
+    data: rows,
+    summary: {
+      approvedChangeOrders: rows.length,
+      withMoneyStillUnbilled: measurable.filter((row) => row.unbilled > 0.005).length,
+      unbilledTotal: Number(measurable.reduce((sum, row) => sum + Math.max(0, row.unbilled), 0).toFixed(2)),
+      // Counted, because a total computed over 3 of 4 change orders and
+      // presented as the book is the failure this tool would otherwise be.
+      changeOrdersWithNoFigure: rows.length - measurable.length,
+      // Named so the model can say it rather than assert a clean total.
+      changeOrdersThatOnlyEditedLines: rows.filter((row) => row.editsOnly).length,
+      changeOrdersWhereBillingIsPartlyInvisible: rows.filter((row) => !row.billingVisible).length,
+    },
+    citations,
+    unavailable:
+      rows.length === 0
+        ? input.jobName
+          ? "No change order has been approved on that job, so there is nothing approved waiting to be billed."
+          : "No change order has been approved anywhere, so there is nothing approved waiting to be billed."
+        : undefined,
+  };
+}
+
+/**
+ * Where each job stands against its own dates — and an explicit refusal to
+ * forecast.
+ *
+ * "Are we going to finish on time?" cannot be answered from this data and
+ * this tool must not imply otherwise. What it reports is DATES ONLY: the
+ * scheduled start and end, how far through that window today is, and how
+ * many days until (or past) the end.
+ *
+ * IT CARRIED COST PERCENT COMPLETE FOR ONE DRAFT AND THAT WAS WRONG, for a
+ * reason the permissions file states outright. `/schedule` is on the open
+ * list because "Job start dates and who is assigned. NO MONEY ON IT, and
+ * everyone needs to know where they are working." A tool takes the gate of
+ * the page it cites, so a schedule tool carrying a cost figure would either
+ * put money on an open surface or take a gate that locks a foreman out of a
+ * question about his own dates. Both are worse than splitting it.
+ *
+ * So the conflation this tool exists to prevent is handled where it
+ * belongs — in the description, which says plainly that cost percent
+ * complete is a DIFFERENT number living in `job_margin`. A job can be 80%
+ * through its budget and 40% through its programme, and reading one as the
+ * other is the mistake; `job_margin` reporting the cost figure alone is why
+ * it was the near-miss named against this question in the census.
+ *
+ * No "ahead or behind" verdict is offered even to somebody holding both
+ * tools. That comparison would be exactly the forecast this refuses to
+ * make: a fit-out job front-loads material cost and a framing job does not.
+ */
+async function scheduleStatus(companyId: string, input: Input): Promise<ToolResult> {
+  const mismatch = await jobNameMismatch(companyId, input.jobName);
+  const citations = [{ label: "Schedule", href: "/schedule" }];
+  if (mismatch) return { data: null, citations, unavailable: mismatch };
+
+  const jobs = await prisma.job.findMany({
+    where: {
+      companyId,
+      status: { in: ["CONTRACTED", "IN_PROGRESS"] },
+      ...(input.jobName?.trim()
+        ? { name: { contains: input.jobName.trim(), mode: "insensitive" as const } }
+        : {}),
+    },
+    select: {
+      name: true,
+      status: true,
+      startDate: true,
+      endDate: true,
+      substantialCompletionDate: true,
+    },
+    orderBy: { name: "asc" },
+  });
+
+  const today = serverToday();
+  const rows = jobs.map((job) => {
+    const start = iso(job.startDate);
+    const end = iso(job.endDate);
+    const wholeWindow = start && end ? daysBetween(start, end) : null;
+    const elapsed = start ? daysBetween(start, today) : null;
+
+    return {
+      job: job.name,
+      status: job.status,
+      scheduledStart: start,
+      scheduledEnd: end,
+      // Negative once the date has passed, which is the number somebody
+      // actually wants: "eleven days past the end date".
+      daysToScheduledEnd: end ? daysBetween(today, end) : null,
+      pastScheduledEnd: end ? daysBetween(today, end) < 0 : false,
+      // Null rather than 0 when a date is missing: a job with no end date
+      // is not a job that is 0% through its programme.
+      scheduleElapsedPercent:
+        wholeWindow != null && elapsed != null && wholeWindow > 0
+          ? Math.round(Math.min(100, Math.max(0, (elapsed / wholeWindow) * 100)))
+          : null,
+      substantialCompletion: iso(job.substantialCompletionDate),
+      datesOnFile: start !== null && end !== null,
+    };
+  });
+
+  return {
+    data: rows,
+    summary: {
+      jobs: rows.length,
+      pastScheduledEnd: rows.filter((row) => row.pastScheduledEnd).length,
+      // The ones nothing can be said about at all. Counted rather than
+      // omitted, because a schedule answer computed over half the jobs and
+      // presented as the whole book is the failure here.
+      withoutBothDates: rows.filter((row) => !row.datesOnFile).length,
+    },
+    citations,
+    unavailable:
+      rows.length === 0
+        ? "No job is contracted or in progress, so there is no programme to be on or off."
+        : undefined,
+  };
+}
+
+/**
+ * What is actually in a job's estimate.
+ *
+ * Three commands WRITE estimate lines — `create_estimate_job`,
+ * `draft_estimate_lines`, `add_catalog_line` — and until now nothing read
+ * them back, so the assistant could build an estimate it could not then
+ * describe. That is the shape CLAUDE.md calls "written, documented, and
+ * never called", arriving from the opposite direction.
+ *
+ * `job_margin` was the near-miss named against this question in the census,
+ * and the distinction is worth keeping: it reports a number ABOUT the
+ * estimate (contract value, how much of it carries a cost estimate). This
+ * reports the estimate.
+ *
+ * A LINE WITH NO PRICE IS COUNTED, NOT SKIPPED. ARCHITECTURE.md makes
+ * `lineItems` the one unified object — estimate, budget, contract content
+ * and job-costing structure at once — so a line can legitimately exist with
+ * a scope and no price yet. Summing only the priced ones and calling it the
+ * estimate total is how a bid goes out light.
+ */
+async function estimateDetail(companyId: string, input: Input): Promise<ToolResult> {
+  const mismatch = await jobNameMismatch(companyId, input.jobName);
+  const citations = [{ label: "Jobs", href: "/jobs" }];
+  if (mismatch) return { data: null, citations, unavailable: mismatch };
+
+  const jobs = await prisma.job.findMany({
+    where: {
+      companyId,
+      ...(input.jobName?.trim()
+        ? { name: { contains: input.jobName.trim(), mode: "insensitive" as const } }
+        : {}),
+    },
+    select: {
+      name: true,
+      status: true,
+      lineItems: {
+        where: { isDeleted: false },
+        select: {
+          description: true,
+          quantity: true,
+          unit: true,
+          unitPrice: true,
+          laborHours: true,
+          tradeScope: true,
+          craftClassification: { select: { name: true } },
+          originChangeOrder: { select: { number: true } },
+        },
+        orderBy: { sortOrder: "asc" },
+      },
+      estimateVersions: { select: { versionNumber: true, createdAt: true, note: true }, orderBy: { versionNumber: "desc" }, take: 1 },
+    },
+    orderBy: { name: "asc" },
+  });
+
+  const rows = jobs.flatMap((job) =>
+    job.lineItems.map((line) => ({
+      job: job.name,
+      jobStatus: job.status,
+      line: line.description,
+      quantity: Number(line.quantity),
+      unit: line.unit,
+      // Null, never 0. A line nobody has priced yet is not a line worth
+      // nothing, and the two read identically once a zero is printed.
+      unitPrice: line.unitPrice != null ? Number(line.unitPrice) : null,
+      lineValue: line.unitPrice != null ? Number((Number(line.quantity) * Number(line.unitPrice)).toFixed(2)) : null,
+      laborHours: line.laborHours != null ? Number(line.laborHours) : null,
+      tradeScope: line.tradeScope,
+      craft: line.craftClassification?.name ?? null,
+      // A line that arrived on an approved change order rather than in the
+      // original bid. Worth seeing: "what's in the estimate" and "what did
+      // we bid" stopped being the same question the moment one was approved.
+      fromChangeOrder: line.originChangeOrder ? `#${line.originChangeOrder.number}` : null,
+      latestEstimateVersion: job.estimateVersions[0]?.versionNumber ?? null,
+    })),
+  );
+
+  const priced = rows.filter((row) => row.lineValue !== null);
+  return {
+    data: rows,
+    summary: {
+      lines: rows.length,
+      linesWithNoPrice: rows.length - priced.length,
+      // Named `pricedLinesTotal`, not `estimateTotal`. With unpriced lines
+      // on the job the second name would be a claim the data does not
+      // support, and `linesWithNoPrice` sitting beside it is what makes the
+      // figure readable rather than misleading.
+      pricedLinesTotal: Number(priced.reduce((sum, row) => sum + (row.lineValue ?? 0), 0).toFixed(2)),
+      linesFromChangeOrders: rows.filter((row) => row.fromChangeOrder !== null).length,
+    },
+    citations,
+    unavailable:
+      rows.length === 0
+        ? input.jobName
+          ? "That job has no estimate lines on it yet — nothing has been priced or scoped."
+          : "No job has any estimate lines on it yet."
+        : undefined,
+  };
+}
+
+/**
+ * What is sitting in the intake tray waiting for a person.
+ *
+ * `/intake` is built and had no tool, so the assistant could not answer the
+ * one question the intake feature exists to answer.
+ *
+ * PROPOSED is the only state that means "somebody still has to do
+ * something". FILED and DISMISSED are both decisions a person made, and
+ * folding them together as "handled" would be right but useless — the tray
+ * is the thing being asked about.
+ *
+ * The classifier's own confidence is carried through unchanged. A LOW
+ * confidence proposal is the one most likely to be filed to the wrong place
+ * by somebody clicking through a tray, and it is the model's business to be
+ * able to say so.
+ */
+async function documentIntake(companyId: string): Promise<ToolResult> {
+  const citations = [{ label: "Intake", href: "/intake" }];
+  const today = serverToday();
+
+  const documents = await prisma.documentIntake.findMany({
+    where: { companyId, status: "PROPOSED" },
+    select: {
+      fileName: true,
+      createdAt: true,
+      proposedKind: true,
+      proposedConfidence: true,
+      proposedReason: true,
+      job: { select: { name: true } },
+      jobHint: true,
+      uploadedBy: { select: { name: true, email: true } },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  const rows = documents.map((document) => ({
+    file: document.fileName,
+    arrivedOn: iso(document.createdAt),
+    daysWaiting: daysBetween(iso(document.createdAt)!, today),
+    // The classifier's guess, plainly labelled as a guess.
+    proposedAs: document.proposedKind.replace(/_/g, " ").toLowerCase(),
+    confidence: document.proposedConfidence,
+    why: document.proposedReason,
+    // The job it was filed against if somebody already said, else the
+    // classifier's HINT — two different things, and a hint presented as a
+    // filing is how a pay app ends up on the wrong job.
+    job: document.job?.name ?? null,
+    jobHint: document.job ? null : document.jobHint,
+    uploadedBy: document.uploadedBy?.name ?? document.uploadedBy?.email ?? null,
+  }));
+
+  return {
+    data: rows,
+    summary: {
+      waiting: rows.length,
+      lowConfidence: rows.filter((row) => row.confidence === "LOW").length,
+      // A week in the tray is a document nobody is going to remember
+      // arriving.
+      waitingMoreThan7Days: rows.filter((row) => row.daysWaiting > 7).length,
+      withNoJobAtAll: rows.filter((row) => row.job === null && !row.jobHint).length,
+    },
+    citations,
+    unavailable:
+      rows.length === 0
+        ? "Nothing is waiting in the intake tray. Everything that came in has been filed or dismissed."
+        : undefined,
+  };
+}
+
+/**
+ * Who is on the books, and what the app knows about each of them.
+ *
+ * `/team` is built and had no tool. The census asked "what is Mike on an
+ * hour?" and the honest answer is that THIS APP HAS NO PER-PERSON RATE —
+ * a rate belongs to a craft classification and a fringe schedule in force
+ * on a date, which is why `job_labor_cost` prices an HOUR rather than a
+ * person. So this reports the crafts a person has actually worked under and
+ * says where the rate lives, rather than inventing a headline number.
+ *
+ * It also reports what is MISSING on a person, because those blanks are
+ * what break the paperwork downstream: no name on an account puts a blank
+ * in the name column of a WH-347, and no craft on their hours puts a blank
+ * in the classification column and takes them out of the ratio review.
+ */
+async function teamRoster(companyId: string): Promise<ToolResult> {
+  const citations = [
+    { label: "Team", href: "/team" },
+    { label: "Certifications", href: "/certifications" },
+  ];
+
+  const people = await prisma.user.findMany({
+    where: { companyId },
+    select: {
+      name: true,
+      email: true,
+      role: true,
+      jobFunction: true,
+      timeEntries: {
+        select: { craftClassification: { select: { name: true } } },
+      },
+      certifications: { select: { id: true } },
+    },
+    orderBy: [{ name: "asc" }, { email: "asc" }],
+  });
+
+  const rows = people.map((person) => {
+    const crafts = [
+      ...new Set(
+        person.timeEntries.flatMap((entry) => (entry.craftClassification ? [entry.craftClassification.name] : [])),
+      ),
+    ].sort();
+    const untagged = person.timeEntries.filter((entry) => entry.craftClassification === null).length;
+    return {
+      name: person.name,
+      email: person.email,
+      role: person.role,
+      jobFunction: person.jobFunction,
+      // No `rate`. There is none on a person — see the tool's description.
+      craftsWorkedUnder: crafts,
+      hoursEntriesWithNoCraft: untagged,
+      certificationsOnFile: person.certifications.length,
+      // The two blanks that break a government form.
+      nameMissing: !person.name?.trim(),
+    };
+  });
+
+  return {
+    data: rows,
+    summary: {
+      people: rows.length,
+      withNoNameOnTheirAccount: rows.filter((row) => row.nameMissing).length,
+      withNoCertificationOnFile: rows.filter((row) => row.certificationsOnFile === 0).length,
+      withUntaggedHours: rows.filter((row) => row.hoursEntriesWithNoCraft > 0).length,
+    },
+    citations,
+    unavailable: rows.length === 0 ? "Nobody has an account on this company yet." : undefined,
+  };
+}
+
+/**
+ * Union dispatch slips — who the hall sent to which job, and when.
+ *
+ * Closest thing this app has to "who is on that job", and DELIBERATELY NOT
+ * offered as an answer to it. A dispatch slip is a record that a worker was
+ * dispatched, not a forward schedule: it says somebody was sent, never that
+ * they are there tomorrow. The census's `who-is-on-tomorrow` gap stands,
+ * and tools.ts KNOWN_GAPS carries it so the model refuses rather than
+ * reaching for this or for `crew_assignments`.
+ *
+ * What it IS for is the compliance question: a job whose workers have no
+ * dispatch slip on file is a finding in a union audit, and nothing in the
+ * app surfaced that.
+ */
+async function dispatchSlips(companyId: string, input: Input): Promise<ToolResult> {
+  const mismatch = await jobNameMismatch(companyId, input.jobName);
+  const citations = [{ label: "Union compliance", href: "/union-compliance" }];
+  if (mismatch) return { data: null, citations, unavailable: mismatch };
+
+  const slips = await prisma.dispatchSlip.findMany({
+    where: {
+      job: {
+        companyId,
+        ...(input.jobName?.trim()
+          ? { name: { contains: input.jobName.trim(), mode: "insensitive" as const } }
+          : {}),
+      },
+    },
+    // `select` rather than a bare field list: the relations below are what
+    // this tool is for, and a select that omits them silently returns the
+    // scalar row with none of them — which is what the first attempt did.
+    select: {
+      dispatchNumber: true,
+      dispatchDate: true,
+      fileUrl: true,
+      note: true,
+      job: { select: { name: true } },
+      employeeUser: { select: { name: true, email: true } },
+      craftClassification: {
+        select: {
+          name: true,
+          // A local has no `name`. It is an international plus a number —
+          // "United Brotherhood of Carpenters Local 213" — and the pieces
+          // are stored apart so a filing knows which is which.
+          unionLocal: { select: { parentInternational: true, localNumber: true } },
+        },
+      },
+    },
+    orderBy: { dispatchDate: "desc" },
+  });
+
+  const rows = slips.map((slip) => ({
+    job: slip.job.name,
+    worker: slip.employeeUser.name ?? slip.employeeUser.email,
+    dispatchedOn: iso(slip.dispatchDate),
+    dispatchNumber: slip.dispatchNumber,
+    craft: slip.craftClassification?.name ?? null,
+    local: slip.craftClassification
+      ? `${slip.craftClassification.unionLocal.parentInternational} Local ${slip.craftClassification.unionLocal.localNumber}`
+      : null,
+    // The distinction an audit turns on: a row saying a slip exists is not
+    // a slip. `wage_determinations` makes the same one and for the same
+    // reason.
+    documentAttached: slip.fileUrl !== null,
+    note: slip.note,
+  }));
+
+  return {
+    data: rows,
+    summary: {
+      slips: rows.length,
+      withoutTheDocument: rows.filter((row) => !row.documentAttached).length,
+      withoutACraft: rows.filter((row) => row.craft === null).length,
+      jobsCovered: new Set(rows.map((row) => row.job)).size,
+    },
+    citations,
+    unavailable:
+      rows.length === 0
+        ? input.jobName
+          ? "No dispatch slip is on file for that job. That is a gap in the records — it does not mean nobody was dispatched."
+          : "No dispatch slip is on file anywhere. That is a gap in the records — it does not mean nobody was dispatched."
+        : undefined,
   };
 }
