@@ -42,6 +42,13 @@ import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
  * deciding whether to show a clip to a GC is the one who has to be told. */
 export type JobMediaCardData = {
   id: string;
+  /** The job this is filed against. The CARD never renders it — `jobName`
+   *  is what the company-wide gallery shows. It is on this type because the
+   *  gallery around the card needs it: a multi-capture selection can only
+   *  become a photo report when every ticked capture is on ONE job, and
+   *  `/photos` is free to show several at once. See
+   *  components/jobMediaSelection.ts. */
+  jobId: string;
   blobUrl: string;
   /** Photo, video or voice note — derived from `contentType` at read time
    *  and stored nowhere. */
@@ -88,7 +95,21 @@ export type JobMediaCardData = {
 const btn =
   "min-h-11 inline-flex items-center rounded-md border border-line-card px-3 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50";
 
-export function JobMediaCard({ media }: { media: JobMediaCardData }) {
+/** The tick box on one card, handed down from the gallery that owns the
+ *  selection. Optional so the card renders unchanged anywhere a selection
+ *  makes no sense; both galleries pass it. */
+export type JobMediaCardSelection = {
+  selected: boolean;
+  onToggle: () => void;
+};
+
+export function JobMediaCard({
+  media,
+  select,
+}: {
+  media: JobMediaCardData;
+  select?: JobMediaCardSelection;
+}) {
   /* One mode for the card, with the tag form as a third value rather than
      a second boolean beside `edit`. Two independent flags would allow a
      card showing the caption form and the tag form at once — two inputs,
@@ -232,11 +253,18 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
             line of small grey type in a card body is not readable at that
             distance. A solid chip over the corner of the photo is.
 
-            Stated as what it MEANS to the reader ("Client can see this")
-            rather than as the state's name ("Shared"). "Shared" invites the
-            reading "shared with the team"; every photo here is already
-            shared with the team. The whole risk in this feature is somebody
-            misreading which audience is meant.
+            NAMES THE AUDIENCE, and the bare state's name will not do.
+            "Shared" alone invites the reading "shared with the team", and
+            every photo here is already shared with the team; the whole risk
+            in this feature is somebody misreading which audience is meant.
+
+            It said "Client can see this" until a customer pointed out that
+            the audience is not the client — the portal link goes to whoever
+            the sub sends it to, the GC, the architect, an owner's rep — and
+            that naming one of them narrows the control wrongly. "Shared by
+            link" names the MECHANISM, which is the only thing that is true
+            of every reader: holding the job's portal link is exactly what
+            this state confers, and it cannot be misread as the team.
 
             A dark label on the opaque brand yellow rather than a
             translucent overlay: the background is an arbitrary photograph,
@@ -256,8 +284,47 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
         <JobMediaMarks marks={media.marks} />
         {media.sharedWithClientLabel && (
           <span className="absolute left-2 top-2 rounded-md bg-brand px-2 py-1 text-xs font-semibold text-neutral-900">
-            Client can see this
+            Shared by link
           </span>
+        )}
+        {/* THE TICK BOX, on the image and OPPOSITE the shared badge so the
+            two never collide on a 250px card.
+            ON THE IMAGE rather than in the card body for the reason the
+            badge is: this has to be findable while scrolling a wall of
+            sixty thumbnails, which is the only situation in which picking
+            three of them is hard work.
+
+            NOT A CHILD OF `RowActions`, unlike every other control on this
+            card, and that is deliberate rather than an oversight of #152's
+            rule 1. That rule empties a row of ordinary ACTIONS while a
+            delete is armed, because an action taken by mistake next to an
+            armed confirm is a mutation. Ticking a box mutates nothing —
+            there is no server call, no disclosure and nothing to undo —
+            and it is 300px away from the armed pair at the foot of the
+            card. What it must not do is sit in the cluster: `RowActions`
+            unmounts its children while armed, so a selection living there
+            would silently untick every card whose delete somebody opened
+            and cancelled.
+
+            A real `<input type="checkbox">` inside a 44px label (#89),
+            rather than a styled button: it is what a screen reader
+            announces as a checkbox with a state, and what a keyboard
+            toggles with a space bar. The opaque backing is the badge's
+            argument — the ground is an arbitrary photograph, so anything
+            translucent has whatever contrast the picture happened to
+            have. */}
+        {select && (
+          <label className="absolute right-2 top-2 z-10 inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-md border border-line-card bg-surface">
+            <input
+              type="checkbox"
+              checked={select.selected}
+              onChange={select.onToggle}
+              aria-label={
+                media.caption ? `Pick “${media.caption}”` : "Pick this capture"
+              }
+              className="h-5 w-5 accent-brand"
+            />
+          </label>
         )}
       </div>
 
@@ -437,7 +504,7 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
              a confirm step stops meaning anything — the same argument the
              tag chips' one-click remove is written from, further down. */
           <div className="flex flex-col gap-2">
-            <p className="text-sm font-medium text-ink-label">Show this photo to the client?</p>
+            <p className="text-sm font-medium text-ink-label">Share this photo?</p>
             <p className="text-sm text-ink-body">
               Anyone holding this job&apos;s portal link will see the file, any marks drawn on it,
               its caption and when it was taken. Tags and who took it are never shown. You can stop
@@ -476,7 +543,7 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
                 }}
                 className="min-h-11 inline-flex items-center rounded-md bg-brand px-4 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
               >
-                {isPending ? "Sharing…" : "Share with client"}
+                {isPending ? "Sharing…" : "Share it"}
               </button>
               <button type="button" disabled={isPending} onClick={() => setMode("view")} className={btn}>
                 Cancel
@@ -626,7 +693,7 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
                 4.5 floor #89 set. */}
             {media.sharedWithClientLabel && (
               <p className="text-sm text-tag-blue-ink">
-                Shared with client, {media.sharedWithClientLabel}
+                Shared by link, {media.sharedWithClientLabel}
               </p>
             )}
             {error && <p className="text-sm text-red-400">{error}</p>}
@@ -751,7 +818,7 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
                       `RowActions` hides every other control in that state,
                       so nothing else can be in flight. Here the feedback is
                       the disabled state (#19) and then the button itself
-                      becoming "Show client". */}
+                      becoming "Share". */}
                   Stop sharing
                 </button>
               ) : (
@@ -764,7 +831,17 @@ export function JobMediaCard({ media }: { media: JobMediaCardData }) {
                   }}
                   className={btn}
                 >
-                  Show client
+                  {/* "SHARE", NOT "SHOW CLIENT", and the customer who asked
+                      for it put the reason better than we had: "so you can
+                      share with anybody, right?" The control sends nothing
+                      to a named party — it puts this capture behind the
+                      job's portal link, and that link goes to whoever the
+                      sub sends it to. "Client" narrowed the button to one
+                      of its audiences and made people stop and wonder
+                      whether it was the right control. The confirmation
+                      step below is where the audience is described exactly,
+                      which is where a person deciding needs it. */}
+                  Share
                 </button>
               )}
             </RowActions>

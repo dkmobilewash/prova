@@ -7,7 +7,7 @@ import { parseLocatedFilter, parseSharedFilter, photosFilterHref } from "@/lib/j
 import { photoReportHref, selectionFromSharedFilter } from "@/lib/photo-report";
 import { NoAccess } from "@/components/NoAccess";
 import { JobMediaCapture } from "@/components/JobMediaCapture";
-import { JobMediaCard } from "@/components/JobMediaCard";
+import { JobMediaGallery } from "@/components/JobMediaGallery";
 import { JobMediaTagDatalist } from "@/components/JobMediaTagDatalist";
 import { JobMediaTagManager } from "@/components/JobMediaTagManager";
 import { jobPickerLabel, toJobOption } from "@/components/jobLabels";
@@ -57,9 +57,14 @@ import { jobPickerLabel, toJobOption } from "@/components/jobLabels";
  * REVIEW it, because the decisions end up scattered across weeks and
  * across people. The safeguard the sharing feature rests on is that a sub
  * can see what the GC can see, and this is where they see it: pick the job
- * chip, pick "Shared with client", and the page is exactly the portal
+ * chip, pick "Shared by link", and the page is exactly the portal
  * gallery for that GC. "Not shared" is the same query inverted, for
  * checking that nothing was published by accident.
+ *
+ * THE GRID ITSELF IS A CLIENT COMPONENT NOW (`JobMediaGallery`), because
+ * picking several captures is state and this page is a server component.
+ * Everything above it — the four filter rows, the cap line, the empty
+ * states — is unchanged and still server-rendered.
  */
 
 /** Five screens of the three-across grid. Larger than the job page's dozen
@@ -277,7 +282,12 @@ export default async function PhotosPage({
               })}
               className={chip(activeShared === "yes")}
             >
-              Shared with client
+              {/* "SHARED BY LINK", not "Shared with client", matching the
+                  card's badge and for the customer's reason: the portal
+                  link goes to whoever the sub sends it to, so naming one
+                  audience describes the state too narrowly. The mechanism
+                  is the part that is true of every reader. */}
+              Shared by link
             </Link>
             <Link
               href={photosFilterHref({
@@ -401,10 +411,10 @@ export default async function PhotosPage({
               <p className="text-sm text-ink-label">
                 {activeShared === "yes"
                   ? activeJob
-                    ? "Nothing on this job is shared with the client."
-                    : "Nothing here is shared with a client."
+                    ? "Nothing on this job is shared by its portal link."
+                    : "Nothing here is shared by a portal link."
                   : activeShared === "no"
-                    ? "Nothing here is being held back from the client."
+                    ? "Nothing here is being kept off the portal link."
                     : /* Below the visibility filter and above the tag one,
                          because an empty "Has a location" gallery is the
                          likeliest of the remaining three to be surprising —
@@ -486,11 +496,7 @@ export default async function PhotosPage({
             </div>
           ) : (
             <>
-              <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {media.map((item) => (
-                  <JobMediaCard key={item.id} media={item} />
-                ))}
-              </ul>
+              <JobMediaGallery media={media} />
               {total > PHOTO_LIMIT && (
                 <p className="mt-3 text-sm text-ink-body">
                   Showing the {PHOTO_LIMIT} most recent of {total}.{" "}

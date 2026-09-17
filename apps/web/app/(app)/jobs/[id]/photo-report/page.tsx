@@ -44,11 +44,14 @@ import {
   PHOTO_REPORT_SELECTIONS,
   groupByDay,
   oldestFirst,
-  parsePhotoReportSelection,
+  parsePhotoReportIds,
   partitionPrintable,
   photoReportCapNote,
+  photoReportContents,
+  photoReportContentsIsInternal,
+  photoReportContentsLabel,
   photoReportHref,
-  photoReportIsInternal,
+  photoReportPickedNote,
   photoReportSelectionLabel,
   photoReportSharedFlag,
 } from "@/lib/photo-report";
@@ -57,7 +60,7 @@ import {
  *  `photoReportSelectionLabel` produces — a chip is a control and the
  *  header is a claim the paper has to carry on its own. */
 const SELECTION_CHIP: Record<(typeof PHOTO_REPORT_SELECTIONS)[number], string> = {
-  shared: "Shared with client",
+  shared: "Shared by link",
   "not-shared": "Not shared",
   everything: "Everything",
 };
@@ -67,10 +70,16 @@ export default async function JobPhotoReportPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ include?: string; tag?: string }>;
+  // `ids` is typed as what Next ACTUALLY hands over — a repeated key arrives
+  // as an array — rather than as the `string` every other page here declares.
+  // That narrowing is a convention, not a guarantee, and `parsePhotoReportIds`
+  // is the first parser on this page that reads the value as a string instead
+  // of comparing it. The other two are left alone: both fall through to their
+  // safe default when handed an array, which is argued where they are parsed.
+  searchParams: Promise<{ include?: string; tag?: string; ids?: string | string[] }>;
 }) {
   const { id } = await params;
-  const { include, tag } = await searchParams;
+  const { include, tag, ids } = await searchParams;
   // MANAGE_FIELD, the same capability `/photos`, the job page's own photo
   // section and every other site-capture surface takes. A document showing
   // strictly what those galleries show must not be reachable by somebody
@@ -85,23 +94,44 @@ export default async function JobPhotoReportPage({
 
   const timeZone = await viewerTimeZone();
   const tags = await loadJobMediaTags(company.id);
-  // Both parameters are validated against something real before they filter
+  // Every parameter is validated against something real before it filters
   // anything: an unrecognised selection falls back to the SAFE default
-  // (`parsePhotoReportSelection`), and a tag id this company does not own
-  // falls back to no tag filter rather than to an empty document with a
-  // live chip nothing on the page can explain. Same posture `/photos`
-  // takes, with the one deliberate difference argued in lib/photo-report.ts.
-  const selection = parsePhotoReportSelection(include);
-  const activeTag = tag && tags.some((t) => t.id === tag) ? tag : null;
-  const shared = photoReportSharedFlag(selection);
+  // (`parsePhotoReportSelection`, inside `photoReportContents`), a tag id
+  // this company does not own falls back to no tag filter rather than to an
+  // empty document with a live chip nothing on the page can explain, and an
+  // id that is not this job's simply matches nothing in the query. Same
+  // posture `/photos` takes, with the deliberate difference argued in
+  // lib/photo-report.ts.
+  //
+  // TWO WAYS TO BUILD THIS DOCUMENT, and they do not compose — a rule, or
+  // a list of captures somebody ticked in the gallery. `photoReportContents`
+  // is the one place that decides which, and `photoReportHref` never writes
+  // both into a URL: a picked set narrowed by `include=` would print fewer
+  // photographs than the person chose, with nothing on the paper to say
+  // which went missing.
+  const pickedIds = parsePhotoReportIds(ids);
+  const contents = photoReportContents(pickedIds, include);
+  const selection = contents.kind === "selection" ? contents.selection : null;
+  // Both narrowings are OFF for a picked document, for the reason above.
+  const activeTag =
+    contents.kind === "selection" && tag && tags.some((t) => t.id === tag) ? tag : null;
+  const shared = selection ? photoReportSharedFlag(selection) : undefined;
+  // Capped here rather than in the parser, so `pickedIds.length` is still
+  // the number the person asked for and `photoReportPickedNote` can say how
+  // many of them did not make it.
+  const usedIds = contents.kind === "picked" ? contents.ids.slice(0, PHOTO_REPORT_LIMIT) : null;
 
-  const [captures, total] = await Promise.all([
+  const [captures, matching] = await Promise.all([
     loadJobMediaForReport(
       {
         jobId: job.id,
         companyId: company.id,
         ...(shared === undefined ? {} : { shared }),
         ...(activeTag ? { tagId: activeTag } : {}),
+        // Scoped by job and company inside the query regardless, so an id
+        // from another job — or another company — matches nothing rather
+        // than printing anything.
+        ...(usedIds ? { ids: usedIds } : {}),
         take: PHOTO_REPORT_LIMIT,
       },
       timeZone,
@@ -111,12 +141,19 @@ export default async function JobPhotoReportPage({
     // A count that ignored the tag filter would be a bigger, wrong number
     // stated with total confidence — the exact bug `countJobMedia`'s own
     // comment exists to prevent.
-    countJobMedia({
-      companyId: company.id,
-      jobId: job.id,
-      ...(shared === undefined ? {} : { shared }),
-      ...(activeTag ? { tagId: activeTag } : {}),
-    }),
+    //
+    // NOT ASKED AT ALL for a picked document: "the 40 most recent of 96
+    // matching" is a sentence about a rule, and a picked set has no wider
+    // population it is a sample of. What it needs instead is
+    // `photoReportPickedNote`, which counts against what was ticked.
+    usedIds
+      ? null
+      : countJobMedia({
+          companyId: company.id,
+          jobId: job.id,
+          ...(shared === undefined ? {} : { shared }),
+          ...(activeTag ? { tagId: activeTag } : {}),
+        }),
   ]);
 
   // The document reads forwards; the query read backwards so the cap kept
@@ -124,8 +161,9 @@ export default async function JobPhotoReportPage({
   const ordered = oldestFirst(captures);
   const { printable, notPrintable } = partitionPrintable(ordered);
   const days = groupByDay(printable);
-  const capNote = photoReportCapNote(captures.length, total);
-  const internal = photoReportIsInternal(selection);
+  const capNote = matching === null ? null : photoReportCapNote(captures.length, matching);
+  const pickedNote = photoReportPickedNote(captures.length, pickedIds.length);
+  const internal = photoReportContentsIsInternal(contents);
   const preparedOn = formatCapturedDay(new Date(), timeZone);
 
   const chip = (active: boolean) =>
@@ -158,6 +196,26 @@ export default async function JobPhotoReportPage({
             mistake before it was put right. The default is the set the
             client has already been shown; widening it is one deliberate
             click that also changes what the printed header says. */}
+        {/* A PICKED DOCUMENT SAYS SO ON THE SCREEN TOO, and says what the
+            chips below will do to it. The chips are the only way out of a
+            picked set — one question per URL — so somebody who came here
+            from the gallery's "Photo report of these 3" has to be told that
+            clicking one of them replaces their three captures with a rule,
+            rather than finding out by printing it. */}
+        {contents.kind === "picked" && (
+          <p className="mt-5 rounded-md border border-line-card bg-surface p-3 text-sm text-ink-label">
+            {captures.length === 0
+              ? "This report has none of the captures you picked in the gallery."
+              : captures.length === 1
+                ? "This report is the one capture you picked in the gallery."
+                : `This report is the ${captures.length} captures you picked in the gallery.`}{" "}
+            <span className="text-ink-body">
+              Choosing one of the selections below replaces them — go back to the gallery to pick
+              a different set.
+            </span>
+          </p>
+        )}
+
         <div className="mt-5 flex flex-wrap gap-2">
           {PHOTO_REPORT_SELECTIONS.map((value) => (
             <Link
@@ -176,7 +234,7 @@ export default async function JobPhotoReportPage({
             one. Only tags this company has actually used are offered; the
             active one stays whatever its count so the chip you are standing
             on never vanishes underneath you. */}
-        {tags.some((t) => t.photoCount > 0) && (
+        {contents.kind === "selection" && tags.some((t) => t.photoCount > 0) && (
           <div className="mt-2 flex flex-wrap gap-2">
             <Link
               href={photoReportHref(job.id, { selection })}
@@ -220,7 +278,7 @@ export default async function JobPhotoReportPage({
               later cannot see which chip was lit. */}
           <p className="mt-1 text-[11px]">
             <span className="font-semibold">Contents: </span>
-            {photoReportSelectionLabel(selection)}
+            {photoReportContentsLabel(contents, captures.length)}
             {activeTag ? ` · tagged “${tags.find((t) => t.id === activeTag)?.name}”` : ""}
           </p>
         </div>
@@ -232,8 +290,8 @@ export default async function JobPhotoReportPage({
             this. */}
         {internal && (
           <p className="mt-3 border border-red-600 p-2 text-[11px] font-semibold text-red-600">
-            INTERNAL — this selection can include captures the client has not been shown. Check
-            every page before sending this to anyone outside the company.
+            INTERNAL — this report can include captures the job&apos;s portal link has never
+            shown. Check every page before sending this to anyone outside the company.
           </p>
         )}
 
@@ -244,9 +302,23 @@ export default async function JobPhotoReportPage({
              no photos" would be a confident lie on a job whose photos are
              all on the other side of the filter. */
           <p className="mt-6 text-[11px]">
-            Nothing on this job matches “{photoReportSelectionLabel(selection).toLowerCase()}”
-            {activeTag ? " with that tag" : ""}, so there is no report to print. Share captures
-            with the client from the gallery, or choose a wider selection above.
+            {selection ? (
+              <>
+                Nothing on this job matches “{photoReportSelectionLabel(selection).toLowerCase()}”
+                {activeTag ? " with that tag" : ""}, so there is no report to print. Share captures
+                from the gallery, or choose a wider selection above.
+              </>
+            ) : (
+              /* A picked document with nothing on it means every capture
+                 that was ticked has since left this job — deleted, or the
+                 link was pasted from somewhere it does not belong. Said as
+                 what happened rather than as "no photos", which would be a
+                 confident lie about a job that may be full of them. */
+              <>
+                None of the captures picked for this report are on this job any more, so there is
+                nothing to print. Pick them again from the gallery.
+              </>
+            )}
           </p>
         ) : (
           <>
@@ -329,7 +401,7 @@ export default async function JobPhotoReportPage({
                           note on each one would be noise that trains the
                           reader to skip it. */}
                       {internal && !capture.clientCanSee && (
-                        <span className="font-semibold text-red-600"> · not shown to the client</span>
+                        <span className="font-semibold text-red-600"> · not shared by link</span>
                       )}
                     </figcaption>
                   </figure>
@@ -362,7 +434,7 @@ export default async function JobPhotoReportPage({
                       {capture.capturedAtLabel}
                       {capture.caption ? ` — ${capture.caption}` : " — no caption"}
                       {internal && !capture.clientCanSee && (
-                        <span className="font-semibold text-red-600"> · not shown to the client</span>
+                        <span className="font-semibold text-red-600"> · not shared by link</span>
                       )}
                     </li>
                   ))}
@@ -374,6 +446,11 @@ export default async function JobPhotoReportPage({
                 says nothing is one whose reader believes they hold the whole
                 record. */}
             {capNote && <p className="mt-6 text-[11px] font-semibold">{capNote}</p>}
+            {/* The picked document's half of the same honesty: something
+                that was ticked is not on this paper, and the reader — who
+                may be reading it months later — must not believe they hold
+                everything that was chosen. */}
+            {pickedNote && <p className="mt-6 text-[11px] font-semibold">{pickedNote}</p>}
           </>
         )}
       </div>
