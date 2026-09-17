@@ -16,6 +16,14 @@ import {
   voidChangeOrder,
 } from "@/lib/actions";
 import { TRADE_SCOPES, type ActionResult } from "@/lib/actions/shared";
+import {
+  CONTRACT_EFFECT,
+  type ChangeOrderStatus,
+  STATUS_LABEL,
+  STATUS_STYLE,
+  VALUE_QUALIFIER,
+  groupIntoBands,
+} from "@/components/changeOrderStates";
 
 const inputClass =
   "rounded-md border border-line-card bg-canvas px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none";
@@ -64,7 +72,7 @@ export type ChangeOrderView = {
   number: number;
   title: string;
   description: string | null;
-  status: "DRAFT" | "SUBMITTED" | "APPROVED" | "REJECTED" | "VOID";
+  status: ChangeOrderStatus;
   submittedOn: string | null;
   decidedOn: string | null;
   decisionNotes: string | null;
@@ -116,22 +124,6 @@ function formatEditValue(field: string, value: string) {
   }
   return value;
 }
-
-const STATUS_STYLE: Record<ChangeOrderView["status"], string> = {
-  DRAFT: "border-neutral-400 bg-neutral-800 text-ink-label",
-  SUBMITTED: "border-amber-600 bg-tag-amber text-tag-amber-ink",
-  APPROVED: "border-emerald-700 bg-tag-green text-tag-green-ink",
-  REJECTED: "border-rose-700 bg-tag-rose text-tag-rose-ink",
-  VOID: "border-line-card bg-surface text-ink-muted",
-};
-
-const STATUS_LABEL: Record<ChangeOrderView["status"], string> = {
-  DRAFT: "Draft",
-  SUBMITTED: "Pending GC",
-  APPROVED: "Approved",
-  REJECTED: "Rejected",
-  VOID: "Withdrawn",
-};
 
 function today() {
   return new Date().toISOString().slice(0, 10);
@@ -495,6 +487,91 @@ function DraftActions({ changeOrder }: { changeOrder: ChangeOrderView }) {
   );
 }
 
+function ChangeOrderCard({ co, lineItems }: { co: ChangeOrderView; lineItems: LineItemChoice[] }) {
+  return (
+    <li className="rounded-md border border-line-card bg-surface p-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <p className="font-medium text-ink">
+          CO #{co.number}: {co.title}
+        </p>
+        <div className="flex items-center gap-2">
+          {/* The figure never appears without saying what it is. A bare
+              "+$18,400" on a PCO reads as money the job has; it is money the
+              job has asked for. */}
+          <span className="text-sm tabular-nums text-ink-label">{co.valueDelta}</span>
+          <span className="text-xs text-ink-body">{VALUE_QUALIFIER[co.status]}</span>
+          <span className={`rounded-full border px-2 py-0.5 text-xs ${STATUS_STYLE[co.status]}`}>
+            {STATUS_LABEL[co.status]}
+          </span>
+        </div>
+      </div>
+      {co.description && <p className="mt-1 text-sm text-ink-body">{co.description}</p>}
+
+      {co.supersedesLabel && (
+        <p className="mt-1 text-xs text-tag-blue-ink">Raised to correct {co.supersedesLabel}.</p>
+      )}
+      {co.revisedByLabels.length > 0 && (
+        <p className="mt-1 text-xs text-tag-blue-ink">
+          Corrected by {co.revisedByLabels.join(", ")}. This one stayed approved — it did move the
+          contract value at the time.
+        </p>
+      )}
+      {co.reopenedAt && (
+        <p className="mt-1 text-xs text-tag-amber-ink">
+          Approved, then reopened on {formatDate(co.reopenedAt)}
+          {co.reopenNote ? `: "${co.reopenNote}"` : ""}.
+        </p>
+      )}
+
+      <p className="mt-1 text-xs text-ink-muted">
+        {co.status === "DRAFT"
+          ? "Not sent yet."
+          : `Sent ${formatDate(co.submittedOn)}${
+              co.decidedOn ? ` · answered ${formatDate(co.decidedOn)}` : " · awaiting a decision"
+            }`}
+        {co.decisionNotes ? ` · "${co.decisionNotes}"` : ""}
+      </p>
+
+      {/* Where this one stands against the contract sum, said on the row
+          rather than only in the band heading — the row is what gets
+          screenshotted into an email. */}
+      <p className="mt-1 text-xs text-ink-body">{CONTRACT_EFFECT[co.status]}</p>
+
+      {co.proposals.length > 0 && (
+        <ul className="mt-2 flex flex-col gap-1">
+          {co.proposals.map((proposal) => (
+            <ProposalRow key={proposal.id} proposal={proposal} canRemove={co.status === "DRAFT"} />
+          ))}
+        </ul>
+      )}
+
+      {/* Audit trail of what actually landed, written on approval. */}
+      {co.edits.length > 0 && (
+        <ul className="mt-2 flex flex-col gap-0.5">
+          {co.edits.map((edit) => (
+            <li key={edit.id} className="text-xs text-ink-muted">
+              {EDIT_FIELD_LABEL[edit.field] ?? edit.field}:{" "}
+              {formatEditValue(edit.field, edit.oldValue)} →{" "}
+              {formatEditValue(edit.field, edit.newValue)}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {co.status === "DRAFT" && (
+        <>
+          <ProposalForms changeOrder={co} lineItems={lineItems} />
+          <DraftActions changeOrder={co} />
+        </>
+      )}
+
+      {co.status === "SUBMITTED" && <Decision changeOrder={co} />}
+
+      {co.status === "APPROVED" && <Correction changeOrder={co} />}
+    </li>
+  );
+}
+
 export function ChangeOrders({
   jobId,
   changeOrders,
@@ -513,6 +590,7 @@ export function ChangeOrders({
   pendingUnbookable?: number;
 }) {
   const pendingCount = changeOrders.filter((co) => co.status === "SUBMITTED").length;
+  const { groups, unbanded } = groupIntoBands(changeOrders);
   const create = useActionRunner();
 
   return (
@@ -532,6 +610,17 @@ export function ChangeOrders({
           </p>
         )}
       </div>
+
+      {/* The one sentence the reviewer's question was asking for. The bands
+          below carry it too, but a reader who only reads the heading should
+          not have to guess which kind of change order this section holds:
+          it holds both, apart. */}
+      <p className="mb-4 text-sm text-ink-body">
+        Pending and executed are kept apart below. A <strong className="text-ink-label">PCO</strong>{" "}
+        is what we have asked the GC for and is not in the contract sum; an{" "}
+        <strong className="text-ink-label">executed</strong> change order is one they agreed to, and
+        it has already moved it.
+      </p>
 
       <form
         onSubmit={(event) => {
@@ -564,81 +653,53 @@ export function ChangeOrders({
           No change orders on this job yet.
         </div>
       ) : (
-        <ul className="flex flex-col gap-3">
-          {changeOrders.map((co) => (
-            <li key={co.id} className="rounded-md border border-line-card bg-surface p-3">
-              <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <p className="font-medium text-ink">
-                  CO #{co.number}: {co.title}
-                </p>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm tabular-nums text-ink-label">{co.valueDelta}</span>
-                  <span className={`rounded-full border px-2 py-0.5 text-xs ${STATUS_STYLE[co.status]}`}>
-                    {STATUS_LABEL[co.status]}
+        <div className="flex flex-col gap-8">
+          {groups.map(({ band, items }) => (
+            <section key={band.key}>
+              <header className="mb-3 border-b border-line-row pb-2">
+                <h3 className="font-semibold text-ink">
+                  {band.heading}
+                  <span className="ml-2 text-xs font-normal tabular-nums text-ink-body">
+                    {items.length}
                   </span>
-                </div>
-              </div>
-              {co.description && <p className="mt-1 text-sm text-ink-body">{co.description}</p>}
-
-              {co.supersedesLabel && (
-                <p className="mt-1 text-xs text-tag-blue-ink">Raised to correct {co.supersedesLabel}.</p>
-              )}
-              {co.revisedByLabels.length > 0 && (
-                <p className="mt-1 text-xs text-tag-blue-ink">
-                  Corrected by {co.revisedByLabels.join(", ")}. This one stayed approved — it did move the
-                  contract value at the time.
+                </h3>
+                <p className="mt-1 text-xs text-ink-body">
+                  {band.blurb}
+                  {band.alsoCalled && (
+                    <span className="text-ink-muted"> Also called {band.alsoCalled}.</span>
+                  )}
                 </p>
-              )}
-              {co.reopenedAt && (
-                <p className="mt-1 text-xs text-tag-amber-ink">
-                  Approved, then reopened on {formatDate(co.reopenedAt)}
-                  {co.reopenNote ? `: "${co.reopenNote}"` : ""}.
-                </p>
-              )}
-
-              <p className="mt-1 text-xs text-ink-muted">
-                {co.status === "DRAFT"
-                  ? "Not sent yet."
-                  : `Sent ${formatDate(co.submittedOn)}${
-                      co.decidedOn ? ` · answered ${formatDate(co.decidedOn)}` : " · awaiting a decision"
-                    }`}
-                {co.decisionNotes ? ` · "${co.decisionNotes}"` : ""}
-              </p>
-
-              {co.proposals.length > 0 && (
-                <ul className="mt-2 flex flex-col gap-1">
-                  {co.proposals.map((proposal) => (
-                    <ProposalRow key={proposal.id} proposal={proposal} canRemove={co.status === "DRAFT"} />
-                  ))}
-                </ul>
-              )}
-
-              {/* Audit trail of what actually landed, written on approval. */}
-              {co.edits.length > 0 && (
-                <ul className="mt-2 flex flex-col gap-0.5">
-                  {co.edits.map((edit) => (
-                    <li key={edit.id} className="text-xs text-ink-muted">
-                      {EDIT_FIELD_LABEL[edit.field] ?? edit.field}:{" "}
-                      {formatEditValue(edit.field, edit.oldValue)} →{" "}
-                      {formatEditValue(edit.field, edit.newValue)}
-                    </li>
-                  ))}
-                </ul>
-              )}
-
-              {co.status === "DRAFT" && (
-                <>
-                  <ProposalForms changeOrder={co} lineItems={lineItems} />
-                  <DraftActions changeOrder={co} />
-                </>
-              )}
-
-              {co.status === "SUBMITTED" && <Decision changeOrder={co} />}
-
-              {co.status === "APPROVED" && <Correction changeOrder={co} />}
-            </li>
+              </header>
+              <ul className="flex flex-col gap-3">
+                {items.map((co) => (
+                  <ChangeOrderCard key={co.id} co={co} lineItems={lineItems} />
+                ))}
+              </ul>
+            </section>
           ))}
-        </ul>
+
+          {/* A change order in a state no band claims still renders. The whole
+              complaint behind this section was that a record can be on screen
+              without saying what it is; a record that is NOT on screen is the
+              worse version of that, and a band list is exactly the kind of
+              thing a new enum member quietly falls out of. */}
+          {unbanded.length > 0 && (
+            <section>
+              <header className="mb-3 border-b border-line-row pb-2">
+                <h3 className="font-semibold text-ink">Not classified</h3>
+                <p className="mt-1 text-xs text-tag-amber-ink">
+                  These are in a state this screen has no heading for. They are shown here rather
+                  than hidden — treat their effect on the contract as unknown.
+                </p>
+              </header>
+              <ul className="flex flex-col gap-3">
+                {unbanded.map((co) => (
+                  <ChangeOrderCard key={co.id} co={co} lineItems={lineItems} />
+                ))}
+              </ul>
+            </section>
+          )}
+        </div>
       )}
     </section>
   );
