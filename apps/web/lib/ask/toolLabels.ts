@@ -29,6 +29,9 @@ const LABELS: Record<ToolName, string> = {
   closeout_status: "closeout",
   fringe_remittance: "what you owe the funds",
   backcharge_exposure: "backcharges",
+  apprenticeship_standing: "your apprentices",
+  daily_field_reports: "the field reports",
+  wage_determinations: "wage determinations",
 };
 
 export function toolLabel(name: ToolName): string {

@@ -1,9 +1,10 @@
-### Six more things the assistant can look up
+### Nine more things the assistant can look up
 
 `open_submittals`, `certification_expiry`, `apprentice_ratio`,
-`closeout_status`, `fringe_remittance` and `backcharge_exposure`, taking the
-read surface from fifteen tools to twenty-one. All six are reads — nothing
-new can be written, and no command was added.
+`closeout_status`, `fringe_remittance`, `backcharge_exposure`, `apprenticeship_standing`,
+`daily_field_reports` and `wage_determinations`, taking the read surface from
+fifteen tools to twenty-four. All nine are reads — nothing new can be
+written, and no command was added.
 
 **`open_submittals` — "what is the GC still sitting on?"** Submittals sent
 and not returned, with days outstanding, the date back, and whether it has
@@ -103,12 +104,49 @@ and the window to dispute it is contractual. `claimedAmount` is what the GC
 ASSERTS and is never an agreed figure; `pastRespondBy` is null, not false,
 where no date was recorded.
 
+**`apprenticeship_standing` — "is anybody behind on their hours?"** From
+`loadApprenticeships`, which /union-compliance renders.
+
+**Its value is entirely in what it refuses to flatten.** Three states a
+summary collapses into "not met" send three different people to do three
+different things: SHORT means hours are recorded and under, so chase the
+hours; NOT_RECORDED means there is a requirement and nobody logged anything,
+so chase the paperwork and not the apprentice; NO_REQUIREMENT_RECORDED means
+the programme has no figure on file, and calling that "short" invents a
+standard nobody set. They are counted separately. An enrollment carrying
+both a completion AND a cancellation date is reported as contradictory
+rather than resolved by precedence — picking one hides a data-entry error on
+a compliance record.
+
+**`daily_field_reports` — "what did we write up?"** Most recent first, with
+the work, the crew, the weather and any delay. **Reports carrying a delay
+are flagged**, because a delay noted on the day is the contemporaneous
+record a claim gets built on months later. A whitespace-only delay field —
+what a form submits when somebody tabbed past it — does not count as one.
+
+The empty-state sentence is the careful part: *"nobody wrote one up, not
+that nothing happened."* A job with no reports is a fact about the
+paperwork, and an answer implying it is a fact about the site is worse than
+no answer.
+
+**`wage_determinations` — "have we got it on file?"** Per job, with the
+jurisdiction and **whether the document is actually attached or linked**. A
+row with NEITHER is flagged: it is a determination in name only, it cannot
+be produced in an audit, and it is the shape most likely to be mistaken for
+coverage — because it exists, so a count says the job is covered.
+
+**It deliberately never says a determination is MISSING.** Nothing in the
+schema records whether a job is public works, so "this job has no
+determination" is not evidence of a gap; it may simply be private work.
+
 **Capabilities follow the page each cites**, which is the rule `tools.ts`
 already states: `/submittals` is `MANAGE_JOBS`, `/certifications` is
 `MANAGE_FIELD`, `/union-compliance` is `MANAGE_COMPLIANCE` (for both the ratio and the
 remittance), `/closeout` is `MANAGE_JOBS`, `/backcharges` is
 `MANAGE_BILLING` — a backcharge is money coming off the next cheque, so it
-sits with whoever chases the cheque rather than with compliance. The second is worth naming — the question is "who can start
+sits with whoever chases the cheque rather than with compliance —
+`/field-reports` is `MANAGE_FIELD`, and `/prevailing-wage` is
+`MANAGE_COMPLIANCE`. The second is worth naming — the question is "who can start
 on Monday", which a foreman asks and a compliance manager does not.
 
 **What adding a tool actually costs here, recorded because it is the good
@@ -118,13 +156,15 @@ censuses — one asserting every tool's capability matches its citation page,
 one asserting every tool has at least one routing eval case. Nothing shipped
 half-wired, and none of it needed remembering.
 
-44 new tests. Eleven mutations watched RED and restored: counting never-sent
+56 new tests. Fourteen mutations watched RED and restored: counting never-sent
 drafts as open, reporting `pastDue: false` where no date was agreed, dropping
 undated certifications, returning nothing on an unreadable window, reading the
 ratio verdict off `daysOver` alone, giving a verdict where no rule exists,
 passing an unreadable month straight through, sorting the closeout blockers,
 burying the unpriced remittance hours, counting settled backcharges as
-exposure, and reporting `pastRespondBy: false` where no date was recorded.
+exposure, reporting `pastRespondBy: false` where no date was recorded, folding
+NOT_RECORDED hours into "short", counting a whitespace-only delay as a
+delay, and calling a determination with no file and no link producible.
 
 **Two things writing the tests found, rather than the tests confirming what
 was already right.** The backcharge summary counted `pastRespondBy` across
@@ -135,7 +175,7 @@ And the first version of the remittance total test computed a figure and
 asserted it differed from another, which was a tautology that passed on
 nothing; it asserts the loader's figures pass through untouched instead.
 
-**Not verified, and not claimed:** none of the six has been asked a real
+**Not verified, and not claimed:** none of the nine has been asked a real
 question through the box. The tests fake the rows, so they prove the rules and not the
 Prisma queries that feed them — in particular the `orderBy revisionNumber
 desc, take 1` that selects a submittal's latest revision is asserted by

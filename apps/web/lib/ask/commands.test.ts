@@ -290,6 +290,11 @@ describe("read-tool capabilities match the pages they cite", () => {
     // taking off the next cheque, so it sits with whoever chases the
     // cheque rather than with compliance.
     backcharge_exposure: ROUTE_CAPABILITY["/backcharges"],
+    // Apprenticeship standing renders on /union-compliance, which is where
+    // its loader is called from — not /certifications, which is cards.
+    apprenticeship_standing: ROUTE_CAPABILITY["/union-compliance"],
+    daily_field_reports: ROUTE_CAPABILITY["/field-reports"],
+    wage_determinations: ROUTE_CAPABILITY["/prevailing-wage"],
   };
 
   it.each(TOOLS.map((tool) => [tool.name, tool.capability] as const))("%s", (name, capability) => {

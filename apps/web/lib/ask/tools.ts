@@ -95,7 +95,10 @@ export type ToolName =
   | "apprentice_ratio"
   | "closeout_status"
   | "fringe_remittance"
-  | "backcharge_exposure";
+  | "backcharge_exposure"
+  | "apprenticeship_standing"
+  | "daily_field_reports"
+  | "wage_determinations";
 
 export type ToolDefinition = {
   name: ToolName;
@@ -387,6 +390,30 @@ export const TOOLS: ToolDefinition[] = [
     capability: "MANAGE_BILLING",
     description:
       "Backcharges a GC has issued against this company — what is claimed, on which job, its status, and the date by which we must object, with whether that date has passed. Answers 'what is being charged back to us and what have we not answered'. A backcharge with no respond-by date recorded is reported as undated rather than as having time left. The claimed amount is what the GC asserts, never an agreed figure, and this cannot tell you whether the claim is valid.",
+    input_schema: jobFilter,
+  },
+  {
+    name: "apprenticeship_standing",
+    // /union-compliance
+    capability: "MANAGE_COMPLIANCE",
+    description:
+      "Every apprentice enrolled, their programme and sponsor, which period they are in, the on-the-job hours recorded this period against what the programme requires, and how short they are. Answers 'is anybody behind on their hours'. It distinguishes THREE things a summary would flatten into one: hours recorded and short, a programme with no required figure on file so there is nothing to measure against, and a requirement with no hours recorded at all. An enrollment carrying both a completion AND a cancellation date is reported as contradictory rather than resolved by precedence — picking one would hide a data-entry error on a compliance record.",
+    input_schema: noInput,
+  },
+  {
+    name: "daily_field_reports",
+    // /field-reports
+    capability: "MANAGE_FIELD",
+    description:
+      "Daily field reports filed on a job, most recent first — the work performed, who was on the crew, the weather and any delay recorded that day. Answers 'what happened on site' and 'what did we write down about that delay'. A delay noted here is the contemporaneous record a claim is later built on, so reports WITH a delay are flagged. It knows only what was filed: a day with no report is a day nobody wrote up, which is not the same as a day nothing happened.",
+    input_schema: jobFilter,
+  },
+  {
+    name: "wage_determinations",
+    // /prevailing-wage
+    capability: "MANAGE_COMPLIANCE",
+    description:
+      "The prevailing-wage determinations filed against each job, with the jurisdiction and whether the actual document is attached or linked. Answers 'do we have the determination for this job on file'. A determination row with NEITHER a file nor a source link is flagged: it is a determination in name only, and it cannot be produced in an audit. It does not know whether a job is public works, so it cannot tell you a determination is MISSING — only what has been filed.",
     input_schema: jobFilter,
   },
 ];

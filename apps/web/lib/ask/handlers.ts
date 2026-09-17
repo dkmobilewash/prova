@@ -29,6 +29,7 @@ import { calculateTimeEntryLaborCost, findEffectiveFringeRateSchedule } from "@/
 import { loadRatioReviews, loadRemittance } from "@/lib/union-compliance-query";
 import { ratioLabel } from "@/lib/apprentice-ratio";
 import { loadCloseoutJobs } from "@/lib/closeout-query";
+import { loadApprenticeships } from "@/lib/apprenticeship-query";
 import { blockerLabel, stageLabel } from "@/components/closeoutPackageLabels";
 import { classificationLabel, isRecordable, outcomeLabel } from "@/components/safetyLabels";
 import {
@@ -120,6 +121,9 @@ export const HANDLERS: Record<
   closeout_status: closeoutStatus,
   fringe_remittance: fringeRemittance,
   backcharge_exposure: backchargeExposure,
+  apprenticeship_standing: apprenticeshipStanding,
+  daily_field_reports: dailyFieldReports,
+  wage_determinations: wageDeterminations,
 };
 
 /** A month the person named, or this one. Same principle as the expiry
@@ -1703,6 +1707,188 @@ async function backchargeExposure(companyId: string, input: Input): Promise<Tool
         ? input.jobName
           ? "No backcharge has been issued against that job."
           : "No backcharge has been issued against this company."
+        : undefined,
+  };
+}
+
+
+/**
+ * Where every apprentice stands against their programme.
+ *
+ * From `loadApprenticeships`, which /union-compliance renders.
+ *
+ * The value here is in what it REFUSES to flatten. `RequirementStanding`
+ * distinguishes three states a summary would collapse into "not met", and
+ * they call for different actions by different people:
+ *
+ *   SHORT — hours are recorded and they are under. Chase the hours.
+ *   NOT_RECORDED — there is a requirement and nobody logged anything.
+ *     Chase the paperwork, not the apprentice.
+ *   NO_REQUIREMENT_RECORDED — the programme has no figure on file, so
+ *     there is nothing to measure against and saying "short" would be
+ *     inventing a standard.
+ *
+ * `CONTRADICTORY` is passed through for the same reason: an enrollment
+ * carrying both a completion and a cancellation date is a data-entry error
+ * on a compliance record, and resolving it by precedence hides it.
+ */
+async function apprenticeshipStanding(companyId: string): Promise<ToolResult> {
+  const citations = [{ label: "Union compliance", href: "/union-compliance" }];
+  const standings = await loadApprenticeships(companyId, serverToday());
+
+  const rows = standings.map((standing) => ({
+    apprentice: standing.apprenticeName,
+    sponsor: standing.sponsorName,
+    programNumber: standing.programNumber,
+    craft: standing.craftName,
+    unionLocal: standing.localName,
+    state: standing.state,
+    period: standing.period,
+    ojtHoursThisPeriod: standing.ojtHoursThisPeriod,
+    requiredOjtHoursPerPeriod: standing.requiredOjtHoursPerPeriod,
+    ojtStanding: standing.ojt,
+    ojtShortfall: standing.ojtShortfall,
+  }));
+
+  return {
+    data: rows,
+    summary: {
+      apprentices: rows.length,
+      active: rows.filter((row) => row.state === "ACTIVE").length,
+      short: rows.filter((row) => row.ojtStanding === "SHORT").length,
+      // Counted apart from `short` on purpose: nobody is behind on these,
+      // the records are. Folding them together sends somebody to talk to an
+      // apprentice about hours when the problem is a blank field.
+      hoursNotRecorded: rows.filter((row) => row.ojtStanding === "NOT_RECORDED").length,
+      noRequirementOnFile: rows.filter((row) => row.ojtStanding === "NO_REQUIREMENT_RECORDED").length,
+      contradictory: rows.filter((row) => row.state === "CONTRADICTORY").length,
+    },
+    citations,
+    unavailable: rows.length === 0 ? "Nobody is enrolled in an apprenticeship programme here." : undefined,
+  };
+}
+
+/**
+ * What was written up on site, most recent first.
+ *
+ * A delay recorded on the day is the contemporaneous record a delay claim
+ * is later built on, so reports carrying one are flagged and counted — that
+ * is the question this gets asked for, months later, by somebody assembling
+ * a claim.
+ *
+ * The `unavailable` sentence is careful: a job with no reports is a job
+ * nobody wrote up, which is NOT the same as a job where nothing happened,
+ * and an answer that implies the second is worse than no answer.
+ */
+async function dailyFieldReports(companyId: string, input: Input): Promise<ToolResult> {
+  const citations = [{ label: "Field reports", href: "/field-reports" }];
+  const jobMismatch = await jobNameMismatch(companyId, input.jobName);
+  if (jobMismatch) return { data: [], citations, unavailable: jobMismatch };
+
+  const reports = await prisma.dailyFieldReport.findMany({
+    where: { companyId },
+    select: {
+      reportDate: true,
+      workPerformed: true,
+      crewPresent: true,
+      weather: true,
+      delays: true,
+      job: { select: { name: true } },
+      filedBy: { select: { name: true, email: true } },
+    },
+    orderBy: { reportDate: "desc" },
+    take: 40,
+  });
+
+  const rows = reports
+    .filter((report) => matchesJobName(report.job.name, input.jobName))
+    .map((report) => ({
+      job: report.job.name,
+      date: iso(report.reportDate),
+      workPerformed: report.workPerformed,
+      crewPresent: report.crewPresent,
+      weather: report.weather,
+      delay: report.delays,
+      hasDelay: Boolean(report.delays?.trim()),
+      filedBy: report.filedBy?.name ?? report.filedBy?.email ?? null,
+    }));
+
+  return {
+    data: rows,
+    summary: {
+      reports: rows.length,
+      reportsWithADelay: rows.filter((row) => row.hasDelay).length,
+    },
+    citations,
+    unavailable:
+      rows.length === 0
+        ? input.jobName
+          ? "No field report has been filed on that job. That means nobody wrote one up, not that nothing happened."
+          : "No field report has been filed. That means nobody wrote one up, not that nothing happened."
+        : undefined,
+  };
+}
+
+/**
+ * Which jobs have a prevailing-wage determination on file, and whether the
+ * document is actually there.
+ *
+ * A row with NEITHER a file nor a source link is a determination in name
+ * only: it cannot be produced in an audit, and it is the shape most likely
+ * to be mistaken for coverage. Flagged rather than counted as filed.
+ *
+ * What this deliberately does NOT do is say a determination is MISSING.
+ * Nothing in the schema records whether a job is public works, so "this job
+ * has no determination" is not evidence of a gap — it may simply be private
+ * work. Claiming otherwise would put a compliance alarm on a job that never
+ * needed one.
+ */
+async function wageDeterminations(companyId: string, input: Input): Promise<ToolResult> {
+  const citations = [{ label: "Prevailing wage", href: "/prevailing-wage" }];
+  const jobMismatch = await jobNameMismatch(companyId, input.jobName);
+  if (jobMismatch) return { data: [], citations, unavailable: jobMismatch };
+
+  const determinations = await prisma.prevailingWageDetermination.findMany({
+    where: { job: { companyId } },
+    select: {
+      jurisdiction: true,
+      fileName: true,
+      fileUrl: true,
+      sourceUrl: true,
+      note: true,
+      createdAt: true,
+      job: { select: { name: true } },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  const rows = determinations
+    .filter((determination) => matchesJobName(determination.job.name, input.jobName))
+    .map((determination) => ({
+      job: determination.job.name,
+      jurisdiction: determination.jurisdiction,
+      fileName: determination.fileName,
+      hasDocument: Boolean(determination.fileUrl),
+      hasSourceLink: Boolean(determination.sourceUrl),
+      // The one that matters. Neither attached nor linked is a row that
+      // proves nothing.
+      producibleInAnAudit: Boolean(determination.fileUrl) || Boolean(determination.sourceUrl),
+      filedOn: iso(determination.createdAt),
+    }));
+
+  return {
+    data: rows,
+    summary: {
+      determinations: rows.length,
+      withoutDocumentOrLink: rows.filter((row) => !row.producibleInAnAudit).length,
+      jobsCovered: new Set(rows.map((row) => row.job)).size,
+    },
+    citations,
+    unavailable:
+      rows.length === 0
+        ? input.jobName
+          ? "No wage determination has been filed against that job. Whether one is required is not recorded anywhere here."
+          : "No wage determination has been filed against any job. Whether any of them are public works is not recorded anywhere here."
         : undefined,
   };
 }
