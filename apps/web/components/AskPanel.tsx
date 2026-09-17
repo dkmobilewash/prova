@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { boundTurns, type AskTurn } from "@/lib/ask/turns";
+import { EXAMPLES } from "@/components/askExamples";
 import type { AskRequest, AskStreamEvent, ClarifyView, ProposalView } from "@/lib/ask/answer";
 import type { Citation } from "@/lib/ask/tools";
 import { cancelAskProposal, confirmAskProposal, loadAskProposal } from "@/lib/actions";
@@ -103,12 +104,9 @@ function rememberedCard(): string | null {
   }
 }
 
-const EXAMPLES = [
-  "What's overdue and who do I chase first?",
-  "Which drawings am I not building to the latest revision of?",
-  "What's left on the punch list?",
-  "Anything expiring I should renew?",
-];
+// EXAMPLES moved to components/askExamples.ts — a constant exported from
+// a "use client" module crosses the RSC boundary as a client-reference
+// proxy, which is the Hint.tsx scar in CLAUDE.md.
 
 export function AskPanel() {
   // The route the person is looking at, sent with every question so the
