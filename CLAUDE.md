@@ -245,7 +245,8 @@ scrollback gets broken by whoever didn't scroll far enough.
   `ChangeOrderCounter` (`jobs.prisma`), `BackchargeCounter`
   (`backcharges.prisma`), `CloseoutSubmissionCounter` (`closeout.prisma`),
   `InvoiceCounter` and `ContractDocumentVersionCounter`
-  (`billing.prisma`).
+  (`billing.prisma`), `EstimateVersionCounter` (`estimating.prisma`),
+  `PurchaseOrderCounter` (`purchasing.prisma`).
 
   **THE COUNT THAT USED TO BE IN THAT SENTENCE IS NOW A TEST, and the
   reason is that it rotted in a day.** This paragraph said EIGHT, with two
@@ -348,7 +349,23 @@ scrollback gets broken by whoever didn't scroll far enough.
   behind a button; inline row edit; two-step delete (never
   `window.confirm`); one shared `*Fields` component for create+edit;
   real empty states with a way out; owner-only destructive actions via
-  `assertOwner(context, "specific message")`.
+  `ownerRefusal(context, "specific message")`, which RETURNS the refusal.
+
+  Corrected 2026-09-16: this bullet said `assertOwner` and following it
+  literally FAILS THE BUILD. A list page's delete action returns
+  `ActionResult` — it has promised the caller a sentence to render — and
+  `assertOwner` refuses by THROWING, which production redacts to a digest,
+  so the row renders a dead button. `ownerRefusalCensus.test.ts` matches on
+  that contract and fails. Verified by mutation rather than inherited from
+  the errors bullet six lines above: writing `assertOwner` into a new
+  ActionResult delete produced "These actions declare a refusal the caller
+  renders and then refuse by throwing … use ownerRefusal() instead of
+  assertOwner()".
+
+  `assertOwner` is still correct — and untouched — in the older actions
+  that declare no `ActionResult` and throw anyway. The rule is the return
+  type, not the age of the file: if the signature promises a readable
+  refusal, refuse by returning one.
 
 ## Traps that already fired — do not rediscover
 
