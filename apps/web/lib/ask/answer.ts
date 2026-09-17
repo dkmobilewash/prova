@@ -27,6 +27,7 @@ import {
 } from "./commands";
 import { pageContextSentence } from "./page-context";
 import { resolvePageJob } from "./page-context-query";
+import { PRIOR_TURNS_RULE, type AskTurn } from "./turns";
 import { runTool } from "./handlers";
 import { recordProposal } from "./proposals";
 import { readingLabel } from "./toolLabels";
@@ -260,6 +261,10 @@ export type AskRequest = {
    * lib/ask/page-context-query.ts for the company scope that enforces it.
    * Optional: every caller that omits it gets exactly the old behaviour. */
   pagePath?: string;
+  /** What was said earlier in this sitting, oldest first. Bounded and
+   * sanitised by lib/ask/turns.ts — see that file for why memory carries
+   * the conversation and never the facts. */
+  priorTurns?: AskTurn[];
   continuation?: {
     command: string;
     partialInput: Record<string, string>;
@@ -489,12 +494,24 @@ export async function* streamAnswer(
   // Joined onto the access line rather than into SYSTEM_PROMPT because both
   // vary per request and the prompt is the cached half.
   const pageJob = await resolvePageJob(ctx.companyId, request.pagePath);
+
+  // The rule about prior turns is only stated when there ARE prior turns:
+  // a paragraph explaining what earlier answers are not, on a question with
+  // no history, is prompt weight bought for nothing.
+  const priorTurns = request.priorTurns ?? [];
   const perRequestContext =
-    [accessContext(ctx.principal), pageContextSentence(pageJob)].filter(Boolean).join("\n\n") || undefined;
+    [
+      accessContext(ctx.principal),
+      pageContextSentence(pageJob),
+      priorTurns.length > 0 ? PRIOR_TURNS_RULE : null,
+    ]
+      .filter(Boolean)
+      .join("\n\n") || undefined;
 
   const events = streamToolConversation<AskHalt>({
     system: SYSTEM_PROMPT,
     context: perRequestContext,
+    priorTurns,
     question,
     tools: offered,
     // ctx is closed over here and is not a parameter of any tool schema,

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { boundTurns, type AskTurn } from "@/lib/ask/turns";
 import type { AskRequest, AskStreamEvent, ClarifyView, ProposalView } from "@/lib/ask/answer";
 import type { Citation } from "@/lib/ask/tools";
 import { cancelAskProposal, confirmAskProposal, loadAskProposal } from "@/lib/actions";
@@ -10,16 +11,33 @@ import { AskProposalCard, type ProposalOutcome } from "@/components/AskProposalC
 
 /** The ask box on the dashboard.
  *
- * Deliberately not a chat. There is no thread and no history: a question
- * about this week's money is answered from today's rows, and a scrollback
- * of stale answers is a place for a number to be read long after it stopped
- * being true. Ask, read, ask again.
+ * Deliberately not a chat, and STILL NOT ONE — but this header used to end
+ * "Nothing here remembers a previous question", and that is no longer true,
+ * so it is amended rather than left to go quietly false.
  *
- * It can now DO things as well as answer, and that did not make it a chat.
- * A command ends the stream with a card or a row of chips; the card is one
- * tap to confirm or cancel, the chips re-run the same question with the
- * pick, and either way the task dies on "Ask something else". Nothing
- * here remembers a previous question.
+ * The original reason stands and is the reason the change took the shape it
+ * did: "a scrollback of stale answers is a place for a number to be read
+ * long after it stopped being true." A dollar figure from four minutes ago
+ * is not a fact about now, and a panel that leaves it on screen invites
+ * somebody to read it as one.
+ *
+ * So: the assistant remembers the CONVERSATION and never the FACTS. The last
+ * few questions and answers travel with the next question so it can resolve
+ * "the same", "that job", "it" — the things a person says to a colleague who
+ * was listening. Every figure in the new answer still comes from a fresh
+ * tool call, because the standing rule did not move. **A stale number cannot
+ * survive into a new answer, not because it is filtered but because nothing
+ * quotes it** — see lib/ask/turns.ts.
+ *
+ * And no scrollback is rendered. Old answers are not redisplayed; asking
+ * again replaces what is on screen exactly as it always did. What changed is
+ * what the assistant can hear, not what the reader can see.
+ *
+ * It can also DO things as well as answer, and that did not make it a chat
+ * either. A command ends the stream with a card or a row of chips; the card
+ * is one tap to confirm or cancel, the chips re-run the same question with
+ * the pick. "Ask something else" ends the sitting — it clears the result AND
+ * what was remembered, which is what its name has always promised.
  */
 
 /** Shown until someone types. Each one is a question this app can actually
@@ -41,6 +59,39 @@ function rememberCard(id: string | null) {
     else sessionStorage.removeItem(PENDING_CARD_KEY);
   } catch {
     // No storage, no reattach; nothing else changes.
+  }
+}
+
+/** What was said earlier in this sitting.
+ *
+ * sessionStorage for the same reason the pending card uses it: it dies with
+ * the tab. A jobsite tablet passed between two people must not carry one
+ * person's questions into the next person's session, and a conversation is
+ * even less of a standing instruction than a card is.
+ *
+ * Nothing is stored server-side. The turns travel with the request and the
+ * server bounds them (lib/ask/turns.ts) — memory carries the conversation,
+ * never the facts, so there is nothing here worth persisting beyond the tab.
+ */
+const TURNS_KEY = "askTurns";
+
+function rememberTurns(turns: AskTurn[]) {
+  try {
+    if (turns.length) sessionStorage.setItem(TURNS_KEY, JSON.stringify(turns));
+    else sessionStorage.removeItem(TURNS_KEY);
+  } catch {
+    // No storage, no memory. Every question still answers on its own,
+    // which is exactly how this panel behaved before.
+  }
+}
+
+function rememberedTurns(): AskTurn[] {
+  try {
+    const raw = sessionStorage.getItem(TURNS_KEY);
+    return raw ? boundTurns(JSON.parse(raw)) : [];
+  } catch {
+    // Unparseable or unavailable. Same answer either way.
+    return [];
   }
 }
 
@@ -90,6 +141,11 @@ export function AskPanel() {
   // double-append under React's double-invoked updaters.
   const provisionalRef = useRef(true);
   const progressRef = useRef("");
+  // The answer text and the question it answered, readable at "done".
+  // State updaters cannot be read synchronously and recording a turn from
+  // inside one would run twice under StrictMode.
+  const answerRef = useRef("");
+  const askedRef = useRef("");
   const [isAsking, setIsAsking] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -149,6 +205,7 @@ export function AskPanel() {
           progressRef.current += event.delta;
           setProgress(progressRef.current);
         } else {
+          answerRef.current += event.delta;
           setAnswer((current) => current + event.delta);
         }
         break;
@@ -160,11 +217,24 @@ export function AskPanel() {
         // sitting in the progress slot. Move it across, or a refusal
         // renders as a status line that never resolves into an answer.
         if (provisionalRef.current && progressRef.current) {
+          answerRef.current = progressRef.current;
           setAnswer(progressRef.current);
           progressRef.current = "";
           setProgress("");
         }
         provisionalRef.current = false;
+        // The exchange, recorded now that the answer is whole. Questions and
+        // answer TEXT only — no tool results, so nothing here can be quoted
+        // as a fact later. See lib/ask/turns.ts.
+        if (askedRef.current && answerRef.current.trim()) {
+          rememberTurns(
+            boundTurns([
+              ...rememberedTurns(),
+              { role: "user", content: askedRef.current },
+              { role: "assistant", content: answerRef.current.trim() },
+            ]),
+          );
+        }
         break;
       case "proposal":
         // Terminal. Whatever the model was saying is not the answer; the
@@ -207,6 +277,10 @@ export function AskPanel() {
   }
 
   async function send(request: AskRequest, shown: string) {
+    // Captured here rather than read off state at "done": `asked` is state
+    // and the closure that handles the stream would see a stale one.
+    askedRef.current = shown;
+    answerRef.current = "";
     // A question already in flight is abandoned rather than blocking this
     // one. Previously the input stayed enabled while the button was
     // disabled, so pressing Return mid-answer did nothing at all — no new
@@ -239,7 +313,7 @@ export function AskPanel() {
         // keep in sync, which is the property AskLauncher's own comment is
         // about. A HINT only: the server resolves it through the session's
         // company and ignores anything that is not this company's job.
-        body: JSON.stringify({ ...request, pagePath: pathname }),
+        body: JSON.stringify({ ...request, pagePath: pathname, priorTurns: rememberedTurns() }),
         signal: controller.signal,
       });
       if (!response.ok || !response.body) {
@@ -487,6 +561,13 @@ export function AskPanel() {
               onClick={() => {
                 abortRef.current?.abort();
                 clearResult();
+                // Something ELSE. The name has always promised a clean
+                // start, so the remembered conversation goes with the
+                // result — otherwise "the same" would reach back across a
+                // boundary the person drew deliberately.
+                rememberTurns([]);
+                askedRef.current = "";
+                answerRef.current = "";
                 setAsked("");
                 setQuestion("");
                 inputRef.current?.focus();

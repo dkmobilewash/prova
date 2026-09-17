@@ -1,6 +1,7 @@
 import { requireCompanyContext } from "@/lib/auth";
 import { viewerToday } from "@/lib/viewerToday";
 import { streamAnswer, type AskRequest } from "@/lib/ask/answer";
+import { boundTurns } from "@/lib/ask/turns";
 import type { CommandContext } from "@/lib/ask/commands";
 
 /** Ask, streamed.
@@ -45,7 +46,7 @@ export const runtime = "nodejs";
 // and on rows that change.
 export const dynamic = "force-dynamic";
 
-type Body = { question?: unknown; pagePath?: unknown; continuation?: unknown };
+type Body = { question?: unknown; pagePath?: unknown; priorTurns?: unknown; continuation?: unknown };
 
 /** Only string values, only string keys, and never more than a handful:
  * a chip answer is one field. */
@@ -72,13 +73,15 @@ function pagePathOf(value: unknown): string | undefined {
 function parseRequest(body: Body): AskRequest {
   const question = typeof body.question === "string" ? body.question : "";
   const pagePath = pagePathOf(body.pagePath);
+  const priorTurns = boundTurns(body.priorTurns);
   const raw = body.continuation;
-  if (typeof raw !== "object" || raw === null) return { question, pagePath };
+  if (typeof raw !== "object" || raw === null) return { question, pagePath, priorTurns };
   const c = raw as { command?: unknown; partialInput?: unknown; answers?: unknown };
   if (typeof c.command !== "string") return { question };
   return {
     question,
     pagePath,
+    priorTurns,
     continuation: {
       command: c.command,
       partialInput: stringRecord(c.partialInput),
