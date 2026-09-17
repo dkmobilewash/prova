@@ -17,6 +17,7 @@ import {
   voidChangeOrder,
 } from "@/lib/actions";
 import { TRADE_SCOPES, type ActionResult } from "@/lib/actions/shared";
+import { OVERHEAD_AND_PROFIT_UNSET_NOTE } from "@/lib/overhead-and-profit";
 
 const inputClass =
   "rounded-md border border-line-card bg-canvas px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none";
@@ -486,11 +487,15 @@ function MoneyBlock({ changeOrder }: { changeOrder: ChangeOrderView }) {
         <dt className="font-semibold text-ink">Total</dt>
         <dd className="font-semibold tabular-nums text-ink">{changeOrder.total}</dd>
       </div>
+      {/* The sentence comes from the module that owns the formatting, not
+          from here. It was written out by hand in this file while
+          OVERHEAD_AND_PROFIT_UNSET_NOTE sat exported and called by nothing —
+          three wordings for one fact, in the module whose stated reason for
+          existing is that the surfaces "cannot each invent their own
+          formatting for the same stored value". The drift it was built to
+          prevent, shipped on day one. */}
       {!changeOrder.overheadAndProfitSet && (
-        <p className="text-xs text-tag-amber-ink">
-          No overhead and profit rate is recorded on this change order, so none is in that total —
-          it is the subtotal. Nothing has been added as 0%.
-        </p>
+        <p className="text-xs text-tag-amber-ink">{OVERHEAD_AND_PROFIT_UNSET_NOTE}</p>
       )}
     </dl>
   );

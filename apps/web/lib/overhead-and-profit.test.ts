@@ -210,3 +210,54 @@ describe("reading a rate off a form", () => {
     expect(parseOverheadAndProfitPercent("%").ok).toBe(false);
   });
 });
+
+/**
+ * ONE SENTENCE, ONE PLACE.
+ *
+ * `OVERHEAD_AND_PROFIT_UNSET_NOTE` shipped exported, with a four-line
+ * docstring saying it is "the sentence shown under an unset line", and
+ * called by NOTHING — while `ChangeOrders.tsx` wrote its own near-copy by
+ * hand. Three wordings for one fact, inside the module whose stated reason
+ * for existing is that the surfaces "cannot each invent their own
+ * formatting for the same stored value". The drift it was built to prevent,
+ * shipped on day one.
+ *
+ * A grep for the symbol looked satisfied, because this test file referenced
+ * it. So the guard is not "is the symbol mentioned" — it is "does the
+ * sentence appear anywhere OTHER than the constant that owns it".
+ */
+describe("the unset note is not re-typed anywhere", () => {
+  it("appears only where the constant defines it", async () => {
+    const { readdirSync, readFileSync, statSync } = await import("node:fs");
+    const { join, relative } = await import("node:path");
+    const { fileURLToPath } = await import("node:url");
+
+    const appDir = fileURLToPath(new URL("..", import.meta.url));
+    const files = (dir: string, out: string[] = []) => {
+      for (const name of readdirSync(dir)) {
+        if (name === "node_modules" || name === ".next" || name.startsWith(".")) continue;
+        const full = join(dir, name);
+        if (statSync(full).isDirectory()) files(full, out);
+        else if (/\.tsx?$/.test(name)) out.push(full);
+      }
+      return out;
+    };
+
+    // A distinctive fragment of the sentence, not the whole of it: a
+    // hand-copy that drifted by a word is exactly the case worth catching,
+    // and an exact-string search would miss it.
+    const FRAGMENT = "so none is in";
+    const offenders = files(appDir)
+      .filter((f) => !f.endsWith("overhead-and-profit.ts") && !f.endsWith("overhead-and-profit.test.ts"))
+      .filter((f) => readFileSync(f, "utf8").includes(FRAGMENT))
+      .map((f) => relative(appDir, f));
+
+    expect(
+      offenders,
+      offenders.length === 0
+        ? ""
+        : `These files re-type the unset note instead of importing OVERHEAD_AND_PROFIT_UNSET_NOTE:\n  ${offenders.join("\n  ")}\n` +
+          `Two wordings for one fact is how a GC-facing sentence drifts. Import the constant.`,
+    ).toEqual([]);
+  });
+});

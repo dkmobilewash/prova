@@ -602,6 +602,34 @@ export async function approveChangeOrder(
          drag the job's estimated-cost coverage down for a line that has no
          cost to forecast. It stays out of percent-complete either way —
          lib/wip.ts only counts lines whose forecast is above zero.
+
+         AND THE HALF THAT SENTENCE LEFT OUT, WHICH REVIEW CAUGHT: staying
+         out of percent-complete also keeps it out of EARNED REVENUE. In
+         calculateLineItemWip a zero forecast makes percentComplete null,
+         and a null percentComplete makes earnedRevenue null — while this
+         line's contractValue is the full markup. So on an approved change
+         order the markup is IN the contract and can never be EARNED:
+
+           - earnedCoverage falls, because the markup sits in the
+             denominator and can never reach the numerator;
+           - the job's earnedRevenue understates by the markup, forever;
+           - overUnderBilling is billedToDate minus earnedRevenue, so once
+             the markup is billed the job reads permanently OVERBILLED by
+             it — and that is a figure a surety reads off a WIP schedule.
+
+         NOT FIXED HERE, deliberately, and this paragraph is the alternative
+         to pretending otherwise. Cost-to-cost cannot earn a line that has
+         no cost, so the honest fix is for the markup to earn pro rata with
+         the work it marks up — a change to how WIP earns, not to this
+         insert, and not one to make at the end of a branch about a
+         percentage field. Nulling the costs is WORSE, not better: it drags
+         estimatedCoverage down too, for a line that genuinely has no cost
+         to forecast.
+
+         `overheadAndProfit.wip.test.ts` pins the numbers above so the
+         behaviour cannot drift while the decision is open, and so whoever
+         makes it can see exactly what changes.
+
          An unset rate creates nothing, and neither does a rate that works
          out to exactly $0.00: a zero-dollar line on a contract is noise, and
          it would move no figure anywhere. */
@@ -818,6 +846,25 @@ export async function reviseChangeOrder(
           description: text(formData, "description") || null,
           status: "DRAFT",
           supersedesId: original.id,
+          // INHERITED FROM THE DOCUMENT IT CORRECTS, not from the company
+          // default. A revision exists to restate a number a GC already
+          // holds, so it has to start from the rate that number was
+          // figured at — a correction that silently re-marked-up at
+          // today's company rate would be a second change, arriving
+          // dressed as a correction.
+          //
+          // Null is inherited too, on purpose: if the original carried no
+          // rate, the revision must not invent one. It shows "Not set" and
+          // says so, which is the house rule that an unset rate is a state
+          // rather than a zero.
+          //
+          // This was missing until review caught it. createChangeOrder
+          // passed `company.overheadAndProfitPercent` and this path passed
+          // nothing, so revising a CO that carried 15% opened the
+          // correction at "Not set" — while the changelog claimed the rate
+          // "is COPIED onto each change order when the draft opens". It was
+          // copied on one of the two draft-creation paths.
+          overheadAndProfitPercent: original.overheadAndProfitPercent,
         },
       });
     });
