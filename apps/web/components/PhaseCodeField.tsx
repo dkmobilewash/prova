@@ -45,19 +45,27 @@ export function PhaseCodeField({
   phaseCodes,
   selectedId = null,
   className,
+  labelled = true,
 }: {
   phaseCodes: PhaseCodeOption[];
   selectedId?: string | null;
   className?: string;
+  /** The add form stacks labelled fields; the inline row edit is a single
+   * flex row of bare controls that lean on `title` instead — the craft
+   * select beside this one has no visible label either. Rendering a
+   * labelled field there would be the only two-line control in the row.
+   *
+   * One component rather than two so the option list, the retired-code
+   * rule and the "Not coded to a phase" wording cannot drift apart between
+   * the two places a phase is chosen. */
+  labelled?: boolean;
 }) {
   const offered = phaseCodes.filter(
     (phase) => phase.isActive || phase.id === selectedId,
   );
 
-  return (
-    <label className="flex flex-col gap-1 text-sm text-ink-label">
-      Phase code
-      <select
+  const select = (
+    <select
         name="phaseCodeId"
         defaultValue={selectedId ?? ""}
         title="Your own cost code for this line — what makes it countable against the same phase on every other job"
@@ -76,7 +84,15 @@ export function PhaseCodeField({
             {phase.isActive ? "" : " (retired)"}
           </option>
         ))}
-      </select>
+    </select>
+  );
+
+  if (!labelled) return select;
+
+  return (
+    <label className="flex flex-col gap-1 text-sm text-ink-label">
+      Phase code
+      {select}
     </label>
   );
 }

@@ -58,6 +58,7 @@ import { jobEarnedRevenue, jobOverUnderBilling } from "@/lib/company-financials"
 import { calculateTimeEntryLaborCost, findEffectiveFringeRateSchedule } from "@/lib/labor-cost";
 import { burdenedHourlyRate, estimateBurdenedLaborCost, laborRateDateFor } from "@/lib/estimate-labor-cost";
 import { LaborHoursField } from "@/components/LaborHoursField";
+import { PhaseCodeField } from "@/components/PhaseCodeField";
 import { calculateRetainageSummary } from "@/lib/retainage";
 import { SubmitButton } from "@/components/SubmitButton";
 import { formatSignedDate } from "@/lib/signed-date";
@@ -271,7 +272,8 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
     notFound();
   }
 
-  const [jobDetailContacts, companyMembers, companyLocations, catalogEntries, craftClassifications] = await Promise.all([
+  const [jobDetailContacts, companyMembers, companyLocations, catalogEntries, craftClassifications, phaseCodes] =
+    await Promise.all([
     // For the Job details form's client picker. Scoped to the company, same
     // as every other list on this page.
     prisma.contact.findMany({
@@ -292,6 +294,13 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
         fringeRateSchedules: { orderBy: { effectiveFrom: "desc" } },
       },
       orderBy: { name: "asc" },
+    }),
+    // Retired codes are fetched too, not filtered here: a line already coded
+    // to one must keep showing it, and PhaseCodeField decides what to offer.
+    prisma.phaseCode.findMany({
+      where: { companyId: company.id },
+      select: { id: true, code: true, name: true, isActive: true },
+      orderBy: [{ sortOrder: "asc" }, { code: "asc" }],
     }),
   ]);
   // Burdened labor cost per line at bid time. The hours and the craft have
@@ -1859,6 +1868,12 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                           </option>
                         ))}
                       </select>
+                      <PhaseCodeField
+                        phaseCodes={phaseCodes}
+                        selectedId={item.phaseCodeId}
+                        labelled={false}
+                        className="rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink focus:border-link focus:outline-none"
+                      />
                       <SubmitButton
                         type="submit"
                         title="Save"
@@ -1977,6 +1992,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                   </select>
                 </label>
                 <LaborHoursField crafts={craftOptions} />
+                <PhaseCodeField phaseCodes={phaseCodes} />
                 <SubmitButton
                   type="submit"
                   className="inline-flex items-center justify-center rounded-md bg-neutral-800 px-4 py-2 text-sm font-medium text-ink hover:bg-neutral-700"

@@ -62,3 +62,61 @@ at the top of the file. Until those land, `/phase-codes` will honestly
 report every line as uncoded — which is the true state of the data, and
 the page saying so rather than showing a confident empty table is the
 whole point of it.
+
+---
+
+### The wiring, and a CLAUDE.md bullet that failed the build
+
+The branch above shipped a phase-code model, a management page and a
+cross-job rollup, and **nothing could be coded to a phase from the UI** —
+both line-item forms and both write actions are in the other lane. That is
+the exact "built, and the last wire missing" shape a product review had just
+spent a day diagnosing, so it is closed here rather than left as an issue.
+
+`phaseCodeIdFromForm` in `lib/actions/shared.ts`, sitting directly beside
+`craftClassificationIdFromForm` and deliberately the same shape: the id
+arrives from a `<select>` in a browser, so it is a claim, and it is looked up
+through the caller's own `companyId` in the same `where` clause. Without it a
+caller could post any company's phase code id and have it stored on their own
+line item, where it would read back as a code they do not have and land in a
+budget report grouped by it. `craftClassificationIdFromForm` has no test at
+all; this is the first of the pair to get one, and it asserts the argument
+sent to the database rather than a returned value — a seeded test would pass
+equally against a post-query ownership check, which is the same protection
+with one more place to forget it.
+
+**A retired code is accepted on purpose and there is a test saying so.** It
+is not OFFERED by the picker, but a line already coded to one must survive
+being edited for any other reason: a retired code is evidence of how work on
+an invoiced job was coded, and dropping it on save would rewrite that
+quietly. The test asserts the `where` carries no `isActive`, so the tidy-up
+that would erase it fails.
+
+`apps/web/app/(app)/jobs/[id]/page.tsx` belongs to the other lane and got
+**17 inserted lines and no restructuring** — an import, the destructure, a
+six-line query, and the picker in each of the two forms. No section slot was
+touched. `PhaseCodeField` grew a `labelled` prop rather than a second
+component, because the add form stacks labelled fields and the inline row
+edit is a row of bare controls leaning on `title` — the craft select beside
+it has no visible label either. One component, so the option list, the
+retired-code rule and the "Not coded to a phase" wording cannot drift apart.
+
+**No phase tag on the read-only row, and that is a decision.** The craft is
+not shown there either, so a phase badge would have been the only such
+marker on the row and inconsistent with its own neighbour.
+
+**And a correction to CLAUDE.md, which is why this rides along with code.**
+Its "List pages" bullet said owner-only destructive actions use
+`assertOwner(context, "…")`. `assertOwner` THROWS, and production redacts a
+thrown Server Action message — so an action declaring `Promise<ActionResult>`
+that refuses that way renders as a dead button, and
+`ownerRefusalCensus.test.ts` fails the build on it. The correct helper is
+`ownerRefusal`. The bullet has been corrected, with the distinction stated:
+`ownerRefusal` for anything returning `ActionResult`, `assertOwner` only in
+the older throw-style actions. Found by a branch doing exactly what the
+bullet told it to.
+
+Mutations on the new helper, each watched red: company scope dropped from the
+`where`; `isActive: true` added to it.
+
+test 3240/3240 (190 files), lint clean, typecheck clean, build green.

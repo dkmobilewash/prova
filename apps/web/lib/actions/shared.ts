@@ -108,6 +108,40 @@ export async function craftClassificationIdFromForm(formData: FormData, companyI
   return craft.id;
 }
 
+/** The same ownership check as `craftClassificationIdFromForm` above, for
+ * the phase code beside it on the same forms, and deliberately the same
+ * shape rather than a cleverer one.
+ *
+ * The id arrives from a `<select>` in a browser, so it is a claim rather
+ * than a fact: without this lookup a caller could post any company's phase
+ * code id and have it stored on their own line item, which would then read
+ * back as a code they do not have and land in somebody's budget report.
+ * Scoped by `companyId` in the same `where`, so the scope cannot be dropped
+ * in a later edit without deleting the predicate that finds the row.
+ *
+ * Throws rather than returning an ActionResult because both call sites do —
+ * `createLineItem` and `updateLineItem` are throw-style and already end on
+ * `throw new Error("Description is required")`. Converting one argument of
+ * one of them would leave a function that reports two ways. A stale form
+ * posting a retired-and-deleted id is the only way to reach it, and a phase
+ * code cannot be deleted at all.
+ *
+ * A RETIRED code is accepted on purpose. It is not offered in the picker,
+ * but a line already coded to one must survive being edited for any other
+ * reason — a retired code is evidence of how work on an invoiced job was
+ * coded, and silently dropping it on save would rewrite that. */
+export async function phaseCodeIdFromForm(formData: FormData, companyId: string): Promise<string | null> {
+  const raw = String(formData.get("phaseCodeId") ?? "").trim();
+  if (!raw) return null;
+  const phase = await prisma.phaseCode.findFirst({
+    where: { id: raw, companyId },
+  });
+  if (!phase) {
+    throw new Error("Phase code not found");
+  }
+  return phase.id;
+}
+
 export function assertOwner(user: { role: string }, message?: string) {
   if (user.role !== "OWNER") {
     throw new Error(message ?? "Only the account owner can do that");

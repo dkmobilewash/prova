@@ -20,7 +20,7 @@ import {
   jobStatusTransitionRefusal,
   type JobStatusValue,
 } from "@/lib/job-status-transitions";
-import { actionFail, actionOk, type ActionResult, assertEditableDirectly, assertJobInCompany, assertLineItemOnJob, COST_CATEGORIES, craftClassificationIdFromForm, decimalFromForm, nullableDecimalFromForm, tradeScopeFromForm } from "./shared";
+import { actionFail, actionOk, type ActionResult, assertEditableDirectly, assertJobInCompany, assertLineItemOnJob, COST_CATEGORIES, craftClassificationIdFromForm, decimalFromForm, phaseCodeIdFromForm, nullableDecimalFromForm, tradeScopeFromForm } from "./shared";
 
 /**
  * Starts a job against a GC — an EXISTING one by preference, a new one when
@@ -105,6 +105,7 @@ export async function addLineItem(jobId: string, formData: FormData) {
   const tradeScope = tradeScopeFromForm(formData);
   const laborHours = nullableDecimalFromForm(formData, "laborHours");
   const craftClassificationId = await craftClassificationIdFromForm(formData, company.id);
+  const phaseCodeId = await phaseCodeIdFromForm(formData, company.id);
 
   if (!description) {
     throw new Error("Description is required");
@@ -122,6 +123,7 @@ export async function addLineItem(jobId: string, formData: FormData) {
       tradeScope,
       laborHours,
       craftClassificationId,
+      phaseCodeId,
     },
   });
 
@@ -169,6 +171,7 @@ export async function updateLineItem(jobId: string, lineItemId: string, formData
   const tradeScope = tradeScopeFromForm(formData);
   const laborHours = nullableDecimalFromForm(formData, "laborHours");
   const craftClassificationId = await craftClassificationIdFromForm(formData, company.id);
+  const phaseCodeId = await phaseCodeIdFromForm(formData, company.id);
 
   if (!description) {
     throw new Error("Description is required");
@@ -186,6 +189,7 @@ export async function updateLineItem(jobId: string, lineItemId: string, formData
       tradeScope,
       laborHours,
       craftClassificationId,
+      phaseCodeId,
     },
   });
 
