@@ -312,3 +312,52 @@ compliant."*
 Prisma queries that feed them — in particular the `orderBy revisionNumber
 desc, take 1` that selects a submittal's latest revision is asserted by
 nothing here, because the fixture holds what that query would return.
+
+
+---
+
+### Five defects a review of this branch found in this branch
+
+Reviewed before asking anyone else to. All five are fixed here, each pinned
+by a test that fails against the old code.
+
+1. **`daily_field_reports` limited to 40 company-wide BEFORE filtering by
+   job.** A job whose reports fell outside the 40 most recent across every
+   job came back empty — and the empty state then said *"No field report
+   has been filed on that job. That means nobody wrote one up, not that
+   nothing happened."* Confidently, specifically false about the paperwork
+   a delay claim is built from. The filter is in the `where` clause now.
+2. **Rows wrapped in an object walked past the 40-row cap.** `forModel()`
+   only truncated when the whole result was an array, and three tools
+   return `{ month, rows }` or `{ withinDays, rows }` — so they shipped
+   every row into the prompt with no cap and no note. `forModel` now
+   follows the rows wherever they are, keeping the wrapper's own keys.
+3. **`outbound_messages` computed its summary from a `take: 50`** and
+   presented it as company-wide totals: 500 sent with 30 bounces answered
+   "50 messages, 2 need attention". The cap belongs downstream, where it
+   can carry a note; a cap in the query happens before the counting.
+4. **The warranty end date overflowed on a month-end start.**
+   `setUTCMonth(+6)` on 2026-08-31 targets 2027-02-31, which JavaScript
+   normalises to 2027-03-03 — so a warranty read "in force" for two days
+   after it ended, and a callback arriving on those days was reported as
+   the company's liability when it was not. `addMonthsClamped` clamps to
+   the last day of the target month.
+5. **The per-job submittal empty state overclaimed.** The company-wide
+   empty register had been split out; the identical per-job case had not,
+   so a job that never had a submittal raised was told every submittal
+   sent on it had come back.
+
+**How they got through is the same shape four times, and it is worth more
+than the fixes.** Each original test asserted the thing being thought about
+rather than the thing that breaks: the field-report empty state was tested
+for its WORDING while the query under it returned the wrong set; the row cap
+was assumed to apply because the tools "return rows", when what it checks is
+whether the whole result is an array; the message summary was asserted
+against a fixture of three, smaller than its own cap of fifty; and the
+warranty date was tested on a start day that exists in every month.
+
+A fixture smaller than a limit cannot see the limit. Every regression test
+here is built larger than the bound it is testing — 45 reports against a cap
+of 40, 60 messages against a cap of 50, 50 rows against a cap of 40.
+
+Five mutations watched RED and restored. Twenty-seven across the branch.

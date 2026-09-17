@@ -156,6 +156,23 @@ export type AskCitation = Citation;
 const MAX_ROWS_PER_TOOL = 40;
 
 export function forModel(data: unknown): unknown {
+  // A tool that wraps its rows in an object — `{ month, rows }`,
+  // `{ withinDays, rows }` — used to walk straight past this cap, because
+  // the guard below only asks whether the WHOLE result is an array. Three
+  // tools did it and shipped every row into the prompt uncapped and with no
+  // note. Found reviewing #303: the rule was "an array is capped" when it
+  // needed to be "rows are capped, wherever they are".
+  //
+  // The wrapper's own keys are preserved, so a tool can still hand the
+  // model a month or a window alongside its rows.
+  if (!Array.isArray(data) && typeof data === "object" && data !== null) {
+    const wrapper = data as Record<string, unknown>;
+    if (Array.isArray(wrapper.rows)) {
+      const capped = forModel(wrapper.rows) as { count: number; rows: unknown[]; note?: string };
+      return { ...wrapper, ...capped };
+    }
+    return data;
+  }
   if (!Array.isArray(data)) return data;
 
   // ALWAYS send the count, even for a short list.

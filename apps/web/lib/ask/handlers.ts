@@ -132,6 +132,30 @@ export const HANDLERS: Record<
   outbound_messages: outboundMessages,
 };
 
+/**
+ * Add whole months to a date without rolling into the next one.
+ *
+ * `setUTCMonth(getUTCMonth() + n)` overflows: 2026-08-31 plus six months
+ * targets 2027-02-31, which JavaScript normalises to 2027-03-03. A warranty
+ * would then read "in force" for two days after it ended — and, for a
+ * callback arriving on those days, report the company as liable when it is
+ * not. Substantial-completion dates land on month ends often enough for
+ * that to be reachable rather than theoretical. Found reviewing #303.
+ *
+ * Clamps to the last day of the target month instead, which is how every
+ * other term in this trade is read: a six-month warranty from 31 August
+ * ends on 28 February, not 3 March.
+ */
+export function addMonthsClamped(startIso: string, months: number): string {
+  const start = new Date(`${startIso}T00:00:00.000Z`);
+  const year = start.getUTCFullYear();
+  const month = start.getUTCMonth() + months;
+  // Day 0 of the FOLLOWING month is the last day of the target month.
+  const lastDayOfTarget = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  const day = Math.min(start.getUTCDate(), lastDayOfTarget);
+  return new Date(Date.UTC(year, month, day)).toISOString().slice(0, 10);
+}
+
 /** A month the person named, or this one. Same principle as the expiry
  * window: the model sends a string, and one this cannot read falls back to
  * the current month rather than to nothing. An empty ratio review reads as
@@ -1383,8 +1407,8 @@ async function openSubmittals(companyId: string, input: Input): Promise<ToolResu
   });
 
   const today = serverToday();
-  const open = submittals
-    .filter((submittal) => matchesJobName(submittal.job.name, input.jobName))
+  const onJob = submittals.filter((submittal) => matchesJobName(submittal.job.name, input.jobName));
+  const open = onJob
     .flatMap((submittal) => {
       const latest = submittal.revisions[0];
       if (!latest || latest.returnedOn !== null) return [];
@@ -1412,16 +1436,20 @@ async function openSubmittals(companyId: string, input: Input): Promise<ToolResu
     data: open,
     citations,
     unavailable:
-      // Same distinction as certification_expiry. "Every submittal sent has
-      // come back" is true of a company that has never sent one, and that
-      // reads as being on top of things.
+      // THREE answers, not two. The company-wide empty register was split
+      // out first; reviewing #303 found the same defect one level down —
+      // a job that has never had a submittal raised was told every
+      // submittal sent on it had come back, which reads as confirmation
+      // that the job's log is clean and current.
       submittals.length === 0
         ? "No submittal has been raised at all. Nothing has been sent, so nothing is outstanding."
-        : open.length === 0
-          ? input.jobName
-            ? "Nothing is out with the GC on that job — every submittal sent has come back."
-            : "Nothing is out with the GC. Every submittal sent has come back."
-          : undefined,
+        : onJob.length === 0
+          ? "No submittal has been raised on that job at all. Nothing has been sent, so nothing is outstanding."
+          : open.length === 0
+            ? input.jobName
+              ? "Nothing is out with the GC on that job — every submittal sent has come back."
+              : "Nothing is out with the GC. Every submittal sent has come back."
+            : undefined,
   };
 }
 
@@ -1804,7 +1832,19 @@ async function dailyFieldReports(companyId: string, input: Input): Promise<ToolR
   if (jobMismatch) return { data: [], citations, unavailable: jobMismatch };
 
   const reports = await prisma.dailyFieldReport.findMany({
-    where: { companyId },
+    // The job filter is in the WHERE, not applied after the take. With
+    // `take: 40` company-wide and the filter afterwards, a job whose
+    // reports fall outside the 40 most recent across every job came back
+    // empty — and the empty state then says "nobody wrote one up", a
+    // confident, specific, false claim about the paperwork a delay claim
+    // is built from. Found reviewing #303. `contains` + insensitive is
+    // exactly what matchesJobName does, so nothing else changes.
+    where: {
+      companyId,
+      ...(input.jobName?.trim()
+        ? { job: { name: { contains: input.jobName.trim(), mode: "insensitive" as const } } }
+        : {}),
+    },
     select: {
       reportDate: true,
       workPerformed: true,
@@ -1819,7 +1859,6 @@ async function dailyFieldReports(companyId: string, input: Input): Promise<ToolR
   });
 
   const rows = reports
-    .filter((report) => matchesJobName(report.job.name, input.jobName))
     .map((report) => ({
       job: report.job.name,
       date: iso(report.reportDate),
@@ -2186,12 +2225,8 @@ async function warrantyObligations(companyId: string, input: Input): Promise<Too
     .filter((job) => job.warrantyPeriod !== null || job.warrantyServiceRequests.length > 0)
     .map((job) => {
       const startsOn = iso(job.warrantyPeriod?.startsOn ?? null);
-      let endsOn: string | null = null;
-      if (startsOn && job.warrantyPeriod) {
-        const end = new Date(`${startsOn}T00:00:00.000Z`);
-        end.setUTCMonth(end.getUTCMonth() + job.warrantyPeriod.months);
-        endsOn = end.toISOString().slice(0, 10);
-      }
+      const endsOn =
+        startsOn && job.warrantyPeriod ? addMonthsClamped(startsOn, job.warrantyPeriod.months) : null;
       const open = job.warrantyServiceRequests.filter((request) => request.resolvedOn === null);
       return {
         job: job.name,
@@ -2260,7 +2295,11 @@ async function outboundMessages(companyId: string): Promise<ToolResult> {
       events: { orderBy: { occurredAt: "desc" }, select: { type: true, occurredAt: true, detail: true } },
     },
     orderBy: { createdAt: "desc" },
-    take: 50,
+    // No `take`. It was 50, and the SUMMARY was computed from the capped
+    // set and presented as company-wide totals — 500 sent with 30 bounces
+    // answered "50 messages, 2 need attention". `forModel` caps what
+    // reaches the model and says so; a cap in the query happens before the
+    // counting, and no downstream note can correct it. Found reviewing #303.
   });
 
   const rows = messages.map((message) => {

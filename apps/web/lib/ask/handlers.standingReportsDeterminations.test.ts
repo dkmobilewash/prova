@@ -142,7 +142,18 @@ const DETERMINATIONS = [
 vi.mock("@prova/db", async (importOriginal) => ({
   Prisma: (await importOriginal<typeof import("@prova/db")>()).Prisma,
   prisma: {
-    dailyFieldReport: { findMany: async () => REPORTS },
+    // Honours the WHERE, because the real one does. This fake used to
+    // return every row whatever it was asked for, and the test passed only
+    // because the handler filtered in memory afterwards — so it could not
+    // see that the filter was running AFTER a company-wide `take`. A fake
+    // more permissive than the database hides exactly the bug that lives
+    // in the query.
+    dailyFieldReport: {
+      findMany: async ({ where }: { where: { job?: { name?: { contains?: string } } } }) => {
+        const wanted = where.job?.name?.contains?.toLowerCase();
+        return wanted ? REPORTS.filter((r) => r.job.name.toLowerCase().includes(wanted)) : REPORTS;
+      },
+    },
     prevailingWageDetermination: { findMany: async () => DETERMINATIONS },
     job: {
       findFirst: async ({ where }: { where: { name?: { contains?: string } } }) => {
