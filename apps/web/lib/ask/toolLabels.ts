@@ -23,6 +23,8 @@ const LABELS: Record<ToolName, string> = {
   change_order_status: "change orders",
   job_labor_cost: "labor cost",
   safety_record: "your safety log",
+  open_submittals: "open submittals",
+  certification_expiry: "certifications",
 };
 
 export function toolLabel(name: ToolName): string {

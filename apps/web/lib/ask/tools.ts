@@ -89,7 +89,9 @@ export type ToolName =
   | "retainage_held"
   | "change_order_status"
   | "job_labor_cost"
-  | "safety_record";
+  | "safety_record"
+  | "open_submittals"
+  | "certification_expiry";
 
 export type ToolDefinition = {
   name: ToolName;
@@ -174,6 +176,21 @@ const changeOrderFilter = {
 /** safety_record: a YEAR, because an OSHA case number is scoped to one and
  * the 300 log is filed per year. A four-digit year the person said, never a
  * range: "last year" is resolved by the app, not narrowed by the model. */
+/** How far ahead to look for something that is about to lapse. Bounded and
+ * defaulted by the app rather than by the model: "soon" is a word a model
+ * will happily resolve to 365, and a card that expires in eleven months is
+ * not an answer to "who is about to be turned away". */
+const expiryWindowFilter = {
+  type: "object" as const,
+  properties: {
+    withinDays: {
+      type: "string",
+      description:
+        "Optional. How many days ahead to count as expiring soon, e.g. 30. Omit for 60, which is what an unqualified question means. Anything already expired is always included.",
+    },
+  },
+};
+
 const safetyYearFilter = {
   type: "object" as const,
   properties: {
@@ -305,6 +322,22 @@ export const TOOLS: ToolDefinition[] = [
     description:
       "The OSHA case log for one year: every incident with its classification and outcome, which cases are recordable on the 300 log, days away and days restricted, and the toolbox talks held. Answers 'what is our safety record this year'. Recordability is derived from the outcome, not stored. It CANNOT confirm that any individual signed a toolbox talk — the attendee roster is free text and the signature sheet is a photo — so it can say a talk was held and never that a named person attended it.",
     input_schema: safetyYearFilter,
+  },
+  {
+    name: "open_submittals",
+    // /submittals
+    capability: "MANAGE_JOBS",
+    description:
+      "Submittals sent to the GC or architect and not yet returned, with their job, how many days they have been out, the date they were due back, and whether that date has passed. Answers 'what is the GC sitting on'. A submittal is open when its LATEST revision has no returned date: a rejected revision that was re-sent is open again on the new revision, not closed on the old one. It reports how long one has been out; it cannot predict when an answer will come back, and it does not know whether the work it covers has been released to start.",
+    input_schema: jobFilter,
+  },
+  {
+    name: "certification_expiry",
+    // /certifications
+    capability: "MANAGE_FIELD",
+    description:
+      "Worker certifications — OSHA 10 and 30, scaffold, aerial lift, fall protection, respirator fit test, first aid and the rest — that are EXPIRED or expiring soon, worst first, with whose they are and the date. Answers 'who is going to be turned away at the gate'. A certification with no expiry date recorded is reported as undated rather than as current, because an unknown date is not the same as a good one. It knows only what has been filed here: it cannot confirm that somebody holds a card nobody entered, and it does not know any GC's own site-access rules.",
+    input_schema: expiryWindowFilter,
   },
 ];
 

@@ -278,6 +278,11 @@ describe("read-tool capabilities match the pages they cite", () => {
     change_order_status: "VIEW_JOB_COSTS",
     job_labor_cost: "VIEW_JOB_COSTS",
     safety_record: ROUTE_CAPABILITY["/safety"],
+    open_submittals: ROUTE_CAPABILITY["/submittals"],
+    // /certifications is MANAGE_FIELD, and that is the right gate rather
+    // than a compliance one: the question this answers is "who can start on
+    // Monday", which a foreman asks and a compliance manager does not.
+    certification_expiry: ROUTE_CAPABILITY["/certifications"],
   };
 
   it.each(TOOLS.map((tool) => [tool.name, tool.capability] as const))("%s", (name, capability) => {

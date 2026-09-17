@@ -55,7 +55,7 @@ import { matchesJobName, TOOLS, type ToolName, type ToolResult } from "./tools";
  * All read-only.
  */
 
-type Input = { jobName?: string; status?: string; year?: string };
+type Input = { jobName?: string; status?: string; year?: string; withinDays?: string };
 
 const iso = (date: Date | null) => (date ? date.toISOString().slice(0, 10) : null);
 
@@ -110,7 +110,35 @@ export const HANDLERS: Record<
   change_order_status: changeOrderStatus,
   job_labor_cost: jobLaborCost,
   safety_record: safetyRecord,
+  open_submittals: openSubmittals,
+  certification_expiry: certificationExpiry,
 };
+
+/** How far ahead "expiring soon" reaches when nobody said. Sixty days is the
+ * renewal window the compliance page already uses, so the assistant and the
+ * screen cannot disagree about what "soon" means. */
+const DEFAULT_EXPIRY_WINDOW_DAYS = 60;
+
+/** The model sends a string; this is the only place that decides what a bad
+ * one means. An unparseable or negative window falls back to the default
+ * rather than returning nothing — a silent empty list would read as "you
+ * have no expiring cards", which is the one wrong answer this tool must
+ * never give. */
+export function expiryWindowDays(raw: string | undefined): number {
+  if (raw === undefined) return DEFAULT_EXPIRY_WINDOW_DAYS;
+  const parsed = Number(raw.trim());
+  if (!Number.isFinite(parsed) || parsed < 0) return DEFAULT_EXPIRY_WINDOW_DAYS;
+  return Math.floor(parsed);
+}
+
+/** A certification's name as a person says it. `kind` is an enum for
+ * filtering; OTHER carries the real name in `otherLabel`, and an OTHER with
+ * no label says so rather than rendering the word "Other" as if it were the
+ * name of a card. */
+export function certificationLabel(kind: string, otherLabel: string | null): string {
+  if (kind === "OTHER") return otherLabel?.trim() || "Unnamed certification";
+  return kind.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+}
 
 /** Who is asking: the company, and the person's role and job function.
  * Handlers still take only the company id — what changed is that the
@@ -1286,6 +1314,137 @@ async function safetyRecord(companyId: string, input: Input): Promise<ToolResult
     unavailable:
       cases.length === 0 && talks.length === 0
         ? `Nothing is recorded for ${year}: no cases and no toolbox talks.`
+        : undefined,
+  };
+}
+
+/**
+ * Submittals the GC or architect is sitting on.
+ *
+ * "Open" is derived from the LATEST revision, never stored — the same rule
+ * the rest of this schema follows. That matters here rather than being
+ * pedantic: a submittal rejected at revision 1 and re-sent as revision 2 is
+ * open again, and reading the first revision would report it as closed on
+ * the day it most needs chasing.
+ *
+ * A submittal with NO revisions has never been sent. It is a draft, not
+ * something anyone is waiting on, and it is left out — counting it would
+ * put the sub's own unfinished paperwork on a list titled "what the GC
+ * owes us".
+ */
+async function openSubmittals(companyId: string, input: Input): Promise<ToolResult> {
+  const citations = [{ label: "Submittals", href: "/submittals" }];
+  const jobMismatch = await jobNameMismatch(companyId, input.jobName);
+  if (jobMismatch) return { data: [], citations, unavailable: jobMismatch };
+
+  const submittals = await prisma.submittal.findMany({
+    where: { companyId },
+    select: {
+      number: true,
+      title: true,
+      specSection: true,
+      job: { select: { name: true } },
+      revisions: {
+        orderBy: { revisionNumber: "desc" },
+        take: 1,
+        select: { revisionNumber: true, sentOn: true, dueBack: true, returnedOn: true },
+      },
+    },
+    orderBy: { number: "asc" },
+  });
+
+  const today = serverToday();
+  const open = submittals
+    .filter((submittal) => matchesJobName(submittal.job.name, input.jobName))
+    .flatMap((submittal) => {
+      const latest = submittal.revisions[0];
+      if (!latest || latest.returnedOn !== null) return [];
+      const sentOn = iso(latest.sentOn);
+      const dueBack = iso(latest.dueBack);
+      return [
+        {
+          job: submittal.job.name,
+          submittal: `#${submittal.number} ${submittal.title}`,
+          specSection: submittal.specSection,
+          revision: latest.revisionNumber,
+          sentOn,
+          daysOutstanding: sentOn ? daysBetween(sentOn, today) : null,
+          dueBack,
+          // Stated rather than left for the model to work out from two
+          // dates, because "is it late" is the question and arithmetic is
+          // the one thing the prompt forbids it to do.
+          pastDue: dueBack === null ? null : daysBetween(dueBack, today) > 0,
+        },
+      ];
+    })
+    .sort((a, b) => (b.daysOutstanding ?? 0) - (a.daysOutstanding ?? 0));
+
+  return {
+    data: open,
+    citations,
+    unavailable:
+      open.length === 0
+        ? input.jobName
+          ? "Nothing is out with the GC on that job — every submittal sent has come back."
+          : "Nothing is out with the GC. Every submittal sent has come back."
+        : undefined,
+  };
+}
+
+/**
+ * Cards that have lapsed or are about to.
+ *
+ * Sorted worst first, and the sort is the product: a foreman asking this is
+ * asking who cannot start on Monday, not for an inventory.
+ *
+ * A certification with NO expiry date is reported as undated and listed
+ * last — never dropped, and never counted as current. An unknown date is
+ * not a good one, and silently omitting it is how somebody gets turned away
+ * at a gate holding a card this app said was fine.
+ */
+async function certificationExpiry(companyId: string, input: Input): Promise<ToolResult> {
+  const citations = [{ label: "Certifications", href: "/certifications" }];
+  const withinDays = expiryWindowDays(input.withinDays);
+  const today = serverToday();
+
+  const certifications = await prisma.workerCertification.findMany({
+    where: { companyId },
+    select: {
+      kind: true,
+      otherLabel: true,
+      issuer: true,
+      expiresOn: true,
+      holder: { select: { name: true, email: true } },
+    },
+  });
+
+  const rows = certifications
+    .map((certification) => {
+      const expiresOn = iso(certification.expiresOn);
+      return {
+        holder: certification.holder?.name ?? certification.holder?.email ?? null,
+        certification: certificationLabel(certification.kind, certification.otherLabel),
+        issuer: certification.issuer,
+        expiresOn,
+        daysUntilExpiry: expiresOn === null ? null : daysBetween(today, expiresOn),
+        state: expiresOn === null ? ("undated" as const) : daysBetween(today, expiresOn) < 0 ? ("expired" as const) : ("expiring" as const),
+      };
+    })
+    .filter((row) => row.expiresOn === null || (row.daysUntilExpiry ?? 0) <= withinDays)
+    .sort((a, b) => {
+      // Undated last: it is a gap in the records, not an emergency, and it
+      // must not outrank a card that actually lapsed yesterday.
+      if (a.daysUntilExpiry === null) return b.daysUntilExpiry === null ? 0 : 1;
+      if (b.daysUntilExpiry === null) return -1;
+      return a.daysUntilExpiry - b.daysUntilExpiry;
+    });
+
+  return {
+    data: { withinDays, rows },
+    citations,
+    unavailable:
+      rows.length === 0
+        ? `No certification is expired or expiring within ${withinDays} days, and every one on file has a date.`
         : undefined,
   };
 }

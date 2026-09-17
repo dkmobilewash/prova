@@ -94,6 +94,15 @@ export const EVAL_CASES: EvalCase[] = [
   // current year is.
   tool("read-safety", "how many recordable injuries have we had this year?", "safety_record"),
   tool("read-safety-field", "what is on the OSHA log for 2025?", "safety_record", { year: "2025" }, FIELD),
+  tool("read-submittals", "what is the GC still sitting on?", "open_submittals"),
+  // Phrased the way a PM says it, and with a job, because the job filter is
+  // the half most likely to be dropped on the way through.
+  tool("read-submittals-job", "which submittals are outstanding on Riverside?", "open_submittals", { jobName: "Riverside" }),
+  tool("read-certs", "whose certifications are about to expire?", "certification_expiry", undefined, FIELD),
+  // The window has to survive as the person's own number rather than being
+  // rounded to the default — "in the next 30 days" is a different question
+  // from "soon", and a foreman planning a week means it literally.
+  tool("read-certs-window", "any cards expiring in the next 30 days?", "certification_expiry", { withinDays: "30" }, FIELD),
 
   // ------------------------------------------------------- commands
   command("cmd-create-estimate", "create an estimate for Riverside Plaza for Turner", "create_estimate_job", { jobName: "Riverside Plaza", gcName: "Turner" }),
