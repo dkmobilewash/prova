@@ -454,6 +454,17 @@ describe("photoReportContentsLabel", () => {
     );
   });
 
+  it("does not say “0 captures” when nothing picked is on this job", () => {
+    // Reached by opening a picked report at a DIFFERENT job's id — the ids
+    // are ANDed into that job's where-clause, so every one of them misses.
+    // The general plural branch printed "Contents: 0 captures, picked from
+    // the gallery", which reads as a bug on a document somebody prints.
+    const label = photoReportContentsLabel({ kind: "picked", ids: ["a", "b"] }, 0);
+    expect(label).toBe("None of the captures you picked");
+    expect(label).not.toContain("0");
+    expect(label).not.toMatch(/\bcaptures, picked\b/);
+  });
+
   it("hands a selection document straight to the label it always had", () => {
     for (const selection of PHOTO_REPORT_SELECTIONS) {
       expect(photoReportContentsLabel({ kind: "selection", selection }, 7)).toBe(

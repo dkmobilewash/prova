@@ -204,9 +204,11 @@ export default async function JobPhotoReportPage({
             rather than finding out by printing it. */}
         {contents.kind === "picked" && (
           <p className="mt-5 rounded-md border border-line-card bg-surface p-3 text-sm text-ink-label">
-            {captures.length === 1
-              ? "This report is the one capture you picked in the gallery."
-              : `This report is the ${captures.length} captures you picked in the gallery.`}{" "}
+            {captures.length === 0
+              ? "This report has none of the captures you picked in the gallery."
+              : captures.length === 1
+                ? "This report is the one capture you picked in the gallery."
+                : `This report is the ${captures.length} captures you picked in the gallery.`}{" "}
             <span className="text-ink-body">
               Choosing one of the selections below replaces them — go back to the gallery to pick
               a different set.

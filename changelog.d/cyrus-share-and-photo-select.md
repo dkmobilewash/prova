@@ -143,3 +143,30 @@ because a mis-tap beside an armed confirm is a mutation; ticking a box calls
 no server and discloses nothing. What it must not do is live in the cluster
 — `RowActions` unmounts its children while armed, so a selection in there
 would silently untick every card whose delete somebody opened and cancelled.
+
+**A second defect found by clicking, after the branch was written.** Opening
+a picked report at a DIFFERENT job's id — `/jobs/<other>/photo-report?ids=<a
+capture on this job>` — printed **"Contents: 0 captures, picked from the
+gallery"**, above a paragraph reading **"This report is the 0 captures you
+picked in the gallery."** Both count sentences were written as
+`n === 1 ? one : ${n}`, and zero fell through the plural branch.
+
+That URL is not contrived: it is what the ids clause DOING ITS JOB looks
+like from the page. Every id is ANDed into the job's own where-clause, so a
+capture from another job matches nothing and `shown` is 0.
+
+So the click that found this also settled the one claim this branch said no
+laptop could prove. `/jobs/cmtx3b50g…/photo-report?ids=<a Riverside
+capture>` renders Northgate's header, zero captures and the empty note —
+the id crossed a job boundary and matched nothing, by result rather than by
+reading the query. Proven against `ep-icy-hat`, Cyrus's own dev database.
+
+Zero now reads **"None of the captures you picked"** on the paper and
+**"This report has none of the captures you picked in the gallery."** above
+it — which is also more accurate than a count would be, since nothing was
+picked zero times; what was picked is not on this job. The empty-state
+sentence underneath the header is untouched and still says why.
+
+Mutation-tested: removing the zero guard fails the new assertion with
+`expected '0 captures, picked from the gallery' to be 'None of the captures
+you picked'`. 53 of 53 green with it restored.

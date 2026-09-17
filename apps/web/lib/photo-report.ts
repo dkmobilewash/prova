@@ -218,6 +218,12 @@ export function photoReportContents(
  * differ, `photoReportPickedNote` says so underneath.
  */
 export function photoReportPickedLabel(shown: number): string {
+  // Zero is not the plural branch. "0 captures, picked from the gallery" is
+  // what the general form produces, and it is both ungrammatical and wrong
+  // about what happened — nothing was picked zero times; what was picked is
+  // not on this job. Found by clicking a picked report at another job's id,
+  // which is exactly how a reader reaches this branch.
+  if (shown === 0) return "None of the captures you picked";
   return shown === 1
     ? "One capture, picked from the gallery"
     : `${shown} captures, picked from the gallery`;
