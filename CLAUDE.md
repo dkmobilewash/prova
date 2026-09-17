@@ -1138,6 +1138,70 @@ scrollback gets broken by whoever didn't scroll far enough.
   passes every downstream assertion, since nothing is ever missing from an
   empty list and nothing is ever out of order in it.
 
+- **AND THE OTHER HALF OF THAT RULE: A CENSUS CAN HAVE THE RIGHT PATTERN
+  AND THE WRONG SCOPE, AND NO SIZE ASSERTION CAN SEE IT.** 2026-09-16,
+  and it is the entry directly above arriving from the side nobody had
+  guarded.
+
+  `packages/ui/src/Button.tsx` shipped `bg-brand text-white
+  hover:bg-blue-700` — white on the founder-approved yellow at **1.53:1**,
+  on the shared primary button that nine pages import, including the
+  GC-facing portal. `apps/web/tailwind.config.ts` says "Never put white
+  text on this" three lines above the token.
+
+  `theme-contrast.test.ts` has a census written for precisely this
+  defect, and it was green the entire time. Its pattern was fine. Its
+  size assertion (`found.length >= 6`) was fine and passed honestly on
+  the ~20 in-app brand buttons. It resolved its scan root as `new URL("..",
+  import.meta.url)` — `apps/web` — and `packages/ui` is not under it, so
+  **the one offending file in the repo was never a candidate.**
+
+  That is why the size assertion could not help. It answers "did the
+  pattern stop matching", and the pattern matched plenty. It cannot
+  answer "am I looking everywhere the answer could be", because a file
+  outside the walk is not a small set — it is not in the set at all.
+  **Nothing is ever missing from a directory you do not walk.**
+
+  So a deriving check needs its SCOPE pinned to a source that cannot
+  drift with it, exactly as the entry above pins the size. Here that
+  source already existed: Tailwind's `content` globs are the definition
+  of which files' classes reach the app, so the census derives its roots
+  from them, asserts one root per glob, and asserts each root exists — a
+  glob resolving to nothing now fails loudly instead of silently
+  shrinking the scanned set. Adding a workspace package to `content`
+  extends the census with no edit to the test.
+
+  Proved by mutation rather than argued, and the third row is the one
+  that matters — it reproduces the world as it shipped:
+
+  | | Button | census scope | result |
+  | --- | --- | --- | --- |
+  | M1 | real bug | from `content` | RED, names the file |
+  | M2 | fixed | old `appDir` | green (no offender to find) |
+  | M3 | real bug | old `appDir` | **green — 20 passed** |
+
+  The generalisation for the next census in this repo: ask what set the
+  check is REASONING about, then ask separately what set it can SEE.
+  Every guard here asserts the first. This is the first one to assert the
+  second.
+
+  A second, smaller trap came out of the same fix, and the measured form
+  of it is narrower than the one first written here: **two Tailwind
+  utilities of the same property in one class string resolve by
+  STYLESHEET order, not by which is written last in the string.** Tailwind
+  emits font weights in ascending scale order — measured in this build,
+  `.font-medium` at char 21611 and `.font-semibold` at 21669 — so a
+  heavier weight appended after a lighter one DOES win, and the reverse
+  silently does not. So `base`'s `font-medium` plus a variant's
+  `font-semibold` would in fact have rendered correctly, and a variant
+  needing `font-medium` over a `font-semibold` base would have failed with
+  nothing to say why.
+
+  Put the weight on each variant and none on the shared `base`. That is
+  not a workaround for the ordering, it removes the dependency on it —
+  which is the only version that stays true when someone adds a `light`
+  variant.
+
 - `FEATURE-AUDIT.md`: the 26-category roadmap and source of truth for
   what's built. It has drifted more than once; don't let it.
 - `CHANGELOG.md`: newest first; says why decisions were made and the
