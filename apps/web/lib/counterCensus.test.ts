@@ -178,6 +178,7 @@ const NUMBERED_TABLES: Record<string, { accessor: string; helper: string }> = {
   EstimateVersionCounter: { accessor: "estimateVersion", helper: "issueEstimateVersionNumber" },
   InvoiceCounter: { accessor: "invoice", helper: "issueInvoiceNumber" },
   MaterialOrderCounter: { accessor: "materialOrder", helper: "issueOrderNumber" },
+  PurchaseOrderCounter: { accessor: "purchaseOrder", helper: "issuePurchaseOrderNumber" },
   RfiCounter: { accessor: "rfi", helper: "issueRfiNumber" },
   SafetyCaseCounter: { accessor: "safetyIncident", helper: "issueCaseNumber" },
   SubmittalCounter: { accessor: "submittal", helper: "issueSubmittalNumber" },

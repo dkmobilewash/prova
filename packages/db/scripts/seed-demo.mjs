@@ -1435,6 +1435,19 @@ async function undo(companyId) {
     await del("materialOrderCounter", () =>
       prisma.materialOrderCounter.deleteMany({ where: { jobId: { in: jobIds } } }),
     );
+    // Lines, order, counter. The lines cascade from the order anyway and are
+    // named so the undo REPORTS what it took; the counter is the one that
+    // must be here, since it is keyed on jobId and deleting the orders never
+    // reaches it — it would then refuse the job delete on its own (#227).
+    await del("purchaseOrderLine", () =>
+      prisma.purchaseOrderLine.deleteMany({ where: { purchaseOrder: { jobId: { in: jobIds } } } }),
+    );
+    await del("purchaseOrder", () =>
+      prisma.purchaseOrder.deleteMany({ where: { jobId: { in: jobIds } } }),
+    );
+    await del("purchaseOrderCounter", () =>
+      prisma.purchaseOrderCounter.deleteMany({ where: { jobId: { in: jobIds } } }),
+    );
     await del("drawingRevision", () =>
       prisma.drawingRevision.deleteMany({ where: { set: { jobId: { in: jobIds } } } }),
     );

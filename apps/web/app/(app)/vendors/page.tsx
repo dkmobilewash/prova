@@ -48,6 +48,8 @@ export default async function VendorsPage() {
                   contactName: vendor.contactName,
                   phone: vendor.phone,
                   email: vendor.email,
+                  vendorNumber: vendor.vendorNumber,
+                  address: vendor.address,
                   notes: vendor.notes,
                 }}
               />

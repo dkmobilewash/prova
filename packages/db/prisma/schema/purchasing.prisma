@@ -1,0 +1,184 @@
+// Purchase orders: the commitment a sub makes to a vendor, per job.
+//
+// Part of the multi-file Prisma schema in this folder.
+//
+// HOW THIS DIFFERS FROM `MaterialOrder`, WHICH ALREADY EXISTS, because if
+// it did not differ this file should not exist.
+//
+//   `MaterialOrder` (operations.prisma) is a LOGISTICS record and its own
+//   comment says so at length: no quantity, no unit, no price, deliberately
+//   — it answers "is it here yet, and if not, who is late". Its whole
+//   substance is `orderedOn` / `promisedFor` / `deliveries[]`.
+//
+//   A PURCHASE ORDER is the COMMITMENT: the priced document that goes to
+//   the vendor and that they later invoice against. Its substance is the
+//   line items — phase/cost code, description, quantity, unit, unit cost —
+//   the terms, and who is being billed. It has no delivery tracking at all,
+//   because that is the other record's job.
+//
+//   The two are not linked today and that is deliberate rather than
+//   forgotten: a link is a pure addition whenever somebody wants it, and
+//   inventing one before anyone has asked would decide, unasked, whether a
+//   PO may have many material orders under it (it can, in real purchasing)
+//   and what happens to the numbers when it does.
+//
+// WHAT MAY NEVER HAPPEN HERE, and it is the same rule `MaterialOrder` and
+// `VendorPriceQuote` are both written under: NOTHING IN THIS FILE MAY BE
+// SUMMED INTO A JOB'S COST. Actual cost lives on `CostEntry` against a
+// `JobLineItem`, and scope lives on `JobLineItem` itself — see
+// ARCHITECTURE.md. A purchase order is money we have COMMITTED, which is a
+// different fact from money we have SPENT, and a second table that job cost
+// could be read out of is the exact anti-pattern the unified line item
+// exists to prevent. The `lineItem` link below is attribution only, on the
+// identical terms `MaterialOrder.lineItem` is.
+
+/// A purchase order issued to a vendor for one job.
+///
+/// The document, not the delivery. Sending it to the vendor by email is a
+/// real requirement and is deliberately NOT modelled here — there is no
+/// `sentAt`, no `sentTo` and no status enum, because a column recording
+/// that something was sent, written before anything can send it, is this
+/// repo's "written, documented, and never called" shape. The seam is
+/// `lib/purchasing/purchase-order-document.ts`, which renders the PO as
+/// text from these rows; whoever wires up outbound mail adds the evidence
+/// columns in the same change that can actually set them.
+model PurchaseOrder {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+  jobId     String
+  job       Job     @relation(fields: [jobId], references: [id])
+
+  /// Issued by `PurchaseOrderCounter` inside the same transaction as the
+  /// insert — never max(number)+1 and never count()+1. A PO number is the
+  /// number a vendor's invoice quotes back at you months later, so a
+  /// number handed out twice on one job is an accounts-payable dispute
+  /// nobody can settle from either side.
+  number Int
+
+  /// Who the commitment is to. Required: a purchase order with no vendor
+  /// commits nothing.
+  vendorId String
+  vendor   Vendor @relation(fields: [vendorId], references: [id])
+
+  /// What this order is for, in one line — the heading a reader sees
+  /// before the line items. The detail belongs on the lines.
+  title String
+
+  /// Where the material actually goes. On the PurchaseOrder rather than on
+  /// `Job`, and that is a decision rather than laziness: a job's delivery
+  /// address is genuinely per-order — one order goes to the site, the next
+  /// to the shop, and on a large project the third goes to a different
+  /// gate or building. Putting one address on `Job` would make the common
+  /// case right and the real case unrecordable. `Job` carries no site
+  /// address today either way.
+  shipToAddress String?
+
+  /// The vendor's payment terms as THEY state them ("Net 30", "2% 10 net
+  /// 30", "COD"). Free text, not an enum: the set is open, a contractor
+  /// finds out what a supplier's terms are when the supplier says so, and
+  /// an enum would force a wrong choice on the first vendor who does not
+  /// fit.
+  paymentTerms String?
+
+  /// The date the order was AWARDED — entered, never stamped. Logging on
+  /// Friday an order you placed on Tuesday must record Tuesday, or every
+  /// question asked later about lead time is answered against paperwork
+  /// rather than against the job.
+  awardedOn DateTime
+
+  /// When the vendor is expected to deliver. Optional, and for the same
+  /// reason `MaterialOrder.promisedFor` is: plenty of orders are awarded
+  /// before anyone will commit to a date, and a guessed date is worse than
+  /// none because it manufactures lateness nobody agreed to.
+  expectedOn DateTime?
+
+  notes String?
+
+  issuedByUserId String?
+  issuedBy       User?   @relation(fields: [issuedByUserId], references: [id])
+
+  lines PurchaseOrderLine[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([jobId, number])
+  @@index([companyId])
+  @@index([jobId])
+  @@index([vendorId])
+}
+
+/// One line of a purchase order: what is being bought, how much of it, and
+/// at what unit cost.
+///
+/// THE LINE TOTAL IS NOT STORED, and neither is the order total. Both are
+/// `quantity * unitCost`, derived at read time in
+/// `components/purchaseOrderTotals.ts` — a stored total can disagree with
+/// the numbers under it, and then two figures for the same order are on
+/// screen at once. Same rule as actual cost on `JobLineItem` and amount
+/// paid on `Invoice`.
+model PurchaseOrderLine {
+  id              String        @id @default(cuid())
+  purchaseOrderId String
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+
+  /// Which SOV line this is bought against — the app's existing cost/phase
+  /// code, the same one `TimeEntry.lineItem` and `MaterialOrder.lineItem`
+  /// point at. ATTRIBUTION ONLY and nullable: nothing may ever sum money
+  /// through it, exactly as on `MaterialOrder`. Committed cost is not
+  /// actual cost, and `CostEntry` is where actual cost lives.
+  ///
+  /// It is NOT a foreign key to a separate phase-code table, because this
+  /// app does not have one: what a contractor writes in the phase-code
+  /// column is a `JobLineItem` here, and a second coding concept beside it
+  /// would be far worse than a missing field.
+  lineItemId String?
+  lineItem   JobLineItem? @relation(fields: [lineItemId], references: [id], onDelete: SetNull)
+
+  /// What is being bought, in the words the vendor will read.
+  description String
+
+  quantity Decimal @db.Decimal(12, 2)
+
+  /// The unit as the VENDOR sells it — "sheets", "LF", "EA", "MSF". Free
+  /// text and never converted, the same rule `VendorPriceQuote.unit`
+  /// states: a vendor who sells by the sheet has not sold by the square
+  /// foot, and inventing the factor between them invents a price. Nullable
+  /// because plenty of lines are a lump sum with no natural unit.
+  ///
+  /// Quantities are totalled PER UNIT and never across units — 104 sheets
+  /// and 2,400 LF on one order is two totals, not one meaningless number.
+  unit String?
+
+  unitCost Decimal @db.Decimal(12, 2)
+
+  /// The order the lines are read in, which is the order they were entered
+  /// and not alphabetical.
+  sortOrder Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([purchaseOrderId])
+  @@index([lineItemId])
+}
+
+/// Per-job purchase order numbers. Same rule as `RfiCounter`,
+/// `MaterialOrderCounter` and the rest: a row that only ever increments,
+/// bumped inside the same transaction as the insert it numbers.
+///
+/// It is keyed on `jobId`, which makes it a RESTRICT child of `Job` that
+/// deleting the job's purchase orders does NOT reach — so it outlives them
+/// and then refuses the job delete. That cost #227 a broken pair of cleanup
+/// scripts; this one is registered in `HANDLED_MODELS`
+/// (packages/db/scripts/scratch-scope.mjs) and in the delete order of both
+/// `clean-scratch-data.mjs` and `seed-demo.mjs` in the same change that
+/// adds it.
+model PurchaseOrderCounter {
+  jobId      String @id
+  job        Job    @relation(fields: [jobId], references: [id])
+  lastNumber Int    @default(0)
+
+  updatedAt DateTime @updatedAt
+}

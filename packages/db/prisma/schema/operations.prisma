@@ -63,10 +63,26 @@ model Vendor {
   email       String?
   notes       String?
 
+  /// The account/vendor number THEY file us under, and the address their
+  /// paperwork goes to. They live on the vendor rather than being copied
+  /// onto every purchase order, because they are facts about the vendor:
+  /// a supplier who moves has moved for every order, and two copies of an
+  /// address is one of them being wrong.
+  ///
+  /// The trade-off is stated rather than hidden: a PO printed today shows
+  /// the address the vendor has TODAY, not the one it had when the order
+  /// was awarded. That is correct while nothing has been sent, and this
+  /// package deliberately sends nothing. Whoever wires up outbound mail
+  /// snapshots what was sent at the moment of sending, which is the only
+  /// point at which a frozen copy becomes evidence rather than a duplicate.
+  vendorNumber String?
+  address      String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   materialOrders MaterialOrder[]
+  purchaseOrders PurchaseOrder[]
   priceQuotes    VendorPriceQuote[]
 
   @@index([companyId])

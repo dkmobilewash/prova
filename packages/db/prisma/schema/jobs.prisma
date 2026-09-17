@@ -90,6 +90,8 @@ model Job {
   submittalCounter             SubmittalCounter?
   materialOrders               MaterialOrder[]
   materialOrderCounter         MaterialOrderCounter?
+  purchaseOrders               PurchaseOrder[]
+  purchaseOrderCounter         PurchaseOrderCounter?
   drawingSets                  DrawingSet[]
   closeoutItems                CloseoutItem[]
   warrantyPeriod               WarrantyPeriod?
@@ -204,6 +206,9 @@ model JobLineItem {
   /// Attribution only — see the note on MaterialOrder.lineItem. No money
   /// is ever summed through this relation; cost stays on CostEntry.
   materialOrders   MaterialOrder[]
+  /// Attribution only, on identical terms — see PurchaseOrderLine.lineItem.
+  /// Committed cost is not actual cost and nothing sums money through here.
+  purchaseOrderLines PurchaseOrderLine[]
 
   @@index([jobId])
   @@index([originChangeOrderId])

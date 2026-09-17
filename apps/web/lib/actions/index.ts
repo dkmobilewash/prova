@@ -27,6 +27,7 @@ export * from "./rfis";
 export * from "./changeOrders";
 export * from "./submittals";
 export * from "./materialOrders";
+export * from "./purchaseOrders";
 export * from "./drawings";
 export * from "./closeout";
 export * from "./vendorPricing";

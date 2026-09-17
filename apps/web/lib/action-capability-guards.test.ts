@@ -706,6 +706,12 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // note on /closeout argues is worse than a consistent state.
   jobMedia: () => import("./actions/jobMedia"),
   materialOrders: () => import("./actions/materialOrders"),
+  // Purchase orders. All six actions are reachable only from
+  // /purchase-orders, which demands MANAGE_BILLING, so the walk puts all
+  // six in MUST_ASSERT and every one is EXECUTED below as a principal
+  // without it. Worth having: these are the writes that commit the
+  // company's money at a price.
+  purchaseOrders: () => import("./actions/purchaseOrders"),
   rfis: () => import("./actions/rfis"),
   submittals: () => import("./actions/submittals"),
   drawings: () => import("./actions/drawings"),

@@ -246,7 +246,7 @@ export class FakeDb {
         include,
       }: {
         where: Record<string, unknown>;
-        include?: Record<string, boolean>;
+        include?: Record<string, unknown>;
       }) =>
         op(() => {
           const row =
@@ -280,14 +280,42 @@ export class FakeDb {
   }
 
   /** Only the relation these tests need: a message's events. */
-  private withIncludes(row: Row, include?: Record<string, boolean>): Row {
-    if (!include?.events) return row;
-    return {
-      ...row,
-      events: this.rows("outboundMessageEvent").filter(
-        (event) => event.messageId === row.id,
-      ),
-    };
+  private withIncludes(row: Row, include?: Record<string, unknown>): Row {
+    if (!include) return row;
+    let out = row;
+    if (include.events) {
+      out = {
+        ...out,
+        events: this.rows("outboundMessageEvent").filter(
+          (event) => event.messageId === row.id,
+        ),
+      };
+    }
+    // A purchase order's lines, and a line's order. Both are relations the
+    // purchase-order actions read to decide something — whether an order may
+    // be deleted, and which company/job a line belongs to — so a fake that
+    // dropped them would hand the code under test `undefined` and fail
+    // somewhere unrecognisable rather than answer the question.
+    if (include.lines) {
+      out = {
+        ...out,
+        lines: this.rows("purchaseOrderLine").filter(
+          (line) => line.purchaseOrderId === row.id,
+        ),
+      };
+    }
+    // Truthy rather than `=== true`: Prisma spells a partial include as
+    // `{ purchaseOrder: { select: { … } } }`, an object, and the whole row
+    // is a superset of any select.
+    if (include.purchaseOrder) {
+      out = {
+        ...out,
+        purchaseOrder: this.rows("purchaseOrder").find(
+          (order) => order.id === row.purchaseOrderId,
+        ),
+      };
+    }
+    return out;
   }
 
   private snapshot() {

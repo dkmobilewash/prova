@@ -7,6 +7,7 @@ import {
   actionFail as fail,
   actionOk as ok,
   InputError,
+  joinWithConjunction,
   ownerRefusal,
   plural,
   runAction,
@@ -47,6 +48,11 @@ function readFields(formData: FormData) {
     contactName: text(formData, "contactName") || null,
     phone: text(formData, "phone") || null,
     email: text(formData, "email") || null,
+    // Kept here rather than copied onto every purchase order: they are facts
+    // about the VENDOR, and a supplier who moves has moved for every order.
+    // A purchase order reads them through the relation.
+    vendorNumber: text(formData, "vendorNumber") || null,
+    address: text(formData, "address") || null,
     notes: text(formData, "notes") || null,
   };
 }
@@ -94,10 +100,24 @@ export async function deleteVendor(vendorId: string): Promise<ActionResult> {
     // Counted rather than assumed to be zero, and named rather than
     // summarised — the same shape as `deleteSalesLead`, which refuses while
     // any child row exists and names the kinds that are non-zero.
-    const orders = await prisma.materialOrder.count({ where: { vendorId: vendor.id } });
-    if (orders > 0) {
+    //
+    // PURCHASE ORDERS ARE COUNTED HERE TOO, and for exactly the same reason
+    // rather than for tidiness: `PurchaseOrder.vendor` has no `onDelete`
+    // either, so it is RESTRICT, and without this line the Remove button
+    // would go straight back to being the silent dead button this guard was
+    // written to end — for a document that names a price the company agreed
+    // to pay.
+    const [materialOrders, purchaseOrders] = await Promise.all([
+      prisma.materialOrder.count({ where: { vendorId: vendor.id } }),
+      prisma.purchaseOrder.count({ where: { vendorId: vendor.id } }),
+    ]);
+    const blocking = [
+      ...(materialOrders > 0 ? [plural(materialOrders, "material order", "material orders")] : []),
+      ...(purchaseOrders > 0 ? [plural(purchaseOrders, "purchase order", "purchase orders")] : []),
+    ];
+    if (blocking.length > 0) {
       return fail(
-        `${vendor.name} is on ${plural(orders, "material order", "material orders")}, so the record stays — ` +
+        `${vendor.name} is on ${joinWithConjunction(blocking)}, so the record stays — ` +
           `deleting it would leave those orders with nobody on the hook for them.`,
       );
     }

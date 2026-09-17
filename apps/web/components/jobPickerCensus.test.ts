@@ -63,6 +63,7 @@ const LABELLED_PICKERS: Record<string, number> = {
   "components/MessageComposer.tsx": 1,
   "components/PunchListForm.tsx": 1,
   "components/PunchListRow.tsx": 1,
+  "components/PurchaseOrderFields.tsx": 1,
   "components/RfiFields.tsx": 1,
   "components/SafetyIncidentFields.tsx": 1,
   "components/SubmittalFields.tsx": 1,
@@ -73,6 +74,7 @@ const LABELLED_PICKERS: Record<string, number> = {
   "app/(app)/material-orders/page.tsx": 1,
   "app/(app)/photos/page.tsx": 1,
   "app/(app)/punch-lists/page.tsx": 1,
+  "app/(app)/purchase-orders/page.tsx": 1,
   "app/(app)/rfis/page.tsx": 1,
   "app/(app)/submittals/page.tsx": 1,
 };
@@ -169,7 +171,12 @@ describe("the job-picker census", () => {
     // bare `job.name` and was caught by the rule below rather than by a
     // reviewer. Moving this number is meant to be a decision, which is why
     // it is a literal and not derived.
-    expect(expected).toEqual(23);
+    //
+    // 23 -> 25 on 2026-09-16: purchase orders, which are scoped by job and
+    // so carry both kinds at once — the select a new order is filed under
+    // (PurchaseOrderFields) and the filter chips the list is narrowed by
+    // (the page).
+    expect(expected).toEqual(25);
     expect(actual).toEqual(expected);
   });
 

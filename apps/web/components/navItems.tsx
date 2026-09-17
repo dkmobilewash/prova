@@ -153,6 +153,23 @@ export const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
+    href: "/purchase-orders",
+    label: "Purchase orders",
+    icon: (
+      // A document with ruled lines and a price: the priced commitment,
+      // distinct from the parcel that stands for a material order below.
+      <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5">
+        <path
+          d="M6 3.5h8a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-11a1 1 0 0 1 1-1Z"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinejoin="round"
+        />
+        <path d="M7.5 7h5M7.5 10h5M7.5 13h2.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      </svg>
+    ),
+  },
+  {
     href: "/material-orders",
     label: "Material orders",
     icon: (
@@ -630,10 +647,15 @@ export const NAV_GROUPS: NavGroup[] = [
   },
   {
     heading: "Logistics",
-    description: "Getting material and machines to the job: vendors, their quoted prices, orders, and where your equipment is.",
+    description: "Getting material and machines to the job: vendors, their quoted prices, what you have committed to buy, and where your equipment is.",
     // A truck.
     icon: groupIcon("M3.5 6.5h8v7h-8zM11.5 9.5h2.8l2.2 2.2v1.8h-5zM6 15.5a1 1 0 1 0 0-2 1 1 0 0 0 0 2ZM14 15.5a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z"),
     items: [
+      // Ahead of material orders, because it comes first in real life: you
+      // commit to the purchase, then you chase the delivery. It is not
+      // `disabled` — unlike the material-orders line below it, this one was
+      // asked for by name on a recorded customer walkthrough.
+      item("/purchase-orders"),
       { ...item("/material-orders"), disabled: true },
       item("/vendors"),
       item("/vendors/pricing"),

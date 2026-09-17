@@ -112,6 +112,12 @@ export function VendorRow({ canDelete, vendor }: VendorRowProps) {
         <p className="font-medium text-ink">{vendor.name}</p>
         {trade && <p className="text-xs text-link">{trade}</p>}
         <p className="text-sm text-ink-body">{contactLine || "No contact info"}</p>
+        {vendor.vendorNumber && (
+          <p className="text-xs text-ink-muted">Vendor #{vendor.vendorNumber}</p>
+        )}
+        {vendor.address && (
+          <p className="mt-1 whitespace-pre-line text-xs text-ink-muted">{vendor.address}</p>
+        )}
         {vendor.notes && <p className="mt-1 text-sm text-ink-muted">{vendor.notes}</p>}
         {error && (
           <p role="alert" className="mt-1 text-sm text-red-400">

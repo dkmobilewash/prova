@@ -244,6 +244,14 @@ async function main() {
     await del("materialOrderDelivery", () => prisma.materialOrderDelivery.deleteMany({ where: { order: { jobId: { in: jobIds } } } }));
     await del("materialOrder", () => prisma.materialOrder.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("materialOrderCounter", () => prisma.materialOrderCounter.deleteMany({ where: { jobId: { in: jobIds } } }));
+    // Lines first, then the order, then the counter. The lines would cascade
+    // from the order anyway; they are named so the run REPORTS what it took
+    // rather than removing rows silently. The counter is the one that has to
+    // be here — it is keyed on jobId, so deleting the orders never reaches
+    // it and it would refuse the job delete on its own (#227's shape).
+    await del("purchaseOrderLine", () => prisma.purchaseOrderLine.deleteMany({ where: { purchaseOrder: { jobId: { in: jobIds } } } }));
+    await del("purchaseOrder", () => prisma.purchaseOrder.deleteMany({ where: { jobId: { in: jobIds } } }));
+    await del("purchaseOrderCounter", () => prisma.purchaseOrderCounter.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("drawingRevision", () => prisma.drawingRevision.deleteMany({ where: { set: { jobId: { in: jobIds } } } }));
     await del("drawingSet", () => prisma.drawingSet.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("closeoutItem", () => prisma.closeoutItem.deleteMany({ where: { jobId: { in: jobIds } } }));

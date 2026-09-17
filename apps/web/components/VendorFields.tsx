@@ -12,6 +12,8 @@ export type VendorFieldValues = {
   contactName: string | null;
   phone: string | null;
   email: string | null;
+  vendorNumber: string | null;
+  address: string | null;
   notes: string | null;
 };
 
@@ -60,6 +62,32 @@ export function VendorFields({ defaults }: { defaults?: Partial<VendorFieldValue
       <label className={labelClass}>
         Email
         <input type="email" name="email" defaultValue={defaults?.email ?? ""} className={inputClass} />
+      </label>
+
+      <label className={labelClass}>
+        Vendor number
+        <input
+          type="text"
+          name="vendorNumber"
+          defaultValue={defaults?.vendorNumber ?? ""}
+          placeholder="e.g. 41822"
+          className={inputClass}
+        />
+        <span className="text-xs text-ink-muted">
+          The account number they file you under. It prints on every purchase order you raise to
+          them, so it is entered once here rather than retyped on each one.
+        </span>
+      </label>
+
+      <label className={labelClass}>
+        Address
+        <textarea
+          name="address"
+          rows={3}
+          defaultValue={defaults?.address ?? ""}
+          placeholder="Where their paperwork goes"
+          className={inputClass}
+        />
       </label>
 
       <label className={labelClass}>

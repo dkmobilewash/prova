@@ -76,6 +76,18 @@ export const notYetRegistered: Exclusion[] = [
 
   // Cyrus's lane, phase 2.
   { action: "vendors.*", reason: CYRUS },
+  // Deliberately NOT the lane placeholder above: a purchase order commits
+  // the company's money at a stated price to a named vendor, and a card
+  // proposing one would be the assistant agreeing its own terms. A hand-off
+  // mode over a document with line items, units and a counter-issued number
+  // is a real design rather than a registration; until it exists this is
+  // raised on its own page, where the person can see the lines they are
+  // agreeing to.
+  {
+    action: "purchaseOrders.*",
+    reason:
+      "A purchase order commits company money at a price to a named vendor; raised on its own page, where the person can see the lines they are agreeing to.",
+  },
   { action: "vendorPricing.*", reason: CYRUS },
   { action: "equipment.*", reason: CYRUS },
   { action: "safety.*", reason: CYRUS },

@@ -174,6 +174,16 @@ export const ROUTE_CAPABILITY: Record<string, Capability> = {
   "/pipeline": "MANAGE_ESTIMATING",
   "/vendors/pricing": "MANAGE_ESTIMATING",
   "/backcharges": "MANAGE_BILLING",
+  // Arguable and called deliberately, because a purchase order sits beside
+  // material orders in the nav and the two take DIFFERENT capabilities. A
+  // material order carries no money at all by design; a purchase order is
+  // nothing but money — unit costs, extended totals, payment terms. FIELD's
+  // exclusion from cost is this file's own stated intent ("simply not this
+  // job"), and MANAGE_ESTIMATING would be wrong in both directions: it
+  // admits an estimator, who commits none of the company's money, and
+  // refuses ACCOUNTING, who has to match this document against the vendor's
+  // invoice when it arrives. So EXECUTIVE, PROJECT_MANAGER and ACCOUNTING.
+  "/purchase-orders": "MANAGE_BILLING",
   "/compliance": "MANAGE_COMPLIANCE",
   "/settings": "MANAGE_COMPLIANCE",
   // A child of `/settings`, so it takes its PARENT's capability rather

@@ -78,6 +78,16 @@ export const HANDLED_MODELS = [
   "RfiCounter",
   "SubmittalCounter",
   "MaterialOrderCounter",
+  // The purchase ORDER before its counter, and both before Job. Its LINES
+  // are deliberately absent: they cascade from the order, and they carry no
+  // `jobId` of their own — which matters, because `clean-test-jobs.mjs`
+  // deletes every entry in this list by `{ jobId: { in: jobIds } }`.
+  "PurchaseOrder",
+  // Keyed on jobId, not reached by deleting the job's purchase orders, and
+  // RESTRICT on Job -- the same shape as InvoiceCounter (#227) and
+  // ContractDocumentVersionCounter, each of which blocked every job delete
+  // until it was listed here.
+  "PurchaseOrderCounter",
   "ChangeOrderCounter",
   "BackchargeCounter",
   "CloseoutSubmissionCounter",
