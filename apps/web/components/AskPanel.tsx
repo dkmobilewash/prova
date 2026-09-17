@@ -6,6 +6,13 @@ import type { AskRequest, AskStreamEvent, ClarifyView, ProposalView } from "@/li
 import type { Citation } from "@/lib/ask/tools";
 import { cancelAskProposal, confirmAskProposal, loadAskProposal } from "@/lib/actions";
 import { AskProposalCard, type ProposalOutcome } from "@/components/AskProposalCard";
+import {
+  DICTATION_TRUNCATED_NOTE,
+  finalTranscript,
+  mergeDictation,
+  speechRecognitionFrom,
+  type SpeechRecognitionLike,
+} from "@/components/speechInput";
 
 /** The ask box on the dashboard.
  *
@@ -95,6 +102,72 @@ export function AskPanel() {
   const [outcome, setOutcome] = useState<ProposalOutcome | null>(null);
   const [tapError, setTapError] = useState<string | null>(null);
   const [isConfirming, startConfirm] = useTransition();
+
+  // Dictation. `canDictate` starts false and is only ever set in an effect:
+  // the server renders no mic, and the browser adds one if it has the API.
+  // Reading `window` during render would differ between the two passes and
+  // break hydration — the same rule this repo already applies to dates.
+  const [canDictate, setCanDictate] = useState(false);
+  const [listening, setListening] = useState(false);
+  const [dictationNote, setDictationNote] = useState<string | null>(null);
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+
+  useEffect(() => {
+    setCanDictate(speechRecognitionFrom(window) !== null);
+  }, []);
+
+  // Stop the microphone when this panel goes away. Without it the browser
+  // keeps listening after a navigation — a live mic the person cannot see
+  // is the one bug in this feature that is worse than it not working.
+  useEffect(() => {
+    return () => {
+      recognitionRef.current?.stop();
+      recognitionRef.current = null;
+    };
+  }, []);
+
+  function stopDictation() {
+    recognitionRef.current?.stop();
+    recognitionRef.current = null;
+    setListening(false);
+  }
+
+  function toggleDictation() {
+    if (listening) {
+      stopDictation();
+      return;
+    }
+    const Ctor = speechRecognitionFrom(window);
+    if (!Ctor) return;
+
+    const recognition = new Ctor();
+    // `continuous` because this is for the long requests a person would not
+    // type standing on a deck; `interimResults` so the recogniser settles a
+    // phrase before it is final, while `finalTranscript` drops the interim
+    // ones so the same words never land twice.
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = navigator.language || "en-US";
+
+    recognition.onresult = (event) => {
+      const phrase = finalTranscript(event);
+      if (phrase === "") return;
+      setQuestion((current) => {
+        const merged = mergeDictation(current, phrase);
+        setDictationNote(merged.truncated ? DICTATION_TRUNCATED_NOTE : null);
+        return merged.text;
+      });
+    };
+    // The browser's own words are not shown. "no-speech" and "aborted" are
+    // ordinary, and a denied mic is a permission the person can see in their
+    // own browser chrome — so this stops rather than explaining.
+    recognition.onerror = () => stopDictation();
+    recognition.onend = () => setListening(false);
+
+    recognitionRef.current = recognition;
+    setListening(true);
+    recognition.start();
+  }
 
   // Asking something else, or leaving, must stop the request in flight —
   // otherwise a slow answer to an abandoned question arrives later and
@@ -322,6 +395,10 @@ export function AskPanel() {
       <form
         onSubmit={(event) => {
           event.preventDefault();
+          // Sending ends the dictation. Leaving the mic live across a submit
+          // drops the next sentence into a box that is about to be cleared.
+          stopDictation();
+          setDictationNote(null);
           ask(question);
         }}
         className="flex gap-2"
@@ -335,6 +412,40 @@ export function AskPanel() {
           maxLength={1000}
           className="min-w-0 flex-1 rounded-md border border-line-card bg-surface px-3 py-2 text-sm text-ink placeholder:text-ink-muted focus:border-brand focus:outline-none"
         />
+        {/* Rendered only where the browser has the API. A mic that is on
+            screen and does nothing reads as broken, not as unavailable —
+            so Firefox gets no button rather than a dead one. */}
+        {canDictate && (
+          <button
+            type="button"
+            onClick={toggleDictation}
+            aria-pressed={listening}
+            aria-label={listening ? "Stop dictating" : "Dictate your question"}
+            title={listening ? "Stop dictating" : "Dictate your question"}
+            className={`shrink-0 rounded-md border px-3 py-2 ${
+              listening
+                ? "border-brand bg-brand/10 text-brand"
+                : "border-line-card bg-surface text-ink-body hover:text-ink"
+            }`}
+          >
+            <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5" aria-hidden="true">
+              <path
+                d="M10 3.5a2 2 0 0 1 2 2v4a2 2 0 1 1-4 0v-4a2 2 0 0 1 2-2Z"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M5.5 9.5a4.5 4.5 0 0 0 9 0M10 14v2.5"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+        )}
         <button
           type="submit"
           // Disabled while in flight. Every create button in this app got
@@ -348,6 +459,21 @@ export function AskPanel() {
           {isAsking && question.trim() === asked ? "Looking…" : "Ask"}
         </button>
       </form>
+
+      {/* Said out loud rather than shown only as a button colour: the person
+          dictating is looking at the deck, not at the screen. The truncation
+          note outlives the listening state on purpose — it is still true
+          after the mic stops, and it is the one thing they must act on. */}
+      {listening && (
+        <p role="status" className="mt-2 text-xs text-ink-body">
+          Listening — say it, then tap the mic again.
+        </p>
+      )}
+      {dictationNote && (
+        <p role="status" className="mt-2 text-xs font-medium text-amber-400">
+          {dictationNote}
+        </p>
+      )}
 
       {!hasResult && !isAsking && (
         <ul className="mt-3 flex flex-wrap gap-2">
