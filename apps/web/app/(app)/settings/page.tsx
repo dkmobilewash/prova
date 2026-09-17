@@ -256,7 +256,15 @@ export default async function SettingsPage({
           company name and address from — so a blank here is a blank on a document somebody outside
           this company reads.
         </p>
-        <CompanyProfileForm company={companyProfile} gaps={companyProfileGaps(companyProfile)} />
+        <CompanyProfileForm
+          company={companyProfile}
+          gaps={companyProfileGaps(companyProfile)}
+          /* A Decimal crossing into a client component has to be a string —
+             and `?? null` rather than `?.toString() ?? ""`, because "" and
+             "0" would be the same value on the other side and they are the
+             two things this feature exists to keep apart. */
+          overheadAndProfitPercent={company.overheadAndProfitPercent?.toString() ?? null}
+        />
       </section>
 
       <section className="mb-10">

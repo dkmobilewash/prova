@@ -3,7 +3,12 @@
 import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@prova/db";
-import { reopenBlockers } from "@/lib/change-order";
+import { changeOrderValueDelta, reopenBlockers } from "@/lib/change-order";
+import {
+  overheadAndProfitBlock,
+  overheadAndProfitLineDescription,
+  parseOverheadAndProfitPercent,
+} from "@/lib/overhead-and-profit";
 import { Prisma } from "@prova/db";
 import {
   actionFail as fail,
@@ -192,6 +197,15 @@ async function runAction(fn: () => Promise<void>): Promise<ActionResult> {
 /**
  * Opens a new change order as a DRAFT with no proposals yet. The budget does
  * not move — nothing here touches JobLineItem.
+ *
+ * The company's overhead-and-profit rate is COPIED onto the draft, not
+ * inherited at read time. Same pattern as Job.retainagePercent against
+ * Contact.defaultRetainagePercent, and for the same two reasons: a document
+ * already sent to a GC must not change its own total because somebody
+ * edited a setting afterwards, and a null that meant "look at the company"
+ * could never say "this change order carries no O&P", which is a real thing
+ * to write on a credit. A company that has set nothing copies null forward,
+ * and the document says NOT SET rather than 0%.
  */
 export async function createChangeOrder(jobId: string, formData: FormData): Promise<ActionResult> {
   return runAction(async () => {
@@ -205,11 +219,52 @@ export async function createChangeOrder(jobId: string, formData: FormData): Prom
     await prisma.$transaction(async (tx) => {
       const number = await issueChangeOrderNumber(tx, jobId);
       await tx.changeOrder.create({
-        data: { jobId, number, title, description: description || null, status: "DRAFT" },
+        data: {
+          jobId,
+          number,
+          title,
+          description: description || null,
+          status: "DRAFT",
+          overheadAndProfitPercent: company.overheadAndProfitPercent,
+        },
       });
     });
 
     revalidatePath(`/jobs/${jobId}`);
+  });
+}
+
+/**
+ * Sets (or clears) this change order's overhead-and-profit rate.
+ *
+ * DRAFT only, like everything else this document says — once it has gone to
+ * the GC, moving the markup would mean their copy and ours disagree about
+ * the total, which is the one thing a change order exists to prevent.
+ *
+ * CLEARING IT IS A REAL ACTION, not a failure to fill something in. A blank
+ * field stores null and the document goes back to saying "Not set", which
+ * is different from 0% and is deliberately reachable: a rate copied from the
+ * company default onto a change order that should not carry one has to be
+ * removable without inventing a zero.
+ */
+export async function setChangeOrderOverheadAndProfit(
+  changeOrderId: string,
+  formData: FormData,
+): Promise<ActionResult> {
+  return runAction(async () => {
+    const { company } = await requireCompanyContext();
+    const changeOrder = await assertChangeOrder(changeOrderId, company.id);
+    assertDraft(changeOrder);
+
+    const parsed = parseOverheadAndProfitPercent(text(formData, "overheadAndProfitPercent"));
+    if (!parsed.ok) throw new InputError(parsed.error);
+
+    await prisma.changeOrder.update({
+      where: { id: changeOrderId },
+      data: { overheadAndProfitPercent: parsed.value },
+    });
+
+    revalidatePath(`/jobs/${changeOrder.jobId}`);
   });
 }
 
@@ -410,6 +465,23 @@ export async function approveChangeOrder(
     const decisionNotes = text(formData, "decisionNotes");
 
     await prisma.$transaction(async (tx) => {
+      /* THE SUBTOTAL, READ BEFORE ANYTHING IS APPLIED.
+         `changeOrderValueDelta` measures an unapplied proposal against the
+         LIVE line item, so this has to happen before the loop below rewrites
+         those rows — afterwards each row has become its own proposal and
+         every EDIT would measure as zero (the same trap the `isApplied`
+         branch in lib/change-order.ts exists for). Inside the transaction
+         rather than beside it, so the figure the overhead-and-profit line is
+         computed from is the same state the loop applies to.
+         Unfiltered by `isDeleted` on purpose: an EDIT or REMOVE can target a
+         line an earlier change order removed, and the loop refuses exactly
+         that case a few lines down. */
+      const targetRows = await tx.jobLineItem.findMany({
+        where: { jobId: changeOrder.jobId },
+        select: { id: true, quantity: true, unitPrice: true, isDeleted: true },
+      });
+      const subtotal = changeOrderValueDelta(changeOrder.proposals, new Map(targetRows.map((row) => [row.id, row])));
+
       for (const proposal of changeOrder.proposals) {
         if (proposal.changeType === "ADD") {
           await tx.jobLineItem.create({
@@ -505,6 +577,46 @@ export async function approveChangeOrder(
         await tx.jobLineItem.update({
           where: { id: lineItem.id },
           data: { quantity: newQuantity, unitPrice: newUnitPrice },
+        });
+      }
+
+      /* OVERHEAD AND PROFIT BECOMES REAL MONEY HERE, OR THE GC SIGNED A
+         NUMBER THIS APP DOES NOT HOLD.
+         The document says subtotal + O&P = total. Contract value, WIP,
+         retainage and every pay application are SUM(JobLineItem), so
+         applying only the proposals would move the budget by the SUBTOTAL
+         while the GC agreed to the TOTAL — a silent shortfall of exactly
+         the markup, on every approved change order, invisible until
+         somebody added the invoices up.
+         So it lands as an ordinary JobLineItem tagged with
+         `originChangeOrderId`, which is the shape this schema already has
+         for "scope a change order added". Three things fall out of that for
+         free rather than needing new mechanics: it shows on the contract
+         summary and the GC's portal as its own line, `reopenChangeOrder`
+         already deletes it with the rest of the change order's additions,
+         and `reopenBlockers` already refuses the reopen once it has been
+         billed.
+         Cost is ZERO, stated rather than left null: overhead and profit is
+         margin, and its direct cost genuinely is nothing. A null there would
+         be "nobody has forecast this", which is a different claim and would
+         drag the job's estimated-cost coverage down for a line that has no
+         cost to forecast. It stays out of percent-complete either way —
+         lib/wip.ts only counts lines whose forecast is above zero.
+         An unset rate creates nothing, and neither does a rate that works
+         out to exactly $0.00: a zero-dollar line on a contract is noise, and
+         it would move no figure anywhere. */
+      const oAndP = overheadAndProfitBlock(subtotal, changeOrder.overheadAndProfitPercent);
+      if (oAndP.percent !== null && oAndP.amount !== null && !oAndP.amount.isZero()) {
+        await tx.jobLineItem.create({
+          data: {
+            jobId: changeOrder.jobId,
+            description: overheadAndProfitLineDescription(changeOrder.number, oAndP.percent),
+            quantity: "1",
+            unitPrice: oAndP.amount,
+            budgetedUnitCost: "0",
+            currentEstimatedUnitCost: "0",
+            originChangeOrderId: changeOrder.id,
+          },
         });
       }
 

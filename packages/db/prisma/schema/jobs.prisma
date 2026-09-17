@@ -254,6 +254,32 @@ model ChangeOrder {
   /// The GC's stated reason, on an approval or a rejection.
   decisionNotes String?
 
+  /// This change order's overhead-and-profit rate, as a percentage — 15
+  /// means 15%. It is the explicit line between the subtotal and the total
+  /// on the document the GC actually receives.
+  ///
+  /// COPIED FORWARD from Company.overheadAndProfitPercent when the draft is
+  /// created, never inherited at read time. Exactly the pattern
+  /// Job.retainagePercent uses against Contact.defaultRetainagePercent, and
+  /// for the same two reasons: a document that has been sent must not
+  /// change its own total because somebody edited a company setting
+  /// afterwards, and an inherited null could not tell "use the company
+  /// rate" apart from "this change order carries no O&P", which is a real
+  /// thing to say on a credit.
+  ///
+  /// NULL MEANS NOT SET, NOT ZERO. Every change order that predates this
+  /// column is null and reads as "not set" — nobody said, and there is no
+  /// source to derive it from. An explicit 0 is a different claim and
+  /// renders as 0%.
+  ///
+  /// Editable only while DRAFT, like every other thing this document says.
+  /// On approval the resulting amount is written as an ordinary
+  /// JobLineItem tagged with `originChangeOrderId`, so the contract value
+  /// moves by the TOTAL the GC agreed to rather than by the subtotal — see
+  /// approveChangeOrder. Nothing derives money from this column after that
+  /// point; the line item is the record.
+  overheadAndProfitPercent Decimal? @db.Decimal(5, 2)
+
   /// When this change order's proposals were written onto JobLineItem.
   /// Non-null means the scope is live; it is what stops the same change
   /// order being applied to the budget twice. Cleared by reopenChangeOrder,

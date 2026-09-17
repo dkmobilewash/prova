@@ -12,6 +12,7 @@ import {
   removeProposal,
   reopenChangeOrder,
   reviseChangeOrder,
+  setChangeOrderOverheadAndProfit,
   submitChangeOrder,
   voidChangeOrder,
 } from "@/lib/actions";
@@ -68,8 +69,30 @@ export type ChangeOrderView = {
   submittedOn: string | null;
   decidedOn: string | null;
   decisionNotes: string | null;
-  /** Signed contract-value delta, formatted. */
-  valueDelta: string;
+  /** The three lines of the document's money block, already formatted on
+   * the server so this component does no arithmetic and cannot invent a
+   * different number from the one the GC's portal prints.
+   *
+   * Signed contract-value delta of the proposals. This is the SUBTOTAL —
+   * the line ABOVE overhead and profit, not the bottom line. It used to be
+   * called `valueDelta` and used to be the only figure here, which is
+   * precisely the document that was missing a line. */
+  subtotal: string;
+  /** "Overhead and profit (15%)", or plain "Overhead and profit" when no
+   * rate has been recorded. */
+  overheadAndProfitLabel: string;
+  /** The markup in dollars, or the literal string "Not set". NEVER "$0.00"
+   * for a rate nobody recorded — that is the whole point of the feature. */
+  overheadAndProfitAmount: string;
+  /** Whether a rate has been recorded at all. `false` is not `0%`. */
+  overheadAndProfitSet: boolean;
+  /** The stored rate as typed into the form ("15", "12.5"), or null. Null
+   * leaves the input blank, which is what "not set" means and what saving
+   * a blank field stores back. */
+  overheadAndProfitPercentValue: string | null;
+  /** Subtotal plus the markup. Equals the subtotal when unset, because an
+   * unset rate is excluded rather than added as zero. */
+  total: string;
   /** Empty when this change order can be reopened; otherwise the reasons it
    * can't, ready to show without the user having to click and get an error. */
   reopenBlockers: string[];
@@ -424,6 +447,104 @@ function Correction({ changeOrder }: { changeOrder: ChangeOrderView }) {
   );
 }
 
+/**
+ * The bottom of the document: subtotal, overhead and profit, total.
+ *
+ * This is the shape of the change-order request a real subcontractor sends,
+ * and the shape this app did not have — there was one figure here and it
+ * was the subtotal, presented as if it were the total.
+ *
+ * UNSET IS NOT ZERO, and this component is where that becomes visible. When
+ * no rate has been recorded the amount column reads "Not set" rather than
+ * "$0.00", the total is the subtotal because nothing was added, and a note
+ * says so. A GC reading $10,000.00 has no way to tell a bid with no markup
+ * in it from one where the markup is genuinely zero; the person sending it
+ * does, right here, before they send it.
+ */
+function MoneyBlock({ changeOrder }: { changeOrder: ChangeOrderView }) {
+  return (
+    <dl className="mt-3 flex flex-col gap-1 border-t border-line-row pt-2 text-sm">
+      <div className="flex items-baseline justify-between gap-3">
+        <dt className="text-ink-body">Subtotal</dt>
+        <dd className="tabular-nums text-ink-label">{changeOrder.subtotal}</dd>
+      </div>
+      <div className="flex items-baseline justify-between gap-3">
+        <dt className={changeOrder.overheadAndProfitSet ? "text-ink-body" : "text-ink-muted"}>
+          {changeOrder.overheadAndProfitLabel}
+        </dt>
+        <dd
+          className={
+            changeOrder.overheadAndProfitSet
+              ? "tabular-nums text-ink-label"
+              : "text-xs uppercase tracking-wide text-tag-amber-ink"
+          }
+        >
+          {changeOrder.overheadAndProfitAmount}
+        </dd>
+      </div>
+      <div className="flex items-baseline justify-between gap-3 border-t border-line-row pt-1">
+        <dt className="font-semibold text-ink">Total</dt>
+        <dd className="font-semibold tabular-nums text-ink">{changeOrder.total}</dd>
+      </div>
+      {!changeOrder.overheadAndProfitSet && (
+        <p className="text-xs text-tag-amber-ink">
+          No overhead and profit rate is recorded on this change order, so none is in that total —
+          it is the subtotal. Nothing has been added as 0%.
+        </p>
+      )}
+    </dl>
+  );
+}
+
+/**
+ * The override, on the draft only.
+ *
+ * Draft-only for the same reason nothing else about a sent change order can
+ * be edited: the GC is holding a copy with a total on it. Blank SAVES as
+ * blank — clearing the field is how somebody takes a copied-in company
+ * default off a change order that should not carry one, and it stores null
+ * rather than a fake zero.
+ */
+function OverheadAndProfitField({ changeOrder }: { changeOrder: ChangeOrderView }) {
+  const { isPending, error, run } = useActionRunner();
+  const [saved, setSaved] = useState(false);
+
+  return (
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        const formData = new FormData(event.currentTarget);
+        setSaved(false);
+        run(() => setChangeOrderOverheadAndProfit(changeOrder.id, formData), () => setSaved(true));
+      }}
+      className="mt-3 flex flex-wrap items-end gap-3 rounded-md border border-line-row bg-canvas p-3"
+    >
+      <label className={labelClass}>
+        Overhead and profit
+        <div className="flex items-center gap-2">
+          <input
+            name="overheadAndProfitPercent"
+            inputMode="decimal"
+            defaultValue={changeOrder.overheadAndProfitPercentValue ?? ""}
+            placeholder="Not set"
+            className={`${inputClass} w-24`}
+          />
+          <span className="text-sm text-ink-body">%</span>
+        </div>
+      </label>
+      <button type="submit" disabled={isPending} className={primaryBtn}>
+        {isPending ? "Saving…" : "Save rate"}
+      </button>
+      <p className="w-full text-xs text-ink-muted">
+        Prints as its own line between the subtotal and the total. Leave it blank for “not set” —
+        blank is not 0%, and the total says which.
+      </p>
+      {saved && !error && <p className="w-full text-xs text-green-400">Saved.</p>}
+      {error && <p className="w-full text-xs text-tag-rose-ink">{error}</p>}
+    </form>
+  );
+}
+
 function ProposalRow({ proposal, canRemove }: { proposal: ProposalView; canRemove: boolean }) {
   const { isPending, error, run } = useActionRunner();
 
@@ -572,7 +693,11 @@ export function ChangeOrders({
                   CO #{co.number}: {co.title}
                 </p>
                 <div className="flex items-center gap-2">
-                  <span className="text-sm tabular-nums text-ink-label">{co.valueDelta}</span>
+                  {/* The TOTAL, not the subtotal. This header read the
+                      subtotal before overhead and profit existed, which
+                      made it the bottom line of a document that had no
+                      bottom line. */}
+                  <span className="text-sm tabular-nums text-ink-label">{co.total}</span>
                   <span className={`rounded-full border px-2 py-0.5 text-xs ${STATUS_STYLE[co.status]}`}>
                     {STATUS_LABEL[co.status]}
                   </span>
@@ -613,6 +738,10 @@ export function ChangeOrders({
                 </ul>
               )}
 
+              {/* The money block goes under the scope it totals, the way a
+                  change-order request reads on paper. */}
+              {co.proposals.length > 0 && <MoneyBlock changeOrder={co} />}
+
               {/* Audit trail of what actually landed, written on approval. */}
               {co.edits.length > 0 && (
                 <ul className="mt-2 flex flex-col gap-0.5">
@@ -629,6 +758,7 @@ export function ChangeOrders({
               {co.status === "DRAFT" && (
                 <>
                   <ProposalForms changeOrder={co} lineItems={lineItems} />
+                  <OverheadAndProfitField changeOrder={co} />
                   <DraftActions changeOrder={co} />
                 </>
               )}

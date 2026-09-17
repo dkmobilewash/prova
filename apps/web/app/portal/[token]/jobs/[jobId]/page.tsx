@@ -2,7 +2,13 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ContractSummary } from "@/components/ContractSummary";
 import { prisma } from "@prova/db";
-import { money } from "@/lib/money";
+import { money, signedMoney } from "@/lib/money";
+import { changeOrderValueDelta } from "@/lib/change-order";
+import {
+  formatOverheadAndProfitAmount,
+  overheadAndProfitBlock,
+  overheadAndProfitLineLabel,
+} from "@/lib/overhead-and-profit";
 import { PortalJobPhotos } from "@/components/PortalJobPhotos";
 import { countJobMedia, loadSharedJobMediaForClient } from "@/lib/job-media-query";
 import { viewerTimeZone } from "@/lib/viewerToday";
@@ -51,7 +57,12 @@ export default async function PortalJobPage({
       changeOrders: {
         where: { status: CLIENT_VISIBLE_CHANGE_ORDER_STATUS },
         orderBy: { number: "asc" },
-        include: { edits: true },
+        // `proposals` joins the read so this page can print the same
+        // subtotal / overhead-and-profit / total block the sub sees on
+        // /jobs/[id]. The GC was previously shown a change order's title
+        // and nothing else about what it was worth — on the one page built
+        // for them to read the money on.
+        include: { edits: true, proposals: { orderBy: { createdAt: "asc" } } },
       },
       // `revokedAt: null` and the `expiresAt` clause: don't hand the GC a
       // "Review and sign" link to a request that will 404 the moment they
@@ -94,7 +105,7 @@ export default async function PortalJobPage({
      in the browser during render, which is the hydration break
      components/localToday.ts exists to warn about. */
   const timeZone = await viewerTimeZone();
-  const [photos, sharedPhotoCount] = await Promise.all([
+  const [photos, sharedPhotoCount, changeOrderTargetRows] = await Promise.all([
     loadSharedJobMediaForClient(
       { jobId: job.id, companyId: job.companyId, take: PHOTO_LIMIT },
       timeZone,
@@ -104,7 +115,24 @@ export default async function PortalJobPage({
     // `shared: true` here is the same `sharedWithClientAt: { not: null }`
     // the loader applies.
     countJobMedia({ companyId: job.companyId, jobId: job.id, shared: true }),
+    /* The UNFILTERED line items, for the change-order arithmetic below —
+       the shape `changeOrderValueDelta` documents for its `targets` map,
+       and the same read /jobs/[id] does for the same purpose.
+       Every change order this page shows is APPROVED, so every proposal on
+       it carries the snapshot of what it replaced and the map is never
+       actually consulted. It is built anyway rather than passed as an empty
+       Map: "it happens not to be read today" is the kind of load-bearing
+       coincidence that turns into a wrong number on the GC's copy the first
+       time this page is allowed to show a pending change order.
+       Below the `job.contactId !== contact.id` guard for the reason spelled
+       out above — the token IS the credential here. */
+    prisma.jobLineItem.findMany({
+      where: { jobId: job.id },
+      select: { id: true, quantity: true, unitPrice: true, isDeleted: true },
+    }),
   ]);
+
+  const changeOrderTargets = new Map(changeOrderTargetRows.map((row) => [row.id, row]));
 
   const pendingSignature = job.signatureRequests[0];
 
@@ -146,14 +174,56 @@ export default async function PortalJobPage({
         <section className="mb-10">
           <h2 className="mb-3 text-lg font-semibold text-ink">Change orders</h2>
           <ul className="flex flex-col gap-2">
-            {job.changeOrders.map((co) => (
-              <li key={co.id} className="rounded-md border border-line-card bg-surface p-3 text-sm">
-                <p className="font-medium text-ink">
-                  CO #{co.number}: {co.title}
-                </p>
-                {co.description && <p className="text-ink-body">{co.description}</p>}
-              </li>
-            ))}
+            {job.changeOrders.map((co) => {
+              /* Subtotal, overhead and profit, total — the same three lines
+                 the sub sees on /jobs/[id], through the same module, so the
+                 two copies of this document cannot print different numbers.
+                 An unset rate reads "Not set" rather than $0.00 here too:
+                 the GC is entitled to see that the total in front of them
+                 has no markup in it, rather than a zero that looks decided. */
+              const block = overheadAndProfitBlock(
+                changeOrderValueDelta(co.proposals, changeOrderTargets),
+                co.overheadAndProfitPercent,
+              );
+              return (
+                <li key={co.id} className="rounded-md border border-line-card bg-surface p-3 text-sm">
+                  <p className="font-medium text-ink">
+                    CO #{co.number}: {co.title}
+                  </p>
+                  {co.description && <p className="text-ink-body">{co.description}</p>}
+                  <dl className="mt-2 flex flex-col gap-1 border-t border-line-row pt-2">
+                    <div className="flex items-baseline justify-between gap-3">
+                      <dt className="text-ink-body">Subtotal</dt>
+                      <dd className="tabular-nums text-ink-label">
+                        {signedMoney(Number(block.subtotal))}
+                      </dd>
+                    </div>
+                    <div className="flex items-baseline justify-between gap-3">
+                      <dt className={block.isSet ? "text-ink-body" : "text-ink-muted"}>
+                        {overheadAndProfitLineLabel(block.percent)}
+                      </dt>
+                      <dd
+                        className={
+                          block.isSet
+                            ? "tabular-nums text-ink-label"
+                            : "text-xs uppercase tracking-wide text-ink-muted"
+                        }
+                      >
+                        {block.isSet
+                          ? signedMoney(Number(block.amount))
+                          : formatOverheadAndProfitAmount(block)}
+                      </dd>
+                    </div>
+                    <div className="flex items-baseline justify-between gap-3 border-t border-line-row pt-1">
+                      <dt className="font-semibold text-ink">Total</dt>
+                      <dd className="font-semibold tabular-nums text-ink">
+                        {signedMoney(Number(block.total))}
+                      </dd>
+                    </div>
+                  </dl>
+                </li>
+              );
+            })}
           </ul>
         </section>
       )}

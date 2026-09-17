@@ -25,6 +25,7 @@ import {
 import { calculateRetainageSummary } from "@/lib/retainage";
 import { loadRetainageHeld } from "@/lib/retainage-query";
 import { changeOrderValueDelta, countUnbookable, PENDING_CHANGE_ORDER_STATUSES } from "@/lib/change-order";
+import { overheadAndProfitBlock } from "@/lib/overhead-and-profit";
 import { calculateTimeEntryLaborCost, findEffectiveFringeRateSchedule } from "@/lib/labor-cost";
 import { classificationLabel, isRecordable, outcomeLabel } from "@/components/safetyLabels";
 import {
@@ -1013,6 +1014,11 @@ async function changeOrderStatus(companyId: string, input: Input): Promise<ToolR
           status: true,
           submittedOn: true,
           decidedOn: true,
+          // The markup, so this tool answers with the number on the bottom
+          // of the document rather than the subtotal halfway up it. An Ask
+          // answer that quotes a different figure from the screen it cites
+          // is #103 finding 1 all over again.
+          overheadAndProfitPercent: true,
           proposals: {
             select: {
               changeType: true,
@@ -1039,13 +1045,25 @@ async function changeOrderStatus(companyId: string, input: Input): Promise<ToolR
         .filter((co) => changeOrderMatches(co.status, wanted))
         .map((co) => {
           const unbookable = countUnbookable(co.proposals, targets);
+          const oAndP = overheadAndProfitBlock(
+            changeOrderValueDelta(co.proposals, targets),
+            co.overheadAndProfitPercent,
+          );
           return {
             job: job.name,
             gc: job.contact.name,
             changeOrder: `CO #${co.number}`,
             title: co.title,
             status: co.status,
-            value: Number(changeOrderValueDelta(co.proposals, targets)),
+            // `value` stays the bottom line, because that is what anyone
+            // asking "what is CO #3 worth" means. The two figures beside it
+            // say how it is made up, and `overheadAndProfit` is NULL — not
+            // 0 — when no rate was recorded, so the model is never handed a
+            // zero it could describe as a decision nobody made.
+            value: Number(oAndP.total),
+            subtotalBeforeOverheadAndProfit: Number(oAndP.subtotal),
+            overheadAndProfitPercent: oAndP.percent === null ? null : Number(oAndP.percent),
+            overheadAndProfit: oAndP.amount === null ? null : Number(oAndP.amount),
             submittedOn: iso(co.submittedOn),
             decidedOn: iso(co.decidedOn),
             // Days since it went to the GC. NOT "days late": nothing

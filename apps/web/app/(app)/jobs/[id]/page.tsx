@@ -43,11 +43,16 @@ import {
   pendingChangeOrderUnbookable,
   reopenBlockers,
 } from "@/lib/change-order";
+import {
+  formatOverheadAndProfitAmount,
+  overheadAndProfitBlock,
+  overheadAndProfitLineLabel,
+} from "@/lib/overhead-and-profit";
 import { can } from "@/lib/permissions";
 import { countJobMedia, loadJobMedia, loadJobMediaTags } from "@/lib/job-media-query";
 import { viewerTimeZone } from "@/lib/viewerToday";
 import { formatCalendarDate, formatInstant } from "@/lib/render-date";
-import { money } from "@/lib/money";
+import { money, signedMoney } from "@/lib/money";
 import {
   calculateLineItemWip,
   calculateJobWip,
@@ -579,9 +584,27 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
     reopenNote: co.reopenNote,
     supersedesLabel: co.supersedes ? `CO #${co.supersedes.number}` : null,
     revisedByLabels: co.revisions.map((revision) => `CO #${revision.number}`),
-    valueDelta: (() => {
-      const delta = Number(changeOrderValueDelta(co.proposals, changeOrderTargetsById));
-      return `${delta >= 0 ? "+" : "−"}${money(Math.abs(delta))}`;
+    /* Subtotal, overhead and profit, total — the bottom of the document,
+       computed once here from the one shared module so this page and the
+       GC's /portal copy cannot print two different totals for the same
+       change order. `signedMoney` keeps the existing +/− convention; an
+       unset markup goes through `formatOverheadAndProfitAmount`, which is
+       the function that must never answer "$0.00" for a rate nobody set. */
+    ...(() => {
+      const block = overheadAndProfitBlock(
+        changeOrderValueDelta(co.proposals, changeOrderTargetsById),
+        co.overheadAndProfitPercent,
+      );
+      return {
+        subtotal: signedMoney(Number(block.subtotal)),
+        overheadAndProfitLabel: overheadAndProfitLineLabel(block.percent),
+        overheadAndProfitAmount: block.isSet
+          ? signedMoney(Number(block.amount))
+          : formatOverheadAndProfitAmount(block),
+        overheadAndProfitSet: block.isSet,
+        overheadAndProfitPercentValue: co.overheadAndProfitPercent?.toString() ?? null,
+        total: signedMoney(Number(block.total)),
+      };
     })(),
     proposals: co.proposals.map((proposal) => ({
       id: proposal.id,

@@ -279,15 +279,51 @@ export class FakeDb {
     };
   }
 
-  /** Only the relation these tests need: a message's events. */
+  /**
+   * Only the relations these tests need, named one at a time on purpose.
+   *
+   * An `include` key with no case here is SILENTLY DROPPED rather than
+   * resolved, so the row comes back without the relation and the action
+   * under test blows up on `undefined` — loudly, at the line that needed
+   * it. That is the intended failure: a generic resolver that guessed at
+   * foreign keys would hand back plausible-looking rows for relations
+   * nobody had thought about, which is how a test comes to assert against
+   * a fiction.
+   *
+   * `job` and `proposals` are here for `approveChangeOrder`, whose whole
+   * argument is what a change order does to `JobLineItem`.
+   *
+   * A RELATION THE ROW WAS SEEDED WITH ALWAYS WINS, and that is a fix
+   * rather than a nicety. Seeding the relation inline —
+   * `db.seed("invoice", { jobId: "job_1", job: { companyId: "co_1" } })` —
+   * is the older convention here and what every QuickBooks test uses; it
+   * lets a test state the one field the action reads without standing up
+   * the whole foreign table. Resolving `include.job` unconditionally
+   * OVERWROTE that with a lookup in a `job` table those tests never seed,
+   * so `invoice.job` came back null and ten of them died on
+   * `invoice.job.companyId` — a test file that had nothing to do with the
+   * change that broke it. So: resolve only what the row does not already
+   * carry.
+   */
   private withIncludes(row: Row, include?: Record<string, boolean>): Row {
-    if (!include?.events) return row;
-    return {
-      ...row,
-      events: this.rows("outboundMessageEvent").filter(
+    if (!include) return row;
+    const resolved: Row = { ...row };
+    const seeded = (key: string) => row[key] !== undefined;
+
+    if (include.events && !seeded("events")) {
+      resolved.events = this.rows("outboundMessageEvent").filter(
         (event) => event.messageId === row.id,
-      ),
-    };
+      );
+    }
+    if (include.job && !seeded("job")) {
+      resolved.job = this.table("job").get(String(row.jobId)) ?? null;
+    }
+    if (include.proposals && !seeded("proposals")) {
+      resolved.proposals = this.rows("changeOrderProposal").filter(
+        (proposal) => proposal.changeOrderId === row.id,
+      );
+    }
+    return resolved;
   }
 
   private snapshot() {

@@ -50,9 +50,17 @@ function GapNote({ gaps, field }: { gaps: CompanyProfileGap[]; field: CompanyPro
 export function CompanyProfileForm({
   company,
   gaps,
+  overheadAndProfitPercent,
 }: {
   company: CompanyProfile;
   gaps: CompanyProfileGap[];
+  /** The company's standing O&P rate as a plain string ("15.00"), or null
+   * when nobody has set one. Passed separately from `company` rather than
+   * folded into `CompanyProfile`: that type is the set of fields the
+   * WH-347 and the remittance sheet print, and a pricing default is not one
+   * of them — `companyProfileGaps` and `employerAddressLines` both read
+   * that shape and neither has anything to say about a markup. */
+  overheadAndProfitPercent: string | null;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -212,6 +220,38 @@ export function CompanyProfileForm({
       <p className="text-[11px] text-ink-muted">
         Phone and website are on the record for your own reference — no document prints them today.
       </p>
+
+      {/* The standing commercial term, not a profile field. It is in this
+          form because it is owner-only for the same reason the legal name
+          is: it changes what a document sent to a GC says. */}
+      <fieldset className="flex flex-col gap-2 border-t border-line-card pt-4">
+        <legend className="text-xs font-semibold text-ink-label">Overhead and profit</legend>
+        <label className={labelClass}>
+          Default rate
+          <span className="font-normal text-ink-muted">
+            Copied onto every new change order as its own line between the subtotal and the total,
+            and editable there while the change order is still a draft. Changing it here never
+            touches a change order already raised.
+          </span>
+          <div className="flex items-center gap-2">
+            <input
+              name="overheadAndProfitPercent"
+              inputMode="decimal"
+              defaultValue={overheadAndProfitPercent ?? ""}
+              placeholder="Not set"
+              className={`w-28 ${inputClass}`}
+            />
+            <span className="text-sm text-ink-body">%</span>
+          </div>
+        </label>
+        {/* The whole point of the feature, said where somebody can act on
+            it. Blank is a state, not an empty number. */}
+        <p className="max-w-prose text-[11px] text-amber-300">
+          {overheadAndProfitPercent === null
+            ? "Not set. Change orders will show “Not set” on the overhead-and-profit line and their total will be the subtotal — nothing is added, and nothing is quietly added as 0%. A GC reading that total is reading a number with no markup in it."
+            : "Leave this blank to go back to “not set”. Blank is not the same as 0% — 0% is a decision to add no markup, and blank is nobody having decided."}
+        </p>
+      </fieldset>
 
       <div className="flex flex-wrap items-center gap-3">
         <button

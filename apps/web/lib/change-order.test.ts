@@ -117,6 +117,7 @@ describe("scope another change order already removed (#105 finding 5)", () => {
     const changeOrders = [
       {
         status: "SUBMITTED",
+        overheadAndProfitPercent: null,
         proposals: [
           proposal({ changeType: "ADD", lineItemId: null, quantity: d(10), unitPrice: d(300) }),
           proposal({ changeType: "REMOVE" }),
@@ -126,6 +127,28 @@ describe("scope another change order already removed (#105 finding 5)", () => {
 
     expect(pendingChangeOrderExposure(changeOrders, targets).toString()).toBe("3000");
     expect(pendingChangeOrderUnbookable(changeOrders, targets)).toBe(1);
+  });
+
+  it("asks the GC for the TOTAL, overhead and profit included", () => {
+    // The number on the bottom of the document, not the subtotal halfway
+    // up it. Hand-worked: 10 @ $300 = $3,000 subtotal, 15% O&P = $450,
+    // total $3,450.
+    const targets = new Map([["line-1", line()]]);
+    const pending = (overheadAndProfitPercent: Prisma.Decimal | null) => [
+      {
+        status: "SUBMITTED",
+        overheadAndProfitPercent,
+        proposals: [proposal({ changeType: "ADD", lineItemId: null, quantity: d(10), unitPrice: d(300) })],
+      },
+    ];
+
+    expect(pendingChangeOrderExposure(pending(d(15)), targets).toString()).toBe("3450");
+
+    // And a rate nobody has recorded adds NOTHING, rather than being
+    // guessed at as zero-and-therefore-harmless. Same number as a recorded
+    // 0%, different claim — see lib/overhead-and-profit.test.ts.
+    expect(pendingChangeOrderExposure(pending(null), targets).toString()).toBe("3000");
+    expect(pendingChangeOrderExposure(pending(d(0)), targets).toString()).toBe("3000");
   });
 
   it("leaves a live line alone", () => {

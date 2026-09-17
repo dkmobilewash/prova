@@ -20,6 +20,7 @@ import {
   plural,
 } from "./shared";
 import { normalizeEin, normalizeWebsite } from "@/lib/company-profile";
+import { parseOverheadAndProfitPercent } from "@/lib/overhead-and-profit";
 import { can } from "@/lib/permissions";
 
 /** The job-function refusal for the company record, worded the way
@@ -135,6 +136,13 @@ export async function updateCompanyProfile(formData: FormData): Promise<ActionRe
     const website = normalizeWebsite(text(formData, "website"));
     if (!website.ok) return fail(website.error);
 
+    /* The company's standing overhead-and-profit rate. Blank is VALID and
+       stores null — "nobody has decided" is a real state and the change
+       order document says so out loud rather than printing $0.00. See
+       lib/overhead-and-profit.ts. */
+    const overheadAndProfit = parseOverheadAndProfitPercent(text(formData, "overheadAndProfitPercent"));
+    if (!overheadAndProfit.ok) return fail(overheadAndProfit.error);
+
     const dbaName = text(formData, "dbaName");
     const hqAddressLine1 = text(formData, "hqAddressLine1");
     const hqAddressLine2 = text(formData, "hqAddressLine2");
@@ -156,6 +164,7 @@ export async function updateCompanyProfile(formData: FormData): Promise<ActionRe
         hqZip: hqZip || null,
         phone: phone || null,
         website: website.value,
+        overheadAndProfitPercent: overheadAndProfit.value,
       },
     });
 

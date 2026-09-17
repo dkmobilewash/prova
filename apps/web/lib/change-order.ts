@@ -1,4 +1,5 @@
 import { Prisma, prisma } from "@prova/db";
+import { overheadAndProfitBlock } from "./overhead-and-profit";
 
 /**
  * What a change order would do to the contract value, computed from its
@@ -184,14 +185,35 @@ export const PENDING_CHANGE_ORDER_STATUSES = ["DRAFT", "SUBMITTED"] as const;
  * Pending change orders, by value — "what we've asked the GC for that they
  * haven't answered". Never added to contract value; it is precisely the
  * money that is not yet ours to count.
+ *
+ * INCLUDES OVERHEAD AND PROFIT, because the ask does. The figure has to be
+ * the number on the bottom of the document that went out, not the subtotal
+ * halfway up it — a PM reading "$40,000 pending" against a stack of change
+ * orders totalling $46,000 has an unexplained $6,000, and the explanation
+ * is a markup this app knew about all along. `overheadAndProfitPercent` is
+ * REQUIRED on the input rather than optional for exactly that reason: an
+ * optional field is one a future caller forgets, and forgetting it here
+ * understates the ask silently instead of failing to compile. Null is the
+ * honest "no rate recorded", and adds nothing — never zero-as-a-guess.
  */
 export function pendingChangeOrderExposure(
-  changeOrders: { status: string; proposals: ProposalForCalc[] }[],
+  changeOrders: {
+    status: string;
+    proposals: ProposalForCalc[];
+    overheadAndProfitPercent: Prisma.Decimal | null;
+  }[],
   targets: Map<string, LineItemForChangeOrder>,
 ): Prisma.Decimal {
   return changeOrders
     .filter((co) => co.status === "SUBMITTED")
-    .reduce((sum, co) => sum.add(changeOrderValueDelta(co.proposals, targets)), ZERO);
+    .reduce(
+      (sum, co) =>
+        sum.add(
+          overheadAndProfitBlock(changeOrderValueDelta(co.proposals, targets), co.overheadAndProfitPercent)
+            .total,
+        ),
+      ZERO,
+    );
 }
 
 /** How many pending proposals the exposure figure above had to drop because
