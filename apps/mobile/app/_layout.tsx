@@ -9,16 +9,24 @@ const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY ?? "";
 // by the publishable key so a session from a DIFFERENT Clerk instance (e.g.
 // dev vs production) can never be read as this one's — switching instances
 // starts signed-out instead of hanging on a foreign, unvalidatable token.
+//
+// The separator must be SecureStore-safe: keys allow only alphanumerics,
+// '.', '-', and '_'. A ':' here threw "Invalid key provided to SecureStore"
+// and silently stalled Clerk init (isLoaded stayed false).
 const tokenCache = {
   async getToken(key: string): Promise<string | null> {
     try {
-      return await SecureStore.getItemAsync(`${publishableKey}:${key}`);
+      return await SecureStore.getItemAsync(`${publishableKey}_${key}`);
     } catch {
       return null;
     }
   },
   async saveToken(key: string, value: string): Promise<void> {
-    await SecureStore.setItemAsync(`${publishableKey}:${key}`, value);
+    try {
+      await SecureStore.setItemAsync(`${publishableKey}_${key}`, value);
+    } catch {
+      // best-effort — never block Clerk init on a cache write failure
+    }
   },
 };
 
