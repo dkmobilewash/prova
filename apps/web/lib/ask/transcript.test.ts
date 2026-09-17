@@ -5,8 +5,10 @@ import {
   MAX_TRANSCRIPT,
   answeredAgo,
   boundTranscript,
+  SUMMARY_CHARS,
   staleIndices,
   stalenessNote,
+  summarizeQuestion,
 } from "./transcript";
 import { MAX_TURNS } from "./turns";
 
@@ -143,5 +145,53 @@ describe("what the mark says", () => {
     expect(note).toMatch(/read then/i);
     // A warning that does not say what to do is decoration.
     expect(note).toMatch(/ask again/i);
+  });
+});
+
+describe("what a closed row says", () => {
+  it("leaves a short question exactly as it was typed", () => {
+    expect(summarizeQuestion("what is overdue?")).toBe("what is overdue?");
+  });
+
+  it("cuts a long one at a word, and marks the cut", () => {
+    const long =
+      "which invoices are overdue on Riverside Medical and how much of that is retainage the GC is still holding";
+    const summary = summarizeQuestion(long);
+    expect(summary.length).toBeLessThanOrEqual(SUMMARY_CHARS + 1);
+    expect(summary.endsWith("…")).toBe(true);
+    const kept = summary.slice(0, -1);
+    expect(long.startsWith(kept)).toBe(true);
+    // The cut landed ON a word boundary — the next character in the
+    // original is a space, so the last word kept is whole rather than a
+    // stump. A plain slice at SUMMARY_CHARS lands mid-word here, which is
+    // what this asserts against; without it the word-boundary search could
+    // be deleted and every other assertion would still pass.
+    expect(long[kept.length]).toBe(" ");
+    expect(summary.slice(-2, -1)).not.toBe(" ");
+  });
+
+  it("flattens dictation into one line", () => {
+    // Speech-to-text arrives as one run and a pasted question carries
+    // newlines; a row is one line either way.
+    expect(summarizeQuestion("what is\n  overdue\ton Riverside?")).toBe("what is overdue on Riverside?");
+  });
+
+  it("still cuts a question with no spaces in it", () => {
+    const wall = "x".repeat(200);
+    const summary = summarizeQuestion(wall);
+    expect(summary).toHaveLength(SUMMARY_CHARS + 1);
+    expect(summary.endsWith("…")).toBe(true);
+  });
+
+  it("NEVER summarises the answer, which is the whole point", () => {
+    // The obvious summary is the answer's first sentence, and it is the one
+    // thing that must not go on a closed row: this answer clipped to its
+    // first sentence reads as a clean bill on the exact question somebody
+    // asked because they were worried.
+    const answer = "Nothing is overdue on Riverside. $32,300 is overdue on Brackett, 15 days out.";
+    const summary = summarizeQuestion("is anything overdue?");
+    expect(answer).toContain("Nothing is overdue");
+    expect(summary).not.toContain("Nothing is overdue");
+    expect(summary).toBe("is anything overdue?");
   });
 });

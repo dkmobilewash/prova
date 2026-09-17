@@ -141,3 +141,38 @@ export function staleIndices(entries: readonly TranscriptEntry[]): number[] {
 export function stalenessNote(askedAt: number, now: number): string {
   return `Answered ${answeredAgo(askedAt, now)} — the figures were read then. Ask again for what is true now.`;
 }
+
+/** How long a collapsed row's question is allowed to run before it is cut.
+ * Roughly one line on a phone; the full text is one tap away. */
+export const SUMMARY_CHARS = 72;
+
+/**
+ * The one line a collapsed entry shows: the person's OWN QUESTION, cut to
+ * fit, never a fragment of the answer.
+ *
+ * THIS IS THE WHOLE DESIGN DECISION AND IT IS DELIBERATE. The obvious
+ * "summary" of an exchange is the first sentence of the answer, and it is
+ * the one thing that must not go here. "Nothing is overdue on Riverside.
+ * $32,300 is overdue on Brackett." clipped to its first sentence reads as
+ * a clean bill on the exact question somebody asked because they were
+ * worried. A truncated ANSWER makes a new, shorter, false claim; a
+ * truncated QUESTION is visibly the reader's own words with an ellipsis on
+ * the end, and the worst it can do is fail to remind them which question
+ * it was — which the tap fixes.
+ *
+ * So the collapsed row carries the question, the age, and the pages the
+ * figures came from. No number is on screen until the row is open, which
+ * is also why the staleness note lives in the expanded view: the mark
+ * travels with the figures it is about.
+ */
+export function summarizeQuestion(question: string, limit: number = SUMMARY_CHARS): string {
+  // Dictation arrives as one long run and a pasted question can carry
+  // newlines; either way a row is one line.
+  const flat = question.replace(/\s+/g, " ").trim();
+  if (flat.length <= limit) return flat;
+  const cut = flat.slice(0, limit);
+  const space = cut.lastIndexOf(" ");
+  // A question with no space in `limit` characters is one enormous token;
+  // cutting mid-word beats returning the whole thing and blowing the row.
+  return `${(space > limit / 2 ? cut.slice(0, space) : cut).trimEnd()}…`;
+}
