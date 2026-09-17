@@ -182,10 +182,54 @@ describe("theme contrast", () => {
    */
   it("puts the dark label it measured on every brand fill in the app", async () => {
     const { readdirSync, readFileSync, statSync } = await import("node:fs");
-    const { join, relative } = await import("node:path");
+    const { join, relative, resolve } = await import("node:path");
     const { fileURLToPath } = await import("node:url");
 
     const appDir = fileURLToPath(new URL("..", import.meta.url));
+
+    /* THE ROOTS COME FROM `content`, NOT FROM THIS FILE'S DIRECTORY, and that
+     * is the whole correction of 2026-09-16.
+     *
+     * This scan walked `appDir` — `apps/web` — for a month. Every offender it
+     * could name lived there, so it stayed green while
+     * `packages/ui/src/Button.tsx` shipped `bg-brand text-white
+     * hover:bg-blue-700`: white on #facc15 at 1.53:1, on the shared primary
+     * button that nine pages import, the GC-facing portal among them.
+     *
+     * The size assertion below did not catch it and could not have. It guards
+     * against the PATTERN breaking — a scan that suddenly matches nothing —
+     * and this scan matched plenty. What was wrong was the SCOPE: the one
+     * offending file was never a candidate, and nothing is ever missing from
+     * a directory you do not walk. That is a second failure mode for a check
+     * that derives its input, alongside the one CLAUDE.md already records.
+     *
+     * Tailwind's `content` is the authoritative list of files whose classes
+     * reach this app — if a class is not in one of these globs it does not
+     * render, and if it is, this census must see it. Deriving the roots from
+     * it means adding a workspace package to `content` extends the census
+     * with no edit here, which is the only version of this that stays true.
+     */
+    const globs = (Array.isArray(config.content) ? config.content : []) as string[];
+    const roots = globs.map((glob) => {
+      const star = glob.indexOf("*");
+      return resolve(appDir, star === -1 ? glob : glob.slice(0, star));
+    });
+
+    expect(
+      roots.length,
+      "tailwind.config.ts declares no `content` globs, so this census would " +
+        "scan nothing and pass everything below it",
+    ).toBe(globs.length);
+    expect(roots.length).toBeGreaterThanOrEqual(3);
+    for (const root of roots) {
+      expect(
+        statSync(root).isDirectory(),
+        `${root} is a content glob root that does not exist — the census cannot ` +
+          `scan it, and a root that resolves to nothing removes files from this ` +
+          `check without removing them from the build`,
+      ).toBe(true);
+    }
+
     const tsx = (dir: string, out: string[] = []) => {
       for (const name of readdirSync(dir)) {
         if (name === "node_modules" || name === ".next" || name.startsWith(".")) continue;
@@ -213,7 +257,7 @@ describe("theme contrast", () => {
     const CLASS_STRING_WITH_BRAND = /(["`])([^"`\n]*\bbg-brand\b(?!\/)[^"`\n]*)\1/g;
 
     const found: { path: string; classes: string }[] = [];
-    for (const full of tsx(appDir)) {
+    for (const full of roots.flatMap((root) => tsx(root))) {
       const code = withoutComments(readFileSync(full, "utf8"));
       for (const match of code.matchAll(CLASS_STRING_WITH_BRAND)) {
         found.push({ path: relative(appDir, full), classes: match[2] });

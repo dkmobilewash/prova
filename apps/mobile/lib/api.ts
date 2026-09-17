@@ -147,6 +147,13 @@ export async function listCrafts(token: string): Promise<Craft[]> {
   return request(`/api/v1/crafts`, { token });
 }
 
+export async function registerDeviceToken(
+  input: { expoToken: string; platform: string },
+  token: string,
+): Promise<{ ok: boolean }> {
+  return request(`/api/v1/device-tokens`, { method: "POST", token, body: input });
+}
+
 export async function listTmTickets(jobId: string, token: string): Promise<TmTicket[]> {
   return request(`/api/v1/jobs/${encodeURIComponent(jobId)}/tickets`, { token });
 }
