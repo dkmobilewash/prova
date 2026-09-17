@@ -283,6 +283,7 @@ model ChangeOrder {
   addedLineItems JobLineItem[]             @relation("OriginChangeOrder")
   edits          ChangeOrderLineItemEdit[]
   proposals      ChangeOrderProposal[]
+  scopeNotes     ChangeOrderScopeNote[]
 
   @@unique([jobId, number])
   @@index([jobId])
@@ -377,6 +378,44 @@ model ChangeOrderProposal {
   currentEstimatedUnitCost Decimal?    @db.Decimal(12, 2)
   tradeScope               TradeScope?
 
+  /// WHICH SIDE OF THE PRICE THIS LINE IS — labour, material, sub, other.
+  ///
+  /// A priced change order request does not present one number; it presents
+  /// labour broken out from materials, because that is the breakdown a GC
+  /// argues with line by line. Nullable, and null means "not broken out"
+  /// rather than OTHER: a change order written before this existed, or one
+  /// somebody priced as a lump sum, has genuinely not said, and folding it
+  /// into OTHER would put money in a bucket nobody chose.
+  ///
+  /// DELIBERATELY NOT COPIED ONTO JobLineItem ON APPROVAL, and that is the
+  /// design rather than an omission. JobLineItem has no cost category and
+  /// adding one would change contract value, WIP and every estimating
+  /// read for a field that describes how a CHANGE ORDER was priced, not
+  /// what the budget line is. The proposal is the pricing record of the
+  /// document that was sent; the line item is the scope that was agreed.
+  /// Reusing CostCategory rather than minting a parallel enum keeps
+  /// "labour" meaning one thing across the app.
+  costCategory CostCategory?
+
+  /// Set ONLY on the foreman-allowance line, and it records the BASIS the
+  /// line was priced on: "foreman figured at 10% of the labour".
+  ///
+  /// The dollar figure is NOT derived from this at read time. A change
+  /// order is an offer with a number on it — once the GC has it, the
+  /// foreman allowance is a fixed amount they agreed to, not a formula
+  /// that re-evaluates when somebody edits a labour line afterwards. So
+  /// the amount lives in quantity x unitPrice like every other line, this
+  /// column records what it was figured at, and `laborBreakout` derives
+  /// what that percentage COMES TO and shows the two side by side. A line
+  /// that no longer matches its own basis is a thing worth seeing before
+  /// the document goes out, which is exactly what storing the derived
+  /// amount instead would hide.
+  ///
+  /// It also keeps the foreman line out of its own base: the breakout
+  /// takes the base labour as the LABOR lines with no percentage on them,
+  /// so a foreman allowance is never a percentage of itself.
+  foremanPercent Decimal? @db.Decimal(5, 2)
+
   /// What this proposal replaced, captured at the moment it was applied.
   /// Null until then.
   ///
@@ -412,6 +451,76 @@ model ChangeOrderLineItemEdit {
 
   @@index([changeOrderId])
   @@index([lineItemId])
+}
+
+/// WHAT THE PRICE DOES NOT COVER, which on a change order request is worth
+/// more to the sub than what it does.
+///
+/// A real priced change order request reads as a short list of sentences
+/// around the priced lines, and they are not all the same KIND of sentence:
+///
+///   - "Furnish and install 3/4 inch FRT APA plywood at catwalk" — the work
+///   - "Temporary dance floor to be provided BY OTHERS" — an exclusion
+///   - "Hecklift provided BY OTHERS, for stocking materials" — an exclusion
+///   - "Top of dance floor no more than 3 feet below catwalk" — an assumption
+///   - "Steel angle figured at continuous perimeter" — how it was priced
+///
+/// Run those together as one paragraph in a description field and the
+/// document still READS fine, which is why it was acceptable for so long.
+/// What it loses is the only thing an exclusion is for: months later the GC
+/// says the dance floor was in your number, and the defence is that the
+/// document you both hold says, in its own labelled section, that it was
+/// not. A sentence buried mid-paragraph is an argument; a sentence under a
+/// heading called "Excluded" is a term.
+///
+/// So the STRUCTURE here is exactly one column — `kind` — and nothing else
+/// about the sentence is parsed, ranked or validated. That is the whole
+/// judgment call (changelog.d/cyrus-change-order-scope.md): the estimator
+/// still types the sentence he would have typed, at 6pm, in his own words;
+/// he just says which of four things it is. Eight structured columns for a
+/// temporary dance floor is the version nobody fills in.
+///
+/// NO MONEY LIVES HERE. Not a quantity, not a price, not a subtotal. The
+/// priced content of a change order is ChangeOrderProposal until approval
+/// and JobLineItem after it, and ARCHITECTURE.md's one-place rule is the
+/// reason this table is text and a tag. An INCLUSION note QUALIFIES the
+/// priced lines in words ("includes layout and fire-caulk at penetrations");
+/// it never restates their value.
+model ChangeOrderScopeNote {
+  id            String                   @id @default(cuid())
+  changeOrderId String
+  changeOrder   ChangeOrder              @relation(fields: [changeOrderId], references: [id], onDelete: Cascade)
+  kind          ChangeOrderScopeNoteKind
+  text          String
+
+  /// The order the estimator put them in, within a kind. A change order is
+  /// a document; the sequence of its clauses is authored, not incidental.
+  sortOrder Int @default(0)
+
+  createdAt DateTime @default(now())
+
+  @@index([changeOrderId])
+}
+
+/// The four kinds of sentence on a priced change order request.
+///
+/// Read them as answers to four different questions a GC can ask six months
+/// later, which is why collapsing any two loses something:
+///
+///   INCLUSION     — "is X in this price?"      yes, and here it is in words
+///   EXCLUSION     — "is X in this price?"      no, and we said so in writing
+///   ASSUMPTION    — "why is it more now?"      the stated condition changed
+///   PRICING_BASIS — "how did you get to that?" what the number was figured on
+///
+/// ASSUMPTION and PRICING_BASIS look alike and are not: an assumption is a
+/// condition about the site that, if it turns out false, is the ground for
+/// another change order. A pricing basis explains the arithmetic and grounds
+/// nothing. Both appear on the document he read out, separately.
+enum ChangeOrderScopeNoteKind {
+  INCLUSION
+  EXCLUSION
+  ASSUMPTION
+  PRICING_BASIS
 }
 
 enum CostCategory {

@@ -33,7 +33,7 @@ drift failure pointing in the unusual direction: the warning was stale, not
 the data. Same lesson as CLAUDE.md's `MIGRATE_EXPECT_HOST` deletion — a doc
 note that says "X has not been done" is a claim with an expiry date on it.
 
-**130 items audited — 105 built / 19 partial / 5 missing / 1 descoped**
+**132 items audited — 106 built / 20 partial / 5 missing / 1 descoped**
 
 (THIS IS THE FOURTH MERGE IN A DAY WHERE BOTH SIDES' TOTALS WERE WRONG, and
 the count is now worth less than the habit. Sheet 17 gained two rows on
@@ -43,8 +43,14 @@ the count is now worth less than the habit. Sheet 17 gained two rows on
 `main` said 129 / 104 / 19 / 5 / 1 and the branch said 130 / 104 / 19 / 6 / 1.
 Each was true before the other landed. Neither was picked.
 
-Re-derived with the rule the paragraph below insists on — rows beneath a
-`## NN.` header only — which is 105 / 19 / 5 / 1 and sums to 130. Note that
+Re-derived again on 2026-09-16 after Sheet 12 gained two rows — structured
+scope on a PCO, and the labour breakout — giving 106 / 20 / 5 / 1, summing
+to 132. The three places were re-derived together rather than one being
+bumped, which is the only version of this that stays true.
+
+The re-derivation before it said 105 / 19 / 5 / 1 summing to 130, with the
+rule the paragraph below insists on — rows beneath a
+`## NN.` header only. Note that
 the two sides agreed on `built: 104` and were BOTH wrong about it, which is
 the reason this file re-derives rather than diffs: agreement between two
 stale numbers is not evidence. All 26 per-sheet headers already agreed with
@@ -101,8 +107,8 @@ header cannot.)
 
 | Status | Count |
 | --- | --- |
-| Built | 105 |
-| Partial | 19 |
+| Built | 106 |
+| Partial | 20 |
 | Missing | 5 |
 | Descoped | 1 |
 
@@ -261,7 +267,7 @@ forecasting shipped 26 Aug 2026.*
 | Built | Retainage withheld vs. released tracking | `Invoice.retainageWithheld` (snapshotted per invoice) and `RetainageRelease` (lump-sum payback); `lib/retainage.ts` computes the outstanding balance |
 | Built | Retainage release forecasting tied to substantial completion/closeout | `Job.substantialCompletionDate` plus a computed "expected release around this date" statement — a plain forecast, not a scheduling/notification system; closeout itself still isn't modeled as a `JobStatus` stage (see Sheet 22) |
 
-## 12. Change Orders — 4 built · 0 partial · 0 missing
+## 12. Change Orders — 5 built · 1 partial · 0 missing
 
 | Status | Feature | Note |
 | --- | --- | --- |
@@ -269,6 +275,8 @@ forecasting shipped 26 Aug 2026.*
 | Built | Correcting an approved change order | `reopenChangeOrder` unwinds it back to draft while its scope is untouched; once costed or billed, `reviseChangeOrder` raises a linked revision and the original stays approved |
 | Built | Change order approval workflow with the GC | `submitChangeOrder` / `approveChangeOrder` / `rejectChangeOrder` / `voidChangeOrder` in `lib/actions/changeOrders.ts`. Sent and decided dates are entered rather than stamped, so a backdated PCO records real turnaround. A rejected CO keeps its proposals as evidence it was priced and refused |
 | Built | Approved COs flow into new/modified `JobLineItem` rows and update contract value | `approveChangeOrder` applies every proposal in one transaction and writes the `ChangeOrderLineItemEdit` audit rows; `appliedAt` stops the same CO reaching the budget twice |
+| Built | Structured scope on a PCO — inclusions, EXCLUSIONS, assumptions, pricing basis | `ChangeOrderScopeNote` + `kind`, one structured field and the estimator's own sentence. Rendered under its own heading per kind by `scopeSections`, never merged into the scope of work — `changeOrderScope.test.ts` mounts the component and asks the DOM which section each sentence landed in. No money lives on the table: the priced lines are still `ChangeOrderProposal`. Draft-only, like the priced lines: an exclusion added after the GC holds a copy would make the two copies disagree about who owes what |
+| Partial | Labour breakout on a priced CO — crew, foreman at a percentage, materials separate | `ChangeOrderProposal.costCategory` (nullable, reusing `CostCategory`) plus `foremanPercent` on the foreman's own line. `laborBreakout` groups and reconciles to `changeOrderValueDelta`; `foremanOutOfStep` reports a foreman line that no longer matches the percentage it says it was figured at, since the amount is the offer and the percentage is only the basis. **Partial for one honest reason: the category stays on the proposal and is NOT copied to `JobLineItem` on approval**, so an approved CO's labour/material split is readable on the change order and not in job costing — putting it there means adding a cost category to contract value, WIP and every estimating read, which is a bigger change than this one |
 
 ## 13. Backcharges & Deductions — 2 built · 0 partial · 0 missing
 

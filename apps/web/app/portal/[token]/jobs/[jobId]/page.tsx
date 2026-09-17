@@ -7,6 +7,7 @@ import { PortalJobPhotos } from "@/components/PortalJobPhotos";
 import { countJobMedia, loadSharedJobMediaForClient } from "@/lib/job-media-query";
 import { viewerTimeZone } from "@/lib/viewerToday";
 import { isPortalAccessRevoked, CLIENT_VISIBLE_CHANGE_ORDER_STATUS } from "@/lib/access-tokens";
+import { scopeSections } from "@/lib/change-order-scope";
 
 /** The photo cap, matching `/photos`. A GC scrolling a job's history wants
  * the same generous page the sub gets, and this section is at the bottom of
@@ -51,7 +52,13 @@ export default async function PortalJobPage({
       changeOrders: {
         where: { status: CLIENT_VISIBLE_CHANGE_ORDER_STATUS },
         orderBy: { number: "asc" },
-        include: { edits: true },
+        // The scope notes come with it, and this is the surface they exist
+        // for. An exclusion is only worth anything because the copy the GC
+        // holds says, under its own heading, that the item is not in the
+        // price — one that lives only on the sub's screen is a note to
+        // self, not a term. Locked by the time it gets here: notes are
+        // draft-only to edit, and this query is APPROVED-only.
+        include: { edits: true, scopeNotes: true },
       },
       // `revokedAt: null` and the `expiresAt` clause: don't hand the GC a
       // "Review and sign" link to a request that will 404 the moment they
@@ -152,6 +159,22 @@ export default async function PortalJobPage({
                   CO #{co.number}: {co.title}
                 </p>
                 {co.description && <p className="text-ink-body">{co.description}</p>}
+                {/* Split by kind server-side by the same function the sub's
+                    own page uses, so there is no rendering path here that
+                    could fold an exclusion back into the scope of work —
+                    which on the GC's copy is the failure that matters. */}
+                {scopeSections(co.scopeNotes).map((section) => (
+                  <div key={section.kind} className="mt-2">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-ink-label">
+                      {section.heading}
+                    </p>
+                    <ul className="mt-1 list-disc pl-5 text-ink-body">
+                      {section.notes.map((note) => (
+                        <li key={note.id}>{note.text}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
               </li>
             ))}
           </ul>
