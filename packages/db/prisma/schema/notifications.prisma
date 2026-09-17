@@ -193,7 +193,7 @@ model DeviceToken {
   /// "ios" | "android". Expo needs it to format the push.
   platform String
 
-  createdAt  DateTime @default(now())
+  createdAt DateTime @default(now())
   lastSeenAt DateTime @default(now())
 
   @@unique([expoToken])
