@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import type { AskRequest, AskStreamEvent, ClarifyView, ProposalView } from "@/lib/ask/answer";
 import type { Citation } from "@/lib/ask/tools";
 import { cancelAskProposal, confirmAskProposal, loadAskProposal } from "@/lib/actions";
@@ -59,6 +60,11 @@ const EXAMPLES = [
 ];
 
 export function AskPanel() {
+  // The route the person is looking at, sent with every question so the
+  // assistant does not have to ask which job they mean when they are
+  // standing on it. See lib/ask/page-context.ts — it is a hint the server
+  // resolves through the session's own company, never an authority.
+  const pathname = usePathname();
   const [question, setQuestion] = useState("");
   const [asked, setAsked] = useState("");
   const [answer, setAnswer] = useState("");
@@ -227,7 +233,13 @@ export function AskPanel() {
       const response = await fetch("/api/ask", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(request),
+        // Where they are standing, sent with every question. Read here
+        // rather than passed in as a prop, so all three mount points — the
+        // Topbar launcher, the dashboard and /ask — get it with nothing to
+        // keep in sync, which is the property AskLauncher's own comment is
+        // about. A HINT only: the server resolves it through the session's
+        // company and ignores anything that is not this company's job.
+        body: JSON.stringify({ ...request, pagePath: pathname }),
         signal: controller.signal,
       });
       if (!response.ok || !response.body) {

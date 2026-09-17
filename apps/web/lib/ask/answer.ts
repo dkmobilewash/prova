@@ -25,6 +25,8 @@ import {
   type Option,
   type PreviewLine,
 } from "./commands";
+import { pageContextSentence } from "./page-context";
+import { resolvePageJob } from "./page-context-query";
 import { runTool } from "./handlers";
 import { recordProposal } from "./proposals";
 import { readingLabel } from "./toolLabels";
@@ -252,6 +254,12 @@ export type AskStreamEvent =
  * model had supplied, and the person's pick. */
 export type AskRequest = {
   question: string;
+  /** The route the person had open when they asked, e.g. `/jobs/<id>`.
+   * A HINT, never an authority — see lib/ask/page-context.ts for why that
+   * distinction is the whole security design, and
+   * lib/ask/page-context-query.ts for the company scope that enforces it.
+   * Optional: every caller that omits it gets exactly the old behaviour. */
+  pagePath?: string;
   continuation?: {
     command: string;
     partialInput: Record<string, string>;
@@ -476,9 +484,17 @@ export async function* streamAnswer(
 
   const offered = offeredTools(ctx.principal);
 
+  // Where they are standing, if it is a job of theirs. Resolved through the
+  // company scope, so a forged path is indistinguishable from no path.
+  // Joined onto the access line rather than into SYSTEM_PROMPT because both
+  // vary per request and the prompt is the cached half.
+  const pageJob = await resolvePageJob(ctx.companyId, request.pagePath);
+  const perRequestContext =
+    [accessContext(ctx.principal), pageContextSentence(pageJob)].filter(Boolean).join("\n\n") || undefined;
+
   const events = streamToolConversation<AskHalt>({
     system: SYSTEM_PROMPT,
-    context: accessContext(ctx.principal),
+    context: perRequestContext,
     question,
     tools: offered,
     // ctx is closed over here and is not a parameter of any tool schema,
