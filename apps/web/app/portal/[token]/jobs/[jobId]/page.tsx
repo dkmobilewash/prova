@@ -8,6 +8,7 @@ import { countJobMedia, loadSharedJobMediaForClient } from "@/lib/job-media-quer
 import { viewerTimeZone } from "@/lib/viewerToday";
 import { isPortalAccessRevoked, CLIENT_VISIBLE_CHANGE_ORDER_STATUS } from "@/lib/access-tokens";
 import { scopeSections } from "@/lib/change-order-scope";
+import { ScopeSectionList } from "@/components/ScopeSectionList";
 
 /** The photo cap, matching `/photos`. A GC scrolling a job's history wants
  * the same generous page the sub gets, and this section is at the bottom of
@@ -159,22 +160,12 @@ export default async function PortalJobPage({
                   CO #{co.number}: {co.title}
                 </p>
                 {co.description && <p className="text-ink-body">{co.description}</p>}
-                {/* Split by kind server-side by the same function the sub's
-                    own page uses, so there is no rendering path here that
-                    could fold an exclusion back into the scope of work —
-                    which on the GC's copy is the failure that matters. */}
-                {scopeSections(co.scopeNotes).map((section) => (
-                  <div key={section.kind} className="mt-2">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-ink-label">
-                      {section.heading}
-                    </p>
-                    <ul className="mt-1 list-disc pl-5 text-ink-body">
-                      {section.notes.map((note) => (
-                        <li key={note.id}>{note.text}</li>
-                      ))}
-                    </ul>
-                  </div>
-                ))}
+                {/* Split by kind AND rendered by a shared component, which is
+                    the half that used to be missing: the splitter was shared
+                    and the markup was hand-rolled here, so deleting the
+                    headings on the GC's copy passed every test in the repo.
+                    ScopeSectionList is mounted and asserted against. */}
+                <ScopeSectionList sections={scopeSections(co.scopeNotes)} />
               </li>
             ))}
           </ul>
