@@ -7,10 +7,18 @@
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
-    "plugins": ["expo-router", "expo-secure-store", "expo-notifications"],
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-notifications"
+    ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.cstream.prova"
+      "bundleIdentifier": "com.cstream.prova",
+      "deploymentTarget": "17.0",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "com.cstream.prova"
@@ -18,6 +26,13 @@
     "web": {
       "bundler": "metro",
       "output": "static"
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "2f42926a-3311-4a3a-a351-1b57abdb4f5e"
+      }
+    },
+    "owner": "diegocstream"
   }
 }
