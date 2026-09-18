@@ -51,7 +51,9 @@ export default async function IntegrationsPage() {
     return (
       <div className="mx-auto max-w-3xl px-6 py-8">
         <h1 className="mb-2 text-xl font-semibold text-ink">Integrations</h1>
-        <p className="text-sm text-ink-body">Only the account owner can manage integrations.</p>
+        <p className="text-sm text-ink-body" data-tour="integrations-owner-only">
+          Only the account owner can manage integrations.
+        </p>
       </div>
     );
   }
@@ -232,7 +234,7 @@ export default async function IntegrationsPage() {
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-8">
-      <div className="mb-6">
+      <div className="mb-6" data-tour="integrations-intro">
         <Link href="/settings" className="text-sm text-ink-body hover:text-ink">
           ← Settings
         </Link>
@@ -243,7 +245,9 @@ export default async function IntegrationsPage() {
         </p>
       </div>
 
-      <div className="flex flex-col gap-4">{visibleProviders.map(renderCard)}</div>
+      <div className="flex flex-col gap-4" data-tour="integrations-list">
+        {visibleProviders.map(renderCard)}
+      </div>
 
       {/* Not a provider card: photo storage is infrastructure this deployment
           holds, not something a company connects. It is here because the
@@ -251,7 +255,7 @@ export default async function IntegrationsPage() {
           has no other screen, and the alternative is reading a build log.
           The store id is not a secret: it is the first label of every photo
           URL the app already renders. The token is never shown. */}
-      <section className="mt-8" data-storage="photos">
+      <section className="mt-8" data-storage="photos" data-tour="integrations-storage">
         <Card>
           <h2 className="text-sm font-semibold text-ink">Photo storage</h2>
           <p className="mt-1 max-w-2xl text-sm text-ink-body">

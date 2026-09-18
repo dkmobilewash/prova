@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { navFooterFor, navGroupsFor } from "@/components/navItems";
+import { activeFooterHref, navFooterFor, navGroupsFor } from "@/components/navItems";
 import { useNavAccordion } from "@/components/useNavAccordion";
 import type { Principal } from "@/lib/permissions";
 
@@ -36,6 +36,7 @@ export function MobileNav({
   const footer = navFooterFor(principal);
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
+  const activeFooter = activeFooterHref(footer, pathname);
   const accordion = useNavAccordion(groups, pathname);
 
   // Navigating closes it. Without this the drawer stays over the page you
@@ -199,7 +200,7 @@ export function MobileNav({
             {footer.length > 0 ? (
               <div className="shrink-0 border-t border-line-row px-3 py-2" data-nav-footer="">
                 {footer.map((entry) => {
-                  const isActive = pathname === entry.href || pathname.startsWith(`${entry.href}/`);
+                  const isActive = activeFooter === entry.href;
                   return (
                     <Link
                       key={entry.href}

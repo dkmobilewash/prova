@@ -482,6 +482,22 @@ export const NAV_ITEMS: NavItem[] = [
       </svg>
     ),
   },
+  {
+    href: "/settings/integrations",
+    label: "Integrations",
+    // Two plugs meeting: things this company connects to.
+    icon: (
+      <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5">
+        <path
+          d="M7.5 3.5v3M12.5 3.5v3M5.5 6.5h9v2.5a4.5 4.5 0 0 1-9 0V6.5ZM10 13.5v3"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    ),
+  },
   // The next TWO are not in NAV_ITEMS's usual home in a NAV_GROUPS group
   // below -- both are for Prova's own operating company only
   // (Company.isProvaOperator), never a tenant, so they are appended
@@ -678,6 +694,9 @@ export const NAV_GROUPS: NavGroup[] = [
 ];
 
 /**
+ * Integrations joined it the same day, also on Cyrus's call: its page
+ * existed but was only reachable from a link inside Settings.
+ *
  * Pinned to the BOTTOM of the rail and of the mobile drawer, outside every
  * group, so it is always on screen and never behind a collapsed heading.
  *
@@ -687,11 +706,30 @@ export const NAV_GROUPS: NavGroup[] = [
  * nearly every app they already use, and it is not a place in the money
  * pipeline the group headings describe; it is the account itself.
  */
-export const NAV_FOOTER: NavItem[] = [item("/settings")];
+export const NAV_FOOTER: NavItem[] = [item("/settings/integrations"), item("/settings")];
 
-/** The footer items this person can reach — same rule as navGroupsFor. */
+/** Footer items shown to the account owner only, because their page says
+ * "only the account owner can manage integrations" to anyone else — a
+ * button to a page that only refuses is a door that will not open. */
+const OWNER_ONLY_FOOTER = new Set(["/settings/integrations"]);
+
+/** The footer items this person can reach — same rule as navGroupsFor,
+ * plus the owner-only pages above. */
 export function navFooterFor(user: Principal): NavItem[] {
-  return NAV_FOOTER.filter((entry) => canReach(user, entry.href));
+  return NAV_FOOTER.filter(
+    (entry) => canReach(user, entry.href) && (!OWNER_ONLY_FOOTER.has(entry.href) || user.role === "OWNER"),
+  );
+}
+
+/** Which footer item is the current page: the LONGEST matching href, so
+ * /settings/integrations lights Integrations, not Settings as well. */
+export function activeFooterHref(items: NavItem[], pathname: string): string | null {
+  let best: string | null = null;
+  for (const entry of items) {
+    const matches = pathname === entry.href || pathname.startsWith(`${entry.href}/`);
+    if (matches && (!best || entry.href.length > best.length)) best = entry.href;
+  }
+  return best;
 }
 
 /**
