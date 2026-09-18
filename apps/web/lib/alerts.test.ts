@@ -9,6 +9,12 @@ import {
   certifiedPayrollAlerts,
   closeoutAlerts,
   contactFollowUpAlerts,
+  drawingRevisionAlerts,
+  rfiAlerts,
+  submittalAlerts,
+  DRAWING_RECEIPT_CHASE_DAYS,
+  RFI_CHASE_DAYS,
+  SUBMITTAL_CHASE_DAYS,
   factDigest,
   filingPeriod,
   moneyFact,
@@ -25,6 +31,9 @@ import {
   type FilingFrequency,
 } from "./alerts";
 import { classifyRenewal, type RenewalSource } from "./compliance-expiry";
+import { can, type Principal } from "./permissions";
+import { WEEK_RUNG_DAYS, noticesDue } from "./notification-milestones";
+import { ALERT_KIND_LABELS, kindLabel } from "@/components/alertLabels";
 import { todayInZone } from "./viewer-timezone";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -1461,5 +1470,513 @@ describe("apprenticeRatioAlerts key length (issue #111)", () => {
   it("separates the days, so a regrouping is a different fact", () => {
     // Without a separator ["ab","c"] and ["a","bc"] digest identically.
     expect(factDigest(["ab", "c"])).not.toEqual(factDigest(["a", "bc"]));
+  });
+});
+
+/* ------------------------------------------------ correspondence chases */
+
+/** Real job functions rather than a hand-rolled predicate, so these tests
+ * fail if lib/permissions.ts moves MANAGE_JOBS out from under a foreman —
+ * which is the decision ALERT_CAPABILITY's entries are leaning on. */
+const asPrincipal = (jobFunction: string | null) => {
+  const principal: Principal = { role: "MEMBER", jobFunction };
+  return (capability: string) => can(principal, capability as never);
+};
+const FOREMAN = asPrincipal("FIELD");
+const BOOKKEEPER = asPrincipal("ACCOUNTING");
+const PAYROLL = asPrincipal("PAYROLL_COMPLIANCE");
+
+describe("rfiAlerts", () => {
+  const rfi = (over: Partial<Parameters<typeof rfiAlerts>[0][number]> = {}) => ({
+    id: "rfi_1",
+    number: 7,
+    subject: "Head-of-wall detail at grid C",
+    jobName: "Mercy Tower",
+    status: "SENT",
+    sentOn: "2026-08-18",
+    dueBy: "2026-08-28",
+    ...over,
+  });
+
+  it("raises exactly one alert for an RFI past the date the contract gave", () => {
+    const alerts = rfiAlerts([rfi()], TODAY);
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0].kind).toBe("RFI_UNANSWERED");
+    expect(alerts[0].severity).toBe("OVERDUE");
+    expect(alerts[0].dueOn).toBe("2026-08-28");
+    expect(alerts[0].daysUntil).toBe(-4);
+    expect(alerts[0].detail).toContain("was due 4 days ago");
+    expect(alerts[0].href).toBe("/rfis");
+  });
+
+  it("raises nothing once the answer has come back", () => {
+    // The plain version of the finding: an answered RFI is not a chase.
+    // ANSWERED and CLOSED are both "not our move any more" — CLOSED covers
+    // a withdrawn RFI that will never be answered, and nagging about it
+    // forever is how a list stops being read.
+    expect(rfiAlerts([rfi({ status: "ANSWERED" })], TODAY)).toEqual([]);
+    expect(rfiAlerts([rfi({ status: "CLOSED" })], TODAY)).toEqual([]);
+  });
+
+  it("raises nothing for a draft, which has not left our hands", () => {
+    expect(rfiAlerts([rfi({ status: "DRAFT", sentOn: null })], TODAY)).toEqual([]);
+  });
+
+  it("carries no money figure, because an RFI has none", () => {
+    // costImpact is a boolean flag on the model, not an amount. A figure
+    // here would be invented, and it is the one field visibleToPrincipal
+    // strips.
+    expect(rfiAlerts([rfi()], TODAY)[0].amount).toBeNull();
+  });
+
+  describe("the dated branch", () => {
+    it("warns inside the horizon and says nothing outside it", () => {
+      const horizon = ALERT_HORIZON_DAYS.RFI_UNANSWERED as number;
+      const inside = rfiAlerts([rfi({ dueBy: "2026-09-08" })], TODAY); // +7
+      const outside = rfiAlerts([rfi({ dueBy: "2026-09-09" })], TODAY); // +8
+
+      expect(horizon).toBe(7);
+      expect(inside).toHaveLength(1);
+      expect(inside[0].severity).toBe("DUE_SOON");
+      expect(inside[0].detail).toContain("due in 7 days");
+      expect(outside).toEqual([]);
+    });
+
+    it("reads 'today' rather than 'in 0 days' on the day itself", () => {
+      const [alert] = rfiAlerts([rfi({ dueBy: TODAY })], TODAY);
+      expect(alert.severity).toBe("DUE_SOON");
+      expect(alert.detail).toContain("due today");
+    });
+  });
+
+  describe("the standing branch, for an RFI nobody gave a date", () => {
+    it("waits out the chase threshold, then says so without claiming a deadline", () => {
+      const early = rfiAlerts([rfi({ dueBy: null, sentOn: "2026-08-19" })], TODAY); // 13
+      const late = rfiAlerts([rfi({ dueBy: null, sentOn: "2026-08-18" })], TODAY); // 14
+
+      expect(RFI_CHASE_DAYS).toBe(14);
+      expect(early).toEqual([]);
+      expect(late).toHaveLength(1);
+      // STANDING, not OVERDUE: nobody recorded a date, so there is no
+      // deadline to be past and asserting one would be this app inventing
+      // a contract term.
+      expect(late[0].severity).toBe("STANDING");
+      expect(late[0].detail).toContain("sent 14 days ago");
+      expect(late[0].detail).toContain("no response date recorded");
+      expect(late[0].dueOn).toBe("2026-08-18");
+    });
+
+    it("says nothing at all about an RFI with neither date", () => {
+      expect(rfiAlerts([rfi({ dueBy: null, sentOn: null })], TODAY)).toEqual([]);
+    });
+  });
+
+  describe("the key", () => {
+    it("does not survive the answer arriving", () => {
+      // The mechanism, stated as the brief states it. There is no expiry
+      // logic anywhere: answering the RFI removes the alert, so the key a
+      // dismissal was recorded against is simply no longer produced.
+      const before = rfiAlerts([rfi()], TODAY);
+      const after = rfiAlerts([rfi({ status: "ANSWERED" })], TODAY);
+      expect(before[0].key).toBe("RFI_UNANSWERED:rfi_1:2026-08-28");
+      expect(after.map((a) => a.key)).not.toContain(before[0].key);
+    });
+
+    it("changes when the response date is rescheduled", () => {
+      const [before] = rfiAlerts([rfi()], TODAY);
+      const [after] = rfiAlerts([rfi({ dueBy: "2026-08-27" })], TODAY);
+      expect(after.key).not.toBe(before.key);
+    });
+
+    it("changes when a date is recorded on one that had none", () => {
+      // The two branches must not collide on one key, or recording the
+      // date the GC actually gave would leave the dismissal in place.
+      const [standing] = rfiAlerts([rfi({ dueBy: null })], TODAY);
+      const [dated] = rfiAlerts([rfi()], TODAY);
+      expect(standing.key).not.toBe(dated.key);
+    });
+
+    it("carries the sent date on the standing branch too", () => {
+      // Added after a mutation survived: replacing the standing fact with
+      // a constant left every assertion above green, because the branches
+      // still differed from each other. The fact has to be the DATE — a
+      // constant would make one "Seen it" silence that RFI for as long as
+      // it stays unanswered, however the log is later corrected.
+      const [a] = rfiAlerts([rfi({ dueBy: null, sentOn: "2026-08-18" })], TODAY);
+      const [b] = rfiAlerts([rfi({ dueBy: null, sentOn: "2026-08-14" })], TODAY);
+      expect(a.key).toBe("RFI_UNANSWERED:rfi_1:2026-08-18");
+      expect(b.key).not.toBe(a.key);
+    });
+  });
+
+  describe("who it reaches", () => {
+    const alerts = rfiAlerts([rfi()], TODAY);
+
+    it("reaches a foreman, which is the point of gating it on MANAGE_JOBS", () => {
+      // FIELD holds MANAGE_JOBS precisely so a foreman gets an RFI when the
+      // drawings are wrong. Nothing on it names money or a GC's books.
+      expect(ALERT_CAPABILITY.RFI_UNANSWERED).toBe("MANAGE_JOBS");
+      expect(visibleToPrincipal(alerts, FOREMAN)).toHaveLength(1);
+    });
+
+    it("reaches nobody who cannot open /rfis", () => {
+      expect(visibleToPrincipal(alerts, BOOKKEEPER)).toEqual([]);
+      expect(visibleToPrincipal(alerts, PAYROLL)).toEqual([]);
+    });
+  });
+});
+
+describe("submittalAlerts", () => {
+  const rev = (over: Record<string, unknown> = {}) => ({
+    revisionNumber: 1,
+    sentOn: "2026-08-10",
+    dueBack: "2026-08-25",
+    returnedOn: null,
+    outcome: null,
+    responseNotes: null,
+    ...over,
+  });
+  const submittal = (revisions = [rev()]) => ({
+    submittalId: "sub_1",
+    number: 4,
+    title: "Shaft wall assembly",
+    jobName: "Mercy Tower",
+    revisions,
+  });
+
+  it("raises exactly one alert for a package the GC is sitting on past its date", () => {
+    const alerts = submittalAlerts([submittal()], TODAY);
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0].kind).toBe("SUBMITTAL_OVERDUE");
+    expect(alerts[0].severity).toBe("OVERDUE");
+    expect(alerts[0].daysUntil).toBe(-7);
+    expect(alerts[0].detail).toContain("Rev 1");
+    expect(alerts[0].href).toBe("/submittals");
+    expect(alerts[0].amount).toBeNull();
+  });
+
+  it("stops the moment the package comes back, whatever the stamp said", () => {
+    // Whose court it is in is submittalState's answer, not a second one
+    // written here. APPROVED is finished; REVISE is ours and /submittals
+    // already lists it — chasing the GC about it would be chasing
+    // ourselves.
+    for (const outcome of ["APPROVED", "APPROVED_AS_NOTED", "REVISE_AND_RESUBMIT", "REJECTED"]) {
+      const returned = submittal([rev({ returnedOn: "2026-08-24", outcome })]);
+      expect(submittalAlerts([returned], TODAY)).toEqual([]);
+    }
+  });
+
+  it("raises nothing for a submittal that was never sent", () => {
+    expect(submittalAlerts([submittal([])], TODAY)).toEqual([]);
+  });
+
+  it("reads the LATEST revision, not the first", () => {
+    // Rev 1 bounced and Rev 2 is out with a date still ahead of the
+    // horizon. Reading rev 1 would report a months-old overdue date about
+    // a round trip that is already finished.
+    const resubmitted = submittal([
+      rev({ revisionNumber: 1, returnedOn: "2026-08-20", outcome: "REVISE_AND_RESUBMIT" }),
+      rev({ revisionNumber: 2, sentOn: "2026-08-21", dueBack: "2026-09-30" }),
+    ]);
+    expect(submittalAlerts([resubmitted], TODAY)).toEqual([]);
+  });
+
+  describe("the standing branch, when no return date was asked for", () => {
+    it("waits out the chase threshold and does not call it overdue", () => {
+      const early = submittal([rev({ dueBack: null, sentOn: "2026-08-19" })]); // 13
+      const late = submittal([rev({ dueBack: null, sentOn: "2026-08-18" })]); // 14
+
+      expect(SUBMITTAL_CHASE_DAYS).toBe(14);
+      expect(submittalAlerts([early], TODAY)).toEqual([]);
+      const [alert] = submittalAlerts([late], TODAY);
+      expect(alert.severity).toBe("STANDING");
+      expect(alert.detail).toContain("no return date asked for");
+    });
+  });
+
+  describe("the key", () => {
+    it("carries the revision, so a resubmission is never pre-dismissed", () => {
+      // A reviewer working to a standing fortnight hands back the same
+      // dueBack on the next round. On the date alone that is the same key,
+      // and one "Seen it" in August would silence September's round too.
+      const first = submittalAlerts([submittal([rev({ revisionNumber: 1 })])], TODAY);
+      const second = submittalAlerts(
+        [
+          submittal([
+            rev({ revisionNumber: 1, returnedOn: "2026-08-20", outcome: "REVISE_AND_RESUBMIT" }),
+            rev({ revisionNumber: 2 }),
+          ]),
+        ],
+        TODAY,
+      );
+      expect(first[0].key).toContain("r1:");
+      expect(second[0].key).toContain("r2:");
+      expect(second[0].key).not.toBe(first[0].key);
+    });
+  });
+
+  it("reaches a foreman and nobody outside MANAGE_JOBS", () => {
+    const alerts = submittalAlerts([submittal()], TODAY);
+    expect(ALERT_CAPABILITY.SUBMITTAL_OVERDUE).toBe("MANAGE_JOBS");
+    expect(visibleToPrincipal(alerts, FOREMAN)).toHaveLength(1);
+    expect(visibleToPrincipal(alerts, BOOKKEEPER)).toEqual([]);
+  });
+});
+
+describe("drawingRevisionAlerts", () => {
+  const rev = (over: Record<string, unknown> = {}) => ({
+    id: "drev_1",
+    label: "Rev 3",
+    issuedOn: "2026-08-20",
+    receivedOn: null,
+    description: null,
+    fileUrl: null,
+    fileName: null,
+    ...over,
+  });
+  const set = (revisions = [rev()]) => ({
+    setId: "dset_1",
+    setName: "Architectural",
+    jobName: "Mercy Tower",
+    revisions,
+  });
+
+  it("raises one standing alert for a set with paper we do not hold", () => {
+    const alerts = drawingRevisionAlerts([set()], TODAY);
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0].kind).toBe("DRAWING_REVISION_UNRECEIVED");
+    // STANDING, not OVERDUE: issuedOn is the architect's title-block date,
+    // not a deadline anyone can meet by acting sooner.
+    expect(alerts[0].severity).toBe("STANDING");
+    expect(alerts[0].dueOn).toBe("2026-08-20");
+    expect(alerts[0].daysUntil).toBe(-12);
+    expect(alerts[0].detail).toContain("Rev 3 was issued 12 days ago");
+    expect(alerts[0].href).toBe("/drawings");
+  });
+
+  it("says nothing once every issue is in hand", () => {
+    expect(drawingRevisionAlerts([set([rev({ receivedOn: "2026-08-22" })])], TODAY)).toEqual([]);
+    expect(drawingRevisionAlerts([set([])], TODAY)).toEqual([]);
+  });
+
+  it("gives a transmittal time to arrive before complaining", () => {
+    const early = drawingRevisionAlerts([set([rev({ issuedOn: "2026-08-27" })])], TODAY); // 5
+    const late = drawingRevisionAlerts([set([rev({ issuedOn: "2026-08-25" })])], TODAY); // 7
+    expect(DRAWING_RECEIPT_CHASE_DAYS).toBe(7);
+    expect(early).toEqual([]);
+    expect(late).toHaveLength(1);
+  });
+
+  it("ignores a revision dated in the future, which is not a gap yet", () => {
+    // And it has to: notification-milestones only ever sends a dated
+    // STANDING alert's one notice once its date is behind it, so an alert
+    // anchored ahead of today would sit in the list and never send.
+    const ahead = drawingRevisionAlerts([set([rev({ issuedOn: "2026-10-01" })])], TODAY);
+    expect(ahead).toEqual([]);
+  });
+
+  it("does not count a future-dated issue against a set that is already behind", () => {
+    // Added after a mutation survived. The case above passes with the
+    // future filter REMOVED, because a revision dated ahead of today is
+    // under the chase threshold anyway and the alert is dropped for the
+    // wrong reason. This one cannot: the set is already raising, so the
+    // only question is whether the future sheet is counted as a gap.
+    const alerts = drawingRevisionAlerts(
+      [
+        set([
+          rev({ id: "a", label: "Rev 2", issuedOn: "2026-08-20" }),
+          rev({ id: "b", label: "Rev 4", issuedOn: "2026-10-01" }),
+        ]),
+      ],
+      TODAY,
+    );
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0].title).toContain("an issued revision");
+    expect(alerts[0].title).not.toContain("2 issued revisions");
+    expect(alerts[0].detail).toContain("Rev 2");
+    expect(alerts[0].detail).not.toContain("Rev 4");
+  });
+
+  it("is one alert per set, dated from the longest-standing gap", () => {
+    // Three alerts about one set is the furniture lib/alerts.ts's header
+    // warns about. And the wait must not restart the day a newer bulletin
+    // is issued, or a month-old gap resets every time.
+    const behind = set([
+      rev({ id: "a", label: "Rev 2", issuedOn: "2026-07-15" }),
+      rev({ id: "b", label: "Rev 3", issuedOn: "2026-08-30" }),
+    ]);
+    const alerts = drawingRevisionAlerts([behind], TODAY);
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0].title).toContain("2 issued revisions");
+    expect(alerts[0].dueOn).toBe("2026-07-15");
+    expect(alerts[0].detail).toContain("Rev 3 is the one that governs");
+  });
+
+  describe("the key", () => {
+    const behind = set([
+      rev({ id: "a", label: "Rev 2", issuedOn: "2026-07-15" }),
+      rev({ id: "b", label: "Rev 3", issuedOn: "2026-08-20" }),
+    ]);
+
+    it("lapses a dismissal the moment one of them arrives", () => {
+      const [before] = drawingRevisionAlerts([behind], TODAY);
+      const [after] = drawingRevisionAlerts(
+        [
+          set([
+            rev({ id: "a", label: "Rev 2", issuedOn: "2026-07-15", receivedOn: "2026-09-01" }),
+            rev({ id: "b", label: "Rev 3", issuedOn: "2026-08-20" }),
+          ]),
+        ],
+        TODAY,
+      );
+      expect(after.key).not.toBe(before.key);
+    });
+
+    it("lapses a dismissal the moment another one is issued", () => {
+      const [before] = drawingRevisionAlerts([behind], TODAY);
+      const [after] = drawingRevisionAlerts(
+        [set([...behind.revisions, rev({ id: "c", label: "Rev 4", issuedOn: "2026-08-22" })])],
+        TODAY,
+      );
+      expect(after.key).not.toBe(before.key);
+    });
+
+    it("stays inside assertKeyShape's cap on a set with a real history", () => {
+      // Same bound as issue #111: a set can carry a dozen bulletins and a
+      // joined label list has no ceiling. Restated here rather than
+      // imported, because assertKeyShape is not exported.
+      const many = {
+        setId: "clx9k2m4p0001qw8h3n7v5t2r",
+        setName: "Architectural",
+        jobName: "Mercy Tower",
+        revisions: Array.from({ length: 30 }, (_, i) =>
+          rev({ id: `d${i}`, label: `ASI-${i + 1}`, issuedOn: "2026-07-15" }),
+        ),
+      };
+      const [alert] = drawingRevisionAlerts([many], TODAY);
+      const parts = alert.key.split(":");
+      expect(alert.key.length).toBeLessThanOrEqual(200);
+      expect(parts).toHaveLength(3);
+      expect(parts.every((p) => p.length > 0)).toBe(true);
+    });
+  });
+
+  it("reaches a foreman and nobody outside MANAGE_JOBS", () => {
+    const alerts = drawingRevisionAlerts([set()], TODAY);
+    expect(ALERT_CAPABILITY.DRAWING_REVISION_UNRECEIVED).toBe("MANAGE_JOBS");
+    expect(visibleToPrincipal(alerts, FOREMAN)).toHaveLength(1);
+    expect(visibleToPrincipal(alerts, BOOKKEEPER)).toEqual([]);
+    expect(visibleToPrincipal(alerts, PAYROLL)).toEqual([]);
+  });
+});
+
+describe("the correspondence kinds reach the digest the engine already feeds", () => {
+  // Not "does the mailer work" — this file has no mailer. It is the one
+  // property that made this feature three functions instead of a feature:
+  // noticesDue consumes whatever the alert list returns, so a new kind
+  // needs nothing added there. A dated kind climbs the rungs; a standing
+  // one fires its single rung. Both are checked, because getting the
+  // DATED/STANDING call wrong is invisible until the email does not send.
+  const overdueRfi = rfiAlerts(
+    [
+      {
+        id: "rfi_1",
+        number: 7,
+        subject: "Head-of-wall detail",
+        jobName: "Mercy Tower",
+        status: "SENT",
+        sentOn: "2026-08-18",
+        dueBy: "2026-08-28",
+      },
+    ],
+    TODAY,
+  );
+  const behindSet = drawingRevisionAlerts(
+    [
+      {
+        setId: "dset_1",
+        setName: "Architectural",
+        jobName: "Mercy Tower",
+        revisions: [
+          {
+            id: "drev_1",
+            label: "Rev 3",
+            issuedOn: "2026-08-20",
+            receivedOn: null,
+            description: null,
+            fileUrl: null,
+            fileName: null,
+          },
+        ],
+      },
+    ],
+    TODAY,
+  );
+
+  it("walks an overdue RFI to the tightest dated rung", () => {
+    const [notice] = noticesDue(overdueRfi, new Set());
+    expect(notice.rung).toBe("due");
+    expect(notice.alsoSpent.sort()).toEqual(["approaching", "week"]);
+  });
+
+  it("fires a behind drawing set's single standing rung", () => {
+    const [notice] = noticesDue(behindSet, new Set());
+    expect(notice.rung).toBe("standing");
+    expect(notice.alsoSpent).toEqual([]);
+  });
+});
+
+describe("every kind is spelled in every list a new kind has to join", () => {
+  // lib/intake/suggestions.test.ts already checks that the two maps have
+  // the SAME KEYS. It does not check the values, and a mutation proved
+  // that gap: setting one label to undefined left both key sets identical
+  // and every test green, while kindLabel fell through to its `?? kind`
+  // and rendered RFI_UNANSWERED at the user.
+  const kinds = Object.keys(ALERT_CAPABILITY) as (keyof typeof ALERT_KIND_LABELS)[];
+
+  it("has a kind list worth iterating", () => {
+    // The size assertion. A loop over an empty or shrunken table passes
+    // every property below without comparing anything.
+    expect(kinds.length).toBeGreaterThanOrEqual(13);
+    expect(Object.keys(ALERT_KIND_LABELS).length).toBe(kinds.length);
+  });
+
+  it("gives every kind words a person would use, not its enum name", () => {
+    for (const kind of kinds) {
+      const label = ALERT_KIND_LABELS[kind];
+      expect(typeof label, `${kind} label`).toBe("string");
+      expect(label, `${kind} label`).not.toBe("");
+      expect(kindLabel(kind), `${kind} label`).not.toBe(kind);
+    }
+  });
+});
+
+describe("every horizon this table holds clears notification-milestones' floor", () => {
+  // The floor is not decoration. `week` fires at days<=7 and `approaching`
+  // fires off severity (days<=horizon), so a horizon below 7 makes `week`
+  // cross first and the earlier warning silently never sends — nothing
+  // fails, nobody finds out. Named here rather than restated, so it tracks
+  // WEEK_RUNG_DAYS if that ever moves.
+  const entries = Object.entries(ALERT_HORIZON_DAYS);
+
+  it("actually has the kinds this change added in it", () => {
+    // The size assertion. A loop over an empty or shrunken table passes
+    // every property below without executing one comparison.
+    expect(entries.length).toBeGreaterThanOrEqual(6);
+    expect(Object.keys(ALERT_HORIZON_DAYS)).toEqual(
+      expect.arrayContaining(["RFI_UNANSWERED", "SUBMITTAL_OVERDUE"]),
+    );
+  });
+
+  it("holds no horizon under the week rung", () => {
+    for (const [kind, days] of entries) {
+      expect(days, `${kind} horizon`).toBeGreaterThanOrEqual(WEEK_RUNG_DAYS);
+    }
+  });
+
+  it("gives the standing kind no horizon at all, because it has no deadline", () => {
+    // Absence is a decision here. A horizon in front of a date nobody can
+    // meet would be a deadline this app invented.
+    expect(ALERT_HORIZON_DAYS.DRAWING_REVISION_UNRECEIVED).toBeUndefined();
   });
 });

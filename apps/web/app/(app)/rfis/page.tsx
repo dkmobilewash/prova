@@ -10,6 +10,7 @@ import { daysBetween, isOpen, isOverdue } from "@/components/rfiLabels";
 import { StatusLine } from "@/components/StatusLine";
 import { rfisStatus } from "@/lib/status-sentences";
 import { jobPickerLabel, toJobOption } from "@/components/jobLabels";
+import { viewerToday } from "@/lib/viewerToday";
 
 /** Stored at UTC midnight, rendered in UTC — same rule as the safety log
  * and daily field reports. Local rendering shows the previous day to
@@ -34,7 +35,16 @@ export default async function RfisPage({
   const askDraft = await loadRfiDraft(context, draft);
   const rfiDraft = askDraft.kind === "draft" ? askDraft.draft : undefined;
 
-  const today = new Date().toISOString().slice(0, 10);
+  // The READER'S calendar day, not the server's UTC one. `dueBy` is a plain
+  // calendar day — the UTC midnight is only how a date with no time reaches
+  // Postgres — so the day it is measured against is the day on the wall
+  // behind whoever is looking. Measured in UTC, an RFI due today flipped to
+  // OVERDUE at 5pm Pacific and the status line named it and counted the days
+  // it was late, on a page whose whole subject is dates being defensible.
+  // Resolved from the timezone cookie on the server (lib/viewerToday.ts), so
+  // this is request data and not a browser call during render — the
+  // hydration trap on components/localToday.ts does not apply here.
+  const today = await viewerToday();
 
   // status + contact, not just the name: issue #65 — fifteen jobs, seven of
   // them called "Smith kitchen remodel", and this picker showed seven
@@ -125,10 +135,12 @@ export default async function RfisPage({
 
       <section className="mb-8">
         {askDraft.kind === "gone" && <AskDraftNotice what="RFI" />}
+        {/* No `today` handed down. The form's sent-date default is
+            localToday() — the browser's day, set after a click opens the
+            form — and the prop this page used to pass was never read. */}
         <RfiForm
           jobs={jobs}
           defaultJobId={rfiDraft?.jobId ?? activeJob ?? undefined}
-          today={today}
           draft={rfiDraft}
         />
       </section>

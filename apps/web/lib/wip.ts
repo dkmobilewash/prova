@@ -14,6 +14,43 @@
 // override when set; otherwise it's derived mechanically as
 // (currentEstimatedUnitCost × quantity) − actual-to-date, floored at 0.
 
+/**
+ * Burdened labor as job cost, split so a screen can name the parts.
+ *
+ * Produced by lib/labor-job-cost.ts (which owns the arithmetic and the
+ * fringe-schedule lookup); declared HERE so this file stays pure arithmetic
+ * with no imports, and so the two cannot drift into two shapes.
+ *
+ * `wageCost` is base-plus-fringe for the hours a fringe schedule could
+ * price. `allowanceCost` is per diem and travel pay, which are stored
+ * dollars and need no schedule. `total` is whichever of those job cost
+ * currently counts -- see LABOR_ALLOWANCES_IN_JOB_COST.
+ *
+ * `unpricedHours` is the point of the split. Hours whose craft has no
+ * effective fringe schedule get NO wage dollars, by design (labor-cost.ts
+ * refuses to guess a rate). Carried up to the job result so the screen can
+ * say "these hours are in here at zero" instead of quietly reading as a
+ * fully-costed job.
+ */
+export interface WipLaborCost {
+  wageCost: number;
+  allowanceCost: number;
+  total: number;
+  pricedHours: number;
+  unpricedHours: number;
+}
+
+/** No hours logged. A named constant because "no labor" is a real answer
+ * that several call sites need, and five zeroes written out five times is
+ * how two of them end up disagreeing. */
+export const NO_LABOR_COST: WipLaborCost = {
+  wageCost: 0,
+  allowanceCost: 0,
+  total: 0,
+  pricedHours: 0,
+  unpricedHours: 0,
+};
+
 export interface WipLineItemInput {
   quantity: number;
   /** Sale price per unit. Null for a cost-only budget line (general
@@ -28,8 +65,22 @@ export interface WipLineItemInput {
   currentEstimatedUnitCost: number | null;
   /** PM override for cost-to-complete. When null, derived mechanically. */
   estimatedCostToComplete: number | null;
-  /** SUM(CostEntry.amount) for this line item. */
+  /** Everything spent against this line item: SUM(CostEntry.amount) PLUS the
+   * burdened labor on the TimeEntry rows that name it.
+   *
+   * It was cost entries alone until issue #287, and a CostEntry only ever
+   * comes from the manual "log a cost" form -- so on a self-performed job
+   * this was the materials and nothing else, and every percentage below was
+   * drawn from roughly a third of the money.
+   *
+   * Composed by `lineItemCostToDate` in lib/labor-job-cost.ts, which is the
+   * only thing that should be building this field. */
   actualCostToDate: number;
+  /** The labor half of the figure above, kept alongside it rather than
+   * folded away: it is what lets the job result report unpriced hours. Omit
+   * for a line with no logged hours (or in a test that only cares about
+   * cost entries) -- it defaults to NO_LABOR_COST. */
+  labor?: WipLaborCost;
 }
 
 export interface WipLineItemResult {
@@ -37,6 +88,8 @@ export interface WipLineItemResult {
   budgetedCost: number | null;
   currentEstimatedCost: number | null;
   actualCostToDate: number;
+  /** The labor inside actualCostToDate, unchanged from the input. */
+  labor: WipLaborCost;
   /** Actual-to-date + cost-to-complete, i.e. the current total cost
    * forecast for this line. Null when there's no cost forecast at all —
    * estimatedCostToComplete and currentEstimatedUnitCost both unset.
@@ -81,6 +134,7 @@ export function calculateLineItemWip(input: WipLineItemInput): WipLineItemResult
     budgetedCost,
     currentEstimatedCost,
     actualCostToDate: input.actualCostToDate,
+    labor: input.labor ?? NO_LABOR_COST,
     estimatedCostAtCompletion,
     costToComplete,
     percentComplete,
@@ -94,8 +148,46 @@ export interface WipJobResult {
    * job's real spend — deliberately NOT narrowed to the lines that feed
    * percentComplete below, because this is the figure the "Actual cost to
    * date" tile shows and the one calculateCompanyFinancials subtracts from
-   * earned revenue. Shrinking it would overstate company gross margin. */
+   * earned revenue. Shrinking it would overstate company gross margin.
+   *
+   * Since issue #287 this includes burdened labor from TimeEntry rows, both
+   * the ones that name a line item and the ones that do not. */
   actualCostToDate: number;
+  /** The labor actually inside actualCostToDate. Equal to laborWageCost +
+   * laborAllowanceCost while LABOR_ALLOWANCES_IN_JOB_COST is on, and to
+   * laborWageCost alone when it is off -- which is why it is its own field
+   * rather than a sum a reader is expected to do. */
+  laborCostToDate: number;
+  /** Burdened wages inside actualCostToDate -- base plus fringes, over every
+   * hour a fringe schedule could price. */
+  laborWageCost: number;
+  /** Per diem and travel pay inside actualCostToDate. Named apart from wages
+   * because whether they belong in job cost at all is a live decision -- see
+   * LABOR_ALLOWANCES_IN_JOB_COST in lib/labor-job-cost.ts. With that flip
+   * off this is still counted and still reported, it is just not added in. */
+  laborAllowanceCost: number;
+  /** Burdened labor on time entries that name NO line item, already inside
+   * actualCostToDate. It is in no LINE's cost, so it is not in
+   * costOnForecastLines either and correctly pulls costCoverage down: the
+   * percentage genuinely was not computed over this money. Logging hours
+   * against "No specific line" is the form's default, so this is routinely
+   * not zero. */
+  unassignedLaborCost: number;
+  /** Logged hours that carry a burdened cost. */
+  pricedLaborHours: number;
+  /** Hours with no craft tag, or whose craft has no fringe schedule
+   * effective on the day worked. They sit in actualCostToDate at ZERO wage
+   * dollars, because lib/labor-cost.ts refuses to guess a rate -- and
+   * "refused to guess" reads exactly like "cost nothing" unless a screen
+   * says otherwise. This is the field that lets it say so. */
+  unpricedLaborHours: number;
+  /** Share of logged hours that carry a burdened cost, 0..1 -- the labor
+   * companion to costCoverage, and an HOURS ratio rather than a dollar one
+   * on purpose: the dollars on the unpriced side are exactly what nobody can
+   * compute, so a dollar share would have to invent the figure it is
+   * warning about. 1 when no hours are logged: no hours means no uncosted
+   * hours, the same convention costCoverage uses for no spend. */
+  laborHourCoverage: number;
   estimatedCostAtCompletion: number;
   /** Job-level % complete, weighted by cost (not a simple average of the
    * per-line percentages) — SUM(actual) / SUM(estimated cost at completion)
@@ -162,9 +254,33 @@ export function formatCoveragePercent(coverage: number): string {
   return `${Math.round(coverage * 100)}%`;
 }
 
-export function calculateJobWip(lineItems: WipLineItemResult[], billedToDate: number): WipJobResult {
+/** Logged hours for display: "7.5", "16", never "7.500000000000001".
+ *
+ * `TimeEntry.hours` is `Decimal(5,2)` and these totals are floating-point
+ * sums of many of them, so the drift is real and it lands on a caveat whose
+ * whole job is to be believed. Trailing zeroes are dropped because hours are
+ * read as a quantity, not as money — "16" rather than "16.00". */
+export function formatLoggedHours(hours: number): string {
+  return String(Math.round(hours * 100) / 100);
+}
+
+/**
+ * @param unassignedLabor Burdened labor on the job's TimeEntry rows that name
+ * no line item. A third parameter rather than a fourth pseudo-line-item: a
+ * synthetic line would land in `contractValue`, in `estimatedCostAtCompletion`
+ * and in the forecast-line filter below, and inventing a $0-value line to
+ * carry real cost is exactly the shape that reported a job as 550% complete
+ * (issue #100). It defaults to NO_LABOR_COST so a caller that has not fetched
+ * time entries gets the old behaviour rather than a silently wrong one.
+ */
+export function calculateJobWip(
+  lineItems: WipLineItemResult[],
+  billedToDate: number,
+  unassignedLabor: WipLaborCost = NO_LABOR_COST,
+): WipJobResult {
   const contractValue = lineItems.reduce((sum, item) => sum + item.contractValue, 0);
-  const actualCostToDate = lineItems.reduce((sum, item) => sum + item.actualCostToDate, 0);
+  const actualCostToDate =
+    lineItems.reduce((sum, item) => sum + item.actualCostToDate, 0) + unassignedLabor.total;
   const earnedRevenue = lineItems.reduce((sum, item) => sum + (item.earnedRevenue ?? 0), 0);
   const estimatedCostAtCompletion = lineItems.reduce(
     (sum, item) => sum + (item.estimatedCostAtCompletion ?? 0),
@@ -193,9 +309,34 @@ export function calculateJobWip(lineItems: WipLineItemResult[], billedToDate: nu
     .filter((item) => item.estimatedCostAtCompletion !== null)
     .reduce((sum, item) => sum + item.contractValue, 0);
 
+  // Labor rolled up over the LINES plus the unattached entries, i.e. over
+  // exactly the same population actualCostToDate is summed from — if these
+  // two ever disagree about which entries they saw, the caveat on screen
+  // would be describing a different job from the figure beside it.
+  const laborCostToDate =
+    lineItems.reduce((sum, item) => sum + item.labor.total, 0) + unassignedLabor.total;
+  const laborWageCost =
+    lineItems.reduce((sum, item) => sum + item.labor.wageCost, 0) + unassignedLabor.wageCost;
+  const laborAllowanceCost =
+    lineItems.reduce((sum, item) => sum + item.labor.allowanceCost, 0) +
+    unassignedLabor.allowanceCost;
+  const pricedLaborHours =
+    lineItems.reduce((sum, item) => sum + item.labor.pricedHours, 0) + unassignedLabor.pricedHours;
+  const unpricedLaborHours =
+    lineItems.reduce((sum, item) => sum + item.labor.unpricedHours, 0) +
+    unassignedLabor.unpricedHours;
+  const loggedHours = pricedLaborHours + unpricedLaborHours;
+
   return {
     contractValue,
     actualCostToDate,
+    laborCostToDate,
+    laborWageCost,
+    laborAllowanceCost,
+    unassignedLaborCost: unassignedLabor.total,
+    pricedLaborHours,
+    unpricedLaborHours,
+    laborHourCoverage: loggedHours > 0 ? pricedLaborHours / loggedHours : 1,
     estimatedCostAtCompletion,
     percentComplete,
     costCoverage: actualCostToDate > 0 ? costOnForecastLines / actualCostToDate : 1,

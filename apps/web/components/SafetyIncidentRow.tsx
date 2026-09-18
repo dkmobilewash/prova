@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { deleteSafetyIncident, updateSafetyIncident } from "@/lib/actions";
+import type { ActionResult } from "@/lib/actions/shared";
 import {
   SafetyIncidentFields,
   type IncidentDefaults,
@@ -43,14 +44,20 @@ export function SafetyIncidentRow({
   // Keyed by the incident id so two rows' edit forms can never share a draft.
   const draft = useFormDraft(`safety-incident:edit:${incident.id}`);
 
-  function run(fn: () => Promise<void>, fallback: string) {
+  /** Runs an action that RETURNS its refusal, and renders it.
+   *
+   * Was a try/catch over `err.message`, which in production is React's "the
+   * specific message is omitted in production builds" paragraph rather than
+   * anything this app wrote — so on a safety case the reason a save was
+   * refused never reached the person saving it. `deleteSafetyIncident`
+   * already returned and had to be re-thrown here to fit; both actions
+   * return now and nothing is re-thrown. Same shape as `EquipmentRow`. */
+  function run(fn: () => Promise<ActionResult>, onOk?: () => void) {
     setError(null);
     startTransition(async () => {
-      try {
-        await fn();
-      } catch (err) {
-        setError(err instanceof Error ? err.message : fallback);
-      }
+      const result = await fn();
+      if (result.ok) onOk?.();
+      else setError(result.error);
     });
   }
 
@@ -63,11 +70,15 @@ export function SafetyIncidentRow({
           onSubmit={(event) => {
             event.preventDefault();
             const formData = new FormData(event.currentTarget);
-            run(async () => {
-              await updateSafetyIncident(incident.id, formData);
-              draft.clear();
-              setIsEditing(false);
-            }, "Could not save changes");
+            // Draft cleared and the form closed on the OK branch only, so a
+            // refused save leaves every field exactly as typed.
+            run(
+              () => updateSafetyIncident(incident.id, formData),
+              () => {
+                draft.clear();
+                setIsEditing(false);
+              },
+            );
           }}
           className="flex flex-col gap-3"
         >
@@ -167,15 +178,10 @@ export function SafetyIncidentRow({
               confirmLabel="Confirm remove"
               pendingLabel="Removing…"
               pending={isPending}
-              onConfirm={() =>
-                run(async () => {
-                  // Returns rather than throws: production redacts a
-                  // thrown message, and the reason a recordable case
-                  // cannot be deleted is the whole point of saying it.
-                  const result = await deleteSafetyIncident(incident.id);
-                  if (!result.ok) throw new Error(result.error);
-                }, "Could not remove the case")
-              }
+              // Returns rather than throws: production redacts a thrown
+              // message, and the reason a recordable case cannot be deleted
+              // is the whole point of saying it.
+              onConfirm={() => run(() => deleteSafetyIncident(incident.id))}
               deleteClassName={rowBtnDanger}
               cancelClassName={rowBtn}
               confirmClassName={rowBtnConfirm}

@@ -121,6 +121,11 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
         );
         return {
           amount: Number(invoice.amount),
+          // Retainage is held back by contract, not paid late. Without
+          // this, no invoice with retainage on it could ever settle and
+          // both timing figures below came back "—" for every GC who holds
+          // any — issue #288, and lib/gc-reliability.ts has the shape of it.
+          retainageWithheld: invoice.retainageWithheld != null ? Number(invoice.retainageWithheld) : null,
           issuedAt: invoice.issuedAt,
           dueAt: invoice.dueAt,
           paidAmount,
@@ -212,6 +217,19 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
               </p>
             </div>
           </div>
+        )}
+        {/* What these timings do and do not cover. "Outstanding" above is
+            gross and includes retainage; the two timing figures are about
+            what was CERTIFIED DUE, which is gross less retainage, because
+            money held back by contract is not money paid late. Saying so
+            is cheaper than letting a reader assume an on-time rate covers
+            every dollar billed. */}
+        {reliability.invoiceCount > 0 && reliability.retainageExcluded > 0 && (
+          <p className="mt-4 text-sm text-ink-muted">
+            Timing figures cover what was due after {money(reliability.retainageExcluded)} of
+            retainage withheld. Retainage is released at closeout, so holding it is not a late
+            payment — it is still counted in Outstanding.
+          </p>
         )}
       </section>
       )}

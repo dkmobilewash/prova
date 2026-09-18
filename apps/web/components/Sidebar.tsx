@@ -280,7 +280,7 @@ export function Sidebar({
       >
         <div className="flex h-14 shrink-0 items-center gap-3 px-4">
           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-brand text-sm font-semibold text-neutral-900">
-            P
+            C
           </span>
           <span className="truncate whitespace-nowrap text-[15px] font-semibold text-white">
             {companyName}
