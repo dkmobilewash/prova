@@ -294,3 +294,24 @@ describe("/deployment with no jobs", () => {
     expect(html).toContain('href="/equipment"');
   });
 });
+
+describe("/compliance with no mod rate recorded", () => {
+  const load = async () => {
+    const { default: Page } = await import("@/app/(app)/compliance/page");
+    return renderToStaticMarkup(await Page());
+  };
+
+  it("says the EMR is not on file and that the app never computes one, with the way to record it", async () => {
+    const html = await load();
+    // Anti-vacuity: the real page rendered, section heading and all.
+    expect(html).toContain("Experience modification rate");
+    expect(html).toContain("No mod rate on file");
+    // The sentence the whole feature turns on. An empty state that invited
+    // a guess — or showed a number — would undo the reason it is recorded.
+    expect(html).toContain("This app never computes or estimates an EMR");
+    // The way out: the collapsed add form's button.
+    expect(html).toContain("Record a mod rate");
+    // No rate means no "current" claim anywhere on the page.
+    expect(html).not.toContain("Current rate");
+  });
+});

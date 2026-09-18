@@ -163,6 +163,30 @@ describe("the gaps, which are the point", () => {
     }
   });
 
+  it("takes a CLOSED gap off the list the model is told to refuse", () => {
+    // The other direction from the test above, and the one it cannot see.
+    // That test checks every open gap IS on KNOWN_GAPS; nothing checked that
+    // a gap closed by a new tool LEFT it. A stale entry is not harmless
+    // clutter — the list is injected into the system prompt, so it tells the
+    // model to refuse a question a tool now answers, and the census would
+    // go on reading the question as routed and fine.
+    //
+    // Named by hand rather than derived: a closed gap has no refusalTopic
+    // left to derive from. Add a row here when you close one.
+    const closed = [{ id: "q-emr", tool: "experience_mod_rate", stale: ["experience modification", "mod rate"] }];
+    const topics = KNOWN_GAPS.map((gap) => `${gap.topic} ${gap.why}`.toLowerCase());
+    for (const { id, tool, stale } of closed) {
+      const q = TOP_QUESTIONS.find((question) => question.id === id);
+      expect(q?.route, id).toEqual({ kind: "tool", name: tool });
+      for (const fragment of stale) {
+        expect(
+          topics.filter((topic) => topic.includes(fragment)),
+          `${id}: KNOWN_GAPS still tells the model to refuse "${fragment}"`,
+        ).toEqual([]);
+      }
+    }
+  });
+
   it("names the tool that would answer it WRONGLY, where one exists", () => {
     // The failure mode of a gap is never silence — it is a near-miss
     // delivered in the same voice as a fact. `crew_assignments` answering

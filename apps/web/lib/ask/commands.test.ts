@@ -350,6 +350,10 @@ describe("read-tool capabilities match the pages they cite", () => {
     team_roster: null,
     // Dispatch slips are union paperwork and render on /union-compliance.
     dispatch_slips: ROUTE_CAPABILITY["/union-compliance"],
+    // The EMR is recorded and shown on /compliance, beside the certificates
+    // it is asked for alongside. NOT /safety's MANAGE_FIELD: the OSHA log is
+    // what a bureau calculates an EMR from, and the rate is not on that page.
+    experience_mod_rate: ROUTE_CAPABILITY["/compliance"],
   };
 
   it.each(TOOLS.map((tool) => [tool.name, tool.capability] as const))("%s", (name, capability) => {
