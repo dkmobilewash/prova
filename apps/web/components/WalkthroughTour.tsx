@@ -110,10 +110,17 @@ export function WalkthroughTour({
     const element = findAnchor(current);
     if (!element) return;
     const tall = element.getBoundingClientRect().height > window.innerHeight * 0.6;
-    element.scrollIntoView({
-      behavior: reducedMotion ? "auto" : "smooth",
-      block: isPhone || tall ? "start" : "center",
-    });
+    const block = isPhone || tall ? "start" : "center";
+    element.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth", block });
+    // A smooth scroll can simply not happen — the browser drops it when the
+    // tab is not being painted, or another scroll interrupts it — and this
+    // app scrolls inside <main>, not the window, so nothing else would bring
+    // the element up. If it is still off screen shortly after, jump there.
+    const fallback = window.setTimeout(() => {
+      const box = element.getBoundingClientRect();
+      if (box.bottom < 0 || box.top > window.innerHeight) element.scrollIntoView({ behavior: "auto", block });
+    }, 700);
+    return () => window.clearTimeout(fallback);
   }, [current, isPhone, reducedMotion]);
 
   // Follow the element while it scrolls, resizes or moves because the page

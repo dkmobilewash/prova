@@ -62,6 +62,20 @@ describe("placing the card", () => {
     expect(placeCard({ top: 50, left: 300, width: 600, height: 700 }, card, viewport)).toEqual({ top: 584, left: 300 });
   });
 
+  it("never leaves the screen when the element is below it, as it is mid-scroll", () => {
+    // Seen on /dashboard: the element was 1,370px down a 740px screen while
+    // the scroll to it was still running, and "above it" put the card at
+    // 1,132px — off the bottom. Above was only checked against the top edge.
+    const place = placeCard({ top: 1370, left: 300, width: 400, height: 38 }, card, viewport);
+    expect(place.top).toBeGreaterThanOrEqual(16);
+    expect(place.top + card.height).toBeLessThanOrEqual(viewport.height - 16);
+  });
+
+  it("never leaves the screen when the element is above it", () => {
+    const place = placeCard({ top: -900, left: 300, width: 400, height: 38 }, card, viewport);
+    expect(place.top).toBeGreaterThanOrEqual(16);
+  });
+
   it("stays inside the screen horizontally", () => {
     expect(placeCard({ top: 100, left: 1100, width: 80, height: 40 }, card, viewport).left).toBe(834);
     expect(placeCard({ top: 100, left: -40, width: 80, height: 40 }, card, viewport).left).toBe(16);

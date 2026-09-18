@@ -81,11 +81,16 @@ export function placeCard(
 ): { top: number; left: number } {
   const maxLeft = Math.max(margin, viewport.width - card.width - margin);
   const left = Math.min(Math.max(target.left, margin), maxLeft);
+  // Every candidate is checked against BOTH edges. "Above it" used to be
+  // checked only against the top, so an element still below the screen
+  // mid-scroll put the card below the screen with it.
+  const maxTop = Math.max(margin, viewport.height - card.height - margin);
+  const fits = (top: number) => top >= margin && top <= maxTop;
   const below = target.top + target.height + gap;
-  if (below + card.height <= viewport.height - margin) return { top: below, left };
+  if (fits(below)) return { top: below, left };
   const above = target.top - gap - card.height;
-  if (above >= margin) return { top: above, left };
-  return { top: Math.max(margin, viewport.height - card.height - margin), left };
+  if (fits(above)) return { top: above, left };
+  return { top: maxTop, left };
 }
 
 /** Which walkthroughs this browser has been through to the end. Stored as
