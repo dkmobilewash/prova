@@ -5,6 +5,7 @@ import { StyleSheet, Text, View } from "react-native";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { Chip } from "@/components/Chip";
+import { DateField } from "@/components/DateField";
 import { Field } from "@/components/Field";
 import { List } from "@/components/List";
 import { RefusedBanner } from "@/components/RefusedBanner";
@@ -237,7 +238,7 @@ export default function TimeScreen() {
   };
 
   const onClockIn = async () => {
-    if (!jobId || (craftRequired && !clockCraftId)) return;
+    if (!jobId || (craftRequired && !clockCraftId) || (costCodeRequired && !clockLineItemId)) return;
     // Never overwrite a running clock: its start time is the evidence.
     const existing = await getOpenSession();
     if (existing) {
@@ -274,7 +275,7 @@ export default function TimeScreen() {
   };
 
   const onSwitch = async () => {
-    if (!jobId || !openSession || (craftRequired && !clockCraftId)) return;
+    if (!jobId || !openSession || (craftRequired && !clockCraftId) || (costCodeRequired && !clockLineItemId)) return;
     const closed = await closeInterval(new Date().toISOString());
     if (!closed) {
       setShowSwitch(false);
@@ -301,7 +302,7 @@ export default function TimeScreen() {
 
   const openClockIn = () => {
     setClockCraftId(pickCraft(myCrafts.options, null));
-    setClockLineItemId(null);
+    setClockLineItemId(onlyLineItemId);
     setShowClockIn(true);
   };
 
@@ -311,7 +312,7 @@ export default function TimeScreen() {
     // A cost code belongs to one job. Switching onto THIS job from another
     // must not carry the other job's cost code over — the server would
     // refuse it and the offline queue would stall behind the refusal.
-    setClockLineItemId(openSession.jobId === jobId ? openSession.lineItemId : null);
+    setClockLineItemId(openSession.jobId === jobId ? (openSession.lineItemId ?? onlyLineItemId) : onlyLineItemId);
     setShowSwitch(true);
   };
 
@@ -327,6 +328,7 @@ export default function TimeScreen() {
 
   const openForm = () => {
     if (!date) setDate(today);
+    if (!lineItemId) setLineItemId(onlyLineItemId);
     // Start with "Me" the first time, so logging your own day is still one tap.
     if (rows.length === 0) {
       setRows([{ worker: "me", hours: null, craftId: pickCraft(craftOptionsFor("me").options, null) }]);
@@ -359,7 +361,9 @@ export default function TimeScreen() {
         .map((r) => ({ ...r, craftId: pickCraft(craftOptionsFor(r.worker).options, r.craftId) })),
     );
     setSharedHours(lastDay.sharedHours);
-    setLineItemId(lastDay.lineItemId);
+    // Copied only if that cost code is still on the job; otherwise keep
+    // what is picked (or the only line) rather than clearing it.
+    if (lastDay.lineItemId && lineItems.some((l) => l.id === lastDay.lineItemId)) setLineItemId(lastDay.lineItemId);
     if (lastDay.payType) setPayType(lastDay.payType as TimeEntryPayType);
   };
 
@@ -418,6 +422,11 @@ export default function TimeScreen() {
   // (wh347.ts) cannot place untagged hours. With none set up at all there is
   // nothing to choose, so hours can still be logged and payroll flags them.
   const craftRequired = crafts.length > 0;
+  // A cost code is required whenever the job has any — job costing and the
+  // WIP report cannot place hours on "no line". A job with none set up can
+  // still take hours; there is nothing to choose.
+  const costCodeRequired = lineItems.length > 0;
+  const onlyLineItemId = lineItems.length === 1 ? lineItems[0].id : null;
   const myCrafts = craftsForWorker(crafts, { kind: "me" });
   const today = dayFromClockIn(new Date().toISOString());
   const lastDay = copyFromLastDay(entries, today);
@@ -432,7 +441,11 @@ export default function TimeScreen() {
   const signedByDate = new Map(signoffs.map((s) => [s.date, s]));
   const dateSigned = signedByDate.get(date);
   const canSave =
-    isValidDate(date) && !dateSigned && rows.length > 0 && rows.every((r) => rowProblem(r) === null);
+    isValidDate(date) &&
+    !dateSigned &&
+    (!costCodeRequired || lineItemId !== null) &&
+    rows.length > 0 &&
+    rows.every((r) => rowProblem(r) === null);
 
   const signEntries = entries.filter((e) => e.date === signDate);
   const signHours = signEntries.reduce((sum, e) => sum + Number(e.hours), 0);
@@ -570,11 +583,16 @@ export default function TimeScreen() {
         title={showClockIn ? "Clock in" : switchLabel}
         primaryLabel={showClockIn ? "Start" : switchLabel}
         onPrimary={showClockIn ? onClockIn : onSwitch}
-        primaryDisabled={craftRequired && !clockCraftId}
+        primaryDisabled={(craftRequired && !clockCraftId) || (costCodeRequired && !clockLineItemId)}
       >
         <Text style={styles.chipLabel}>Cost code</Text>
+        <Text style={styles.hint}>
+          {costCodeRequired ? "Required." : "This job has no cost codes yet, so these hours go on no specific line."}
+        </Text>
         <View style={styles.chips}>
-          <Chip label="No specific line" selected={clockLineItemId === null} onPress={() => setClockLineItemId(null)} />
+          {costCodeRequired ? null : (
+            <Chip label="No specific line" selected={clockLineItemId === null} onPress={() => setClockLineItemId(null)} />
+          )}
           {lineItems.map((l) => (
             <Chip key={l.id} label={l.description} selected={clockLineItemId === l.id} onPress={() => setClockLineItemId(l.id)} />
           ))}
@@ -603,7 +621,7 @@ export default function TimeScreen() {
             {`Copy crew from ${lastDay.date}`}
           </Button>
         ) : null}
-        <Field label="Date" placeholder="YYYY-MM-DD" value={date} onChangeText={setDate} />
+        <DateField label="Date" value={date} onChange={setDate} max={today} />
         {dateSigned ? (
           <Text style={styles.rowProblem}>
             {date} is signed{dateSigned.state === "APPROVED" ? " and approved" : ""}, so its hours are locked. The
@@ -667,8 +685,13 @@ export default function TimeScreen() {
         </View>
 
         <Text style={styles.chipLabel}>Cost code</Text>
+        <Text style={styles.hint}>
+          {costCodeRequired ? "Required." : "This job has no cost codes yet, so these hours go on no specific line."}
+        </Text>
         <View style={styles.chips}>
-          <Chip label="No specific line" selected={lineItemId === null} onPress={() => setLineItemId(null)} />
+          {costCodeRequired ? null : (
+            <Chip label="No specific line" selected={lineItemId === null} onPress={() => setLineItemId(null)} />
+          )}
           {lineItems.map((l) => (
             <Chip key={l.id} label={l.description} selected={lineItemId === l.id} onPress={() => setLineItemId(l.id)} />
           ))}
@@ -686,7 +709,7 @@ export default function TimeScreen() {
         onPrimary={submitSignoff}
         primaryDisabled={!canSign}
       >
-        <Field label="Date" placeholder="YYYY-MM-DD" value={signDate} onChangeText={setSignDate} />
+        <DateField label="Date" value={signDate} onChange={setSignDate} max={today} />
         {signDateSigned ? (
           <Text style={styles.rowProblem}>
             {signDate} is already signed by {signDateSigned.signerName}.
