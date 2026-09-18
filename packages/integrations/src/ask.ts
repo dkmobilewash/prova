@@ -94,6 +94,20 @@ export type AskConversationOptions<H = never> = {
    * outside the cache breakpoint so it does not invalidate the prefix. */
   context?: string;
   question: string;
+  /** What was said earlier in this sitting, oldest first, so the model can
+   * resolve "the same", "that job", "it" — and nothing more.
+   *
+   * THESE ARE NOT A SOURCE OF FACTS. The system prompt's standing rule is
+   * that every fact in an answer comes from a tool call in THIS
+   * conversation, and prior turns do not relax it: a figure quoted from an
+   * earlier answer is a figure that may have stopped being true. Replaying
+   * old TOOL RESULTS would break that rule, which is exactly why only the
+   * question and the answer text travel and the tool transcript does not.
+   * The model re-reads the rows either way.
+   *
+   * The caller bounds this. An unbounded history is unbounded cost, and
+   * these arrive from a browser. */
+  priorTurns?: { role: "user" | "assistant"; content: string }[];
   tools: AskToolDefinition[];
   /** Runs one tool. Supplied by the caller already bound to a company. */
   execute: (name: string, input: unknown, meta: AskToolCallMeta) => Promise<AskToolOutcome<H>>;
@@ -169,8 +183,15 @@ export async function* streamToolConversation<H = never>(
   options: AskConversationOptions<H>,
 ): AsyncGenerator<AskEvent<H>> {
   const client = options.client ?? new Anthropic();
+  // Prior turns go in as real conversation turns rather than as text glued
+  // into the system prompt. Two reasons, and the second is the important
+  // one: it is what they are, and it keeps the system block — the trusted
+  // half — free of anything a browser supplied. Content a caller can author
+  // stays in the user role, where the injection suite already assumes it is
+  // hostile.
   const messages: Anthropic.MessageParam[] = [
-    { role: "user", content: options.question },
+    ...(options.priorTurns ?? []).map((turn) => ({ role: turn.role, content: turn.content })),
+    { role: "user" as const, content: options.question },
   ];
   const toolsCalled: string[] = [];
   // Every tool_use whose result has been pushed into `messages` so far —
