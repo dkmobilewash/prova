@@ -146,7 +146,23 @@ export function WalkthroughTour({
       frame = window.requestAnimationFrame(tick);
     };
     tick();
-    return () => window.cancelAnimationFrame(frame);
+    // Scrolls and resizes re-read the rect too, not only animation frames:
+    // a browser stops calling requestAnimationFrame for a tab it is not
+    // painting, and the jump in the scroll effect above must still move the
+    // outline and the card with it. Capture, because the scroll that
+    // matters is <main>'s, which does not bubble to the window.
+    const reread = () => {
+      const box = findAnchor(current)?.getBoundingClientRect();
+      const next: Rect | null = box ? { top: box.top, left: box.left, width: box.width, height: box.height } : null;
+      setRect((previousRect) => (sameRect(previousRect, next) ? previousRect : next));
+    };
+    document.addEventListener("scroll", reread, { capture: true, passive: true });
+    window.addEventListener("resize", reread);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      document.removeEventListener("scroll", reread, { capture: true });
+      window.removeEventListener("resize", reread);
+    };
   }, [current, steps]);
 
   useLayoutEffect(() => {
