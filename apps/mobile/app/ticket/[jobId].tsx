@@ -4,6 +4,7 @@ import { useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
+import { DateField } from "@/components/DateField";
 import { Field } from "@/components/Field";
 import { List } from "@/components/List";
 import { RefusedBanner } from "@/components/RefusedBanner";
@@ -119,7 +120,7 @@ export default function TicketScreen() {
         onPrimary={submit}
         primaryDisabled={!canSubmit}
       >
-        <Field label="Date" placeholder="YYYY-MM-DD" value={workDate} onChangeText={setWorkDate} />
+        <DateField label="Date" value={workDate} onChange={setWorkDate} max={localToday()} />
         <Field
           label="What was done"
           placeholder="Describe the extra work"
