@@ -263,6 +263,9 @@ describe("read-tool capabilities match the pages they cite", () => {
     drawing_currency: ROUTE_CAPABILITY["/drawings"],
     job_margin: "VIEW_JOB_COSTS",
     bid_status: ROUTE_CAPABILITY["/bids"],
+    // The chase list is shown and edited on /pipeline, so it takes that
+    // page's gate — which is MANAGE_ESTIMATING, the same as /bids.
+    bid_pursuits: ROUTE_CAPABILITY["/pipeline"],
     open_rfis: ROUTE_CAPABILITY["/rfis"],
     material_deliveries: ROUTE_CAPABILITY["/material-orders"],
     equipment_location: ROUTE_CAPABILITY["/equipment"],

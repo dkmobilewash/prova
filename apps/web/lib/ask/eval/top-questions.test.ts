@@ -193,7 +193,14 @@ describe("the gaps, which are the point", () => {
     // "who is on Riverside tomorrow" with a roster is the example: right
     // shape, wrong question, and a foreman cannot tell from the answer.
     const named = GAPS.filter((q) => q.route.kind === "gap" && q.route.nearest !== null);
-    expect(named.length).toBeGreaterThanOrEqual(4);
+    // A FLOOR THAT SCALES WITH THE SET, and this line is a scar. It was
+    // `>= 6`, then `>= 4`, written as absolute numbers when there were
+    // thirteen gaps and then eight. Three gaps closed on 2026-09-18 (EMR,
+    // lien deadlines, the pre-bid pipeline) and only three remain, so the
+    // absolute floor failed on a census that was right — a floor on a
+    // shrinking set goes stale exactly as fast as the set shrinks. What it
+    // guards is that people keep filling in `nearest`, which is a ratio.
+    expect(named.length).toBeGreaterThanOrEqual(Math.ceil(GAPS.length / 2));
     for (const q of named) {
       if (q.route.kind !== "gap" || !q.route.nearest) continue;
       expect(TOOLS.map((t) => t.name), q.id).toContain(q.route.nearest);

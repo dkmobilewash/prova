@@ -25,6 +25,7 @@ export * from "./quickbooks";
 export * from "./fieldReports";
 export * from "./crewSchedule";
 export * from "./lienDeadlines";
+export * from "./bidPursuits";
 export * from "./safety";
 export * from "./rfis";
 export * from "./changeOrders";

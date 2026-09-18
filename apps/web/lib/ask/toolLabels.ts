@@ -15,6 +15,7 @@ const LABELS: Record<ToolName, string> = {
   drawing_currency: "your drawings",
   job_margin: "job costs",
   bid_status: "your bids",
+  bid_pursuits: "your pursuit list",
   open_rfis: "open RFIs",
   material_deliveries: "material orders",
   equipment_location: "equipment",

@@ -1,0 +1,93 @@
+// A subcontractor's OWN pre-bid pipeline: projects they know are coming and
+// are working toward BEFORE any GC has sent an invitation to bid.
+//
+// Its own file, like crew-schedule.prisma and backcharges.prisma, so this
+// lane's migration does not collide with anyone else's schema edits.
+//
+// WHY THIS IS NOT SalesLead / SalesOpportunity. Those two look like the
+// answer and are the one thing this must never be built on: sales.prisma's
+// first line says they are Prova's OWN CRM for selling this product,
+// populated only on the operator company. A tool or page over them would
+// hand every tenant the vendor's sales pipeline. Nothing here reads them,
+// and `bid_pursuits`' handler test asserts it never touches a sales model.
+//
+// WHY THIS IS NOT BidInvitation. An invitation starts when a GC asks us to
+// price something. A pursuit is everything before that — a hospital the
+// owner has announced, an architect we have been talking to, a GC we expect
+// to invite us. Most never become an invitation. When one does, it is
+// LINKED to it (below) rather than converted, because the pursuit's history
+// — how early we knew, who we talked to — is the part worth keeping.
+
+/// How far along the chase is. A statement somebody makes, not a derivation:
+/// nothing in the data can tell WATCHING from CONTACTED.
+///
+/// INVITED is here as well as the `bidInvitationId` link, and deliberately
+/// not derived from it. A GC's invitation often arrives by phone before
+/// anybody logs it on the contact page, so "invited, not yet logged" is a
+/// real state; and a logged invitation linked here moves the stage to
+/// INVITED in the same write (lib/actions/bidPursuits.ts), because linking
+/// IS somebody saying the invite arrived.
+enum BidPursuitStage {
+  WATCHING
+  CONTACTED
+  EXPECTING_INVITE
+  INVITED
+  DROPPED
+}
+
+/// One project this company is chasing before it has been invited to bid.
+/// Company-scoped, NOT job-scoped: there is no job yet, and most pursuits
+/// never become one.
+///
+/// NOTHING DERIVED IS STORED. "Gone quiet" is no update in N days, read off
+/// `updatedAt`; "bid date coming up" and "bid date passed with no invite"
+/// are `expectedBidDate` against today. All three live in
+/// lib/bid-pursuits.ts and are computed on every read.
+model BidPursuit {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  projectName String
+
+  /// Who is building it — owner or developer. Free text: at this stage
+  /// they are rarely somebody we already have as a Contact.
+  owner     String?
+  architect String?
+
+  /// Which GC or GCs are expected to bid it, as typed. FREE TEXT, NOT a
+  /// Contact FK, on purpose: a pursuit often has no GC yet, often has
+  /// three candidates, and a required Contact would force somebody to
+  /// create a GC record for a company that may never invite us.
+  expectedGcs String?
+
+  /// When the bid is expected to be due. ENTERED, never stamped — it is
+  /// somebody's estimate of a future date. UTC midnight, rendered in UTC.
+  expectedBidDate DateTime?
+
+  /// A rough value for our scope, when somebody has one. Null is "nobody
+  /// said", never zero — every sum over this says how many rows it skipped.
+  estimatedValue Decimal? @db.Decimal(12, 2)
+
+  stage BidPursuitStage @default(WATCHING)
+
+  /// The invitation this pursuit became, once a GC actually invited us.
+  /// SET NULL: deleting a mis-logged invitation must not take the pursuit's
+  /// history with it. UNIQUE: one invitation came from one pursuit — two
+  /// pursuits claiming the same invitation are a duplicate somebody should
+  /// be told about. (Postgres treats NULLs as distinct, so any number of
+  /// unlinked pursuits coexist.)
+  bidInvitationId String?        @unique
+  bidInvitation   BidInvitation? @relation(fields: [bidInvitationId], references: [id], onDelete: SetNull)
+
+  note String?
+
+  createdByUserId String?
+  createdBy       User?   @relation("BidPursuitCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([companyId, stage])
+}
