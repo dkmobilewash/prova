@@ -344,8 +344,12 @@ export default function TimeScreen() {
   const submit = async () => {
     if (!jobId || !canSave) return;
     const toSave = rows;
+    const savedDate = date;
     setRows([]);
     setNote("");
+    // Back to today next time: a sheet reopened tomorrow must not still say
+    // the day that was logged last.
+    setDate("");
     setShowForm(false);
     // One entry per person, each with its own idempotency key, so a retried
     // offline flush replays each rather than duplicating any.
@@ -354,7 +358,7 @@ export default function TimeScreen() {
         type: "time:create",
         jobId,
         clientOperationId: uuid(),
-        date,
+        date: savedDate,
         hours: (r.hours ?? sharedHours).trim(),
         payType,
         note: note || undefined,
