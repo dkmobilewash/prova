@@ -7,7 +7,9 @@ import { Card } from "@/components/Card";
 import { Chip } from "@/components/Chip";
 import { Field } from "@/components/Field";
 import { List } from "@/components/List";
+import { RefusedBanner } from "@/components/RefusedBanner";
 import { Sheet } from "@/components/Sheet";
+import { SignaturePad } from "@/components/SignaturePad";
 import { colors, typography } from "@/lib/theme";
 import * as api from "@/lib/api";
 import {
@@ -31,7 +33,15 @@ import {
 import { uuid } from "@/lib/id";
 import { enqueue } from "@/lib/sync-queue";
 import { useSync } from "@/lib/use-sync";
-import type { Craft, CrewMember, LineItem, RatioWarning, TimeEntry, TimeEntryPayType } from "@/lib/types";
+import type {
+  Craft,
+  CrewMember,
+  LineItem,
+  RatioWarning,
+  TimeEntry,
+  TimeEntryPayType,
+  TimesheetSignoff,
+} from "@/lib/types";
 
 const PAY_TYPES: TimeEntryPayType[] = ["STRAIGHT", "OVERTIME", "DOUBLE_TIME", "SHIFT_DIFFERENTIAL"];
 
@@ -123,6 +133,14 @@ export default function TimeScreen() {
   const [lineItemId, setLineItemId] = useState<string | null>(null);
   const [rows, setRows] = useState<CrewRow[]>([]);
 
+  // "Sign the day" — the foreman's signature on one day's hours. From then
+  // the day is locked until the office reopens it on the web.
+  const [signoffs, setSignoffs] = useState<TimesheetSignoff[]>([]);
+  const [showSign, setShowSign] = useState(false);
+  const [signDate, setSignDate] = useState("");
+  const [signerName, setSignerName] = useState("");
+  const [signaturePath, setSignaturePath] = useState<string | null>(null);
+
   const load = async () => {
     const token = await getToken();
     if (!token || !jobId) return;
@@ -142,6 +160,12 @@ export default function TimeScreen() {
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load time");
+    }
+    // Separate, so an older server without sign-offs still shows the hours.
+    try {
+      setSignoffs(await api.listSignoffs(jobId, token));
+    } catch {
+      setSignoffs([]);
     }
     // Separate from the list above: a ratio that cannot be read must not
     // hide the entries, and offline it simply shows nothing.
@@ -175,7 +199,7 @@ export default function TimeScreen() {
     return () => clearInterval(id);
   }, []);
 
-  const { pending, sync } = useSync(load);
+  const { pending, sync, refused, dismissRefused } = useSync(load);
 
   /** Close the running interval: compute the worked duration (phone computes
    * DURATION only — pay type is entered, never derived) and enqueue the
@@ -341,6 +365,28 @@ export default function TimeScreen() {
     if (lastDay.payType) setPayType(lastDay.payType as TimeEntryPayType);
   };
 
+  const openSign = () => {
+    setSignDate(today);
+    setSignaturePath(null);
+    setShowSign(true);
+  };
+
+  const submitSignoff = async () => {
+    if (!jobId || !canSign || !signaturePath) return;
+    const op = {
+      type: "signoff:create" as const,
+      jobId,
+      clientOperationId: uuid(),
+      date: signDate,
+      signerName: signerName.trim(),
+      signaturePath,
+    };
+    setShowSign(false);
+    setSignaturePath(null);
+    await enqueue(op);
+    await sync();
+  };
+
   const submit = async () => {
     if (!jobId || !canSave) return;
     const toSave = rows;
@@ -382,7 +428,23 @@ export default function TimeScreen() {
     if (craftRequired && !r.craftId) return "Pick a craft.";
     return null;
   };
-  const canSave = isValidDate(date) && rows.length > 0 && rows.every((r) => rowProblem(r) === null);
+  // Days with a live sign-off: their hours are locked. The server refuses a
+  // write to one (409), so the sheet refuses first rather than queueing
+  // entries that can only be set aside.
+  const signedByDate = new Map(signoffs.map((s) => [s.date, s]));
+  const dateSigned = signedByDate.get(date);
+  const canSave =
+    isValidDate(date) && !dateSigned && rows.length > 0 && rows.every((r) => rowProblem(r) === null);
+
+  const signEntries = entries.filter((e) => e.date === signDate);
+  const signHours = signEntries.reduce((sum, e) => sum + Number(e.hours), 0);
+  const signDateSigned = signedByDate.get(signDate);
+  const canSign =
+    isValidDate(signDate) &&
+    !signDateSigned &&
+    signEntries.length > 0 &&
+    signerName.trim().length > 0 &&
+    signaturePath !== null;
   const saveLabel = rows.length > 1 ? `Save ${rows.length} entries` : "Save entry";
 
   const elapsedMs = openSession ? now.getTime() - new Date(openSession.clockStartedAt).getTime() : 0;
@@ -401,6 +463,7 @@ export default function TimeScreen() {
     <View style={styles.screen}>
       {pending > 0 ? <Text style={styles.pending}>Pending sync: {pending}</Text> : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
+      <RefusedBanner refused={refused} onDismiss={dismissRefused} />
 
       {ratioWarnings.length > 0 ? (
         <View style={styles.ratioBanner}>
@@ -468,6 +531,11 @@ export default function TimeScreen() {
               <Text style={styles.date}>{item.date}</Text>
               <Text style={styles.hours}>{item.hours}h</Text>
             </View>
+            {signedByDate.get(item.date) ? (
+              <Text style={styles.signed}>
+                {signedByDate.get(item.date)!.state === "APPROVED" ? "Approved" : "Signed"} · locked
+              </Text>
+            ) : null}
             <Text style={styles.meta}>
               {item.employeeName} · {item.payType.replace(/_/g, " ")}
               {item.craftLabel ? ` · ${item.craftLabel}` : ""}
@@ -486,10 +554,15 @@ export default function TimeScreen() {
         emptyDescription="Tap “Log time” to record the day's hours."
       />
 
-      <View style={styles.footer}>
-        <Button fullWidth onPress={openForm}>
-          Log time
+      <View style={[styles.footer, styles.footerRow]}>
+        <Button variant="secondary" onPress={openSign}>
+          Sign the day
         </Button>
+        <View style={styles.footerMain}>
+          <Button fullWidth onPress={openForm}>
+            Log time
+          </Button>
+        </View>
       </View>
 
       {/* Clock in / Switch — pick craft + cost code together */}
@@ -533,6 +606,12 @@ export default function TimeScreen() {
           </Button>
         ) : null}
         <Field label="Date" placeholder="YYYY-MM-DD" value={date} onChangeText={setDate} />
+        {dateSigned ? (
+          <Text style={styles.rowProblem}>
+            {date} is signed{dateSigned.state === "APPROVED" ? " and approved" : ""}, so its hours are locked. The
+            office can reopen it on the web.
+          </Text>
+        ) : null}
         <Field
           label="Hours for everyone"
           placeholder="e.g. 8 or 8.5"
@@ -599,6 +678,44 @@ export default function TimeScreen() {
 
         <Field label="Note" placeholder="Optional — goes on every entry" value={note} onChangeText={setNote} />
       </Sheet>
+
+      {/* "Sign the day" — one signature for everyone's hours on this job */}
+      <Sheet
+        visible={showSign}
+        onClose={() => setShowSign(false)}
+        title="Sign the day"
+        primaryLabel="Sign and lock"
+        onPrimary={submitSignoff}
+        primaryDisabled={!canSign}
+      >
+        <Field label="Date" placeholder="YYYY-MM-DD" value={signDate} onChangeText={setSignDate} />
+        {signDateSigned ? (
+          <Text style={styles.rowProblem}>
+            {signDate} is already signed by {signDateSigned.signerName}.
+          </Text>
+        ) : signEntries.length === 0 ? (
+          <Text style={styles.rowProblem}>No hours on {signDate || "that day"} to sign.</Text>
+        ) : (
+          <View style={styles.crewRow}>
+            <Text style={styles.crewName}>
+              {signEntries.length} {signEntries.length === 1 ? "entry" : "entries"} · {Math.round(signHours * 100) / 100}h
+            </Text>
+            {signEntries.map((e) => (
+              <Text key={e.id} style={styles.meta}>
+                {e.employeeName} · {e.hours}h · {e.payType.replace(/_/g, " ")}
+                {e.craftLabel ? ` · ${e.craftLabel}` : ""}
+              </Text>
+            ))}
+          </View>
+        )}
+        <Text style={styles.hint}>
+          Signing locks these hours. Anything still waiting to sync goes up first. If something is wrong later,
+          the office reopens the day on the web.
+        </Text>
+        <Field label="Your name" placeholder="Printed under the signature" value={signerName} onChangeText={setSignerName} />
+        <Text style={styles.chipLabel}>Signature</Text>
+        <SignaturePad key={showSign ? "open" : "closed"} onChange={setSignaturePath} />
+      </Sheet>
     </View>
   );
 }
@@ -651,4 +768,7 @@ const styles = StyleSheet.create({
   ratioTitle: { color: colors.tagRoseInk, fontSize: typography.size.md, fontWeight: typography.weight.bold },
   ratioLine: { color: colors.inkBody, fontSize: typography.size.sm },
   footer: { padding: 16, paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.lineRow },
+  footerRow: { flexDirection: "row", gap: 8, alignItems: "center" },
+  footerMain: { flex: 1 },
+  signed: { color: colors.link, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
 });

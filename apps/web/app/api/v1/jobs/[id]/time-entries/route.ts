@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireApiContext } from "@/lib/auth";
 import { prisma, TimeEntryPayType } from "@prova/db";
 import { crewMemberName } from "@/lib/worker-name";
+import { isDayLockError, liveSignoff, lockedDayMessage } from "@/lib/timesheet-signoff";
 
 export const dynamic = "force-dynamic";
 
@@ -215,24 +216,38 @@ export async function POST(
     if (existing) return NextResponse.json(toJson(existing), { status: 200 });
   }
 
-  const entry = await prisma.timeEntry.create({
-    data: {
-      jobId: job.id,
-      employeeUserId,
-      crewMemberId,
-      lineItemId,
-      craftClassificationId,
-      date,
-      hours,
-      payType,
-      clockStartedAt: clockStartedAt.value,
-      clockEndedAt: clockEndedAt.value,
-      clockBreakMinutes: clockBreakMinutes.value,
-      note: String(input.note ?? "").trim() || null,
-      clientOperationId,
-    },
-    select: entrySelect,
-  });
+  // A signed day is locked. 409, not 400: the phone's queue treats it as
+  // final and sets the entry aside with a note, rather than retrying it
+  // forever and holding every later write behind it.
+  const live = await liveSignoff(job.id, date);
+  if (live) return jsonError(lockedDayMessage(date, live), 409);
+
+  let entry;
+  try {
+    entry = await prisma.timeEntry.create({
+      data: {
+        jobId: job.id,
+        employeeUserId,
+        crewMemberId,
+        lineItemId,
+        craftClassificationId,
+        date,
+        hours,
+        payType,
+        clockStartedAt: clockStartedAt.value,
+        clockEndedAt: clockEndedAt.value,
+        clockBreakMinutes: clockBreakMinutes.value,
+        note: String(input.note ?? "").trim() || null,
+        clientOperationId,
+      },
+      select: entrySelect,
+    });
+  } catch (error) {
+    // The day was signed between the check above and this write, and the
+    // database's day lock refused it.
+    if (isDayLockError(error)) return jsonError(`${dateRaw} was just signed, so its hours are locked.`, 409);
+    throw error;
+  }
 
   return NextResponse.json(toJson(entry), { status: 201 });
 }

@@ -461,3 +461,74 @@ model ApprenticeRatioRule {
   @@index([unionLocalId])
   @@index([companyId])
 }
+
+/// A foreman's signature on one job's hours for one day, and the office's
+/// approval of it — the step that turns typed hours into a payroll record.
+///
+/// THE DAY'S STATE IS DERIVED, NEVER STORED (CLAUDE.md: derived state is never
+/// stored). The newest sign-off for (jobId, date) with `reopenedAt` NULL is the
+/// live one: no live sign-off = OPEN; live and `approvedAt` NULL = SUBMITTED;
+/// live and approved = APPROVED. There is no status column to disagree with
+/// the timestamps.
+///
+/// APPEND-ONLY. Reopening does not delete or un-sign anything: it stamps
+/// `reopenedAt` on the row, which leaves it in the history, and the next
+/// signature is a NEW row. A partial unique index in the migration allows only
+/// one live (un-reopened) sign-off per job per day. A BEFORE UPDATE trigger,
+/// `prova_timesheet_signoff_lock`, refuses any change to what was signed and
+/// lets `approvedAt` and `reopenedAt` be set once each.
+///
+/// WHILE A DAY HAS A LIVE SIGN-OFF, ITS HOURS ARE LOCKED. The trigger
+/// `prova_time_entry_day_lock` on TimeEntry refuses an INSERT, UPDATE or
+/// DELETE of an entry on a signed day. The API and the actions check first so
+/// that people see a sentence; the trigger is the rule. Cleanup scripts delete
+/// sign-offs BEFORE time entries for exactly that reason.
+model TimesheetSignoff {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+  jobId     String
+  job       Job     @relation(fields: [jobId], references: [id])
+
+  /// The day signed for. UTC midnight, the same as TimeEntry.date.
+  date DateTime
+
+  /// The printed name under the signature.
+  signerName     String
+  /// The drawn signature: an SVG path in exactly one shape, `M<x> <y>` and
+  /// `L<x> <y>` in whole pixels on a 320x160 box. The server refuses anything
+  /// else, so a signature can never carry markup into a page that draws it.
+  signaturePath  String
+  signedByUserId String?
+  signedByUser   User?    @relation("TimesheetSignoffSignedBy", fields: [signedByUserId], references: [id])
+  signedAt       DateTime
+
+  /// What the signature covered, counted at signing: the number of entries
+  /// and their total hours. Nothing can change under a live sign-off, so
+  /// these can only disagree with the entries after a reopen — which is
+  /// exactly when you want to know what was signed originally.
+  entryCount Int
+  totalHours Decimal @db.Decimal(7, 2)
+
+  approvedAt       DateTime?
+  approvedByUserId String?
+  approvedByUser   User?     @relation("TimesheetSignoffApprovedBy", fields: [approvedByUserId], references: [id])
+
+  reopenedAt       DateTime?
+  reopenedByUserId String?
+  reopenedByUser   User?     @relation("TimesheetSignoffReopenedBy", fields: [reopenedByUserId], references: [id])
+  reopenReason     String?
+
+  /// Idempotency key from the phone, so a retried offline POST replays
+  /// instead of signing twice.
+  clientOperationId String?
+
+  createdAt DateTime @default(now())
+
+  @@unique([companyId, clientOperationId])
+  @@index([companyId])
+  @@index([jobId, date])
+  @@index([signedByUserId])
+  @@index([approvedByUserId])
+  @@index([reopenedByUserId])
+}

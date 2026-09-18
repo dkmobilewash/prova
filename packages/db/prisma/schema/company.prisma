@@ -59,6 +59,7 @@ model Company {
   lineItemCatalogEntries    LineItemCatalogEntry[]
   punchListItems            PunchListItem[]
   tmTickets                 TmTicket[]
+  timesheetSignoffs         TimesheetSignoff[]
   deviceTokens              DeviceToken[]
   dailyFieldReports         DailyFieldReport[]
   jobMedia                  JobMedia[]
@@ -178,6 +179,9 @@ model User {
   createdRetainageReleases             RetainageRelease[]
   raisedPunchListItems                 PunchListItem[]
   createdTmTickets                     TmTicket[]
+  signedTimesheets                     TimesheetSignoff[]            @relation("TimesheetSignoffSignedBy")
+  approvedTimesheets                   TimesheetSignoff[]            @relation("TimesheetSignoffApprovedBy")
+  reopenedTimesheets                   TimesheetSignoff[]            @relation("TimesheetSignoffReopenedBy")
   deviceTokens                         DeviceToken[]
   filedDailyFieldReports               DailyFieldReport[]
   capturedJobMedia                     JobMedia[]                    @relation("JobMediaCapturedBy")

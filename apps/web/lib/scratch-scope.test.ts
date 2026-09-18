@@ -63,6 +63,9 @@ describe("what the cleanup refuses to touch", () => {
     expect(at("CostEntry")).toBeLessThan(at("JobLineItem"));
     expect(at("InvoiceLineItem")).toBeLessThan(at("Invoice"));
     expect(at("Payment")).toBeLessThan(at("Invoice"));
+    // Not a foreign key: a live sign-off makes the TimeEntry day-lock
+    // trigger refuse the time entries' delete.
+    expect(at("TimesheetSignoff")).toBeLessThan(at("TimeEntry"));
   });
 });
 

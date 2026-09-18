@@ -69,6 +69,10 @@ export const HANDLED_MODELS = [
   // Job — so it blocks the job delete however clean the invoices are.
   "InvoiceCounter",
   "RetainageRelease",
+  // Before TimeEntry, and not only for foreign-key reasons: while a live
+  // sign-off exists, the TimeEntry day-lock trigger refuses to delete that
+  // day's hours. Sign-offs go first so the time entries can follow.
+  "TimesheetSignoff",
   "TimeEntry",
   "TmTicket",
   // Planned days on the job. RESTRICT on Job, so a scratch job cannot be
