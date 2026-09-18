@@ -8,6 +8,7 @@ import { countVisibleAlerts } from "@/lib/alerts-query";
 import { can, type Principal } from "@/lib/permissions";
 import { viewerToday } from "@/lib/viewerToday";
 import { TimeZoneCookie } from "@/components/TimeZoneCookie";
+import { FullTour } from "@/components/FullTour";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const { company, ...currentUser } = await requireCompanyContext();
@@ -60,6 +61,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       {/* Renders nothing. Parks the browser's IANA zone in a cookie so
           the server can work out what day it is where the reader is. */}
       <TimeZoneCookie />
+      {/* "Take the full tour": renders nothing until someone starts it.
+          Here rather than on a page because it moves between pages. */}
+      <FullTour principal={principal} />
       <Sidebar
         companyName={company.name}
         principal={principal}
