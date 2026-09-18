@@ -593,9 +593,9 @@ export function AskPanel() {
                       {/* The question again, in full — the row above it is
                           cut, and a person opening a row is often opening
                           it to find out which question it was. */}
-                      <p className="text-xs text-ink-body">{entry.question}</p>
+                      <p className="text-sm font-medium text-ink-label">{entry.question}</p>
                       {entry.answer ? (
-                        <p className={`mt-1 whitespace-pre-line text-sm ${stale ? "text-ink-muted" : "text-ink"}`}>
+                        <p className={`mt-2 max-w-prose whitespace-pre-line text-base leading-relaxed ${stale ? "text-ink-muted" : "text-ink"}`}>
                           {entry.answer}
                         </p>
                       ) : (
@@ -639,7 +639,7 @@ export function AskPanel() {
           nearest the input, same as the scrollback's own ordering. */}
       {(hasResult || isAsking) && (
         <div className="mb-3">
-          <p className="text-xs text-ink-body">{asked}</p>
+          <p className="text-sm font-medium text-ink-label">{asked}</p>
 
           {/* The status line names what is being read, because a question
               spanning several areas spends most of its time in the
@@ -647,7 +647,7 @@ export function AskPanel() {
               hang rather than as work. */}
           {(status || progress) && (
             <p
-              className="mt-1 whitespace-pre-line text-sm text-ink-body"
+              className="mt-2 whitespace-pre-line text-base leading-relaxed text-ink-body"
               data-ask="progress"
               aria-live="polite"
             >
@@ -665,7 +665,11 @@ export function AskPanel() {
               is a prefix of the other. */}
           {answer && (
             <p
-              className="mt-1 whitespace-pre-line text-sm text-ink"
+              // 16px with relaxed leading and a readable line length.
+              // It was 14px with the default tight leading, which was the
+              // first thing said in a live demo: answers are the point of
+              // this panel and they were set like a caption.
+              className="mt-2 max-w-prose whitespace-pre-line text-base leading-relaxed text-ink"
               data-ask="answer"
               aria-live="polite"
             >
