@@ -13,6 +13,7 @@ import {
   planCrewImport,
   planJobImport,
 } from "@/lib/spreadsheet-import";
+import { IMPORT_COLLIDED, IMPORT_TX_OPTIONS, isWriteConflict } from "@/lib/import-shared";
 import { isUniqueConstraintError, ownerRefusal, type ActionResultWith } from "./shared";
 
 /**
@@ -56,19 +57,14 @@ export type ImportSummary = {
 
 type ImportResult = ActionResultWith<ImportSummary>;
 
-const TX_OPTIONS = { isolationLevel: "Serializable" as const, timeout: 20_000 };
-
-const COLLIDED =
-  "Another import for your company was saving at the same moment, so nothing from this one was saved. Check the preview and confirm again — anything the other import added will show as already there.";
+// Shared with the Jobber import (lib/actions/jobber.ts); see lib/import-shared.ts.
+const TX_OPTIONS = IMPORT_TX_OPTIONS;
+const COLLIDED = IMPORT_COLLIDED;
 
 /** A returned refusal, narrowed to the failure branch so it fits the
  * with-payload result these actions promise. */
 function fail(error: string): Extract<ImportResult, { ok: false }> {
   return { ok: false, error };
-}
-
-function isWriteConflict(err: unknown): boolean {
-  return typeof err === "object" && err !== null && (err as { code?: unknown }).code === "P2034";
 }
 
 function textFrom(formData: FormData): string | ImportResult {

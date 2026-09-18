@@ -29,6 +29,9 @@ enum IntegrationProvider {
   DOCUSIGN
   PROCORE
   MYCOI
+  /// A one-way, read-only import of clients, jobs and quotes (onboarding).
+  /// Not a sync: see lib/jobber-import.ts.
+  JOBBER
 }
 
 enum IntegrationConnectionStatus {

@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import type { IntegrationProvider } from "@prova/db";
+import { JOBBER_REQUIRED_ENV } from "@/lib/jobber/setup";
 
 /**
  * The one list of providers, and the seam the next phase hooks into.
@@ -33,6 +34,14 @@ export type ProviderImplementation =
    * managed, so there is exactly one answer to "is it connected?".
    */
   | { kind: "external"; href: string; managedAt: string }
+  /**
+   * A one-way import during onboarding: OAuth connect, then a preview of
+   * what would come across and a Confirm. Status lives on this framework's
+   * own connection row. `requiredEnv` names what this install needs before
+   * the card offers a Connect button at all — without it the card says the
+   * service is not set up here yet, rather than showing a broken button.
+   */
+  | { kind: "import"; startHref: string; requiredEnv: readonly string[] }
   /** Not built. Renders disabled, with no control that implies otherwise. */
   | { kind: "planned" };
 
@@ -109,6 +118,19 @@ export const PROVIDERS: ProviderEntry[] = [
           strokeWidth="1.4"
           strokeLinecap="round"
         />
+      </svg>
+    ),
+  },
+  {
+    provider: "JOBBER",
+    name: "Jobber",
+    description:
+      "Run your business on Jobber? Bring your clients, their addresses, your jobs and your open quotes across in one go. You see everything first, and nothing is saved until you press Confirm. One direction only: C Stream reads Jobber and never changes anything there.",
+    implementation: { kind: "import", startHref: "/api/jobber/start", requiredEnv: JOBBER_REQUIRED_ENV },
+    icon: (
+      <svg viewBox="0 0 20 20" fill="none" className={iconClass} aria-hidden="true">
+        <path d="M10 3v9.5a3 3 0 0 1-5.6 1.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+        <path d="M13 8.5 16 11.5 13 14.5M16 11.5h-4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     ),
   },

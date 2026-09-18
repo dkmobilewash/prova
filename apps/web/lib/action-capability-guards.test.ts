@@ -683,6 +683,10 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // and this suite found it by the walk on the day it was added, which is
   // the behaviour the file is for.
   company: () => import("./actions/company"),
+  // The Jobber import's three actions: reachable only from
+  // /settings/integrations, so they assert its MANAGE_COMPLIANCE before
+  // the owner check and before anything is read.
+  jobber: () => import("./actions/jobber"),
   safety: () => import("./actions/safety"),
   certifications: () => import("./actions/certifications"),
   punchLists: () => import("./actions/punchLists"),

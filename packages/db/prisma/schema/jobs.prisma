@@ -70,6 +70,11 @@ model Job {
   /// the note that it came from the web.
   bidResearch Json?
 
+  /// The Jobber job or quote this was imported from (Jobber ids are global
+  /// and name their type, so one column holds both). Null for everything
+  /// else. See jobberId on Contact.
+  jobberId String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -122,6 +127,7 @@ model Job {
   @@index([companyId])
   @@index([contactId])
   @@index([operatingLocationId])
+  @@unique([companyId, jobberId])
 }
 
 /// A single line item, referenced everywhere: estimate, contract summary,

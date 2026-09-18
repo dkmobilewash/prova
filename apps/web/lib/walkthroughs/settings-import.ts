@@ -12,6 +12,12 @@ export const settingsImportWalkthrough: Walkthrough = {
         "If you keep your clients, jobs or crew in Excel or Google Sheets, bring them in here instead of typing them again. Nothing is saved until you press Confirm.",
     },
     {
+      anchor: "import-jobber",
+      title: "Using Jobber?",
+      body:
+        "If your clients and jobs are in Jobber, you don't need a spreadsheet. Press Connect it instead to bring them straight across.",
+    },
+    {
       anchor: "import-clients",
       title: "Start with clients",
       body:

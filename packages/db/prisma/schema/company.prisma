@@ -322,10 +322,16 @@ model Contact {
   /// same way as msaExpirationDate, not stored twice.
   prequalificationExpiresAt DateTime?
 
+  /// The Jobber client this contact was imported from, so a second import
+  /// recognises its own rows even after a rename on either side. Null for
+  /// every contact that did not come from Jobber. Set once, at import.
+  jobberId String?
+
   jobs           Job[]
   bidInvitations BidInvitation[]
   interactions   ContactInteraction[]
   people         ContactPerson[]
 
+  @@unique([companyId, jobberId])
   @@index([companyId])
 }
