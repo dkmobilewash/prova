@@ -2,8 +2,6 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { TOOLS } from "./ask/tools";
-
 /**
  * Guards on the plumbing BETWEEN the two lanes, rather than on the code
  * inside either one.
@@ -245,55 +243,68 @@ describe("FEATURE-AUDIT counts agree with its own rows", () => {
 });
 
 /* ------------------------------------------------------------------ *
- * 3. FEATURE-AUDIT's read-tool count must equal the tools that exist.
+ * 3. Sheet 23 must not carry a count of the read tools.
  * ------------------------------------------------------------------ */
 
 /*
- * This row has now been stale FOUR times in seven days, and the fourth is
- * the reason it is a test rather than a sentence.
+ * This row stated a number of read tools and was wrong FOUR times in seven
+ * days: fifteen until 12 Sep, then stale through #297, #303 and #304, then
+ * corrected to thirty-nine by an audit that wrote "do not re-add a number
+ * here without that derivation" beside it — and #306, #307 and #308 each
+ * landed another tool within hours, so the correction was false on its own
+ * branch before it merged.
  *
- * The audit of 2026-09-18 corrected it from "fifteen" to "thirty-nine",
- * re-derived from `TOOLS` rather than counted by hand, and wrote "do not
- * re-add a number here without that derivation" beside it. Within four
- * hours #306 and #307 had each landed another tool and the corrected
- * figure was false again — on the same branch that corrected it, before it
- * had even merged. A derivation nobody re-runs is a claim with an expiry
- * date; CLAUDE.md says exactly this about the counter roll-call, which is
- * why that count lives in `counterCensus.test.ts` and not in prose.
+ * THE FIX THAT LOOKED OBVIOUS WAS WRONG, and it is recorded because it was
+ * committed first. Pinning the stated figure to `TOOLS.length` does stop
+ * the rot, and it buys a worse problem: a digit in this row makes every
+ * tool-adding PR edit the SAME LINE, so two open PRs that each add a tool
+ * conflict here and the second re-resolves. That is the `CHANGELOG.md`
+ * scar in CLAUDE.md — one conflict resolved four times in a day across
+ * three PRs, with the expensive part not the conflict but the CI that
+ * never queued behind it. Trading a stale number for a serialised edit is
+ * not a trade worth making.
  *
- * So the number stays where a reader wants it and stops being maintained
- * by memory. Adding a read tool now fails here, naming the row to change —
- * a one-word edit inside the PR that adds the tool, which is working
- * agreement rule 1: documentation rides along with the work it describes.
+ * So the count goes where CLAUDE.md put the counter roll-call after the
+ * same lesson: into the code, with nothing in the prose to maintain.
+ * `TOOLS` is the count. This test only stops one from being written back —
+ * a tool-adding PR then touches this row not at all, and no two PRs
+ * collide on it.
  *
- * The count side is IMPORTED rather than parsed. The doc side cannot be,
- * so it gets the same treatment every deriving check in this repo gets:
- * its own assertion that it matched anything at all, run before the
- * comparison, because nothing is ever missing from an empty set.
+ * Asserting an ABSENCE is the vacuous-test shape this repo keeps getting
+ * caught by, so the row is located first and that lookup is its own
+ * assertion: a rename that moves the row fails here loudly rather than
+ * passing because it found nothing to object to.
  */
 
-describe("FEATURE-AUDIT's read-tool count agrees with lib/ask/tools.ts", () => {
-  const claim = /\*\*(\d+)\*\* read tools \(`lib\/ask\/tools\.ts`\)/.exec(
+describe("FEATURE-AUDIT does not restate the read-tool count", () => {
+  const row = /^\| Built \| Ask: answers about the company's own data.*$/m.exec(
     readFileSync(join(REPO, "FEATURE-AUDIT.md"), "utf8"),
   );
 
-  it("finds the figure it is checking", () => {
+  it("finds the Ask row it is checking", () => {
     expect(
-      claim,
-      "FEATURE-AUDIT.md no longer contains the shape this test reads:\n" +
-        "  **<n>** read tools (`lib/ask/tools.ts`)\n\n" +
-        "Reword the row freely, but keep a DIGIT in that shape. The figure " +
-        "was wrong four times in seven days while it was spelled in words " +
-        "and checked by nobody.",
+      row,
+      "Could not find the `| Built | Ask: answers about the company's own data` " +
+        "row in FEATURE-AUDIT.md. If it was renamed, update this pattern — an " +
+        "absence test that cannot find its subject passes forever and guards " +
+        "nothing.",
     ).not.toBeNull();
   });
 
-  it("the stated figure equals the number of tools", () => {
+  it("states no number of read tools", () => {
+    // Digits and the written-out forms, since every stale version of this
+    // row used a word ("fifteen", "thirty-nine") rather than a numeral.
+    const counted =
+      /\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred)[\s*-]*(read )?tools\b/i.exec(
+        row![0],
+      );
     expect(
-      Number(claim![1]),
-      `FEATURE-AUDIT.md Sheet 23 says ${claim![1]} read tools; lib/ask/tools.ts ` +
-        `exports ${TOOLS.length}. Change the row in the PR that adds the tool — ` +
-        `the count is one word and the drift is what costs a day.`,
-    ).toBe(TOOLS.length);
+      counted,
+      `Sheet 23 states a read-tool count again ("${counted?.[0]}"). Take it out.\n\n` +
+        `The count is TOOLS in lib/ask/tools.ts. A number here was wrong four ` +
+        `times in seven days, and pinning it to the code with a test was worse: ` +
+        `it makes every tool-adding PR edit this one line, so concurrent PRs ` +
+        `conflict on it (the CHANGELOG.md scar in CLAUDE.md).`,
+    ).toBeNull();
   });
 });
