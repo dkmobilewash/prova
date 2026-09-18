@@ -91,6 +91,7 @@ model Company {
   salesStageChanges         SalesStageChange[]
   equipmentAssignments      EquipmentAssignment[]
   crewMembers               CrewMember[]
+  crewScheduleDays          CrewScheduleDay[]
   workerCertifications      WorkerCertification[]
   requiredCertifications    CertificationRequirement[]
 }
@@ -149,6 +150,8 @@ model User {
   updatedAt DateTime @updatedAt
 
   assignments                          JobAssignment[]
+  crewScheduleDays                     CrewScheduleDay[]      @relation("CrewScheduleDayUser")
+  crewScheduleDaysCreated              CrewScheduleDay[]      @relation("CrewScheduleDayCreatedBy")
   connectedQuickBooks                  QuickBooksConnection[]
   quickBooksSyncAttempts               QuickBooksSyncAttempt[]
   connectedIntegrations                IntegrationConnection[]

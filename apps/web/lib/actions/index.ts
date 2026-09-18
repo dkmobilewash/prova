@@ -22,6 +22,7 @@ export * from "./equipment";
 export * from "./punchLists";
 export * from "./quickbooks";
 export * from "./fieldReports";
+export * from "./crewSchedule";
 export * from "./safety";
 export * from "./rfis";
 export * from "./changeOrders";

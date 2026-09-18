@@ -248,21 +248,14 @@ export const TOP_QUESTIONS: TopQuestion[] = [
     "certification_expiry",
     FIELD,
   ),
-  gap(
-    "q-who-tomorrow",
-    "who is on Riverside tomorrow?",
-    "crew_assignments",
-    "who is on a job tomorrow",
-    "There is no per-day crew schedule in this app — `crew_assignments` is a ROSTER, and its own description says so. `dispatch_slips` is closer and still not it: a slip records that the hall DID dispatch somebody, never that they are on site tomorrow. The near-miss is the dangerous part, because the roster answers in the right shape and a foreman reads a list of names as tomorrow's crew.",
-    FIELD,
-  ),
-  gap(
-    "q-missing-hours",
-    "whose hours haven't been turned in for last week?",
-    "job_labor_cost",
-    "whose timecard is missing",
-    "`TimeEntry` has no submitted, approved or locked state — an hour is either recorded or it does not exist — so nothing can tell a missing timecard from a man who did not work. `certified_payroll` reports what a week's payroll is MISSING, which is the nearest thing and is about the hours that were logged, not the ones that were not.",
-  ),
+  // WAS A GAP until the crew schedule merged. JobAssignment carries no date,
+  // so the roster answered this in the right shape and the wrong substance;
+  // CrewScheduleDay is a planned day, which is the question.
+  t("q-who-tomorrow", "who is on Riverside tomorrow?", "crew_schedule", FIELD),
+  // WAS A GAP until the crew schedule merged. TimeEntry still has no
+  // submitted state; what closes it is a PLANNED day with no hours against
+  // it — and the tool says "nobody logged it", never "they did not work".
+  t("q-missing-hours", "whose hours haven't been turned in for last week?", "crew_schedule"),
   // THE SECOND CASE THE MODEL EVAL FAILED, AND AGAIN THE QUESTION WAS
   // WRONG. This was routed to `team_roster` — whose own description says,
   // in capitals, that there is no per-person pay rate in this app and it
@@ -387,7 +380,7 @@ export const TOP_QUESTIONS: TopQuestion[] = [
  * It goes DOWN when a gap is closed. It going UP is a decision, not an
  * accident.
  */
-export const CENSUS_GAPS = 8;
+export const CENSUS_GAPS = 6;
 
 /** Questions the registry deliberately refuses. Counted APART from the
  * gaps and asserted separately, because the two must never be added

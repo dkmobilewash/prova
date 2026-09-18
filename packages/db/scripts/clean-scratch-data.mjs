@@ -226,6 +226,7 @@ async function main() {
     const lineIds = lineItems.map((l) => l.id);
     await del("costEntry", () => prisma.costEntry.deleteMany({ where: { lineItemId: { in: lineIds } } }));
     await del("equipmentAssignment", () => prisma.equipmentAssignment.deleteMany({ where: { jobId: { in: jobIds } } }));
+    await del("crewScheduleDay", () => prisma.crewScheduleDay.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("timeEntry", () => prisma.timeEntry.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("dailyFieldReport", () => prisma.dailyFieldReport.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("tmTicket", () => prisma.tmTicket.deleteMany({ where: { jobId: { in: jobIds } } }));

@@ -48,6 +48,11 @@ import { can, type Principal } from "@/lib/permissions";
 import { refusalFor } from "./access";
 import { certifiedPayrollWeekStart } from "@/lib/certified-payroll-week";
 import { timeEntryWorkerId, timeEntryWorkerName } from "@/lib/worker-name";
+import {
+  loadPlannedDaysMissingHours,
+  loadUpcomingSchedule,
+  scheduledWorkerName,
+} from "@/lib/crew-schedule-query";
 import { matchesJobName, TOOLS, type ToolName, type ToolResult } from "./tools";
 
 /**
@@ -106,6 +111,7 @@ export const HANDLERS: Record<
   (companyId: string, input: Input) => Promise<ToolResult>
 > = {
   crew_assignments: (companyId) => crewAssignments(companyId),
+  crew_schedule: crewSchedule,
   open_punch_list: openPunchList,
   compliance_status: (companyId) => complianceStatus(companyId),
   drawing_currency: drawingCurrency,
@@ -3226,6 +3232,80 @@ async function dispatchSlips(companyId: string, input: Input): Promise<ToolResul
         ? input.jobName
           ? "No dispatch slip is on file for that job. That is a gap in the records — it does not mean nobody was dispatched."
           : "No dispatch slip is on file anywhere. That is a gap in the records — it does not mean nobody was dispatched."
+        : undefined,
+  };
+}
+
+/**
+ * Who is planned where, and which planned days nobody logged hours against.
+ *
+ * TWO ANSWERS IN ONE TOOL, and they are one tool because they are one
+ * model read twice — forward for the plan, backward for the gap between
+ * the plan and the hours.
+ *
+ * THE SECOND ONE IS WORDED WITH MORE CARE THAN ANYTHING ELSE IN THIS FILE.
+ * A planned day with no hours means NOBODY LOGGED THAT DAY. It does not
+ * mean the person did not work, and the difference is not pedantry: "Marco
+ * did not work Tuesday" is a claim about a man and goes in front of a
+ * foreman, and "nobody logged Marco's Tuesday" is a claim about paperwork
+ * and goes in front of whoever runs payroll. Only the second is supported,
+ * so every field name and every sentence here says the second.
+ *
+ * And the honest limit, stated rather than left to be assumed: this can
+ * only see days somebody actually PUT on the schedule. An empty list is not
+ * proof that every hour was logged — it is proof that every planned day
+ * has hours, which is a much smaller claim.
+ */
+async function crewSchedule(companyId: string, input: Input): Promise<ToolResult> {
+  const mismatch = await jobNameMismatch(companyId, input.jobName);
+  const citations = [{ label: "Schedule", href: "/schedule" }];
+  if (mismatch) return { data: null, citations, unavailable: mismatch };
+
+  const today = serverToday();
+  const wanted = input.jobName?.trim();
+  const job = wanted
+    ? await prisma.job.findFirst({
+        where: { companyId, name: { contains: wanted, mode: "insensitive" } },
+        select: { id: true },
+      })
+    : null;
+
+  const [upcoming, missing] = await Promise.all([
+    loadUpcomingSchedule(companyId, today, job?.id),
+    loadPlannedDaysMissingHours(companyId, today, job?.id),
+  ]);
+
+  const planned = upcoming.map((day) => ({
+    job: day.job.name,
+    day: iso(day.workDate),
+    worker: scheduledWorkerName(day),
+    craft: day.craftClassification?.name ?? null,
+    note: day.note,
+  }));
+
+  const noHours = missing.map((day) => ({
+    job: day.job.name,
+    day: iso(day.workDate),
+    worker: scheduledWorkerName(day),
+    // Spelled out on the ROW, because a row is what gets quoted back and a
+    // caveat that lives only in the tool description is a caveat that gets
+    // dropped somewhere between here and a person.
+    means: "nobody logged hours for that day — not that they did not work",
+  }));
+
+  return {
+    data: { planned, plannedDaysWithNoHoursLogged: noHours },
+    summary: {
+      plannedDaysAhead: planned.length,
+      jobsWithSomebodyOn: new Set(planned.map((row) => row.job)).size,
+      plannedDaysWithNoHoursLogged: noHours.length,
+    },
+    citations,
+    unavailable:
+      planned.length === 0 && noHours.length === 0
+        ? wanted
+          ? "Nobody has been put on the schedule for that job. That is a gap in the plan rather than a quiet week — nothing fills the schedule in for you."
+          : "Nobody has been put on the schedule at all. That is a gap in the plan rather than a quiet fortnight — nothing fills the schedule in for you."
         : undefined,
   };
 }

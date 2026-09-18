@@ -52,6 +52,9 @@ const LABELLED_PICKERS: Record<string, number> = {
   "components/BackchargeFields.tsx": 1,
   "components/CloseoutJobCard.tsx": 1,
   "components/ComplianceUploadForm.tsx": 1,
+  // Which job somebody is being put ON for a day. Added with the per-day
+  // crew schedule.
+  "components/CrewScheduleBoard.tsx": 1,
   "components/DrawingSetFields.tsx": 1,
   // Two: deploy a piece of equipment, and move an existing stay to another job.
   "components/EquipmentDeploymentControls.tsx": 2,
@@ -175,7 +178,14 @@ describe("the job-picker census", () => {
     // that /punch-lists and /photos already had. It is the log a GC asks
     // for by job, and reading it meant picking rows out of a company-wide
     // week by eye.
-    expect(expected).toEqual(24);
+    //
+    // 24 -> 25 on 2026-09-17: the crew schedule's "which job is he on"
+    // picker. BOTH sides of the merge that brought this in had moved the
+    // number 23 -> 24 independently — /field-reports above, /schedule here
+    // — so a mechanical merge kept "24" and would have failed on a count
+    // that was right on each branch alone. Two pickers, one literal, which
+    // is the reason it is a literal: it made a person add them up.
+    expect(expected).toEqual(25);
     expect(actual).toEqual(expected);
   });
 

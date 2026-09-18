@@ -71,6 +71,10 @@ export const HANDLED_MODELS = [
   "RetainageRelease",
   "TimeEntry",
   "TmTicket",
+  // Planned days on the job. RESTRICT on Job, so a scratch job cannot be
+  // deleted while its schedule exists — the #227 shape, and the reason this
+  // name is here as well as in both scripts' del() order.
+  "CrewScheduleDay",
   "JobAssignment",
   "EquipmentAssignment",
   "EstimateVersion",

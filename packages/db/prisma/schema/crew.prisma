@@ -162,6 +162,8 @@ model CrewMember {
   /// above buys less than it looks like it buys without that.
   timeEntries TimeEntry[]
 
+  crewScheduleDays CrewScheduleDay[]
+
   @@unique([companyId, employeeNumber])
   @@index([companyId])
   @@index([archivedAt])
