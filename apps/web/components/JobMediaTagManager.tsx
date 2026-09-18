@@ -46,6 +46,7 @@ export function JobMediaTagManager({ tags }: { tags: JobMediaTagSummary[] }) {
         onClick={() => setOpen((wasOpen) => !wasOpen)}
         className={btn}
         aria-expanded={open}
+        data-tour="photos-manage-tags"
       >
         {open ? "Done managing tags" : `Manage tags (${tags.length})`}
       </button>

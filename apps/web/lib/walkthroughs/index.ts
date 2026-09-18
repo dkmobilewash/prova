@@ -23,6 +23,18 @@ import { pipelineWalkthrough } from "./pipeline";
 import { punchListsWalkthrough } from "./punch-lists";
 import { scheduleWalkthrough } from "./schedule";
 import { settingsImportWalkthrough } from "./settings-import";
+import { deploymentWalkthrough } from "./deployment";
+import { phaseCodesWalkthrough } from "./phase-codes";
+import { photosWalkthrough } from "./photos";
+import { prevailingWageWalkthrough } from "./prevailing-wage";
+import { rfisWalkthrough } from "./rfis";
+import { safetyWalkthrough } from "./safety";
+import { settingsWalkthrough } from "./settings";
+import { submittalsWalkthrough } from "./submittals";
+import { teamWalkthrough } from "./team";
+import { unionComplianceWalkthrough } from "./union-compliance";
+import { vendorsWalkthrough } from "./vendors";
+import { vendorPricingWalkthrough } from "./vendors-pricing";
 
 export type { Walkthrough, WalkthroughStep } from "./types";
 
@@ -61,6 +73,18 @@ export const WALKTHROUGHS: Walkthrough[] = [
   lienDeadlinesWalkthrough,
   materialOrdersWalkthrough,
   messagesWalkthrough,
+  phaseCodesWalkthrough,
+  photosWalkthrough,
+  prevailingWageWalkthrough,
+  rfisWalkthrough,
+  safetyWalkthrough,
+  settingsWalkthrough,
+  submittalsWalkthrough,
+  teamWalkthrough,
+  unionComplianceWalkthrough,
+  vendorsWalkthrough,
+  vendorPricingWalkthrough,
+  deploymentWalkthrough,
 ];
 
 /**
@@ -77,20 +101,12 @@ export const WALKTHROUGHS: Walkthrough[] = [
  * Estimating filter.
  */
 export const ROUTES_WITHOUT_WALKTHROUGH: string[] = [
-  "/deployment",
+  // C Stream's own operator page (who is still logging in, across every
+  // customer). No customer can open it, so there is nobody to walk through it.
   "/internal/usage",
-  "/phase-codes",
-  "/photos",
-  "/prevailing-wage",
-  "/rfis",
-  "/safety",
+  // C Stream's own sales CRM, for selling C Stream. Operator-only like
+  // /internal/usage: a customer sees "Not part of your access".
   "/sales",
-  "/settings",
-  "/submittals",
-  "/team",
-  "/union-compliance",
-  "/vendors",
-  "/vendors/pricing",
 ];
 
 /** True when `pathname` is an address of `route`. A `[segment]` in the

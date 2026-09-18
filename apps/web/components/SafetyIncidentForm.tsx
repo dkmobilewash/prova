@@ -20,6 +20,7 @@ export function SafetyIncidentForm({ jobs, today }: { jobs: JobOption[]; today: 
       <button
         type="button"
         onClick={() => setIsOpen(true)}
+        data-tour="safety-record-incident"
         className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500"
       >
         Record an incident

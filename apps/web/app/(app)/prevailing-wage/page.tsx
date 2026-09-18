@@ -57,7 +57,7 @@ export default async function PrevailingWagePage({
       </p>
 
       {/* --------------------------------------------------- review --- */}
-      <section className="mb-10">
+      <section className="mb-10" data-tour="pw-check-week">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Check a week against the rules</h2>
 
         {weeks.length === 0 ? (
@@ -159,7 +159,7 @@ export default async function PrevailingWagePage({
       </section>
 
       {/* ---------------------------------------------- attachments --- */}
-      <section className="mb-10">
+      <section className="mb-10" data-tour="pw-which-job">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Which rules apply to which job</h2>
         {determinations.length === 0 ? (
           <p className="text-sm text-ink-body">
@@ -197,7 +197,7 @@ export default async function PrevailingWagePage({
             {ruleSets.length} rule {ruleSets.length === 1 ? "set" : "sets"}
           </h2>
         </div>
-        <div className="mb-4">
+        <div className="mb-4" data-tour="pw-record-rules">
           <RuleSetForm />
         </div>
 
@@ -207,7 +207,7 @@ export default async function PrevailingWagePage({
             thresholds you can cite, and leave the rest blank.
           </p>
         ) : (
-          <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
+          <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface" data-tour="pw-rule-sets">
             {ruleSets.map((ruleSet) => (
               <RuleSetRow
                 key={ruleSet.id}

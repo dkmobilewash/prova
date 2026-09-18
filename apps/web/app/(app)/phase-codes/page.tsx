@@ -153,7 +153,7 @@ export default async function PhaseCodesPage() {
            button: "phase code" is a term this product is asking somebody
            to adopt, and a page that says "none yet" to a reader who does
            not know what one is has told them nothing. */
-        <div className="rounded-lg border border-line-card bg-surface p-6">
+        <div className="rounded-lg border border-line-card bg-surface p-6" data-tour="phase-codes-empty">
           <h2 className="mb-2 text-sm font-semibold text-ink-label">
             You haven&apos;t set up any phase codes yet
           </h2>
@@ -181,6 +181,7 @@ export default async function PhaseCodesPage() {
           </p>
           <Link
             href="/settings#phase-codes"
+            data-tour="phase-codes-set-up"
             className="inline-flex items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500"
           >
             Set up your first phase code
@@ -195,6 +196,7 @@ export default async function PhaseCodesPage() {
               reader has to know which one they are looking at BEFORE they
               read it. */}
           <div
+            data-tour="phase-codes-coverage"
             className={`mb-6 rounded-lg border p-4 ${
               rollup.budgetCoverage < 1
                 ? "border-amber-700 bg-tag-amber/20"
@@ -229,7 +231,7 @@ export default async function PhaseCodesPage() {
             )}
           </div>
 
-          <div className="overflow-x-auto rounded-lg border border-line-card bg-surface">
+          <div className="overflow-x-auto rounded-lg border border-line-card bg-surface" data-tour="phase-codes-table">
             <table className="w-full min-w-[42rem] border-collapse">
               <thead>
                 <tr className="text-left text-xs uppercase tracking-wide text-ink-body">

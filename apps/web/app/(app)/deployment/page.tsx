@@ -91,7 +91,7 @@ export default async function DeploymentPage() {
       </p>
 
       {clashes.length > 0 && (
-        <div className="mb-6 rounded-lg border border-red-700 bg-tag-rose p-4">
+        <div className="mb-6 rounded-lg border border-red-700 bg-tag-rose p-4" data-tour="deploy-clashes">
           <p className="text-sm font-medium text-tag-rose-ink">
             {clashes.length} {clashes.length === 1 ? "record puts" : "records put"} a machine in two
             places at once
@@ -108,7 +108,7 @@ export default async function DeploymentPage() {
         </div>
       )}
 
-      <section className="mb-10">
+      <section className="mb-10" data-tour="deploy-crew">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Crew</h2>
         {crew.length === 0 ? (
           <p className="text-ink-body">Nobody on the team yet.</p>
@@ -151,7 +151,7 @@ export default async function DeploymentPage() {
         <h2 className="mb-3 text-sm font-semibold text-ink-label">By job</h2>
         {jobs.length === 0 ? (
           totalJobs === 0 ? (
-            <div className="rounded-lg border border-line-card bg-surface p-6">
+            <div className="rounded-lg border border-line-card bg-surface p-6" data-tour="deploy-no-jobs">
               <p className="text-ink-label">No jobs yet, so there is nowhere to be deployed.</p>
               <p className="mt-2 max-w-xl text-sm text-ink-body">
                 Once a job is contracted or in progress it appears here with whoever is assigned to it
@@ -171,7 +171,7 @@ export default async function DeploymentPage() {
               </Link>
             </div>
           ) : (
-            <p className="text-ink-body">
+            <p className="text-ink-body" data-tour="deploy-none-running">
               No contracted or in-progress jobs. Deployment only covers work that is actually running
               — an estimate has nobody on it yet.{" "}
               <Link href="/jobs" className="text-link hover:text-brand">
@@ -181,7 +181,7 @@ export default async function DeploymentPage() {
             </p>
           )
         ) : (
-          <ul className="flex flex-col gap-3">
+          <ul className="flex flex-col gap-3" data-tour="deploy-by-job">
             {jobs.map((job) => {
               const people = crew.filter((p) =>
                 p.assignments.some((a) => a.job.id === job.id),
@@ -240,7 +240,7 @@ export default async function DeploymentPage() {
       </section>
 
       {out.some((s) => !activeJobIds.has(s.jobId)) && (
-        <section className="mt-8">
+        <section className="mt-8" data-tour="deploy-stranded">
           <h2 className="mb-3 text-sm font-semibold text-ink-label">Out on a job that isn&apos;t running</h2>
           <p className="mb-2 text-xs text-ink-muted">
             These pieces are recorded as out on a job that isn&apos;t contracted or in progress —

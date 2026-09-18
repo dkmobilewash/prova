@@ -133,7 +133,7 @@ export default async function RfisPage({
         dates.
       </p>
 
-      <section className="mb-8">
+      <section className="mb-8" data-tour="rfis-raise">
         {askDraft.kind === "gone" && <AskDraftNotice what="RFI" />}
         {/* No `today` handed down. The form's sent-date default is
             localToday() — the browser's day, set after a click opens the
@@ -148,7 +148,7 @@ export default async function RfisPage({
       <StatusLine report={status} />
 
       {jobs.length > 0 && (
-        <div className="mb-4 flex flex-wrap gap-2">
+        <div className="mb-4 flex flex-wrap gap-2" data-tour="rfis-job-filter">
           <Link href={filterHref({ job: null })} className={chip(!activeJob)}>
             All jobs
           </Link>
@@ -166,6 +166,7 @@ export default async function RfisPage({
         </h2>
         <Link
           href={filterHref({ show: showClosed ? null : "all" })}
+          data-tour="rfis-show-closed"
           className="inline-flex min-h-11 items-center text-sm text-link"
         >
           {showClosed ? "Hide closed" : "Show closed"}
@@ -173,12 +174,12 @@ export default async function RfisPage({
       </div>
 
       {rows.length === 0 ? (
-        <p className="text-ink-body">
+        <p className="text-ink-body" data-tour="rfis-empty">
           Nothing here yet. Raise one the day the question comes up rather than the day it becomes a
           problem — the gap between those two dates is the whole value of the log.
         </p>
       ) : (
-        <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
+        <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface" data-tour="rfis-list">
           {rows.map((rfi) => (
             <RfiRow
               key={rfi.id}

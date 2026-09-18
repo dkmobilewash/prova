@@ -168,7 +168,7 @@ export default async function PhotosPage({
       </p>
 
       {jobs.length === 0 ? (
-        <div className="rounded-lg border border-line-card bg-surface p-6">
+        <div className="rounded-lg border border-line-card bg-surface p-6" data-tour="photos-no-jobs">
           <p className="text-sm text-ink-label">
             There are no jobs yet, and a photo is always filed against one.
           </p>
@@ -185,7 +185,7 @@ export default async function PhotosPage({
               its `list` attribute at this one element. */}
           <JobMediaTagDatalist names={tags.map((tag) => tag.name)} />
 
-          <div className="mb-3 flex flex-wrap gap-2">
+          <div className="mb-3 flex flex-wrap gap-2" data-tour="photos-job-filter">
             <Link
               href={photosFilterHref({ tag: activeTag, shared: activeShared, located: activeLocated })}
               className={chip(!activeJob)}
@@ -212,7 +212,7 @@ export default async function PhotosPage({
               tag chip keeps whatever job is chosen and each job chip keeps
               whatever tag is chosen, so the two narrow together. */}
           {filterableTags.length > 0 && (
-            <div className="mb-3 flex flex-wrap gap-2">
+            <div className="mb-3 flex flex-wrap gap-2" data-tour="photos-tag-filter">
               <Link
                 href={photosFilterHref({
                   job: activeJob,
@@ -266,7 +266,7 @@ export default async function PhotosPage({
               not — two numbers on one row of chips, counting different
               populations, and no room to say which. The gallery's own
               "showing N of M" line already states the filtered total. */}
-          <div className="mb-3 flex flex-wrap gap-2">
+          <div className="mb-3 flex flex-wrap gap-2" data-tour="photos-shared-filter">
             <Link
               href={photosFilterHref({ job: activeJob, tag: activeTag, located: activeLocated })}
               className={chip(!activeShared)}
@@ -329,7 +329,7 @@ export default async function PhotosPage({
               the job chip while the tag counts beside it did not. The
               gallery's own "showing N of M" line already states the
               filtered total. */}
-          <div className="mb-3 flex flex-wrap gap-2">
+          <div className="mb-3 flex flex-wrap gap-2" data-tour="photos-location-filter">
             <Link
               href={photosFilterHref({ job: activeJob, tag: activeTag, shared: activeShared })}
               className={chip(!activeLocated)}
@@ -366,7 +366,7 @@ export default async function PhotosPage({
               chosen. On the job page it is always there, because the job is
               the page. */}
           {activeJob ? (
-            <div className="mb-8 rounded-lg border border-line-card bg-surface p-4">
+            <div className="mb-8 rounded-lg border border-line-card bg-surface p-4" data-tour="photos-add">
               <JobMediaCapture jobId={activeJob} />
               {/* ONLY WITH A JOB CHOSEN, because a photo report is one
                   JOB's document — the header names the job and the client,
@@ -388,13 +388,13 @@ export default async function PhotosPage({
               </p>
             </div>
           ) : (
-            <p className="mb-8 text-sm text-ink-body">
+            <p className="mb-8 text-sm text-ink-body" data-tour="photos-pick-job">
               Pick a job above to add photos, or open the job itself.
             </p>
           )}
 
           {media.length === 0 ? (
-            <div className="rounded-lg border border-line-card bg-surface p-6">
+            <div className="rounded-lg border border-line-card bg-surface p-6" data-tour="photos-empty">
               {/* THE VISIBILITY FILTER GETS THE FIRST WORD when it is on,
                   because it is then the likeliest reason the gallery is
                   empty and — unlike the other two — the emptiness is itself
@@ -495,7 +495,7 @@ export default async function PhotosPage({
               </p>
             </div>
           ) : (
-            <>
+            <div data-tour="photos-gallery">
               <JobMediaGallery media={media} />
               {total > PHOTO_LIMIT && (
                 <p className="mt-3 text-sm text-ink-body">
@@ -505,7 +505,7 @@ export default async function PhotosPage({
                     : "Pick a job or a tag above to narrow this down."}
                 </p>
               )}
-            </>
+            </div>
           )}
         </>
       )}
