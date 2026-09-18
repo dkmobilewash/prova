@@ -127,7 +127,9 @@ export type ToolName =
   // The morning question, the address book, and one job on one screen.
   | "needs_attention"
   | "contact_lookup"
-  | "job_overview";
+  | "job_overview"
+  // The dashboard's getting-started card, for a brand-new account.
+  | "getting_started";
 
 export type ToolDefinition = {
   name: ToolName;
@@ -701,6 +703,17 @@ export const TOOLS: ToolDefinition[] = [
     description:
       "One job at a glance: its status, GC and scheduled dates; contract value, billed to date, cost to date and percent complete; and how many RFIs are open (and past their response date), punch items are open and change orders are pending or awaiting the GC. Answers 'how's Riverside looking' and 'give me the rundown on Maple'. Every figure comes from the same calculation as job_margin, open_rfis, open_punch_list and change_order_status — use those for the detail behind a count. Sections the person's access does not include are listed in `withheldFromYou` and must be described as withheld, never as zero. Needs one job: if several match, ask which.",
     input_schema: oneJob,
+  },
+  {
+    name: "getting_started",
+    // /dashboard is open. The STEPS are filtered per person by the card's own
+    // lib/getting-started.ts, handed the asker's principal, so each step's
+    // page is one this person can open — the same rule that keeps it off
+    // their card.
+    capability: null,
+    description:
+      "The Getting started checklist from the dashboard — the same steps, for this company and for THIS person: name the company, add the first job, bring in a spreadsheet or Jobber (optional), add the crew, put someone on the schedule, log the first day on site, connect QuickBooks (optional). Each step comes back done or not, what it means in the card's own words, its page, and `askCanDo` when a confirm-card command can do it for this person. Steps this person cannot do are left out, exactly as on their card — never call those done. Call this for 'help me finish getting started', 'what's left to set up', 'walk me through setup', or 'complete the get-started list', from ANY page. Answer by saying what is done in one line, then one bullet per OPEN step: when `askCanDo` is set, offer to do it and ask for exactly its `needsFromPerson` (call that command only once they have given it, one per question); otherwise give the step's page to do it there. Renaming the company, inviting people, importing a spreadsheet or Jobber, and connecting QuickBooks are done on their pages — never claim to have done them. `hiddenOnDashboard` true means they hid the card; mention it only if asked where the card went.",
+    input_schema: noInput,
   },
 ];
 

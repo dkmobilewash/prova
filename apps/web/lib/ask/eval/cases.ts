@@ -87,6 +87,7 @@ export const EVAL_CASES: EvalCase[] = [
   tool("read-attention", "what needs my attention today?", "needs_attention"),
   tool("read-contact", "what's the number for the PM at Halvorsen?", "contact_lookup", { name: "Halvorsen" }, ESTIMATOR),
   tool("read-job-overview", "give me the rundown on Riverside", "job_overview", { jobName: "Riverside" }),
+  tool("read-getting-started", "help me finish getting started", "getting_started"),
   // Roadmap item 4's five. Each is phrased the way the question actually
   // arrives — "what's coming in", "what is the GC sitting on" — rather than
   // in the tool's own vocabulary, since routing from the words a
