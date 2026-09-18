@@ -283,13 +283,19 @@ export function Sidebar({
         aria-label="Main"
         className="fixed inset-y-0 left-0 z-40 flex w-60 flex-col bg-rail"
       >
-        <div className="flex h-14 shrink-0 items-center gap-3 px-4">
-          {/* The C Stream mark (2026-09-18), replacing the yellow "C" tile. */}
-          <Image src="/brand/cstream-mark.png" alt="C Stream" width={32} height={32} className="h-8 w-8 shrink-0 object-contain" priority />
+        {/* The C Stream mark (2026-09-18), replacing the yellow "C" tile.
+            The whole row is the way home, as a logo is in nearly every app —
+            Cyrus's call, 2026-09-18. */}
+        <Link
+          href="/dashboard"
+          aria-label={`${companyName} — go to the dashboard`}
+          className="flex h-14 shrink-0 items-center gap-3 px-4 hover:bg-rail-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand"
+        >
+          <Image src="/brand/cstream-mark.png" alt="" width={32} height={32} className="h-8 w-8 shrink-0 object-contain" priority />
           <span className="truncate whitespace-nowrap text-[15px] font-semibold text-white">
             {companyName}
           </span>
-        </div>
+        </Link>
 
         {/* Ask is a LINK, not a collapsible group. It was briefly a group of
             its own and Cyrus killed it on sight, correctly: a disclosure

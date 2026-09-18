@@ -373,6 +373,15 @@ export const TOP_QUESTIONS: TopQuestion[] = [
   t("q-attention-overdue", "what have we let slip past its date?", "needs_attention", ACCOUNTING),
   t("q-contact-number", "what's the number for the PM at Halvorsen?", "contact_lookup", ESTIMATOR),
   t("q-job-rundown", "give me the rundown on Riverside", "job_overview"),
+
+  // ══════════════════════════════════ a brand-new account
+  // The first of these is the question that was actually asked, verbatim,
+  // and answered "I can't see that page's get-started checklist" — which was
+  // true, and is why `getting_started` exists. The checklist lives on the
+  // dashboard; the person was on the jobs page, so it must route from anywhere.
+  t("q-getting-started-all", "Can you help me complete everything in get started on the jobs and estimates page", "getting_started"),
+  t("q-getting-started-left", "what's left to set up on my account?", "getting_started"),
+  t("q-getting-started-member", "walk me through the getting started steps", "getting_started", ESTIMATOR),
   c("q-contact-add", "add Halvorsen Builders to our contacts, they're a GC, 555-0142", "add_contact", ESTIMATOR),
   c("q-pursuit-add", "add Northgate Medical to what we're chasing, Turner and Skanska are bidding it", "add_bid_pursuit", ESTIMATOR),
   c("q-pursuit-stage", "we called about Northgate Medical, move it to contacted", "set_pursuit_stage", ESTIMATOR),
@@ -442,7 +451,10 @@ export const CENSUS_REFUSALS = 2;
  * a refusal for adding a lien deadline by chat, and a gap for who is on
  * the clock. Still called "the hundred" everywhere else, which is the name
  * of the census rather than its size — the size is this literal. */
-export const TOTAL_QUESTIONS = 110;
+/** 110 -> 113 on 2026-09-18: three getting-started questions for the
+ * `getting_started` tool, one of them the real question a new account asked
+ * and was told "nothing here reads it". No gap and no refusal changed. */
+export const TOTAL_QUESTIONS = 113;
 
 /**
  * The routable ninety-seven, as eval cases, so the model half of the
