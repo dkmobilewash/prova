@@ -8,6 +8,7 @@ import type {
   MaterialOrder,
   Media,
   PunchListItem,
+  RatioWarning,
   SafetyIncident,
   TimeEntry,
   TmTicket,
@@ -148,6 +149,19 @@ export async function listLineItems(jobId: string, token: string): Promise<LineI
 
 export async function listCrafts(token: string): Promise<Craft[]> {
   return request(`/api/v1/crafts`, { token });
+}
+
+/** Apprentice-ratio breaches for one job on one day (the phone's own
+ * yyyy-mm-dd), from the crew schedule and the hours already logged. */
+export async function getApprenticeRatio(
+  jobId: string,
+  date: string,
+  token: string,
+): Promise<{ date: string; warnings: RatioWarning[] }> {
+  return request(
+    `/api/v1/jobs/${encodeURIComponent(jobId)}/apprentice-ratio?date=${encodeURIComponent(date)}`,
+    { token },
+  );
 }
 
 export async function registerDeviceToken(

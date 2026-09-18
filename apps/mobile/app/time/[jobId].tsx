@@ -18,16 +18,54 @@ import {
   saveSession,
   type OpenClockSession,
 } from "@/lib/clock-session";
+import { craftsForWorker, pickCraft } from "@/lib/crafts";
 import { uuid } from "@/lib/id";
 import { enqueue } from "@/lib/sync-queue";
 import { useSync } from "@/lib/use-sync";
-import type { Craft, CrewMember, LineItem, TimeEntry, TimeEntryPayType } from "@/lib/types";
+import type { Craft, CrewMember, LineItem, RatioWarning, TimeEntry, TimeEntryPayType } from "@/lib/types";
 
 const PAY_TYPES: TimeEntryPayType[] = ["STRAIGHT", "OVERTIME", "DOUBLE_TIME", "SHIFT_DIFFERENTIAL"];
 
 /** "7:02 AM" in the device's own time zone. */
 function formatClockTime(iso: string): string {
   return new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
+/** One line per breach, in the unit it was measured in: people on the
+ * schedule, hours once logged. */
+function ratioWarningText(w: RatioWarning): string {
+  const planned = w.source === "planned";
+  const apprentices = planned ? people(w.apprentices, "apprentice") : `${w.apprentices}h apprentice`;
+  const journeymen = planned ? people(w.journeymen, "journeyman", "journeymen") : `${w.journeymen}h journeyman`;
+  const where = planned ? "Scheduled crew" : "Hours logged";
+  const rule = `(${w.unionLocalLabel}: ${w.rule})`;
+  if (w.status === "NO_JOURNEYMAN") return `${where}: ${apprentices} and no journeyman ${rule}.`;
+  const allowed =
+    w.allowedApprentices === null ? "" : ` — ${planned ? w.allowedApprentices : `${w.allowedApprentices}h`} allowed`;
+  return `${where}: ${apprentices} to ${journeymen}${allowed} ${rule}.`;
+}
+
+function people(n: number, one: string, many = `${one}s`): string {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
+/** The line under "Craft": why the list is what it is. */
+function CraftHint({ required, fallback, who }: { required: boolean; fallback: boolean; who: string }) {
+  if (!required) {
+    return (
+      <Text style={styles.hint}>
+        No crafts are set up for this company, so these hours will show as untagged on certified payroll.
+      </Text>
+    );
+  }
+  if (fallback) {
+    return (
+      <Text style={styles.hint}>
+        No crafts are ticked for {who} yet, so every craft is shown. Tick them on the web under Union compliance.
+      </Text>
+    );
+  }
+  return <Text style={styles.hint}>Required.</Text>;
 }
 
 function formatElapsed(ms: number): string {
@@ -48,6 +86,10 @@ export default function TimeScreen() {
   // which may not be the job this screen is showing.
   const [jobNames, setJobNames] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
+  // Apprentice-ratio breaches for today on this job, from the crew schedule
+  // and the hours already logged. Empty when within ratio, or when it could
+  // not be read (a failed read is not a warning).
+  const [ratioWarnings, setRatioWarnings] = useState<RatioWarning[]>([]);
 
   // Clock state. `sessionLoaded` holds the card back until the saved session
   // has been read — until then a running clock would render as "Not on the
@@ -90,6 +132,14 @@ export default function TimeScreen() {
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load time");
+    }
+    // Separate from the list above: a ratio that cannot be read must not
+    // hide the entries, and offline it simply shows nothing.
+    try {
+      const today = dayFromClockIn(new Date().toISOString());
+      setRatioWarnings((await api.getApprenticeRatio(jobId, today, token)).warnings);
+    } catch {
+      setRatioWarnings([]);
     }
   };
 
@@ -155,7 +205,7 @@ export default function TimeScreen() {
   };
 
   const onClockIn = async () => {
-    if (!jobId) return;
+    if (!jobId || (craftRequired && !clockCraftId)) return;
     // Never overwrite a running clock: its start time is the evidence.
     const existing = await getOpenSession();
     if (existing) {
@@ -192,7 +242,7 @@ export default function TimeScreen() {
   };
 
   const onSwitch = async () => {
-    if (!jobId || !openSession) return;
+    if (!jobId || !openSession || (craftRequired && !clockCraftId)) return;
     const closed = await closeInterval(new Date().toISOString());
     if (!closed) {
       setShowSwitch(false);
@@ -218,14 +268,14 @@ export default function TimeScreen() {
   };
 
   const openClockIn = () => {
-    setClockCraftId(null);
+    setClockCraftId(pickCraft(myCrafts.options, null));
     setClockLineItemId(null);
     setShowClockIn(true);
   };
 
   const openSwitch = () => {
     if (!openSession) return;
-    setClockCraftId(openSession.craftClassificationId);
+    setClockCraftId(pickCraft(myCrafts.options, openSession.craftClassificationId));
     // A cost code belongs to one job. Switching onto THIS job from another
     // must not carry the other job's cost code over — the server would
     // refuse it and the offline queue would stall behind the refusal.
@@ -233,8 +283,20 @@ export default function TimeScreen() {
     setShowSwitch(true);
   };
 
+  const openForm = () => {
+    setCraftClassificationId(pickCraft(formCrafts.options, craftClassificationId));
+    setShowForm(true);
+  };
+
+  /** Changing who the hours are for re-picks the craft from THEIR crafts. */
+  const selectWorker = (id: string | null) => {
+    setCrewMemberId(id);
+    const options = craftsForWorker(crafts, id ? { kind: "crew", id } : { kind: "me" }).options;
+    setCraftClassificationId(pickCraft(options, craftClassificationId));
+  };
+
   const submit = async () => {
-    if (!jobId || !date || !hours) return;
+    if (!jobId || !date || !hours || (craftRequired && !craftClassificationId)) return;
     setDate("");
     setHours("");
     setNote("");
@@ -254,6 +316,14 @@ export default function TimeScreen() {
     await sync();
   };
 
+  // A craft is required whenever the company has any — certified payroll
+  // (wh347.ts) cannot place untagged hours. With none set up at all there is
+  // nothing to choose, so hours can still be logged and payroll flags them.
+  const craftRequired = crafts.length > 0;
+  const myCrafts = craftsForWorker(crafts, { kind: "me" });
+  const formCrafts = craftsForWorker(crafts, crewMemberId ? { kind: "crew", id: crewMemberId } : { kind: "me" });
+  const formWorkerName = crewMemberId ? (crew.find((c) => c.id === crewMemberId)?.name ?? "this person") : "you";
+
   const elapsedMs = openSession ? now.getTime() - new Date(openSession.clockStartedAt).getTime() : 0;
   const clockCraftLabel = openSession?.craftClassificationId
     ? crafts.find((c) => c.id === openSession.craftClassificationId)?.name ?? null
@@ -270,6 +340,15 @@ export default function TimeScreen() {
     <View style={styles.screen}>
       {pending > 0 ? <Text style={styles.pending}>Pending sync: {pending}</Text> : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
+
+      {ratioWarnings.length > 0 ? (
+        <View style={styles.ratioBanner}>
+          <Text style={styles.ratioTitle}>Apprentice ratio — over today</Text>
+          {ratioWarnings.map((w, i) => (
+            <Text key={i} style={styles.ratioLine}>{ratioWarningText(w)}</Text>
+          ))}
+        </View>
+      ) : null}
 
       {/* Clock card */}
       <View style={styles.clockCard}>
@@ -347,7 +426,7 @@ export default function TimeScreen() {
       />
 
       <View style={styles.footer}>
-        <Button fullWidth onPress={() => setShowForm(true)}>
+        <Button fullWidth onPress={openForm}>
           Log time
         </Button>
       </View>
@@ -359,6 +438,7 @@ export default function TimeScreen() {
         title={showClockIn ? "Clock in" : switchLabel}
         primaryLabel={showClockIn ? "Start" : switchLabel}
         onPrimary={showClockIn ? onClockIn : onSwitch}
+        primaryDisabled={craftRequired && !clockCraftId}
       >
         <Text style={styles.chipLabel}>Cost code</Text>
         <View style={styles.chips}>
@@ -369,9 +449,9 @@ export default function TimeScreen() {
         </View>
 
         <Text style={styles.chipLabel}>Craft</Text>
+        <CraftHint required={craftRequired} fallback={myCrafts.fallback} who="you" />
         <View style={styles.chips}>
-          <Chip label="No craft" selected={clockCraftId === null} onPress={() => setClockCraftId(null)} />
-          {crafts.map((c) => (
+          {myCrafts.options.map((c) => (
             <Chip key={c.id} label={c.name} selected={clockCraftId === c.id} onPress={() => setClockCraftId(c.id)} />
           ))}
         </View>
@@ -384,6 +464,7 @@ export default function TimeScreen() {
         title="Log time"
         primaryLabel="Save entry"
         onPrimary={submit}
+        primaryDisabled={craftRequired && !craftClassificationId}
       >
         <Field label="Date" placeholder="YYYY-MM-DD" value={date} onChangeText={setDate} />
         <Field label="Hours" placeholder="e.g. 8 or 8.5" value={hours} onChangeText={setHours} keyboardType="decimal-pad" />
@@ -391,9 +472,9 @@ export default function TimeScreen() {
 
         <Text style={styles.chipLabel}>Who</Text>
         <View style={styles.chips}>
-          <Chip label="Me" selected={crewMemberId === null} onPress={() => setCrewMemberId(null)} />
+          <Chip label="Me" selected={crewMemberId === null} onPress={() => selectWorker(null)} />
           {crew.map((c) => (
-            <Chip key={c.id} label={c.name} selected={crewMemberId === c.id} onPress={() => setCrewMemberId(c.id)} />
+            <Chip key={c.id} label={c.name} selected={crewMemberId === c.id} onPress={() => selectWorker(c.id)} />
           ))}
         </View>
 
@@ -413,9 +494,9 @@ export default function TimeScreen() {
         </View>
 
         <Text style={styles.chipLabel}>Craft</Text>
+        <CraftHint required={craftRequired} fallback={formCrafts.fallback} who={formWorkerName} />
         <View style={styles.chips}>
-          <Chip label="No craft" selected={craftClassificationId === null} onPress={() => setCraftClassificationId(null)} />
-          {crafts.map((c) => (
+          {formCrafts.options.map((c) => (
             <Chip key={c.id} label={c.name} selected={craftClassificationId === c.id} onPress={() => setCraftClassificationId(c.id)} />
           ))}
         </View>
@@ -450,5 +531,17 @@ const styles = StyleSheet.create({
   note: { color: colors.inkBody, fontSize: typography.size.md, marginTop: 4 },
   chipLabel: { color: colors.inkLabel, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  hint: { color: colors.inkMuted, fontSize: typography.size.sm },
+  ratioBanner: {
+    margin: 16,
+    marginBottom: 0,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.tagRoseInk,
+    gap: 4,
+  },
+  ratioTitle: { color: colors.tagRoseInk, fontSize: typography.size.md, fontWeight: typography.weight.bold },
+  ratioLine: { color: colors.inkBody, fontSize: typography.size.sm },
   footer: { padding: 16, paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.lineRow },
 });

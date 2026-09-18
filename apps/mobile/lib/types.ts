@@ -136,6 +136,22 @@ export type LineItem = {
 export type Craft = {
   id: string;
   name: string;
+  tier: "JOURNEYMAN" | "APPRENTICE" | "FOREMAN" | null;
+  /** The signed-in user works under this craft. */
+  mine: boolean;
+  /** Crew members who work under this craft. */
+  crewMemberIds: string[];
+};
+
+export type RatioWarning = {
+  /** "planned" = today's crew schedule, counted in people; "logged" = hours. */
+  source: "planned" | "logged";
+  unionLocalLabel: string;
+  rule: string;
+  status: "OVER" | "NO_JOURNEYMAN";
+  journeymen: number;
+  apprentices: number;
+  allowedApprentices: number | null;
 };
 
 export type TmTicket = {

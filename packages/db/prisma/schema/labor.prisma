@@ -350,10 +350,52 @@ model CraftClassification {
   dispatchSlips             DispatchSlip[]
   apprenticeshipEnrollments ApprenticeshipEnrollment[]
   crewScheduleDays          CrewScheduleDay[]
+  workerCrafts              WorkerCraft[]
 
   @@unique([unionLocalId, name])
   @@index([unionLocalId])
   @@index([companyId])
+}
+
+/// Which crafts a person can be logged under — "Tino works as a Journeyman
+/// Carpenter". It drives one thing: the phone's craft picker shows a worker
+/// only their own crafts, so a foreman is not choosing from every craft the
+/// company has (teardown D-12, filtered by the worker, kept deliberately
+/// simple). A worker with no rows here is shown every craft rather than
+/// none, so a company that has not set this up is never blocked.
+///
+/// It is NOT a certification record and proves nothing to an agency —
+/// WorkerCertification is the safety-card table, and this is separate from
+/// it on purpose. Nor is it enforced when an hour is saved: the phone's
+/// offline queue stops at the first refused write, so a server-side refusal
+/// would strand every entry queued behind it. What a filing reads is the
+/// craft on the TimeEntry itself.
+///
+/// A person is a login (userId) OR a crew member (crewMemberId), never both
+/// and never neither — the same XOR as TimeEntry, CHECKed in the migration.
+/// Cascades from every parent: a row means nothing once its craft or its
+/// person is gone, and nothing reads it historically.
+model WorkerCraft {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  craftClassificationId String
+  craftClassification   CraftClassification @relation(fields: [craftClassificationId], references: [id], onDelete: Cascade)
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  crewMemberId String?
+  crewMember   CrewMember? @relation(fields: [crewMemberId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([craftClassificationId, userId])
+  @@unique([craftClassificationId, crewMemberId])
+  @@index([companyId])
+  @@index([userId])
+  @@index([crewMemberId])
 }
 
 /// Effective-dated, not a flat current-rate field: CBA rates typically

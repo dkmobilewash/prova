@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
+import { can } from "@/lib/permissions";
 import { prisma } from "@prova/db";
 import {
   actionFail as fail,
@@ -537,4 +538,75 @@ export async function deleteFringeRateSchedule(scheduleId: string): Promise<Acti
     revalidatePath("/union-compliance");
     return ok;
   });
+}
+
+/**
+ * Turns one "this person works under this craft" on or off — a checkbox on
+ * /union-compliance. It feeds the phone's craft picker (see WorkerCraft in
+ * labor.prisma) and nothing else: no time entry reads it, so turning one off
+ * changes no hour already logged.
+ *
+ * `worker` is "user:<id>" or "crew:<id>", the same shape the crew schedule
+ * uses. The craft, the user and the crew member are each checked against
+ * this company, because a form value is not a permission.
+ */
+export async function setWorkerCraft(
+  craftId: string,
+  worker: string,
+  enabled: boolean,
+): Promise<ActionResult> {
+  // Asserted here, not only on the page: a Server Action is its own endpoint
+  // and answers whoever posts to it. Returned rather than thrown, since
+  // production redacts a thrown message. (The older actions in this file are
+  // still on the known-open list in action-capability-guards.test.ts; this
+  // one is not added to it.)
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_COMPLIANCE")) {
+    return fail("Setting who works under each craft isn't part of your job function.");
+  }
+  const { company } = context;
+
+  const craft = await prisma.craftClassification.findFirst({
+    where: { id: craftId, companyId: company.id },
+    select: { id: true },
+  });
+  if (!craft) return fail("That classification no longer exists");
+
+  let person: { userId: string } | { crewMemberId: string };
+  if (worker.startsWith("user:") && worker.length > 5) {
+    const user = await prisma.user.findFirst({
+      where: { id: worker.slice(5), companyId: company.id },
+      select: { id: true },
+    });
+    if (!user) return fail("That team member isn't in this company");
+    person = { userId: user.id };
+  } else if (worker.startsWith("crew:") && worker.length > 5) {
+    const member = await prisma.crewMember.findFirst({
+      where: { id: worker.slice(5), companyId: company.id },
+      select: { id: true, archivedAt: true },
+    });
+    if (!member) return fail("That crew member isn't in this company");
+    if (enabled && member.archivedAt) return fail("That crew member is archived");
+    person = { crewMemberId: member.id };
+  } else {
+    return fail("Pick a person");
+  }
+
+  if (enabled) {
+    try {
+      await prisma.workerCraft.create({
+        data: { companyId: company.id, craftClassificationId: craft.id, ...person },
+      });
+    } catch (err) {
+      // Already on — a double click, or two tabs. The state asked for holds.
+      if (!isUniqueConstraintError(err)) throw err;
+    }
+  } else {
+    await prisma.workerCraft.deleteMany({
+      where: { companyId: company.id, craftClassificationId: craft.id, ...person },
+    });
+  }
+
+  revalidatePath("/union-compliance");
+  return ok;
 }
