@@ -6,6 +6,7 @@ import { valueIsPartial, winRateLabel } from "@/lib/bid-pipeline";
 import { money } from "@/lib/money";
 import { loadBidPursuits, loadLinkableInvitations } from "@/lib/bid-pursuits-query";
 import { BidPursuitList } from "@/components/BidPursuitList";
+import { viewerToday } from "@/lib/viewerToday";
 
 /**
  * The bidding relationship, per GC.
@@ -29,9 +30,16 @@ export default async function PipelinePage() {
   if (!allowed) return <NoAccess capability="MANAGE_ESTIMATING" />;
 
   const today = new Date().toISOString().slice(0, 10);
+  // The pursuit flags ("bid date passed", "soon", "untouched") are judged on
+  // the READER'S calendar: the create form's date floor is localToday(), and
+  // on UTC's day an evening entry for tomorrow in Los Angeles read as passed
+  // the moment it was saved. The bid_pursuits Ask tool uses the same call,
+  // so the screen and the answer agree. The invitation figures below keep
+  // `today` (UTC), unchanged, matching their own Ask tool.
+  const pursuitDay = await viewerToday();
   const [{ rows, live }, pursuits, invitations] = await Promise.all([
     loadBidPipeline(context.company.id, today),
-    loadBidPursuits(context.company.id, today),
+    loadBidPursuits(context.company.id, pursuitDay),
     loadLinkableInvitations(context.company.id),
   ]);
 

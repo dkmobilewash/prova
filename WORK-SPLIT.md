@@ -345,7 +345,11 @@ access" and the click-list passes while proving nothing.
 The third lane also built `/pipeline` — a per-GC read of `BidInvitation`
 (`lib/bid-pipeline.ts`, `lib/bid-pipeline-query.ts`). It is deliberately
 READ-ONLY: `BidInvitation`, its actions in `lib/actions/estimating.ts` and
-the `/bids` page all stay with estimating, and a status is changed there.
+the `/bids` page all stay with estimating. An invitation's status is changed
+on the GC's contact page, `app/(app)/contacts/[id]/page.tsx`
+(`updateBidInvitationStatus`, under "Bid invitations") — NOT on `/bids`,
+which only filters and reads. (Corrected 2026-09-17: this said "a status is
+changed there" after naming `/bids`, which has no write on it.)
 Shared files touched, one line each: `navItems.tsx`, `middleware.ts`, and
 the `ROUTE_CAPABILITY` map in `lib/permissions.ts`.
 
@@ -353,8 +357,9 @@ the `ROUTE_CAPABILITY` map in `lib/permissions.ts`.
 `BidInvitation`.** The pre-bid chase list (`BidPursuit`, `pursuits.prisma`,
 `lib/actions/bidPursuits.ts`) sits at the top of the page — projects being
 chased before any GC has invited us. The invitation half below it is still
-read-only exactly as described above; a pursuit only LINKS to the invitation
-it became (nullable FK, SET NULL) and never edits it. Not `SalesLead`, which
+read-only ON `/pipeline` — an invitation is created, re-statused and
+deleted on the GC's contact page, as above; a pursuit only LINKS to the
+invitation it became (nullable FK, SET NULL) and never edits it. Not `SalesLead`, which
 is Prova's own CRM — see `sales.prisma`'s first line.
 
 The CRM lane (`claude/prova-crm-contact-lifecycle`, #72) owns contacts

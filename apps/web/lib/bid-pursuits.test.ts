@@ -93,7 +93,7 @@ describe("summary counts", () => {
   it("sums value over OPEN pursuits only, and says how many open ones had none", () => {
     const summary = summarisePursuits(rows, TODAY);
     // Not the invited 999,999 nor the dropped 777: those are not being chased.
-    expect(summary.openEstimatedValue).toBeCloseTo(150_000.5, 2);
+    expect(summary.openEstimatedValue).toBe(150_000.5);
     expect(summary.openUnpriced).toBe(1);
   });
 });
@@ -136,5 +136,47 @@ describe("parsing what somebody typed", () => {
   it("counts whole calendar days", () => {
     expect(daysFromTo("2026-09-01", "2026-09-18")).toBe(17);
     expect(daysFromTo("2026-09-18", "2026-09-01")).toBe(-17);
+  });
+});
+
+describe("the open value is money, summed as money", () => {
+  it("adds $100.10 and $200.20 to exactly 300.30, not 300.29999999999995", () => {
+    // Float addition of the two gives 300.29999999999995, which the Ask tool
+    // handed the model raw. Summed in whole cents, it is 300.3 on the nose.
+    const summary = summarisePursuits(
+      [pursuit({ estimatedValue: 100.1 }), pursuit({ estimatedValue: 200.2 })],
+      TODAY,
+    );
+    expect(100.1 + 200.2).not.toBe(300.3); // the trap is real on this runtime
+    expect(summary.openEstimatedValue).toBe(300.3);
+    expect(summary.openEstimatedValue.toFixed(2)).toBe("300.30");
+  });
+
+  it("stays exact across many cent amounts", () => {
+    const rows = Array.from({ length: 10 }, () => pursuit({ estimatedValue: 0.1 }));
+    expect(summarisePursuits(rows, TODAY).openEstimatedValue).toBe(1);
+  });
+});
+
+describe("the value parser reads money the way a person types it", () => {
+  it("forgives a space after the dollar sign", () => {
+    expect(optionalValueFromString("$ 250,000")).toBe("250000");
+    expect(optionalValueFromString(" $250,000 ")).toBe("250000");
+  });
+
+  it("accepts commas only as thousands grouping", () => {
+    expect(optionalValueFromString("1,250,000.00")).toBe("1250000.00");
+    expect(optionalValueFromString("1250000")).toBe("1250000");
+    // "1,2,3" is not a number anybody meant; storing 123 is worse than asking.
+    expect(() => optionalValueFromString("1,2,3")).toThrow();
+    expect(() => optionalValueFromString("12,50")).toThrow();
+    expect(() => optionalValueFromString("1,0000")).toThrow();
+    expect(() => optionalValueFromString(",250")).toThrow();
+  });
+
+  it("refuses zero, because blank — not zero — means nobody said", () => {
+    expect(() => optionalValueFromString("0")).toThrow(/leave it blank/);
+    expect(() => optionalValueFromString("$0.00")).toThrow(/leave it blank/);
+    expect(optionalValueFromString("0.50")).toBe("0.50");
   });
 });

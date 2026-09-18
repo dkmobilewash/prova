@@ -109,3 +109,42 @@ mutation.
 The general point, and why an agent's "20 of 20" is not the end of review: a
 mutation list written by the author tests the lines the author was thinking
 about. The query nobody thought of as a boundary is the one worth breaking.
+
+## Eight things review found, each reproduced as a red test before it was fixed
+
+- **A refused save wiped the form.** All three forms were
+  `<form action={(formData) => …}>`, and React's form-action path resets the
+  form before the action runs, whatever it returns — so "Estimated value must
+  be a number…" arrived on an empty form. Now `onSubmit` + `preventDefault()`,
+  the LogTimeEntryForm pattern; nothing resets, and on success the form
+  closes. `components/bidPursuitList.test.ts` renders the list in happy-dom,
+  submits a refused create and a refused edit, and asserts every typed value
+  survives; a source check fails if an `action={(formData)` comes back.
+- **The stage dropdown snapped back.** A controlled `value={pursuit.stage}`
+  showed the OLD stage, disabled, for the seconds the refreshed page takes —
+  reading as a failed change. Now uncontrolled, keyed on the saved stage; a
+  refusal bumps the key to put the saved stage back beside the reason.
+- **The Ask tool's open value had float noise.** $100.10 + $200.20 summed as
+  300.29999999999995. Summed in whole cents now; that pair is the test.
+- **The linked-means-INVITED rule had a race, and four writes ignored
+  `count`.** A stage write off INVITED now carries `bidInvitationId: null`
+  in its WHERE, so a link saved by someone else between the read and the
+  write makes it match nothing, and that comes back as the unlink-first
+  sentence. Stage, link and unlink writes on a pursuit deleted a moment
+  earlier now say "no longer on your list" instead of ok. The action test's
+  fake gained a between-read-and-write hook to reproduce both.
+- **"Bid date passed" and the create form's floor were on different days.**
+  The floor is the browser's `localToday()`; passed was judged on UTC's day,
+  so an evening entry for tomorrow in Los Angeles read as passed on save.
+  The pursuit flags on `/pipeline` and in `bid_pursuits` now both use
+  `viewerToday()`; a test pins both to that call. The invitation figures on
+  the same page stay on UTC, as their own Ask tool does.
+- **The value parser.** "$ 250,000" was refused (trimmed before the `$`
+  came off); "1,2,3" was stored as 123 (every comma stripped); 0 was accepted
+  though blank, not zero, means nobody said. Commas now only as thousands
+  grouping, and zero is refused with "leave it blank".
+- **WORK-SPLIT.md said an invitation's status is changed on `/bids`.** It is
+  changed on the GC's contact page; `/bids` has no write. Both sentences
+  corrected.
+- **The export left `BidPursuit` out without saying so.** Now disclosed
+  under the pipeline omission, with a test naming it.

@@ -15,6 +15,7 @@ import {
 import { renewalAlerts, renewalCoverage, renewalCoverageMessage, renewalTiming } from "@/lib/compliance-expiry";
 import { renewalSourcesForCompany } from "@/lib/renewals";
 import { serverToday } from "@/lib/serverToday";
+import { viewerToday } from "@/lib/viewerToday";
 import { daysBetween } from "./dates";
 import {
   arBalanceFor,
@@ -3351,7 +3352,11 @@ async function bidPursuits(companyId: string, input: Input): Promise<ToolResult>
         ? [requested as BidPursuitStage]
         : undefined;
 
-  const today = serverToday();
+  // The READER'S day, not UTC's — the same viewerToday() /pipeline uses for
+  // these rows, and the day the create form's floor (localToday) is on. On
+  // serverToday a Los Angeles evening entry for tomorrow read as "bid date
+  // passed" the moment it was saved.
+  const today = await viewerToday();
   const pursuits = await loadBidPursuits(companyId, today, stages);
   const summary = summarisePursuits(pursuits, today);
 

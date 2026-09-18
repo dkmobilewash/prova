@@ -438,10 +438,12 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
     key: "pipeline",
     title: "The sales pipeline and bidding",
     detail:
-      "Leads, opportunities, bid invitations, vendor price quotes, and the named people " +
-      "and call history behind a contact. The contact record itself is exported; the work " +
-      "of winning it is not.",
+      "Leads, opportunities, bid invitations, the pre-bid chase list on the bid pipeline " +
+      "page (projects being pursued before any GC invited you), vendor price quotes, and " +
+      "the named people and call history behind a contact. The contact record itself is " +
+      "exported; the work of winning it is not.",
     models: [
+      "BidPursuit",
       "SalesLead",
       "SalesOpportunity",
       "SalesActivity",

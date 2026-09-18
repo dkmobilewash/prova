@@ -19,6 +19,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  */
 
 vi.mock("@/lib/serverToday", () => ({ serverToday: () => "2026-09-18" }));
+// The READER'S calendar day. Defaults to the same day as the UTC one, so
+// every case below reads as it always did; the timezone case moves it.
+let viewerDay = "2026-09-18";
+vi.mock("@/lib/viewerToday", () => ({ viewerToday: async () => viewerDay, viewerTimeZone: async () => "UTC" }));
 
 type Row = {
   id: string;
@@ -147,6 +151,7 @@ type Out = {
 };
 
 beforeEach(() => {
+  viewerDay = "2026-09-18";
   touched.clear();
   findMany.mockClear();
 });
@@ -254,6 +259,38 @@ describe("the write side and the shared query do not name a sales model either",
       // Anti-vacuity: each file really does read or write BidPursuit.
       expect(code, file).toMatch(/[Bb]idPursuit/);
       expect(code.match(/\bsales(Lead|Opportunit|Activit|StageChange)\w*/gi) ?? [], file).toEqual([]);
+    }
+  });
+});
+
+describe("\"bid date passed\" is judged on the reader's calendar, the same day the create form's floor uses", () => {
+  it("does not call a Los Angeles reader's TOMORROW passed just because UTC has rolled over", async () => {
+    // 17:30 on Aug 31 in Los Angeles is already Sep 1 in UTC. Riverside's
+    // bid is expected Sep 1 — tomorrow, to the person asking. The create
+    // form's floor (localToday) would let them enter it; the answer must
+    // not then call it passed.
+    viewerDay = "2026-08-31";
+    const rows = (await ask()).data as Out[];
+    const riverside = rows.find((r) => r.project === "Riverside library")!;
+    expect(riverside.bidDatePassedWithNoInvite).toBe(false);
+    expect(riverside.bidDateComingUp).toBe(true);
+  });
+
+  it("/pipeline derives the pursuit flags from the same viewerToday() as this tool", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { fileURLToPath } = await import("node:url");
+    const page = readFileSync(fileURLToPath(new URL("../../app/(app)/pipeline/page.tsx", import.meta.url)), "utf8");
+    const handlers = readFileSync(fileURLToPath(new URL("./handlers.ts", import.meta.url)), "utf8");
+    // Anti-vacuity: both files really do load pursuits.
+    expect(page).toContain("loadBidPursuits(");
+    expect(handlers).toContain("loadBidPursuits(");
+    const dayArg = (source: string) => source.match(/loadBidPursuits\(\s*[\w.]+,\s*(\w+)/)?.[1];
+    for (const [name, source] of [["page", page], ["handler", handlers]] as const) {
+      const variable = dayArg(source);
+      expect(variable, name).toBeTruthy();
+      expect(source, `${name} sets ${variable} from viewerToday()`).toMatch(
+        new RegExp(`const ${variable} = await viewerToday\\(\\)`),
+      );
     }
   });
 });

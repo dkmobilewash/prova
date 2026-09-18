@@ -22,6 +22,7 @@ type Invitation = { id: string; companyId: string };
 let pursuits: Pursuit[] = [];
 let invitations: Invitation[] = [];
 let collideOnLink = false;
+let betweenReadAndWrite: (() => void) | null = null;
 const deleted: string[] = [];
 
 const context = { company: { id: "co_1" }, id: "user_1", role: "OWNER" as string, jobFunction: null as string | null };
@@ -44,6 +45,11 @@ vi.mock("@prova/db", () => ({
       findFirst: async ({ where }: { where: Record<string, unknown> }) =>
         pursuits.find((row) => matches(row, where)) ?? null,
       updateMany: async ({ where, data }: { where: Record<string, unknown>; data: Partial<Pursuit> }) => {
+        // Somebody else's write landing between this action's read and its
+        // write — the window a read-then-write guard leaves open.
+        const interleave = betweenReadAndWrite;
+        betweenReadAndWrite = null;
+        interleave?.();
         if (collideOnLink && data.bidInvitationId) {
           const error = new Error("Unique constraint failed on the fields: (`bidInvitationId`)");
           (error as Error & { code?: string }).code = "P2002";
@@ -81,6 +87,7 @@ beforeEach(() => {
     { id: "inv_theirs", companyId: "co_2" },
   ];
   collideOnLink = false;
+  betweenReadAndWrite = null;
   deleted.length = 0;
   context.role = "OWNER";
   context.jobFunction = null;
@@ -185,3 +192,63 @@ describe("the stage and the link cannot disagree", () => {
     expect(pursuits[1].stage).toBe("WATCHING");
   });
 });
+
+describe("a write that lands between the read and the write", () => {
+  const linkedByAnotherUser = () => {
+    pursuits[0].bidInvitationId = "inv_mine";
+    pursuits[0].stage = "INVITED";
+  };
+  const deletedByAnotherUser = () => {
+    pursuits = pursuits.filter((p) => p.id !== "mine");
+  };
+
+  it("does not move a pursuit off INVITED that somebody linked a moment ago (quick stage change)", async () => {
+    betweenReadAndWrite = linkedByAnotherUser;
+    const { setBidPursuitStage } = await actions();
+    const result = await setBidPursuitStage("mine", "DROPPED");
+    expect(result.ok === false && result.error).toMatch(/Unlink the invitation first/);
+    expect(pursuits[0]).toMatchObject({ bidInvitationId: "inv_mine", stage: "INVITED" });
+  });
+
+  it("does not move a pursuit off INVITED that somebody linked a moment ago (edit form)", async () => {
+    betweenReadAndWrite = linkedByAnotherUser;
+    const { updateBidPursuit } = await actions();
+    const result = await updateBidPursuit("mine", form({ projectName: "St. Mary's", stage: "WATCHING" }));
+    expect(result.ok === false && result.error).toMatch(/Unlink the invitation first/);
+    expect(pursuits[0]).toMatchObject({ bidInvitationId: "inv_mine", stage: "INVITED" });
+  });
+
+  it("still lets a linked pursuit be edited while it stays INVITED", async () => {
+    linkedByAnotherUser();
+    const { updateBidPursuit, setBidPursuitStage } = await actions();
+    expect(await updateBidPursuit("mine", form({ projectName: "St. Mary's, renamed", stage: "INVITED" }))).toEqual({
+      ok: true,
+    });
+    expect(pursuits[0]).toMatchObject({ projectName: "St. Mary's, renamed", bidInvitationId: "inv_mine" });
+    expect(await setBidPursuitStage("mine", "INVITED")).toEqual({ ok: true });
+  });
+
+  it("says the pursuit is gone, rather than ok, when it was deleted a moment ago", async () => {
+    const { setBidPursuitStage, linkBidPursuitToInvitation } = await actions();
+    const gone = { ok: false, error: "That pursuit is no longer on your list." };
+
+    betweenReadAndWrite = deletedByAnotherUser;
+    expect(await setBidPursuitStage("mine", "CONTACTED")).toEqual(gone);
+
+    beforeEachReset();
+    betweenReadAndWrite = deletedByAnotherUser;
+    expect(await linkBidPursuitToInvitation("mine", "inv_mine")).toEqual(gone);
+
+    beforeEachReset();
+    pursuits[0].bidInvitationId = "inv_mine";
+    betweenReadAndWrite = deletedByAnotherUser;
+    expect(await linkBidPursuitToInvitation("mine", "")).toEqual(gone);
+  });
+});
+
+function beforeEachReset() {
+  pursuits = [
+    { id: "mine", companyId: "co_1", stage: "WATCHING", bidInvitationId: null, projectName: "St. Mary's" },
+    { id: "theirs", companyId: "co_2", stage: "WATCHING", bidInvitationId: null, projectName: "Not yours" },
+  ];
+}

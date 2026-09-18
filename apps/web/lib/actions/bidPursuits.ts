@@ -40,6 +40,28 @@ const NOT_FOUND = "That pursuit is no longer on your list.";
 const LINKED_STAGE =
   "This pursuit is linked to a logged bid invitation, so it is INVITED. Unlink the invitation first if the invite did not really come from this pursuit.";
 
+/**
+ * Why a guarded write matched nothing: the row is gone, or it was linked
+ * between our read and our write. Re-read only on the failure path, so the
+ * happy path stays one read and one write.
+ */
+async function whyNothingMatched(id: string, companyId: string): Promise<ActionResult> {
+  const now = await prisma.bidPursuit.findFirst({ where: { id, companyId }, select: { bidInvitationId: true } });
+  return fail(now?.bidInvitationId ? LINKED_STAGE : NOT_FOUND);
+}
+
+/**
+ * The WHERE for a write that sets `stage`. The read-then-check above each
+ * caller catches the ordinary case with a clear sentence; this closes the
+ * window between that read and the write. When the new stage is not
+ * INVITED, the write only matches a row that is STILL unlinked — so a
+ * link somebody else saved a moment ago makes it match nothing, instead of
+ * leaving a pursuit linked to an invitation but not INVITED.
+ */
+function stageWriteWhere(id: string, companyId: string, stage: BidPursuitStage) {
+  return stage === "INVITED" ? { id, companyId } : { id, companyId, bidInvitationId: null };
+}
+
 function text(formData: FormData, key: string): string {
   return String(formData.get(key) ?? "").trim();
 }
@@ -109,8 +131,11 @@ export async function updateBidPursuit(id: string, formData: FormData): Promise<
   if (existing.bidInvitationId && fields.stage !== "INVITED") return fail(LINKED_STAGE);
 
   // Scoped in the WHERE, so a row belonging to another company never matches.
-  const updated = await prisma.bidPursuit.updateMany({ where: { id, companyId: company.id }, data: fields });
-  if (updated.count === 0) return fail(NOT_FOUND);
+  const updated = await prisma.bidPursuit.updateMany({
+    where: stageWriteWhere(id, company.id, fields.stage),
+    data: fields,
+  });
+  if (updated.count === 0) return whyNothingMatched(id, company.id);
 
   revalidatePath("/pipeline");
   return ok;
@@ -138,7 +163,12 @@ export async function setBidPursuitStage(id: string, stage: string): Promise<Act
   // Letting the stage say otherwise would store two facts that disagree.
   if (existing.bidInvitationId && next !== "INVITED") return fail(LINKED_STAGE);
 
-  await prisma.bidPursuit.updateMany({ where: { id, companyId: company.id }, data: { stage: next } });
+  const updated = await prisma.bidPursuit.updateMany({
+    where: stageWriteWhere(id, company.id, next),
+    data: { stage: next },
+  });
+  // Deleted, or linked, since the read above — never a silent ok.
+  if (updated.count === 0) return whyNothingMatched(id, company.id);
 
   revalidatePath("/pipeline");
   return ok;
@@ -163,7 +193,13 @@ export async function linkBidPursuitToInvitation(id: string, bidInvitationId: st
 
   const invitationId = String(bidInvitationId ?? "").trim();
   if (!invitationId) {
-    await prisma.bidPursuit.updateMany({ where: { id, companyId: company.id }, data: { bidInvitationId: null } });
+    const unlinked = await prisma.bidPursuit.updateMany({
+      where: { id, companyId: company.id },
+      data: { bidInvitationId: null },
+    });
+    // Deleted since the read above: say so rather than report an unlink of
+    // nothing as done.
+    if (unlinked.count === 0) return fail(NOT_FOUND);
     revalidatePath("/pipeline");
     return ok;
   }
@@ -177,8 +213,9 @@ export async function linkBidPursuitToInvitation(id: string, bidInvitationId: st
   });
   if (!invitation) return fail("That bid invitation is not on your account.");
 
+  let linked: { count: number };
   try {
-    await prisma.bidPursuit.updateMany({
+    linked = await prisma.bidPursuit.updateMany({
       where: { id, companyId: company.id },
       data: { bidInvitationId: invitationId, stage: "INVITED" },
     });
@@ -190,6 +227,7 @@ export async function linkBidPursuitToInvitation(id: string, bidInvitationId: st
     }
     throw err;
   }
+  if (linked.count === 0) return fail(NOT_FOUND);
 
   revalidatePath("/pipeline");
   return ok;

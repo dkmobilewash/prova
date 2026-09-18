@@ -95,8 +95,13 @@ function BidPursuitFields({ pursuit, minBidDate }: { pursuit?: PursuitRow; minBi
           // NOT pre-filled: an expected bid date is somebody's estimate, and
           // today is never the right guess. On create the USER'S today is the
           // floor, since a new pursuit expecting a bid that already passed is
-          // almost always a typo. Edit has no floor — a date that has gone by
-          // is exactly what "bid date passed, no invite" is for.
+          // almost always a typo. "Passed" on /pipeline and in the Ask tool is
+          // judged on the same calendar — viewerToday(), off the browser's own
+          // zone cookie — so a date this floor allows does not read as passed
+          // the moment it is saved. (Before that cookie exists, on a brand-new
+          // browser's first page, viewerToday falls back to a geo-IP guess or
+          // UTC and the two can differ by a day.) Edit has no floor — a date
+          // that has gone by is exactly what "bid date passed, no invite" is for.
           min={minBidDate}
           className={inputClass}
         />
@@ -137,8 +142,15 @@ function PursuitRowView({
   const [mode, setMode] = useState<"view" | "edit" | "link">("view");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  // Bumped when a stage change is refused, to remount the (uncontrolled)
+  // stage select back onto the saved stage. See the select below.
+  const [stageRevert, setStageRevert] = useState(0);
 
-  const run = (action: () => Promise<{ ok: true } | { ok: false; error: string }>, onOk?: () => void) =>
+  const run = (
+    action: () => Promise<{ ok: true } | { ok: false; error: string }>,
+    onOk?: () => void,
+    onFail?: () => void,
+  ) =>
     startTransition(async () => {
       const result = await action();
       if (result.ok) {
@@ -146,14 +158,24 @@ function PursuitRowView({
         onOk?.();
       } else {
         setError(result.error);
+        onFail?.();
       }
     });
 
   if (mode === "edit") {
     return (
       <li className="p-4">
+        {/* onSubmit + preventDefault, NOT `action={…}`: React's form-action
+            path resets the form before the action even runs, so a refused
+            save ("Estimated value must be a number…") would arrive on a form
+            that had already thrown away what was typed. Nothing is reset
+            here on success either — the form closes. */}
         <form
-          action={(formData) => run(() => updateBidPursuit(pursuit.id, formData), () => setMode("view"))}
+          onSubmit={(event) => {
+            event.preventDefault();
+            const formData = new FormData(event.currentTarget);
+            run(() => updateBidPursuit(pursuit.id, formData), () => setMode("view"));
+          }}
           className="space-y-3"
         >
           <BidPursuitFields pursuit={pursuit} />
@@ -231,12 +253,14 @@ function PursuitRowView({
 
         {mode === "link" && (
           <form
-            action={(formData) =>
+            onSubmit={(event) => {
+              event.preventDefault();
+              const formData = new FormData(event.currentTarget);
               run(
                 () => linkBidPursuitToInvitation(pursuit.id, String(formData.get("bidInvitationId") ?? "")),
                 () => setMode("view"),
-              )
-            }
+              );
+            }}
             className="mt-3 flex flex-wrap items-end gap-2"
           >
             <label className="block text-sm">
@@ -305,11 +329,26 @@ function PursuitRowView({
         <label className="sr-only" htmlFor={`stage-${pursuit.id}`}>
           Stage
         </label>
+        {/* UNCONTROLLED, keyed on the saved stage. A controlled
+            `value={pursuit.stage}` snapped straight back to the old stage
+            and sat there, disabled, until the refreshed page arrived
+            (1.5-4.4s here) — which reads as a change that failed. Now the
+            choice shows at once; the refreshed props change the key and
+            remount it on what was saved, and a refusal bumps `stageRevert`
+            to put the saved stage back beside the reason. */}
         <select
+          key={`${pursuit.stage}:${stageRevert}`}
           id={`stage-${pursuit.id}`}
-          value={pursuit.stage}
+          defaultValue={pursuit.stage}
           disabled={pending}
-          onChange={(event) => run(() => setBidPursuitStage(pursuit.id, event.target.value))}
+          onChange={(event) => {
+            const next = event.target.value;
+            run(
+              () => setBidPursuitStage(pursuit.id, next),
+              undefined,
+              () => setStageRevert((n) => n + 1),
+            );
+          }}
           className="rounded-md border border-line-card bg-surface px-2 py-1.5 text-xs text-ink-label"
         >
           {BID_PURSUIT_STAGES.map((stage) => (
@@ -378,9 +417,13 @@ export function BidPursuitList({
       </div>
 
       {adding && (
+        // onSubmit, not `action={…}` — see the edit form above. On a refusal
+        // everything typed stays; on success the form closes.
         <form
           data-testid="bid-pursuit-form"
-          action={(formData) =>
+          onSubmit={(event) => {
+            event.preventDefault();
+            const formData = new FormData(event.currentTarget);
             startTransition(async () => {
               const result = await createBidPursuit(formData);
               if (result.ok) {
@@ -389,8 +432,8 @@ export function BidPursuitList({
               } else {
                 setError(result.error);
               }
-            })
-          }
+            });
+          }}
           className="mb-4 space-y-3 rounded-lg border border-line-card bg-surface p-4"
         >
           {/* localToday(), not the server's day: at 17:00 in Los Angeles UTC

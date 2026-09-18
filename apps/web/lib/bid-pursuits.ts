@@ -102,7 +102,8 @@ export type PursuitSummary = {
   bidDatesComingUp: number;
   bidDatesPassed: number;
   goneQuiet: number;
-  /** Summed estimatedValue across OPEN pursuits that have one. */
+  /** Summed estimatedValue across OPEN pursuits that have one, in dollars,
+   * summed in whole cents so it never carries float noise. */
   openEstimatedValue: number;
   /** Open pursuits with no value recorded. When above zero,
    * openEstimatedValue is a floor, and whatever renders it must say so. */
@@ -123,7 +124,11 @@ export function summarisePursuits(pursuits: PursuitForDerivation[], today: strin
     bidDatesComingUp: pursuits.filter((p) => isBidDateComingUp(p, today)).length,
     bidDatesPassed: pursuits.filter((p) => isBidDatePassed(p, today)).length,
     goneQuiet: pursuits.filter((p) => isGoneQuiet(p, today)).length,
-    openEstimatedValue: priced.reduce((sum, p) => sum + (p.estimatedValue ?? 0), 0),
+    // In whole CENTS, then back to dollars once. Summing the dollar floats
+    // directly gave $100.10 + $200.20 = 300.29999999999995, which the Ask
+    // tool handed the model raw. Every stored value is DECIMAL(12,2), so a
+    // round to the cent loses nothing.
+    openEstimatedValue: priced.reduce((cents, p) => cents + Math.round((p.estimatedValue ?? 0) * 100), 0) / 100,
     openUnpriced: open.length - priced.length,
   };
 }
@@ -162,16 +167,28 @@ export function optionalDateFromString(raw: unknown): Date | null {
 }
 
 /** An optional money amount as a string Prisma's Decimal accepts, or null
- * when blank. Commas and a leading $ are forgiven because that is how a
- * person types a number like this. Negative is refused: a pursuit is not
- * worth less than nothing. */
+ * when blank. A leading $ (with or without a space after it) and thousands
+ * commas are forgiven because that is how a person types a number like
+ * this. Commas anywhere else are REFUSED rather than stripped: "1,2,3" is
+ * not a number anybody meant, and storing it as 123 is worse than asking.
+ * Negative is refused: a pursuit is not worth less than nothing. Zero is
+ * refused too, because blank — not zero — is what "nobody said" is stored
+ * as, and a 0 would read as a priced pursuit worth nothing. */
 export function optionalValueFromString(raw: unknown): string | null {
-  const value = typeof raw === "string" ? raw.trim().replace(/^\$/, "").replace(/,/g, "") : "";
-  if (!value) return null;
+  // Trim, drop the $, trim again: "$ 250,000" is how some people type it.
+  const typed = typeof raw === "string" ? raw.trim().replace(/^\$/, "").trim() : "";
+  if (!typed) return null;
+  const bad = () => new BidPursuitInputError("Estimated value must be a number, like 250000 or 250,000.00");
+  // Either no commas at all, or commas exactly where thousands go.
+  if (!/^(\d+|\d{1,3}(,\d{3})+)(\.\d{1,2})?$/.test(typed)) throw bad();
+  const value = typed.replace(/,/g, "");
   // Ten digits before the point is what DECIMAL(12,2) holds; more would be
   // a database error the person could not read.
-  if (!/^\d{1,10}(\.\d{1,2})?$/.test(value)) {
-    throw new BidPursuitInputError("Estimated value must be a number, like 250000 or 250,000.00");
+  if (!/^\d{1,10}(\.\d{1,2})?$/.test(value)) throw bad();
+  if (Number(value) === 0) {
+    throw new BidPursuitInputError(
+      "Estimated value can't be zero. If nobody knows what it is worth yet, leave it blank.",
+    );
   }
   return value;
 }
