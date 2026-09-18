@@ -62,6 +62,8 @@ const LABELLED_PICKERS: Record<string, number> = {
   // Where a DROPPED document gets filed. Added with /intake; it shipped
   // rendering `job.name` and this census is what caught it.
   "components/IntakeTable.tsx": 1,
+  // Which job a lien deadline belongs to. Added with /lien-deadlines.
+  "components/LienDeadlinesBoard.tsx": 1,
   "components/MaterialOrderFields.tsx": 1,
   "components/MessageComposer.tsx": 1,
   "components/PunchListForm.tsx": 1,
@@ -185,7 +187,12 @@ describe("the job-picker census", () => {
     // — so a mechanical merge kept "24" and would have failed on a count
     // that was right on each branch alone. Two pickers, one literal, which
     // is the reason it is a literal: it made a person add them up.
-    expect(expected).toEqual(25);
+    //
+    // 25 -> 26 on 2026-09-18: /lien-deadlines' "which job is this deadline
+    // on" picker, in LienDeadlinesBoard's shared create/edit fields (the
+    // edit form does not render it — job is what the row IS — so the call
+    // appears once in source).
+    expect(expected).toEqual(26);
     expect(actual).toEqual(expected);
   });
 

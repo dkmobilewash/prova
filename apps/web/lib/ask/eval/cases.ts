@@ -116,6 +116,10 @@ export const EVAL_CASES: EvalCase[] = [
   tool("read-remittance", "what do we owe the funds this month?", "fringe_remittance"),
   tool("read-remittance-month", "what were the fringes for July 2026?", "fringe_remittance", { month: "2026-07" }),
   tool("read-backcharges", "what is Turner charging back to us?", "backcharge_exposure"),
+  // The deadline is READ, never worked out: the tool returns only dates a
+  // person entered, and its description forbids computing one.
+  tool("read-lien-deadline", "when does our lien deadline run out on Riverside?", "lien_deadlines", { jobName: "Riverside" }),
+  tool("read-prelim-notices", "which preliminary notices haven't gone out yet?", "lien_deadlines", undefined, ACCOUNTING),
   tool("read-apprentices", "is anybody behind on their apprenticeship hours?", "apprenticeship_standing"),
   tool("read-field-reports", "what did we write up on Riverside last week?", "daily_field_reports", { jobName: "Riverside" }, FIELD),
   tool("read-determinations", "do we have the wage determination for Riverside on file?", "wage_determinations", { jobName: "Riverside" }),

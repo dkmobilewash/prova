@@ -20,6 +20,7 @@ export const ALERT_KIND_LABELS: Record<AlertKind, string> = {
   // The set, not the sheet: one alert covers every unreceived revision on
   // one drawing set, so the singular would misname what the row is about.
   DRAWING_REVISION_UNRECEIVED: "Drawings",
+  LIEN_DEADLINE: "Lien deadline",
 };
 
 export function kindLabel(kind: AlertKind) {

@@ -1,0 +1,109 @@
+// Lien-rights deadlines: preliminary notices, mechanic's liens, stop
+// payment notices, bond claims.
+//
+// Its own file, like crew-schedule.prisma and backcharges.prisma, so this
+// lane's migrations do not collide with anyone else's schema edits.
+//
+// WHY THIS EXISTS. "When does our lien deadline run out on Riverside?" had
+// no answer anywhere in the app — not a date, not a document, not a
+// reminder. Lien and notice deadlines vary by state, by public versus
+// private work and by the contractor's tier, and missing one can cost lien
+// rights. For a sub, the lien is the one lever left when a GC stops paying,
+// and it can be lost to a calendar rather than to a dispute. (This comment
+// used to quote one state's window as a flat rule with a flat consequence;
+// review found it overstated the statute, which is exactly the kind of
+// claim this feature exists not to make.)
+//
+// THE LOAD-BEARING RULE: THIS APP NEVER COMPUTES A LEGAL DEADLINE.
+//
+// Every `dueOn` here is ENTERED by a person — from their counsel, their
+// bonding company, or their own reading of the statute. Nothing derives
+// it from a first-furnishing date, a completion date, a state, or a tier.
+// There is deliberately no state-rules table and no date arithmetic that
+// produces a deadline, anywhere, and there must never be one:
+//
+//   - the rules vary by state, by public versus private work, by the
+//     contractor's tier (a sub-sub is not a first-tier sub), and by
+//     triggering events (notice of completion, notice of cessation) the
+//     app does not know happened;
+//   - a computed deadline that is wrong can cost lien rights, and it is
+//     wrong in the same confident voice as one that is right.
+//
+// So the app only tracks, sorts and reminds — an unserved deadline that is
+// overdue or due within 14 days raises a LIEN_DEADLINE alert
+// (apps/web/lib/alerts.ts, MANAGE_BILLING). It is a calendar the person
+// fills in, not an opinion about the law.
+
+/// Which remedy the deadline belongs to. A label for filtering and for
+/// reading the list — never an input to any date calculation.
+enum LienDeadlineKind {
+  PRELIMINARY_NOTICE
+  MECHANICS_LIEN
+  STOP_PAYMENT_NOTICE
+  BOND_CLAIM
+  OTHER
+}
+
+/// One deadline on one job's lien rights.
+///
+/// No unique key, on purpose. A job can carry several preliminary notices
+/// due the same day — owner, GC and construction lender are each served —
+/// and a key on (job, kind, dueOn) would refuse the second one. `recipient`
+/// cannot join the key either: it is optional, and Postgres treats NULLs as
+/// distinct, so a key including it would not stop a double-submit anyway.
+/// The double-submit is stopped the way every create form here stops it:
+/// the button is disabled while the action is in flight.
+model LienDeadline {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  /// Required, which makes this a RESTRICT child of Job: a job cannot be
+  /// deleted while a lien deadline hangs off it. That is the #227 shape —
+  /// this model is in HANDLED_MODELS (packages/db/scripts/scratch-scope.mjs)
+  /// and deleted before the job in BOTH clean-scratch-data.mjs and
+  /// seed-demo.mjs, and scratch-cleanup-order.test.ts fails if either
+  /// forgets.
+  jobId String
+  job   Job    @relation(fields: [jobId], references: [id])
+
+  kind LienDeadlineKind
+
+  /// What an OTHER deadline is actually called — "notice of intent to
+  /// lien", "Miller Act 90-day notice". Null on every other kind.
+  otherLabel String?
+
+  /// THE DEADLINE, AS ENTERED. UTC midnight, rendered in UTC, and never
+  /// stamped or computed — see the rule at the top of this file. The app
+  /// does not know what the law says this date should be and must not
+  /// pretend to.
+  dueOn DateTime
+
+  /// When the notice or claim was actually served or recorded. ENTERED,
+  /// because the date that matters is the one on the proof of service or
+  /// the recorder's stamp, not the day somebody clicked a button.
+  ///
+  /// Null means not served yet. "Served", "overdue" and "due soon" are all
+  /// DERIVED from this and `dueOn` against today (apps/web/lib/lien-deadlines.ts)
+  /// and NEVER stored: a stored `overdue` flag is wrong the morning after
+  /// it was written, and a stored `served` flag can disagree with the date
+  /// that proves it.
+  servedOn DateTime?
+
+  /// Who it goes to — "Owner: Riverside Holdings LLC", "Travelers (payment
+  /// bond)". Free text, because it is read by a person and served by a
+  /// person; nothing computes on it.
+  recipient String?
+
+  note String?
+
+  createdByUserId String?
+  createdBy       User?   @relation("LienDeadlineCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([jobId, dueOn])
+  @@index([createdByUserId])
+}

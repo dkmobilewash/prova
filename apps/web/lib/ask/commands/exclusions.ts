@@ -132,4 +132,30 @@ export const notYetRegistered: Exclusion[] = [
     reason:
       "The only irreversible act in the product. Owner-only, estimate-only, and never from a card that could be confirmed by reflex.",
   },
+
+  // Lien deadlines, per action, and NEVER commands — not a scope call. The
+  // whole design rests on one rule: this app never computes a legal
+  // deadline, every date is typed by a person from counsel or the statute.
+  // A command would put a MODEL in the position of supplying that date, and
+  // a plausible wrong one on a confirm card can cost lien rights. Reading
+  // them is the `lien_deadlines` tool; writing them is the page.
+  {
+    action: "createLienDeadline",
+    reason:
+      "The deadline date is legal advice the app refuses to generate. A model proposing one — however it was worded — is the app computing a deadline by another route. Entered on /lien-deadlines by a person, from counsel or the statute. Never a command.",
+  },
+  {
+    action: "updateLienDeadline",
+    reason: "Changing a deadline date is the same judgement as setting one. Done on /lien-deadlines, where the row is visible. Never a command.",
+  },
+  {
+    action: "markLienDeadlineServed",
+    reason:
+      "The served date is the date on the proof of service — evidence a person reads off a document, not something a model can know. Marked on /lien-deadlines. Never a command.",
+  },
+  {
+    action: "clearLienDeadlineServed",
+    reason: "Removes the fact that says a right was preserved; owner-only, one deliberate tap on the row. Never a command.",
+  },
+  { action: "deleteLienDeadline", reason: "T5: deletes are never commands." },
 ];
