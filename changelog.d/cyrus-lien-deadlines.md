@@ -66,3 +66,19 @@ than "fixed", because a test demanding the list be exhaustive would be wrong.
 Migration `20260918110000_add_lien_deadlines`: additive, hand-written with
 every statement on one line, and identical in content to what
 `prisma migrate diff` generates from the schema change.
+
+## Two cross-company writes no test guarded, found in review
+
+Independent review deleted the company scope from every read and write in
+`lib/actions/lienDeadlines.ts`, one at a time. Create, mark-served and delete
+went red. **Edit and undo-served did not** — each passed all 3,830 tests. The
+code was correct; a regression in either would have been invisible:
+
+- without it, `updateLienDeadline` could rewrite **another company's**
+  deadline date;
+- without it, `clearLienDeadlineServed` could mark **another company's served
+  notice** as unserved — erasing the record that a legal notice went out.
+
+Both are now pinned against the existing `"theirs"` fixture, and both go red
+on the mutation. They were the two the author's own mutation list did not
+reach, which is the reason an author's "all caught" is where review starts.

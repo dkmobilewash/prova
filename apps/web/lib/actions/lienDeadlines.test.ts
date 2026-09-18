@@ -225,3 +225,40 @@ describe("deleteLienDeadline and clearLienDeadlineServed", () => {
     expect(deadlines.some((r) => r.id === "theirs")).toBe(true);
   });
 });
+
+/**
+ * The two cross-company WRITES that nothing guarded.
+ *
+ * Found by independent review after this branch reported every mutation
+ * caught: deleting `companyId` from updateLienDeadline's lookup, or from
+ * clearLienDeadlineServed's update, passed all 3,830 tests in the repo. The
+ * code was right; the regression would have been invisible. Mark-served and
+ * delete were already pinned against the "theirs" row above — these two were
+ * the ones the author's list did not reach.
+ *
+ * Both are writes, which is why they matter more than a read leak would: one
+ * lets a company rewrite another company's deadline date, the other lets it
+ * mark another company's SERVED notice as unserved — erasing the record that
+ * a legal notice went out.
+ */
+describe("no write reaches another company's deadline", () => {
+  it("updateLienDeadline cannot edit another company's row", async () => {
+    await refusal(updateLienDeadline("theirs", form({ dueOn: "2027-01-01", recipient: "someone" })));
+    const theirs = deadlines.find((r) => r.id === "theirs") as Row;
+    expect(theirs.dueOn).toEqual(d("2026-09-20"));
+    expect(theirs.recipient).toBeUndefined();
+  });
+
+  it("clearLienDeadlineServed cannot un-serve another company's notice", async () => {
+    deadlines.push({
+      id: "theirs-served",
+      companyId: "co_2",
+      jobId: "job_other",
+      kind: "PRELIMINARY_NOTICE",
+      dueOn: d("2026-09-10"),
+      servedOn: d("2026-09-08"),
+    });
+    await refusal(clearLienDeadlineServed("theirs-served"));
+    expect((deadlines.find((r) => r.id === "theirs-served") as Row).servedOn).toEqual(d("2026-09-08"));
+  });
+});
