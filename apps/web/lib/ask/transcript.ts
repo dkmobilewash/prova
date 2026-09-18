@@ -47,6 +47,9 @@ export type TranscriptEntry = {
   citations: Citation[];
   /** Epoch milliseconds. Browser-local and never compared across devices. */
   askedAt: number;
+  /** The name of a file attached to this question, if one was. The name
+   * only — the file itself went to the model once and is not kept here. */
+  attachmentName?: string;
 };
 
 /** What a person will scroll, not what a model will hold. Twenty is well
@@ -72,7 +75,7 @@ export function boundTranscript(value: unknown): TranscriptEntry[] {
   const clean: TranscriptEntry[] = [];
   for (const entry of value) {
     if (typeof entry !== "object" || entry === null) continue;
-    const { question, answer, citations, askedAt } = entry as Record<string, unknown>;
+    const { question, answer, citations, askedAt, attachmentName } = entry as Record<string, unknown>;
     if (typeof question !== "string") continue;
     const asked = question.trim();
     if (!asked) continue;
@@ -94,6 +97,9 @@ export function boundTranscript(value: unknown): TranscriptEntry[] {
           })
         : [],
       askedAt,
+      ...(typeof attachmentName === "string" && attachmentName.trim()
+        ? { attachmentName: attachmentName.trim().slice(0, 120) }
+        : {}),
     });
   }
 

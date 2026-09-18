@@ -195,3 +195,22 @@ describe("what a closed row says", () => {
     expect(summary).toBe("is anything overdue?");
   });
 });
+
+describe("an attached file in the scrollback", () => {
+  it("keeps the file's NAME on the row, bounded, and nothing else about it", () => {
+    const [entry] = boundTranscript([
+      { question: "what's the bid date?", answer: "Oct 10.", citations: [], askedAt: 1, attachmentName: `  ${"x".repeat(300)}.pdf ` },
+    ]);
+    expect(entry.attachmentName?.length).toBe(120);
+    expect(Object.keys(entry).sort()).toEqual(["answer", "askedAt", "attachmentName", "citations", "question"]);
+  });
+
+  it("drops a name that is not a string, and adds no key for a question without a file", () => {
+    const [withJunk, without] = boundTranscript([
+      { question: "a", answer: "", citations: [], askedAt: 1, attachmentName: { url: "https://evil" } },
+      { question: "b", answer: "", citations: [], askedAt: 2 },
+    ]);
+    expect(withJunk).not.toHaveProperty("attachmentName");
+    expect(without).not.toHaveProperty("attachmentName");
+  });
+});

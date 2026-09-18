@@ -4,6 +4,9 @@ import { addCatalogLine } from "@/lib/estimating/catalog-line";
 import { createEstimateJob } from "@/lib/estimating/create-job";
 import { draftLinesFromScope } from "@/lib/estimating/draft-lines";
 import { resolveCatalogEntry, resolveContact, resolveJob } from "../resolve";
+import { dayLabel } from "../dates";
+import { dueDayFor } from "./bids";
+import { keepSuggestions, type WebSuggestion } from "../webSuggestions";
 import type {
   CommandContext,
   CommandDefinition,
@@ -43,7 +46,15 @@ type CreateJobResolved = {
   scope: string | null;
   contact: { id: string; name: string } | { name: string; email: string | null };
   draftLines: boolean;
+  projectLocation: string | null;
+  /** ISO day, from the person's words. */
+  bidDueDate: string | null;
+  /** What the person left ticked. `confirmAskProposal` has already removed
+   * the ones they dropped before this payload reaches `execute`. */
+  webSuggestions: WebSuggestion[];
 };
+
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 function asCreateJob(payload: ResolvedPayload): CreateJobResolved | null {
   const jobName = str(payload, "jobName");
@@ -59,7 +70,60 @@ function asCreateJob(payload: ResolvedPayload): CreateJobResolved | null {
         ? { id: c.id, name: c.name }
         : { name: c.name, email: typeof c.email === "string" ? c.email : null },
     draftLines: payload.draftLines === true,
+    projectLocation: str(payload, "projectLocation"),
+    bidDueDate: (() => {
+      const day = str(payload, "bidDueDate");
+      return day && ISO_DAY.test(day) ? day : null;
+    })(),
+    webSuggestions: keepSuggestions(payload.webSuggestions),
   };
+}
+
+/**
+ * The essentials of a bid, in the order a person would say them. "start a
+ * bid" with nothing else used to reach this command's two-field check and
+ * come back asking for a name and a GC — and then, answered, produce a job
+ * with no location, no due date and no scope, which is the blank record
+ * this list exists to prevent. When the two things the job cannot exist
+ * without are missing, the question names EVERY essential not yet given,
+ * so one answer can cover them all. Once a name and a GC are in hand the
+ * other three are asked for on the card as warnings rather than as a
+ * second round of questions: a bid whose due date nobody knows yet is
+ * still a bid.
+ */
+export function missingBidEssentials(input: CommandInput): string[] {
+  const missing: string[] = [];
+  if (!input.jobName) missing.push("the project's name");
+  if (!input.gcName && !input.contactId) missing.push("the GC (or owner) it's for");
+  if (!input.location) missing.push("where it is (city and state)");
+  if (!input.bidDueDate) missing.push("when the bid is due");
+  if (!input.scope) missing.push("our scope on it");
+  return missing;
+}
+
+/** The web half of a new bid: the suggestions to show, and the warning
+ * that says what happened when there are none. Only the name and the
+ * location go in — see BidResearcher. */
+async function researchFor(
+  ctx: CommandContext,
+  projectName: string,
+  location: string,
+): Promise<{ suggestions: WebSuggestion[]; warning: string | null }> {
+  if (!ctx.research) return { suggestions: [], warning: null };
+  let result;
+  try {
+    result = await ctx.research({ projectName, location });
+  } catch (err) {
+    console.error("[ask] bid research threw", err);
+    return { suggestions: [], warning: "Web research is unavailable right now, so this card is only what you gave." };
+  }
+  if (!result.ok) {
+    return { suggestions: [], warning: "Web research is unavailable right now, so this card is only what you gave." };
+  }
+  if (result.suggestions.length === 0) {
+    return { suggestions: [], warning: `Nothing about ${projectName} in ${location} turned up on the web, so this card is only what you gave.` };
+  }
+  return { suggestions: result.suggestions, warning: null };
 }
 
 async function resolveCreateJob(ctx: CommandContext, input: CommandInput): Promise<Resolution> {
@@ -67,10 +131,14 @@ async function resolveCreateJob(ctx: CommandContext, input: CommandInput): Promi
   const gcName = input.gcName ?? "";
   const scope = input.scope ?? "";
 
-  const missing: string[] = [];
-  if (!jobName) missing.push("the job's name");
-  if (!gcName && !input.contactId) missing.push("which GC the job is for");
-  if (missing.length > 0) return { kind: "need", missing: missing.join(" and ") };
+  if (!jobName || (!gcName && !input.contactId)) {
+    const missing = missingBidEssentials(input);
+    return {
+      kind: "need",
+      missing: `${missing.slice(0, -1).join(", ")}${missing.length > 1 ? ", and " : ""}${missing[missing.length - 1]} — ask for all of these in one short question`,
+    };
+  }
+  const location = input.location ?? "";
 
   const warnings: string[] = [];
   let contact: CreateJobResolved["contact"];
@@ -123,7 +191,7 @@ async function resolveCreateJob(ctx: CommandContext, input: CommandInput): Promi
     if (existing) {
       return {
         kind: "ready",
-        resolved: { jobName, scope: null, contact, draftLines: false },
+        resolved: { jobName, scope: null, contact, draftLines: false, projectLocation: null, bidDueDate: null, webSuggestions: [] },
         preview,
         warnings,
         existing: { label: `${existing.name} for ${contact.name} already exists`, href: `/jobs/${existing.id}` },
@@ -136,6 +204,29 @@ async function resolveCreateJob(ctx: CommandContext, input: CommandInput): Promi
     });
   }
 
+  // The due date before any research: a which-year chip stops here, and
+  // stopping before a paid search rather than after is the point.
+  let bidDueDate: string | null = null;
+  if (input.bidDueDate) {
+    const day = dueDayFor(input.bidDueDate, ctx.today, "bidDueDate");
+    if (!("day" in day)) return day;
+    bidDueDate = day.day;
+    if (bidDueDate < ctx.today) warnings.push(`That due date, ${dayLabel(bidDueDate)}, has already passed.`);
+  } else {
+    warnings.push("No bid due date given. Say it now if you have one.");
+  }
+
+  let suggestions: WebSuggestion[] = [];
+  if (location) {
+    const research = await researchFor(ctx, jobName, location);
+    suggestions = research.suggestions;
+    if (research.warning) warnings.push(research.warning);
+  } else {
+    warnings.push("No location given, so nothing was looked up on the web.");
+  }
+
+  preview.push({ label: "Location", value: location ? clip(location, 200) : "Not given" });
+  preview.push({ label: "Bid due", value: bidDueDate ? dayLabel(bidDueDate) : "Not given" });
   preview.push({ label: "Scope", value: scope ? clip(scope, 240) : "None given" });
   preview.push({
     label: "Line items",
@@ -146,9 +237,18 @@ async function resolveCreateJob(ctx: CommandContext, input: CommandInput): Promi
 
   return {
     kind: "ready",
-    resolved: { jobName, scope: scope || null, contact, draftLines: scope !== "" },
+    resolved: {
+      jobName,
+      scope: scope || null,
+      contact,
+      draftLines: scope !== "",
+      projectLocation: location ? location.slice(0, 200) : null,
+      bidDueDate,
+      webSuggestions: suggestions,
+    },
     preview,
     warnings,
+    suggestions,
   };
 }
 
@@ -162,6 +262,10 @@ async function executeCreateJob(ctx: CommandContext, payload: ResolvedPayload) {
       jobName: resolved.jobName,
       scope: resolved.scope,
       contact: "id" in resolved.contact ? { id: resolved.contact.id } : resolved.contact,
+      projectLocation: resolved.projectLocation,
+      bidDueDate: resolved.bidDueDate ? new Date(`${resolved.bidDueDate}T00:00:00.000Z`) : null,
+      // Only what the person left ticked, and only now that they tapped.
+      bidResearch: resolved.webSuggestions.length > 0 ? resolved.webSuggestions : null,
     },
     { refuseDuplicateName: true },
   );
@@ -195,7 +299,7 @@ async function executeCreateJob(ctx: CommandContext, payload: ResolvedPayload) {
 export const createEstimateJobCommand: DirectCommandDefinition = {
   name: "create_estimate_job",
   description:
-    "Starts a NEW job at the ESTIMATE stage for a general contractor. There is no separate estimate record: a job's line items ARE its estimate. Needs the job's name and the GC's name — if the person gave either one no name, ask them for it instead of calling this. When a scope of work is given, line items are drafted from it after the job exists, flagged for review. Does NOT contract the job, price anything itself, or send anything. It proposes only: the person confirms on a card before anything is created.",
+    "Starts a NEW bid: a job at the ESTIMATE stage for a general contractor. This is what 'start a bid', 'new bid', 'start an estimate' and 'bid this job' mean. There is no separate estimate record: a job's line items ARE its estimate. CALL THIS even when the person gave few or no details (e.g. just 'start a bid') — pass whatever they did say and it answers with exactly what to ask for; never invent a name, GC, place or date to fill a gap. With a project name and a location it also looks the project up on the public web and shows what it found as suggestions the person can keep or drop. When a scope of work is given, line items are drafted from it after the job exists, flagged for review. Does NOT contract the job, price anything itself, or send anything. It proposes only: the person confirms on a card before anything is created.",
   capability: "MANAGE_ESTIMATING",
   requiresAlso: ["VIEW_JOB_COSTS"],
   tier: "T1_DRAFT",
@@ -223,6 +327,14 @@ export const createEstimateJobCommand: DirectCommandDefinition = {
       scope: {
         type: "string",
         description: "The scope of work in the person's own words: trade, building, rough quantities, anything they said about the work itself. Words like 'commercial' or 'tenant improvement' belong here. Omit when they said nothing about the work.",
+      },
+      location: {
+        type: "string",
+        description: "Where the project is, as the person said it — a city and state, or an address, e.g. 'Portland, OR'. Omit if they did not say.",
+      },
+      bidDueDate: {
+        type: "string",
+        description: "When the bid is due, in the person's exact words, e.g. 'Oct 10', '10/10', 'next Friday'. Never convert, compute or invent one; omit if they did not say.",
       },
     },
   },

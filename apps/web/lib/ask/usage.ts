@@ -144,7 +144,11 @@ export type AskUsageFeature =
   | "ask"
   | "wip-narrative"
   | "compliance-extract"
-  | "draft-estimate-lines";
+  | "draft-estimate-lines"
+  /** The public-web lookup behind "start a bid" (lib/ask/commands/
+   *  estimating.ts). Its own row, because web search is billed per search
+   *  on top of tokens and would otherwise hide inside an Ask row. */
+  | "bid-research";
 
 export type AskUsageRecord = {
   companyId: string;

@@ -37,6 +37,44 @@ export type AskToolDefinition = {
  * know a tenant. */
 export type AskToolOutcome<H = never> = { content: string; isError?: boolean; halt?: H };
 
+/** A file for the model, in the three shapes the API reads. `text` is for
+ * plain text and CSV, which go as a text document rather than as bytes. */
+export type AskAttachmentBlock =
+  | { kind: "pdf"; fileName: string; base64: string }
+  | { kind: "image"; fileName: string; mediaType: "image/jpeg" | "image/png" | "image/webp" | "image/gif"; base64: string }
+  | { kind: "text"; fileName: string; text: string };
+
+/** The content block for an attachment. Exported for the test that proves
+ * the file reaches the request. The cache breakpoint is on the file: the
+ * loop resends it on every pass, and a PDF is by far the largest thing in
+ * the request, so re-processing it per tool round is the cost worth
+ * avoiding. */
+export function attachmentContentBlock(attachment: AskAttachmentBlock): Anthropic.ContentBlockParam {
+  const cache_control = { type: "ephemeral" as const };
+  switch (attachment.kind) {
+    case "pdf":
+      return {
+        type: "document",
+        title: attachment.fileName,
+        source: { type: "base64", media_type: "application/pdf", data: attachment.base64 },
+        cache_control,
+      };
+    case "image":
+      return {
+        type: "image",
+        source: { type: "base64", media_type: attachment.mediaType, data: attachment.base64 },
+        cache_control,
+      };
+    case "text":
+      return {
+        type: "document",
+        title: attachment.fileName,
+        source: { type: "text", media_type: "text/plain", data: attachment.text },
+        cache_control,
+      };
+  }
+}
+
 export type AskFailureReason = "refusal" | "no_text" | "exhausted" | "api";
 
 /** What one question cost, summed over every model pass it took. Read
@@ -94,6 +132,12 @@ export type AskConversationOptions<H = never> = {
    * outside the cache breakpoint so it does not invalidate the prefix. */
   context?: string;
   question: string;
+  /** A file the person attached to THIS question, already verified by the
+   * caller as belonging to their company and already read. It rides in the
+   * question's own user turn, before the words, which is where a document
+   * block belongs. It is sent on this question only: prior turns carry text,
+   * never a file. */
+  attachment?: AskAttachmentBlock;
   /** What was said earlier in this sitting, oldest first, so the model can
    * resolve "the same", "that job", "it" — and nothing more.
    *
@@ -191,7 +235,15 @@ export async function* streamToolConversation<H = never>(
   // hostile.
   const messages: Anthropic.MessageParam[] = [
     ...(options.priorTurns ?? []).map((turn) => ({ role: turn.role, content: turn.content })),
-    { role: "user" as const, content: options.question },
+    {
+      role: "user" as const,
+      content: options.attachment
+        ? [
+            attachmentContentBlock(options.attachment),
+            { type: "text" as const, text: `(Attached file: ${options.attachment.fileName})\n\n${options.question}` },
+          ]
+        : options.question,
+    },
   ];
   const toolsCalled: string[] = [];
   // Every tool_use whose result has been pushed into `messages` so far —
