@@ -76,7 +76,7 @@ export default async function BidsPage({
         work has priced at before.
       </p>
 
-      <form method="get" className="mb-6 flex flex-wrap items-end gap-3">
+      <form method="get" className="mb-6 flex flex-wrap items-end gap-3" data-tour="bids-filter">
         <label className="flex flex-col gap-1 text-sm text-ink-label">
           Trade
           <select
@@ -139,7 +139,7 @@ export default async function BidsPage({
             .
           </p>
         ) : (
-          <div className="rounded-lg border border-line-card bg-surface p-6">
+          <div className="rounded-lg border border-line-card bg-surface p-6" data-tour="bids-empty">
             <p className="text-ink-label">No bids logged yet.</p>
             <p className="mt-2 max-w-xl text-sm text-ink-body">
               A bid invitation is logged against the GC who sent it, so this page is the history of
@@ -157,7 +157,7 @@ export default async function BidsPage({
           </div>
         )
       ) : (
-        <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
+        <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface" data-tour="bids-list">
           {bids.map((bid) => (
             <li key={bid.id} className="p-4">
               <Link

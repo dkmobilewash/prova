@@ -77,7 +77,7 @@ export default async function AlertsPage({
       <StatusLine report={status} />
 
       {currentUser.email && (
-        <div className="mb-6">
+        <div className="mb-6" data-tour="alerts-email">
           <SendDigestButton
             sendMyAlertDigest={sendMyAlertDigest}
             recipientEmail={currentUser.email}
@@ -85,7 +85,7 @@ export default async function AlertsPage({
         </div>
       )}
 
-      <div className="mb-3 flex items-center justify-between">
+      <div className="mb-3 flex items-center justify-between" data-tour="alerts-silenced">
         <h2 className="text-sm font-semibold text-ink-label">
           {rows.length} {showSilenced ? "silenced" : "needing attention"}
         </h2>
@@ -105,7 +105,7 @@ export default async function AlertsPage({
             Nothing silenced. Anything you mark as seen shows up here so you can put it back.
           </p>
         ) : (
-          <div className="rounded-lg border border-line-card bg-surface p-6">
+          <div className="rounded-lg border border-line-card bg-surface p-6" data-tour="alerts-empty">
             <p className="text-ink-label">Nothing needs attention.</p>
             <p className="mt-2 max-w-2xl text-sm text-ink-body">
               This list only sees what has been recorded — a licence with no expiry date entered, or a
@@ -128,7 +128,7 @@ export default async function AlertsPage({
           </div>
         )
       ) : (
-        <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
+        <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface" data-tour="alerts-list">
           {rows.map((alert) => (
             <AlertRow key={alert.key} alert={alert} silenced={showSilenced} />
           ))}

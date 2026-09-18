@@ -1,4 +1,18 @@
 import type { Walkthrough } from "./types";
+import { alertsWalkthrough } from "./alerts";
+import { backchargesWalkthrough } from "./backcharges";
+import { bidsWalkthrough } from "./bids";
+import { cashFlowWalkthrough } from "./cash-flow";
+import { catalogWalkthrough } from "./catalog";
+import { certificationsWalkthrough } from "./certifications";
+import { closeoutWalkthrough } from "./closeout";
+import { complianceWalkthrough } from "./compliance";
+import { drawingsWalkthrough } from "./drawings";
+import { equipmentWalkthrough } from "./equipment";
+import { intakeWalkthrough } from "./intake";
+import { lienDeadlinesWalkthrough } from "./lien-deadlines";
+import { materialOrdersWalkthrough } from "./material-orders";
+import { messagesWalkthrough } from "./messages";
 import { askWalkthrough } from "./ask";
 import { contactsWalkthrough } from "./contacts";
 import { dashboardWalkthrough } from "./dashboard";
@@ -45,6 +59,20 @@ export const WALKTHROUGHS: Walkthrough[] = [
   fieldReportsWalkthrough,
   askWalkthrough,
   settingsImportWalkthrough,
+  alertsWalkthrough,
+  backchargesWalkthrough,
+  bidsWalkthrough,
+  cashFlowWalkthrough,
+  catalogWalkthrough,
+  certificationsWalkthrough,
+  closeoutWalkthrough,
+  complianceWalkthrough,
+  drawingsWalkthrough,
+  equipmentWalkthrough,
+  intakeWalkthrough,
+  lienDeadlinesWalkthrough,
+  materialOrdersWalkthrough,
+  messagesWalkthrough,
   phaseCodesWalkthrough,
   photosWalkthrough,
   prevailingWageWalkthrough,
@@ -73,23 +101,9 @@ export const WALKTHROUGHS: Walkthrough[] = [
  * Estimating filter.
  */
 export const ROUTES_WITHOUT_WALKTHROUGH: string[] = [
-  "/alerts",
-  "/backcharges",
-  "/bids",
-  "/cash-flow",
-  "/catalog",
-  "/certifications",
-  "/closeout",
-  "/compliance",
-  "/drawings",
-  "/equipment",
-  "/intake",
   // C Stream's own operator page (who is still logging in, across every
   // customer). No customer can open it, so there is nobody to walk through it.
   "/internal/usage",
-  "/lien-deadlines",
-  "/material-orders",
-  "/messages",
   // C Stream's own sales CRM, for selling C Stream. Operator-only like
   // /internal/usage: a customer sees "Not part of your access".
   "/sales",

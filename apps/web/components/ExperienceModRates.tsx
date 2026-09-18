@@ -21,7 +21,7 @@ export function ExperienceModRates({
     record.id === current?.id ? "current" : upcomingIds.has(record.id) ? "upcoming" : "past";
 
   return (
-    <section className="mb-8">
+    <section className="mb-8" data-tour="compliance-mod-rate">
       <h2 className="mb-1 text-sm font-semibold text-ink-label">Experience modification rate</h2>
       <p className="mb-3 text-sm text-ink-body">
         The mod rate on your workers&apos; comp, as the rating bureau issued it — the figure a GC asks for on a

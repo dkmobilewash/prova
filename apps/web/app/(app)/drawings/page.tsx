@@ -99,14 +99,14 @@ export default async function DrawingsPage({
         set.
       </p>
 
-      <section className="mb-8">
+      <section className="mb-8" data-tour="drawings-add">
         <DrawingSetForm jobs={jobs} defaultJobId={activeJob ?? undefined} />
       </section>
 
       <StatusLine report={status} />
 
       {jobs.length > 0 && (
-        <div className="mb-4 flex flex-wrap gap-2">
+        <div className="mb-4 flex flex-wrap gap-2" data-tour="drawings-job-filter">
           <Link href={filterHref(null)} className={chip(!activeJob)}>
             All jobs
           </Link>
@@ -123,13 +123,13 @@ export default async function DrawingsPage({
       </h2>
 
       {rows.length === 0 ? (
-        <p className="text-ink-body">
+        <p className="text-ink-body" data-tour="drawings-empty">
           No drawing sets yet. Add one per discipline the job issues separately — the log of which
           revision governed on which date is what answers &ldquo;why did the crew build it that
           way.&rdquo;
         </p>
       ) : (
-        <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
+        <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface" data-tour="drawings-list">
           {rows.map((set) => (
             <DrawingSetRow
               key={set.id}

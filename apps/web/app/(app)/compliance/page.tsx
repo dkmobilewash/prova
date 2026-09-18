@@ -61,7 +61,7 @@ export default async function CompliancePage() {
       {/* Above the upload form deliberately: this is the only part of the
           page that is time-sensitive, and it covers licences, policies and
           bonds that live on /settings and were never visible together. */}
-      <div className="mb-8">
+      <div className="mb-8" data-tour="compliance-renewals">
         <RenewalAlerts
           renewals={renewals}
           // Sources, not alerts. `renewalAlerts` drops everything current,
@@ -79,7 +79,7 @@ export default async function CompliancePage() {
           it — which is exactly the number this app refuses to produce. */}
       <ExperienceModRates standing={modRateStanding} canDelete={currentUser.role === "OWNER"} />
 
-      <section className="mb-8 rounded-lg border border-line-card bg-surface p-4">
+      <section className="mb-8 rounded-lg border border-line-card bg-surface p-4" data-tour="compliance-upload">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Upload a document</h2>
         <ComplianceUploadForm companyId={company.id} jobs={jobs.map(toJobOption)} />
       </section>
@@ -87,9 +87,9 @@ export default async function CompliancePage() {
       <section>
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Documents</h2>
         {documents.length === 0 ? (
-          <p className="text-ink-body">No compliance documents yet.</p>
+          <p className="text-ink-body" data-tour="compliance-empty">No compliance documents yet.</p>
         ) : (
-          <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
+          <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface" data-tour="compliance-documents">
             {documents.map((doc) => (
               <ComplianceDocumentRow
                 key={doc.id}
