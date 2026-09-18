@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import {
   ASK_CREATE_JOB_CAPABILITIES,
@@ -262,5 +263,29 @@ describe("the hide cookie", () => {
     expect(isGettingStartedHidden("co-2", "co-1")).toBe(false);
     expect(isGettingStartedHidden(undefined, "co-1")).toBe(false);
     expect(isGettingStartedHidden("", "co-1")).toBe(false);
+  });
+});
+
+describe("every link on the checklist goes to a page that exists", () => {
+  // The import step was written before /settings/import existed, pointing
+  // at a route another branch was adding. A link to a missing page is a 404
+  // on the card a brand-new contractor sees first, and nothing else here
+  // would notice — so each step's href must resolve to a real page file.
+  it("resolves each owner-visible href to app/(app)/<href>/page.tsx", () => {
+    const steps = run({}, OWNER, GENERATED).steps;
+    // All seven, so a filter that dropped steps cannot make this vacuous.
+    expect(steps.map((s) => s.id)).toEqual([
+      "name-company",
+      "first-job",
+      "import",
+      "crew",
+      "schedule",
+      "first-day",
+      "quickbooks",
+    ]);
+    for (const s of steps) {
+      const page = new URL(`../app/(app)${s.href}/page.tsx`, import.meta.url);
+      expect(existsSync(page), `${s.id} -> ${s.href}`).toBe(true);
+    }
   });
 });

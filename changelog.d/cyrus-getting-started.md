@@ -37,5 +37,8 @@ deliberate breakages (each step's rule, the permission filter, the
 per-company scoping of every count, the hide-when-complete line) each
 turned a test red.
 
-The import step links to `/settings/import`, which is being built on a
-separate branch and does not exist here yet.
+The import step links to `/settings/import`, which landed first in #312.
+`lib/getting-started.test.ts` now requires every step's link to resolve to
+a real `page.tsx`, so a checklist link can never again point at a route
+that does not exist — checked by renaming the href, and by removing the
+importer's page, each of which turns it red.

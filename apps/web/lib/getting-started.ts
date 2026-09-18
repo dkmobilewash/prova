@@ -139,13 +139,14 @@ const STEPS: StepDefinition[] = [
   {
     id: "import",
     title: "Bring in what you already have",
-    body: "Keep your jobs or contacts in a spreadsheet? Bring it in instead of typing it all again.",
+    body: "Keep your clients, jobs or crew in a spreadsheet? Bring it in instead of typing it all again.",
     doneBody: "",
     href: "/settings/import",
     linkLabel: "Import a spreadsheet",
     optional: true,
-    // Everything under /settings refuses non-owners today, so this is
-    // assumed to as well until the importer says otherwise.
+    // The importer page and all three of its confirm actions refuse
+    // non-owners (app/(app)/settings/import/page.tsx,
+    // lib/actions/spreadsheetImport.ts).
     ownerOnly: true,
     alsoReach: ["/settings"],
     // Optional and never counted, so it is never "done" either: there is
