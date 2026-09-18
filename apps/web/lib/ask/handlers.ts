@@ -15,6 +15,7 @@ import {
 import { renewalAlerts, renewalCoverage, renewalCoverageMessage, renewalTiming } from "@/lib/compliance-expiry";
 import { renewalSourcesForCompany } from "@/lib/renewals";
 import { serverToday } from "@/lib/serverToday";
+import { viewerToday } from "@/lib/viewerToday";
 import { daysBetween } from "./dates";
 import {
   arBalanceFor,
@@ -53,6 +54,8 @@ import {
   loadUpcomingSchedule,
   scheduledWorkerName,
 } from "@/lib/crew-schedule-query";
+import { emrStanding } from "@/lib/emr";
+import { loadExperienceModRates } from "@/lib/emr-query";
 import { matchesJobName, TOOLS, type ToolName, type ToolResult } from "./tools";
 
 /**
@@ -149,6 +152,7 @@ export const HANDLERS: Record<
   document_intake: (companyId) => documentIntake(companyId),
   team_roster: (companyId) => teamRoster(companyId),
   dispatch_slips: dispatchSlips,
+  experience_mod_rate: (companyId) => experienceModRate(companyId),
 };
 
 /**
@@ -3307,5 +3311,55 @@ async function crewSchedule(companyId: string, input: Input): Promise<ToolResult
           ? "Nobody has been put on the schedule for that job. That is a gap in the plan rather than a quiet week — nothing fills the schedule in for you."
           : "Nobody has been put on the schedule at all. That is a gap in the plan rather than a quiet fortnight — nothing fills the schedule in for you."
         : undefined,
+  };
+}
+
+/**
+ * The experience modification rate, as RECORDED — never computed.
+ *
+ * Which rate is current is derived by `emrStanding` from the effective dates,
+ * with the same `today` the /compliance page uses, so the box and the page
+ * cannot disagree. A rate dated in the future is reported as upcoming and is
+ * NOT the current one, however recently it was typed in.
+ *
+ * `rate` goes to the model as the string the database holds ("0.87"), not a
+ * float: it is a figure to be repeated verbatim onto a GC's form, and there
+ * is no arithmetic for anyone to do with it.
+ */
+async function experienceModRate(companyId: string): Promise<ToolResult> {
+  const citations = [{ label: "Compliance", href: "/compliance" }];
+  const records = await loadExperienceModRates(companyId);
+  // The viewer's day, the same one the page uses -- which rate is in force is
+  // decided by the exact day. Every other tool here reads serverToday(); this
+  // one must not, or the Ask box and /compliance disagree about which mod is
+  // current for ~8 hours on the evening a new policy year starts.
+  const today = await viewerToday();
+  const standing = emrStanding(records, today);
+
+  const shape = (record: (typeof records)[number]) => ({
+    rate: record.rate,
+    effectiveDate: record.effectiveDate,
+    issuedBy: record.source,
+    note: record.note,
+  });
+
+  return {
+    data: {
+      current: standing.current ? shape(standing.current) : null,
+      currentIsPastItsPolicyYear: standing.currentIsPastItsPolicyYear,
+      upcoming: standing.upcoming.map(shape),
+      history: standing.history.map(shape),
+    },
+    summary: {
+      ratesOnFile: standing.history.length,
+      upcomingRates: standing.upcoming.length,
+    },
+    citations,
+    unavailable:
+      records.length === 0
+        ? "No experience modification rate is recorded. It comes from the rating bureau through the carrier or broker, and this app never computes one — record it on the Compliance page."
+        : standing.current === null
+          ? `No recorded rate has taken effect yet; the earliest starts ${standing.upcoming[0]?.effectiveDate}.`
+          : undefined,
   };
 }

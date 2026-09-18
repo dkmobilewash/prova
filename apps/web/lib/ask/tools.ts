@@ -117,7 +117,9 @@ export type ToolName =
   | "estimate_detail"
   | "document_intake"
   | "team_roster"
-  | "dispatch_slips";
+  | "dispatch_slips"
+  // Was the census gap `q-emr` — see top-questions.ts.
+  | "experience_mod_rate";
 
 export type ToolDefinition = {
   name: ToolName;
@@ -592,6 +594,17 @@ export const TOOLS: ToolDefinition[] = [
       "Who is PLANNED to be on which job on which day, for the next two weeks — and, separately, planned days in the last eight weeks that nobody logged hours against. Answers 'who is on Riverside tomorrow', which crew_assignments CANNOT: that tool is a roster of everyone attached to a job and carries no date at all. A planned day with no hours is a claim about PAPERWORK and never about a person — it means nobody logged that day, not that the person did not work, and it must never be reported as the second. It also only sees days somebody actually put on the schedule, so an empty missing-hours list is not proof that every hour was logged.",
     input_schema: jobFilter,
   },
+  {
+    name: "experience_mod_rate",
+    // /compliance. The EMR is an insurance figure a GC asks for on the same
+    // prequalification form as the certificates that page holds, so it takes
+    // that page's gate — not /safety's, whose OSHA log is what a bureau
+    // calculates an EMR FROM, which is the confusion this tool must not make.
+    capability: "MANAGE_COMPLIANCE",
+    description:
+      "The company's experience modification rate (EMR, mod rate) as RECORDED from the rating bureau's worksheet: the current rate — the one with the latest effective date that has started — who issued it, any rate recorded for a policy year not yet started, and the history. Answers 'what is our mod rate' and 'what EMR do we put on this prequal'. IT NEVER COMPUTES, ESTIMATES OR PROJECTS AN EMR, and neither may you: the rate comes from the bureau, and the OSHA log (safety_record) is only one input to a calculation somebody else does with payroll and loss data this app does not hold. Never derive, adjust or forecast a rate from incidents, and never state a rate that is not in this tool's result. When nothing is recorded, say it is not recorded and that the figure comes from the carrier or broker. `currentIsPastItsPolicyYear` means the newest rate on file is from a policy year that has ended — say so rather than presenting it as this year's rate.",
+    input_schema: noInput,
+  },
 ];
 
 /**
@@ -632,7 +645,7 @@ export const KNOWN_GAPS: { topic: string; why: string }[] = [
     why: "job addresses are not modelled as coordinates and there is no routing.",
   },
 
-  /* ─── the six the hundred-question census left standing ───
+  /* ─── the gaps the hundred-question census left standing ───
    *
    * Each one was asked, routed to nothing, and — this is the part that
    * makes them belong HERE rather than only in the census — each has a
@@ -641,12 +654,15 @@ export const KNOWN_GAPS: { topic: string; why: string }[] = [
    * the same voice as a fact, and the only thing standing between a
    * near-miss and a person acting on it is the model having been told.
    *
-   * The seventh, the payroll-cash question, was already at the top of this
-   * list and is the reason the list exists. */
-  {
-    topic: "the experience modification rate, or mod rate",
-    why: "the EMR comes from the carrier's rating bureau and is not recorded here. The OSHA log is what an EMR is calculated FROM by somebody else, so a figure derived from it would be a number no insurer has ever quoted us.",
-  },
+   * The payroll-cash question was already at the top of this list and is
+   * the reason the list exists.
+   *
+   * The experience modification rate WAS here, and was removed when it
+   * stopped being a gap: it is recorded on /compliance and answered by
+   * `experience_mod_rate`. Leaving it would have told the model to refuse a
+   * question it can now answer — this list is injected into the system
+   * prompt. The reason it was a gap still governs the tool: the rate is
+   * recorded from the bureau and never derived from the OSHA log. */
   {
     topic: "lien deadlines, preliminary notices or stop notices",
     why: "none of it is modelled — not a date, not a document, not a reminder. This is missing DATA rather than a missing screen, and the cost of a confident wrong answer is total: on California public work the preliminary notice window is 20 days from first furnishing and missing it forfeits the remedy.",
