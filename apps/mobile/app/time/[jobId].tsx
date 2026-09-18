@@ -39,6 +39,9 @@ export default function TimeScreen() {
   const [crew, setCrew] = useState<CrewMember[]>([]);
   const [lineItems, setLineItems] = useState<LineItem[]>([]);
   const [crafts, setCrafts] = useState<Craft[]>([]);
+  // Job names by id, so the clock card can name the job a session is on —
+  // which may not be the job this screen is showing.
+  const [jobNames, setJobNames] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
 
   // Clock state. `sessionLoaded` holds the card back until the saved session
@@ -67,16 +70,18 @@ export default function TimeScreen() {
     const token = await getToken();
     if (!token || !jobId) return;
     try {
-      const [es, cs, ls, cts] = await Promise.all([
+      const [es, cs, ls, cts, js] = await Promise.all([
         api.listTimeEntries(jobId, token),
         api.listCrew(token),
         api.listLineItems(jobId, token),
         api.listCrafts(token),
+        api.listJobs(token),
       ]);
       setEntries(es);
       setCrew(cs);
       setLineItems(ls);
       setCrafts(cts);
+      setJobNames(Object.fromEntries(js.map((j) => [j.id, j.name])));
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load time");
@@ -216,7 +221,10 @@ export default function TimeScreen() {
   const openSwitch = () => {
     if (!openSession) return;
     setClockCraftId(openSession.craftClassificationId);
-    setClockLineItemId(openSession.lineItemId);
+    // A cost code belongs to one job. Switching onto THIS job from another
+    // must not carry the other job's cost code over — the server would
+    // refuse it and the offline queue would stall behind the refusal.
+    setClockLineItemId(openSession.jobId === jobId ? openSession.lineItemId : null);
     setShowSwitch(true);
   };
 
@@ -248,6 +256,10 @@ export default function TimeScreen() {
   const clockLineItemLabel = openSession?.lineItemId
     ? lineItems.find((l) => l.id === openSession.lineItemId)?.description ?? null
     : null;
+  // The session is on a different job from the one this screen shows.
+  const onOtherJob = openSession != null && openSession.jobId !== jobId;
+  const sessionJobName = openSession ? jobNames[openSession.jobId] : undefined;
+  const switchLabel = onOtherJob ? "Switch to this job" : "Switch";
 
   return (
     <View style={styles.screen}>
@@ -263,6 +275,11 @@ export default function TimeScreen() {
         ) : openSession ? (
           <Card>
             <Text style={styles.clockElapsed}>On the clock · {formatElapsed(elapsedMs)}</Text>
+            {onOtherJob ? (
+              <Text style={styles.clockOtherJob}>Clocked in on {sessionJobName ?? "another job"}</Text>
+            ) : sessionJobName ? (
+              <Text style={styles.clockJob}>{sessionJobName}</Text>
+            ) : null}
             {clockCraftLabel || clockLineItemLabel ? (
               <Text style={styles.clockContext}>
                 {[clockCraftLabel, clockLineItemLabel].filter(Boolean).join(" · ")}
@@ -280,7 +297,7 @@ export default function TimeScreen() {
             {clockError ? <Text style={styles.clockErrorText}>{clockError}</Text> : null}
             <View style={styles.clockActions}>
               <Button variant="secondary" onPress={openSwitch}>
-                Switch
+                {switchLabel}
               </Button>
               <Button fullWidth onPress={onClockOut}>
                 Clock out
@@ -328,8 +345,8 @@ export default function TimeScreen() {
       <Sheet
         visible={showClockIn || showSwitch}
         onClose={() => { setShowClockIn(false); setShowSwitch(false); }}
-        title={showClockIn ? "Clock in" : "Switch"}
-        primaryLabel={showClockIn ? "Start" : "Switch"}
+        title={showClockIn ? "Clock in" : switchLabel}
+        primaryLabel={showClockIn ? "Start" : switchLabel}
         onPrimary={showClockIn ? onClockIn : onSwitch}
       >
         <Text style={styles.chipLabel}>Cost code</Text>
@@ -403,6 +420,13 @@ const styles = StyleSheet.create({
   clockCard: { padding: 16, paddingBottom: 4 },
   clockElapsed: { color: colors.ink, fontSize: typography.size.lg, fontWeight: typography.weight.bold },
   clockContext: { color: colors.inkBody, fontSize: typography.size.md, marginTop: 4 },
+  clockJob: { color: colors.inkBody, fontSize: typography.size.md, marginTop: 4 },
+  clockOtherJob: {
+    color: colors.tagRoseInk,
+    fontSize: typography.size.md,
+    fontWeight: typography.weight.semibold,
+    marginTop: 4,
+  },
   clockBreak: { color: colors.inkBody, fontSize: typography.size.md, fontWeight: typography.weight.semibold },
   clockErrorText: { color: colors.tagRoseInk, fontSize: typography.size.sm, marginTop: 8 },
   clockIdle: { color: colors.ink, fontSize: typography.size.md, fontWeight: typography.weight.semibold },
