@@ -110,10 +110,20 @@ export function WalkthroughTour({
     const element = findAnchor(current);
     if (!element) return;
     const tall = element.getBoundingClientRect().height > window.innerHeight * 0.6;
-    element.scrollIntoView({
-      behavior: reducedMotion ? "auto" : "smooth",
-      block: isPhone || tall ? "start" : "center",
-    });
+    const block = isPhone || tall ? "start" : "center";
+    element.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth", block });
+    // A smooth scroll can simply not happen — the browser drops it when the
+    // tab is not being painted, or another scroll interrupts it — and this
+    // app scrolls inside <main>, not the window, so nothing else would bring
+    // the element up. If it is still off screen shortly after, jump there.
+    const fallback = window.setTimeout(() => {
+      const box = element.getBoundingClientRect();
+      // "In view" means enough of it to read, not a sliver at an edge: a
+      // section whose top edge sits on the bottom of the screen is off it.
+      const visible = Math.min(box.bottom, window.innerHeight) - Math.max(box.top, 0);
+      if (visible < Math.min(box.height, 120)) element.scrollIntoView({ behavior: "auto", block });
+    }, 700);
+    return () => window.clearTimeout(fallback);
   }, [current, isPhone, reducedMotion]);
 
   // Follow the element while it scrolls, resizes or moves because the page
@@ -139,7 +149,23 @@ export function WalkthroughTour({
       frame = window.requestAnimationFrame(tick);
     };
     tick();
-    return () => window.cancelAnimationFrame(frame);
+    // Scrolls and resizes re-read the rect too, not only animation frames:
+    // a browser stops calling requestAnimationFrame for a tab it is not
+    // painting, and the jump in the scroll effect above must still move the
+    // outline and the card with it. Capture, because the scroll that
+    // matters is <main>'s, which does not bubble to the window.
+    const reread = () => {
+      const box = findAnchor(current)?.getBoundingClientRect();
+      const next: Rect | null = box ? { top: box.top, left: box.left, width: box.width, height: box.height } : null;
+      setRect((previousRect) => (sameRect(previousRect, next) ? previousRect : next));
+    };
+    document.addEventListener("scroll", reread, { capture: true, passive: true });
+    window.addEventListener("resize", reread);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      document.removeEventListener("scroll", reread, { capture: true });
+      window.removeEventListener("resize", reread);
+    };
   }, [current, steps]);
 
   useLayoutEffect(() => {
