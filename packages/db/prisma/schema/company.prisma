@@ -93,6 +93,7 @@ model Company {
   crewMembers               CrewMember[]
   crewScheduleDays          CrewScheduleDay[]
   experienceModRates        ExperienceModRate[]
+  lienDeadlines             LienDeadline[]
   workerCertifications      WorkerCertification[]
   requiredCertifications    CertificationRequirement[]
 }
@@ -154,6 +155,7 @@ model User {
   crewScheduleDays                     CrewScheduleDay[]      @relation("CrewScheduleDayUser")
   crewScheduleDaysCreated              CrewScheduleDay[]      @relation("CrewScheduleDayCreatedBy")
   experienceModRatesCreated            ExperienceModRate[]    @relation("ExperienceModRateCreatedBy")
+  lienDeadlinesCreated                 LienDeadline[]         @relation("LienDeadlineCreatedBy")
   connectedQuickBooks                  QuickBooksConnection[]
   quickBooksSyncAttempts               QuickBooksSyncAttempt[]
   connectedIntegrations                IntegrationConnection[]

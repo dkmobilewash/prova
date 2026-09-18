@@ -456,6 +456,16 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
     ],
   },
   {
+    key: "lien-deadlines",
+    title: "Lien deadlines",
+    detail:
+      "The preliminary notice, mechanic's lien, stop payment notice and bond claim dates you " +
+      "entered, and the dates you marked them served. They are in the app on the Lien " +
+      "deadlines page; they are not in this file — so keep your own copy of the proofs of " +
+      "service, which are the record that counts.",
+    models: ["LienDeadline"],
+  },
+  {
     key: "closeout-warranty-equipment",
     title: "Closeout, warranty, equipment and toolbox talks",
     detail:

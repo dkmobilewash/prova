@@ -185,6 +185,10 @@ export const ROUTE_CAPABILITY: Record<string, Capability> = {
   "/pipeline": "MANAGE_ESTIMATING",
   "/vendors/pricing": "MANAGE_ESTIMATING",
   "/backcharges": "MANAGE_BILLING",
+  // Preliminary notices, liens, stop notices, bond claims. A lien is how a
+  // sub gets PAID when the GC stops paying, so it sits with the rest of the
+  // money chase rather than with compliance paperwork.
+  "/lien-deadlines": "MANAGE_BILLING",
   "/compliance": "MANAGE_COMPLIANCE",
   "/settings": "MANAGE_COMPLIANCE",
   // A child of `/settings`, so it takes its PARENT's capability rather

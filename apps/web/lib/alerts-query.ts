@@ -6,6 +6,7 @@ import {
   closeoutAlerts,
   contactFollowUpAlerts,
   drawingRevisionAlerts,
+  lienDeadlineAlerts,
   partitionAlerts,
   renewalAlert,
   rfiAlerts,
@@ -79,6 +80,7 @@ export async function loadAlerts(
     submittals,
     drawingSets,
     fringeSchedulesByCraft,
+    lienDeadlines,
   ] = await Promise.all([
     renewalSourcesForCompany(companyId),
 
@@ -247,6 +249,23 @@ export async function loadAlerts(
       },
     }),
     loadFringeSchedulesByCraft(companyId),
+
+    // Lien deadlines not yet served. Scoped by company in the WHERE like
+    // every read here; `servedOn: null` is only a narrowing —
+    // lienDeadlineAlerts applies lienDeadlineState itself, so what counts
+    // as served is still decided in one place.
+    prisma.lienDeadline.findMany({
+      where: { companyId, servedOn: null },
+      select: {
+        id: true,
+        kind: true,
+        otherLabel: true,
+        recipient: true,
+        dueOn: true,
+        servedOn: true,
+        job: { select: { name: true } },
+      },
+    }),
   ]);
 
   const alerts: Alert[] = [];
@@ -482,6 +501,22 @@ export async function loadAlerts(
           fileUrl: rev.fileUrl,
           fileName: rev.fileName,
         })),
+      })),
+      todayIso,
+    ),
+  );
+
+  alerts.push(
+    ...lienDeadlineAlerts(
+      lienDeadlines.map((row) => ({
+        id: row.id,
+        kind: row.kind as string,
+        otherLabel: row.otherLabel,
+        jobName: row.job.name,
+        recipient: row.recipient,
+        // dueOn is required on LienDeadline; servedOn is the nullable one.
+        dueOn: isoDate(row.dueOn) as string,
+        servedOn: isoDate(row.servedOn),
       })),
       todayIso,
     ),
