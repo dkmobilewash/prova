@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { prisma } from "@prova/db";
 import type { FringeRateScheduleInput } from "./labor-cost";
 
@@ -17,7 +18,7 @@ import type { FringeRateScheduleInput } from "./labor-cost";
  * depending on array order at #104 finding 3; the order here is for a human
  * reading the list.
  */
-export async function loadFringeSchedulesByCraft(
+async function readFringeSchedulesByCraft(
   companyId: string,
 ): Promise<Map<string, FringeRateScheduleInput[]>> {
   const schedules = await prisma.fringeRateSchedule.findMany({
@@ -65,3 +66,14 @@ export const TIME_ENTRY_COST_SELECT = {
   perDiemAmount: true,
   travelPayAmount: true,
 } as const;
+
+/**
+ * ONE READ PER RENDER. The (app) layout asks for this from two loaders at
+ * once (loadCompanyFinancials for the metric bar and loadAlerts for the
+ * bell), and nothing deduped server reads within a render, so every page
+ * ran it twice. React's `cache()` scopes the memo to a single
+ * server request -- a Server Action's re-render reads fresh data, never a
+ * previous request's -- and outside a React server render (tests, scripts)
+ * it simply calls through. Same function, same result, read once.
+ */
+export const loadFringeSchedulesByCraft = cache(readFringeSchedulesByCraft);

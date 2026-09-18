@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { prisma } from "@prova/db";
 import { toIsoDate, type RenewalSource } from "@/lib/compliance-expiry";
 
@@ -35,7 +36,7 @@ const BOND_LABELS: Record<string, string> = {
   PERFORMANCE_PAYMENT_CAPACITY: "Performance & payment capacity",
 };
 
-export async function renewalSourcesForCompany(companyId: string): Promise<RenewalSource[]> {
+async function readRenewalSources(companyId: string): Promise<RenewalSource[]> {
   const [documents, licenses, policies, bonds, contacts] = await Promise.all([
     // Only COIs expire. A lien waiver or a payroll report has no renewal
     // date and never will, so they are not candidates at all.
@@ -151,3 +152,14 @@ export async function renewalSourcesForCompany(companyId: string): Promise<Renew
     }),
   ];
 }
+
+/**
+ * ONE READ PER RENDER. The (app) layout asks for this from two loaders at
+ * once (getMoneyRailStages for the rail and loadAlerts for the bell), and
+ * nothing deduped server reads within a render, so every page ran it
+ * twice. React's `cache()` scopes the memo to a single
+ * server request -- a Server Action's re-render reads fresh data, never a
+ * previous request's -- and outside a React server render (tests, scripts)
+ * it simply calls through. Same function, same result, read once.
+ */
+export const renewalSourcesForCompany = cache(readRenewalSources);

@@ -3,6 +3,7 @@ import { isLive, type BidStatus } from "./bid-pipeline";
 import { renewalAlerts } from "./compliance-expiry";
 import { renewalSourcesForCompany } from "./renewals";
 import { loadRetainageHeld } from "./retainage-query";
+import { loadActiveJobCostRows } from "./company-financials-query";
 import { serverToday } from "./serverToday";
 import { submittalState, type RevisionData } from "@/components/submittalLabels";
 
@@ -188,18 +189,13 @@ export async function getMoneyRailStages(
         where: { companyId, status: { in: ["INVITED", "SUBMITTED"] } },
         select: { status: true, bidAmount: true },
       }),
-      prisma.job.findMany({
-        where: { companyId, status: { in: ["CONTRACTED", "IN_PROGRESS"] } },
-        select: {
-          lineItems: {
-            where: { isDeleted: false },
-            select: { quantity: true, unitPrice: true },
-          },
-          // amount only: billed-to-date for the unbilled figure. Retainage
-          // is NOT read from this active-job list — that is issue #97.
-          invoices: { select: { amount: true } },
-        },
-      }),
+      // The same read loadCompanyFinancials makes for the metric bar —
+      // CONTRACTED or IN_PROGRESS jobs, their non-deleted lines and their
+      // invoices — shared rather than repeated, so the layout issues it
+      // once per render. Only quantity, unitPrice and invoice amount are
+      // read below. Retainage is NOT read from this active-job list — that
+      // is issue #97.
+      loadActiveJobCostRows(companyId),
       prisma.rfi.count({ where: { companyId, status: "SENT" } }),
       prisma.submittal.findMany({
         where: { companyId },

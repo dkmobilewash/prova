@@ -244,3 +244,136 @@ describe("the open total under the heading", () => {
     expect(container.querySelector('[data-testid="bid-pursuit-total"]')).toBeNull();
   });
 });
+
+describe("a save shows in the list before the refreshed page arrives", () => {
+  // The refreshed props land seconds after the action answers (CLAUDE.md,
+  // #61). These pin what the list says in that gap — the window in which a
+  // person used to see "Nothing on the chase list yet" and click Save again.
+  const EMPTY = "Nothing on the chase list yet.";
+
+  function addForm() {
+    return container.querySelector<HTMLFormElement>('[data-testid="bid-pursuit-form"]');
+  }
+
+  function rowsNamed(name: string) {
+    return [...container.querySelectorAll("li")].filter((li) => li.textContent?.includes(name));
+  }
+
+  function typeAndSubmit(name: string) {
+    click("Add a pursuit");
+    field<HTMLInputElement>('[name="projectName"]').value = name;
+    act(() => {
+      addForm()!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+  }
+
+  it("the new row is on screen, marked saving, while the action is in flight", async () => {
+    let finish: (result: Result) => void = () => {};
+    fake.createBidPursuit.mockReturnValue(new Promise<Result>((resolve) => (finish = resolve)));
+    renderList([]);
+    expect(container.textContent).toContain(EMPTY);
+
+    typeAndSubmit("Harbor lofts");
+
+    expect(container.textContent).not.toContain(EMPTY);
+    expect(rowsNamed("Harbor lofts")).toHaveLength(1);
+    expect(rowsNamed("Harbor lofts")[0].querySelector('[data-testid="pursuit-saving"]')).not.toBeNull();
+    // A placeholder has no id the server knows, so it offers nothing to click.
+    expect(rowsNamed("Harbor lofts")[0].querySelector("button")).toBeNull();
+    await act(async () => finish({ ok: true }));
+  });
+
+  it("a second click cannot send a second create while the first is in flight", async () => {
+    let finish: (result: Result) => void = () => {};
+    fake.createBidPursuit.mockReturnValue(new Promise<Result>((resolve) => (finish = resolve)));
+    renderList([]);
+    typeAndSubmit("Harbor lofts");
+
+    const submitButton = addForm()!.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+    expect(submitButton.disabled).toBe(true);
+    act(() => submitButton.click());
+    expect(fake.createBidPursuit).toHaveBeenCalledTimes(1);
+    await act(async () => finish({ ok: true }));
+  });
+
+  it("after ok the form closes and the row STAYS until the page's own list replaces it", async () => {
+    fake.createBidPursuit.mockResolvedValue({ ok: true });
+    renderList([]);
+    typeAndSubmit("Harbor lofts");
+    await act(async () => {});
+
+    expect(addForm()).toBeNull();
+    expect(container.textContent).not.toContain(EMPTY);
+    expect(rowsNamed("Harbor lofts")).toHaveLength(1);
+
+    // The refreshed page arrives with the real row: exactly one, no marker.
+    renderList([{ ...pursuit, id: "real-1", projectName: "Harbor lofts" }]);
+    expect(rowsNamed("Harbor lofts")).toHaveLength(1);
+    expect(container.querySelector('[data-testid="pursuit-saving"]')).toBeNull();
+  });
+
+  it("a refused create takes the row back out, says why, and keeps what was typed", async () => {
+    let finish: (result: Result) => void = () => {};
+    fake.createBidPursuit.mockReturnValue(new Promise<Result>((resolve) => (finish = resolve)));
+    renderList([]);
+    typeAndSubmit("Harbor lofts");
+    expect(rowsNamed("Harbor lofts")).toHaveLength(1);
+
+    await act(async () => finish({ ok: false, error: "Give the project a name." }));
+
+    expect(rowsNamed("Harbor lofts")).toHaveLength(0);
+    expect(container.textContent).toContain(EMPTY);
+    expect(container.textContent).toContain("Give the project a name.");
+    expect(field<HTMLInputElement>('[name="projectName"]').value).toBe("Harbor lofts");
+  });
+
+  it("an edit shows its new values after ok, before the refreshed page", async () => {
+    fake.updateBidPursuit.mockResolvedValue({ ok: true });
+    renderList();
+    click("Edit");
+    field<HTMLInputElement>('[name="projectName"]').value = "St. Mary's west wing";
+    await submit(container.querySelector("form") as HTMLFormElement);
+
+    expect(rowsNamed("St. Mary's west wing")).toHaveLength(1);
+    expect(rowsNamed("St. Mary's east wing")).toHaveLength(0);
+  });
+
+  it("a delete takes the row away on ok, before the refreshed page", async () => {
+    fake.deleteBidPursuit.mockResolvedValue({ ok: true });
+    renderList();
+    click("Delete");
+    click("Delete it");
+    await act(async () => {});
+    expect(rowsNamed("St. Mary's east wing")).toHaveLength(0);
+  });
+
+  it("a refused delete leaves the row where it was", async () => {
+    fake.deleteBidPursuit.mockResolvedValue({ ok: false, error: "Only the account owner can delete a pursuit." });
+    renderList();
+    click("Delete");
+    click("Delete it");
+    await act(async () => {});
+    expect(rowsNamed("St. Mary's east wing")).toHaveLength(1);
+    expect(container.textContent).toContain("Only the account owner can delete a pursuit.");
+  });
+});
+
+describe("the add button before hydration", () => {
+  it("is disabled in the server's markup, so an early click is visibly refused, not swallowed", async () => {
+    const { renderToString } = await import("react-dom/server");
+    const html = renderToString(
+      createElement(BidPursuitList, { pursuits: [], invitations: [], isOwner: true }),
+    );
+    const buttons = [...html.matchAll(/<button[^>]*>([^<]*)<\/button>/g)];
+    const add = buttons.find((match) => match[1] === "Add a pursuit");
+    const first = buttons.find((match) => match[1] === "Add the first one");
+    expect(add?.[0]).toMatch(/\sdisabled=""/);
+    expect(first?.[0]).toMatch(/\sdisabled=""/);
+  });
+
+  it("is enabled once the page is live", () => {
+    renderList([]);
+    const add = [...container.querySelectorAll("button")].find((b) => b.textContent === "Add a pursuit");
+    expect(add?.disabled).toBe(false);
+  });
+});

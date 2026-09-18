@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useOptimistic, useRef, useState, useSyncExternalStore, useTransition } from "react";
 import Link from "next/link";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { localToday } from "@/components/localToday";
@@ -15,11 +15,20 @@ import {
   BID_PURSUIT_STAGES,
   STAGE_LABELS,
   describeOpenPursuitValue,
+  isOpenPursuit,
   openPursuitValue,
   type BidPursuitStage,
 } from "@/lib/bid-pursuits";
 import type { PursuitRow } from "@/lib/bid-pursuits-query";
 import { money } from "@/lib/money";
+import {
+  applyPursuitChanges,
+  draftPursuit,
+  heldOver,
+  type HeldChange,
+  type PursuitChange,
+  type ShownPursuit,
+} from "@/components/pursuitListChanges";
 
 /**
  * What we are out chasing that nobody has invited us to bid yet.
@@ -33,7 +42,38 @@ import { money } from "@/lib/money";
  * in `useState(rows)` and a successful create showed an empty list, because
  * useState ignores its argument after the first render. Every action here
  * revalidates /pipeline, which re-renders this with fresh props.
+ *
+ * WHAT IT DOES SHOW ON TOP OF THEM, and only until they catch up: the row a
+ * save is making. The refreshed props arrive seconds after the action says
+ * `ok` (see components/pursuitListChanges.ts), and in that gap the list used
+ * to say "Nothing on the chase list yet" under a form that had just closed
+ * — an invitation to click Save again. `useOptimistic` puts the typed row in
+ * the list, marked "saving…", while the action is in flight, and takes it
+ * away again if the action refuses; a confirmed change is then HELD against
+ * the props it was made over, and dropped the moment the page's own list
+ * replaces them. The props are still the truth — the held copy never
+ * outlives one refresh.
  */
+
+/** Ids for rows drawn from a form before the server has made the record. */
+const DRAFT_ID_PREFIX = "saving-";
+
+/** True in the browser once React has hydrated; false in server markup and
+ * during hydration. A button whose onClick only exists after hydration is
+ * rendered disabled until then, so a click that lands before it is visibly
+ * refused instead of silently vanishing. */
+const noSubscription = () => () => {};
+function useHydrated(): boolean {
+  return useSyncExternalStore(
+    noSubscription,
+    () => true,
+    () => false,
+  );
+}
+
+/** Starts holding a change made over the list that is on screen NOW; call
+ * the returned function once the server has confirmed it. */
+type BeginHold = () => (change: PursuitChange) => void;
 
 export type LinkableInvitation = { id: string; label: string };
 
@@ -140,10 +180,12 @@ function PursuitRowView({
   pursuit,
   invitations,
   isOwner,
+  beginHold,
 }: {
-  pursuit: PursuitRow;
+  pursuit: ShownPursuit;
   invitations: LinkableInvitation[];
   isOwner: boolean;
+  beginHold: BeginHold;
 }) {
   const [mode, setMode] = useState<"view" | "edit" | "link">("view");
   const [error, setError] = useState<string | null>(null);
@@ -180,7 +222,17 @@ function PursuitRowView({
           onSubmit={(event) => {
             event.preventDefault();
             const formData = new FormData(event.currentTarget);
-            run(() => updateBidPursuit(pursuit.id, formData), () => setMode("view"));
+            const hold = beginHold();
+            run(
+              () => updateBidPursuit(pursuit.id, formData),
+              () => {
+                setMode("view");
+                hold({
+                  kind: "edit",
+                  row: draftPursuit(formData, localToday(), { id: pursuit.id, invitation: pursuit.invitation }),
+                });
+              },
+            );
           }}
           className="space-y-3"
         >
@@ -229,6 +281,11 @@ function PursuitRowView({
           <span className={`rounded px-1.5 py-0.5 text-xs ${STAGE_STYLE[pursuit.stage]}`}>
             {STAGE_LABELS[pursuit.stage]}
           </span>
+          {pursuit.saving && (
+            <span data-testid="pursuit-saving" className="text-xs italic text-ink-muted">
+              saving…
+            </span>
+          )}
           {pursuit.bidDatePassed && (
             <span className="rounded bg-tag-rose px-1.5 py-0.5 text-xs text-tag-rose-ink">
               bid date passed, no invite
@@ -317,73 +374,86 @@ function PursuitRowView({
         )}
       </div>
 
-      <RowActions
-        className="flex shrink-0 flex-wrap items-center gap-2"
-        destructive={
-          isOwner ? (
-            <ConfirmDelete
-              label="Delete"
-              confirmLabel="Delete it"
-              describe={`Deletes the pursuit "${pursuit.projectName}" for good. To stop chasing it but keep the record, set it to Dropped instead. A linked bid invitation is not touched.`}
-              pinned="end"
-              pending={pending}
-              onConfirm={() => run(() => deleteBidPursuit(pursuit.id))}
-            />
-          ) : undefined
-        }
-      >
-        <label className="sr-only" htmlFor={`stage-${pursuit.id}`}>
-          Stage
-        </label>
-        {/* UNCONTROLLED, keyed on the saved stage. A controlled
-            `value={pursuit.stage}` snapped straight back to the old stage
-            and sat there, disabled, until the refreshed page arrived
-            (1.5-4.4s here) — which reads as a change that failed. Now the
-            choice shows at once; the refreshed props change the key and
-            remount it on what was saved, and a refusal bumps `stageRevert`
-            to put the saved stage back beside the reason. */}
-        <select
-          key={`${pursuit.stage}:${stageRevert}`}
-          id={`stage-${pursuit.id}`}
-          defaultValue={pursuit.stage}
-          disabled={pending}
-          onChange={(event) => {
-            const next = event.target.value;
-            run(
-              () => setBidPursuitStage(pursuit.id, next),
-              undefined,
-              () => setStageRevert((n) => n + 1),
-            );
-          }}
-          className="rounded-md border border-line-card bg-surface px-2 py-1.5 text-xs text-ink-label"
+      {/* A row drawn from the create form has no id the server knows, so
+          it has nothing to act on yet. Its real row replaces it in seconds. */}
+      {!pursuit.id.startsWith(DRAFT_ID_PREFIX) && (
+        <RowActions
+          className="flex shrink-0 flex-wrap items-center gap-2"
+          destructive={
+            isOwner ? (
+              <ConfirmDelete
+                label="Delete"
+                confirmLabel="Delete it"
+                describe={`Deletes the pursuit "${pursuit.projectName}" for good. To stop chasing it but keep the record, set it to Dropped instead. A linked bid invitation is not touched.`}
+                pinned="end"
+                pending={pending}
+                onConfirm={() => {
+                  const hold = beginHold();
+                  run(
+                    () => deleteBidPursuit(pursuit.id),
+                    () => hold({ kind: "remove", id: pursuit.id }),
+                  );
+                }}
+              />
+            ) : undefined
+          }
         >
-          {BID_PURSUIT_STAGES.map((stage) => (
-            <option key={stage} value={stage}>
-              {STAGE_LABELS[stage]}
-            </option>
-          ))}
-        </select>
-        <button
-          type="button"
-          onClick={() => {
-            setMode("edit");
-            setError(null);
-          }}
-          className="rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-neutral-800"
-        >
-          Edit
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setMode(mode === "link" ? "view" : "link");
-            setError(null);
-          }}
-          className="rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-neutral-800"
-        >
-          {pursuit.invitation ? "Change link" : "Link invite"}
-        </button>
-      </RowActions>
+          <label className="sr-only" htmlFor={`stage-${pursuit.id}`}>
+            Stage
+          </label>
+          {/* UNCONTROLLED, keyed on the saved stage. A controlled
+              `value={pursuit.stage}` snapped straight back to the old stage
+              and sat there, disabled, until the refreshed page arrived
+              (1.5-4.4s here) — which reads as a change that failed. Now the
+              choice shows at once; the refreshed props change the key and
+              remount it on what was saved, and a refusal bumps `stageRevert`
+              to put the saved stage back beside the reason. */}
+          <select
+            key={`${pursuit.stage}:${stageRevert}`}
+            id={`stage-${pursuit.id}`}
+            defaultValue={pursuit.stage}
+            disabled={pending}
+            onChange={(event) => {
+              const next = event.target.value as BidPursuitStage;
+              const hold = beginHold();
+              run(
+                () => setBidPursuitStage(pursuit.id, next),
+                // Held so a move to Invited or Dropped leaves the open list now,
+                // rather than when the refreshed page arrives.
+                () => hold({ kind: "edit", row: { ...pursuit, stage: next, open: isOpenPursuit(next), saving: true } }),
+                () => setStageRevert((n) => n + 1),
+              );
+            }}
+            className="rounded-md border border-line-card bg-surface px-2 py-1.5 text-xs text-ink-label"
+          >
+            {BID_PURSUIT_STAGES.map((stage) => (
+              <option key={stage} value={stage}>
+                {STAGE_LABELS[stage]}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={() => {
+              setMode("edit");
+              setError(null);
+            }}
+            className="rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-neutral-800"
+          >
+            Edit
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setMode(mode === "link" ? "view" : "link");
+              setError(null);
+            }}
+            className="rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-neutral-800"
+          >
+            {pursuit.invitation ? "Change link" : "Link invite"}
+          </button>
+        </RowActions>
+      )}
     </li>
   );
 }
@@ -400,12 +470,27 @@ export function BidPursuitList({
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const hydrated = useHydrated();
+  const drafts = useRef(0);
 
-  const open = pursuits.filter((p) => p.open);
-  const closed = pursuits.filter((p) => !p.open);
+  // Confirmed saves the refreshed props have not caught up with yet.
+  const [held, setHeld] = useState<HeldChange[]>([]);
+  const settled = applyPursuitChanges(pursuits, heldOver(held, pursuits));
+  // Plus, while an action is in flight, the row it is making.
+  const [shown, showInFlight] = useOptimistic(settled, (rows: ShownPursuit[], change: PursuitChange) =>
+    applyPursuitChanges(rows, [change]),
+  );
+  const beginHold: BeginHold = () => {
+    const basis = pursuits;
+    return (change) => setHeld((current) => [...heldOver(current, basis), { ...change, basis }]);
+  };
+
+  const open = shown.filter((p) => p.open);
+  const closed = shown.filter((p) => !p.open);
   // The same sum the bid_pursuits Ask tool reports — openPursuitValue is the
-  // only one. Over the rows the page already loaded for this company.
-  const valueLine = describeOpenPursuitValue(openPursuitValue(pursuits));
+  // only one. Over the rows on screen, so the line and the list agree while
+  // a save is on its way; the server's figure replaces it with the list.
+  const valueLine = describeOpenPursuitValue(openPursuitValue(shown));
 
   return (
     <section className="mb-10">
@@ -422,11 +507,12 @@ export function BidPursuitList({
             form open by default on a page you came to READ is noise. */}
         <button
           type="button"
+          disabled={!hydrated}
           onClick={() => {
             setAdding((value) => !value);
             setError(null);
           }}
-          className="min-h-11 rounded-md border border-line-card px-3 text-sm text-ink-label hover:border-link hover:text-link"
+          className="min-h-11 rounded-md border border-line-card px-3 text-sm text-ink-label hover:border-link hover:text-link disabled:opacity-50"
         >
           {adding ? "Cancel" : "Add a pursuit"}
         </button>
@@ -440,9 +526,18 @@ export function BidPursuitList({
           onSubmit={(event) => {
             event.preventDefault();
             const formData = new FormData(event.currentTarget);
+            const draft = draftPursuit(formData, localToday(), {
+              id: `${DRAFT_ID_PREFIX}${(drafts.current += 1)}`,
+              invitation: null,
+            });
+            const hold = beginHold();
             startTransition(async () => {
+              // In the list at once, marked "saving…"; withdrawn by React
+              // when this transition ends unless it is held below.
+              showInFlight({ kind: "create", row: draft });
               const result = await createBidPursuit(formData);
               if (result.ok) {
+                hold({ kind: "create", row: draft });
                 setError(null);
                 setAdding(false);
               } else {
@@ -472,7 +567,7 @@ export function BidPursuitList({
         </form>
       )}
 
-      {pursuits.length === 0 ? (
+      {shown.length === 0 ? (
         <div className="rounded-lg border border-line-card bg-surface p-6">
           <p className="text-ink-label">Nothing on the chase list yet.</p>
           <p className="mt-2 max-w-xl text-sm text-ink-body">
@@ -484,8 +579,9 @@ export function BidPursuitList({
           {!adding && (
             <button
               type="button"
+              disabled={!hydrated}
               onClick={() => setAdding(true)}
-              className="mt-3 text-sm text-link hover:underline"
+              className="mt-3 text-sm text-link hover:underline disabled:opacity-50"
             >
               Add the first one
             </button>
@@ -500,7 +596,13 @@ export function BidPursuitList({
           ) : (
             <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
               {open.map((pursuit) => (
-                <PursuitRowView key={pursuit.id} pursuit={pursuit} invitations={invitations} isOwner={isOwner} />
+                <PursuitRowView
+                  key={pursuit.id}
+                  pursuit={pursuit}
+                  invitations={invitations}
+                  isOwner={isOwner}
+                  beginHold={beginHold}
+                />
               ))}
             </ul>
           )}
@@ -511,7 +613,13 @@ export function BidPursuitList({
               </summary>
               <ul className="mt-2 divide-y divide-line-row rounded-lg border border-line-card bg-surface">
                 {closed.map((pursuit) => (
-                  <PursuitRowView key={pursuit.id} pursuit={pursuit} invitations={invitations} isOwner={isOwner} />
+                  <PursuitRowView
+                  key={pursuit.id}
+                  pursuit={pursuit}
+                  invitations={invitations}
+                  isOwner={isOwner}
+                  beginHold={beginHold}
+                />
                 ))}
               </ul>
             </details>

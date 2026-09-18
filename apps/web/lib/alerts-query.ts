@@ -30,6 +30,7 @@ import { certifiedPayrollWeekStart } from "@/lib/certified-payroll-week";
 import { can, type Principal } from "@/lib/permissions";
 import { loadRatioReviews } from "@/lib/union-compliance-query";
 import { intakeTraySummary } from "@/lib/intake/review";
+import { firstRowBy, groupRowsBy, rowsFor } from "@/lib/group-rows";
 
 /**
  * Every alert one company currently has, assembled from the rows that
@@ -51,6 +52,119 @@ function isoDate(date: Date | null | undefined): string | null {
 
 function addDays(iso: string, days: number): string {
   return new Date(Date.parse(`${iso}T00:00:00.000Z`) + days * 86_400_000).toISOString().slice(0, 10);
+}
+
+/**
+ * Every job with the facts the per-job alerts read — retainage, closeout,
+ * certified payroll, WIP variance.
+ *
+ * This was ONE `job.findMany` with nine relations nested under it, which
+ * Prisma resolves as ten queries run one after another: about a second of
+ * every page render, since the bell count in the layout runs this, and the
+ * longest wait in the whole layout (measured 2026-09-18). It is now the
+ * job query and then every relation at once. Each child query is the SQL
+ * Prisma was already sending — `WHERE "jobId" IN (...)`, with the same
+ * ORDER BY on the two that take the newest row — so the rows, their order
+ * and therefore every alert are unchanged. The shape handed back is the
+ * shape the nested read returned, so nothing below this function changed.
+ */
+async function loadAlertJobs(companyId: string) {
+  const jobs = await prisma.job.findMany({
+    where: { companyId },
+    select: { id: true, name: true, substantialCompletionDate: true },
+  });
+  // A nested read with no parents sends no child queries; neither does this.
+  if (jobs.length === 0) return [];
+  const jobId = { in: jobs.map((job) => job.id) };
+
+  const [
+    invoices,
+    retainageReleases,
+    closeoutSubmissions,
+    prevailingWageDeterminations,
+    timeEntries,
+    complianceDocuments,
+    lineItems,
+  ] = await Promise.all([
+    prisma.invoice.findMany({
+      where: { jobId },
+      select: { jobId: true, amount: true, retainageWithheld: true },
+    }),
+    prisma.retainageRelease.findMany({ where: { jobId }, select: { jobId: true, amount: true } }),
+
+    // The newest attempt per job: every attempt newest-first, first one per
+    // job kept below — exactly how Prisma resolved the nested `take: 1`.
+    prisma.closeoutSubmission.findMany({
+      where: { jobId },
+      orderBy: { attempt: "desc" },
+      select: { jobId: true, status: true, submittedOn: true, respondedOn: true },
+    }),
+
+    // Only jobs carrying a wage determination can raise a certified
+    // payroll alert — see certifiedPayrollAlerts. One row per job is
+    // enough: this is a "does one exist" question.
+    prisma.prevailingWageDetermination.findMany({
+      where: { jobId },
+      orderBy: { createdAt: "desc" },
+      // The jurisdiction's own filing window and frequency, where they
+      // have been recorded. Without a window the alert falls back to
+      // its generic horizon and says so; without a frequency it
+      // assumes WEEKLY, both jobs certifiedPayrollAlerts already does.
+      select: {
+        jobId: true,
+        id: true,
+        ruleSet: { select: { filingDueDays: true, filingFrequency: true } },
+      },
+    }),
+    // TIME_ENTRY_COST_SELECT already carries `date`, which is the only
+    // column certifiedPayrollAlerts wanted; the rest is burdened job
+    // cost (issue #287), read through the same helper /jobs/[id] uses.
+    prisma.timeEntry.findMany({
+      where: { jobId },
+      select: { ...TIME_ENTRY_COST_SELECT, jobId: true },
+    }),
+    prisma.complianceDocument.findMany({
+      where: { jobId, type: "CERTIFIED_PAYROLL" },
+      select: { jobId: true, periodStart: true, periodEnd: true },
+    }),
+    prisma.jobLineItem.findMany({
+      where: { jobId, isDeleted: false },
+      select: {
+        jobId: true,
+        id: true,
+        quantity: true,
+        unitPrice: true,
+        budgetedUnitCost: true,
+        currentEstimatedUnitCost: true,
+        estimatedCostToComplete: true,
+        costEntries: { select: { amount: true } },
+      },
+    }),
+  ]);
+
+  const byJob = <T extends { jobId: string | null }>(rows: T[]) => groupRowsBy(rows, (row) => row.jobId);
+  const invoicesByJob = byJob(invoices);
+  const releasesByJob = byJob(retainageReleases);
+  const latestCloseout = firstRowBy(closeoutSubmissions, (row) => row.jobId);
+  const latestDetermination = firstRowBy(prevailingWageDeterminations, (row) => row.jobId);
+  const timeEntriesByJob = byJob(timeEntries);
+  const documentsByJob = byJob(complianceDocuments);
+  const lineItemsByJob = byJob(lineItems);
+
+  return jobs.map((job) => {
+    const closeout = latestCloseout.get(job.id);
+    const determination = latestDetermination.get(job.id);
+    return {
+      ...job,
+      invoices: rowsFor(invoicesByJob, job.id),
+      retainageReleases: rowsFor(releasesByJob, job.id),
+      closeoutSubmissions: closeout ? [closeout] : [],
+      prevailingWageDeterminations: determination ? [determination] : [],
+      timeEntries: rowsFor(timeEntriesByJob, job.id),
+      complianceDocuments: rowsFor(documentsByJob, job.id),
+      lineItems: rowsFor(lineItemsByJob, job.id),
+    };
+  });
 }
 
 export async function loadAlerts(
@@ -96,60 +210,7 @@ export async function loadAlerts(
       },
     }),
 
-    prisma.job.findMany({
-      where: { companyId },
-      select: {
-        id: true,
-        name: true,
-        substantialCompletionDate: true,
-
-        invoices: { select: { amount: true, retainageWithheld: true } },
-        retainageReleases: { select: { amount: true } },
-
-        closeoutSubmissions: {
-          orderBy: { attempt: "desc" },
-          take: 1,
-          select: { status: true, submittedOn: true, respondedOn: true },
-        },
-
-        // Only jobs carrying a wage determination can raise a certified
-        // payroll alert — see certifiedPayrollAlerts. Taking one row is
-        // enough: this is a "does one exist" question.
-        prevailingWageDeterminations: {
-          take: 1,
-          orderBy: { createdAt: "desc" },
-          // The jurisdiction's own filing window and frequency, where they
-          // have been recorded. Without a window the alert falls back to
-          // its generic horizon and says so; without a frequency it
-          // assumes WEEKLY, both jobs certifiedPayrollAlerts already does.
-          select: { id: true, ruleSet: { select: { filingDueDays: true, filingFrequency: true } } },
-        },
-        // `date` is what certifiedPayrollAlerts needs; the rest is burdened
-        // job cost (issue #287), which the WIP variance alert below reads
-        // through the same helper /jobs/[id] does.
-        // TIME_ENTRY_COST_SELECT already carries `date`, which is the only
-        // column certifiedPayrollAlerts wanted; the rest is burdened job
-        // cost (issue #287), read through the same helper /jobs/[id] uses.
-        timeEntries: { select: TIME_ENTRY_COST_SELECT },
-        complianceDocuments: {
-          where: { type: "CERTIFIED_PAYROLL" },
-          select: { periodStart: true, periodEnd: true },
-        },
-
-        lineItems: {
-          where: { isDeleted: false },
-          select: {
-            id: true,
-            quantity: true,
-            unitPrice: true,
-            budgetedUnitCost: true,
-            currentEstimatedUnitCost: true,
-            estimatedCostToComplete: true,
-            costEntries: { select: { amount: true } },
-          },
-        },
-      },
-    }),
+    loadAlertJobs(companyId),
 
     prisma.alertAcknowledgement.findMany({
       where: { userId },
