@@ -17,6 +17,9 @@ const entrySelect = {
   hours: true,
   payType: true,
   note: true,
+  clockStartedAt: true,
+  clockEndedAt: true,
+  clockBreakMinutes: true,
   employeeUser: { select: { name: true, email: true } },
   crewMember: { select: { legalFirstName: true, legalMiddleName: true, legalLastName: true } },
   lineItem: { select: { description: true } },
@@ -29,6 +32,9 @@ function toJson(e: {
   hours: unknown;
   payType: string;
   note: string | null;
+  clockStartedAt: Date | null;
+  clockEndedAt: Date | null;
+  clockBreakMinutes: number | null;
   employeeUser: { name: string | null; email: string } | null;
   crewMember: { legalFirstName: string; legalMiddleName: string | null; legalLastName: string } | null;
   lineItem: { description: string } | null;
@@ -40,6 +46,11 @@ function toJson(e: {
     hours: String(e.hours),
     payType: e.payType,
     note: e.note,
+    // Clock capture, when the entry was clocked rather than typed. ISO
+    // timestamps so the phone renders them in the worker's own time zone.
+    clockStartedAt: e.clockStartedAt?.toISOString() ?? null,
+    clockEndedAt: e.clockEndedAt?.toISOString() ?? null,
+    clockBreakMinutes: e.clockBreakMinutes,
     // The worker the hours are for: an employee (User) or a crew member.
     employeeName: e.employeeUser
       ? e.employeeUser.name ?? e.employeeUser.email

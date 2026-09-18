@@ -25,6 +25,11 @@ import type { Craft, CrewMember, LineItem, TimeEntry, TimeEntryPayType } from "@
 
 const PAY_TYPES: TimeEntryPayType[] = ["STRAIGHT", "OVERTIME", "DOUBLE_TIME", "SHIFT_DIFFERENTIAL"];
 
+/** "7:02 AM" in the device's own time zone. */
+function formatClockTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
 function formatElapsed(ms: number): string {
   const totalMinutes = Math.max(0, Math.floor(ms / 60000));
   const h = Math.floor(totalMinutes / 60);
@@ -327,6 +332,12 @@ export default function TimeScreen() {
               {item.employeeName} · {item.payType.replace(/_/g, " ")}
               {item.craftLabel ? ` · ${item.craftLabel}` : ""}
             </Text>
+            {item.clockStartedAt && item.clockEndedAt ? (
+              <Text style={styles.meta}>
+                {formatClockTime(item.clockStartedAt)}–{formatClockTime(item.clockEndedAt)}
+                {item.clockBreakMinutes ? ` · ${item.clockBreakMinutes} min break` : ""}
+              </Text>
+            ) : null}
             {item.lineItemDescription ? <Text style={styles.note}>{item.lineItemDescription}</Text> : null}
             {item.note ? <Text style={styles.note}>{item.note}</Text> : null}
           </Card>
