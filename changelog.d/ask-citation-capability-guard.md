@@ -90,13 +90,24 @@ caught by, so the row is located first and that lookup is its own assertion:
 renaming the row fails loudly instead of passing because nothing was found
 to object to.
 
-Four mutations, four caught, control passes: a digit re-added, a word
-re-added, a bare count with no "read", and the row renamed away. Run against
-the assertion logic standalone rather than through vitest — npm's registry
-was 503ing for every package and this worktree could not install, having
-pruned `@types/react` before the outage stopped it refetching. Said plainly
-because "mutation-tested" here means watching a named test go red, and that
-is not what happened; CI is what ran this file.
+Four mutations, four caught, control passes, each restored byte-identical by
+sha256sum:
+
+| mutation | result |
+| --- | --- |
+| a digit re-added | red — `states a read-tool count again ("42** read tools")` |
+| a spelled-out word re-added | red — `("two read tools")` |
+| a bare count with no "read" | red — `("42 tools")` |
+| the row renamed away | red — TWO tests, the lookup and the comparison |
+
+The last one is the point of locating the row first: an absence test that
+cannot find its subject would otherwise pass for ever.
+
+These were first checked against the assertion logic standalone, because
+npm's registry was 503ing for every package and this worktree could not
+install, having pruned `@types/react` before the outage stopped it
+refetching. The registry recovered and they have now been run properly,
+through vitest, and agree.
 
 WHAT THE AUDIT CHECKED AND FOUND SOUND, recorded so nobody re-runs it: still
 four model call sites and four metered features, all on `claude-opus-5`; the
@@ -105,17 +116,16 @@ handler is a compile error; every one of the tools has an eval
 case AND a test asserting it; `capability` is type-required so no tool can
 omit it; and the bill-versus-bound split on `/settings/assistant` survives.
 
-VERIFICATION, and the second half of it is a caveat rather than a figure.
-The branch as first written ran clean locally: typecheck 0, lint 0 errors,
-232 files / 3825 unit tests, 39 files / 449 database tests against a real
-Postgres 16, production build exit 0 — and the citation guard was re-run
-after merging main, 22 tests, with the tool roll-call confirmed at 41 union
-names and 41 parsed handlers so the two tools that arrived meanwhile were
-inside its scope rather than skipped by it.
+VERIFICATION, on the merged tree and after the registry came back:
+typecheck 0, lint 0 errors, 249 files / 4,055 unit tests, 39 files / 450
+database tests against a real Postgres 16, production build exit 0. The
+citation guard covers all 42 tools — union 42, HANDLERS parsed 42 — so the
+four that arrived from main while this was open were inside its scope rather
+than skipped by it, and none needed an exception.
 
-Everything after that merge was verified by CI, not here: npm's registry
-began returning 503 for every package and an interrupted install had
-already pruned `@types/react`, so this worktree could not typecheck, test or
-build. That is named rather than papered over, because a local suite nobody
-could run is exactly the "reports done on the strength of plausible code"
-shape CLAUDE.md warns about.
+There was a window where none of that could be run here: npm returned 503
+for every package and an interrupted install had pruned `@types/react`, so
+CI was the only validator. Recorded because a suite nobody could run is
+exactly the "reports done on the strength of plausible code" shape CLAUDE.md
+warns about, and the honest move was to say so rather than restate an older
+green.
