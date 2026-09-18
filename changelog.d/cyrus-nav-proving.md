@@ -18,5 +18,5 @@ lights Integrations and not Settings too. The page gets a four-step
 walkthrough; its non-owner refusal is a step of its own.
 
 Clicked in the browser: Proving below Compliance & safety; Integrations
-opens its page with only its own button highlighted; the tour runs all
-four steps on screen.
+opens its page with only its own button highlighted; for the owner the
+tour runs three steps on screen, skipping the non-owner one.
