@@ -62,6 +62,32 @@ function parseHours(raw: unknown): string | null {
   return text;
 }
 
+/** An ISO timestamp, or null when absent — clock capture evidence, present
+ * only on entries that were clocked. The server stores it but never
+ * recomputes `hours` from it: hours is authoritative and correctable. */
+function parseOptionalTimestamp(
+  raw: unknown,
+  label: string,
+): { ok: true; value: Date | null } | { ok: false; error: string } {
+  const text = String(raw ?? "").trim();
+  if (!text) return { ok: true, value: null };
+  const d = new Date(text);
+  if (Number.isNaN(d.getTime())) return { ok: false, error: `${label} must be a valid timestamp` };
+  return { ok: true, value: d };
+}
+
+/** Whole, non-negative break minutes, or null when absent. */
+function parseOptionalBreakMinutes(
+  raw: unknown,
+): { ok: true; value: number | null } | { ok: false; error: string } {
+  const text = String(raw ?? "").trim();
+  if (!text) return { ok: true, value: null };
+  if (!/^\d+$/.test(text)) {
+    return { ok: false, error: "clockBreakMinutes must be a whole number of minutes, or omitted" };
+  }
+  return { ok: true, value: Number(text) };
+}
+
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -144,6 +170,15 @@ export async function POST(
     craftClassificationId = craft.id;
   }
 
+  // Clock capture evidence — optional, and only ever from the phone's clock
+  // flow. Stored as-is; never used to recompute `hours`.
+  const clockStartedAt = parseOptionalTimestamp(input.clockStartedAt, "clockStartedAt");
+  if (!clockStartedAt.ok) return jsonError(clockStartedAt.error, 400);
+  const clockEndedAt = parseOptionalTimestamp(input.clockEndedAt, "clockEndedAt");
+  if (!clockEndedAt.ok) return jsonError(clockEndedAt.error, 400);
+  const clockBreakMinutes = parseOptionalBreakMinutes(input.clockBreakMinutes);
+  if (!clockBreakMinutes.ok) return jsonError(clockBreakMinutes.error, 400);
+
   // Idempotent create: a retried offline POST replays instead of duplicating.
   const clientOperationId = String(input.clientOperationId ?? "").trim() || undefined;
   if (clientOperationId) {
@@ -164,6 +199,9 @@ export async function POST(
       date,
       hours,
       payType,
+      clockStartedAt: clockStartedAt.value,
+      clockEndedAt: clockEndedAt.value,
+      clockBreakMinutes: clockBreakMinutes.value,
       note: String(input.note ?? "").trim() || null,
       clientOperationId,
     },

@@ -28,6 +28,9 @@ export type CreateOp =
       crewMemberId?: string;
       lineItemId?: string;
       craftClassificationId?: string;
+      clockStartedAt?: string;
+      clockEndedAt?: string;
+      clockBreakMinutes?: number;
     }
   | {
       type: "material:create";
@@ -159,6 +162,9 @@ async function runOp(op: PendingOp, token: string): Promise<void> {
           crewMemberId: op.crewMemberId,
           lineItemId: op.lineItemId,
           craftClassificationId: op.craftClassificationId,
+          clockStartedAt: op.clockStartedAt,
+          clockEndedAt: op.clockEndedAt,
+          clockBreakMinutes: op.clockBreakMinutes,
         },
         token,
       );

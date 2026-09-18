@@ -92,6 +92,17 @@ model TimeEntry {
   hours   Decimal          @db.Decimal(5, 2)
   payType TimeEntryPayType @default(STRAIGHT)
 
+  /// Clock-capture evidence: the timestamps the phone recorded when this
+  /// interval was clocked in and out, and the unpaid break subtracted from
+  /// the worked duration. IMMUTABLE after creation — a correction fixes
+  /// `hours` (the authoritative figure), never these. The phone computes
+  /// DURATION only and never derives the pay-type split (lib/prevailing-wage.ts:
+  /// TimeEntry.payType is entered by a person, nothing rewrites it). All three
+  /// are null for web/typed/backfill entries that were not clocked.
+  clockStartedAt    DateTime?
+  clockEndedAt      DateTime?
+  clockBreakMinutes Int?
+
   /// Flat daily allowances, independent of hours/payType — a per diem or
   /// travel day is still one row on this date for this employee/job, not
   /// a second entry. Both null for a normal local day with no allowance.
