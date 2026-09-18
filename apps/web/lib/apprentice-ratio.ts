@@ -190,3 +190,61 @@ export function ratioLabel(rule: RatioRuleInput): string {
   const journeymen = `${rule.journeymenCount} journeym${rule.journeymenCount === 1 ? "an" : "en"}`;
   return `${apprentices} per ${journeymen}`;
 }
+
+export interface LocalRatioEntryInput extends RatioEntryInput {
+  /** Null when the entry names no craft, so it belongs to no local. */
+  unionLocalId: string | null;
+  unionLocalLabel: string | null;
+}
+
+export interface LocalDayRatio {
+  unionLocalId: string;
+  unionLocalLabel: string;
+  rule: RatioRuleInput | null;
+  day: DayRatio;
+}
+
+/**
+ * One job's ratio on one day, per union local — what the phone's time screen
+ * warns from while there is still time to change the crew.
+ *
+ * Same folding as the month review in union-compliance-query.ts: the rule
+ * is per local, and an entry with no craft belongs to no local, so it is
+ * counted as unclassified in EVERY local's day. A day cannot read compliant
+ * while somebody on site is unaccounted for.
+ *
+ * Works on any unit that is the same on both sides. The time screen feeds
+ * it logged HOURS, and the day's planned crew as ONE per person — a
+ * headcount, since a schedule has no hours — and the ratio of the two sides
+ * is what the rule compares either way.
+ */
+export function reviewDayByLocal(
+  entries: LocalRatioEntryInput[],
+  ruleByLocal: Map<string, RatioRuleInput>,
+): LocalDayRatio[] {
+  const locals = new Map<string, { label: string; entries: RatioEntryInput[] }>();
+  const untagged: RatioEntryInput[] = [];
+  for (const entry of entries) {
+    if (entry.unionLocalId === null) {
+      untagged.push(entry);
+      continue;
+    }
+    const local = locals.get(entry.unionLocalId) ?? { label: entry.unionLocalLabel ?? "", entries: [] };
+    local.entries.push(entry);
+    locals.set(entry.unionLocalId, local);
+  }
+
+  const out: LocalDayRatio[] = [];
+  for (const [unionLocalId, local] of locals) {
+    const rule = ruleByLocal.get(unionLocalId) ?? null;
+    const [day] = reviewRatioByDay([...local.entries, ...untagged], rule);
+    if (day) out.push({ unionLocalId, unionLocalLabel: local.label, rule, day });
+  }
+  return out;
+}
+
+/** The day is over the ratio in a way a foreman can act on: too many
+ * apprentices for the journeymen on site, or apprentices with none. */
+export function isRatioBreach(day: DayRatio): boolean {
+  return day.status === "OVER" || day.status === "NO_JOURNEYMAN";
+}

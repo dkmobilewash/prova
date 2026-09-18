@@ -1,7 +1,9 @@
 import { prisma } from "@prova/db";
 import {
+  reviewDayByLocal,
   reviewRatioByDay,
   summarizeRatio,
+  type LocalDayRatio,
   type CraftTier,
   type DayRatio,
   type RatioEntryInput,
@@ -14,7 +16,7 @@ import {
   type RemittanceReport,
 } from "@/lib/fringe-remittance";
 import type { FringeRateScheduleInput } from "@/lib/labor-cost";
-import { timeEntryWorkerName, timeEntryWorkerId } from "@/lib/worker-name";
+import { crewMemberName, payrollWorkerName, timeEntryWorkerName, timeEntryWorkerId } from "@/lib/worker-name";
 
 /**
  * Fetching and normalising for the union compliance page.
@@ -510,4 +512,139 @@ export async function loadUnionSetup(companyId: string): Promise<SetupLocalRow[]
       })),
     };
   });
+}
+
+export type WorkerCraftPerson = {
+  /** "user:<id>" or "crew:<id>" — what setWorkerCraft takes. */
+  key: string;
+  label: string;
+  /** Crew members have no login; the page says so beside the name. */
+  kind: "user" | "crew";
+  /** Craft ids this person can be logged under. */
+  craftIds: string[];
+};
+
+/**
+ * Everyone who can have hours logged — team members and active crew — with
+ * the crafts each is set up under. Feeds the "Who works under each craft"
+ * section; the phone reads the same rows through /api/v1/crafts.
+ */
+export async function loadWorkerCrafts(companyId: string): Promise<WorkerCraftPerson[]> {
+  const [users, crew, rows] = await Promise.all([
+    prisma.user.findMany({
+      where: { companyId },
+      select: { id: true, name: true, email: true },
+      orderBy: [{ name: "asc" }, { email: "asc" }],
+    }),
+    prisma.crewMember.findMany({
+      where: { companyId, archivedAt: null },
+      select: { id: true, legalFirstName: true, legalMiddleName: true, legalLastName: true },
+      orderBy: [{ legalLastName: "asc" }, { legalFirstName: "asc" }],
+    }),
+    prisma.workerCraft.findMany({
+      where: { companyId },
+      select: { craftClassificationId: true, userId: true, crewMemberId: true },
+    }),
+  ]);
+
+  const craftsOf = (match: (row: (typeof rows)[number]) => boolean) =>
+    rows.filter(match).map((row) => row.craftClassificationId);
+
+  return [
+    ...users.map((u) => ({
+      key: `user:${u.id}`,
+      label: payrollWorkerName(u).label,
+      kind: "user" as const,
+      craftIds: craftsOf((row) => row.userId === u.id),
+    })),
+    ...crew.map((c) => ({
+      key: `crew:${c.id}`,
+      label: crewMemberName(c).label,
+      kind: "crew" as const,
+      craftIds: craftsOf((row) => row.crewMemberId === c.id),
+    })),
+  ];
+}
+
+export type JobDayRatio = {
+  /** From the hours already logged for the day. */
+  logged: LocalDayRatio[];
+  /** From the day's crew schedule, one per person — the only signal there
+   * is in the morning, before anyone has clocked out. Empty when nobody is
+   * scheduled. */
+  planned: LocalDayRatio[];
+};
+
+/**
+ * One job's apprentice ratio on one day — what the phone's time screen
+ * warns from. `date` is yyyy-mm-dd; both TimeEntry.date and
+ * CrewScheduleDay.workDate are stored at UTC midnight of the day they name.
+ */
+export async function loadJobDayRatio(companyId: string, jobId: string, date: string): Promise<JobDayRatio> {
+  const day = new Date(`${date}T00:00:00.000Z`);
+  const craftSelect = { select: { tier: true, unionLocalId: true, unionLocal: true } } as const;
+
+  const [entries, scheduled, rules] = await Promise.all([
+    prisma.timeEntry.findMany({
+      where: { jobId, job: { companyId }, date: day },
+      select: {
+        hours: true,
+        craftClassification: craftSelect,
+        employeeUser: { select: { name: true, email: true } },
+        crewMember: { select: { legalFirstName: true, legalMiddleName: true, legalLastName: true } },
+      },
+    }),
+    prisma.crewScheduleDay.findMany({
+      where: { jobId, companyId, workDate: day },
+      select: {
+        craftClassification: craftSelect,
+        scheduledUser: { select: { name: true, email: true } },
+        crewMember: { select: { legalFirstName: true, legalMiddleName: true, legalLastName: true } },
+      },
+    }),
+    // Oldest first, so the Map keeps the NEWEST rule per local — the same
+    // read loadRatioReviews makes, for the same reason.
+    prisma.apprenticeRatioRule.findMany({ where: { companyId }, orderBy: { createdAt: "asc" } }),
+  ]);
+
+  const ruleByLocal = new Map<string, RatioRuleInput>(
+    rules.map((r) => [
+      r.unionLocalId,
+      {
+        apprenticeCount: r.apprenticeCount,
+        journeymenCount: r.journeymenCount,
+        programStandardReference: r.programStandardReference,
+      },
+    ]),
+  );
+
+  const toInput = (
+    hours: number,
+    craft: { tier: string | null; unionLocalId: string; unionLocal: Parameters<typeof localLabel>[0] } | null,
+    name: string,
+  ) => ({
+    date,
+    hours,
+    tier: (craft?.tier as CraftTier | null) ?? null,
+    employeeName: name,
+    unionLocalId: craft?.unionLocalId ?? null,
+    unionLocalLabel: craft ? localLabel(craft.unionLocal) : null,
+  });
+
+  return {
+    logged: reviewDayByLocal(
+      entries.map((e) => toInput(Number(e.hours), e.craftClassification, timeEntryWorkerName(e).label)),
+      ruleByLocal,
+    ),
+    planned: reviewDayByLocal(
+      scheduled.map((s) =>
+        toInput(
+          1,
+          s.craftClassification,
+          timeEntryWorkerName({ employeeUser: s.scheduledUser, crewMember: s.crewMember }).label,
+        ),
+      ),
+      ruleByLocal,
+    ),
+  };
 }
