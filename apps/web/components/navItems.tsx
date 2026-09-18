@@ -346,6 +346,17 @@ export const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
+    href: "/lien-deadlines",
+    label: "Lien deadlines",
+    icon: (
+      // A calendar page with a flag: a date somebody else set, to be kept.
+      <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5">
+        <rect x="3.5" y="4.5" width="13" height="12" rx="1" stroke="currentColor" strokeWidth="1.4" />
+        <path d="M3.5 8h13M7 3v3M13 3v3M8 11v4M8 11h4l-1 1 1 1H8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+  },
+  {
     href: "/safety",
     label: "Safety",
     icon: (
@@ -614,14 +625,17 @@ export const NAV_GROUPS: NavGroup[] = [
   },
   {
     heading: "Financials",
-    description: "Money in, money held back, and what the work is costing: cash coming in, backcharges you are claiming, budget against actual by phase code, and the company settings behind them.",
+    description: "Money in, money held back, and what the work is costing: cash coming in, backcharges you are claiming, the lien deadlines that protect getting paid, budget against actual by phase code, and the company settings behind them.",
     // A bank note.
     icon: groupIcon("M3.5 6.5h13v7h-13zM10 12a2 2 0 1 0 0-4 2 2 0 0 0 0 4ZM6 10h.01M14 10h.01"),
     // Phase codes next to cash flow: both are company-wide money read
     // across the whole book rather than one job, and both answer to
     // VIEW_COMPANY_FINANCIALS. Settings stays last because it is where the
     // phase codes this page reports on are set up.
-    items: [item("/cash-flow"), item("/phase-codes"), item("/backcharges"), item("/settings")],
+    // Lien deadlines beside backcharges: both are the sub defending money
+    // the GC is holding, one by objecting and one by preserving the right
+    // to lien. Settings stays last.
+    items: [item("/cash-flow"), item("/phase-codes"), item("/backcharges"), item("/lien-deadlines"), item("/settings")],
   },
   {
     heading: "Compliance & safety",

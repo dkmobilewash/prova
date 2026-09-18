@@ -204,6 +204,25 @@ describe("what the page says is missing, is missing", () => {
     }
   });
 
+  it("discloses lien deadlines, which the export does not carry", () => {
+    // Review finding on cyrus/lien-deadlines: LienDeadline was added to the
+    // schema, to no dataset, and to no line here — so the page told a
+    // customer their file held everything but these categories, while a
+    // record of which legal notices went out, and when, quietly stayed
+    // behind. Same defect this file exists for, one table later.
+    const all = EXPORT_OMISSIONS.flatMap((o) => o.models);
+    expect(all).toContain("LienDeadline");
+  });
+
+  it("discloses the pre-bid chase list, which is not a dataset", () => {
+    // BidPursuit shipped with /pipeline's chase list and no line here, so
+    // the export quietly left out months of somebody's chasing — the same
+    // defect as a costing row quietly leaving out a cost.
+    const all = EXPORT_OMISSIONS.flatMap((o) => o.models);
+    expect(exportedModels()).not.toContain("BidPursuit");
+    expect(all, "BidPursuit is disclosed").toContain("BidPursuit");
+  });
+
   it("holds the withheld list to columns that are real credentials", () => {
     const fieldNames = new Set(
       schemaText()

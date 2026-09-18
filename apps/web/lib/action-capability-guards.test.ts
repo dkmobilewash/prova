@@ -706,6 +706,9 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // note on /closeout argues is worse than a consistent state.
   jobMedia: () => import("./actions/jobMedia"),
   materialOrders: () => import("./actions/materialOrders"),
+  // Lien deadlines — every write reachable only from /lien-deadlines, which
+  // demands MANAGE_BILLING, and every one asserts it before any query.
+  lienDeadlines: () => import("./actions/lienDeadlines"),
   // Phase codes — the company's own cost-coding vocabulary. All three
   // writes are reachable only from /settings, which demands
   // MANAGE_COMPLIANCE, so the walk puts all three in MUST_ASSERT and every
@@ -714,6 +717,11 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // phase code with priced work against it is the evidence of how work on
   // an already-invoiced job was coded.
   "phase-codes": () => import("./actions/phase-codes"),
+  // The experience modification rate. All three writes are reachable only
+  // from /compliance, which demands MANAGE_COMPLIANCE, so the walk puts all
+  // three in MUST_ASSERT and each is executed below as a principal without
+  // it — a FIELD foreman must not be able to post a mod rate a GC will read.
+  emr: () => import("./actions/emr"),
   rfis: () => import("./actions/rfis"),
   submittals: () => import("./actions/submittals"),
   drawings: () => import("./actions/drawings"),
@@ -726,6 +734,11 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // reached from an upload route as well as a page, and the file it records
   // a URL for is in a blob store shared by every tenant.
   intake: () => import("./actions/intake"),
+  // The pre-bid pursuit list. All five actions are reachable only from
+  // /pipeline, which demands MANAGE_ESTIMATING, so the walk put all five in
+  // MUST_ASSERT on the day they were added — and each is executed below as
+  // a principal without it.
+  bidPursuits: () => import("./actions/bidPursuits"),
   // The Ask box. Only `checkAssistantConnection` lands in MUST_ASSERT: it
   // is reachable from /settings/assistant alone, which demands
   // MANAGE_COMPLIANCE. The card actions (confirm, cancel, settle, load)

@@ -297,13 +297,12 @@ export const TOP_QUESTIONS: TopQuestion[] = [
   t("q-recordables", "how many recordable injuries have we had this year?", "safety_record", FIELD),
   t("q-days-away", "how many days away have we lost this year?", "safety_record", FIELD),
   t("q-dispatch", "have we got dispatch slips on file for everybody on Riverside?", "dispatch_slips", PAYROLL),
-  gap(
-    "q-emr",
-    "what's our mod rate this year?",
-    "safety_record",
-    "experience modification rate",
-    "The experience modification rate is not recorded anywhere — it comes from the carrier's rating bureau, not from the OSHA log. `safety_record` holds incidents, which is what an EMR is CALCULATED from by somebody else, so an answer derived from it would be a number nobody has ever quoted us.",
-  ),
+  // WAS A GAP, nearest `safety_record`: the EMR was recorded nowhere, and the
+  // OSHA log is what one is CALCULATED from by somebody else. Closed by
+  // recording the bureau's rate on /compliance — never by deriving one — and
+  // its KNOWN_GAPS entry was removed in the same change, since that list is
+  // injected into the system prompt and would have told the model to refuse.
+  t("q-emr", "what's our mod rate this year?", "experience_mod_rate"),
 
   // ══════════════════════════════════ estimating and bids
   t("q-bids-out", "what bids have we got out?", "bid_status", ESTIMATOR),
@@ -327,14 +326,16 @@ export const TOP_QUESTIONS: TopQuestion[] = [
   t("q-vendor-quote", "what did we get quoted for 5/8 type X?", "vendor_pricing", ESTIMATOR),
   t("q-vendor-stale", "are those prices still good or have they run out?", "vendor_pricing", ESTIMATOR),
   t("q-estimate-read", "what's in the Northgate estimate?", "estimate_detail", ESTIMATOR),
-  gap(
-    "q-pipeline",
-    "what have we got out chasing that we haven't bid yet?",
-    "bid_status",
-    "our own sales pipeline",
-    "A subcontractor's own pre-bid pipeline is not modelled. SalesLead and SalesOpportunity look like the answer and are NOT: sales.prisma's first line says they are Prova's own CRM for selling this product, populated only on the operator company, so a tool over them would hand every tenant the vendor's sales pipeline. `bid_status` starts at the bid INVITATION, so it knows about work a GC has already asked us to price and nothing about what is being chased.",
-    ESTIMATOR,
-  ),
+  // WAS A GAP until BidPursuit (pursuits.prisma). A subcontractor's own
+  // pre-bid pipeline was not modelled: `bid_status` starts at the bid
+  // INVITATION and knows nothing about what is being chased before one.
+  // SalesLead and SalesOpportunity looked like the answer and were NOT —
+  // sales.prisma's first line says they are Prova's own CRM for selling this
+  // product, populated only on the operator company, so a tool over them
+  // would have handed every tenant the vendor's sales pipeline. bid_pursuits
+  // reads BidPursuit only, and its handler test fails if it touches a sales
+  // model.
+  t("q-pipeline", "what have we got out chasing that we haven't bid yet?", "bid_pursuits", ESTIMATOR),
 
   // ══════════════════════════════════ schedule, closeout, warranty
   c("q-reschedule", "push Riverside's start to October 6", "reschedule_job"),
@@ -350,13 +351,12 @@ export const TOP_QUESTIONS: TopQuestion[] = [
     "Nothing forecasts a completion DATE. `schedule_status` now answers where a job stands against its dates, which is as far as the data goes; `job_margin`'s percent complete is cost-based — money spent against money expected — and a job can be 80% through its budget and nowhere near 80% through its programme. Reading one as the other is exactly the mistake a schedule question invites.",
   ),
   t("q-intake-unfiled", "what came in this week that nobody has filed yet?", "document_intake"),
-  gap(
-    "q-lien-deadline",
-    "when does our lien deadline run out on Riverside?",
-    null,
-    "lien deadlines",
-    "There is no lien, preliminary notice or stop notice model in this app at all. Not a missing tool — missing data. On a California public job the preliminary notice window is 20 days from first furnishing, and missing it forfeits the remedy entirely, so a confident wrong answer here is worse than no answer.",
-  ),
+  // WAS A GAP until LienDeadline existed: there was no lien, preliminary
+  // notice or stop notice model at all — missing data, not a missing tool.
+  // What closed it is a place to ENTER the date, not a way to compute one:
+  // the app never works out a legal deadline, and `lien_deadlines` answers
+  // only from dates a person typed in from counsel or the statute.
+  t("q-lien-deadline", "when does our lien deadline run out on Riverside?", "lien_deadlines"),
 ];
 
 /**
@@ -379,8 +379,18 @@ export const TOP_QUESTIONS: TopQuestion[] = [
  *
  * It goes DOWN when a gap is closed. It going UP is a decision, not an
  * accident.
+ *
+ * 6 -> 5 when `q-emr` closed: the mod rate is now RECORDED from the bureau
+ * on /compliance and read by `experience_mod_rate`.
+ * 5 -> 4 on 2026-09-18: the lien deadline, closed by LienDeadline and the
+ * `lien_deadlines` tool. BOTH branches had written "6 -> 5" and set the
+ * literal to 5; git merged the identical edit as agreement and kept 5.
+ * Two gaps closed, so it is 4 — the literal exists to make somebody add up.
+ * 4 -> 3 on 2026-09-18: our own pre-bid pipeline, closed by BidPursuit and
+ * the `bid_pursuits` tool. The pipeline branch had also written "6 -> 5";
+ * three branches each closed one gap from the same starting count.
  */
-export const CENSUS_GAPS = 6;
+export const CENSUS_GAPS = 3;
 
 /** Questions the registry deliberately refuses. Counted APART from the
  * gaps and asserted separately, because the two must never be added

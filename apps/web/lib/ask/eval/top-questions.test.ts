@@ -163,13 +163,44 @@ describe("the gaps, which are the point", () => {
     }
   });
 
+  it("takes a CLOSED gap off the list the model is told to refuse", () => {
+    // The other direction from the test above, and the one it cannot see.
+    // That test checks every open gap IS on KNOWN_GAPS; nothing checked that
+    // a gap closed by a new tool LEFT it. A stale entry is not harmless
+    // clutter — the list is injected into the system prompt, so it tells the
+    // model to refuse a question a tool now answers, and the census would
+    // go on reading the question as routed and fine.
+    //
+    // Named by hand rather than derived: a closed gap has no refusalTopic
+    // left to derive from. Add a row here when you close one.
+    const closed = [{ id: "q-emr", tool: "experience_mod_rate", stale: ["experience modification", "mod rate"] }];
+    const topics = KNOWN_GAPS.map((gap) => `${gap.topic} ${gap.why}`.toLowerCase());
+    for (const { id, tool, stale } of closed) {
+      const q = TOP_QUESTIONS.find((question) => question.id === id);
+      expect(q?.route, id).toEqual({ kind: "tool", name: tool });
+      for (const fragment of stale) {
+        expect(
+          topics.filter((topic) => topic.includes(fragment)),
+          `${id}: KNOWN_GAPS still tells the model to refuse "${fragment}"`,
+        ).toEqual([]);
+      }
+    }
+  });
+
   it("names the tool that would answer it WRONGLY, where one exists", () => {
     // The failure mode of a gap is never silence — it is a near-miss
     // delivered in the same voice as a fact. `crew_assignments` answering
     // "who is on Riverside tomorrow" with a roster is the example: right
     // shape, wrong question, and a foreman cannot tell from the answer.
     const named = GAPS.filter((q) => q.route.kind === "gap" && q.route.nearest !== null);
-    expect(named.length).toBeGreaterThanOrEqual(4);
+    // A FLOOR THAT SCALES WITH THE SET, and this line is a scar. It was
+    // `>= 6`, then `>= 4`, written as absolute numbers when there were
+    // thirteen gaps and then eight. Three gaps closed on 2026-09-18 (EMR,
+    // lien deadlines, the pre-bid pipeline) and only three remain, so the
+    // absolute floor failed on a census that was right — a floor on a
+    // shrinking set goes stale exactly as fast as the set shrinks. What it
+    // guards is that people keep filling in `nearest`, which is a ratio.
+    expect(named.length).toBeGreaterThanOrEqual(Math.ceil(GAPS.length / 2));
     for (const q of named) {
       if (q.route.kind !== "gap" || !q.route.nearest) continue;
       expect(TOOLS.map((t) => t.name), q.id).toContain(q.route.nearest);

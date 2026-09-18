@@ -176,6 +176,32 @@ describe("/bids with no bids and no filter applied", () => {
   });
 });
 
+describe("/pipeline with no pursuits and no invitations", () => {
+  const load = async () => {
+    const { default: Page } = await import("@/app/(app)/pipeline/page");
+    return renderToStaticMarkup(await Page());
+  };
+
+  it("renders the chase list's own empty state, with a way to add the first one", async () => {
+    const html = await load();
+    // Anti-vacuity: the real page rendered.
+    expect(html).toContain("Bid pipeline");
+    expect(html).toContain("Nothing on the chase list yet.");
+    expect(html).toContain("it only knows what somebody here types");
+    expect(html).toContain("Add a pursuit");
+  });
+
+  it("still says the invitation half is empty, separately — one does not hide the other", async () => {
+    const html = await load();
+    expect(html).toContain("No bid invitations recorded yet.");
+  });
+
+  it("does not render the add form until somebody clicks — it is collapsed", async () => {
+    const html = await load();
+    expect(html).not.toContain('data-testid="bid-pursuit-form"');
+  });
+});
+
 describe("/schedule with no jobs", () => {
   const load = async () => {
     const { default: Page } = await import("@/app/(app)/schedule/page");
@@ -292,5 +318,26 @@ describe("/deployment with no jobs", () => {
     const html = await load();
     expect(html).toContain('href="/jobs/new"');
     expect(html).toContain('href="/equipment"');
+  });
+});
+
+describe("/compliance with no mod rate recorded", () => {
+  const load = async () => {
+    const { default: Page } = await import("@/app/(app)/compliance/page");
+    return renderToStaticMarkup(await Page());
+  };
+
+  it("says the EMR is not on file and that the app never computes one, with the way to record it", async () => {
+    const html = await load();
+    // Anti-vacuity: the real page rendered, section heading and all.
+    expect(html).toContain("Experience modification rate");
+    expect(html).toContain("No mod rate on file");
+    // The sentence the whole feature turns on. An empty state that invited
+    // a guess — or showed a number — would undo the reason it is recorded.
+    expect(html).toContain("This app never computes or estimates an EMR");
+    // The way out: the collapsed add form's button.
+    expect(html).toContain("Record a mod rate");
+    // No rate means no "current" claim anywhere on the page.
+    expect(html).not.toContain("Current rate");
   });
 });
