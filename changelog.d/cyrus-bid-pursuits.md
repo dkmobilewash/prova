@@ -92,3 +92,20 @@ the unique-collision sentence, the linked-stage guard, delete's company
 scope, cross-company invitation linking, and `CENSUS_GAPS`. One mutation
 survived the first pass — delete's owner check — and got its own action
 test before this shipped.
+
+## The 21st mutation, which review found and the branch did not
+
+The branch reported 20 of 20 mutations caught. An independent pass found a
+21st that survived **every** test in the repo: deleting `companyId` from
+`loadLinkableInvitations` — the picker of invitations a pursuit can be linked
+to — passed all 3,823. The link *action* refuses a foreign invitation, so the
+leak could never have written a row; but the picker would have **listed
+another company's bids**, project names, GCs and due dates, in a dropdown on
+`/pipeline`. `lib/bid-pursuits-query.test.ts` now asserts both the argument
+sent to the database and, against a fake that honours the where clause across
+two companies, that nothing foreign comes back. Both assertions go red on the
+mutation.
+
+The general point, and why an agent's "20 of 20" is not the end of review: a
+mutation list written by the author tests the lines the author was thinking
+about. The query nobody thought of as a boundary is the one worth breaking.
