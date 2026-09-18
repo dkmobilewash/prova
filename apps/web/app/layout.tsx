@@ -5,8 +5,12 @@ import { RscFailureBanner } from "@/components/RscFailureBanner";
 import "./globals.css";
 
 export const metadata: Metadata = {
+  // Absolute base for the link-preview image (app/opengraph-image.png) and
+  // the icons, which Next turns into full URLs. The live app's own address.
+  metadataBase: new URL("https://app.cstream.ai"),
   title: "C Stream",
   description: "Contractor operating system",
+  openGraph: { siteName: "C Stream", title: "C Stream", description: "Contractor operating system" },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

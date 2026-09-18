@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Hint } from "@/components/Hint";
@@ -283,9 +284,8 @@ export function Sidebar({
         className="fixed inset-y-0 left-0 z-40 flex w-60 flex-col bg-rail"
       >
         <div className="flex h-14 shrink-0 items-center gap-3 px-4">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-brand text-sm font-semibold text-neutral-900">
-            C
-          </span>
+          {/* The C Stream mark (2026-09-18), replacing the yellow "C" tile. */}
+          <Image src="/brand/cstream-mark.png" alt="C Stream" width={32} height={32} className="h-8 w-8 shrink-0 object-contain" priority />
           <span className="truncate whitespace-nowrap text-[15px] font-semibold text-white">
             {companyName}
           </span>
