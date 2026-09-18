@@ -347,6 +347,55 @@ describe("a save shows in the list before the refreshed page arrives", () => {
     expect(rowsNamed("St. Mary's east wing")).toHaveLength(0);
   });
 
+  // Seen in the browser on #316: every row change below waited for the
+  // action's answer before the list moved (only a create showed at once), so
+  // a Dropped pursuit sat in the open list for seconds. These hold the
+  // action open and look at the list in between.
+  function openRowsNamed(name: string) {
+    return rowsNamed(name).filter((li) => !li.closest("details"));
+  }
+
+  it("a stage change to Dropped leaves the open list while the save is in flight", async () => {
+    let finish: (result: Result) => void = () => {};
+    fake.setBidPursuitStage.mockReturnValue(new Promise<Result>((resolve) => (finish = resolve)));
+    renderList();
+    const select = field<HTMLSelectElement>(`#stage-${pursuit.id}`);
+    act(() => {
+      select.value = "DROPPED";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(openRowsNamed("St. Mary's east wing")).toHaveLength(0);
+    expect(container.textContent).toContain("Invited or dropped (1)");
+    await act(async () => finish({ ok: true }));
+    // Held after ok until the page's own list arrives.
+    expect(openRowsNamed("St. Mary's east wing")).toHaveLength(0);
+  });
+
+  it("a refused move back out of the open list says why, where it can be seen", async () => {
+    let finish: (result: Result) => void = () => {};
+    fake.setBidPursuitStage.mockReturnValue(new Promise<Result>((resolve) => (finish = resolve)));
+    renderList();
+    const select = field<HTMLSelectElement>(`#stage-${pursuit.id}`);
+    act(() => {
+      select.value = "DROPPED";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await act(async () => finish({ ok: false, error: "That pursuit is no longer on your list." }));
+    expect(openRowsNamed("St. Mary's east wing")).toHaveLength(1);
+    expect(container.textContent).toContain("That pursuit is no longer on your list.");
+  });
+
+  it("a delete takes the row away while the action is in flight", async () => {
+    let finish: (result: Result) => void = () => {};
+    fake.deleteBidPursuit.mockReturnValue(new Promise<Result>((resolve) => (finish = resolve)));
+    renderList();
+    click("Delete");
+    click("Delete it");
+    expect(rowsNamed("St. Mary's east wing")).toHaveLength(0);
+    await act(async () => finish({ ok: true }));
+    expect(rowsNamed("St. Mary's east wing")).toHaveLength(0);
+  });
+
   it("a refused delete leaves the row where it was", async () => {
     fake.deleteBidPursuit.mockResolvedValue({ ok: false, error: "Only the account owner can delete a pursuit." });
     renderList();
