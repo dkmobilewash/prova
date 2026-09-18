@@ -118,7 +118,10 @@ export function WalkthroughTour({
     // the element up. If it is still off screen shortly after, jump there.
     const fallback = window.setTimeout(() => {
       const box = element.getBoundingClientRect();
-      if (box.bottom < 0 || box.top > window.innerHeight) element.scrollIntoView({ behavior: "auto", block });
+      // "In view" means enough of it to read, not a sliver at an edge: a
+      // section whose top edge sits on the bottom of the screen is off it.
+      const visible = Math.min(box.bottom, window.innerHeight) - Math.max(box.top, 0);
+      if (visible < Math.min(box.height, 120)) element.scrollIntoView({ behavior: "auto", block });
     }, 700);
     return () => window.clearTimeout(fallback);
   }, [current, isPhone, reducedMotion]);
