@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, type FormEvent } from "react";
 import Link from "next/link";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { jobPickerLabel, type JobOption } from "@/components/jobLabels";
@@ -32,7 +32,35 @@ import type { ActionResult } from "@/lib/actions/shared";
  * schedule shipped `useState(upcoming)` and showed an empty list after a
  * successful create, because useState ignores its argument after the first
  * render. The actions revalidate; the props are the list.
+ *
+ * EVERY FORM SUBMITS THROUGH onSubmit, NEVER `<form action>`. React resets
+ * a form handed to `action` BEFORE the action runs (react-dom's
+ * startHostTransition calls requestFormReset unconditionally), so a
+ * returned refusal — "that date is in the future" — used to arrive over a
+ * form it had already emptied. `submitForm` below prevents the browser
+ * submit, runs the action in a transition, and resets only on success;
+ * LogTimeEntryForm is the reference.
  */
+
+/** The one submit path every form here uses. A failed save leaves every
+ * field exactly as typed; only a successful one clears the form. */
+function submitForm(
+  event: FormEvent<HTMLFormElement>,
+  startTransition: (callback: () => Promise<void>) => void,
+  call: (formData: FormData) => Promise<ActionResult>,
+  onResult: (result: ActionResult) => void,
+) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const formData = new FormData(form);
+  startTransition(async () => {
+    const result = await call(formData);
+    if (result.ok) {
+      form.reset();
+    }
+    onResult(result);
+  });
+}
 
 export type LienDeadlineRow = {
   id: string;
@@ -75,7 +103,14 @@ function LienDeadlineFields({
         <>
           <label className="block text-sm">
             <span className="text-ink-label">Job</span>
-            <select name="jobId" required className={inputClass}>
+            {/* Starts on a placeholder, as every other picker does: without
+                one the browser preselects the first (newest) job, and a
+                deadline saved without touching this is filed against it —
+                with no way to move it, since job is not editable. */}
+            <select name="jobId" required defaultValue="" className={inputClass}>
+              <option value="" disabled>
+                Choose a job
+              </option>
               {jobs.map((job) => (
                 <option key={job.id} value={job.id}>
                   {jobPickerLabel(job)}
@@ -183,9 +218,8 @@ function DeadlineRow({
   const status = stateLine(row);
   const title = lienKindLabel(row.kind, row.otherLabel);
 
-  const run = (call: () => Promise<ActionResult>) =>
-    startTransition(async () => {
-      const result = await call();
+  const submit = (event: FormEvent<HTMLFormElement>, call: (formData: FormData) => Promise<ActionResult>) =>
+    submitForm(event, startTransition, call, (result) => {
       if (result.ok) {
         setError(null);
         setMode("view");
@@ -245,7 +279,7 @@ function DeadlineRow({
                 <ConfirmDelete
                   label="Remove"
                   confirmLabel="Remove it"
-                  describe={`Removes this ${title.toLowerCase()} deadline on ${row.jobName}. Nothing will remind anyone about it again.`}
+                  describe={`Removes this ${title.toLowerCase()} deadline on ${row.jobName}. It drops off the alerts list, and nothing will remind anyone about it again.`}
                   pinned="end"
                   action={async () => {
                     const result = await deleteLienDeadline(row.id);
@@ -267,7 +301,7 @@ function DeadlineRow({
 
       {mode === "serve" && (
         <form
-          action={(formData) => run(() => markLienDeadlineServed(row.id, formData))}
+          onSubmit={(event) => submit(event, (formData) => markLienDeadlineServed(row.id, formData))}
           className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-end"
         >
           <label className="block text-sm">
@@ -290,7 +324,7 @@ function DeadlineRow({
 
       {mode === "edit" && (
         <form
-          action={(formData) => run(() => updateLienDeadline(row.id, formData))}
+          onSubmit={(event) => submit(event, (formData) => updateLienDeadline(row.id, formData))}
           className="mt-3 space-y-3 rounded-lg border border-line-card p-3"
         >
           <LienDeadlineFields jobs={jobs} editing={row} />
@@ -351,9 +385,8 @@ export function LienDeadlinesBoard({
         {adding && (
           <form
             data-testid="lien-deadline-form"
-            action={(formData) =>
-              startTransition(async () => {
-                const result = await createLienDeadline(formData);
+            onSubmit={(event) =>
+              submitForm(event, startTransition, createLienDeadline, (result) => {
                 if (result.ok) {
                   setError(null);
                   setAdding(false);
@@ -381,10 +414,10 @@ export function LienDeadlinesBoard({
             <p className="text-ink-label">No lien deadlines waiting on you.</p>
             <p className="mt-2 max-w-xl text-sm text-ink-body">
               This app never works out a lien deadline for you — the dates depend on the state,
-              public or private work, and your tier, and a wrong one costs the whole remedy. Get the
-              date from your attorney or the statute, add it here, and this list keeps it in front
-              of you until it is served. An empty list means nothing has been entered, not that no
-              deadline is running.
+              public or private work, and your tier, and a wrong one can cost you lien rights. Get
+              the date from your attorney or the statute and add it here. Until it is marked served,
+              it stays on this list, and from 14 days out it is on the alerts list too. An empty list
+              means nothing has been entered, not that no deadline is running.
             </p>
             {jobs.length === 0 && (
               <p className="mt-2 text-sm text-ink-body">

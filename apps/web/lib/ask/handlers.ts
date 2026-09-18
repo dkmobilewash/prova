@@ -3342,21 +3342,35 @@ async function lienDeadlines(companyId: string, input: Input): Promise<ToolResul
   const wanted = input.jobName?.trim();
   // EVERY job the name matches, not the first: "Riverside" can be two jobs,
   // and answering for one of them silently drops the other's deadlines.
-  const jobIds = wanted
-    ? (
-        await prisma.job.findMany({
-          where: { companyId, name: { contains: wanted, mode: "insensitive" } },
-          select: { id: true },
-        })
-      ).map((job) => job.id)
+  const matchedJobs = wanted
+    ? await prisma.job.findMany({
+        where: { companyId, name: { contains: wanted, mode: "insensitive" } },
+        select: { id: true, name: true },
+      })
     : undefined;
+  const jobIds = matchedJobs?.map((job) => job.id);
 
   const rows = await loadLienDeadlines(companyId, today, jobIds);
   const summary = summarizeLienDeadlines(rows, today);
 
-  const byJob = new Map<string, { job: string; unserved: unknown[]; served: unknown[] }>();
+  const byJob = new Map<string, { job: string; unserved: unknown[]; served: unknown[]; note?: string }>();
+  // With a job filter, EVERY matched job gets a group — seeded before the
+  // rows, so one with nothing entered is named rather than left out. The
+  // old shape built groups from rows alone: "Riverside" matching Ph 1 (with
+  // deadlines) and Ph 2 (none) answered for Ph 1 and said nothing about
+  // Ph 2, which reads as "nothing due there". The note says what is true:
+  // nothing has been ENTERED. Replaced below if a row turns up.
+  for (const job of matchedJobs ?? []) {
+    byJob.set(job.id, {
+      job: job.name,
+      unserved: [],
+      served: [],
+      note: "No lien deadline has been entered for this job. That is not the same as no deadline running — the date has to come from their attorney or the statute and be added on the Lien deadlines page. Do not work one out.",
+    });
+  }
   for (const row of rows) {
-    const group = byJob.get(row.jobId) ?? { job: row.jobName, unserved: [], served: [] };
+    const seeded = byJob.get(row.jobId);
+    const group = seeded && !seeded.note ? seeded : { job: row.jobName, unserved: [], served: [] };
     byJob.set(row.jobId, group);
     const base = {
       what: lienKindLabel(row.kind, row.otherLabel),

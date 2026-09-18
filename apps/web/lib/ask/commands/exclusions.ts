@@ -115,7 +115,7 @@ export const notYetRegistered: Exclusion[] = [
   // whole design rests on one rule: this app never computes a legal
   // deadline, every date is typed by a person from counsel or the statute.
   // A command would put a MODEL in the position of supplying that date, and
-  // a plausible wrong one on a confirm card costs the whole remedy. Reading
+  // a plausible wrong one on a confirm card can cost lien rights. Reading
   // them is the `lien_deadlines` tool; writing them is the page.
   {
     action: "createLienDeadline",

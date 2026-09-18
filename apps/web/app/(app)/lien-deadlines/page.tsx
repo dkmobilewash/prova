@@ -43,10 +43,11 @@ export default async function LienDeadlinesPage() {
       <h1 className="mb-2 text-xl font-semibold text-ink">Lien deadlines</h1>
       <p className="mb-6 max-w-2xl text-sm text-ink-body">
         Preliminary notices, mechanic&apos;s liens, stop payment notices and bond claims — the dates
-        that keep your right to get paid. Miss one and the remedy can be gone for good. This app does
+        that keep your right to get paid. Miss one and you can lose lien rights. This app does
         not work out any of these dates: they depend on the state, on public or private work and on
         your tier, so every date here is one you entered from your attorney or the statute. It keeps
-        them sorted and in front of you until they are served.
+        them sorted here, and puts any within 14 days or overdue on the alerts list, until they are
+        served.
       </p>
 
       <dl className="mb-8 grid grid-cols-3 gap-3">

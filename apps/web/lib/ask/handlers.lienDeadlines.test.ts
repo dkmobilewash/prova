@@ -35,6 +35,9 @@ const JOBS: JobRow[] = [
   { id: "job-maple", companyId: "company-1", name: "Maple Street" },
   // A real job with nothing entered against it.
   { id: "job-cedar", companyId: "company-1", name: "Cedar Park" },
+  // Matches "Maple" alongside Maple Street, which HAS deadlines, while having
+  // none entered itself — the case where silence reads as "nothing due".
+  { id: "job-maple-2", companyId: "company-1", name: "Maple Street Phase 2" },
   { id: "job-theirs", companyId: "company-2", name: "Riverside Other Tenant" },
 ];
 
@@ -231,6 +234,25 @@ describe("lien_deadlines", () => {
 
     // And a job that HAS rows gets no such message.
     expect((await ask({ jobName: "Maple" })).unavailable).toBeUndefined();
+  });
+
+  it("names a matched job with NO deadlines entered, alongside one that has them", async () => {
+    // Review finding: `byJob` was built from rows alone and `unavailable`
+    // fired only when there were no rows at all, so "Maple" answered for
+    // Maple Street and said nothing whatever about Maple Street Phase 2 —
+    // the silence this handler's own header calls the most dangerous thing
+    // it could say.
+    const result = await ask({ jobName: "Maple" });
+    const { jobs } = result.data as { jobs: (Group & { note?: string })[] };
+    expect(jobs.map((group) => group.job).sort()).toEqual(["Maple Street", "Maple Street Phase 2"]);
+    const phase2 = groupFor(jobs, "Maple Street Phase 2") as Group & { note?: string };
+    expect(phase2.unserved).toEqual([]);
+    expect(phase2.served).toEqual([]);
+    expect(phase2.note).toContain("No lien deadline has been entered for this job");
+    expect(phase2.note).toContain("not the same as no deadline running");
+    expect(phase2.note).not.toMatch(/none due|nothing due|no deadlines? due/i);
+    // A job that has rows carries no such note.
+    expect((groupFor(jobs, "Maple Street") as Group & { note?: string }).note).toBeUndefined();
   });
 
   it("refuses a job name that matches nothing, rather than answering 'no deadlines'", async () => {

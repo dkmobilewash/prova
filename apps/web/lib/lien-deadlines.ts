@@ -6,8 +6,8 @@
  * statute. Nothing here, and nothing anywhere else in the app, turns a
  * first-furnishing date, a completion date, a state or a tier into a
  * deadline — the rules differ by state, by public versus private work and
- * by the contractor's tier, and a computed deadline that is wrong costs the
- * whole remedy while reading exactly like one that is right.
+ * by the contractor's tier, and a computed deadline that is wrong can cost
+ * lien rights while reading exactly like one that is right.
  *
  * What this file does is the arithmetic that is safe: how many days lie
  * between today and a date somebody else decided, and which of three

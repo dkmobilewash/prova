@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
-import { serverToday } from "@/lib/serverToday";
+import { viewerToday } from "@/lib/viewerToday";
 import {
   LIEN_DEADLINE_KINDS,
   LienDeadlineInputError,
@@ -136,8 +136,13 @@ export async function updateLienDeadline(id: string, formData: FormData): Promis
   const otherLabel = existing.kind === "OTHER" ? text(formData, "otherLabel") : "";
   if (existing.kind === "OTHER" && !otherLabel) return fail("Say what this deadline is for.");
 
-  await prisma.lienDeadline.update({
-    where: { id: existing.id },
+  // The unserved check is REPEATED in the write's own WHERE. The read above
+  // is only for the kind and a friendly refusal; a mark-served landing
+  // between it and this line would otherwise be edited over — rewriting the
+  // deadline and recipient of a notice that has already gone out. Same
+  // shape as mark-served and delete.
+  const updated = await prisma.lienDeadline.updateMany({
+    where: { id: existing.id, companyId, servedOn: null },
     data: {
       otherLabel: otherLabel || null,
       dueOn,
@@ -145,6 +150,9 @@ export async function updateLienDeadline(id: string, formData: FormData): Promis
       note: text(formData, "note") || null,
     },
   });
+  if (updated.count === 0) {
+    return fail("This one was just marked served, so its details are the record of what went out and are not edited. Reload to see it.");
+  }
 
   revalidate();
   return ok;
@@ -156,11 +164,17 @@ export async function updateLienDeadline(id: string, formData: FormData): Promis
  * clicked. A served date after the deadline is accepted and kept: it is a
  * fact, and whether late service still preserves the right is for counsel.
  *
- * A date more than a day ahead of the server's is refused. One day of
- * slack because the server's calendar is UTC and a person west of it is
- * legitimately a day behind; beyond that it is a typo, and a typo here
- * would show an unserved notice as served — the most expensive wrong
- * answer this screen could give.
+ * A date after the VIEWER's today is refused, with no slack. A typo here
+ * would show an unserved notice as served and take it off the due list —
+ * the most expensive wrong answer this screen could give.
+ *
+ * It used to compare against serverToday (UTC) with a day of slack "for a
+ * person west of UTC". That was backwards: a US user's own date is the same
+ * as UTC's or BEHIND it, never ahead, so the slack never helped anyone
+ * here — it only let a notice be marked served a day before it went out
+ * (two, on a Pacific evening, when UTC is already on tomorrow). viewerToday
+ * reads the person's own calendar from the timezone cookie, so a user ahead
+ * of UTC is not refused their own today either.
  */
 export async function markLienDeadlineServed(id: string, formData: FormData): Promise<ActionResult> {
   const context = await requireCompanyContext();
@@ -169,7 +183,7 @@ export async function markLienDeadlineServed(id: string, formData: FormData): Pr
 
   const servedOn = enteredDate(formData, "servedOn", "The date it was served");
   if (typeof servedOn === "string") return fail(servedOn);
-  if (daysFromToday(servedOn.toISOString().slice(0, 10), serverToday()) > 1) {
+  if (daysFromToday(servedOn.toISOString().slice(0, 10), await viewerToday()) > 0) {
     return fail("That date is in the future. Enter the date on the proof of service.");
   }
 

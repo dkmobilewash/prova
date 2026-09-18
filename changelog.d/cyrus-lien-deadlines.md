@@ -4,15 +4,15 @@
 *"When does our lien deadline run out on Riverside?"* was one of the six
 questions the hundred-question census left with no answer, and the reason
 was not a missing tool. There was **no lien, preliminary notice or stop
-notice model in the app at all.** On California public work the
-preliminary notice window is 20 days from first furnishing, and missing it
-forfeits the remedy entirely — for a sub, the lien is the lever left when a
-GC stops paying, and it is lost to a calendar rather than to a dispute.
+notice model in the app at all.** The deadlines vary by state, by public
+versus private work and by tier, and missing one can cost lien rights — for
+a sub, the lien is the lever left when a GC stops paying, and it can be lost
+to a calendar rather than to a dispute.
 
 **THE APP NEVER COMPUTES A LEGAL DEADLINE, and that is the design, not a
 gap in it.** The rules change by state, by public versus private work and
-by the contractor's tier, and a computed date that is wrong costs the whole
-remedy in the same confident voice as one that is right. So every
+by the contractor's tier, and a computed date that is wrong can cost lien
+rights in the same confident voice as one that is right. So every
 `dueOn` is ENTERED by a person, from their counsel or the statute. There is
 no state-rules table and no date arithmetic that produces a deadline — the
 only arithmetic anywhere is the count of days between today and a date
@@ -32,8 +32,8 @@ service still counts is for counsel. The row says so in those words.
 
 A served row is the record: it is not re-served over (the "mark served"
 write only matches unserved rows), not edited, and never deleted. The owner
-can take a served date back off for a mis-click. A served date more than a
-day in the future is refused, because a typo there shows an unserved notice
+can take a served date back off for a mis-click. A served date after the
+person's own today is refused, because a typo there shows an unserved notice
 as served — the most expensive wrong answer this screen could give.
 
 No unique key, deliberately: one job carries several preliminary notices due
@@ -82,3 +82,47 @@ code was correct; a regression in either would have been invisible:
 Both are now pinned against the existing `"theirs"` fixture, and both go red
 on the mutation. They were the two the author's own mutation list did not
 reach, which is the reason an author's "all caught" is where review starts.
+
+## Eight findings from a second review, each reproduced before it was fixed
+
+Every one below has a test that was run RED against the code as it stood,
+then green after the fix.
+
+- **A failed save wiped the form.** All three forms used `<form
+  action={fn}>`, and the installed react-dom resets a form handed to
+  `action` before the action runs — so "that date is in the future" arrived
+  over an empty form. Now `onSubmit` + `preventDefault` in a transition,
+  resetting only on success (`LogTimeEntryForm`'s pattern). Pinned by a
+  source test, since no test here can render the page.
+- **The served-date check had its day of slack pointing the wrong way.** It
+  compared against the server's UTC day and allowed one day ahead "for a
+  person west of UTC" — but a US user's date is never ahead of UTC's, so the
+  slack only let a notice be marked served a day (on a Pacific evening, two)
+  before it went out. Now `viewerToday()`, no slack. The old test asserted
+  the wrong behaviour and was rewritten to assert the right one.
+- **Nothing reminded anyone, though the page said it did.** No alert, tile
+  or digest read `LienDeadline`. It is now alert kind `LIEN_DEADLINE`: an
+  unserved deadline that is overdue or within 14 days (the page's own
+  `DUE_SOON_DAYS`, read rather than restated), MANAGE_BILLING, company-scoped
+  in the query. The bell, `/alerts` and the notification digest all read
+  `loadAlerts`, so all three pick it up. `AlertAcknowledgement.alertKey` is
+  a plain string, so the new kind needed no migration.
+- **The job picker preselected the newest job.** It now opens on a disabled
+  "Choose a job", like every other picker, so the server's "Pick a job." can
+  fire.
+- **The Ask tool said nothing about a matched job with no deadlines.**
+  "Maple" answered for Maple Street and was silent on Maple Street Phase 2.
+  With a job filter every matched job is now listed, and one with nothing
+  entered says so — never that nothing is due.
+- **A served row could be edited in a race.** The served check was a read
+  and the write an update by id alone. The write's own WHERE now carries
+  `companyId` and `servedOn: null`, and zero rows updated is a refusal.
+- **The schema comment and this entry stated a statute as fact**, and
+  overstated it. Replaced with what the repo can stand behind: deadlines
+  vary, and missing one can cost lien rights. The same all-or-nothing
+  phrasing about losing the remedy went the same way in five other files,
+  and a test now fails if either comes back.
+- **The data export left `LienDeadline` out without saying so.** It is now
+  in `EXPORT_OMISSIONS`, so the export page and the JSON bundle both name
+  it.
+

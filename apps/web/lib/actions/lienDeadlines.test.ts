@@ -50,11 +50,6 @@ const fakePrisma = {
     },
     findFirst: async ({ where }: { where: Record<string, unknown> }) =>
       deadlines.find((row) => matches(row, where)) ?? null,
-    update: async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
-      const row = deadlines.find((r) => r.id === where.id) as Row;
-      Object.assign(row, data);
-      return row;
-    },
     updateMany: async ({ where, data }: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
       const hit = deadlines.filter((row) => matches(row, where));
       for (const row of hit) Object.assign(row, data);
@@ -77,7 +72,13 @@ const context = {
 
 vi.mock("@/lib/auth", () => ({ requireCompanyContext: async () => context }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
-vi.mock("@/lib/serverToday", () => ({ serverToday: () => "2026-09-18" }));
+// The server's UTC day and the viewer's own day, set apart per test. They
+// disagree for every US user each evening, and the served-date check must
+// read the VIEWER's: a notice cannot have been served after the day the
+// person entering it is living in.
+const today = { server: "2026-09-18", viewer: "2026-09-18" };
+vi.mock("@/lib/serverToday", () => ({ serverToday: () => today.server }));
+vi.mock("@/lib/viewerToday", () => ({ viewerToday: async () => today.viewer }));
 vi.mock("@prova/db", () => ({ Prisma: {}, prisma: fakePrisma }));
 
 const {
@@ -109,6 +110,8 @@ const d = (iso: string) => new Date(`${iso}T00:00:00.000Z`);
 
 beforeEach(() => {
   context.role = "OWNER";
+  today.server = "2026-09-18";
+  today.viewer = "2026-09-18";
   jobs = [
     { id: "job_1", companyId: "co_1", name: "Riverside" },
     { id: "job_other", companyId: "co_2", name: "Theirs" },
@@ -160,12 +163,33 @@ describe("markLienDeadlineServed", () => {
     expect((row.servedOn as Date).toISOString().slice(0, 10)).toBe("2026-09-18");
   });
 
-  it("refuses a date more than a day in the future — a typo would show an unserved notice as served", async () => {
+  it("refuses a date well in the future — a typo would show an unserved notice as served", async () => {
     expect(await refusal(markLienDeadlineServed("open", form({ servedOn: "2026-09-25" })))).toContain("in the future");
     expect((deadlines.find((r) => r.id === "open") as Row).servedOn).toBeNull();
   });
 
-  it("allows tomorrow, for a person west of UTC whose day is behind the server's", async () => {
+  // Review finding: this used to ALLOW tomorrow, "for a person west of
+  // UTC". Backwards — a US user's own date is the same as or BEHIND UTC, so
+  // the slack never helped them; it only let a notice be marked served a
+  // day (after 5pm Pacific, two) before it went out, moving it off the
+  // due list. The check is now against the viewer's day, with no slack.
+  it("refuses tomorrow on the viewer's own calendar", async () => {
+    expect(await refusal(markLienDeadlineServed("open", form({ servedOn: "2026-09-19" })))).toContain("in the future");
+    expect((deadlines.find((r) => r.id === "open") as Row).servedOn).toBeNull();
+  });
+
+  it("refuses the UTC date on a US evening, when the server is already on tomorrow", async () => {
+    // 7pm Pacific on the 18th: UTC says the 19th, the person's calendar the 18th.
+    today.server = "2026-09-19";
+    today.viewer = "2026-09-18";
+    expect(await refusal(markLienDeadlineServed("open", form({ servedOn: "2026-09-19" })))).toContain("in the future");
+    expect((deadlines.find((r) => r.id === "open") as Row).servedOn).toBeNull();
+  });
+
+  it("accepts the viewer's today when they are AHEAD of UTC", async () => {
+    // Early morning in Asia/Pacific: their calendar is already on the 19th.
+    today.server = "2026-09-18";
+    today.viewer = "2026-09-19";
     expect(await markLienDeadlineServed("open", form({ servedOn: "2026-09-19" }))).toEqual({ ok: true });
   });
 
@@ -192,6 +216,30 @@ describe("updateLienDeadline", () => {
 
   it("refuses to edit a served one — it is the record of what went out", async () => {
     expect(await refusal(updateLienDeadline("served", form({ dueOn: "2026-09-30" })))).toContain("has been served");
+  });
+
+  it("refuses when the row is marked served BETWEEN the check and the write", async () => {
+    // Review finding: the served check was a findFirst and the write an
+    // update by id alone, so a mark-served landing in between was edited
+    // over — rewriting the due date and recipient of a notice that had
+    // already gone out. The refusal has to be in the write's own WHERE.
+    const original = fakePrisma.lienDeadline.findFirst;
+    fakePrisma.lienDeadline.findFirst = async (args) => {
+      const found = await original(args);
+      const snapshot = found ? { ...found } : null;
+      // Another tab marks it served while this request is between its read
+      // and its write.
+      if (found) found.servedOn = d("2026-09-17");
+      return snapshot;
+    };
+    try {
+      await refusal(updateLienDeadline("open", form({ dueOn: "2026-10-30", recipient: "someone else" })));
+    } finally {
+      fakePrisma.lienDeadline.findFirst = original;
+    }
+    const row = deadlines.find((r) => r.id === "open") as Row;
+    expect(row.dueOn).toEqual(d("2026-09-25"));
+    expect(row.recipient).toBeUndefined();
   });
 });
 

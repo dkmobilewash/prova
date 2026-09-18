@@ -6,10 +6,13 @@
 //
 // WHY THIS EXISTS. "When does our lien deadline run out on Riverside?" had
 // no answer anywhere in the app — not a date, not a document, not a
-// reminder. On California public work the preliminary notice window is 20
-// days from first furnishing, and missing it forfeits the remedy entirely.
-// For a sub, the lien is the one lever left when a GC stops paying, and it
-// is lost by a calendar rather than by a dispute.
+// reminder. Lien and notice deadlines vary by state, by public versus
+// private work and by the contractor's tier, and missing one can cost lien
+// rights. For a sub, the lien is the one lever left when a GC stops paying,
+// and it can be lost to a calendar rather than to a dispute. (This comment
+// used to quote one state's window as a flat rule with a flat consequence;
+// review found it overstated the statute, which is exactly the kind of
+// claim this feature exists not to make.)
 //
 // THE LOAD-BEARING RULE: THIS APP NEVER COMPUTES A LEGAL DEADLINE.
 //
@@ -23,10 +26,12 @@
 //     contractor's tier (a sub-sub is not a first-tier sub), and by
 //     triggering events (notice of completion, notice of cessation) the
 //     app does not know happened;
-//   - a computed deadline that is wrong costs the WHOLE remedy, and it is
+//   - a computed deadline that is wrong can cost lien rights, and it is
 //     wrong in the same confident voice as one that is right.
 //
-// So the app only tracks, sorts and reminds. It is a calendar the person
+// So the app only tracks, sorts and reminds — an unserved deadline that is
+// overdue or due within 14 days raises a LIEN_DEADLINE alert
+// (apps/web/lib/alerts.ts, MANAGE_BILLING). It is a calendar the person
 // fills in, not an opinion about the law.
 
 /// Which remedy the deadline belongs to. A label for filtering and for

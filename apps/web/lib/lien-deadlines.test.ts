@@ -1,3 +1,6 @@
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   DUE_SOON_DAYS,
@@ -148,3 +151,51 @@ describe("lienKindLabel", () => {
     expect(lienKindLabel("OTHER", "  ")).toBe("Unnamed lien deadline");
   });
 });
+
+/**
+ * The feature says it never states a rule of law. Review found two places
+ * where it did — the schema comment and the changelog both gave the
+ * California public-work preliminary notice window as a flat number of days
+ * and said missing it forfeits the remedy entirely, which overstates the
+ * statute (a late notice still covers some of the work). And "costs the
+ * whole remedy" was repeated across the page, the Ask tool and the command
+ * exclusions. The claim the repo can stand behind is weaker and is the
+ * reason for the design: deadlines vary, and missing one can cost lien
+ * rights.
+ */
+describe("the lien feature states no rule of law", () => {
+  const root = fileURLToPath(new URL("../../../", import.meta.url));
+  const files = [
+    "packages/db/prisma/schema/liens.prisma",
+    "apps/web/components/LienDeadlinesBoard.tsx",
+    "apps/web/app/(app)/lien-deadlines/page.tsx",
+    "apps/web/lib/lien-deadlines.ts",
+    "apps/web/lib/actions/lienDeadlines.ts",
+    "apps/web/lib/ask/tools.ts",
+    "apps/web/lib/ask/handlers.ts",
+    "apps/web/lib/ask/commands/exclusions.ts",
+  ];
+
+  // The changelog entry is scanned only while it exists: `pnpm
+  // changelog:collect` folds it into CHANGELOG.md and deletes it, and this
+  // test must not break that commit.
+  const pending = "changelog.d/cyrus-lien-deadlines.md";
+  const scanned = existsSync(join(root, pending)) ? [...files, pending] : files;
+
+  it("reads every file it claims to", () => {
+    for (const file of scanned) expect(readFileSync(join(root, file), "utf8").length, file).toBeGreaterThan(100);
+  });
+
+  it("gives no statutory window and no forfeiture claim as fact", () => {
+    const found: string[] = [];
+    for (const file of scanned) {
+      readFileSync(join(root, file), "utf8")
+        .split("\n")
+        .forEach((line, i) => {
+          if (/forfeit|\b20 days\b|whole remedy|remedy entirely/i.test(line)) found.push(`${file}:${i + 1}: ${line.trim()}`);
+        });
+    }
+    expect(found).toEqual([]);
+  });
+});
+
