@@ -25,6 +25,7 @@ const isProtectedRoute = createRouteMatcher([
   "/drawings(.*)",
   "/closeout(.*)",
   "/backcharges(.*)",
+  "/lien-deadlines(.*)",
   "/alerts(.*)",
   "/prevailing-wage(.*)",
   "/union-compliance(.*)",

@@ -117,7 +117,13 @@ export type ToolName =
   | "estimate_detail"
   | "document_intake"
   | "team_roster"
-  | "dispatch_slips";
+  | "dispatch_slips"
+  // Was the census gap `q-emr` — see top-questions.ts.
+  | "experience_mod_rate"
+  // Was the census gap `q-lien-deadline`.
+  | "lien_deadlines"
+  // Was the census gap `q-pipeline`.
+  | "bid_pursuits";
 
 export type ToolDefinition = {
   name: ToolName;
@@ -227,6 +233,21 @@ const monthFilter = {
       type: "string",
       description:
         "Optional. The month to review as YYYY-MM, e.g. 2026-09. Omit for the current month, which is what an unqualified question means.",
+    },
+  },
+};
+
+/** bid_pursuits: OPEN is the three still-being-chased stages together
+ * (WATCHING, CONTACTED, EXPECTING_INVITE) — "what have we got out chasing"
+ * is that question, and it is asked far more than any one stage. */
+const pursuitStageFilter = {
+  type: "object" as const,
+  properties: {
+    stage: {
+      type: "string",
+      enum: ["OPEN", "WATCHING", "CONTACTED", "EXPECTING_INVITE", "INVITED", "DROPPED"],
+      description:
+        "Optional. OPEN means still being chased — not yet invited and not dropped — and is what 'what are we chasing' means. Omit to cover every pursuit, open ones first.",
     },
   },
 };
@@ -418,6 +439,24 @@ export const TOOLS: ToolDefinition[] = [
     input_schema: jobFilter,
   },
   {
+    name: "lien_deadlines",
+    // /lien-deadlines. MANAGE_BILLING, the page's own gate: a lien is how a
+    // sub gets paid, and this tool answers what that page shows.
+    capability: "MANAGE_BILLING",
+    description:
+      "Lien-rights deadlines recorded against each job — preliminary notices, mechanic's liens, stop payment notices and payment bond claims — with the deadline, who it goes to, whether it has been served, and for unserved ones how many days are left or how many days overdue. Answers 'when does our lien deadline run out on Riverside'. THIS APP NEVER COMPUTES A LEGAL DEADLINE AND NEITHER MAY YOU: every date here was ENTERED by a person from their counsel or the statute. Never work out, estimate or suggest a deadline from a first-furnishing date, a completion date, a state's rules or anything else — the rules vary by state, public versus private work and the contractor's tier, and a wrong date can cost lien rights. If nothing is recorded for a job, say that no deadline has been entered and that the date has to come from their attorney or the statute; an empty list is NOT evidence that no deadline is running. A row served after its entered date is still served; whether late service preserves the right is a question for counsel, not for you.",
+    input_schema: jobFilter,
+  },
+  {
+    name: "bid_pursuits",
+    // /pipeline, where the chase list is shown and edited — MANAGE_ESTIMATING,
+    // the same gate as bid_status's /bids.
+    capability: "MANAGE_ESTIMATING",
+    description:
+      "The company's OWN pursuit list: projects somebody here is chasing BEFORE any GC has invited us to bid — by stage (watching, contacted, expecting invite, invited, dropped), with owner, architect, the GC(s) expected, the expected bid date and a rough value when entered. Answers 'what have we got out chasing that we haven't bid yet', which bid_status CANNOT: that tool starts at the invitation. Flags expected bid dates coming up in the next 30 days, expected bid dates that have PASSED with no invitation, and pursuits nobody has touched in 30 days (gone quiet). It knows NOTHING about a project until somebody here types it in — it is not a feed of upcoming work, so an empty or short list means nobody has entered more, never that nothing is out there. A passed bid date says only that the date went by with no invite logged, never why. Pass stage: OPEN for exactly the still-being-chased ones. Summary counts are over every matching pursuit, even if the list is capped.",
+    input_schema: pursuitStageFilter,
+  },
+  {
     name: "apprenticeship_standing",
     // /union-compliance
     capability: "MANAGE_COMPLIANCE",
@@ -578,6 +617,17 @@ export const TOOLS: ToolDefinition[] = [
       "Who is PLANNED to be on which job on which day, for the next two weeks — and, separately, planned days in the last eight weeks that nobody logged hours against. Answers 'who is on Riverside tomorrow', which crew_assignments CANNOT: that tool is a roster of everyone attached to a job and carries no date at all. A planned day with no hours is a claim about PAPERWORK and never about a person — it means nobody logged that day, not that the person did not work, and it must never be reported as the second. It also only sees days somebody actually put on the schedule, so an empty missing-hours list is not proof that every hour was logged.",
     input_schema: jobFilter,
   },
+  {
+    name: "experience_mod_rate",
+    // /compliance. The EMR is an insurance figure a GC asks for on the same
+    // prequalification form as the certificates that page holds, so it takes
+    // that page's gate — not /safety's, whose OSHA log is what a bureau
+    // calculates an EMR FROM, which is the confusion this tool must not make.
+    capability: "MANAGE_COMPLIANCE",
+    description:
+      "The company's experience modification rate (EMR, mod rate) as RECORDED from the rating bureau's worksheet: the current rate — the one with the latest effective date that has started — who issued it, any rate recorded for a policy year not yet started, and the history. Answers 'what is our mod rate' and 'what EMR do we put on this prequal'. IT NEVER COMPUTES, ESTIMATES OR PROJECTS AN EMR, and neither may you: the rate comes from the bureau, and the OSHA log (safety_record) is only one input to a calculation somebody else does with payroll and loss data this app does not hold. Never derive, adjust or forecast a rate from incidents, and never state a rate that is not in this tool's result. When nothing is recorded, say it is not recorded and that the figure comes from the carrier or broker. `currentIsPastItsPolicyYear` means the newest rate on file is from a policy year that has ended — say so rather than presenting it as this year's rate.",
+    input_schema: noInput,
+  },
 ];
 
 /**
@@ -618,7 +668,7 @@ export const KNOWN_GAPS: { topic: string; why: string }[] = [
     why: "job addresses are not modelled as coordinates and there is no routing.",
   },
 
-  /* ─── the six the hundred-question census left standing ───
+  /* ─── the gaps the hundred-question census left standing ───
    *
    * Each one was asked, routed to nothing, and — this is the part that
    * makes them belong HERE rather than only in the census — each has a
@@ -627,16 +677,15 @@ export const KNOWN_GAPS: { topic: string; why: string }[] = [
    * the same voice as a fact, and the only thing standing between a
    * near-miss and a person acting on it is the model having been told.
    *
-   * The seventh, the payroll-cash question, was already at the top of this
-   * list and is the reason the list exists. */
-  {
-    topic: "the experience modification rate, or mod rate",
-    why: "the EMR comes from the carrier's rating bureau and is not recorded here. The OSHA log is what an EMR is calculated FROM by somebody else, so a figure derived from it would be a number no insurer has ever quoted us.",
-  },
-  {
-    topic: "lien deadlines, preliminary notices or stop notices",
-    why: "none of it is modelled — not a date, not a document, not a reminder. This is missing DATA rather than a missing screen, and the cost of a confident wrong answer is total: on California public work the preliminary notice window is 20 days from first furnishing and missing it forfeits the remedy.",
-  },
+   * The payroll-cash question was already at the top of this list and is
+   * the reason the list exists.
+   *
+   * The experience modification rate WAS here, and was removed when it
+   * stopped being a gap: it is recorded on /compliance and answered by
+   * `experience_mod_rate`. Leaving it would have told the model to refuse a
+   * question it can now answer — this list is injected into the system
+   * prompt. The reason it was a gap still governs the tool: the rate is
+   * recorded from the bureau and never derived from the OSHA log. */
   {
     topic: "whether a job will finish on time, or a forecast completion date",
     why: "nothing forecasts a date. `schedule_status` says where a job stands against the dates somebody entered, which is as far as the data goes. Percent complete is COST-based — money spent against money expected — and a job can be 80% through its budget and nowhere near 80% through its programme.",
@@ -644,10 +693,6 @@ export const KNOWN_GAPS: { topic: string; why: string }[] = [
   {
     topic: "what a person is paid an hour",
     why: "there is no per-person pay rate here, by design. A rate belongs to a CRAFT CLASSIFICATION and the fringe schedule in force on a given date — which is why job_labor_cost prices an hour rather than a person, and why the same man on two crafts in one week costs two different amounts. Say that, and name the crafts he has worked under (team_roster has them) rather than refusing flat: the classification and its schedule are where the number actually lives.",
-  },
-  {
-    topic: "our own sales pipeline — work being chased before anyone invites us to bid",
-    why: "a subcontractor's pre-bid pipeline is not modelled. `bid_status` starts at the bid INVITATION, so it knows about work a GC has already asked us to price and nothing about what is being chased. (The SalesLead model in this database is Prova's own CRM for selling this product and is not your data.)",
   },
 ];
 

@@ -92,8 +92,11 @@ model Company {
   equipmentAssignments      EquipmentAssignment[]
   crewMembers               CrewMember[]
   crewScheduleDays          CrewScheduleDay[]
+  experienceModRates        ExperienceModRate[]
+  lienDeadlines             LienDeadline[]
   workerCertifications      WorkerCertification[]
   requiredCertifications    CertificationRequirement[]
+  bidPursuits               BidPursuit[]
 }
 
 enum UserRole {
@@ -152,6 +155,9 @@ model User {
   assignments                          JobAssignment[]
   crewScheduleDays                     CrewScheduleDay[]      @relation("CrewScheduleDayUser")
   crewScheduleDaysCreated              CrewScheduleDay[]      @relation("CrewScheduleDayCreatedBy")
+  experienceModRatesCreated            ExperienceModRate[]    @relation("ExperienceModRateCreatedBy")
+  lienDeadlinesCreated                 LienDeadline[]         @relation("LienDeadlineCreatedBy")
+  bidPursuitsCreated                   BidPursuit[]           @relation("BidPursuitCreatedBy")
   connectedQuickBooks                  QuickBooksConnection[]
   quickBooksSyncAttempts               QuickBooksSyncAttempt[]
   connectedIntegrations                IntegrationConnection[]

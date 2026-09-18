@@ -49,6 +49,10 @@ import {
   unreceivedRevisions,
   type RevisionData as DrawingRevisionData,
 } from "@/components/drawingLabels";
+// Lien state has one definition too — the page, the Ask tool and this
+// alert all read lienDeadlineState, so "overdue" and "due soon" cannot mean
+// one thing on /lien-deadlines and another in the bell.
+import { DUE_SOON_DAYS as LIEN_DUE_SOON_DAYS, lienDeadlineState, lienKindLabel } from "@/lib/lien-deadlines";
 
 export type AlertKind =
   | "RENEWAL"
@@ -63,7 +67,8 @@ export type AlertKind =
   | "DOCUMENT_INTAKE"
   | "RFI_UNANSWERED"
   | "SUBMITTAL_OVERDUE"
-  | "DRAWING_REVISION_UNRECEIVED";
+  | "DRAWING_REVISION_UNRECEIVED"
+  | "LIEN_DEADLINE";
 
 /** Three levels, not five. OVERDUE is "a date has passed"; DUE_SOON is "a
  * date is coming"; STANDING is a condition with no deadline attached to
@@ -145,6 +150,10 @@ export const ALERT_CAPABILITY: Record<AlertKind, Capability> = {
   RFI_UNANSWERED: "MANAGE_JOBS",
   SUBMITTAL_OVERDUE: "MANAGE_JOBS",
   DRAWING_REVISION_UNRECEIVED: "MANAGE_JOBS",
+  // The capability /lien-deadlines and every lien action take. A lien is
+  // about getting paid, so it goes to the people who chase money — and not
+  // to a foreman, who could not open the page the alert points at.
+  LIEN_DEADLINE: "MANAGE_BILLING",
 };
 
 /**
@@ -212,6 +221,11 @@ export const ALERT_HORIZON_DAYS: Partial<Record<AlertKind, number>> = {
   CONTACT_FOLLOW_UP: 7,
   RFI_UNANSWERED: 7,
   SUBMITTAL_OVERDUE: 7,
+  // The same fourteen days the page highlights as "due soon" and the Ask
+  // tool reports, read from the one constant rather than restated, so the
+  // bell and the page cannot disagree about which deadlines are close. A
+  // REMINDER horizon — it says nothing about how long any statute allows.
+  LIEN_DEADLINE: LIEN_DUE_SOON_DAYS,
 };
 
 /**
@@ -1681,6 +1695,62 @@ export function drawingRevisionAlerts(
       href: "/drawings",
       dueOn: oldest.issuedOn,
       daysUntil: -waiting,
+      amount: null,
+    });
+  }
+
+  return alerts;
+}
+
+/* -------------------------------------------------------- lien deadlines */
+
+export type LienDeadlineAlertSource = {
+  id: string;
+  kind: string;
+  otherLabel: string | null;
+  jobName: string;
+  recipient: string | null;
+  /** ENTERED by a person, from counsel or the statute. Never computed. */
+  dueOn: string;
+  servedOn: string | null;
+};
+
+/**
+ * An UNSERVED lien deadline that has passed or falls within the "due soon"
+ * window.
+ *
+ * Every date here is one a person typed in — this app never computes a
+ * legal deadline, and this function does no date arithmetic beyond the
+ * count of days to a date somebody else decided. A SERVED deadline raises
+ * nothing, even one served after its entered date: it went out, and
+ * whether late service still counts is for counsel, not for a red badge
+ * telling somebody to serve it again (lienDeadlineState's rule).
+ *
+ * Keyed on the entered due date, so a date counsel revises is a new alert
+ * rather than one already dismissed.
+ */
+export function lienDeadlineAlerts(sources: LienDeadlineAlertSource[], todayIso: string): Alert[] {
+  const alerts: Alert[] = [];
+
+  for (const row of sources) {
+    const state = lienDeadlineState(row, todayIso);
+    if (state !== "overdue" && state !== "due_soon") continue;
+
+    const days = daysUntilIso(row.dueOn, todayIso);
+    const what = lienKindLabel(row.kind, row.otherLabel);
+    const to = row.recipient ? ` to ${row.recipient}` : "";
+    alerts.push({
+      key: alertKey("LIEN_DEADLINE", row.id, row.dueOn),
+      kind: "LIEN_DEADLINE",
+      severity: state === "overdue" ? "OVERDUE" : "DUE_SOON",
+      title: `${what} on ${row.jobName} is not marked served`,
+      detail:
+        state === "overdue"
+          ? `The deadline you entered was ${row.dueOn}, ${agoPhrase(days)}, and nothing records it going out${to}. If it was served, mark it served with the date on the proof; if not, what can still be done is a question for your attorney.`
+          : `Due${to} ${aheadPhrase(days)} (${row.dueOn}), from the date you entered.`,
+      href: "/lien-deadlines",
+      dueOn: row.dueOn,
+      daysUntil: days,
       amount: null,
     });
   }

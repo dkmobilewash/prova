@@ -75,6 +75,9 @@ export const HANDLED_MODELS = [
   // deleted while its schedule exists — the #227 shape, and the reason this
   // name is here as well as in both scripts' del() order.
   "CrewScheduleDay",
+  // Lien-rights deadlines. Required jobId, RESTRICT on Job — the #227 shape
+  // again, so it is here AND in both scripts' del() order.
+  "LienDeadline",
   "JobAssignment",
   "EquipmentAssignment",
   "EstimateVersion",
