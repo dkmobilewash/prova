@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireApiContext } from "@/lib/auth";
 import { prisma, TimeEntryPayType } from "@prova/db";
 import { crewMemberName } from "@/lib/worker-name";
+import { isDayLockError, liveSignoff, lockedDayMessage } from "@/lib/timesheet-signoff";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +21,10 @@ const entrySelect = {
   clockStartedAt: true,
   clockEndedAt: true,
   clockBreakMinutes: true,
+  employeeUserId: true,
+  crewMemberId: true,
+  lineItemId: true,
+  craftClassificationId: true,
   employeeUser: { select: { name: true, email: true } },
   crewMember: { select: { legalFirstName: true, legalMiddleName: true, legalLastName: true } },
   lineItem: { select: { description: true } },
@@ -35,6 +40,10 @@ function toJson(e: {
   clockStartedAt: Date | null;
   clockEndedAt: Date | null;
   clockBreakMinutes: number | null;
+  employeeUserId: string | null;
+  crewMemberId: string | null;
+  lineItemId: string | null;
+  craftClassificationId: string | null;
   employeeUser: { name: string | null; email: string } | null;
   crewMember: { legalFirstName: string; legalMiddleName: string | null; legalLastName: string } | null;
   lineItem: { description: string } | null;
@@ -59,6 +68,11 @@ function toJson(e: {
         : "Name not recorded",
     lineItemDescription: e.lineItem?.description ?? null,
     craftLabel: e.craftClassification?.name ?? null,
+    // The ids behind the labels, so the phone's "Copy from yesterday" can
+    // put the same people, cost code and crafts back on a new day.
+    crewMemberId: e.crewMemberId,
+    lineItemId: e.lineItemId,
+    craftClassificationId: e.craftClassificationId,
   };
 }
 
@@ -116,7 +130,9 @@ export async function GET(
     select: entrySelect,
   });
 
-  return NextResponse.json(entries.map(toJson));
+  // `mine` rather than the user id: the phone knows the caller as "Me", not
+  // by database id.
+  return NextResponse.json(entries.map((e) => ({ ...toJson(e), mine: e.employeeUserId === context.id })));
 }
 
 export async function POST(
@@ -200,24 +216,38 @@ export async function POST(
     if (existing) return NextResponse.json(toJson(existing), { status: 200 });
   }
 
-  const entry = await prisma.timeEntry.create({
-    data: {
-      jobId: job.id,
-      employeeUserId,
-      crewMemberId,
-      lineItemId,
-      craftClassificationId,
-      date,
-      hours,
-      payType,
-      clockStartedAt: clockStartedAt.value,
-      clockEndedAt: clockEndedAt.value,
-      clockBreakMinutes: clockBreakMinutes.value,
-      note: String(input.note ?? "").trim() || null,
-      clientOperationId,
-    },
-    select: entrySelect,
-  });
+  // A signed day is locked. 409, not 400: the phone's queue treats it as
+  // final and sets the entry aside with a note, rather than retrying it
+  // forever and holding every later write behind it.
+  const live = await liveSignoff(job.id, date);
+  if (live) return jsonError(lockedDayMessage(date, live), 409);
+
+  let entry;
+  try {
+    entry = await prisma.timeEntry.create({
+      data: {
+        jobId: job.id,
+        employeeUserId,
+        crewMemberId,
+        lineItemId,
+        craftClassificationId,
+        date,
+        hours,
+        payType,
+        clockStartedAt: clockStartedAt.value,
+        clockEndedAt: clockEndedAt.value,
+        clockBreakMinutes: clockBreakMinutes.value,
+        note: String(input.note ?? "").trim() || null,
+        clientOperationId,
+      },
+      select: entrySelect,
+    });
+  } catch (error) {
+    // The day was signed between the check above and this write, and the
+    // database's day lock refused it.
+    if (isDayLockError(error)) return jsonError(`${dateRaw} was just signed, so its hours are locked.`, 409);
+    throw error;
+  }
 
   return NextResponse.json(toJson(entry), { status: 201 });
 }

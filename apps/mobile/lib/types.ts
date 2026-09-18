@@ -121,6 +121,11 @@ export type TimeEntry = {
   employeeName: string;
   lineItemDescription: string | null;
   craftLabel: string | null;
+  crewMemberId?: string | null;
+  lineItemId?: string | null;
+  craftClassificationId?: string | null;
+  /** The entry is the signed-in user's own (only on the list endpoint). */
+  mine?: boolean;
 };
 
 export type CrewMember = {
@@ -174,6 +179,21 @@ export type TmTicket = {
   } | null;
   signerName: string;
   signedAt: string;
+  /** False on tickets signed before the phone took drawn signatures. */
+  hasSignature?: boolean;
+};
+
+/** A day's hours signed by the foreman. While one exists for a day, that
+ * day's hours are locked; the office approves it or reopens it. */
+export type TimesheetSignoff = {
+  id: string;
+  date: string;
+  state: "SUBMITTED" | "APPROVED";
+  signerName: string;
+  signedAt: string;
+  entryCount: number;
+  totalHours: string;
+  approvedAt: string | null;
 };
 
 export type Vendor = {

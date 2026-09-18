@@ -246,4 +246,16 @@ export const laborExclusions: Exclusion[] = [
   },
   { action: "uploadPrevailingWageDetermination", reason: "Needs a determination document the browser has already uploaded to storage (#27), and is compliance configuration for a job; page only." },
   { action: "deletePrevailingWageDetermination", reason: "T5: deletes are never commands." },
+  {
+    action: "archiveCrewMember",
+    reason: "Taking a person off the crew is an owner's roster decision, made on the Team page in front of the name; page only.",
+  },
+  {
+    action: "approveTimesheetDay",
+    reason: "Approving a signed day makes it payroll; it is done in front of the signature and the hours it covers, on the job page only.",
+  },
+  {
+    action: "reopenTimesheetDay",
+    reason: "Reopening a signed day unlocks payroll evidence and records why; done on the row it reopens, page only.",
+  },
 ];

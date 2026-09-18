@@ -7,7 +7,9 @@ import { Card } from "@/components/Card";
 import { Chip } from "@/components/Chip";
 import { Field } from "@/components/Field";
 import { List } from "@/components/List";
+import { RefusedBanner } from "@/components/RefusedBanner";
 import { Sheet } from "@/components/Sheet";
+import { SignaturePad } from "@/components/SignaturePad";
 import { colors, typography } from "@/lib/theme";
 import * as api from "@/lib/api";
 import {
@@ -18,11 +20,28 @@ import {
   saveSession,
   type OpenClockSession,
 } from "@/lib/clock-session";
-import { craftsForWorker, pickCraft } from "@/lib/crafts";
+import { craftsForWorker, pickCraft, type CraftWorker } from "@/lib/crafts";
+import {
+  copyFromLastDay,
+  crewIdOf,
+  crewKey,
+  isValidDate,
+  isValidHours,
+  type CrewRow,
+  type WorkerKey,
+} from "@/lib/crew-entry";
 import { uuid } from "@/lib/id";
 import { enqueue } from "@/lib/sync-queue";
 import { useSync } from "@/lib/use-sync";
-import type { Craft, CrewMember, LineItem, RatioWarning, TimeEntry, TimeEntryPayType } from "@/lib/types";
+import type {
+  Craft,
+  CrewMember,
+  LineItem,
+  RatioWarning,
+  TimeEntry,
+  TimeEntryPayType,
+  TimesheetSignoff,
+} from "@/lib/types";
 
 const PAY_TYPES: TimeEntryPayType[] = ["STRAIGHT", "OVERTIME", "DOUBLE_TIME", "SHIFT_DIFFERENTIAL"];
 
@@ -103,15 +122,24 @@ export default function TimeScreen() {
   const [clockCraftId, setClockCraftId] = useState<string | null>(null);
   const [clockLineItemId, setClockLineItemId] = useState<string | null>(null);
 
-  // Manual "Log time" form state (backfill — no clock capture).
+  // "Log time" — the crew sheet (typed, no clock capture). One set of
+  // details for everyone selected; each person's row can override the hours
+  // (late arrival, early out) and carries their own craft.
   const [showForm, setShowForm] = useState(false);
   const [date, setDate] = useState("");
-  const [hours, setHours] = useState("");
+  const [sharedHours, setSharedHours] = useState("8");
   const [payType, setPayType] = useState<TimeEntryPayType>("STRAIGHT");
   const [note, setNote] = useState("");
-  const [crewMemberId, setCrewMemberId] = useState<string | null>(null);
   const [lineItemId, setLineItemId] = useState<string | null>(null);
-  const [craftClassificationId, setCraftClassificationId] = useState<string | null>(null);
+  const [rows, setRows] = useState<CrewRow[]>([]);
+
+  // "Sign the day" — the foreman's signature on one day's hours. From then
+  // the day is locked until the office reopens it on the web.
+  const [signoffs, setSignoffs] = useState<TimesheetSignoff[]>([]);
+  const [showSign, setShowSign] = useState(false);
+  const [signDate, setSignDate] = useState("");
+  const [signerName, setSignerName] = useState("");
+  const [signaturePath, setSignaturePath] = useState<string | null>(null);
 
   const load = async () => {
     const token = await getToken();
@@ -132,6 +160,12 @@ export default function TimeScreen() {
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load time");
+    }
+    // Separate, so an older server without sign-offs still shows the hours.
+    try {
+      setSignoffs(await api.listSignoffs(jobId, token));
+    } catch {
+      setSignoffs([]);
     }
     // Separate from the list above: a ratio that cannot be read must not
     // hide the entries, and offline it simply shows nothing.
@@ -165,7 +199,7 @@ export default function TimeScreen() {
     return () => clearInterval(id);
   }, []);
 
-  const { pending, sync } = useSync(load);
+  const { pending, sync, refused, dismissRefused } = useSync(load);
 
   /** Close the running interval: compute the worked duration (phone computes
    * DURATION only — pay type is entered, never derived) and enqueue the
@@ -283,36 +317,102 @@ export default function TimeScreen() {
     setShowSwitch(true);
   };
 
+  const workerOf = (key: WorkerKey): CraftWorker => {
+    const id = crewIdOf(key);
+    return id ? { kind: "crew", id } : { kind: "me" };
+  };
+  const nameOf = (key: WorkerKey): string => {
+    const id = crewIdOf(key);
+    return id ? (crew.find((c) => c.id === id)?.name ?? "Crew member") : "Me";
+  };
+  const craftOptionsFor = (key: WorkerKey) => craftsForWorker(crafts, workerOf(key));
+
   const openForm = () => {
-    setCraftClassificationId(pickCraft(formCrafts.options, craftClassificationId));
+    if (!date) setDate(today);
+    // Start with "Me" the first time, so logging your own day is still one tap.
+    if (rows.length === 0) {
+      setRows([{ worker: "me", hours: null, craftId: pickCraft(craftOptionsFor("me").options, null) }]);
+    }
     setShowForm(true);
   };
 
-  /** Changing who the hours are for re-picks the craft from THEIR crafts. */
-  const selectWorker = (id: string | null) => {
-    setCrewMemberId(id);
-    const options = craftsForWorker(crafts, id ? { kind: "crew", id } : { kind: "me" }).options;
-    setCraftClassificationId(pickCraft(options, craftClassificationId));
+  const toggleWorker = (key: WorkerKey) => {
+    setRows((current) =>
+      current.some((r) => r.worker === key)
+        ? current.filter((r) => r.worker !== key)
+        : [...current, { worker: key, hours: null, craftId: pickCraft(craftOptionsFor(key).options, null) }],
+    );
+  };
+  const setRowHours = (key: WorkerKey, text: string) =>
+    setRows((current) => current.map((r) => (r.worker === key ? { ...r, hours: text.trim() === "" ? null : text } : r)));
+  const setRowCraft = (key: WorkerKey, craftId: string) =>
+    setRows((current) => current.map((r) => (r.worker === key ? { ...r, craftId } : r)));
+
+  /** Fill the sheet from the last day this job had hours — people, hours,
+   * crafts, cost code — for the foreman to adjust rather than re-pick. Crew
+   * members who have since been archived are dropped; a craft the person no
+   * longer works under is re-picked from their current ones. */
+  const copyLastDay = () => {
+    if (!lastDay) return;
+    const active = new Set(crew.map((c) => crewKey(c.id)));
+    setRows(
+      lastDay.rows
+        .filter((r) => r.worker === "me" || active.has(r.worker))
+        .map((r) => ({ ...r, craftId: pickCraft(craftOptionsFor(r.worker).options, r.craftId) })),
+    );
+    setSharedHours(lastDay.sharedHours);
+    setLineItemId(lastDay.lineItemId);
+    if (lastDay.payType) setPayType(lastDay.payType as TimeEntryPayType);
+  };
+
+  const openSign = () => {
+    setSignDate(today);
+    setSignaturePath(null);
+    setShowSign(true);
+  };
+
+  const submitSignoff = async () => {
+    if (!jobId || !canSign || !signaturePath) return;
+    const op = {
+      type: "signoff:create" as const,
+      jobId,
+      clientOperationId: uuid(),
+      date: signDate,
+      signerName: signerName.trim(),
+      signaturePath,
+    };
+    setShowSign(false);
+    setSignaturePath(null);
+    await enqueue(op);
+    await sync();
   };
 
   const submit = async () => {
-    if (!jobId || !date || !hours || (craftRequired && !craftClassificationId)) return;
-    setDate("");
-    setHours("");
+    if (!jobId || !canSave) return;
+    const toSave = rows;
+    const savedDate = date;
+    setRows([]);
     setNote("");
+    // Back to today next time: a sheet reopened tomorrow must not still say
+    // the day that was logged last.
+    setDate("");
     setShowForm(false);
-    await enqueue({
-      type: "time:create",
-      jobId,
-      clientOperationId: uuid(),
-      date,
-      hours,
-      payType,
-      note: note || undefined,
-      crewMemberId: crewMemberId || undefined,
-      lineItemId: lineItemId || undefined,
-      craftClassificationId: craftClassificationId || undefined,
-    });
+    // One entry per person, each with its own idempotency key, so a retried
+    // offline flush replays each rather than duplicating any.
+    for (const r of toSave) {
+      await enqueue({
+        type: "time:create",
+        jobId,
+        clientOperationId: uuid(),
+        date: savedDate,
+        hours: (r.hours ?? sharedHours).trim(),
+        payType,
+        note: note || undefined,
+        crewMemberId: crewIdOf(r.worker) ?? undefined,
+        lineItemId: lineItemId || undefined,
+        craftClassificationId: r.craftId || undefined,
+      });
+    }
     await sync();
   };
 
@@ -321,8 +421,31 @@ export default function TimeScreen() {
   // nothing to choose, so hours can still be logged and payroll flags them.
   const craftRequired = crafts.length > 0;
   const myCrafts = craftsForWorker(crafts, { kind: "me" });
-  const formCrafts = craftsForWorker(crafts, crewMemberId ? { kind: "crew", id: crewMemberId } : { kind: "me" });
-  const formWorkerName = crewMemberId ? (crew.find((c) => c.id === crewMemberId)?.name ?? "this person") : "you";
+  const today = dayFromClockIn(new Date().toISOString());
+  const lastDay = copyFromLastDay(entries, today);
+  const rowProblem = (r: CrewRow): string | null => {
+    if (!isValidHours(r.hours ?? sharedHours)) return "Hours must be more than 0 and at most 24.";
+    if (craftRequired && !r.craftId) return "Pick a craft.";
+    return null;
+  };
+  // Days with a live sign-off: their hours are locked. The server refuses a
+  // write to one (409), so the sheet refuses first rather than queueing
+  // entries that can only be set aside.
+  const signedByDate = new Map(signoffs.map((s) => [s.date, s]));
+  const dateSigned = signedByDate.get(date);
+  const canSave =
+    isValidDate(date) && !dateSigned && rows.length > 0 && rows.every((r) => rowProblem(r) === null);
+
+  const signEntries = entries.filter((e) => e.date === signDate);
+  const signHours = signEntries.reduce((sum, e) => sum + Number(e.hours), 0);
+  const signDateSigned = signedByDate.get(signDate);
+  const canSign =
+    isValidDate(signDate) &&
+    !signDateSigned &&
+    signEntries.length > 0 &&
+    signerName.trim().length > 0 &&
+    signaturePath !== null;
+  const saveLabel = rows.length > 1 ? `Save ${rows.length} entries` : "Save entry";
 
   const elapsedMs = openSession ? now.getTime() - new Date(openSession.clockStartedAt).getTime() : 0;
   const clockCraftLabel = openSession?.craftClassificationId
@@ -340,6 +463,7 @@ export default function TimeScreen() {
     <View style={styles.screen}>
       {pending > 0 ? <Text style={styles.pending}>Pending sync: {pending}</Text> : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
+      <RefusedBanner refused={refused} onDismiss={dismissRefused} />
 
       {ratioWarnings.length > 0 ? (
         <View style={styles.ratioBanner}>
@@ -407,6 +531,11 @@ export default function TimeScreen() {
               <Text style={styles.date}>{item.date}</Text>
               <Text style={styles.hours}>{item.hours}h</Text>
             </View>
+            {signedByDate.get(item.date) ? (
+              <Text style={styles.signed}>
+                {signedByDate.get(item.date)!.state === "APPROVED" ? "Approved" : "Signed"} · locked
+              </Text>
+            ) : null}
             <Text style={styles.meta}>
               {item.employeeName} · {item.payType.replace(/_/g, " ")}
               {item.craftLabel ? ` · ${item.craftLabel}` : ""}
@@ -425,10 +554,15 @@ export default function TimeScreen() {
         emptyDescription="Tap “Log time” to record the day's hours."
       />
 
-      <View style={styles.footer}>
-        <Button fullWidth onPress={openForm}>
-          Log time
+      <View style={[styles.footer, styles.footerRow]}>
+        <Button variant="secondary" onPress={openSign}>
+          Sign the day
         </Button>
+        <View style={styles.footerMain}>
+          <Button fullWidth onPress={openForm}>
+            Log time
+          </Button>
+        </View>
       </View>
 
       {/* Clock in / Switch — pick craft + cost code together */}
@@ -457,26 +591,75 @@ export default function TimeScreen() {
         </View>
       </Sheet>
 
-      {/* Manual "Log time" backfill form */}
+      {/* "Log time" — the crew sheet */}
       <Sheet
         visible={showForm}
         onClose={() => setShowForm(false)}
         title="Log time"
-        primaryLabel="Save entry"
+        primaryLabel={saveLabel}
         onPrimary={submit}
-        primaryDisabled={craftRequired && !craftClassificationId}
+        primaryDisabled={!canSave}
       >
+        {lastDay ? (
+          <Button variant="secondary" onPress={copyLastDay}>
+            {`Copy crew from ${lastDay.date}`}
+          </Button>
+        ) : null}
         <Field label="Date" placeholder="YYYY-MM-DD" value={date} onChangeText={setDate} />
-        <Field label="Hours" placeholder="e.g. 8 or 8.5" value={hours} onChangeText={setHours} keyboardType="decimal-pad" />
-        <Field label="Note" placeholder="Optional" value={note} onChangeText={setNote} />
+        {dateSigned ? (
+          <Text style={styles.rowProblem}>
+            {date} is signed{dateSigned.state === "APPROVED" ? " and approved" : ""}, so its hours are locked. The
+            office can reopen it on the web.
+          </Text>
+        ) : null}
+        <Field
+          label="Hours for everyone"
+          placeholder="e.g. 8 or 8.5"
+          value={sharedHours}
+          onChangeText={setSharedHours}
+          keyboardType="decimal-pad"
+        />
 
         <Text style={styles.chipLabel}>Who</Text>
         <View style={styles.chips}>
-          <Chip label="Me" selected={crewMemberId === null} onPress={() => selectWorker(null)} />
+          <Chip label="Me" selected={rows.some((r) => r.worker === "me")} onPress={() => toggleWorker("me")} />
           {crew.map((c) => (
-            <Chip key={c.id} label={c.name} selected={crewMemberId === c.id} onPress={() => selectWorker(c.id)} />
+            <Chip
+              key={c.id}
+              label={c.name}
+              selected={rows.some((r) => r.worker === crewKey(c.id))}
+              onPress={() => toggleWorker(crewKey(c.id))}
+            />
           ))}
         </View>
+
+        {rows.map((r) => {
+          const options = craftOptionsFor(r.worker);
+          const problem = rowProblem(r);
+          return (
+            <View key={r.worker} style={styles.crewRow}>
+              <Text style={styles.crewName}>{nameOf(r.worker)}</Text>
+              <Field
+                label="Hours (if different)"
+                placeholder={`${sharedHours || "—"} — same as everyone`}
+                value={r.hours ?? ""}
+                onChangeText={(text) => setRowHours(r.worker, text)}
+                keyboardType="decimal-pad"
+              />
+              <CraftHint
+                required={craftRequired}
+                fallback={options.fallback}
+                who={r.worker === "me" ? "you" : nameOf(r.worker)}
+              />
+              <View style={styles.chips}>
+                {options.options.map((c) => (
+                  <Chip key={c.id} label={c.name} selected={r.craftId === c.id} onPress={() => setRowCraft(r.worker, c.id)} />
+                ))}
+              </View>
+              {problem ? <Text style={styles.rowProblem}>{problem}</Text> : null}
+            </View>
+          );
+        })}
 
         <Text style={styles.chipLabel}>Pay type</Text>
         <View style={styles.chips}>
@@ -493,13 +676,45 @@ export default function TimeScreen() {
           ))}
         </View>
 
-        <Text style={styles.chipLabel}>Craft</Text>
-        <CraftHint required={craftRequired} fallback={formCrafts.fallback} who={formWorkerName} />
-        <View style={styles.chips}>
-          {formCrafts.options.map((c) => (
-            <Chip key={c.id} label={c.name} selected={craftClassificationId === c.id} onPress={() => setCraftClassificationId(c.id)} />
-          ))}
-        </View>
+        <Field label="Note" placeholder="Optional — goes on every entry" value={note} onChangeText={setNote} />
+      </Sheet>
+
+      {/* "Sign the day" — one signature for everyone's hours on this job */}
+      <Sheet
+        visible={showSign}
+        onClose={() => setShowSign(false)}
+        title="Sign the day"
+        primaryLabel="Sign and lock"
+        onPrimary={submitSignoff}
+        primaryDisabled={!canSign}
+      >
+        <Field label="Date" placeholder="YYYY-MM-DD" value={signDate} onChangeText={setSignDate} />
+        {signDateSigned ? (
+          <Text style={styles.rowProblem}>
+            {signDate} is already signed by {signDateSigned.signerName}.
+          </Text>
+        ) : signEntries.length === 0 ? (
+          <Text style={styles.rowProblem}>No hours on {signDate || "that day"} to sign.</Text>
+        ) : (
+          <View style={styles.crewRow}>
+            <Text style={styles.crewName}>
+              {signEntries.length} {signEntries.length === 1 ? "entry" : "entries"} · {Math.round(signHours * 100) / 100}h
+            </Text>
+            {signEntries.map((e) => (
+              <Text key={e.id} style={styles.meta}>
+                {e.employeeName} · {e.hours}h · {e.payType.replace(/_/g, " ")}
+                {e.craftLabel ? ` · ${e.craftLabel}` : ""}
+              </Text>
+            ))}
+          </View>
+        )}
+        <Text style={styles.hint}>
+          Signing locks these hours. Anything still waiting to sync goes up first. If something is wrong later,
+          the office reopens the day on the web.
+        </Text>
+        <Field label="Your name" placeholder="Printed under the signature" value={signerName} onChangeText={setSignerName} />
+        <Text style={styles.chipLabel}>Signature</Text>
+        <SignaturePad key={showSign ? "open" : "closed"} onChange={setSignaturePath} />
       </Sheet>
     </View>
   );
@@ -532,6 +747,15 @@ const styles = StyleSheet.create({
   chipLabel: { color: colors.inkLabel, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   hint: { color: colors.inkMuted, fontSize: typography.size.sm },
+  crewRow: {
+    gap: 8,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.lineCard,
+  },
+  crewName: { color: colors.ink, fontSize: typography.size.md, fontWeight: typography.weight.semibold },
+  rowProblem: { color: colors.tagRoseInk, fontSize: typography.size.sm },
   ratioBanner: {
     margin: 16,
     marginBottom: 0,
@@ -544,4 +768,7 @@ const styles = StyleSheet.create({
   ratioTitle: { color: colors.tagRoseInk, fontSize: typography.size.md, fontWeight: typography.weight.bold },
   ratioLine: { color: colors.inkBody, fontSize: typography.size.sm },
   footer: { padding: 16, paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.lineRow },
+  footerRow: { flexDirection: "row", gap: 8, alignItems: "center" },
+  footerMain: { flex: 1 },
+  signed: { color: colors.link, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
 });

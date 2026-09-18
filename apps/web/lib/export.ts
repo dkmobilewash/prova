@@ -495,6 +495,15 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
     models: ["TmTicket"],
   },
   {
+    key: "timesheet-signoffs",
+    title: "Timesheet sign-offs",
+    detail:
+      "Which days' hours a foreman signed on the phone, the drawn signature, and when the " +
+      "office approved or reopened them. The hours themselves are in the time entries above; " +
+      "the signatures are in the app, not in this file.",
+    models: ["TimesheetSignoff"],
+  },
+  {
     key: "messages",
     title: "Messages sent from the app",
     detail:
