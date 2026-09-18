@@ -82,9 +82,28 @@ export function SignaturePad({ onChange }: { onChange: (path: string | null) => 
   return (
     <View style={styles.wrap}>
       <View style={styles.pad} {...responder.panHandlers}>
-        {strokes.length === 0 ? <Text style={styles.placeholder}>Sign here</Text> : null}
+        {/* pointerEvents none: otherwise the first touch lands on this text
+            and its locationX/Y are measured from the TEXT, not the pad, so
+            the first stroke starts in the wrong place. */}
+        {strokes.length === 0 ? (
+          <Text pointerEvents="none" style={styles.placeholder}>
+            Sign here
+          </Text>
+        ) : null}
         {strokes.flatMap((stroke, si) =>
-          stroke.slice(1).map((p, i) => {
+          // A tap, or the dot of an "i": one point and no segment to draw,
+          // so it gets a round dot. The path already records it (a
+          // zero-length line), so without this the signature would hold a
+          // mark the signer never saw.
+          stroke.length === 1
+            ? [
+                <View
+                  key={`${si}-dot`}
+                  pointerEvents="none"
+                  style={[styles.dot, { left: stroke[0].x - STROKE, top: stroke[0].y - STROKE }]}
+                />,
+              ]
+            : stroke.slice(1).map((p, i) => {
             const a = stroke[i];
             const dx = p.x - a.x;
             const dy = p.y - a.y;
@@ -129,12 +148,21 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   placeholder: { color: colors.inkMuted, fontSize: typography.size.md },
+  dot: {
+    position: "absolute",
+    width: STROKE * 2,
+    height: STROKE * 2,
+    borderRadius: STROKE,
+    backgroundColor: "#111111",
+  },
   segment: {
     position: "absolute",
     height: STROKE,
     borderRadius: STROKE / 2,
     backgroundColor: "#111111",
   },
-  clear: { alignSelf: "flex-end", paddingHorizontal: 8, paddingVertical: 4 },
+  // Left, not right: the app-wide floating Tools button sits over the
+  // bottom-right of a sheet and covered a right-aligned Clear.
+  clear: { alignSelf: "flex-start", paddingHorizontal: 8, paddingVertical: 4 },
   clearLabel: { color: colors.link, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
 });
