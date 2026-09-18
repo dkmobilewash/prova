@@ -402,6 +402,9 @@ describe("read-tool capabilities match the pages they cite", () => {
     // /jobs/[id] is open with its sections withheld in-page; the handler
     // gates each section on the capability of its own tool.
     job_overview: null,
+    // /dashboard is open; the checklist's steps are filtered per person by
+    // lib/getting-started.ts, the card's own function.
+    getting_started: null,
   };
 
   it.each(TOOLS.map((tool) => [tool.name, tool.capability] as const))("%s", (name, capability) => {
