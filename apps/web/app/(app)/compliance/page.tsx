@@ -7,6 +7,7 @@ import { RenewalAlerts } from "@/components/RenewalAlerts";
 import { renewalSourcesForCompany } from "@/lib/renewals";
 import { renewalAlerts } from "@/lib/compliance-expiry";
 import { serverToday } from "@/lib/serverToday";
+import { viewerToday } from "@/lib/viewerToday";
 import { toJobOption } from "@/components/jobLabels";
 import { ExperienceModRates } from "@/components/ExperienceModRates";
 import { loadExperienceModRates } from "@/lib/emr-query";
@@ -34,13 +35,19 @@ export default async function CompliancePage() {
     loadExperienceModRates(company.id),
   ]);
 
-  // ONE today for this page. The rows below decide "Expired" against the
-  // same day the alerts above are computed from -- two answers for the
-  // same fact is worse than either being wrong (settings/page.tsx:66).
+  // ONE today for the renewal rows. They decide "Expired" against the same
+  // day the alerts above are computed from -- two answers for the same fact
+  // is worse than either being wrong (settings/page.tsx:66).
   const today = serverToday();
   const renewals = renewalAlerts(renewalSources, today);
-  // Which mod rate is current is derived from the same `today`, never stored.
-  const modRateStanding = emrStanding(modRates, today);
+
+  // A SECOND today, for a DIFFERENT fact, and deliberately so. Which mod rate
+  // is in force is decided by the exact day, and on New Year's Eve evening in
+  // the US the UTC day is already next year -- so serverToday() would show
+  // next year's rate on a prequal form filled in that evening. The renewal
+  // horizons above are 30/60-day windows where a day either way is noise.
+  // Found in review; see lib/emr.ts. Derived, never stored.
+  const modRateStanding = emrStanding(modRates, await viewerToday());
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-8">

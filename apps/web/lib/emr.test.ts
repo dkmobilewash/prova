@@ -108,3 +108,32 @@ describe("emrRateProblem", () => {
     expect(emrRateProblem("0,87")).not.toBeNull();
   });
 });
+
+describe("review findings on #306 — the date and the written rate", () => {
+  it("refuses an IMPOSSIBLE date instead of rolling it forward", async () => {
+    const { emrEffectiveDate } = await import("./emr");
+    // new Date("2026-02-30") is a VALID Date in JavaScript -- 2 March. The
+    // first version only checked isNaN, so this stored a March rate silently.
+    expect(emrEffectiveDate("2026-02-30")).toBe("That date does not exist — check the day and month");
+    expect(emrEffectiveDate("2026-04-31")).toBe("That date does not exist — check the day and month");
+    expect(emrEffectiveDate("2026-02-28")).toBeInstanceOf(Date);
+    expect(emrEffectiveDate("2028-02-29")).toBeInstanceOf(Date);
+  });
+
+  it("refuses a year no rating bureau issued in", async () => {
+    const { emrEffectiveDate } = await import("./emr");
+    // "0025" went through Date.UTC's 1900 offset and read back as ending 1926.
+    expect(emrEffectiveDate("0025-01-01")).toBe("Check the year on the effective date");
+    expect(emrEffectiveDate("1989-01-01")).toBe("Check the year on the effective date");
+    expect(emrEffectiveDate("2101-01-01")).toBe("Check the year on the effective date");
+    expect(emrEffectiveDate("2026-01-01")).toBeInstanceOf(Date);
+  });
+
+  it("writes a rate with at least two places and a real third", async () => {
+    const { emrRateText } = await import("./emr");
+    expect(emrRateText("1.000")).toBe("1.00");
+    expect(emrRateText("0.870")).toBe("0.87");
+    expect(emrRateText("0.900")).toBe("0.90");
+    expect(emrRateText("0.875")).toBe("0.875");
+  });
+});

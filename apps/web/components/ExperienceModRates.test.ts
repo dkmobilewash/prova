@@ -57,3 +57,20 @@ describe("ExperienceModRates", () => {
     expect(html).toContain("No rate on file has taken effect yet. The earliest one recorded starts 2027-01-01.");
   });
 });
+
+describe("review finding on #306 — the stale-year banner", () => {
+  it("names the next rate when it is already on file, instead of asking for it", () => {
+    // The renewal date moved: 2025's year ended 2026-01-01 and the next rate
+    // starts 2026-10-01. The banner used to say "record the new one when the
+    // bureau issues it" with that very rate sitting directly below it.
+    const html = render([rate("old", "2025-01-01", "0.94"), rate("next", "2026-10-01", "0.88")], "2026-09-17");
+    expect(html).toContain("policy year ended");
+    expect(html).toContain("The next rate on file, 0.88, starts 2026-10-01.");
+    expect(html).not.toContain("Record the new one");
+  });
+
+  it("still asks for it when nothing is on file yet", () => {
+    const html = render([rate("old", "2025-01-01", "0.94")], "2026-09-17");
+    expect(html).toContain("Record the new one when the bureau issues it.");
+  });
+});

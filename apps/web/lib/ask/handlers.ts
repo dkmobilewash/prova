@@ -15,6 +15,7 @@ import {
 import { renewalAlerts, renewalCoverage, renewalCoverageMessage, renewalTiming } from "@/lib/compliance-expiry";
 import { renewalSourcesForCompany } from "@/lib/renewals";
 import { serverToday } from "@/lib/serverToday";
+import { viewerToday } from "@/lib/viewerToday";
 import { daysBetween } from "./dates";
 import {
   arBalanceFor,
@@ -3328,7 +3329,11 @@ async function crewSchedule(companyId: string, input: Input): Promise<ToolResult
 async function experienceModRate(companyId: string): Promise<ToolResult> {
   const citations = [{ label: "Compliance", href: "/compliance" }];
   const records = await loadExperienceModRates(companyId);
-  const today = serverToday();
+  // The viewer's day, the same one the page uses -- which rate is in force is
+  // decided by the exact day. Every other tool here reads serverToday(); this
+  // one must not, or the Ask box and /compliance disagree about which mod is
+  // current for ~8 hours on the evening a new policy year starts.
+  const today = await viewerToday();
   const standing = emrStanding(records, today);
 
   const shape = (record: (typeof records)[number]) => ({

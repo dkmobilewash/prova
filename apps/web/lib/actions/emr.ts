@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
-import { emrRateProblem } from "@/lib/emr";
+import { emrRateProblem, emrEffectiveDate } from "@/lib/emr";
 import { can } from "@/lib/permissions";
 import {
   actionFail as fail,
@@ -47,12 +47,8 @@ function rateFromForm(formData: FormData): string {
 /** ENTERED, stored at UTC midnight — the first day of the policy year, off
  * the worksheet. Never defaulted to today by the server. */
 function effectiveDateFromForm(formData: FormData): Date {
-  const raw = text(formData, "effectiveDate");
-  if (!raw) throw new InputError("The effective date is required");
-  const date = new Date(`${raw}T00:00:00.000Z`);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw) || Number.isNaN(date.getTime())) {
-    throw new InputError("The effective date is not a valid date");
-  }
+  const date = emrEffectiveDate(text(formData, "effectiveDate"));
+  if (typeof date === "string") throw new InputError(date);
   return date;
 }
 

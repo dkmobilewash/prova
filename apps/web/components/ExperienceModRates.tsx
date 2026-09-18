@@ -35,8 +35,13 @@ export function ExperienceModRates({
           {currentIsPastItsPolicyYear && (
             <span className="text-tag-amber-ink">
               {" "}
-              That policy year ended {policyYearEnd(current.effectiveDate)} — this is the newest rate on file, not
-              necessarily this year&apos;s. Record the new one when the bureau issues it.
+              That policy year ended {policyYearEnd(current.effectiveDate)} — this is the newest rate in force, not
+              necessarily this year&apos;s.{" "}
+              {/* Review finding: this always said "record the new one", even
+                  with the next rate already on file directly below it. */}
+              {upcoming[0]
+                ? `The next rate on file, ${upcoming[0].rate}, starts ${upcoming[0].effectiveDate}.`
+                : "Record the new one when the bureau issues it."}
             </span>
           )}
         </p>

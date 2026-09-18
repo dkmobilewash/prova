@@ -3,9 +3,15 @@
  * stored.
  *
  * Pure: no database, no clock. `today` is passed in as a YYYY-MM-DD string
- * by the caller (`serverToday()` on the page and in the Ask handler), so the
- * page and the assistant cannot disagree about which rate is current, and a
- * test can pin the day.
+ * by the caller — `viewerToday()`, on the page and in the Ask handler alike,
+ * so the two cannot disagree and a test can pin the day.
+ *
+ * VIEWER'S DAY, NOT `serverToday()`, and this was a review finding rather
+ * than a first draft. Which rate is in force is a question "the exact day
+ * decides", which is the case `serverToday()`'s own doc comment says it is
+ * not good enough for: on 31 December at 17:00 in California the UTC day is
+ * already 1 January, and the page would have shown NEXT year's mod to
+ * somebody filling in a prequal form that evening.
  *
  * NOTHING HERE COMPUTES AN EMR. The rate is whatever the bureau issued and a
  * person typed in. This file only answers "of the rates on file, which one
@@ -17,7 +23,13 @@
 export type EmrRecord = {
   id: string;
   effectiveDate: string;
-  /** As stored — a decimal string such as "0.87". Never re-derived. */
+  /** The rate as an EMR is written — at least two decimal places, three when
+   * the bureau issued three ("0.87", "1.00", "0.875"). See `emrRateText`.
+   *
+   * This comment used to say "as stored", and that was false: Prisma's
+   * Decimal.toString() drops trailing zeros, so a bureau-issued 1.000 came
+   * back as "1" and 0.900 as "0.9" — the figure the tool tells the model to
+   * repeat verbatim onto a GC's form. */
   rate: string;
   source: string;
   sourceUrl: string | null;
@@ -40,6 +52,44 @@ export type EmrStanding<T extends EmrRecord = EmrRecord> = {
    * 2027 about a 2025 rating is the near-miss this flag exists to stop. */
   currentIsPastItsPolicyYear: boolean;
 };
+
+/**
+ * The rate as it is written on a mod worksheet: never fewer than two decimal
+ * places, three only when the third is not zero.
+ *
+ * Takes the database value already fixed to three places (Decimal.toFixed(3))
+ * so this stays pure. "1.000" -> "1.00", "0.870" -> "0.87", "0.875" -> "0.875".
+ * Dropping to "1" is what Decimal.toString() did, and an EMR is never written
+ * that way: "1" on a prequal form reads as a typo for 1.00 at best.
+ */
+export function emrRateText(fixedToThree: string): string {
+  return /\.\d\d0$/.test(fixedToThree) ? fixedToThree.slice(0, -1) : fixedToThree;
+}
+
+/**
+ * The effective date as typed, or the sentence saying why it is not one.
+ *
+ * Two checks the first version missed, both review findings:
+ *   - an IMPOSSIBLE date is not an invalid Date in JavaScript — 2026-02-30
+ *     silently becomes 2026-03-02 — so the typed string must survive the
+ *     round trip unchanged;
+ *   - a year below 100 goes through Date.UTC's 1900 offset, so a typo'd
+ *     "0025" was stored and then read back as ending in 1926. A mod rate is
+ *     a document from a working bureau; a year outside 1990–2100 is a typo.
+ * Returns the Date on success, a string on failure.
+ */
+export function emrEffectiveDate(raw: string): Date | string {
+  const value = raw.trim();
+  if (!value) return "The effective date is required";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return "The effective date is not a valid date";
+  const date = new Date(`${value}T00:00:00.000Z`);
+  if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== value) {
+    return "That date does not exist — check the day and month";
+  }
+  const year = date.getUTCFullYear();
+  if (year < 1990 || year > 2100) return "Check the year on the effective date";
+  return date;
+}
 
 /** Twelve months on from an effective date, clamped to the month's end —
  * a policy year starting 29 February ends on 28 February. */
