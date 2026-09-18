@@ -18,6 +18,8 @@
  * to get wrong.
  */
 
+import { money } from "./money";
+
 export const BID_PURSUIT_STAGES = [
   "WATCHING",
   "CONTACTED",
@@ -110,26 +112,76 @@ export type PursuitSummary = {
   openUnpriced: number;
 };
 
+/** What the open pursuits add up to, and how many of them could not be
+ * added because nobody has put a value on them. */
+export type OpenPursuitValue = {
+  /** Open pursuits (see isOpenPursuit), priced or not. */
+  open: number;
+  /** Open pursuits with a value recorded. */
+  priced: number;
+  /** Open pursuits with NO value. Never counted as $0: when above zero,
+   * `total` is a floor and whatever shows it must say so. */
+  unpriced: number;
+  /** Sum of the priced open pursuits, in dollars. */
+  total: number;
+};
+
+/**
+ * THE one place the open pursuit value is added up. /pipeline renders it
+ * (BidPursuitList) and the bid_pursuits Ask tool reports it (through
+ * summarisePursuits), so the screen and the answer cannot disagree — do not
+ * write a second sum anywhere.
+ *
+ * In whole CENTS, then back to dollars once. Summing the dollar floats
+ * directly gave $100.10 + $200.20 = 300.29999999999995, which the Ask tool
+ * handed the model raw. Every stored value is DECIMAL(12,2), so a round to
+ * the cent loses nothing.
+ */
+export function openPursuitValue(
+  pursuits: Pick<PursuitForDerivation, "stage" | "estimatedValue">[],
+): OpenPursuitValue {
+  const open = pursuits.filter((p) => isOpenPursuit(p.stage));
+  const priced = open.filter((p) => p.estimatedValue !== null);
+  const cents = priced.reduce((sum, p) => sum + Math.round((p.estimatedValue ?? 0) * 100), 0);
+  return { open: open.length, priced: priced.length, unpriced: open.length - priced.length, total: cents / 100 };
+}
+
+/**
+ * The open value in plain words, for the line under /pipeline's chase-list
+ * heading. Null when nothing is open — there is no total to state.
+ *
+ *   "3 open, about $350,000.50"
+ *   "3 open, 2 with a value, about $350,000.50 — 1 has no value yet"
+ *   "3 open, none with a value yet"
+ *
+ * A pursuit with no value is named, never folded in as $0, so a total that
+ * is only a floor reads as one.
+ */
+export function describeOpenPursuitValue(value: OpenPursuitValue): string | null {
+  if (value.open === 0) return null;
+  const dollars = money(value.total);
+  if (value.priced === 0) return `${value.open} open, none with a value yet`;
+  if (value.unpriced === 0) return `${value.open} open, about ${dollars}`;
+  const has = value.unpriced === 1 ? "has" : "have";
+  return `${value.open} open, ${value.priced} with a value, about ${dollars} — ${value.unpriced} ${has} no value yet`;
+}
+
 export function summarisePursuits(pursuits: PursuitForDerivation[], today: string): PursuitSummary {
   const byStage = Object.fromEntries(BID_PURSUIT_STAGES.map((s) => [s, 0])) as Record<BidPursuitStage, number>;
   for (const p of pursuits) byStage[p.stage] += 1;
 
-  const open = pursuits.filter((p) => isOpenPursuit(p.stage));
-  const priced = open.filter((p) => p.estimatedValue !== null);
+  const value = openPursuitValue(pursuits);
 
   return {
     total: pursuits.length,
-    open: open.length,
+    open: value.open,
     byStage,
     bidDatesComingUp: pursuits.filter((p) => isBidDateComingUp(p, today)).length,
     bidDatesPassed: pursuits.filter((p) => isBidDatePassed(p, today)).length,
     goneQuiet: pursuits.filter((p) => isGoneQuiet(p, today)).length,
-    // In whole CENTS, then back to dollars once. Summing the dollar floats
-    // directly gave $100.10 + $200.20 = 300.29999999999995, which the Ask
-    // tool handed the model raw. Every stored value is DECIMAL(12,2), so a
-    // round to the cent loses nothing.
-    openEstimatedValue: priced.reduce((cents, p) => cents + Math.round((p.estimatedValue ?? 0) * 100), 0) / 100,
-    openUnpriced: open.length - priced.length,
+    // openPursuitValue is the only sum; see there for why it is in cents.
+    openEstimatedValue: value.total,
+    openUnpriced: value.unpriced,
   };
 }
 

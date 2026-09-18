@@ -225,3 +225,22 @@ describe("the stage dropdown", () => {
     expect(stageSelect().value).toBe("EXPECTING_INVITE");
   });
 });
+
+describe("the open total under the heading", () => {
+  it("shows the open total and names the pursuit with no value; closed ones are left out", () => {
+    renderList([
+      { ...pursuit, id: "a", estimatedValue: 250_000 },
+      { ...pursuit, id: "b", stage: "CONTACTED", estimatedValue: 100_000.5 },
+      { ...pursuit, id: "c", stage: "EXPECTING_INVITE", estimatedValue: null },
+      { ...pursuit, id: "d", stage: "DROPPED", open: false, estimatedValue: 9_999_999 },
+    ]);
+    expect(container.querySelector('[data-testid="bid-pursuit-total"]')?.textContent).toBe(
+      "3 open, 2 with a value, about $350,000.50 — 1 has no value yet",
+    );
+  });
+
+  it("shows no total line when nothing is open", () => {
+    renderList([]);
+    expect(container.querySelector('[data-testid="bid-pursuit-total"]')).toBeNull();
+  });
+});

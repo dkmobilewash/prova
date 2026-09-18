@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   comparePursuits,
   daysFromTo,
+  describeOpenPursuitValue,
   isBidDateComingUp,
   isBidDatePassed,
   isGoneQuiet,
   isOpenPursuit,
+  openPursuitValue,
   optionalDateFromString,
   optionalValueFromString,
   stageFromString,
@@ -178,5 +180,70 @@ describe("the value parser reads money the way a person types it", () => {
     expect(() => optionalValueFromString("0")).toThrow(/leave it blank/);
     expect(() => optionalValueFromString("$0.00")).toThrow(/leave it blank/);
     expect(optionalValueFromString("0.50")).toBe("0.50");
+  });
+});
+
+describe("the open total /pipeline shows — one sum, shared with the Ask tool", () => {
+  const rows = [
+    pursuit({ stage: "WATCHING", estimatedValue: 250_000 }),
+    pursuit({ stage: "CONTACTED", estimatedValue: 100_000.5 }),
+    pursuit({ stage: "EXPECTING_INVITE", estimatedValue: null }),
+    // Closed: none of these is being chased, so none of it is in the total.
+    pursuit({ stage: "INVITED", estimatedValue: 5_000_000 }),
+    pursuit({ stage: "DROPPED", estimatedValue: 1_234.56 }),
+    pursuit({ stage: "DROPPED", estimatedValue: null }),
+  ];
+
+  it("adds open pursuits only, in cents, and counts the blank one instead of calling it $0", () => {
+    expect(openPursuitValue(rows)).toEqual({ open: 3, priced: 2, unpriced: 1, total: 350_000.5 });
+  });
+
+  it("says it in plain words, naming the pursuit with no value", () => {
+    expect(describeOpenPursuitValue(openPursuitValue(rows))).toBe(
+      "3 open, 2 with a value, about $350,000.50 — 1 has no value yet",
+    );
+  });
+
+  it("is exactly what the Ask tool's summary reports, not a second sum", () => {
+    const summary = summarisePursuits(rows, TODAY);
+    const value = openPursuitValue(rows);
+    expect(summary.openEstimatedValue).toBe(value.total);
+    expect(summary.openUnpriced).toBe(value.unpriced);
+    expect(summary.open).toBe(value.open);
+  });
+
+  it("stays in cents where float addition would not", () => {
+    // 100.10 + 200.20 as floats is 300.29999999999995, which money() would
+    // still round to $300.30 — so the exact total is asserted, not the text.
+    const value = openPursuitValue([pursuit({ estimatedValue: 100.1 }), pursuit({ estimatedValue: 200.2 })]);
+    expect(value.total).toBe(300.3);
+  });
+
+  it("rounds each value to a whole cent BEFORE adding", () => {
+    // 0.29 * 100 is 28.999999999999996: converting to cents without rounding
+    // each one still drifts (0.8599999999999999), so the round is load-bearing.
+    const value = openPursuitValue([pursuit({ estimatedValue: 0.29 }), pursuit({ estimatedValue: 0.57 })]);
+    expect(value.total).toBe(0.86);
+  });
+
+  it("drops the 'with a value' clause when every open pursuit has one", () => {
+    const value = openPursuitValue([pursuit({ estimatedValue: 250_000 }), pursuit({ estimatedValue: 100_000.5 })]);
+    expect(describeOpenPursuitValue(value)).toBe("2 open, about $350,000.50");
+  });
+
+  it("does not print $0.00 when nothing open has a value", () => {
+    const value = openPursuitValue([pursuit(), pursuit(), pursuit({ stage: "INVITED", estimatedValue: 9 })]);
+    expect(value).toEqual({ open: 2, priced: 0, unpriced: 2, total: 0 });
+    expect(describeOpenPursuitValue(value)).toBe("2 open, none with a value yet");
+  });
+
+  it("says nothing when nothing is open — there is no total to state", () => {
+    expect(describeOpenPursuitValue(openPursuitValue([]))).toBeNull();
+    expect(describeOpenPursuitValue(openPursuitValue([pursuit({ stage: "DROPPED", estimatedValue: 500 })]))).toBeNull();
+  });
+
+  it("agrees the verb with the count of unpriced pursuits", () => {
+    const value = openPursuitValue([pursuit({ estimatedValue: 10 }), pursuit(), pursuit()]);
+    expect(describeOpenPursuitValue(value)).toBe("3 open, 1 with a value, about $10.00 — 2 have no value yet");
   });
 });
