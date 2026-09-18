@@ -227,9 +227,10 @@ export default async function SettingsPage({
           support ticket, a sales call, or nothing at all. */}
       <p className="mb-6 text-sm text-ink-body">
         <Link href="/settings/export" className="text-link hover:text-link-hover">
-          Export your data
+          Export core records
         </Link>{" "}
-        — every job, price, cost and hour, as CSV or one JSON file.
+        — jobs, prices, costs, hours and correspondence, as CSV or one JSON file. The page
+        names what it does not cover.
       </p>
 
       {qb === "connected" && (

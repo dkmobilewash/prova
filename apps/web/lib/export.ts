@@ -262,6 +262,255 @@ export function datasetByKey(key: string): ExportDataset | undefined {
   return EXPORT_DATASETS.find((d) => d.key === key);
 }
 
+/* ------------------------------------------- what the export does NOT hold
+ *
+ * THE PAGE USED TO CALL THIS "EVERYTHING", AND IT NEVER WAS.
+ *
+ * `/settings/export` said "Everything <company> has put into C Stream" over
+ * a button reading "Download everything", and named exactly three
+ * omissions: integration credentials, portal and signing links, and
+ * uploaded files. The list above is 18 tables. The schema is 93 models.
+ * Some of that gap is bookkeeping nobody wants — eight sequence counters,
+ * sync logs, notification rows — but a lot of it is work somebody did: the
+ * licences and bonds a GC asks for, retainage releases, backcharges, the
+ * wage and fringe tables certified payroll is built from, photos, drawings,
+ * the sales pipeline, closeout and warranty.
+ *
+ * One of the three omissions was also simply false. "Documents appear as
+ * their metadata rows here" — they do not; `ComplianceDocument`,
+ * `ContractDocument`, `DrawingRevision`, `DocumentIntake` and `JobMedia`
+ * are not in any dataset above, so neither the file nor the row that points
+ * at it comes out.
+ *
+ * This is the same defect as the one the module comment at the top of this
+ * file is about, pointed at the customer: an export that quietly omits a
+ * table is the same defect as a costing row that quietly omits a cost. It
+ * was not caught because nothing could catch it — no test compared the copy
+ * to the registry, and the copy had no number in it to be wrong.
+ *
+ * THE FIX IS COPY, NOT COVERAGE. Adding these datasets is a much larger
+ * piece of work and some of the omissions are deliberate (see
+ * `EXPORT_WITHHELD`). What changes here is that the page stops claiming
+ * them. The lists below are the page's source of truth for that claim, and
+ * `export.test.ts` holds them to the schema: every model named here has to
+ * exist and has to be genuinely absent from `EXPORT_DATASETS`, so the day
+ * one of these categories IS exported, this file fails rather than
+ * under-promising forever.
+ */
+
+/** A category of record the export does not reach. */
+export type ExportOmission = {
+  key: string;
+  title: string;
+  detail: string;
+  /**
+   * The schema models this line accounts for. Named rather than described
+   * so the claim is checkable: the test insists each one exists and that
+   * none of them is exported by a dataset above.
+   */
+  models: string[];
+};
+
+/** A secret that will never be exported, whatever else is added. */
+export type ExportWithheld = {
+  key: string;
+  title: string;
+  detail: string;
+  /**
+   * The credential COLUMNS this line is about — these are fields on models
+   * that are otherwise exported or partly exported, not tables of their
+   * own, which is why this list is columns where `ExportOmission` is
+   * models. The test holds each one to the same credential pattern that
+   * guards the dataset column lists.
+   */
+  columns: string[];
+};
+
+/**
+ * Deliberately withheld, and it stays withheld even if every table below
+ * is eventually exported. These are live keys, not records of work.
+ */
+export const EXPORT_WITHHELD: ExportWithheld[] = [
+  {
+    key: "integration-credentials",
+    title: "Integration credentials",
+    detail:
+      "QuickBooks and other connection tokens. They are keys to another system, not a " +
+      "record of your work, and a copy in a downloaded file is a copy that can leak.",
+    columns: ["accessToken", "refreshToken", "encryptedAccessToken", "encryptedRefreshToken"],
+  },
+  {
+    key: "portal-and-signing-links",
+    title: "Client portal and signing links",
+    detail:
+      "Same reason — anyone holding one can open a client portal or sign a contract. The " +
+      "Contacts file below is complete apart from this one column.",
+    columns: ["portalToken", "token"],
+  },
+];
+
+/**
+ * Real records a person would look for in the file and not find. Ordered
+ * roughly by how likely somebody is to go looking.
+ */
+export const EXPORT_OMISSIONS: ExportOmission[] = [
+  {
+    key: "compliance",
+    title: "Licences, bonds, insurance and compliance documents",
+    detail:
+      "Contractor licences, bonds, insurance policies, worker certifications and the " +
+      "documents filed against them. The expiry dates a GC asks for are in the app; they " +
+      "are not in this file.",
+    models: [
+      "CompanyLicense",
+      "CompanyBond",
+      "CompanyInsurancePolicy",
+      "ComplianceDocument",
+      "WorkerCertification",
+      "CertificationRequirement",
+    ],
+  },
+  {
+    key: "retainage-and-backcharges",
+    title: "Retainage releases and backcharges",
+    detail:
+      "Invoices carry what was withheld on each application. The release records saying " +
+      "when held money was billed back, and backcharges a GC passed down, are separate " +
+      "rows and are not exported.",
+    models: ["RetainageRelease", "Backcharge"],
+  },
+  {
+    key: "payroll-rates",
+    title: "Pay rates, crews, classifications and union agreements",
+    detail:
+      "Hours are exported; what they are worth is not. Craft classifications, fringe " +
+      "schedules, prevailing wage determinations, union agreements, crew records and " +
+      "apprenticeship enrolments all stay behind — which means the hours file cannot be " +
+      "repriced somewhere else on its own, and the classification ids in it will not " +
+      "resolve to names.",
+    models: [
+      "CrewMember",
+      "CraftClassification",
+      "FringeRateSchedule",
+      "PrevailingWageDetermination",
+      "PrevailingWageRuleSet",
+      "CompanyUnionAgreement",
+      "UnionLocal",
+      "ApprenticeshipEnrollment",
+      "ApprenticeRatioRule",
+      "DispatchSlip",
+    ],
+  },
+  {
+    key: "files-and-documents",
+    title: "Photos, videos, drawings and contract documents",
+    detail:
+      "The uploaded files themselves are not something a CSV or a JSON file can hold — " +
+      "they stay in storage. Neither are the rows that index them: job photos and their " +
+      "annotations, drawing sets and revisions, contract documents, signature requests " +
+      "and anything filed through document intake.",
+    models: [
+      "JobMedia",
+      "JobMediaAnnotation",
+      "JobMediaTag",
+      "DrawingSet",
+      "DrawingRevision",
+      "ContractDocument",
+      "SignatureRequest",
+      "DocumentIntake",
+    ],
+  },
+  {
+    key: "revisions-and-deliveries",
+    title: "Submittal revisions, deliveries and change order proposals",
+    detail:
+      "The submittals file names its current revision number but not the revision " +
+      "records themselves. Deliveries booked against a material order, and the proposal " +
+      "and line-item-edit trail behind a change order, are also their own rows.",
+    models: [
+      "SubmittalRevision",
+      "MaterialOrderDelivery",
+      "ChangeOrderProposal",
+      "ChangeOrderLineItemEdit",
+    ],
+  },
+  {
+    key: "pipeline",
+    title: "The sales pipeline and bidding",
+    detail:
+      "Leads, opportunities, bid invitations, vendor price quotes, and the named people " +
+      "and call history behind a contact. The contact record itself is exported; the work " +
+      "of winning it is not.",
+    models: [
+      "SalesLead",
+      "SalesOpportunity",
+      "SalesActivity",
+      "SalesStageChange",
+      "BidInvitation",
+      "VendorPriceQuote",
+      "ContactPerson",
+      "ContactInteraction",
+    ],
+  },
+  {
+    key: "closeout-warranty-equipment",
+    title: "Closeout, warranty, equipment and toolbox talks",
+    detail:
+      "Closeout items and submissions, warranty periods and service calls, the equipment " +
+      "list and who has it, and toolbox talk records.",
+    models: [
+      "CloseoutItem",
+      "CloseoutSubmission",
+      "WarrantyPeriod",
+      "WarrantyServiceRequest",
+      "Equipment",
+      "EquipmentAssignment",
+      "ToolboxTalk",
+    ],
+  },
+  {
+    key: "account",
+    title: "Your company profile and your own people",
+    detail:
+      "The company record, its locations and trade scopes, your users, their invitations " +
+      "and who is assigned to which job.",
+    models: [
+      "Company",
+      "CompanyLocation",
+      "CompanyTradeScope",
+      "User",
+      "Invite",
+      "JobAssignment",
+    ],
+  },
+];
+
+/**
+ * The same disclosure, written into the JSON bundle itself.
+ *
+ * THE FILE OUTLIVES THE ACCOUNT, which is the whole argument for the
+ * feature — so a caveat that exists only on a page the person has cancelled
+ * their way out of is a caveat they cannot read when it matters. The route
+ * already carried a `notIncluded` array for this reason; it was three
+ * hand-typed strings, one of them wrong, and nothing connected them to the
+ * page they were a copy of. Derived here so there is one list and one place
+ * to change it.
+ */
+export function exportNotIncludedLines(): string[] {
+  return [
+    ...EXPORT_WITHHELD.map((item) => `${item.title} — ${item.detail}`),
+    ...EXPORT_OMISSIONS.map((item) => `${item.title} — ${item.detail}`),
+  ];
+}
+
+/** What the bundle says about its own scope, counted rather than claimed. */
+export function exportCoverageNote(): string {
+  return (
+    `This file holds the ${EXPORT_DATASETS.length} tables listed under "datasets". It is not ` +
+    `the whole account — see "notIncluded" for what it leaves out.`
+  );
+}
+
 /**
  * Characters that make a spreadsheet treat a cell as a formula.
  *

@@ -47,15 +47,18 @@ import { can } from "@/lib/permissions";
 import { countJobMedia, loadJobMedia, loadJobMediaTags } from "@/lib/job-media-query";
 import { viewerTimeZone } from "@/lib/viewerToday";
 import { formatCalendarDate, formatInstant } from "@/lib/render-date";
+import { cashReceived } from "@/lib/billing/payment-entry";
 import { money } from "@/lib/money";
 import {
   calculateLineItemWip,
   calculateJobWip,
   formatPercentComplete,
   formatCoveragePercent,
+  formatLoggedHours,
 } from "@/lib/wip";
 import { jobEarnedRevenue, jobOverUnderBilling } from "@/lib/company-financials";
 import { calculateTimeEntryLaborCost, findEffectiveFringeRateSchedule } from "@/lib/labor-cost";
+import { lineItemCostToDate, unassignedLaborCost } from "@/lib/labor-job-cost";
 import { burdenedHourlyRate, estimateBurdenedLaborCost, laborRateDateFor } from "@/lib/estimate-labor-cost";
 import { LaborHoursField } from "@/components/LaborHoursField";
 import { calculateRetainageSummary } from "@/lib/retainage";
@@ -358,7 +361,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
         item.currentEstimatedUnitCost != null ? Number(item.currentEstimatedUnitCost) : null,
       estimatedCostToComplete:
         item.estimatedCostToComplete != null ? Number(item.estimatedCostToComplete) : null,
-      actualCostToDate: item.costEntries.reduce((s, entry) => s + Number(entry.amount), 0),
+      ...lineItemCostToDate(item.id, item.costEntries, job.timeEntries, schedulesByCraft),
     }),
   }));
   // Burdened labor cost per time entry, using the FringeRateSchedule
@@ -487,6 +490,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
   const jobWip = calculateJobWip(
     lineItemWip.map((l) => l.wip),
     billedToDate,
+    unassignedLaborCost(job.timeEntries, schedulesByCraft),
   );
   // Null when too little of the job's value has an earned-revenue figure for
   // the position to mean anything — see MIN_EARNED_COVERAGE.
@@ -881,7 +885,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                 >
                   {contractExecution.document.fileName}
                 </a>{" "}
-                — an off-platform signature Prova did not witness. The file is the record.
+                — an off-platform signature C Stream did not witness. The file is the record.
               </p>
             )}
             {!isContractExecuted && showsJobManagement && (
@@ -1061,6 +1065,21 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             <div>
               <p className="text-xs text-ink-muted">Actual cost to date</p>
               <p className="text-ink">{money(jobWip.actualCostToDate)}</p>
+              {/* Logged hours are IN this figure since #287 -- but only the
+                  ones a fringe rate schedule could price. The rest are in it
+                  at zero, because lib/labor-cost.ts refuses to guess a wage,
+                  and "refused to guess" is indistinguishable from "cost
+                  nothing" unless the screen says which. Same sentence the
+                  certified payroll report already uses for the same hours. */}
+              {jobWip.unpricedLaborHours > 0 && (
+                <p className="mt-1 text-xs text-amber-400">
+                  {formatLoggedHours(jobWip.unpricedLaborHours)} of{" "}
+                  {formatLoggedHours(jobWip.pricedLaborHours + jobWip.unpricedLaborHours)} logged
+                  hours have no craft tag or no effective fringe rate schedule, so they are in this
+                  figure at $0 of wages ({formatCoveragePercent(jobWip.laborHourCoverage)} of hours
+                  priced).
+                </p>
+              )}
             </div>
             <div>
               <p className="text-xs text-ink-muted">% complete</p>
@@ -1512,11 +1531,33 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                         {invoice.payments.map((payment) => (
                           <li key={payment.id} className="flex items-center justify-between text-sm">
                             <span className="text-ink-label">
-                              {formatInstant(payment.receivedAt, timeZone, "dayMonth")}
+                              {/* `formatCalendarDate`, not `formatInstant`:
+                                  receivedAt is a date a person types now, so
+                                  it is stored at UTC midnight and reads back
+                                  in UTC. Rendered in the viewer's zone it
+                                  would show the day before for everyone west
+                                  of UTC. Payments recorded before this field
+                                  existed hold the timestamp of the click
+                                  instead, and one logged late in the evening
+                                  can therefore now read a day later. */}
+                              {formatCalendarDate(payment.receivedAt, "dayMonth")}
                               {payment.method ? ` · ${payment.method}` : ""}
                               {payment.note ? ` · ${payment.note}` : ""}
                             </span>
                             <span className="flex items-center gap-2">
+                              {/* What a platform took in transit, and what
+                                  therefore reached the bank — derived, never
+                                  stored (lib/billing/payment-entry.ts). The
+                                  amount beside it is what was APPLIED to the
+                                  invoice, which is what the balance above
+                                  subtracts. */}
+                              {payment.feeAmount != null && (
+                                <span className="text-xs text-ink-muted">
+                                  {money(Number(payment.feeAmount))} fee
+                                  {payment.feeSource ? ` (${payment.feeSource})` : ""} ·{" "}
+                                  {money(cashReceived(Number(payment.amount), Number(payment.feeAmount)))} banked
+                                </span>
+                              )}
                               <span className="text-ink">{money(Number(payment.amount))}</span>
                               {/* The QuickBooks push is `children`, not a
                                   sibling: this is money received, the worst
@@ -2086,7 +2127,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
               ) : (
                 <p className="text-sm text-amber-400">
                   This job has no executed contract yet. Either send the GC a signing link above and
-                  wait for them to sign it in Prova, or — if they already sent you the executed
+                  wait for them to sign it in C Stream, or — if they already sent you the executed
                   subcontract — record it above under Contract signature.
                 </p>
               )}

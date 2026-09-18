@@ -17,6 +17,13 @@ function wip(overrides: Partial<WipJobResult> = {}): WipJobResult {
   return {
     contractValue: 100_000,
     actualCostToDate: 30_000,
+    laborCostToDate: 0,
+    laborWageCost: 0,
+    laborAllowanceCost: 0,
+    unassignedLaborCost: 0,
+    pricedLaborHours: 0,
+    unpricedLaborHours: 0,
+    laborHourCoverage: 1,
     estimatedCostAtCompletion: 60_000,
     percentComplete: 0.5,
     costCoverage: 1,
@@ -227,6 +234,47 @@ describe("the CSV itself", () => {
     const csv = toCsv(["Earned revenue to date"], [{ "Earned revenue to date": row.earnedRevenue }]);
     // Header line, then a line that is empty -- not "0".
     expect(csv.split("\n")[1]).toBe("");
+  });
+});
+
+describe("labor on the schedule (issue #287)", () => {
+  it("states the burdened labor inside cost to date, and the hours it could not price", () => {
+    // Cost to date CHANGED MEANING at #287 -- logged hours reached no
+    // financial figure in this product before it. A reader comparing this
+    // quarter against last quarter needs both halves on the page.
+    const row = job(
+      wip({
+        actualCostToDate: 90_000,
+        laborCostToDate: 60_000,
+        laborWageCost: 57_000,
+        laborAllowanceCost: 3_000,
+        pricedLaborHours: 800,
+        unpricedLaborHours: 120,
+        laborHourCoverage: 800 / 920,
+      }),
+    );
+    expect(row.costToDate).toBe(90_000);
+    expect(row.laborCostToDate).toBe(60_000);
+    expect(row.unpricedLaborHours).toBe(120);
+  });
+
+  it("prints zero unpriced hours rather than a blank — zero is a fact here", () => {
+    // Unlike the silenced money cells above, "every hour is priced" is
+    // something this schedule knows. A blank would read as "not computed".
+    const row = job(wip({ unpricedLaborHours: 0 }));
+    expect(row.unpricedLaborHours).toBe(0);
+    expect(row.unpricedLaborHours).not.toBeNull();
+  });
+
+  it("sums unpriced hours on the TOTAL line, unlike the coverage ratios", () => {
+    const rows = [
+      job(wip({ unpricedLaborHours: 120, laborCostToDate: 60_000 })),
+      job(wip({ unpricedLaborHours: 8, laborCostToDate: 10_000 })),
+    ];
+    const totals = wipScheduleTotals(rows);
+    expect(totals.unpricedLaborHours).toBe(128);
+    expect(totals.laborCostToDate).toBe(70_000);
+    expect(totals.costCoverage).toBeNull();
   });
 });
 
