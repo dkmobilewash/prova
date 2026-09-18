@@ -630,12 +630,13 @@ export const NAV_GROUPS: NavGroup[] = [
     icon: groupIcon("M3.5 6.5h13v7h-13zM10 12a2 2 0 1 0 0-4 2 2 0 0 0 0 4ZM6 10h.01M14 10h.01"),
     // Phase codes next to cash flow: both are company-wide money read
     // across the whole book rather than one job, and both answer to
-    // VIEW_COMPANY_FINANCIALS. Settings stays last because it is where the
-    // phase codes this page reports on are set up.
+    // VIEW_COMPANY_FINANCIALS.
     // Lien deadlines beside backcharges: both are the sub defending money
     // the GC is holding, one by objecting and one by preserving the right
-    // to lien. Settings stays last.
-    items: [item("/cash-flow"), item("/phase-codes"), item("/backcharges"), item("/lien-deadlines"), item("/settings")],
+    // to lien.
+    // Settings USED to be last in this group and is not in any group now:
+    // see NAV_FOOTER below.
+    items: [item("/cash-flow"), item("/phase-codes"), item("/backcharges"), item("/lien-deadlines")],
   },
   {
     heading: "Compliance & safety",
@@ -675,6 +676,23 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
 ];
+
+/**
+ * Pinned to the BOTTOM of the rail and of the mobile drawer, outside every
+ * group, so it is always on screen and never behind a collapsed heading.
+ *
+ * Moved 2026-09-18 on Cyrus's call. Settings sat last inside Financials,
+ * which starts collapsed — and Cyrus, the account owner, looked for it
+ * and could not find it. Bottom-left is where people look for settings in
+ * nearly every app they already use, and it is not a place in the money
+ * pipeline the group headings describe; it is the account itself.
+ */
+export const NAV_FOOTER: NavItem[] = [item("/settings")];
+
+/** The footer items this person can reach — same rule as navGroupsFor. */
+export function navFooterFor(user: Principal): NavItem[] {
+  return NAV_FOOTER.filter((entry) => canReach(user, entry.href));
+}
 
 /**
  * The heading of the group that holds the current page, or null when no

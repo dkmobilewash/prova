@@ -4,7 +4,7 @@ import { Fragment, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Hint } from "@/components/Hint";
-import { activeGroupHeading, navGroupsFor } from "@/components/navItems";
+import { activeGroupHeading, navFooterFor, navGroupsFor } from "@/components/navItems";
 import { money } from "@/lib/money";
 import type { Principal } from "@/lib/permissions";
 import type { MoneyRailFigure, MoneyRailStage } from "@/lib/moneyRail";
@@ -211,6 +211,7 @@ export function Sidebar({
   // Filtered here rather than in the layout so the desktop rail and
   // the mobile drawer run the same function on the same input.
   const groups = navGroupsFor(principal, { showsInternal });
+  const footer = navFooterFor(principal);
   const pathname = usePathname();
   const activeHeading = activeGroupHeading(groups, pathname);
 
@@ -481,6 +482,32 @@ export function Sidebar({
             );
           })}
         </div>
+
+        {/* Pinned to the bottom-left, OUTSIDE the scrolling column, so it
+            never scrolls away or hides in a collapsed group — see NAV_FOOTER
+            in navItems.tsx for why Settings left Financials. */}
+        {footer.length > 0 ? (
+          <div className="shrink-0 border-t border-line-row px-2 py-2" data-nav-footer="">
+            {footer.map((entry) => {
+              const isActive = pathname === entry.href || pathname.startsWith(`${entry.href}/`);
+              return (
+                <Link
+                  key={entry.href}
+                  href={entry.href}
+                  aria-current={isActive ? "page" : undefined}
+                  className={`flex h-11 items-center gap-3 rounded-md px-2 text-[15px] font-semibold transition-colors ${
+                    isActive
+                      ? "bg-rail-hover text-brand shadow-[inset_3px_0_0_#facc15]"
+                      : "text-neutral-300 hover:bg-rail-hover hover:text-white"
+                  }`}
+                >
+                  <span className="shrink-0">{entry.icon}</span>
+                  <span className="truncate whitespace-nowrap">{entry.label}</span>
+                </Link>
+              );
+            })}
+          </div>
+        ) : null}
       </nav>
     </div>
   );

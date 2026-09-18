@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activeGroupHeading, NAV_GROUPS, NAV_ITEMS, navGroupsFor } from "./navItems";
+import { activeGroupHeading, NAV_FOOTER, NAV_GROUPS, NAV_ITEMS, navFooterFor, navGroupsFor } from "./navItems";
 import { JOB_FUNCTIONS } from "@/lib/permissions";
 
 /**
@@ -49,11 +49,26 @@ function groupedHrefs(groups: typeof NAV_GROUPS): Set<string> {
 const hrefsIn = (groups: typeof NAV_GROUPS) =>
   groups.flatMap((group) => group.items.map((item) => item.href));
 
+describe("the pinned footer", () => {
+  it("holds Settings, and Settings is in no group", () => {
+    // Cyrus could not find Settings while it sat last inside the collapsed
+    // Financials group. It is pinned to the bottom of the rail instead.
+    expect(NAV_FOOTER.map((i) => i.href)).toEqual(["/settings"]);
+    expect(NAV_GROUPS.flatMap((g) => g.items.map((i) => i.href))).not.toContain("/settings");
+  });
+
+  it("shows Settings only to someone who can reach it", () => {
+    expect(navFooterFor({ role: "OWNER", jobFunction: null }).map((i) => i.href)).toEqual(["/settings"]);
+    expect(navFooterFor({ role: "MEMBER", jobFunction: "FIELD" }).map((i) => i.href)).toEqual([]);
+  });
+});
+
 describe("every nav item is reachable", () => {
   it("puts every NAV_ITEM in a group, or names it as a deliberate exception", () => {
     const grouped = groupedHrefs(NAV_GROUPS);
+    const footer = new Set(NAV_FOOTER.map((i) => i.href));
     const unreachable = NAV_ITEMS.map((i) => i.href).filter(
-      (href) => !grouped.has(href) && !APPENDED_SEPARATELY.has(href),
+      (href) => !grouped.has(href) && !footer.has(href) && !APPENDED_SEPARATELY.has(href),
     );
 
     expect(
@@ -167,7 +182,9 @@ describe("the collapsible rail (#240)", () => {
     // lands there; /settings/assistant hangs off /settings and must land in
     // the group that holds it, not on whichever prefix came first.
     expect(activeGroupHeading(NAV_GROUPS, "/vendors/pricing")).toBe("Logistics");
-    expect(activeGroupHeading(NAV_GROUPS, "/settings/assistant")).toBe("Financials");
+    // /settings is pinned in the footer, not in a group (NAV_FOOTER), so
+    // its pages open no group rather than the one it used to sit in.
+    expect(activeGroupHeading(NAV_GROUPS, "/settings/assistant")).toBe(null);
     // A prefix that is not a path segment is not a match: /teams would be
     // a different page from /team.
     expect(activeGroupHeading(NAV_GROUPS, "/teamwork")).toBe(null);
