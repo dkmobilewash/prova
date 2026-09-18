@@ -4,6 +4,7 @@ import * as api from "./api";
 import { getClientId } from "./client-id";
 import { uuid } from "./id";
 import { enqueue, flushQueue, pendingCount } from "./sync-queue";
+import { useStableGetToken } from "./use-stable-get-token";
 import type { FieldReportFields, FieldReportRow } from "./types";
 
 /** A job's field reports with offline writes: an optimistic local row is
@@ -11,7 +12,8 @@ import type { FieldReportFields, FieldReportRow } from "./types";
  * the queue against the API. Re-fetching the list after a flush replaces
  * optimistic rows with the server's. */
 export function useFieldReports(jobId: string) {
-  const { getToken, isSignedIn } = useAuth();
+  const { isSignedIn } = useAuth();
+  const getToken = useStableGetToken();
   const [reports, setReports] = useState<FieldReportRow[]>([]);
   const [pending, setPending] = useState(0);
   const [loading, setLoading] = useState(false);
