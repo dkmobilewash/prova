@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
+import { ConfirmDeleteButton } from "@/components/ConfirmDeleteButton";
 import { usePathname } from "next/navigation";
 import { boundTurns, type AskTurn } from "@/lib/ask/turns";
 import {
@@ -227,9 +228,6 @@ export function AskPanel() {
   // index because trimming at MAX_TRANSCRIPT shifts every index down one
   // and would silently open somebody else's row.
   const [openRows, setOpenRows] = useState<number[]>([]);
-  // Two steps, like every destructive control here: the first click only
-  // asks. The history lives in this tab alone, so a slip cannot be undone.
-  const [confirmingClear, setConfirmingClear] = useState(false);
   const citationsRef = useRef<Citation[]>([]);
   const scrollbackRef = useRef<HTMLDivElement>(null);
 
@@ -619,7 +617,6 @@ export function AskPanel() {
     rememberTranscript([]);
     setTranscript([]);
     setOpenRows([]);
-    setConfirmingClear(false);
     askedRef.current = "";
     answerRef.current = "";
     setAsked("");
@@ -653,38 +650,17 @@ export function AskPanel() {
           above the rest of the dashboard and must not push it down the
           page as a conversation grows. */}
       {priorExchanges.length > 0 && (
-        <div className="mb-1 flex items-center justify-end gap-3 text-xs" data-ask="transcript-clear">
-          {confirmingClear ? (
-            <>
-              <span className="text-ink-body">
-                Clear {transcript.length === 1 ? "this question" : `all ${transcript.length} questions`}? The assistant
-                forgets them too.
-              </span>
-              <button
-                type="button"
-                onClick={startOver}
-                className="min-h-8 rounded-md border border-line-card px-2 text-tag-rose-ink hover:border-tag-rose-ink"
-              >
-                Clear them
-              </button>
-              <button
-                type="button"
-                onClick={() => setConfirmingClear(false)}
-                className="min-h-8 rounded-md border border-line-card px-2 text-ink-label hover:border-link hover:text-link"
-              >
-                Cancel
-              </button>
-            </>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setConfirmingClear(true)}
-              disabled={isAsking}
-              className="min-h-8 text-ink-body underline hover:text-link disabled:opacity-50"
-            >
-              Clear history
-            </button>
-          )}
+        <div className="mb-1 flex justify-end" data-ask="transcript-clear">
+          {/* The shared two-step delete, so the arming state and the
+              Cancel-on-the-vacated-pixel rule are the ones every list
+              here uses. The label stays short for that rule's sake; what
+              it clears is in `describe`. */}
+          <ConfirmDeleteButton
+            action={startOver}
+            label="Clear all"
+            confirmLabel="Clear them"
+            describe="Clears these questions from this tab, and the assistant forgets them too."
+          />
         </div>
       )}
       {priorExchanges.length > 0 && (
