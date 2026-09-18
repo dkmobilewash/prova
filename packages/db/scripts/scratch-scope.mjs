@@ -73,6 +73,9 @@ export const HANDLED_MODELS = [
   // sign-off exists, the TimeEntry day-lock trigger refuses to delete that
   // day's hours. Sign-offs go first so the time entries can follow.
   "TimesheetSignoff",
+  // After TimesheetSignoff for the same reason as TimeEntry: a live sign-off
+  // makes the DelayEvent day-lock trigger refuse the delete.
+  "DelayEvent",
   "TimeEntry",
   "TmTicket",
   // Planned days on the job. RESTRICT on Job, so a scratch job cannot be

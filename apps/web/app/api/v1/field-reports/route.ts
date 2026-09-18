@@ -6,6 +6,9 @@ import {
   listFieldReportsForJob,
   FIELD_ONLY,
 } from "@/lib/field-reports-core";
+import { prisma } from "@prova/db";
+import { loadManpower, manpowerLine } from "@/lib/manpower";
+import { weatherLine, type DayWeather } from "@/lib/weather";
 
 /**
  * The mobile HTTP surface for daily field reports — PR 1 of the Expo app.
@@ -39,7 +42,29 @@ export async function GET(request: NextRequest) {
 
   const result = await listFieldReportsForJob(context.company, jobId);
   if (!result.ok) return jsonError(result.error, 400);
-  return NextResponse.json(result.value);
+
+  // What the phone shows on each report and can't work out itself: the
+  // weather as one line, the crew from that day's time entries, and whether
+  // the day is signed (so the report is read-only).
+  const dates = result.value.map((r) => new Date(`${r.reportDate}T00:00:00.000Z`));
+  const [manpower, live] = await Promise.all([
+    loadManpower(jobId, dates),
+    prisma.timesheetSignoff.findMany({ where: { jobId, reopenedAt: null }, select: { date: true, approvedAt: true } }),
+  ]);
+  const locked = new Map(live.map((s) => [s.date.toISOString().slice(0, 10), s.approvedAt ? "APPROVED" : "SUBMITTED"]));
+  return NextResponse.json(
+    result.value.map((r) => {
+      const auto = r.weatherAuto as DayWeather | null;
+      const crew = manpower.get(r.reportDate);
+      return {
+        ...r,
+        weatherLine: auto ? weatherLine(auto) : null,
+        weatherKind: auto?.kind ?? null,
+        manpowerLine: crew ? manpowerLine(crew) : null,
+        lockState: locked.get(r.reportDate) ?? null,
+      };
+    }),
+  );
 }
 
 export async function POST(request: NextRequest) {
