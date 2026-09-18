@@ -65,15 +65,32 @@ function sameRect(a: Rect | null, b: Rect | null): boolean {
   return a.top === b.top && a.left === b.left && a.width === b.width && a.height === b.height;
 }
 
+/**
+ * When this overlay is one stop of the full tour (components/FullTour.tsx)
+ * rather than a page's own walkthrough. Same card, same spotlight; what
+ * changes is the header ("Stop 3 of 11"), Back on a stop's first card going
+ * to the previous stop, the last card's button saying "Next stop", and two
+ * more ways out — skip this stop, or end the whole tour.
+ */
+export type TourJourney = {
+  stop: number;
+  stops: number;
+  /** Back from this stop's first card, or null on the first stop. */
+  onBackPast: (() => void) | null;
+  onSkip: () => void;
+};
+
 export function WalkthroughTour({
   walkthrough,
   onClose,
   returnFocusTo,
+  journey,
 }: {
   walkthrough: Walkthrough;
   /** `finished` is true only when they pressed Done on the last step. */
   onClose: (finished: boolean) => void;
   returnFocusTo?: RefObject<HTMLElement | null>;
+  journey?: TourJourney;
 }) {
   const { steps } = walkthrough;
   // Mounted only after a click, so the page is there to be read.
@@ -100,9 +117,14 @@ export function WalkthroughTour({
   // Nothing on screen to show (the Help panel checks first, so this is a
   // page that changed between the click and the mount): close quietly
   // rather than open a card that points at nothing.
+  // On the full tour, a stop with nothing to show is skipped, not the end
+  // of the whole tour.
+  const skipStop = journey?.onSkip;
   useEffect(() => {
-    if (current === null) close(false);
-  }, [current, close]);
+    if (current !== null) return;
+    if (skipStop) skipStop();
+    else close(false);
+  }, [current, close, skipStop]);
 
   // Bring the element into view each time the step changes.
   useEffect(() => {
@@ -214,7 +236,9 @@ export function WalkthroughTour({
   const goBack = () => {
     const before = stepBefore(steps, current, isAnchorShown);
     if (before) setCurrent(before.anchor);
+    else journey?.onBackPast?.();
   };
+  const canGoBack = previous !== null || Boolean(journey?.onBackPast);
 
   const trapTab = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (event.key === "ArrowRight" && next) {
@@ -222,7 +246,7 @@ export function WalkthroughTour({
       goNext();
       return;
     }
-    if (event.key === "ArrowLeft" && previous) {
+    if (event.key === "ArrowLeft" && canGoBack) {
       event.preventDefault();
       goBack();
       return;
@@ -310,12 +334,14 @@ export function WalkthroughTour({
       >
         <div className="flex items-start justify-between gap-3">
           <p className="text-xs font-medium text-ink-body">
-            Step {position.index} of {position.total} · {walkthrough.title}
+            {journey
+              ? `Stop ${journey.stop} of ${journey.stops} · ${walkthrough.title}${position.total > 1 ? ` · ${position.index} of ${position.total}` : ""}`
+              : `Step ${position.index} of ${position.total} · ${walkthrough.title}`}
           </p>
           <button
             type="button"
             onClick={() => close(false)}
-            aria-label="Close the walkthrough"
+            aria-label={journey ? "End the tour" : "Close the walkthrough"}
             className="-mr-2 -mt-2 inline-flex min-h-11 min-w-11 items-center justify-center rounded-md text-ink-body hover:bg-rail-hover hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
           >
             <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4" aria-hidden="true">
@@ -335,10 +361,34 @@ export function WalkthroughTour({
           </p>
         </div>
 
-        <div className="mt-4 flex items-center justify-end gap-2">
+        <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
+          {journey && (
+            // Quieter than Back/Next and on their own side: they leave this
+            // stop (or the tour) rather than move through it.
+            <div className="mr-auto flex items-center">
+              {/* Not on the last stop, where skipping it and ending the
+                  tour are the same thing. */}
+              {journey.stop < journey.stops && (
+                <button
+                  type="button"
+                  onClick={journey.onSkip}
+                  className="inline-flex min-h-11 items-center rounded-md px-2 text-sm text-ink-body hover:bg-rail-hover hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+                >
+                  Skip stop
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => close(false)}
+                className="inline-flex min-h-11 items-center rounded-md px-2 text-sm text-ink-body hover:bg-rail-hover hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+              >
+                End tour
+              </button>
+            </div>
+          )}
           {/* Absent on the first step rather than greyed out: a button that
               does nothing reads as broken. */}
-          {previous && (
+          {canGoBack && (
             <button
               type="button"
               onClick={goBack}
@@ -353,7 +403,13 @@ export function WalkthroughTour({
             onClick={goNext}
             className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
           >
-            {isLast ? "Done" : "Next"}
+            {!isLast
+              ? "Next"
+              : !journey
+                ? "Done"
+                : journey.stop === journey.stops
+                  ? "Finish tour"
+                  : "Next stop"}
           </button>
         </div>
       </div>

@@ -12,6 +12,7 @@ import { serverToday } from "@/lib/serverToday";
 import { loadTodayDashboard } from "@/lib/today-dashboard";
 import { AskPanel } from "@/components/AskPanel";
 import { GettingStartedCard } from "@/components/GettingStartedCard";
+import { FullTourOffer } from "@/components/FullTourOffer";
 import { gettingStartedChecklist } from "@/lib/getting-started";
 import { loadGettingStartedCounts } from "@/lib/getting-started-counts";
 import { GETTING_STARTED_HIDDEN_COOKIE, isGettingStartedHidden } from "@/lib/getting-started-cookie";
@@ -190,6 +191,10 @@ export default async function TodayPage({
             <p className="mt-1 text-sm text-ink-body">
               What needs a decision, before you go looking for it.
             </p>
+
+            {/* The full tour, offered once to an account with no jobs yet —
+                a brand-new one. Dismissed per browser; see FullTourOffer. */}
+            {allJobs.length === 0 && <FullTourOffer />}
 
             {/* First, and only until the required steps are done or someone
                 hides it on this browser. Everything below keeps its order. */}
