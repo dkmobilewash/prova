@@ -10,7 +10,12 @@ export type CraftWorker = { kind: "me" } | { kind: "crew"; id: string };
  * blocked from logging hours.
  */
 export function craftsForWorker(crafts: Craft[], worker: CraftWorker): { options: Craft[]; fallback: boolean } {
-  const theirs = crafts.filter((c) => (worker.kind === "me" ? c.mine : c.crewMemberIds.includes(worker.id)));
+  // Tolerates a server that predates these fields (a phone and the API are
+  // not always the same build): a craft with no worker data reads as
+  // nobody's, which falls through to offering every craft.
+  const theirs = crafts.filter((c) =>
+    worker.kind === "me" ? c.mine === true : (c.crewMemberIds ?? []).includes(worker.id),
+  );
   return theirs.length > 0 ? { options: theirs, fallback: false } : { options: crafts, fallback: true };
 }
 
