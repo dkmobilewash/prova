@@ -206,7 +206,7 @@ describe("the Money Rail's groups collapse", () => {
     // Two links live outside the groups, present whether anything is
     // expanded or not: "/ask" pinned above them, and "/settings" pinned at
     // the bottom (NAV_FOOTER) — Cyrus could not find it inside Financials.
-    expect(linkHrefs()).toEqual(["/ask", "/settings"]);
+    expect(linkHrefs()).toEqual(["/ask", "/settings/integrations", "/settings"]);
   });
 
   it("keeps a closed group's links OUT of the document, not merely invisible", () => {
@@ -273,6 +273,19 @@ describe("the five figures are never what collapses", () => {
     // only one available — see the note in Sidebar.tsx.
     expect(text).toContain("Proving");
     for (const figure of FIGURE_TEXTS) expect(text).toContain(figure);
+  });
+
+  it("draws Proving right after Compliance & safety, before Paper trail", () => {
+    // Cyrus's call, 2026-09-18: Proving sits below Compliance & safety.
+    nav.pathname = "/jobs/abc123";
+    renderRail();
+    const text = container.textContent ?? "";
+    const compliance = text.indexOf("Compliance & safety");
+    const proving = text.indexOf("Proving");
+    const paperTrail = text.indexOf("Paper trail");
+    expect(compliance).toBeGreaterThan(-1);
+    expect(proving).toBeGreaterThan(compliance);
+    expect(proving).toBeLessThan(paperTrail);
   });
 
   it("still draws all five after every group has been opened and closed again", () => {

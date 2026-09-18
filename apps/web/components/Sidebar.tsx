@@ -4,7 +4,7 @@ import { Fragment, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Hint } from "@/components/Hint";
-import { activeGroupHeading, navFooterFor, navGroupsFor } from "@/components/navItems";
+import { activeGroupHeading, activeFooterHref, navFooterFor, navGroupsFor } from "@/components/navItems";
 import { money } from "@/lib/money";
 import type { Principal } from "@/lib/permissions";
 import type { MoneyRailFigure, MoneyRailStage } from "@/lib/moneyRail";
@@ -213,6 +213,7 @@ export function Sidebar({
   const groups = navGroupsFor(principal, { showsInternal });
   const footer = navFooterFor(principal);
   const pathname = usePathname();
+  const activeFooter = activeFooterHref(footer, pathname);
   const activeHeading = activeGroupHeading(groups, pathname);
 
   // One boolean per heading, and the only writer flips exactly one key.
@@ -266,8 +267,10 @@ export function Sidebar({
   // deliberate: the headings are Cyrus's to rename and the anchor should
   // not quietly break when he does.
   const provingStage = stageByKey.get("proving");
+  // MOVED AGAIN 2026-09-18, Cyrus's call: below Compliance & safety
+  // (the "staying-legal" heading) rather than below Financials.
   const provingAfterHeading = Object.entries(STAGE_KEY_FOR_HEADING).find(
-    ([, key]) => key === "getting-paid",
+    ([, key]) => key === "staying-legal",
   )?.[0];
 
   return (
@@ -489,7 +492,7 @@ export function Sidebar({
         {footer.length > 0 ? (
           <div className="shrink-0 border-t border-line-row px-2 py-2" data-nav-footer="">
             {footer.map((entry) => {
-              const isActive = pathname === entry.href || pathname.startsWith(`${entry.href}/`);
+              const isActive = activeFooter === entry.href;
               return (
                 <Link
                   key={entry.href}

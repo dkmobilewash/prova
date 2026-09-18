@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activeGroupHeading, NAV_FOOTER, NAV_GROUPS, NAV_ITEMS, navFooterFor, navGroupsFor } from "./navItems";
+import { activeFooterHref, activeGroupHeading, NAV_FOOTER, NAV_GROUPS, NAV_ITEMS, navFooterFor, navGroupsFor } from "./navItems";
 import { JOB_FUNCTIONS } from "@/lib/permissions";
 
 /**
@@ -53,13 +53,33 @@ describe("the pinned footer", () => {
   it("holds Settings, and Settings is in no group", () => {
     // Cyrus could not find Settings while it sat last inside the collapsed
     // Financials group. It is pinned to the bottom of the rail instead.
-    expect(NAV_FOOTER.map((i) => i.href)).toEqual(["/settings"]);
+    expect(NAV_FOOTER.map((i) => i.href)).toEqual(["/settings/integrations", "/settings"]);
     expect(NAV_GROUPS.flatMap((g) => g.items.map((i) => i.href))).not.toContain("/settings");
   });
 
   it("shows Settings only to someone who can reach it", () => {
-    expect(navFooterFor({ role: "OWNER", jobFunction: null }).map((i) => i.href)).toEqual(["/settings"]);
+    expect(navFooterFor({ role: "OWNER", jobFunction: null }).map((i) => i.href)).toEqual([
+      "/settings/integrations",
+      "/settings",
+    ]);
     expect(navFooterFor({ role: "MEMBER", jobFunction: "FIELD" }).map((i) => i.href)).toEqual([]);
+  });
+});
+
+describe("the Integrations footer button", () => {
+  it("is shown only to the owner, since its page refuses everyone else", () => {
+    for (const jobFunction of ["OFFICE", "PM", "FIELD", "ESTIMATOR"] as const) {
+      const hrefs = navFooterFor({ role: "MEMBER", jobFunction } as never).map((i) => i.href);
+      expect(hrefs, jobFunction).not.toContain("/settings/integrations");
+    }
+  });
+
+  it("lights Integrations, not Settings too, on its own page", () => {
+    const footer = navFooterFor({ role: "OWNER", jobFunction: null });
+    expect(activeFooterHref(footer, "/settings/integrations")).toBe("/settings/integrations");
+    expect(activeFooterHref(footer, "/settings")).toBe("/settings");
+    expect(activeFooterHref(footer, "/settings/import")).toBe("/settings");
+    expect(activeFooterHref(footer, "/dashboard")).toBe(null);
   });
 });
 

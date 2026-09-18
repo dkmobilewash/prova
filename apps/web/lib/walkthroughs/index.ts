@@ -23,6 +23,7 @@ import { pipelineWalkthrough } from "./pipeline";
 import { punchListsWalkthrough } from "./punch-lists";
 import { scheduleWalkthrough } from "./schedule";
 import { settingsImportWalkthrough } from "./settings-import";
+import { settingsIntegrationsWalkthrough } from "./settings-integrations";
 import { deploymentWalkthrough } from "./deployment";
 import { phaseCodesWalkthrough } from "./phase-codes";
 import { photosWalkthrough } from "./photos";
@@ -59,6 +60,7 @@ export const WALKTHROUGHS: Walkthrough[] = [
   fieldReportsWalkthrough,
   askWalkthrough,
   settingsImportWalkthrough,
+  settingsIntegrationsWalkthrough,
   alertsWalkthrough,
   backchargesWalkthrough,
   bidsWalkthrough,
