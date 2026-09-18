@@ -23,7 +23,10 @@ export default function RootLayout() {
   return (
     <ClerkProvider publishableKey={publishableKey} tokenCache={tokenCache}>
       <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        {/* The title is never shown (the tabs draw their own header), but iOS
+            uses it as the back-button label on every screen pushed from here —
+            without it that label read "(tabs)". */}
+        <Stack.Screen name="(tabs)" options={{ headerShown: false, title: "Jobs" }} />
         <Stack.Screen name="sign-in" options={{ title: "Sign in" }} />
         <Stack.Screen name="job/[jobId]" options={{ title: "Job" }} />
         <Stack.Screen name="reports/[jobId]" options={{ title: "Field reports" }} />

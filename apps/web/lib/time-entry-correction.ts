@@ -100,12 +100,11 @@ export function timeEntryPayTypeFromForm(formData: FormData): TimeEntryPayType {
  * clockBreakMinutes) sit beside the identity four: they are capture evidence,
  * written once at create, and a correction fixes `hours` instead of them.
  *
- * `crewMemberId` is NULL on every row today and read by nothing (see
- * labor.prisma), and it is in this list anyway: the guarantee it carries —
- * "an hour, once attributed, does not change hands" — is the one CLAUDE.md
- * records losing when the original trigger came out, and the moment that
- * column is wired is the moment an update path would be able to move a
- * filed hour from one named person to another.
+ * `crewMemberId` is written by the phone's crew time entry (#292), and the
+ * guarantee it carries — "an hour, once attributed, does not change hands" —
+ * is the one CLAUDE.md records losing when the original trigger came out.
+ * The trigger enforces it one way: NULL -> an id is allowed (attribution),
+ * any change after that is refused.
  */
 export const TIME_ENTRY_LOCKED_COLUMNS = [
   "jobId",
