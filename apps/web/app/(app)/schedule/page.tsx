@@ -121,7 +121,6 @@ export default async function SchedulePage() {
         workers={workers}
         crafts={crafts}
         canWrite={canWrite && workers.length > 0 && scheduled.length + unscheduled.length > 0}
-        today={today}
       />
 
       <section className="mb-10">

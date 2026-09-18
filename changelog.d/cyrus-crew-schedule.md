@@ -106,3 +106,58 @@ planned" — the one answer this table exists to stop being assumed.
 the one that matters most: **hours logged on a DIFFERENT job must not
 satisfy a plan**, because a man moved to another site is exactly the case
 somebody is looking for.
+
+## Clicked through, and it found three defects a green build could not
+
+Every one of these passed typecheck, lint, 3,268 tests and a full build.
+
+1. :warning: **A successful write showed an empty list** — this repo's own
+   issue-#61 shape, and unlike #61 the cause is known and was mine. The
+   board held `useState(upcoming)`, kept so a removal could filter a row
+   out optimistically. `useState` takes an INITIAL value and ignores props
+   on every later render, so after a create the action revalidated, the
+   server sent fresh props, and the list went on rendering the empty array
+   it was born with. The row was in the database and the screen said
+   "Nobody is on the schedule for the next two weeks." Now rendered from
+   props; the revalidate drives both create and remove.
+
+2. :warning: **The date field defaulted to the SERVER'S day, not the
+   user's.** The click test ran at 18:04 Mountain, where UTC is already
+   tomorrow — so the form pre-filled 09-18 for a foreman whose day was the
+   17th. `components/localToday.ts` exists for exactly this and its own
+   comment describes the case; the form is mounted by a click, so calling
+   it during render is safe.
+
+3. :warning: **The duplicate guard threw instead of speaking, and hit the
+   error boundary.** The second submit gave "This page didn't load …
+   reference 2348556877" on a form whose whole job was to say one readable
+   sentence. `err instanceof Prisma.PrismaClientKnownRequestError` is FALSE
+   at runtime even though the server log printed
+   `Error [PrismaClientKnownRequestError] … code: 'P2002'`.
+   `isUniqueConstraintError` in `lib/actions/shared.ts` already existed for
+   this and its comment says instanceof is false here, measured
+   2026-08-28. Written, documented — and not called by me.
+
+**And one "defect" that was the test being wrong.** A planned day on 09-11
+did not appear as missing hours, which looked like a broken join until the
+database was asked: Cyrus has 8 hours logged on Riverside that day, so the
+day IS covered. That accidental control is better evidence than the check
+it replaced — 09-11 has hours and is absent, 09-14 has none and is present,
+same person, same job, same query.
+
+**All seven steps verified in the browser**, plus the XOR proved against
+real Postgres (`23514 … violates check constraint
+"CrewScheduleDay_user_or_crew"`). The best of them is the last: asked
+*"whose hours haven't been turned in?"*, the assistant routed to
+`crew_schedule` and carried the wording discipline into its own prose —
+
+> One planned day has no hours logged against it.
+> • Cyrus Oliveras — Riverside Medical Office Building, 2026-09-14
+> **That means nobody logged that day, not that he didn't work.** Also note
+> the schedule only shows days somebody actually put on it.
+
+Both caveats survived from the tool description into the answer, which is
+the whole reason they are worded on the row rather than in a preamble.
+
+Test rows were created on `ep-icy-hat` during the pass and deleted in the
+same sitting; `CrewScheduleDay` is back to 0.

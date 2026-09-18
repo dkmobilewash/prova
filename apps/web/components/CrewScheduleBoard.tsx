@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { jobPickerLabel, type JobOption } from "@/components/jobLabels";
+import { localToday } from "@/components/localToday";
 import { scheduleCrewDay, unscheduleCrewDay } from "@/lib/actions";
 
 /**
@@ -35,12 +36,10 @@ function DayGroup({
   date,
   days,
   canWrite,
-  onRemoved,
 }: {
   date: string;
   days: ScheduleDay[];
   canWrite: boolean;
-  onRemoved: (id: string) => void;
 }) {
   return (
     <li className="px-4 py-3">
@@ -72,9 +71,10 @@ function DayGroup({
                     confirmLabel="Remove it"
                     describe={`Takes ${day.worker} off ${day.jobName} on ${date}. It does not touch any hours already logged.`}
                     pinned="end"
+                    // The revalidate inside the action is what removes the
+                    // row from the screen. Nothing here filters a local copy.
                     action={async () => {
-                      const result = await unscheduleCrewDay(day.id);
-                      if (result.ok) onRemoved(day.id);
+                      await unscheduleCrewDay(day.id);
                     }}
                     armedClassName="flex flex-wrap items-center justify-end gap-2"
                     deleteClassName="shrink-0 rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:border-red-500 hover:text-red-400"
@@ -96,7 +96,6 @@ export function CrewScheduleBoard({
   workers,
   crafts,
   canWrite,
-  today,
 }: {
   upcoming: ScheduleDay[];
   missingHours: ScheduleDay[];
@@ -104,14 +103,27 @@ export function CrewScheduleBoard({
   workers: WorkerOption[];
   crafts: CraftOption[];
   canWrite: boolean;
-  today: string;
 }) {
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [rows, setRows] = useState(upcoming);
   const [pending, startTransition] = useTransition();
 
-  const byDate = rows.reduce<Record<string, ScheduleDay[]>>((acc, day) => {
+  // RENDERED FROM PROPS, NEVER FROM STATE, and this cost a click test.
+  //
+  // It was `useState(upcoming)`, held so a removal could filter the row out
+  // optimistically. `useState` takes its argument as an INITIAL value and
+  // ignores it on every later render — so after a successful create the
+  // action revalidated, the server sent fresh props, and the list went on
+  // rendering the empty array it was born with. The row was in the database
+  // and the screen said "Nobody is on the schedule for the next two weeks".
+  //
+  // That is this repo's "successful write, empty list" shape (issue #61),
+  // and unlike #61 the cause here is known and was mine. Both actions call
+  // revalidatePath, and CLAUDE.md's own reading of the Next source says an
+  // action that revalidates and RETURNS a value re-renders the client with
+  // no router.refresh() at all — so the optimistic copy was not buying
+  // anything it was not also breaking.
+  const byDate = upcoming.reduce<Record<string, ScheduleDay[]>>((acc, day) => {
     (acc[day.workDate] ??= []).push(day);
     return acc;
   }, {});
@@ -192,7 +204,18 @@ export function CrewScheduleBoard({
                   type="date"
                   name="workDate"
                   required
-                  defaultValue={today}
+                  // THE USER'S calendar date, not the server's — and the
+                  // difference is a whole day, not a nicety. The first
+                  // click test of this ran at 18:04 Mountain, where UTC is
+                  // already tomorrow, and the form pre-filled 09-18 for a
+                  // foreman whose day was the 17th. localToday.ts's own
+                  // comment describes exactly that case.
+                  //
+                  // Safe to call during render here for the reason that
+                  // file gives: this form only exists once somebody has
+                  // clicked "Put someone on", so it is never in
+                  // server-rendered markup and cannot break hydration.
+                  defaultValue={localToday()}
                   className="mt-1 w-full rounded-md border border-line-card bg-surface px-3 py-2 text-sm text-ink"
                 />
               </label>
@@ -252,7 +275,6 @@ export function CrewScheduleBoard({
                 date={date}
                 days={byDate[date]}
                 canWrite={canWrite}
-                onRemoved={(id) => setRows((current) => current.filter((row) => row.id !== id))}
               />
             ))}
           </ul>

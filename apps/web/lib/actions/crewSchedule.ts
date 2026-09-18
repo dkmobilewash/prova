@@ -1,10 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { prisma, Prisma } from "@prova/db";
+import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
-import { actionFail as fail, actionOk as ok, type ActionResult } from "./shared";
+import { actionFail as fail, actionOk as ok, isUniqueConstraintError, type ActionResult } from "./shared";
 import { CrewScheduleInputError, workDateFromString } from "@/lib/crew-schedule";
 
 /**
@@ -110,7 +110,21 @@ export async function scheduleCrewDay(formData: FormData): Promise<ActionResult>
     // The unique key is (job, worker, day). Caught and said in words rather
     // than left to throw: "already on that job that day" is information,
     // and a redacted digest is not.
-    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+    //
+    // BY `code`, NOT BY `instanceof`, and this line cost a click test. It
+    // was `err instanceof Prisma.PrismaClientKnownRequestError && err.code
+    // === "P2002"`, which is false at runtime even though the thrown error
+    // IS that class with that code — the server log printed
+    // `Error [PrismaClientKnownRequestError] … code: 'P2002'` while the
+    // branch did not take. So the second submit escaped as an unhandled
+    // throw and the person got the error boundary: "This page didn't load
+    // … reference 2348556877", on a form whose whole job was to say one
+    // readable sentence.
+    //
+    // `isUniqueConstraintError` already existed for exactly this and its
+    // own comment says instanceof is false here, measured 2026-08-28. The
+    // helper was written, documented — and not called by me.
+    if (isUniqueConstraintError(err)) {
       return fail("They are already on that job that day.");
     }
     throw err;
