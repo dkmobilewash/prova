@@ -15,7 +15,7 @@ export const askWalkthrough: Walkthrough = {
       anchor: "ask-box",
       title: "Type or talk",
       body:
-        "Type here and press Ask. If you see a microphone button, you can tap it and say it out loud instead. For example: “start a job called Smith kitchen for Jane Smith”.",
+        "Type here and press Ask — for example, “start a job called Smith kitchen for Jane Smith”. The paperclip attaches a PDF or photo for it to read, like a set of plans. If you see a microphone, you can tap it and just say it.",
     },
   ],
 };
