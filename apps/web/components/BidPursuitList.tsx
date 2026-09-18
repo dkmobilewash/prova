@@ -528,7 +528,7 @@ export function BidPursuitList({
   const valueLine = describeOpenPursuitValue(openPursuitValue(shown));
 
   return (
-    <section className="mb-10">
+    <section className="mb-10" data-tour="pipeline-chase-list">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div>
           <h2 className="text-sm font-medium text-ink-label">Out chasing — not invited yet</h2>
@@ -543,6 +543,7 @@ export function BidPursuitList({
         <button
           type="button"
           disabled={!hydrated}
+          data-tour="pipeline-add-pursuit"
           onClick={() => {
             setAdding((value) => !value);
             setError(null);
@@ -638,7 +639,7 @@ export function BidPursuitList({
               Nothing open — every pursuit on file has been invited or dropped.
             </p>
           ) : (
-            <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
+            <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface" data-tour="pipeline-open-pursuits">
               {open.map((pursuit) => (
                 <PursuitRowView
                   key={pursuit.id}

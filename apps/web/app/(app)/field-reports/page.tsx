@@ -142,7 +142,7 @@ export default async function FieldReportsPage({
           log a GC asks for by job, and reading it meant scrolling a company-
           wide week and picking out the right rows by eye. */}
       {jobOptions.length > 0 && (
-        <div className="mb-4 flex flex-wrap gap-2">
+        <div className="mb-4 flex flex-wrap gap-2" data-tour="field-reports-job-filter">
           <Link href={fieldReportsFilterHref(null)} className={chip(!activeJob)}>
             All jobs
           </Link>
@@ -159,7 +159,7 @@ export default async function FieldReportsPage({
       )}
 
       {weeks.length === 0 ? (
-        <div className="rounded-lg border border-line-card bg-surface p-6">
+        <div className="rounded-lg border border-line-card bg-surface p-6" data-tour="field-reports-empty">
           <p className="text-ink-label">
             {activeJob ? "Nothing filed on this job yet." : "Nothing filed yet."}
           </p>
@@ -170,7 +170,7 @@ export default async function FieldReportsPage({
           </p>
         </div>
       ) : (
-        <div className="flex flex-col gap-8">
+        <div className="flex flex-col gap-8" data-tour="field-reports-weeks">
           {weeks.map((week) => {
             // One summary per job in the week — a GC gets the week for
             // their project, not for every project we ran that week.

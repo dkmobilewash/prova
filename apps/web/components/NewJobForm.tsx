@@ -60,12 +60,12 @@ export function NewJobForm({ contacts }: { contacts: GcOption[] }) {
       onInput={() => setError(null)}
       className="flex flex-col gap-4"
     >
-      <label className="flex flex-col gap-1 text-sm text-ink-label">
+      <label className="flex flex-col gap-1 text-sm text-ink-label" data-tour="new-job-name">
         Job name
         <input name="jobName" required className={field} placeholder="Building C — level 3 drywall" />
       </label>
 
-      <label className="flex flex-col gap-1 text-sm text-ink-label">
+      <label className="flex flex-col gap-1 text-sm text-ink-label" data-tour="new-job-scope">
         Scope
         <textarea
           name="scope"
@@ -74,7 +74,7 @@ export function NewJobForm({ contacts }: { contacts: GcOption[] }) {
         />
       </label>
 
-      <div className="flex flex-col gap-2 rounded-lg border border-line-card bg-surface/60 p-4">
+      <div className="flex flex-col gap-2 rounded-lg border border-line-card bg-surface/60 p-4" data-tour="new-job-client">
         <p className="text-sm font-medium text-ink-label">General contractor</p>
 
         {contacts.length === 0 ? (
@@ -146,6 +146,7 @@ export function NewJobForm({ contacts }: { contacts: GcOption[] }) {
       <button
         type="submit"
         disabled={isPending}
+        data-tour="new-job-create"
         className="mt-2 inline-flex items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-60"
       >
         {isPending ? "Creating…" : "Create job"}

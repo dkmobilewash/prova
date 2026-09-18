@@ -197,7 +197,7 @@ export function DailyFieldReports({
   }
 
   return (
-    <section>
+    <section data-tour="job-field-reports">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-lg font-semibold text-ink">Daily field reports</h2>
         {!isOpen && (

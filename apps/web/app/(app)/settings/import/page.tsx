@@ -55,7 +55,9 @@ export default async function ImportPage() {
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-ink">Import from a spreadsheet</h1>
+      <h1 className="mb-2 text-xl font-semibold text-ink" data-tour="import-intro">
+        Import from a spreadsheet
+      </h1>
       <p className="mb-2 text-sm text-ink-body">
         Bring in the clients, jobs and crew you already keep in Excel, Google Sheets or a
         QuickBooks export, instead of adding them one at a time.
@@ -68,13 +70,19 @@ export default async function ImportPage() {
       </p>
 
       <div className="mb-8 flex flex-col gap-6">
-        <SpreadsheetImport kind="clients" existingContactNames={contactNames} />
-        <SpreadsheetImport
-          kind="jobs"
-          existingContactNames={contactNames}
-          existingJobs={jobs.map((job) => ({ name: job.name, clientName: job.contact.name }))}
-        />
-        <SpreadsheetImport kind="crew" existingCrew={crew} />
+        <div data-tour="import-clients">
+          <SpreadsheetImport kind="clients" existingContactNames={contactNames} />
+        </div>
+        <div data-tour="import-jobs">
+          <SpreadsheetImport
+            kind="jobs"
+            existingContactNames={contactNames}
+            existingJobs={jobs.map((job) => ({ name: job.name, clientName: job.contact.name }))}
+          />
+        </div>
+        <div data-tour="import-crew">
+          <SpreadsheetImport kind="crew" existingCrew={crew} />
+        </div>
       </div>
 
       <p className="text-sm text-ink-body">

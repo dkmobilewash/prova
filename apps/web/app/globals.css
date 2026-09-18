@@ -16,3 +16,11 @@ body {
 ::selection {
   background-color: theme("colors.brand / 50%");
 }
+
+/* "Walk me through this page" scrolls each highlighted element into view.
+   A little room above and below, so the highlight ring drawn 6px outside
+   the element is not cut off by the edge of the scrolling area. */
+[data-tour] {
+  scroll-margin-top: 1rem;
+  scroll-margin-bottom: 1rem;
+}

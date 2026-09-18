@@ -194,7 +194,7 @@ export default async function TodayPage({
             {/* First, and only until the required steps are done or someone
                 hides it on this browser. Everything below keeps its order. */}
             {gettingStarted && !gettingStarted.complete && (
-              <div className="mt-6">
+              <div className="mt-6" data-tour="dashboard-getting-started">
                 <GettingStartedCard checklist={gettingStarted} />
               </div>
             )}
@@ -202,12 +202,12 @@ export default async function TodayPage({
             {/* Above the tiles on purpose. The tiles answer the four
                 questions we guessed at; this answers the one they actually
                 have. */}
-            <div className="mt-6">
+            <div className="mt-6" data-tour="dashboard-ask">
               <AskPanel />
             </div>
 
             {/* ------------------------------------ needs attention --- */}
-            <section className="mt-6">
+            <section className="mt-6" data-tour="dashboard-needs-attention">
               <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-label">
                 Needs attention
               </h2>
@@ -259,7 +259,7 @@ export default async function TodayPage({
             </section>
 
             {/* -------------------------------- today in the field ---- */}
-            <section className="mt-8">
+            <section className="mt-8" data-tour="dashboard-field">
               <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-label">
                 Today in the field
               </h2>
@@ -324,7 +324,7 @@ export default async function TodayPage({
 
             {/* ------------------------------------------------ money -- */}
             {showsBilling && (
-            <section className="mt-8">
+            <section className="mt-8" data-tour="dashboard-money">
               <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-label">
                 Money
               </h2>
@@ -378,7 +378,7 @@ export default async function TodayPage({
             {/* The sentences here ARE the margin — "forecast 8% past
                 contract value" is the number said out loud. */}
             {showsJobMoney && (
-            <section className="mt-8">
+            <section className="mt-8" data-tour="dashboard-job-health">
               <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-label">
                 Job health
               </h2>
@@ -419,6 +419,7 @@ export default async function TodayPage({
                 <div className="flex flex-wrap items-center gap-3">
                   <Link
                     href="/jobs/new"
+                    data-tour="dashboard-new-job"
                     className="inline-flex items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500"
                   >
                     New job
@@ -449,7 +450,7 @@ export default async function TodayPage({
                 </form>
               </div>
 
-              <div className="mt-4 flex flex-wrap gap-2 border-b border-line-card pb-4">
+              <div className="mt-4 flex flex-wrap gap-2 border-b border-line-card pb-4" data-tour="dashboard-job-filters">
                 {STATUS_FILTERS.map((filter) => {
                   const isActive =
                     filter.value === "ALL" ? activeStatus === null : activeStatus === filter.value;
@@ -470,7 +471,7 @@ export default async function TodayPage({
               </div>
 
               {allJobs.length === 0 ? (
-                <Card className="mt-6">
+                <Card className="mt-6" data-tour="dashboard-jobs-empty">
                   <p className="text-ink-label">No jobs yet.</p>
                   <p className="mt-1 text-sm text-ink-body">
                     Start one and you&apos;re estimating —{" "}
@@ -505,7 +506,7 @@ export default async function TodayPage({
                   )}
                 </Card>
               ) : (
-                <div className="mt-6 flex flex-col gap-6">
+                <div className="mt-6 flex flex-col gap-6" data-tour="dashboard-job-list">
                   {grouped.map((group) => (
                     <div key={group.status}>
                       {!activeStatus && (

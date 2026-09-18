@@ -67,7 +67,7 @@ export default async function PipelinePage() {
       />
 
       {rows.length === 0 ? (
-        <div className="rounded-lg border border-line-card bg-surface p-6">
+        <div className="rounded-lg border border-line-card bg-surface p-6" data-tour="pipeline-no-invitations">
           <p className="text-ink-label">No bid invitations recorded yet.</p>
           <p className="mt-2 text-sm text-ink-body">
             A GC appears here once they have invited you to bid at least once. Log one from{" "}
@@ -79,7 +79,7 @@ export default async function PipelinePage() {
         </div>
       ) : (
         <>
-          <section className="mb-8">
+          <section className="mb-8" data-tour="pipeline-waiting">
             <div className="mb-3 flex items-baseline gap-3">
               <h2 className="text-sm font-medium text-ink-label">Waiting on us</h2>
               {overdueCount > 0 && (
@@ -128,7 +128,7 @@ export default async function PipelinePage() {
             )}
           </section>
 
-          <section>
+          <section data-tour="pipeline-by-gc">
             <h2 className="mb-3 text-sm font-medium text-ink-label">By general contractor</h2>
             <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
               {rows.map((row) => (

@@ -131,7 +131,7 @@ export function CrewScheduleBoard({
 
   return (
     <>
-      <section className="mb-10">
+      <section className="mb-10" data-tour="schedule-crew-board">
         <div className="mb-3 flex items-center justify-between gap-3">
           <h2 className="text-sm font-semibold text-ink-label">Who is on, next two weeks</h2>
           {canWrite && (
@@ -140,6 +140,7 @@ export function CrewScheduleBoard({
             // noise on every visit.
             <button
               type="button"
+              data-tour="schedule-put-on"
               onClick={() => {
                 setAdding((open) => !open);
                 setError(null);
@@ -295,7 +296,7 @@ export function CrewScheduleBoard({
       {/* The second question the model answers, and the one worth the most.
           Deliberately worded as a claim about PAPERWORK and never about a
           person: "nobody logged" rather than "did not work". */}
-      <section className="mb-10">
+      <section className="mb-10" data-tour="schedule-missing-hours">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Planned days with no hours logged</h2>
         {missingHours.length === 0 ? (
           <div className="rounded-lg border border-line-card bg-surface p-6">

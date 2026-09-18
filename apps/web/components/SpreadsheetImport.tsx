@@ -306,7 +306,7 @@ export function SpreadsheetImport(props: Props) {
       </p>
       <ColumnHelp kind={kind} />
 
-      <div className="mb-3 flex flex-wrap items-center gap-3">
+      <div className="mb-3 flex flex-wrap items-center gap-3" data-tour="import-file">
         <a
           href={templateHref}
           download={template.fileName}
@@ -326,6 +326,7 @@ export function SpreadsheetImport(props: Props) {
       {fileError && <p className="mb-3 text-xs text-tag-rose-ink">{fileError}</p>}
 
       <textarea
+        data-tour="import-paste"
         value={text}
         onChange={(event) => edit(event.target.value)}
         rows={8}
@@ -337,7 +338,7 @@ export function SpreadsheetImport(props: Props) {
 
       {plan && (
         <div className="mt-3">
-          <div className="flex flex-wrap gap-2 text-xs">
+          <div className="flex flex-wrap gap-2 text-xs" data-tour="import-preview">
             <span className={`${chip} border-line-card bg-tag-green text-tag-green-ink`}>
               {createCount} will be added
             </span>
@@ -476,6 +477,7 @@ export function SpreadsheetImport(props: Props) {
           <div className="mt-3 flex flex-wrap items-center gap-3">
             <button
               type="button"
+              data-tour="import-confirm"
               onClick={confirm}
               disabled={pending || createCount === 0 || tooLarge}
               aria-busy={pending || undefined}

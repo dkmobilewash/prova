@@ -24,7 +24,7 @@ export default function AskPage() {
         something, and it will show you exactly what it will change before anything is
         written.
       </p>
-      <div className="mt-6">
+      <div className="mt-6" data-tour="ask-panel">
         <AskPanel />
       </div>
     </div>

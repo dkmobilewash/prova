@@ -36,7 +36,7 @@ export function JobMediaSection({
   limit?: number;
 }) {
   return (
-    <section className="mb-10">
+    <section className="mb-10" data-tour="job-photos">
       <div className="mb-1 flex flex-wrap items-baseline justify-between gap-3">
         <h2 className="text-lg font-semibold text-ink">Site photos</h2>
         {/* THE ONLY ENTRY POINT TO THE REPORT FROM A JOB, and it is here

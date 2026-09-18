@@ -72,13 +72,13 @@ export default async function PunchListsPage({
         memory.
       </p>
 
-      <section className="mb-8 rounded-lg border border-line-card bg-surface p-4">
+      <section className="mb-8 rounded-lg border border-line-card bg-surface p-4" data-tour="punch-add">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Add an item</h2>
         <PunchListForm jobs={jobOptions} defaultJobId={activeJob ?? undefined} />
       </section>
 
       {jobOptions.length > 0 && (
-        <div className="mb-4 flex flex-wrap gap-2">
+        <div className="mb-4 flex flex-wrap gap-2" data-tour="punch-job-filter">
           <Link href={filterHref({ job: null })} className={chip(!activeJob)}>
             All jobs
           </Link>
@@ -90,7 +90,7 @@ export default async function PunchListsPage({
         </div>
       )}
 
-      <section>
+      <section data-tour="punch-open">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-ink-label">
             {openCount} open{activeJob ? " on this job" : ""}

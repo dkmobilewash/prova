@@ -23,14 +23,14 @@ export default async function ContactsPage() {
     <div className="mx-auto max-w-3xl px-6 py-8">
       <h1 className="mb-6 text-xl font-semibold text-ink">Contacts</h1>
 
-      <div className="mb-6">
+      <div className="mb-6" data-tour="contacts-add">
         <ContactForm />
       </div>
 
       {contacts.length === 0 ? (
-        <p className="text-ink-body">No contacts yet — add the first GC, developer, or vendor you&apos;re talking to.</p>
+        <p className="text-ink-body" data-tour="contacts-empty">No contacts yet — add the first GC, developer, or vendor you&apos;re talking to.</p>
       ) : (
-        <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
+        <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface" data-tour="contacts-list">
           {contacts.map((contact) => (
             <ContactRow
               key={contact.id}
