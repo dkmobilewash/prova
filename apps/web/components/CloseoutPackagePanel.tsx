@@ -99,7 +99,7 @@ export function CloseoutPackagePanel({
   const withGc = latest?.status === "SUBMITTED";
 
   return (
-    <section>
+    <section data-tour="closeout-package">
       <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-muted">
         Closeout package
       </h3>

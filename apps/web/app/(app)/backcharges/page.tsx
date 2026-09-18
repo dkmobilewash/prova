@@ -114,11 +114,11 @@ export default async function BackchargesPage({
         usually short, and an objection is worth nothing without the date it went out.
       </p>
 
-      <section className="mb-8">
+      <section className="mb-8" data-tour="backcharges-log">
         <BackchargeForm jobs={jobs} defaultJobId={activeJob ?? undefined} />
       </section>
 
-      <div className="mb-4 grid gap-3 sm:grid-cols-4">
+      <div className="mb-4 grid gap-3 sm:grid-cols-4" data-tour="backcharges-totals">
         <div className="rounded-lg border border-line-card bg-surface p-4">
           <p className="font-mono text-xl font-semibold text-ink">{money(summary.openClaimed)}</p>
           <p className="text-xs text-ink-muted">
@@ -156,7 +156,7 @@ export default async function BackchargesPage({
       </p>
 
       {jobs.length > 0 && (
-        <div className="mb-4 flex flex-wrap gap-2">
+        <div className="mb-4 flex flex-wrap gap-2" data-tour="backcharges-job-filter">
           <Link href={filterHref({ job: null })} className={chip(!activeJob)}>
             All jobs
           </Link>
@@ -178,13 +178,13 @@ export default async function BackchargesPage({
       </div>
 
       {rows.length === 0 ? (
-        <p className="text-ink-body">
+        <p className="text-ink-body" data-tour="backcharges-empty">
           {showResolved
             ? "No backcharges logged. That is worth being sure of rather than assuming — a deduction sheet stapled to a pay application is still a backcharge."
             : "Nothing unresolved. Switch to “Show resolved” for the ones already closed out."}
         </p>
       ) : (
-        <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
+        <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface" data-tour="backcharges-list">
           {rows.map((bc) => (
             <BackchargeRow
               key={bc.id}

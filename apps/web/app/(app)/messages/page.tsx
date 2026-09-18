@@ -118,7 +118,7 @@ export default async function MessagesPage({
       </p>
 
       {setupProblem && (
-        <div className="mb-6 rounded-lg border border-amber-700 bg-tag-amber p-4">
+        <div className="mb-6 rounded-lg border border-amber-700 bg-tag-amber p-4" data-tour="messages-setup">
           <p className="text-sm font-medium text-tag-amber-ink">Sending isn&apos;t set up yet</p>
           <p className="mt-1 text-sm text-tag-amber-ink/80">{setupProblem}</p>
           <p className="mt-2 text-xs text-tag-amber-ink/60">
@@ -146,7 +146,7 @@ export default async function MessagesPage({
 
       <StatusLine report={status} />
 
-      <div className="mb-4 flex flex-wrap gap-2">
+      <div className="mb-4 flex flex-wrap gap-2" data-tour="messages-filter">
         <Link href="/messages" className={chip(!onlyProblems)}>
           Everything
         </Link>
@@ -160,13 +160,13 @@ export default async function MessagesPage({
       </h2>
 
       {visible.length === 0 ? (
-        <p className="text-ink-body">
+        <p className="text-ink-body" data-tour="messages-empty">
           {rows.length === 0
             ? "Nothing sent yet. Once sending is set up, anything the app sends on your behalf is recorded here with what the provider said happened to it."
             : "Nothing needs attention — everything sent has either been delivered or is still in flight."}
         </p>
       ) : (
-        <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
+        <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface" data-tour="messages-list">
           {visible.map((message) => (
             <MessageRow
               key={message.id}

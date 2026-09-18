@@ -114,18 +114,18 @@ export default async function CertificationsPage({
         question before the gate does.
       </p>
 
-      <section className="mb-8">
+      <section className="mb-8" data-tour="certifications-record">
         <CertificationForm workers={workerOptions} />
       </section>
 
-      <div className="mb-6 grid gap-3 sm:grid-cols-4">
+      <div className="mb-6 grid gap-3 sm:grid-cols-4" data-tour="certifications-totals">
         {tile(summary.missing, "Required, nothing on file", "text-tag-rose-ink")}
         {tile(summary.expired, "Expired", "text-tag-rose-ink")}
         {tile(summary.expiring, "Expiring soon", "text-tag-amber-ink")}
         {tile(summary.undated, "No expiry recorded", "text-tag-amber-ink")}
       </div>
 
-      <section className="mb-10">
+      <section className="mb-10" data-tour="certifications-people">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-sm font-semibold text-ink-label">
             {showEverything
@@ -182,7 +182,7 @@ export default async function CertificationsPage({
         )}
       </section>
 
-      <section className="mb-10">
+      <section className="mb-10" data-tour="certifications-by-job">
         <h2 className="mb-2 text-sm font-semibold text-ink-label">By job</h2>
         <p className="mb-3 text-sm text-ink-body">
           The same finding, cut the way it gets asked: is this job&apos;s crew clear on Monday. Jobs
@@ -231,7 +231,7 @@ export default async function CertificationsPage({
         )}
       </section>
 
-      <section>
+      <section data-tour="certifications-required">
         <h2 className="mb-2 text-sm font-semibold text-ink-label">What everyone here needs</h2>
         <CertificationRequirements
           requirements={requirements}

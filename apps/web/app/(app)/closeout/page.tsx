@@ -79,7 +79,7 @@ export default async function CloseoutPage() {
       <StatusLine report={status} />
 
       {attention.length > 0 && (
-        <section className="mb-6 rounded-lg border border-line-card bg-surface p-4">
+        <section className="mb-6 rounded-lg border border-line-card bg-surface p-4" data-tour="closeout-next">
           <h2 className="mb-1 text-sm font-semibold text-ink-label">What to do next</h2>
           <p className="mb-3 text-xs text-ink-muted">
             Most money first. A job is only off this list once the GC has accepted its package —
@@ -115,7 +115,7 @@ export default async function CloseoutPage() {
       )}
 
       {rows.length === 0 ? (
-        <div className="rounded-lg border border-line-card bg-surface p-6">
+        <div className="rounded-lg border border-line-card bg-surface p-6" data-tour="closeout-empty">
           <p className="text-ink-label">
             No jobs yet. Closeout and warranty both hang off a job.
           </p>
@@ -133,7 +133,7 @@ export default async function CloseoutPage() {
           </Link>
         </div>
       ) : (
-        <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
+        <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface" data-tour="closeout-jobs">
           {withReadiness.map((job) => (
             <CloseoutJobCard
               key={job.id}

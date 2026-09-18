@@ -97,7 +97,7 @@ export default async function EquipmentPage() {
         can never be recorded in two places at once.
       </p>
 
-      <div className="mb-8">
+      <div className="mb-8" data-tour="equipment-add">
         <EquipmentForm />
       </div>
 
@@ -113,12 +113,12 @@ export default async function EquipmentPage() {
           )}
         </h2>
         {items.length === 0 ? (
-          <p className="text-ink-body">
+          <p className="text-ink-body" data-tour="equipment-empty">
             No equipment yet. Add the gear that moves between jobs — lifts, scaffolding, mixers —
             so you can tell where something is without calling the foreman.
           </p>
         ) : (
-          <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
+          <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface" data-tour="equipment-list">
             {items.map(({ item, history, where, use }) => (
               <li key={item.id} className="p-4">
                 <EquipmentRow
@@ -139,7 +139,7 @@ export default async function EquipmentPage() {
                     ink-body, not ink-muted: the muted level is under the 4.5
                      floor, and where a thing is is the
                     reason this page exists. */}
-                <p className="mt-1 text-xs text-ink-body">
+                <p className="mt-1 text-xs text-ink-body" data-tour="equipment-where">
                   {where.kind === "out"
                     ? `${stayLength(where.stay, today)} on ${where.stay.jobName}`
                     : where.kind === "planned"

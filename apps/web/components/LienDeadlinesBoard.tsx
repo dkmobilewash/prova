@@ -367,7 +367,7 @@ export function LienDeadlinesBoard({
   return (
     <>
       <section className="mb-10">
-        <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="mb-3 flex items-center justify-between gap-3" data-tour="lien-add">
           <h2 className="text-sm font-semibold text-ink-label">Not served yet</h2>
           <button
             type="button"
@@ -410,7 +410,7 @@ export function LienDeadlinesBoard({
         )}
 
         {open.length === 0 ? (
-          <div className="rounded-lg border border-line-card bg-surface p-6">
+          <div className="rounded-lg border border-line-card bg-surface p-6" data-tour="lien-empty">
             <p className="text-ink-label">No lien deadlines waiting on you.</p>
             <p className="mt-2 max-w-xl text-sm text-ink-body">
               This app never works out a lien deadline for you — the dates depend on the state,
@@ -429,7 +429,7 @@ export function LienDeadlinesBoard({
             )}
           </div>
         ) : (
-          <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
+          <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface" data-tour="lien-open">
             {open.map((row) => (
               <DeadlineRow key={row.id} row={row} jobs={jobs} canRemove={canRemove} />
             ))}
@@ -437,7 +437,7 @@ export function LienDeadlinesBoard({
         )}
       </section>
 
-      <section className="mb-10">
+      <section className="mb-10" data-tour="lien-served">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Served</h2>
         {served.length === 0 ? (
           <div className="rounded-lg border border-line-card bg-surface p-6">

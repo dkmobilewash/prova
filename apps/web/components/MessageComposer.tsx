@@ -57,6 +57,7 @@ export function MessageComposer({
         type="button"
         onClick={() => setIsOpen(true)}
         className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500"
+        data-tour="messages-compose"
       >
         Send an email
       </button>
@@ -82,6 +83,7 @@ export function MessageComposer({
         });
       }}
       className="flex flex-col gap-3 rounded-lg border border-line-card bg-surface p-4"
+      data-tour="messages-compose"
     >
       <h2 className="text-sm font-semibold text-ink-label">Send an email</h2>
 

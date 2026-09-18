@@ -126,7 +126,7 @@ export function IntakeTable({ rows, jobs }: { rows: IntakeRow[]; jobs: IntakeJob
   if (rows.length === 0) return null;
 
   return (
-    <div>
+    <div data-tour="intake-table">
       <div className="mb-3 flex flex-wrap items-center gap-3">
         <button
           type="button"

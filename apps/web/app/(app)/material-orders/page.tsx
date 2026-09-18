@@ -135,7 +135,7 @@ export default async function MaterialOrdersPage({
         the date they promised.
       </p>
 
-      <section className="mb-8">
+      <section className="mb-8" data-tour="material-orders-log">
         <MaterialOrderForm
           jobs={jobs}
           vendors={vendors}
@@ -147,7 +147,7 @@ export default async function MaterialOrdersPage({
       <StatusLine report={status} />
 
       {jobs.length > 0 && (
-        <div className="mb-4 flex flex-wrap gap-2">
+        <div className="mb-4 flex flex-wrap gap-2" data-tour="material-orders-job-filter">
           <Link href={filterHref({ job: null })} className={chip(!activeJob)}>
             All jobs
           </Link>
@@ -169,13 +169,13 @@ export default async function MaterialOrdersPage({
       </div>
 
       {rows.length === 0 ? (
-        <p className="text-ink-body">
+        <p className="text-ink-body" data-tour="material-orders-empty">
           {allRows.length === 0
             ? "Nothing on order. Log a package the day you place it — the gap between the date you ordered it and the date it turned up is the whole value of the record."
             : `Nothing outstanding — every order on this job has been delivered. ${deliveredCount} delivered order${deliveredCount === 1 ? "" : "s"} hidden.`}
         </p>
       ) : (
-        <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
+        <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface" data-tour="material-orders-list">
           {rows.map((order) => (
             <MaterialOrderRow
               key={order.id}

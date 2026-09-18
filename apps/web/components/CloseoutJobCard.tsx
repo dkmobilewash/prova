@@ -174,7 +174,7 @@ export function CloseoutJobCard({
       {packageSlot}
 
       {/* ------------------------------------------------------ checklist */}
-      <section>
+      <section data-tour="closeout-checklist">
         <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-muted">
           Closeout checklist
         </h3>
@@ -365,7 +365,7 @@ export function CloseoutJobCard({
       </section>
 
       {/* ------------------------------------------------------- warranty */}
-      <section>
+      <section data-tour="closeout-warranty">
         <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-muted">Warranty</h3>
 
         {job.warranty && openForm !== "warranty" && (
@@ -455,7 +455,7 @@ export function CloseoutJobCard({
       </section>
 
       {/* ------------------------------------------------- service requests */}
-      <section>
+      <section data-tour="closeout-callbacks">
         <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-muted">
           Callbacks after completion
         </h3>

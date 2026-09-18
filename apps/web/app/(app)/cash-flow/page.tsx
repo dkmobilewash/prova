@@ -110,7 +110,7 @@ export default async function CashFlowPage() {
     return (
       <div className="mx-auto max-w-4xl px-6 py-8">
         <h1 className="mb-1 text-xl font-semibold text-ink">Cash flow forecast</h1>
-        <div className="mt-6 rounded-lg border border-line-card bg-surface p-6">
+        <div className="mt-6 rounded-lg border border-line-card bg-surface p-6" data-tour="cash-flow-empty">
           <p className="text-ink-label">
             {jobs.length === 0
               ? "No jobs yet, and every figure on this page is worked out from an invoice against one."
@@ -155,7 +155,7 @@ export default async function CashFlowPage() {
         one.
       </p>
 
-      <section className="mb-6 rounded-lg border border-slate-800 bg-slate-900 p-4">
+      <section className="mb-6 rounded-lg border border-slate-800 bg-slate-900 p-4" data-tour="cash-flow-wip">
         <h2 className="mb-1 text-sm font-semibold text-slate-100">WIP schedule</h2>
         <p className="mb-3 max-w-2xl text-sm text-slate-400">
           Percentage of completion by the cost-to-cost method, one row per contracted or in-progress job, with
@@ -176,7 +176,7 @@ export default async function CashFlowPage() {
         </a>
       </section>
 
-      <section className="mb-10">
+      <section className="mb-10" data-tour="cash-flow-aging">
         <h2 className="mb-3 text-lg font-semibold text-ink">Accounts receivable aging</h2>
         {/* The grid and the total only appear when something is outstanding.
             An account that has been paid in full does not need five zeros
@@ -260,7 +260,7 @@ export default async function CashFlowPage() {
         )}
       </section>
 
-      <section className="mb-10">
+      <section className="mb-10" data-tour="cash-flow-retainage">
         <h2 className="mb-3 text-lg font-semibold text-ink">Retainage receivable</h2>
         {/* Same rule as the aging total above: a zero total is stated once,
             by the sentence, instead of twice. */}
@@ -301,7 +301,7 @@ export default async function CashFlowPage() {
         )}
       </section>
 
-      <section>
+      <section data-tour="cash-flow-forecast">
         <h2 className="mb-3 text-lg font-semibold text-ink">Forecast, next {FORECAST_MONTHS_AHEAD} months</h2>
         {/* `calculateCashFlowForecast` seeds Overdue plus every month in the
             window whether or not anything lands in them — deliberately, so

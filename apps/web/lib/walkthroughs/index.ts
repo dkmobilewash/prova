@@ -1,4 +1,18 @@
 import type { Walkthrough } from "./types";
+import { alertsWalkthrough } from "./alerts";
+import { backchargesWalkthrough } from "./backcharges";
+import { bidsWalkthrough } from "./bids";
+import { cashFlowWalkthrough } from "./cash-flow";
+import { catalogWalkthrough } from "./catalog";
+import { certificationsWalkthrough } from "./certifications";
+import { closeoutWalkthrough } from "./closeout";
+import { complianceWalkthrough } from "./compliance";
+import { drawingsWalkthrough } from "./drawings";
+import { equipmentWalkthrough } from "./equipment";
+import { intakeWalkthrough } from "./intake";
+import { lienDeadlinesWalkthrough } from "./lien-deadlines";
+import { materialOrdersWalkthrough } from "./material-orders";
+import { messagesWalkthrough } from "./messages";
 import { askWalkthrough } from "./ask";
 import { contactsWalkthrough } from "./contacts";
 import { dashboardWalkthrough } from "./dashboard";
@@ -33,6 +47,20 @@ export const WALKTHROUGHS: Walkthrough[] = [
   fieldReportsWalkthrough,
   askWalkthrough,
   settingsImportWalkthrough,
+  alertsWalkthrough,
+  backchargesWalkthrough,
+  bidsWalkthrough,
+  cashFlowWalkthrough,
+  catalogWalkthrough,
+  certificationsWalkthrough,
+  closeoutWalkthrough,
+  complianceWalkthrough,
+  drawingsWalkthrough,
+  equipmentWalkthrough,
+  intakeWalkthrough,
+  lienDeadlinesWalkthrough,
+  materialOrdersWalkthrough,
+  messagesWalkthrough,
 ];
 
 /**
@@ -49,22 +77,8 @@ export const WALKTHROUGHS: Walkthrough[] = [
  * Estimating filter.
  */
 export const ROUTES_WITHOUT_WALKTHROUGH: string[] = [
-  "/alerts",
-  "/backcharges",
-  "/bids",
-  "/cash-flow",
-  "/catalog",
-  "/certifications",
-  "/closeout",
-  "/compliance",
   "/deployment",
-  "/drawings",
-  "/equipment",
-  "/intake",
   "/internal/usage",
-  "/lien-deadlines",
-  "/material-orders",
-  "/messages",
   "/phase-codes",
   "/photos",
   "/prevailing-wage",

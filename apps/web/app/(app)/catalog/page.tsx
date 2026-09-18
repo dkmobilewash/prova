@@ -143,15 +143,15 @@ export default async function CatalogPage() {
         catalog&quot; on any ESTIMATE-stage job.
       </p>
 
-      <div className="mb-6">
+      <div className="mb-6" data-tour="catalog-import">
         <CatalogImport existingDescriptions={entries.map((entry) => entry.description)} />
       </div>
 
       <section className="mb-8">
         {entries.length === 0 ? (
-          <p className="text-ink-body">No catalog entries yet.</p>
+          <p className="text-ink-body" data-tour="catalog-empty">No catalog entries yet.</p>
         ) : (
-          <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
+          <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface" data-tour="catalog-list">
             {entries.map((entry) => (
               <CatalogEntryRow
                 key={entry.id}
@@ -193,7 +193,7 @@ export default async function CatalogPage() {
         )}
       </section>
 
-      <section className="rounded-lg border border-line-card bg-surface p-4">
+      <section className="rounded-lg border border-line-card bg-surface p-4" data-tour="catalog-add">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Add a catalog entry</h2>
         <form action={createLineItemCatalogEntry} className="flex flex-wrap items-end gap-3">
           <label className="flex flex-1 min-w-[200px] flex-col gap-1 text-sm text-ink-label">
