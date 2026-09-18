@@ -11,6 +11,7 @@ import type {
   RatioWarning,
   SafetyIncident,
   TimeEntry,
+  TimesheetSignoff,
   TmTicket,
   ToolboxTalk,
   UpdateFieldReportInput,
@@ -181,11 +182,28 @@ export async function createTmTicket(
     workDate: string;
     workDescription: string;
     signerName: string;
+    signaturePath?: string;
     clientOperationId?: string;
   },
   token: string,
 ): Promise<TmTicket> {
   return request(`/api/v1/jobs/${encodeURIComponent(jobId)}/tickets`, {
+    method: "POST",
+    token,
+    body: input,
+  });
+}
+
+export async function listSignoffs(jobId: string, token: string): Promise<TimesheetSignoff[]> {
+  return request(`/api/v1/jobs/${encodeURIComponent(jobId)}/signoffs`, { token });
+}
+
+export async function createSignoff(
+  jobId: string,
+  input: { date: string; signerName: string; signaturePath: string; clientOperationId?: string },
+  token: string,
+): Promise<TimesheetSignoff> {
+  return request(`/api/v1/jobs/${encodeURIComponent(jobId)}/signoffs`, {
     method: "POST",
     token,
     body: input,

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireApiContext } from "@/lib/auth";
 import { prisma } from "@prova/db";
 import { timeEntryWorkerName } from "@/lib/worker-name";
+import { isValidSignaturePath } from "@/lib/signature-path";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +24,7 @@ function toJson(t: {
   snapshot: unknown;
   signerName: string;
   signedAt: Date;
+  signaturePath: string | null;
 }) {
   return {
     id: t.id,
@@ -31,6 +33,7 @@ function toJson(t: {
     snapshot: t.snapshot,
     signerName: t.signerName,
     signedAt: t.signedAt.toISOString(),
+    hasSignature: t.signaturePath !== null,
   };
 }
 
@@ -80,6 +83,15 @@ export async function POST(
 
   const signerName = String(input.signerName ?? "").trim();
   if (!signerName) return jsonError("The client's name is required to sign", 400);
+
+  // The drawn signature. Optional here so a phone still running an older
+  // build (typed name only) is not stranded; the current phone requires it.
+  // When sent, it must be exactly the path shape the phone draws.
+  let signaturePath: string | null = null;
+  if (input.signaturePath !== undefined && input.signaturePath !== null && input.signaturePath !== "") {
+    if (!isValidSignaturePath(input.signaturePath)) return jsonError("The signature could not be read. Clear it and sign again.", 400);
+    signaturePath = input.signaturePath;
+  }
 
   // Idempotent create: a retried offline POST replays instead of duplicating.
   const clientOperationId = String(input.clientOperationId ?? "").trim() || undefined;
@@ -135,6 +147,7 @@ export async function POST(
       workDescription,
       snapshot,
       signerName,
+      signaturePath,
       signedAt: new Date(),
       createdByUserId: context.id,
       clientOperationId,

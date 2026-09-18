@@ -1443,6 +1443,11 @@ async function undo(companyId) {
     await del("lienDeadline", () => prisma.lienDeadline.deleteMany({ where: { jobId: { in: jobIds } } }));
     // Cascades to its cached ProcoreItem rows. Nothing in Procore changes.
     await del("procoreProjectLink", () => prisma.procoreProjectLink.deleteMany({ where: { jobId: { in: jobIds } } }));
+    // Sign-offs first: a live one makes the TimeEntry day-lock trigger refuse
+    // to delete that day's hours.
+    await del("timesheetSignoff", () =>
+      prisma.timesheetSignoff.deleteMany({ where: { jobId: { in: jobIds } } }),
+    );
     await del("timeEntry", () => prisma.timeEntry.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("safetyIncident", () =>
       prisma.safetyIncident.deleteMany({ where: { jobId: { in: jobIds } } }),
