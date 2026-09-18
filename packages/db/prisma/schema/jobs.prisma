@@ -53,6 +53,23 @@ model Job {
   /// separate, not-yet-built phase.
   substantialCompletionDate DateTime?
 
+  /// Where the project is, in the person's words ("Portland, OR", "SE 13th
+  /// and Tacoma"). Free text, not an address model: it is what a person
+  /// said when starting the bid, and the only thing that reads it is the job
+  /// page and the web research the Ask box runs on a new bid.
+  projectLocation String?
+  /// When the bid is due, as the person ENTERED it — stored at UTC midnight
+  /// like every other date here. Never set from the web: a bid date found
+  /// online stays in `bidResearch` with its source, because a date read off
+  /// a stranger's page is a weaker claim than one the GC gave.
+  bidDueDate DateTime?
+  /// Public-web facts about the project that a PERSON kept on a confirm card
+  /// when starting the bid from the Ask box: `[{ field, label, value,
+  /// sources: [{ title, url }] }]`. Only what they left ticked is written,
+  /// and only after they tapped. Shown on the job page with its links and
+  /// the note that it came from the web.
+  bidResearch Json?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

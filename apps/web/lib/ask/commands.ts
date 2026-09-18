@@ -1,4 +1,5 @@
 import type { AskToolDefinition } from "@prova/integrations";
+import type { WebSuggestion } from "./webSuggestions";
 import { can, type Capability, type Principal } from "@/lib/permissions";
 import { equipmentCommands, equipmentExclusions } from "./commands/equipment";
 import { estimatingCommands, estimatingExclusions } from "./commands/estimating";
@@ -88,10 +89,21 @@ export type CommandMode = "DIRECT" | "HANDOFF";
 
 export type Actor = { companyId: string; userId: string; principal: Principal };
 
+/** Public-web research for a new bid. Takes ONLY the project name and the
+ * location the person typed — the type is the boundary on what may be
+ * searched for. Supplied by the Ask loop, bound to the company for usage
+ * accounting; absent everywhere else, which is how the confirm tap and every
+ * test that does not pass one run with no web access at all. */
+export type BidResearcher = (input: {
+  projectName: string;
+  location: string;
+}) => Promise<{ ok: true; suggestions: WebSuggestion[] } | { ok: false }>;
+
 export type CommandContext = Actor & {
   /** The person's calendar date, resolved on the server by viewerToday().
    * The only "today" a command may use. */
   today: string;
+  research?: BidResearcher;
 };
 
 export type PreviewLine = { label: string; value: string };
@@ -109,7 +121,17 @@ export type Resolution =
   /** Everything needed is known; show the card. `existing` means the
    * natural key already matches a row: the card links to it and offers no
    * button, and the proposal is recorded as refused. */
-  | { kind: "ready"; resolved: ResolvedPayload; preview: PreviewLine[]; warnings: string[]; existing?: Link }
+  | {
+      kind: "ready";
+      resolved: ResolvedPayload;
+      preview: PreviewLine[];
+      warnings: string[];
+      existing?: Link;
+      /** Found on the public web, shown apart from the preview and marked
+       * as such, each with its sources. The same list sits in `resolved`
+       * as `webSuggestions`; the person can drop any before confirming. */
+      suggestions?: WebSuggestion[];
+    }
   /** A name matched several rows. The person picks from chips; the answer
    * comes back as `field: option.value` and `resolve` runs again with no
    * model pass. At least two options, always. */

@@ -2,6 +2,7 @@ import { requireCompanyContext } from "@/lib/auth";
 import { viewerToday } from "@/lib/viewerToday";
 import { streamAnswer, type AskRequest } from "@/lib/ask/answer";
 import { boundTurns } from "@/lib/ask/turns";
+import { attachmentRefOf } from "@/lib/ask/attachment";
 import type { CommandContext } from "@/lib/ask/commands";
 
 /** Ask, streamed.
@@ -46,7 +47,7 @@ export const runtime = "nodejs";
 // and on rows that change.
 export const dynamic = "force-dynamic";
 
-type Body = { question?: unknown; pagePath?: unknown; priorTurns?: unknown; continuation?: unknown };
+type Body = { question?: unknown; pagePath?: unknown; priorTurns?: unknown; attachment?: unknown; continuation?: unknown };
 
 /** Only string values, only string keys, and never more than a handful:
  * a chip answer is one field. */
@@ -74,8 +75,13 @@ function parseRequest(body: Body): AskRequest {
   const question = typeof body.question === "string" ? body.question : "";
   const pagePath = pagePathOf(body.pagePath);
   const priorTurns = boundTurns(body.priorTurns);
+  // A reference to an uploaded file, shape-checked here and then verified
+  // against the SESSION's company inside streamAnswer before a byte of it
+  // is fetched. Like pagePath it cannot widen access: another company's
+  // URL is refused, not read. Never on a chip answer, which has no model.
+  const attachment = attachmentRefOf(body.attachment);
   const raw = body.continuation;
-  if (typeof raw !== "object" || raw === null) return { question, pagePath, priorTurns };
+  if (typeof raw !== "object" || raw === null) return { question, pagePath, priorTurns, attachment };
   const c = raw as { command?: unknown; partialInput?: unknown; answers?: unknown };
   if (typeof c.command !== "string") return { question };
   return {

@@ -16,7 +16,20 @@ import {
 import { EXAMPLES } from "@/components/askExamples";
 import type { AskRequest, AskStreamEvent, ClarifyView, ProposalView } from "@/lib/ask/answer";
 import type { Citation } from "@/lib/ask/tools";
-import { cancelAskProposal, confirmAskProposal, loadAskProposal } from "@/lib/actions";
+import {
+  cancelAskProposal,
+  confirmAskProposal,
+  loadAskProposal,
+  prepareAskAttachment,
+  recordIntakeDocument,
+} from "@/lib/actions";
+import { upload } from "@vercel/blob/client";
+import { intakeUploadErrorMessage } from "@/lib/intake/upload";
+import {
+  ASK_ATTACHMENT_ACCEPT,
+  askAttachmentTypeOrSizeProblem,
+  type AskAttachmentRef,
+} from "@/lib/ask/attachment";
 import { AskProposalCard, type ProposalOutcome } from "@/components/AskProposalCard";
 import {
   DICTATION_TRUNCATED_NOTE,
@@ -164,6 +177,12 @@ function rememberedCard(): string | null {
   }
 }
 
+/** A file on its way into, or sitting in, the box. `ready` carries the
+ * reference the question will send; nothing else about it leaves the tab. */
+type PendingAttachment =
+  | { status: "uploading"; name: string }
+  | { status: "ready"; name: string; ref: AskAttachmentRef };
+
 // EXAMPLES moved to components/askExamples.ts — a constant exported from
 // a "use client" module crosses the RSC boundary as a client-reference
 // proxy, which is the Hint.tsx scar in CLAUDE.md.
@@ -214,6 +233,22 @@ export function AskPanel() {
   const [clarify, setClarify] = useState<ClarifyView | null>(null);
   const [outcome, setOutcome] = useState<ProposalOutcome | null>(null);
   const [tapError, setTapError] = useState<string | null>(null);
+  // Web suggestions the person unticked on the card in front of them.
+  const [droppedSuggestions, setDroppedSuggestions] = useState<string[]>([]);
+
+  // THE ATTACHMENT. `attachment` is the chip in the box, before sending;
+  // `sentAttachment` is the file the question on screen was asked with,
+  // kept for its name and for "File it in Document intake". An upload is
+  // tagged with a sequence number so a file removed mid-upload cannot
+  // reappear when its upload finishes.
+  const [attachment, setAttachment] = useState<PendingAttachment | null>(null);
+  const [attachError, setAttachError] = useState<string | null>(null);
+  const [sentAttachment, setSentAttachment] = useState<AskAttachmentRef | null>(null);
+  const [filed, setFiled] = useState<{ ok: boolean; message: string } | null>(null);
+  const [isFiling, startFiling] = useTransition();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const uploadSeq = useRef(0);
+  const sentAttachmentRef = useRef<AskAttachmentRef | null>(null);
 
   // The scrollback, and the clock the staleness marks are measured against.
   // Both start empty and are filled in an effect: the server renders no
@@ -404,6 +439,7 @@ export function AskPanel() {
               answer: answerRef.current.trim(),
               citations: citationsRef.current,
               askedAt: Date.now(),
+              ...(sentAttachmentRef.current ? { attachmentName: sentAttachmentRef.current.name } : {}),
             },
           ]);
           rememberTranscript(recorded);
@@ -450,6 +486,76 @@ export function AskPanel() {
     setClarify(null);
     setOutcome(null);
     setTapError(null);
+    setDroppedSuggestions([]);
+    setFiled(null);
+  }
+
+  /** Clears the chip and forgets any upload still in flight. The blob, if
+   * it landed, stays in the store like any intake file nobody filed. */
+  function clearAttachment() {
+    uploadSeq.current += 1;
+    setAttachment(null);
+    setAttachError(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
+  async function attach(file: File) {
+    setAttachError(null);
+    const seq = ++uploadSeq.current;
+    // The browser's copy of the rule, so a 40 MB drawing set is refused
+    // before a byte moves. The server says the same sentence twice more.
+    const problem = askAttachmentTypeOrSizeProblem(file.type, file.size);
+    if (problem) {
+      setAttachment(null);
+      setAttachError(problem);
+      return;
+    }
+    setAttachment({ status: "uploading", name: file.name });
+    const prepared = await prepareAskAttachment(file.name, file.type, file.size);
+    if (seq !== uploadSeq.current) return;
+    if (!prepared.ok) {
+      setAttachment(null);
+      setAttachError(prepared.error);
+      return;
+    }
+    try {
+      // The intake route, unchanged: it signs a token for this company's
+      // intake folder only. See app/api/intake/upload/route.ts.
+      const blob = await upload(prepared.value.pathname, file, {
+        access: "public",
+        contentType: file.type,
+        handleUploadUrl: "/api/intake/upload",
+        clientPayload: JSON.stringify({ contentType: file.type }),
+      });
+      if (seq !== uploadSeq.current) return;
+      setAttachment({
+        status: "ready",
+        name: file.name,
+        ref: { url: blob.url, name: file.name, contentType: file.type, size: file.size },
+      });
+    } catch (err) {
+      if (seq !== uploadSeq.current) return;
+      setAttachment(null);
+      setAttachError(intakeUploadErrorMessage(err));
+    }
+  }
+
+  /** The existing intake path, by the person's own tap: one row in the
+   * tray, classified and waiting for them there like any dropped file. */
+  function fileInIntake(ref: AskAttachmentRef) {
+    startFiling(async () => {
+      const formData = new FormData();
+      formData.set("blobUrl", ref.url);
+      formData.set("fileName", ref.name);
+      formData.set("contentType", ref.contentType);
+      formData.set("byteSize", String(ref.size));
+      const result = await recordIntakeDocument(formData);
+      setFiled(
+        result.ok
+          ? { ok: true, message: "Filed in Document intake — it's waiting in the tray for you to say what it is." }
+          : { ok: false, message: result.error },
+      );
+    });
   }
 
   async function send(request: AskRequest, shown: string) {
@@ -536,7 +642,13 @@ export function AskPanel() {
   function ask(text: string) {
     const trimmed = text.trim();
     if (!trimmed) return;
-    void send({ question: trimmed }, trimmed);
+    // The chip goes with THIS question and then leaves the box: a file is
+    // sent once, and the next question is about whatever it is about.
+    const ref = attachment?.status === "ready" ? attachment.ref : null;
+    sentAttachmentRef.current = ref;
+    setSentAttachment(ref);
+    if (ref) clearAttachment();
+    void send(ref ? { question: trimmed, attachment: ref } : { question: trimmed }, trimmed);
   }
 
   /** A chip: the same question, with the person's pick, and no model pass. */
@@ -557,7 +669,7 @@ export function AskPanel() {
   function confirm(current: ProposalView) {
     setTapError(null);
     startConfirm(async () => {
-      const result = await confirmAskProposal(current.proposalId);
+      const result = await confirmAskProposal(current.proposalId, droppedSuggestions);
       if (result.ok) {
         setOutcome(result.value);
         rememberCard(null);
@@ -617,6 +729,11 @@ export function AskPanel() {
     rememberTranscript([]);
     setTranscript([]);
     setOpenRows([]);
+    // The file goes with the conversation: Clear all leaves no chip and no
+    // name behind.
+    clearAttachment();
+    sentAttachmentRef.current = null;
+    setSentAttachment(null);
     askedRef.current = "";
     answerRef.current = "";
     setAsked("");
@@ -696,6 +813,7 @@ export function AskPanel() {
                           about. */}
                       <span className="mt-0.5 block text-xs text-ink-muted">
                         {answeredAgo(entry.askedAt, now)}
+                        {entry.attachmentName && ` · Attached: ${entry.attachmentName}`}
                         {entry.citations.length > 0 &&
                           ` · ${entry.citations.map((citation) => citation.label).join(", ")}`}
                       </span>
@@ -754,6 +872,11 @@ export function AskPanel() {
       {(hasResult || isAsking) && (
         <div className="mb-3">
           <p className="text-sm font-medium text-ink-label">{asked}</p>
+          {sentAttachment && (
+            <p className="mt-0.5 text-xs text-ink-body" data-ask="sent-attachment">
+              Attached: {sentAttachment.name}
+            </p>
+          )}
 
           {/* The status line names what is being read, because a question
               spanning several areas spends most of its time in the
@@ -833,7 +956,39 @@ export function AskPanel() {
               // forgotten here rather than cancelled: the page will load
               // it, and the server refuses to reattach an opened card.
               onOpen={() => rememberCard(null)}
+              dropped={droppedSuggestions}
+              onToggleSuggestion={(key) =>
+                setDroppedSuggestions((current) =>
+                  current.includes(key) ? current.filter((value) => value !== key) : [...current, key],
+                )
+              }
             />
+          )}
+
+          {/* Filing the document is the tray's job, not a second store: the
+              same recordIntakeDocument the drop zone calls, on a tap. */}
+          {sentAttachment && !isAsking && answer && (
+            <div className="mt-2 text-xs" data-ask="file-in-intake">
+              {filed ? (
+                <p className={filed.ok ? "text-ink-body" : "text-tag-rose-ink"}>
+                  {filed.message}{" "}
+                  {filed.ok && (
+                    <Link href="/intake" className="underline hover:text-link">
+                      Open the tray
+                    </Link>
+                  )}
+                </p>
+              ) : (
+                <button
+                  type="button"
+                  disabled={isFiling}
+                  onClick={() => fileInIntake(sentAttachment)}
+                  className="underline hover:text-link disabled:opacity-50"
+                >
+                  {isFiling ? "Filing…" : "File it in Document intake"}
+                </button>
+              )}
+            </div>
           )}
 
           {/* Citations arrive with the last event, not the first, so they
@@ -887,6 +1042,33 @@ export function AskPanel() {
         </ul>
       )}
 
+      {/* The attached file, as a chip, before it is sent. Removable until
+          then; it leaves with the question it was sent with. */}
+      {(attachment || attachError) && (
+        <div className="mb-2 flex flex-wrap items-center gap-2 text-xs" data-ask="attachment">
+          {attachment && (
+            <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-line-card px-3 py-1 text-ink-body">
+              <span className="truncate">{attachment.name}</span>
+              {attachment.status === "uploading" && <span className="text-ink-muted">uploading…</span>}
+              <button
+                type="button"
+                onClick={clearAttachment}
+                aria-label={`Take ${attachment.name} off this question`}
+                title="Take the file off"
+                className="-mr-1 inline-flex h-6 w-6 items-center justify-center rounded-full hover:text-link"
+              >
+                ×
+              </button>
+            </span>
+          )}
+          {attachError && (
+            <span role="status" className="text-tag-rose-ink">
+              {attachError}
+            </span>
+          )}
+        </div>
+      )}
+
       {/* The box, LAST — the one fixed thing in the panel, with everything
           the sitting has produced stacked above it. */}
       <form
@@ -916,6 +1098,36 @@ export function AskPanel() {
           maxLength={1000}
           className="min-w-0 flex-1 rounded-md border border-line-card bg-surface px-3 py-2 text-sm text-ink placeholder:text-ink-muted focus:border-brand focus:outline-none"
         />
+        {/* Attach a file. The input is hidden and the button opens it; the
+            upload starts on pick, so sending is not held up by it. */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept={ASK_ATTACHMENT_ACCEPT}
+          className="hidden"
+          data-ask="attach-input"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) void attach(file);
+          }}
+        />
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          aria-label="Attach a file"
+          title="Attach a PDF, photo or text file"
+          className="shrink-0 rounded-md border border-line-card bg-surface px-3 py-2 text-ink-body hover:text-ink"
+        >
+          <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5" aria-hidden="true">
+            <path
+              d="M13.5 6.5 7.8 12.2a1.5 1.5 0 0 0 2.1 2.1l6-6a3 3 0 0 0-4.2-4.2l-6.2 6.2a4.5 4.5 0 0 0 6.4 6.4l5-5"
+              stroke="currentColor"
+              strokeWidth="1.4"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
         {/* Rendered only where the browser has the API. A mic that is on
             screen and does nothing reads as broken, not as unavailable —
             so Firefox gets no button rather than a dead one. */}
@@ -961,7 +1173,7 @@ export function AskPanel() {
           // to decide whether ITS OWN question was in flight. Clearing the
           // box on send makes that comparison always false, so it asks
           // `isAsking` directly — which is what it meant.
-          disabled={question.trim() === "" || isAsking}
+          disabled={question.trim() === "" || isAsking || attachment?.status === "uploading"}
           className="shrink-0 rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {isAsking ? "Looking…" : "Ask"}

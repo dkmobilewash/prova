@@ -64,8 +64,8 @@ describe("create_estimate_job.resolve", () => {
     const result = await createEstimateJobCommand.resolve(ctx, { scope: "commercial project" });
     expect(result.kind).toBe("need");
     if (result.kind !== "need") throw new Error("unreachable");
-    expect(result.missing).toContain("the job's name");
-    expect(result.missing).toContain("which GC");
+    expect(result.missing).toContain("the project's name");
+    expect(result.missing).toContain("the GC");
     expect(fake.prisma.contact.findMany).not.toHaveBeenCalled();
   });
 
@@ -97,6 +97,9 @@ describe("create_estimate_job.resolve", () => {
       scope: "commercial TI, drywall and ceilings",
       contact: { id: "t1", name: "Turner Construction" },
       draftLines: true,
+      projectLocation: null,
+      bidDueDate: null,
+      webSuggestions: [],
     });
     expect(result.preview.find((l) => l.label === "GC")?.value).toBe("Turner Construction (on file, 3 jobs)");
     expect(result.preview.find((l) => l.label === "Line items")?.value).toMatch(/flagged for your review/);

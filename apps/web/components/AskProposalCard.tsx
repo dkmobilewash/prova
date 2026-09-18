@@ -40,8 +40,13 @@ export function AskProposalCard({
   onConfirm,
   onCancel,
   onOpen,
+  dropped = [],
+  onToggleSuggestion,
 }: {
   proposal: ProposalView;
+  /** Keys of the web suggestions the person has unticked. */
+  dropped?: string[];
+  onToggleSuggestion?: (key: string) => void;
   pending: boolean;
   error: string | null;
   outcome: ProposalOutcome | null;
@@ -71,6 +76,58 @@ export function AskProposalCard({
           </div>
         ))}
       </dl>
+
+      {/* FOUND ON THE WEB, and kept visibly apart from the preview above,
+          which is only ever the person's words and this company's rows.
+          Every line carries its links, and the box beside it is the
+          person's say over whether it is saved: unticked lines are sent
+          back as keys to DROP, so the browser can remove a suggestion but
+          never add or alter one. */}
+      {proposal.suggestions && proposal.suggestions.length > 0 && (
+        <div className="mt-3 rounded-md border border-dashed border-line-card p-2" data-ask="web-suggestions">
+          <p className="text-xs font-semibold text-tag-amber-ink">Found on the web — check before you rely on it</p>
+          <p className="mt-0.5 text-xs text-ink-body">
+            {settled
+              ? "Saved with the job were the ones left ticked."
+              : `Nothing here is saved unless you tap ${proposal.button}, and only the ones left ticked.`}
+          </p>
+          <ul className="mt-2 space-y-2">
+            {proposal.suggestions.map((suggestion) => {
+              const kept = !dropped.includes(suggestion.key);
+              return (
+                <li key={suggestion.key} className="text-sm" data-ask="web-suggestion">
+                  <label className="flex items-start gap-2">
+                    <input
+                      type="checkbox"
+                      checked={kept}
+                      disabled={settled || pending || !onToggleSuggestion}
+                      onChange={() => onToggleSuggestion?.(suggestion.key)}
+                      className="mt-1 h-4 w-4 shrink-0"
+                      aria-label={`Keep ${suggestion.label}`}
+                    />
+                    <span className={`min-w-0 break-words ${kept ? "text-ink" : "text-ink-muted line-through"}`}>
+                      <span className="text-ink-body">{suggestion.label}:</span> {suggestion.value}
+                    </span>
+                  </label>
+                  <span className="ml-6 flex flex-wrap gap-x-2 text-xs text-ink-body">
+                    {suggestion.sources.map((source) => (
+                      <a
+                        key={source.url}
+                        href={source.url}
+                        target="_blank"
+                        rel="noopener noreferrer nofollow"
+                        className="max-w-full truncate underline hover:text-link"
+                      >
+                        {source.title}
+                      </a>
+                    ))}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
 
       {proposal.warnings.length > 0 && (
         <ul className="mt-2 text-xs text-tag-amber-ink">

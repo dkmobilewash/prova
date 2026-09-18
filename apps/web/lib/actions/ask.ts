@@ -18,6 +18,9 @@ import { actionOk, ownerRefusal, type ActionResult, type ActionResultWith } from
 import { ASK_DEFAULT_MODEL, checkAnthropicConnection } from "@prova/integrations";
 import { connectionProblem } from "@/lib/ask/connection";
 import { can } from "@/lib/permissions";
+import { intakeUploadPathname } from "@/lib/intake/upload";
+import { ASK_ATTACHMENT_PREFIX, askAttachmentTypeOrSizeProblem } from "@/lib/ask/attachment";
+import { droppedKeys, keepSuggestions, suggestionsFrom } from "@/lib/ask/webSuggestions";
 
 /**
  * The tap.
@@ -43,6 +46,9 @@ import { can } from "@/lib/permissions";
  */
 export async function confirmAskProposal(
   proposalId: string,
+  /** Web suggestions the person UNticked on the card. Can only remove:
+   * the list executed is the server-held one minus these keys. */
+  dropSuggestions: string[] = [],
 ): Promise<ActionResultWith<{ message: string; created?: Link }>> {
   const context = await requireCompanyContext();
   const principal = { role: context.role, jobFunction: context.jobFunction };
@@ -97,7 +103,15 @@ export async function confirmAskProposal(
 
   let executed: Awaited<ReturnType<typeof command.execute>>;
   try {
-    executed = await command.execute(ctx, row.resolved as ResolvedPayload);
+    const resolved = row.resolved as ResolvedPayload;
+    // Web suggestions are the one part of a card the person can edit, and
+    // only downward. Filtered here, before `execute` ever sees them, so no
+    // command can forget to honour an untick.
+    const payload: ResolvedPayload =
+      resolved && typeof resolved === "object" && "webSuggestions" in resolved
+        ? { ...resolved, webSuggestions: keepSuggestions(resolved.webSuggestions, droppedKeys(dropSuggestions)) }
+        : resolved;
+    executed = await command.execute(ctx, payload);
   } catch (err) {
     // A throw here is a bug, not an expected refusal: the cores return
     // their sentences. Record it and say so without inventing a sentence
@@ -217,6 +231,10 @@ export async function loadAskProposal(
         mode: command.mode,
         handoffHref: command.handoffHref?.(row.id),
         preview: Array.isArray(row.preview) ? (row.preview as PreviewLine[]) : [],
+        // A reattached card must show every web suggestion it would save:
+        // confirming it saves what is still ticked, so hiding them here
+        // would write things the person never saw.
+        suggestions: suggestionsFrom((row.resolved as Record<string, unknown> | null)?.webSuggestions),
         warnings: [],
         alsoRequested: [],
         expiresAt: row.expiresAt.toISOString(),
@@ -259,4 +277,31 @@ export async function checkAssistantConnection(): Promise<AssistantConnectionRes
   const result = await checkAnthropicConnection(ASK_DEFAULT_MODEL);
   if (result.ok) return { ok: true, value: { model: result.model } };
   return { ok: false, error: connectionProblem(result, ASK_DEFAULT_MODEL) };
+}
+
+/**
+ * Where an Ask attachment may be uploaded, or the sentence saying why not.
+ *
+ * The browser calls this before the bytes move, for three reasons: it
+ * needs a pathname in this company's intake folder and does not know the
+ * company id; the capability is intake's own (MANAGE_JOBS — the token route
+ * refuses anyone else, and a refusal there reaches the browser only as the
+ * SDK's "Failed to retrieve the client token"); and the size and type caps
+ * belong on the server with a plain sentence, not only in the browser.
+ * The ask route checks all of it again against what actually arrives.
+ */
+export async function prepareAskAttachment(
+  fileName: string,
+  contentType: string,
+  size: number,
+): Promise<ActionResultWith<{ pathname: string }>> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_JOBS")) {
+    return fail("Attaching files uses document intake, which isn't part of your job function. The account owner sets who sees what, on the Team page.");
+  }
+  const problem = askAttachmentTypeOrSizeProblem(String(contentType), Number(size));
+  if (problem) return fail(problem);
+  const pathname = intakeUploadPathname(context.companyId, `${ASK_ATTACHMENT_PREFIX}${String(fileName)}`);
+  if (!pathname) return fail("This company cannot take uploads.");
+  return { ok: true, value: { pathname } };
 }

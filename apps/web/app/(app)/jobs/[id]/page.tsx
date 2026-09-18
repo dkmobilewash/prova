@@ -64,6 +64,7 @@ import { LaborHoursField } from "@/components/LaborHoursField";
 import { PhaseCodeField } from "@/components/PhaseCodeField";
 import { calculateRetainageSummary } from "@/lib/retainage";
 import { SubmitButton } from "@/components/SubmitButton";
+import { JobBidDetails } from "@/components/JobBidDetails";
 import { formatSignedDate } from "@/lib/signed-date";
 import {
   addLineItem,
@@ -745,6 +746,13 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             contacts={jobDetailContacts}
             isEstimate={job.status === "ESTIMATE"}
             canRemove={currentUser.role === "OWNER"}
+          />
+          {/* A bid started from the Ask box: location, due date and the web
+              facts the person kept. Renders nothing for any other job. */}
+          <JobBidDetails
+            projectLocation={job.projectLocation}
+            bidDueDate={job.bidDueDate}
+            bidResearch={job.bidResearch}
           />
         </section>
         )}

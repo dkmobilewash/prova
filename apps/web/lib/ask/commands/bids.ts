@@ -114,7 +114,7 @@ const tradeOptions = (scopes: readonly TradeScope[]): Option[] =>
 /** The due date the person gave, as a day, or the Resolution that stops
  * here. There is no stored date on a record that does not exist yet, so a
  * relative phrase is a question rather than a count from today. */
-function dueDayFor(text: string, today: string): { day: string } | Resolution {
+export function dueDayFor(text: string, today: string, field = "dueDate"): { day: string } | Resolution {
   const parsed = parseDateWords(text, today);
   if (!parsed) {
     return {
@@ -128,7 +128,7 @@ function dueDayFor(text: string, today: string): { day: string } | Resolution {
     case "which-year":
       return {
         kind: "clarify",
-        field: "dueDate",
+        field,
         question: `"${text}" has already passed this year — which due date?`,
         options: [
           { value: parsed.thisYear, label: dayLabel(parsed.thisYear), detail: relativeToToday(parsed.thisYear, today) },

@@ -154,6 +154,17 @@ export const EVAL_CASES: EvalCase[] = [
 
   // ------------------------------------------------------- commands
   command("cmd-create-estimate", "create an estimate for Riverside Plaza for Turner", "create_estimate_job", { jobName: "Riverside Plaza", gcName: "Turner" }),
+  // "Start a bid" IS create_estimate_job. Bare, the model must still call it
+  // (with nothing) so the command's own list of missing essentials is what
+  // the person is asked — not a blank job, and not the model's guess at
+  // which details matter.
+  command("cmd-start-bid-bare", "start a bid", "create_estimate_job"),
+  command(
+    "cmd-start-bid-full",
+    "start a bid: Sellwood Clinic, Portland OR, for Brackett, due Oct 10, our scope is drywall",
+    "create_estimate_job",
+    { jobName: "Sellwood Clinic", gcName: "Brackett", location: "Portland" },
+  ),
   command("cmd-draft-lines", "draft the line items for Riverside from the scope", "draft_estimate_lines", { jobName: "Riverside" }),
   command("cmd-catalog-line", "add a catalog line for 5/8 type X to Riverside", "add_catalog_line", { jobName: "Riverside" }),
   command("cmd-field-report", "log today's report for Riverside: hung board on level 2, crew of 6", "log_daily_field_report", { jobName: "Riverside" }),
