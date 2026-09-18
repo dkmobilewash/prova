@@ -15,6 +15,18 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
  * predicate shared by both. Going through `calculateArAgingInvoice` here
  * rather than re-deriving a due date is what keeps the box on the same side
  * of that line.
+ *
+ * FOUR NUMBERS IN THIS FILE CHANGED WITH #288, and the fixture below is why
+ * they were worth changing: it already carried `retainageWithheld` on both
+ * invoices, because the retainage half of the forecast reads it. The AR
+ * half did not, so the $2,000 and $1,500 were counted once as retainage
+ * receivable and again inside the AR balance — and this file asserted the
+ * doubled figures as correct. `arOutstanding` was 14,000 with
+ * `retainageOutstanding` 3,500 beside it, a forecast total of 17,500 on
+ * 14,000 of actually-outstanding money. The new AR figure, 10,500, plus
+ * the unchanged 3,500, is exactly the 14,000 the old AR column claimed on
+ * its own. That arithmetic is now asserted directly in
+ * lib/cash-flow.test.ts rather than left for a reader to notice.
  */
 
 const JOBS = [
@@ -82,29 +94,39 @@ describe("cash_flow_forecast", () => {
   it("puts a long-overdue invoice in the overdue bucket rather than a calendar month", async () => {
     const data = (await ask()).data as { months: { key: string; arExpected: number }[] };
     expect(data.months[0].key).toBe("OVERDUE");
-    // 10,000 invoiced less 1,000 paid. Maple's, due 20 July, is NOT here —
-    // it is five weeks away, and a forecast that files it under "overdue"
-    // is the contradiction /cash-flow shipped twice.
-    expect(data.months[0].arExpected).toBe(9_000);
+    // 10,000 invoiced, less 2,000 retained (not due until completion, and
+    // reported as retainage above), less 1,000 paid. Maple's, due 20 July,
+    // is NOT here — it is five weeks away, and a forecast that files it
+    // under "overdue" is the contradiction /cash-flow shipped twice.
+    expect(data.months[0].arExpected).toBe(7_000);
     const july = data.months.find((month) => month.key === "2026-07")!;
-    expect(july.arExpected).toBe(5_000);
+    // 5,000 invoiced less 1,500 retained, nothing paid.
+    expect(july.arExpected).toBe(3_500);
   });
 
   it("carries the totals the model would otherwise have to add up", async () => {
     const result = await ask();
     expect(result.summary).toMatchObject({
-      arOutstanding: 14_000,
+      // 7,000 + 3,500, both net of retainage. Was 14,000 — which is what
+      // these two lines now sum to, because the 3,500 below was inside it.
+      arOutstanding: 10_500,
       // 2,000 unanchored + 1,500 scheduled.
       retainageOutstanding: 3_500,
-      overdueNow: 9_000,
+      overdueNow: 7_000,
     });
+
+    // The model is handed both figures and will add them. Asserted here so
+    // that sum is a true total rather than a double count — 14,000 of
+    // outstanding money, once.
+    const summary = result.summary as { arOutstanding: number; retainageOutstanding: number };
+    expect(summary.arOutstanding + summary.retainageOutstanding).toBe(14_000);
   });
 
   it("splits receivables into the same aging buckets the page shows", async () => {
     const data = (await ask()).data as { agingByBucket: Record<string, number> };
     // One predicate, shared with the aging table: the overdue invoice lands
     // in a past-due bucket and the not-yet-due one in CURRENT.
-    expect(data.agingByBucket.DAYS_90_PLUS).toBe(9_000);
-    expect(data.agingByBucket.CURRENT).toBe(5_000);
+    expect(data.agingByBucket.DAYS_90_PLUS).toBe(7_000);
+    expect(data.agingByBucket.CURRENT).toBe(3_500);
   });
 });

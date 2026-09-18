@@ -7,6 +7,7 @@ import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { documentDisplayFileName, documentUrlProblem } from "@/lib/document-uploads";
 import { Prisma, prisma } from "@prova/db";
+import { pushToUser } from "@/lib/push";
 import { issueContractDocumentVersion } from "@/lib/billing/contract-document-version";
 import { createEstimateJob } from "@/lib/estimating/create-job";
 import { draftLinesFromScope } from "@/lib/estimating/draft-lines";
@@ -20,7 +21,7 @@ import {
   jobStatusTransitionRefusal,
   type JobStatusValue,
 } from "@/lib/job-status-transitions";
-import { actionFail, actionOk, type ActionResult, assertEditableDirectly, assertJobInCompany, assertLineItemOnJob, COST_CATEGORIES, craftClassificationIdFromForm, decimalFromForm, nullableDecimalFromForm, tradeScopeFromForm } from "./shared";
+import { actionFail, actionOk, type ActionResult, assertEditableDirectly, assertJobInCompany, assertLineItemOnJob, COST_CATEGORIES, craftClassificationIdFromForm, decimalFromForm, phaseCodeIdFromForm, nullableDecimalFromForm, tradeScopeFromForm } from "./shared";
 
 /**
  * Starts a job against a GC — an EXISTING one by preference, a new one when
@@ -105,6 +106,7 @@ export async function addLineItem(jobId: string, formData: FormData) {
   const tradeScope = tradeScopeFromForm(formData);
   const laborHours = nullableDecimalFromForm(formData, "laborHours");
   const craftClassificationId = await craftClassificationIdFromForm(formData, company.id);
+  const phaseCodeId = await phaseCodeIdFromForm(formData, company.id);
 
   if (!description) {
     throw new Error("Description is required");
@@ -122,6 +124,7 @@ export async function addLineItem(jobId: string, formData: FormData) {
       tradeScope,
       laborHours,
       craftClassificationId,
+      phaseCodeId,
     },
   });
 
@@ -169,6 +172,7 @@ export async function updateLineItem(jobId: string, lineItemId: string, formData
   const tradeScope = tradeScopeFromForm(formData);
   const laborHours = nullableDecimalFromForm(formData, "laborHours");
   const craftClassificationId = await craftClassificationIdFromForm(formData, company.id);
+  const phaseCodeId = await phaseCodeIdFromForm(formData, company.id);
 
   if (!description) {
     throw new Error("Description is required");
@@ -186,6 +190,7 @@ export async function updateLineItem(jobId: string, lineItemId: string, formData
       tradeScope,
       laborHours,
       craftClassificationId,
+      phaseCodeId,
     },
   });
 
@@ -593,7 +598,7 @@ export async function updateJobSchedule(jobId: string, formData: FormData) {
 /** Assigns a company teammate to a job's crew. */
 export async function assignCrewMember(jobId: string, formData: FormData) {
   const { company } = await requireCompanyContext();
-  await assertJobInCompany(jobId, company.id);
+  const job = await assertJobInCompany(jobId, company.id);
 
   const userId = String(formData.get("userId") ?? "");
   const member = await prisma.user.findUnique({ where: { id: userId } });
@@ -601,13 +606,22 @@ export async function assignCrewMember(jobId: string, formData: FormData) {
     throw new Error("Team member not found");
   }
 
+  let assigned = false;
   try {
     await prisma.jobAssignment.create({ data: { jobId, userId } });
+    assigned = true;
   } catch (error) {
     if (!(error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002")) {
       throw error;
     }
     // Already assigned — treat as a no-op rather than an error.
+  }
+
+  // Real-time push to the teammate, so the assignment reaches their phone
+  // rather than waiting to be found on the schedule. Best-effort — a push
+  // failure never blocks the assignment.
+  if (assigned) {
+    void pushToUser(userId, "New job assignment", `You're assigned to ${job.name}`, { jobId });
   }
 
   revalidatePath(`/jobs/${jobId}`);

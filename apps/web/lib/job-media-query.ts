@@ -181,6 +181,14 @@ export async function loadJobMedia(
 
   return rows.map((row) => ({
     id: row.id,
+    // WHICH JOB, on every row of both galleries, and it is the GALLERY that
+    // reads it rather than the card. `/photos` can show several jobs at
+    // once, and a photo report is one job's document — so the bulk action
+    // on a multi-capture selection has to know whether the ticked captures
+    // are all on the same job before it can offer to build one. Reading it
+    // off the row is the only honest source: the company-wide gallery has
+    // no single job to fall back on.
+    jobId: row.jobId,
     blobUrl: row.blobUrl,
     // DERIVED HERE, ONCE, for both galleries and every card in them. The
     // column it comes from is the only stored fact; a `kind` column beside
@@ -558,23 +566,40 @@ export async function loadJobMediaForReport(
     companyId,
     shared,
     tagId,
+    ids,
     take,
   }: {
     jobId: string;
     companyId: string;
     shared?: boolean;
     tagId?: string;
+    /** A HAND-PICKED SET, the other way a report is built (lib/photo-report.ts).
+     *
+     * ADDED TO the company and job clauses rather than replacing them, which
+     * is the whole security of it: these ids arrive in a URL anybody can
+     * type, so an id belonging to another company — or to another job in
+     * this company — matches nothing and is simply absent from the
+     * document. Nothing here has to trust the caller's list.
+     *
+     * An EMPTY array is not "no filter". `{ in: [] }` matches nothing, and
+     * that is the right answer for a picked set with nothing in it; callers
+     * that mean "no ids" pass undefined, which is what
+     * `photoReportContents` produces for a URL with no `ids=`. */
+    ids?: string[];
     take: number;
   },
   timeZone: string,
 ): Promise<JobPhotoReportCapture[]> {
   const rows = await prisma.jobMedia.findMany({
-    where: jobMediaWhere({
-      companyId,
-      jobId,
-      ...(tagId ? { tagId } : {}),
-      ...(shared === undefined ? {} : { shared }),
-    }),
+    where: {
+      ...jobMediaWhere({
+        companyId,
+        jobId,
+        ...(tagId ? { tagId } : {}),
+        ...(shared === undefined ? {} : { shared }),
+      }),
+      ...(ids === undefined ? {} : { id: { in: ids } }),
+    },
     take,
     orderBy: [{ capturedAt: "desc" }, { createdAt: "desc" }],
     // An explicit `select` rather than the default row, for the same reason

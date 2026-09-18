@@ -37,7 +37,7 @@ model TimeEntry {
   /// recordedBy pair. A relation NAME changes nothing in SQL: the foreign key
   /// is still "TimeEntry_employeeUserId_fkey" on the same column, so this
   /// carries no migration of its own.
-  employeeUser   User?  @relation("TimeEntryEmployee", fields: [employeeUserId], references: [id], onDelete: Restrict)
+  employeeUser   User?   @relation("TimeEntryEmployee", fields: [employeeUserId], references: [id], onDelete: Restrict)
 
   /// The crew member this entry is for, when the worker has no login. See
   /// crew.prisma. NULL on every row today and read by nothing — this ships
@@ -246,13 +246,13 @@ model UnionLocal {
   tradeJurisdiction   String?
   createdAt           DateTime @default(now())
 
-  craftClassifications CraftClassification[]
-  apprenticeRatioRules ApprenticeRatioRule[]
-  companyAgreements    CompanyUnionAgreement[]
+  craftClassifications      CraftClassification[]
+  apprenticeRatioRules      ApprenticeRatioRule[]
+  companyAgreements         CompanyUnionAgreement[]
+  apprenticeshipEnrollments ApprenticeshipEnrollment[]
 
   @@unique([companyId, parentInternational, localNumber])
   @@index([companyId])
-  apprenticeshipEnrollments ApprenticeshipEnrollment[]
 }
 
 /// One CBA between a Company and a UnionLocal. `complianceDocument` links
@@ -327,18 +327,18 @@ model CraftClassification {
   /// step rather than to price it.
   apprenticePeriod Int?
 
-  createdAt    DateTime   @default(now())
+  createdAt DateTime @default(now())
 
-  fringeRateSchedules FringeRateSchedule[]
-  jobLineItems        JobLineItem[]
-  catalogEntries      LineItemCatalogEntry[]
-  timeEntries         TimeEntry[]
-  dispatchSlips       DispatchSlip[]
+  fringeRateSchedules       FringeRateSchedule[]
+  jobLineItems              JobLineItem[]
+  catalogEntries            LineItemCatalogEntry[]
+  timeEntries               TimeEntry[]
+  dispatchSlips             DispatchSlip[]
+  apprenticeshipEnrollments ApprenticeshipEnrollment[]
 
   @@unique([unionLocalId, name])
   @@index([unionLocalId])
   @@index([companyId])
-  apprenticeshipEnrollments ApprenticeshipEnrollment[]
 }
 
 /// Effective-dated, not a flat current-rate field: CBA rates typically
