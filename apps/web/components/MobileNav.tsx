@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { navGroupsFor } from "@/components/navItems";
+import { navFooterFor, navGroupsFor } from "@/components/navItems";
 import { useNavAccordion } from "@/components/useNavAccordion";
 import type { Principal } from "@/lib/permissions";
 
@@ -33,6 +33,7 @@ export function MobileNav({
   // Filtered here rather than in the layout so the desktop rail and
   // the mobile drawer run the same function on the same input.
   const groups = navGroupsFor(principal, { showsInternal });
+  const footer = navFooterFor(principal);
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
   const accordion = useNavAccordion(groups, pathname);
@@ -193,6 +194,28 @@ export function MobileNav({
                 );
               })}
             </nav>
+            {/* Same footer as the desktop rail: Settings pinned at the
+                bottom, outside the accordion and the scroll. */}
+            {footer.length > 0 ? (
+              <div className="shrink-0 border-t border-line-row px-3 py-2" data-nav-footer="">
+                {footer.map((entry) => {
+                  const isActive = pathname === entry.href || pathname.startsWith(`${entry.href}/`);
+                  return (
+                    <Link
+                      key={entry.href}
+                      href={entry.href}
+                      aria-current={isActive ? "page" : undefined}
+                      className={`flex min-h-11 items-center gap-3 rounded-md px-3 py-3 text-sm font-medium transition-colors ${
+                        isActive ? "bg-brand/15 text-brand" : "text-neutral-300 hover:bg-rail-hover hover:text-white"
+                      }`}
+                    >
+                      {entry.icon}
+                      {entry.label}
+                    </Link>
+                  );
+                })}
+              </div>
+            ) : null}
           </div>
         </>
       )}

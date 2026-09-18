@@ -203,9 +203,10 @@ describe("the Money Rail's groups collapse", () => {
     renderRail();
 
     for (const heading of HEADINGS) expect(isExpanded(heading)).toBe(false);
-    // "/ask" is the one link outside the groups: a standalone row pinned
-    // above them, so it is present whether anything is expanded or not.
-    expect(linkHrefs()).toEqual(["/ask"]);
+    // Two links live outside the groups, present whether anything is
+    // expanded or not: "/ask" pinned above them, and "/settings" pinned at
+    // the bottom (NAV_FOOTER) — Cyrus could not find it inside Financials.
+    expect(linkHrefs()).toEqual(["/ask", "/settings"]);
   });
 
   it("keeps a closed group's links OUT of the document, not merely invisible", () => {
