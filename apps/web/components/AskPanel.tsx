@@ -227,6 +227,9 @@ export function AskPanel() {
   // index because trimming at MAX_TRANSCRIPT shifts every index down one
   // and would silently open somebody else's row.
   const [openRows, setOpenRows] = useState<number[]>([]);
+  // Two steps, like every destructive control here: the first click only
+  // asks. The history lives in this tab alone, so a slip cannot be undone.
+  const [confirmingClear, setConfirmingClear] = useState(false);
   const citationsRef = useRef<Citation[]>([]);
   const scrollbackRef = useRef<HTMLDivElement>(null);
 
@@ -597,6 +600,33 @@ export function AskPanel() {
     .map((entry, index) => ({ entry, index }))
     .filter(({ entry, index }) => !(hasResult && index === transcript.length - 1 && entry.question === asked));
 
+  /**
+   * A clean start: the live result, the remembered conversation the model
+   * is sent, and the scrollback, together. "Ask something else" and the
+   * scrollback's Clear both call this, because clearing only the rows would
+   * leave the model remembering questions the screen says are gone.
+   */
+  function startOver() {
+    abortRef.current?.abort();
+    clearResult();
+    // Something ELSE. The name has always promised a clean start, so the
+    // remembered conversation goes with the result — otherwise "the same"
+    // would reach back across a boundary the person drew deliberately.
+    rememberTurns([]);
+    // The scrollback goes with them. A transcript that survives is the
+    // boundary the person drew being ignored on screen while it is
+    // honoured in the prompt.
+    rememberTranscript([]);
+    setTranscript([]);
+    setOpenRows([]);
+    setConfirmingClear(false);
+    askedRef.current = "";
+    answerRef.current = "";
+    setAsked("");
+    setQuestion("");
+    inputRef.current?.focus();
+  }
+
   function toggleRow(askedAt: number) {
     setOpenRows((current) =>
       current.includes(askedAt) ? current.filter((value) => value !== askedAt) : [...current, askedAt],
@@ -622,6 +652,41 @@ export function AskPanel() {
           Capped in height and scrolled on its own, because this panel sits
           above the rest of the dashboard and must not push it down the
           page as a conversation grows. */}
+      {priorExchanges.length > 0 && (
+        <div className="mb-1 flex items-center justify-end gap-3 text-xs" data-ask="transcript-clear">
+          {confirmingClear ? (
+            <>
+              <span className="text-ink-body">
+                Clear {transcript.length === 1 ? "this question" : `all ${transcript.length} questions`}? The assistant
+                forgets them too.
+              </span>
+              <button
+                type="button"
+                onClick={startOver}
+                className="min-h-8 rounded-md border border-line-card px-2 text-tag-rose-ink hover:border-tag-rose-ink"
+              >
+                Clear them
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmingClear(false)}
+                className="min-h-8 rounded-md border border-line-card px-2 text-ink-label hover:border-link hover:text-link"
+              >
+                Cancel
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setConfirmingClear(true)}
+              disabled={isAsking}
+              className="min-h-8 text-ink-body underline hover:text-link disabled:opacity-50"
+            >
+              Clear history
+            </button>
+          )}
+        </div>
+      )}
       {priorExchanges.length > 0 && (
         <div
           ref={scrollbackRef}
@@ -817,27 +882,7 @@ export function AskPanel() {
           {!isAsking && hasResult && (
             <button
               type="button"
-              onClick={() => {
-                abortRef.current?.abort();
-                clearResult();
-                // Something ELSE. The name has always promised a clean
-                // start, so the remembered conversation goes with the
-                // result — otherwise "the same" would reach back across a
-                // boundary the person drew deliberately.
-                rememberTurns([]);
-                // The scrollback goes with them. "Something else" has
-                // always promised a clean start, and a transcript that
-                // survives it is the boundary the person drew being
-                // ignored on screen while it is honoured in the prompt.
-                rememberTranscript([]);
-                setTranscript([]);
-                setOpenRows([]);
-                askedRef.current = "";
-                answerRef.current = "";
-                setAsked("");
-                setQuestion("");
-                inputRef.current?.focus();
-              }}
+              onClick={startOver}
               className="mt-2 text-xs text-ink-body underline hover:text-link"
             >
               Ask something else
