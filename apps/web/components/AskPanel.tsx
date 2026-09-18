@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
+import { ConfirmDeleteButton } from "@/components/ConfirmDeleteButton";
 import { usePathname } from "next/navigation";
 import { boundTurns, type AskTurn } from "@/lib/ask/turns";
 import {
@@ -597,6 +598,32 @@ export function AskPanel() {
     .map((entry, index) => ({ entry, index }))
     .filter(({ entry, index }) => !(hasResult && index === transcript.length - 1 && entry.question === asked));
 
+  /**
+   * A clean start: the live result, the remembered conversation the model
+   * is sent, and the scrollback, together. "Ask something else" and the
+   * scrollback's Clear both call this, because clearing only the rows would
+   * leave the model remembering questions the screen says are gone.
+   */
+  function startOver() {
+    abortRef.current?.abort();
+    clearResult();
+    // Something ELSE. The name has always promised a clean start, so the
+    // remembered conversation goes with the result — otherwise "the same"
+    // would reach back across a boundary the person drew deliberately.
+    rememberTurns([]);
+    // The scrollback goes with them. A transcript that survives is the
+    // boundary the person drew being ignored on screen while it is
+    // honoured in the prompt.
+    rememberTranscript([]);
+    setTranscript([]);
+    setOpenRows([]);
+    askedRef.current = "";
+    answerRef.current = "";
+    setAsked("");
+    setQuestion("");
+    inputRef.current?.focus();
+  }
+
   function toggleRow(askedAt: number) {
     setOpenRows((current) =>
       current.includes(askedAt) ? current.filter((value) => value !== askedAt) : [...current, askedAt],
@@ -622,6 +649,20 @@ export function AskPanel() {
           Capped in height and scrolled on its own, because this panel sits
           above the rest of the dashboard and must not push it down the
           page as a conversation grows. */}
+      {priorExchanges.length > 0 && (
+        <div className="mb-1 flex justify-end" data-ask="transcript-clear">
+          {/* The shared two-step delete, so the arming state and the
+              Cancel-on-the-vacated-pixel rule are the ones every list
+              here uses. The label stays short for that rule's sake; what
+              it clears is in `describe`. */}
+          <ConfirmDeleteButton
+            action={startOver}
+            label="Clear all"
+            confirmLabel="Clear them"
+            describe="Clears these questions from this tab, and the assistant forgets them too."
+          />
+        </div>
+      )}
       {priorExchanges.length > 0 && (
         <div
           ref={scrollbackRef}
@@ -817,27 +858,7 @@ export function AskPanel() {
           {!isAsking && hasResult && (
             <button
               type="button"
-              onClick={() => {
-                abortRef.current?.abort();
-                clearResult();
-                // Something ELSE. The name has always promised a clean
-                // start, so the remembered conversation goes with the
-                // result — otherwise "the same" would reach back across a
-                // boundary the person drew deliberately.
-                rememberTurns([]);
-                // The scrollback goes with them. "Something else" has
-                // always promised a clean start, and a transcript that
-                // survives it is the boundary the person drew being
-                // ignored on screen while it is honoured in the prompt.
-                rememberTranscript([]);
-                setTranscript([]);
-                setOpenRows([]);
-                askedRef.current = "";
-                answerRef.current = "";
-                setAsked("");
-                setQuestion("");
-                inputRef.current?.focus();
-              }}
+              onClick={startOver}
               className="mt-2 text-xs text-ink-body underline hover:text-link"
             >
               Ask something else
