@@ -82,8 +82,9 @@ export function ExportOmissionsPanel() {
       </ul>
 
       <p className="mt-4 text-xs text-ink-muted">
-        Sequence counters, sync logs, notification records and AI usage are not listed above
-        and are not in the file either. That is bookkeeping the app does for itself, not work
+        Sequence counters, integration connections and sync logs, notification records, AI
+        usage and the shared licence-classification table are not listed above and are not in
+        the file either. That is bookkeeping the app does for itself, not work
         anybody put in.
       </p>
     </section>

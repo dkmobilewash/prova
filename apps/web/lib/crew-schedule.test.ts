@@ -54,6 +54,24 @@ describe("the date a plan is for", () => {
     expect(() => workDateFromString("next tuesday")).toThrow(CrewScheduleInputError);
     expect(() => workDateFromString(undefined)).toThrow(CrewScheduleInputError);
   });
+
+  it("refuses a date that does not exist, rather than rolling it into next month", () => {
+    // `new Date("2026-02-30T00:00:00Z")` is NOT invalid — it is 2 March.
+    // Without a round trip, a typo in the day put a man on the schedule for
+    // a different day than anybody chose, and nothing said so.
+    for (const impossible of ["2026-02-30", "2026-02-29", "2026-04-31", "2026-13-01", "2026-00-10", "2026-09-00"]) {
+      expect(() => workDateFromString(impossible), impossible).toThrow(CrewScheduleInputError);
+    }
+    // Leap day in a leap year is a real day.
+    expect(workDateFromString("2028-02-29").toISOString()).toBe("2028-02-29T00:00:00.000Z");
+  });
+
+  it("refuses anything that is not a plain YYYY-MM-DD day", () => {
+    // A timestamp would parse, and would quietly carry a time into a
+    // column that means a calendar day.
+    expect(() => workDateFromString("2026-09-21T15:00:00Z")).toThrow(CrewScheduleInputError);
+    expect(() => workDateFromString("2026-9-21")).toThrow(CrewScheduleInputError);
+  });
 });
 
 describe("planned days nobody logged an hour against", () => {
