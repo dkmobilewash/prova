@@ -131,7 +131,7 @@ export default async function SettingsPage({
     return (
       <div className="mx-auto max-w-3xl px-6 py-8">
         <h1 className="mb-2 text-xl font-semibold text-ink">Settings</h1>
-        <p className="text-sm text-ink-body">Only the account owner can manage integrations.</p>
+        <p className="text-sm text-ink-body" data-tour="settings-owner-only">Only the account owner can manage integrations.</p>
       </div>
     );
   }
@@ -216,7 +216,7 @@ export default async function SettingsPage({
           an account mapping and reconciliation the generic page has no place
           for. The link exists so there is one route to look for connections
           from, rather than two pages neither of which mentions the other. */}
-      <p className="mb-6 text-sm text-ink-body">
+      <p className="mb-6 text-sm text-ink-body" data-tour="settings-integrations">
         <Link href="/settings/integrations" className="text-link hover:text-link-hover">
           Integrations
         </Link>{" "}
@@ -235,7 +235,7 @@ export default async function SettingsPage({
       {/* Findable without asking anyone, which is most of the point: the
           research found four vendors where getting your history out meant a
           support ticket, a sales call, or nothing at all. */}
-      <p className="mb-6 text-sm text-ink-body">
+      <p className="mb-6 text-sm text-ink-body" data-tour="settings-export">
         <Link href="/settings/export" className="text-link hover:text-link-hover">
           Export core records
         </Link>{" "}
@@ -244,7 +244,7 @@ export default async function SettingsPage({
       </p>
 
       {/* The way in, beside the way out. Owner-only like export. */}
-      <p className="mb-6 text-sm text-ink-body">
+      <p className="mb-6 text-sm text-ink-body" data-tour="settings-import">
         <Link href="/settings/import" className="text-link hover:text-link-hover">
           Import from a spreadsheet
         </Link>{" "}
@@ -268,7 +268,7 @@ export default async function SettingsPage({
           "Settings → Company" — two of them in red on a document a trust
           fund receives. `companyPointer.test.ts` fails the build if that
           instruction and this heading ever stop agreeing. */}
-      <section id="company" className="mb-10">
+      <section id="company" className="mb-10" data-tour="settings-company">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Company</h2>
         <p className="mb-4 text-sm text-ink-body">
           Your own company record. This is where the WH-347 certified payroll form, a union
@@ -279,7 +279,7 @@ export default async function SettingsPage({
         <CompanyProfileForm company={companyProfile} gaps={companyProfileGaps(companyProfile)} />
       </section>
 
-      <section className="mb-10">
+      <section className="mb-10" data-tour="settings-quickbooks">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">QuickBooks Online</h2>
         <p className="mb-4 text-sm text-ink-body">
           Connects your QuickBooks Online company so invoices can be pushed to it. Deliberately
@@ -376,7 +376,7 @@ export default async function SettingsPage({
         )}
       </section>
 
-      <section className="mb-10">
+      <section className="mb-10" data-tour="settings-locations">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Company locations</h2>
         <p className="mb-4 text-sm text-ink-body">
           Offices, yards, and warehouses this company operates out of. Jobs can be tagged with the
@@ -481,7 +481,7 @@ export default async function SettingsPage({
         </details>
       </section>
 
-      <section className="mb-10">
+      <section className="mb-10" data-tour="settings-licences">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Contractor licences</h2>
         <p className="mb-4 text-sm text-ink-body">
           One row per licence you hold, not per state — some jurisdictions have no state licence at
@@ -513,7 +513,7 @@ export default async function SettingsPage({
           because this is where the company's own reference data lives. The
           report they feed is its own page — this section is the vocabulary,
           not the numbers. */}
-      <section id="phase-codes" className="mb-10">
+      <section id="phase-codes" className="mb-10" data-tour="settings-phase-codes">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Phase codes</h2>
         <p className="mb-4 text-sm text-ink-body">
           Your own cost codes, exactly as you write them on your own budget — a number and a name,
@@ -540,7 +540,7 @@ export default async function SettingsPage({
         />
       </section>
 
-      <section className="mb-10">
+      <section className="mb-10" data-tour="settings-insurance">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Insurance policies</h2>
         <p className="mb-4 text-sm text-ink-body">
           This company&apos;s own coverage — the source data per-job certificates of insurance would
@@ -633,7 +633,7 @@ export default async function SettingsPage({
         </details>
       </section>
 
-      <section>
+      <section data-tour="settings-bonding">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Bonding</h2>
         <p className="mb-4 text-sm text-ink-body">
           License bonds and overall performance/payment bonding capacity, and who to contact to
