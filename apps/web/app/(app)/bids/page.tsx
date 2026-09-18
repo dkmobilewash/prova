@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { EmptyState } from "@/components/EmptyState";
 import { BidInvitationStatus, prisma, TradeScope } from "@prova/db";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
@@ -139,22 +140,33 @@ export default async function BidsPage({
             .
           </p>
         ) : (
-          <div className="rounded-lg border border-line-card bg-surface p-6" data-tour="bids-empty">
-            <p className="text-ink-label">No bids logged yet.</p>
-            <p className="mt-2 max-w-xl text-sm text-ink-body">
-              A bid invitation is logged against the GC who sent it, so this page is the history of
-              what you have been asked to price and what it went for. Once a few are in, filtering by
-              trade tells you what similar work priced at last time — which is the number you actually
-              want when a GC asks for a budget figure on the phone.
-            </p>
-            <p className="mt-3 text-sm text-ink-body">
-              Bids are added from the GC&apos;s own page, under Bid invitations.{" "}
-              <Link href="/contacts" className="text-link hover:text-brand">
-                Open your contacts
-              </Link>{" "}
-              and pick the GC, or add them there first.
-            </p>
-          </div>
+          <EmptyState
+            data-tour="bids-empty"
+            title="No bids logged yet"
+            purpose={
+              <p>
+                Everything you have been asked to price, who asked, and how it went — won, lost or
+                still out. Once a few are in, filtering by type of work shows what similar jobs went
+                for last time, which is the number you want when someone asks for a ballpark on the
+                phone.
+              </p>
+            }
+            actions={[{ label: "Open your contacts", href: "/contacts" }, { label: "See the pipeline", href: "/pipeline" }]}
+            ask="Northside Builders invited us to bid the Oak Ave addition, due October 3"
+            sources={
+              <p>
+                A bid is logged on the page of whoever asked for the price — a builder, a developer
+                or a homeowner — under Bid invitations. Open the contact, or add them first.
+              </p>
+            }
+            example={{
+              rows: [
+                { title: "Oak Ave addition", tag: "Submitted", detail: "Northside Builders · due Oct 3", meta: "$48,500" },
+                { title: "Maple St. bathroom", tag: "Won", detail: "Jane Smith · decided Aug 20", meta: "$18,200" },
+                { title: "Hillcrest deck", tag: "Lost", detail: "Ridge Homes · went $3,000 lower", meta: "$22,900" },
+              ],
+            }}
+          />
         )
       ) : (
         <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface" data-tour="bids-list">

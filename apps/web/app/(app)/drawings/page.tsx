@@ -3,6 +3,7 @@ import { prisma } from "@prova/db";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { DrawingSetForm } from "@/components/DrawingSetForm";
+import { EmptyState } from "@/components/EmptyState";
 import { DrawingSetRow } from "@/components/DrawingSetRow";
 import { setState, unreceivedRevisions } from "@/components/drawingLabels";
 import { StatusLine } from "@/components/StatusLine";
@@ -75,6 +76,11 @@ export default async function DrawingsPage({
 
   // Per set, with how many issues each is missing — "which sets, and how
   // far behind" is what someone chases the GC with.
+  // Whether this company has EVER logged one, not whether the current
+  // filter shows any — the teaching empty state is for the first, and a
+  // filter that happens to match nothing keeps its plain line.
+  const everLogged = activeJob ? await prisma.drawingSet.count({ where: { companyId: company.id } }) : rows.length;
+
   const behind = rows
     .filter((r) => setState(r.revisions) === "BEHIND")
     .map((r) => ({ name: r.name, jobName: r.jobName, missing: unreceivedRevisions(r.revisions).length }));
@@ -122,12 +128,32 @@ export default async function DrawingsPage({
         {rows.length} {rows.length === 1 ? "set" : "sets"}
       </h2>
 
-      {rows.length === 0 ? (
-        <p className="text-ink-body" data-tour="drawings-empty">
-          No drawing sets yet. Add one per discipline the job issues separately — the log of which
-          revision governed on which date is what answers &ldquo;why did the crew build it that
-          way.&rdquo;
-        </p>
+      {rows.length === 0 && everLogged === 0 ? (
+        <EmptyState
+          data-tour="drawings-empty"
+          title="No drawings yet"
+          purpose={
+            <p>
+              The plans for each job and which version is current. When the architect or designer
+              sends a revised set, log it here, so nobody on site builds from last month&apos;s
+              pages — and you can show which version was in force on the day something was built.
+            </p>
+          }
+          actions={
+            jobs.length === 0
+              ? [{ label: "Create a job", href: "/jobs/new" }]
+              : [{ label: "Add a drawing set", opens: "drawings-add" }]
+          }
+          example={{
+            rows: [
+              { title: "Architectural", tag: "Current, in hand", detail: "Smith kitchen remodel · Rev C issued Sep 3", meta: "3 revisions" },
+              { title: "Structural", tag: "Not received", detail: "Oak Ave addition · Rev B issued Sep 10, not in hand", meta: "2 revisions" },
+              { title: "Electrical", tag: "Current, in hand", detail: "Oak Ave addition · Rev A", meta: "1 revision" },
+            ],
+          }}
+        />
+      ) : rows.length === 0 ? (
+        <p className="text-ink-body">No drawing sets on this job yet.</p>
       ) : (
         <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface" data-tour="drawings-list">
           {rows.map((set) => (

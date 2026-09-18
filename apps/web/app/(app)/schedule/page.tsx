@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { EmptyState } from "@/components/EmptyState";
 import { StatusBadge } from "@prova/ui";
 import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
@@ -87,20 +88,32 @@ export default async function SchedulePage() {
     return (
       <div className="mx-auto max-w-3xl px-6 py-8">
         <h1 className="mb-6 text-xl font-semibold text-ink">Schedule</h1>
-        <div className="rounded-lg border border-line-card bg-surface p-6" data-tour="schedule-no-jobs">
-          <p className="text-ink-label">No jobs yet, so there is nothing to lay out.</p>
-          <p className="mt-2 max-w-xl text-sm text-ink-body">
-            This page puts every job on one list in start-date order, with the crew assigned to each —
-            so you can see the week a second job wants the same three hangers as the first. A job
-            starts here without a date and moves up once you set one; nothing is scheduled for you.
-          </p>
-          <Link
-            href="/jobs/new"
-            className="mt-4 inline-flex min-h-11 items-center rounded-md bg-brand px-4 text-sm font-medium text-neutral-900 hover:bg-yellow-500"
-          >
-            Create a job
-          </Link>
-        </div>
+        <EmptyState
+          data-tour="schedule-no-jobs"
+          title="No jobs yet, so there is nothing to lay out"
+          purpose={
+            <p>
+              Who is where, and when. Every job goes on one list in start-date order, and each day
+              shows which of your people are on which job — so you see the week two jobs want the
+              same crew before it happens, not the morning of. Nothing is scheduled for you; a job
+              starts here without a date and moves up once you give it one.
+            </p>
+          }
+          actions={[{ label: "Create a job", href: "/jobs/new" }, { label: "Add your crew", href: "/team" }]}
+          sources={
+            <p>
+              Jobs come from Jobs &amp; Estimates (or an import); the people you can put on a day
+              come from Team.
+            </p>
+          }
+          example={{
+            rows: [
+              { title: "Mon, Sep 15", detail: "Smith kitchen remodel — Mike, Luis · Oak Ave addition — Dan", meta: "3 on site" },
+              { title: "Tue, Sep 16", detail: "Smith kitchen remodel — Mike, Luis, Dan", meta: "3 on site" },
+              { title: "Oak Ave addition", tag: "Starts Sep 22", detail: "Framing, then drywall", meta: "6 weeks" },
+            ],
+          }}
+        />
       </div>
     );
   }

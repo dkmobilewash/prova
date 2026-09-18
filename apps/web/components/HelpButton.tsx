@@ -14,6 +14,7 @@ import { inputClass } from "@/components/RfiFields";
 import { WalkthroughTour, isAnchorShown } from "@/components/WalkthroughTour";
 import { walkthroughFor, type Walkthrough } from "@/lib/walkthroughs";
 import { browserStorage, markFinished, readFinished, shownSteps } from "@/lib/walkthroughs/engine";
+import { WALKTHROUGH_EVENT } from "@/lib/empty-state-events";
 
 /**
  * The way out of the app to a human, on every screen.
@@ -122,6 +123,21 @@ export function HelpButton({
     setIsOpen(false);
     setTouring(walkthrough);
   }
+
+  // "Walk me through this page" on an empty state (EmptyState.tsx) asks for
+  // the same tour this panel offers. Read from the address bar at the moment
+  // of the click, not from `pathname`, so the listener never needs rebinding.
+  useEffect(() => {
+    const onWalk = () => {
+      const walkthrough = walkthroughFor(window.location.pathname);
+      if (walkthrough) {
+        setIsOpen(false);
+        setTouring(walkthrough);
+      }
+    };
+    window.addEventListener(WALKTHROUGH_EVENT, onWalk);
+    return () => window.removeEventListener(WALKTHROUGH_EVENT, onWalk);
+  }, []);
 
   // What the panel promises to include, and what `helpBody` actually
   // includes — kept next to each other on purpose. Nothing is sent that is

@@ -3,6 +3,7 @@ import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { EquipmentForm } from "@/components/EquipmentForm";
 import { EquipmentRow } from "@/components/EquipmentRow";
+import { EmptyState } from "@/components/EmptyState";
 import { EquipmentDeploymentControls } from "@/components/EquipmentDeploymentControls";
 import {
   type AssignmentData,
@@ -113,10 +114,25 @@ export default async function EquipmentPage() {
           )}
         </h2>
         {items.length === 0 ? (
-          <p className="text-ink-body" data-tour="equipment-empty">
-            No equipment yet. Add the gear that moves between jobs — lifts, scaffolding, mixers —
-            so you can tell where something is without calling the foreman.
-          </p>
+          <EmptyState
+            data-tour="equipment-empty"
+            title="No equipment yet"
+            purpose={
+              <p>
+                The tools and gear that move between jobs — the trailer, the scaffolding, the tile
+                saw, the compressor. Send each one out to a job and bring it back, and this page
+                tells you where everything is without a phone call.
+              </p>
+            }
+            actions={[{ label: "Add equipment", opens: "equipment-add" }]}
+            example={{
+              rows: [
+                { title: "Enclosed trailer", tag: "Out", detail: "At Smith kitchen remodel since Sep 2", meta: "TR-1" },
+                { title: "Scaffolding, 3 sections", tag: "In the yard", detail: "Back from Oak Ave addition Aug 28", meta: "SC-2" },
+                { title: "Wet tile saw", tag: "Out", detail: "At Maple St. bathroom since Sep 9", meta: "TS-1" },
+              ],
+            }}
+          />
         ) : (
           <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface" data-tour="equipment-list">
             {items.map(({ item, history, where, use }) => (

@@ -3,6 +3,7 @@ import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { VendorForm } from "@/components/VendorForm";
 import { VendorRow } from "@/components/VendorRow";
+import { EmptyState } from "@/components/EmptyState";
 
 export default async function VendorsPage() {
   const { company, ...currentUser } = await requireCompanyContext();
@@ -31,10 +32,28 @@ export default async function VendorsPage() {
       <section>
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Directory</h2>
         {vendors.length === 0 ? (
-          <p className="text-ink-body" data-tour="vendors-empty">
-            No vendors yet. Add the suppliers you buy from most — board and steel, scaffolding,
-            equipment rental — so material costs have a source attached to them.
-          </p>
+          <EmptyState
+            data-tour="vendors-empty"
+            title="No vendors yet"
+            purpose={
+              <p>
+                The suppliers you buy from — the lumber yard, the tile shop, the equipment rental
+                place — with who to call and what they carry. Once they are here, material orders
+                and price quotes can say where things came from.
+              </p>
+            }
+            actions={[
+              { label: "Add a vendor", opens: "vendors-add" },
+              { label: "See vendor pricing", href: "/vendors/pricing" },
+            ]}
+            example={{
+              rows: [
+                { title: "Valley Lumber Supply", tag: "Lumber", detail: "Sam · (555) 010-4455", meta: "orders@example.com" },
+                { title: "Main St. Tile & Stone", tag: "Tile", detail: "Front counter · (555) 010-7788" },
+                { title: "Ridge Equipment Rental", tag: "Rental", detail: "Lifts, dumpsters, scaffolding" },
+              ],
+            }}
+          />
         ) : (
           <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface" data-tour="vendors-list">
             {vendors.map((vendor) => (

@@ -3,6 +3,7 @@ import { prisma } from "@prova/db";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { MaterialOrderForm } from "@/components/MaterialOrderForm";
+import { EmptyState } from "@/components/EmptyState";
 import { MaterialOrderRow } from "@/components/MaterialOrderRow";
 import { daysLate, orderState } from "@/components/materialOrderLabels";
 import { StatusLine } from "@/components/StatusLine";
@@ -94,6 +95,11 @@ export default async function MaterialOrdersPage({
   // A delivered order is the normal end state, so it leaves the default
   // view — but stays one click away, because "when did that actually show
   // up" is exactly what someone checks when a schedule is questioned.
+  // Whether this company has EVER logged one, not whether the current
+  // filter shows any — the teaching empty state is for the first, and a
+  // filter that happens to match nothing keeps its plain line.
+  const everLogged = activeJob ? await prisma.materialOrder.count({ where: { companyId: company.id } }) : allRows.length;
+
   const rows = showDelivered
     ? allRows
     : allRows.filter((row) => orderState(row.deliveries) !== "COMPLETE");
@@ -168,8 +174,34 @@ export default async function MaterialOrdersPage({
         </Link>
       </div>
 
-      {rows.length === 0 ? (
-        <p className="text-ink-body" data-tour="material-orders-empty">
+      {rows.length === 0 && everLogged === 0 ? (
+        <EmptyState
+          data-tour="material-orders-empty"
+          title="Nothing on order yet"
+          purpose={
+            <p>
+              What you have ordered for each job, from whom, and whether it showed up — cabinets,
+              windows, lumber packages. Log it the day you order and mark it delivered when it
+              lands, and a late delivery is a date on paper instead of a crew standing around.
+            </p>
+          }
+          actions={
+            jobs.length === 0
+              ? [{ label: "Create a job", href: "/jobs/new" }]
+              : vendors.length === 0
+                ? [{ label: "Add a vendor first", href: "/vendors" }]
+                : [{ label: "Log an order", opens: "material-orders-log" }]
+          }
+          example={{
+            rows: [
+              { title: "#3 Kitchen cabinets", tag: "Late", detail: "Smith kitchen remodel · Valley Cabinet Co. · promised Sep 8", meta: "4 days late" },
+              { title: "#2 Framing lumber package", tag: "Delivered", detail: "Oak Ave addition · Valley Lumber Supply", meta: "on time" },
+              { title: "#1 Windows (6)", tag: "Part delivered", detail: "Oak Ave addition · 4 of 6 arrived Sep 3", meta: "2 to come" },
+            ],
+          }}
+        />
+      ) : rows.length === 0 ? (
+        <p className="text-ink-body">
           {allRows.length === 0
             ? "Nothing on order. Log a package the day you place it — the gap between the date you ordered it and the date it turned up is the whole value of the record."
             : `Nothing outstanding — every order on this job has been delivered. ${deliveredCount} delivered order${deliveredCount === 1 ? "" : "s"} hidden.`}
