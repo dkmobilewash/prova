@@ -67,6 +67,11 @@ export const notYetRegistered: Exclusion[] = [
   { action: "intake.*", reason: "Recording needs a real File in the blob store, and confirming a proposal is the human judgement the whole screen exists for — never a command." },
   { action: "compliance.*", reason: "Compliance documents need a real File and are evidence records; page only until a hand-off mode exists." },
   { action: "crm.*", reason: "Contact people and interactions: a natural T1 command, unassigned in WORK-SPLIT.md (open question in the plan)." },
+  // Spreadsheet import. Owner-only bulk writes whose whole claim is that a
+  // PERSON reads the preview — what will be created, what is already here,
+  // which rows have problems — before anything is written. A command that
+  // confirmed one would skip the only step the screen exists for.
+  { action: "spreadsheetImport.*", reason: ADMIN + " Bulk import from a pasted file: the preview is the human judgement, so it is page only." },
   { action: "sales.*", reason: "Prova-operator-only CRM, unreachable for any contractor tenant; excluded from the agent surface entirely." },
   { action: "alerts.*", reason: "Snooze and dismiss are done on the alert being read; nothing to resolve by name." },
   { action: "notifications.*", reason: "Sends the person their own digest; not a task anyone asks the box for." },

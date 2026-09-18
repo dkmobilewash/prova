@@ -121,7 +121,9 @@ export type ToolName =
   // Was the census gap `q-emr` — see top-questions.ts.
   | "experience_mod_rate"
   // Was the census gap `q-lien-deadline`.
-  | "lien_deadlines";
+  | "lien_deadlines"
+  // Was the census gap `q-pipeline`.
+  | "bid_pursuits";
 
 export type ToolDefinition = {
   name: ToolName;
@@ -245,6 +247,21 @@ const monthFilter = {
       type: "string",
       description:
         "Optional. The month to review as YYYY-MM, e.g. 2026-09. Omit for the current month, which is what an unqualified question means.",
+    },
+  },
+};
+
+/** bid_pursuits: OPEN is the three still-being-chased stages together
+ * (WATCHING, CONTACTED, EXPECTING_INVITE) — "what have we got out chasing"
+ * is that question, and it is asked far more than any one stage. */
+const pursuitStageFilter = {
+  type: "object" as const,
+  properties: {
+    stage: {
+      type: "string",
+      enum: ["OPEN", "WATCHING", "CONTACTED", "EXPECTING_INVITE", "INVITED", "DROPPED"],
+      description:
+        "Optional. OPEN means still being chased — not yet invited and not dropped — and is what 'what are we chasing' means. Omit to cover every pursuit, open ones first.",
     },
   },
 };
@@ -443,6 +460,15 @@ export const TOOLS: ToolDefinition[] = [
     description:
       "Lien-rights deadlines recorded against each job — preliminary notices, mechanic's liens, stop payment notices and payment bond claims — with the deadline, who it goes to, whether it has been served, and for unserved ones how many days are left or how many days overdue. Answers 'when does our lien deadline run out on Riverside'. THIS APP NEVER COMPUTES A LEGAL DEADLINE AND NEITHER MAY YOU: every date here was ENTERED by a person from their counsel or the statute. Never work out, estimate or suggest a deadline from a first-furnishing date, a completion date, a state's rules or anything else — the rules vary by state, public versus private work and the contractor's tier, and a wrong date can cost lien rights. If nothing is recorded for a job, say that no deadline has been entered and that the date has to come from their attorney or the statute; an empty list is NOT evidence that no deadline is running. A row served after its entered date is still served; whether late service preserves the right is a question for counsel, not for you.",
     input_schema: jobFilter,
+  },
+  {
+    name: "bid_pursuits",
+    // /pipeline, where the chase list is shown and edited — MANAGE_ESTIMATING,
+    // the same gate as bid_status's /bids.
+    capability: "MANAGE_ESTIMATING",
+    description:
+      "The company's OWN pursuit list: projects somebody here is chasing BEFORE any GC has invited us to bid — by stage (watching, contacted, expecting invite, invited, dropped), with owner, architect, the GC(s) expected, the expected bid date and a rough value when entered. Answers 'what have we got out chasing that we haven't bid yet', which bid_status CANNOT: that tool starts at the invitation. Flags expected bid dates coming up in the next 30 days, expected bid dates that have PASSED with no invitation, and pursuits nobody has touched in 30 days (gone quiet). It knows NOTHING about a project until somebody here types it in — it is not a feed of upcoming work, so an empty or short list means nobody has entered more, never that nothing is out there. A passed bid date says only that the date went by with no invite logged, never why. Pass stage: OPEN for exactly the still-being-chased ones. Summary counts are over every matching pursuit, even if the list is capped.",
+    input_schema: pursuitStageFilter,
   },
   {
     name: "apprenticeship_standing",
@@ -681,10 +707,6 @@ export const KNOWN_GAPS: { topic: string; why: string }[] = [
   {
     topic: "what a person is paid an hour",
     why: "there is no per-person pay rate here, by design. A rate belongs to a CRAFT CLASSIFICATION and the fringe schedule in force on a given date — which is why job_labor_cost prices an hour rather than a person, and why the same man on two crafts in one week costs two different amounts. Say that, and name the crafts he has worked under (team_roster has them) rather than refusing flat: the classification and its schedule are where the number actually lives.",
-  },
-  {
-    topic: "our own sales pipeline — work being chased before anyone invites us to bid",
-    why: "a subcontractor's pre-bid pipeline is not modelled. `bid_status` starts at the bid INVITATION, so it knows about work a GC has already asked us to price and nothing about what is being chased. (The SalesLead model in this database is Prova's own CRM for selling this product and is not your data.)",
   },
 ];
 

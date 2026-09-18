@@ -156,6 +156,24 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     scope: byJob,
   },
   {
+    // Missed when the crew schedule shipped (#304): a table of the company's
+    // own planning, in no dataset and on no omission line — so the export
+    // left it out without saying so. exportCompletenessCensus.test.ts now
+    // fails the build on the next model that does that.
+    key: "crew-schedule",
+    model: "crewScheduleDay",
+    label: "Crew schedule",
+    note:
+      "Who was planned on which job, which day. A plan, not a record of work — hours are " +
+      "in the labour file. Crew members without a login appear by id only, since crew " +
+      "records are not exported.",
+    columns: [
+      "id", "jobId", "workDate", "scheduledUserId", "crewMemberId",
+      "craftClassificationId", "note", "createdByUserId", "createdAt", "updatedAt",
+    ],
+    scope: byCompany,
+  },
+  {
     key: "material-orders",
     model: "materialOrder",
     label: "Material orders",
@@ -400,6 +418,9 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
       "CompanyUnionAgreement",
       "UnionLocal",
       "ApprenticeshipEnrollment",
+      // Found by exportCompletenessCensus.test.ts: the sign-offs for each
+      // indenture period, in no dataset and on no line.
+      "ApprenticeshipPeriodRecord",
       "ApprenticeRatioRule",
       "DispatchSlip",
     ],
@@ -416,6 +437,7 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
       "JobMedia",
       "JobMediaAnnotation",
       "JobMediaTag",
+      "JobMediaTagAssignment",
       "DrawingSet",
       "DrawingRevision",
       "ContractDocument",
@@ -441,10 +463,12 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
     key: "pipeline",
     title: "The sales pipeline and bidding",
     detail:
-      "Leads, opportunities, bid invitations, vendor price quotes, and the named people " +
-      "and call history behind a contact. The contact record itself is exported; the work " +
-      "of winning it is not.",
+      "Leads, opportunities, bid invitations, the pre-bid chase list on the bid pipeline " +
+      "page (projects being pursued before any GC invited you), vendor price quotes, and " +
+      "the named people and call history behind a contact. The contact record itself is " +
+      "exported; the work of winning it is not.",
     models: [
+      "BidPursuit",
       "SalesLead",
       "SalesOpportunity",
       "SalesActivity",
@@ -454,6 +478,34 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
       "ContactPerson",
       "ContactInteraction",
     ],
+  },
+  {
+    // The next three lines were found by exportCompletenessCensus.test.ts on
+    // its first run: real records, in no dataset and on no line, so the page
+    // said "everything but these" while they quietly stayed behind.
+    key: "tm-tickets",
+    title: "Signed time-and-materials tickets",
+    detail:
+      "Time-and-materials tickets — the extra work on a day, what it was built from, and " +
+      "the name of whoever signed it on site. They are in the app; they are not in this " +
+      "file, so keep your own copy of anything a GC signed.",
+    models: ["TmTicket"],
+  },
+  {
+    key: "messages",
+    title: "Messages sent from the app",
+    detail:
+      "Emails and texts sent to GCs and contacts from inside the app, and the delivery " +
+      "history the provider reported for each one.",
+    models: ["OutboundMessage", "OutboundMessageEvent"],
+  },
+  {
+    key: "phase-codes",
+    title: "Phase codes",
+    detail:
+      "The cost codes you set up. Scope lines and costs are exported; the code list they " +
+      "are grouped by is not.",
+    models: ["PhaseCode"],
   },
   {
     key: "lien-deadlines",
@@ -497,6 +549,48 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
     ],
   },
 ];
+
+/**
+ * Models that are neither exported nor disclosed, because they are not
+ * anybody's work — each with the reason, so adding one is a sentence
+ * somebody has to be willing to write.
+ *
+ * This is the third bucket `exportCompletenessCensus.test.ts` accepts. Every
+ * model in the schema must sit in EXACTLY ONE of: a dataset,
+ * `EXPORT_OMISSIONS`, or this list. A model in none of them is a table the
+ * page says nothing about, which is how `CrewScheduleDay`, `TmTicket` and
+ * the outbound message log were left out silently; a model in two is a
+ * claim that contradicts itself.
+ *
+ * Not a place to hide real records. If a person would go looking for it in
+ * their file, it belongs in `EXPORT_OMISSIONS`, where the page says so. The
+ * panel's closing sentence ("sequence counters, sync logs…") is the promise
+ * this list is held to.
+ */
+export const EXPORT_INTERNAL_MODELS: Record<string, string> = {
+  BackchargeCounter: "sequence counter — the numbers it issued are on the rows themselves",
+  ChangeOrderCounter: "sequence counter — the numbers it issued are on the exported change orders",
+  CloseoutSubmissionCounter: "sequence counter — the numbers it issued are on the rows themselves",
+  ContractDocumentVersionCounter: "sequence counter — the numbers it issued are on the rows themselves",
+  EstimateVersionCounter: "sequence counter — the numbers it issued are on the exported estimate versions",
+  InvoiceCounter: "sequence counter — the numbers it issued are on the exported invoices",
+  MaterialOrderCounter: "sequence counter — the numbers it issued are on the exported material orders",
+  RfiCounter: "sequence counter — the numbers it issued are on the exported RFIs",
+  SafetyCaseCounter: "sequence counter — the numbers it issued are on the exported incidents",
+  SubmittalCounter: "sequence counter — the numbers it issued are on the exported submittals",
+  QuickBooksConnection: "an integration connection: tokens into another system, withheld above",
+  IntegrationConnection: "an integration connection: tokens into another system, withheld above",
+  QuickBooksAccountMapping: "integration plumbing — which QuickBooks account a posting goes to, meaningless without that QuickBooks company",
+  QuickBooksEntityLink: "integration plumbing — our id against QuickBooks' id for the same record",
+  QuickBooksSyncAttempt: "sync log — each attempt to post a record to QuickBooks",
+  IntegrationSyncLog: "sync log — each run of an integration, and what it moved",
+  NotificationDispatch: "notification record — which alert was sent to whom, not the thing it was about",
+  AlertAcknowledgement: "notification record — who dismissed or snoozed an alert",
+  DeviceToken: "notification record — a phone's push address, and a credential in its own right",
+  AskUsage: "AI usage metering",
+  AskProposal: "AI usage — a change the assistant proposed and waited on; anything confirmed is in the real tables",
+  LicenseClassificationReference: "shared reference table of licence classifications, the same for every company",
+};
 
 /**
  * The same disclosure, written into the JSON bundle itself.

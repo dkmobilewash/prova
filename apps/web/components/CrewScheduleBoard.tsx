@@ -154,10 +154,21 @@ export function CrewScheduleBoard({
         {adding && (
           <form
             data-testid="crew-schedule-form"
-            action={(formData) =>
+            // onSubmit, NOT `action={...}`. In React 19 a form `action`
+            // resets the form before the action runs, whatever it returns
+            // (`startHostTransition` -> `requestFormReset`), so a refused
+            // save showed "already on that job that day" next to a form
+            // that had snapped back to the first job, the first worker and
+            // today. Reset only on success. formActionCensus.test.ts keeps
+            // this from coming back.
+            onSubmit={(event) => {
+              event.preventDefault();
+              const form = event.currentTarget;
+              const formData = new FormData(form);
               startTransition(async () => {
                 const result = await scheduleCrewDay(formData);
                 if (result.ok) {
+                  form.reset();
                   setError(null);
                   setAdding(false);
                   // The row list is refreshed by the action's revalidate;
@@ -165,8 +176,8 @@ export function CrewScheduleBoard({
                 } else {
                   setError(result.error);
                 }
-              })
-            }
+              });
+            }}
             className="mb-4 space-y-3 rounded-lg border border-line-card bg-surface p-4"
           >
             <div className="grid gap-3 sm:grid-cols-2">
