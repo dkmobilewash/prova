@@ -74,6 +74,8 @@ function useHydrated(): boolean {
 /** Starts holding a change made over the list that is on screen NOW; call
  * the returned function once the server has confirmed it. */
 type BeginHold = () => (change: PursuitChange) => void;
+/** Shows a change while its action is in flight (useOptimistic's setter). */
+type ShowInFlight = (change: PursuitChange) => void;
 
 export type LinkableInvitation = { id: string; label: string };
 
@@ -181,11 +183,18 @@ function PursuitRowView({
   invitations,
   isOwner,
   beginHold,
+  showInFlight,
+  reportRefusal,
 }: {
   pursuit: ShownPursuit;
   invitations: LinkableInvitation[];
   isOwner: boolean;
   beginHold: BeginHold;
+  showInFlight: ShowInFlight;
+  /** A refusal for a change that moved or removed this row on screen: the
+   * row may have remounted in the other list, or be gone, by the time the
+   * answer arrives, so its own error line could never be seen. */
+  reportRefusal: (error: string) => void;
 }) {
   const [mode, setMode] = useState<"view" | "edit" | "link">("view");
   const [error, setError] = useState<string | null>(null);
@@ -197,16 +206,21 @@ function PursuitRowView({
   const run = (
     action: () => Promise<{ ok: true } | { ok: false; error: string }>,
     onOk?: () => void,
-    onFail?: () => void,
+    onFail?: (error: string) => void,
+    // Shown the moment the action starts, not when it answers — the answer
+    // alone took 1.5s+ and the refreshed list seconds more. React withdraws
+    // it when this transition ends; onOk holds it until the list catches up.
+    inFlight?: PursuitChange,
   ) =>
     startTransition(async () => {
+      if (inFlight) showInFlight(inFlight);
       const result = await action();
       if (result.ok) {
         setError(null);
         onOk?.();
       } else {
         setError(result.error);
-        onFail?.();
+        onFail?.(result.error);
       }
     });
 
@@ -223,15 +237,18 @@ function PursuitRowView({
             event.preventDefault();
             const formData = new FormData(event.currentTarget);
             const hold = beginHold();
+            const edited: PursuitChange = {
+              kind: "edit",
+              row: draftPursuit(formData, localToday(), { id: pursuit.id, invitation: pursuit.invitation }),
+            };
             run(
               () => updateBidPursuit(pursuit.id, formData),
               () => {
                 setMode("view");
-                hold({
-                  kind: "edit",
-                  row: draftPursuit(formData, localToday(), { id: pursuit.id, invitation: pursuit.invitation }),
-                });
+                hold(edited);
               },
+              undefined,
+              edited,
             );
           }}
           className="space-y-3"
@@ -389,9 +406,13 @@ function PursuitRowView({
                 pending={pending}
                 onConfirm={() => {
                   const hold = beginHold();
+                  const removed: PursuitChange = { kind: "remove", id: pursuit.id };
                   run(
                     () => deleteBidPursuit(pursuit.id),
-                    () => hold({ kind: "remove", id: pursuit.id }),
+                    () => hold(removed),
+                    // The row left the screen when the delete started.
+                    (reason) => reportRefusal(`"${pursuit.projectName}" was not deleted. ${reason}`),
+                    removed,
                   );
                 }}
               />
@@ -416,12 +437,24 @@ function PursuitRowView({
             onChange={(event) => {
               const next = event.target.value as BidPursuitStage;
               const hold = beginHold();
+              // Shown at once and held after, so a move to Invited or Dropped
+              // leaves the open list on the click, not when the page refreshes.
+              const moved: PursuitChange = {
+                kind: "edit",
+                row: { ...pursuit, stage: next, open: isOpenPursuit(next), saving: true },
+              };
               run(
                 () => setBidPursuitStage(pursuit.id, next),
-                // Held so a move to Invited or Dropped leaves the open list now,
-                // rather than when the refreshed page arrives.
-                () => hold({ kind: "edit", row: { ...pursuit, stage: next, open: isOpenPursuit(next), saving: true } }),
-                () => setStageRevert((n) => n + 1),
+                () => hold(moved),
+                (reason) => {
+                  setStageRevert((n) => n + 1);
+                  // A move between the open and closed lists remounted this
+                  // row, so say it where it will be seen.
+                  if (moved.kind === "edit" && moved.row.open !== pursuit.open) {
+                    reportRefusal(`"${pursuit.projectName}" was not moved. ${reason}`);
+                  }
+                },
+                moved,
               );
             }}
             className="rounded-md border border-line-card bg-surface px-2 py-1.5 text-xs text-ink-label"
@@ -475,6 +508,8 @@ export function BidPursuitList({
 
   // Confirmed saves the refreshed props have not caught up with yet.
   const [held, setHeld] = useState<HeldChange[]>([]);
+  // A row change refused after its row had already moved or left the screen.
+  const [rowRefusal, setRowRefusal] = useState<string | null>(null);
   const settled = applyPursuitChanges(pursuits, heldOver(held, pursuits));
   // Plus, while an action is in flight, the row it is making.
   const [shown, showInFlight] = useOptimistic(settled, (rows: ShownPursuit[], change: PursuitChange) =>
@@ -567,6 +602,15 @@ export function BidPursuitList({
         </form>
       )}
 
+      {rowRefusal && (
+        <p className="mb-3 text-sm text-tag-rose-ink" role="alert">
+          {rowRefusal}{" "}
+          <button type="button" onClick={() => setRowRefusal(null)} className="underline">
+            Dismiss
+          </button>
+        </p>
+      )}
+
       {shown.length === 0 ? (
         <div className="rounded-lg border border-line-card bg-surface p-6">
           <p className="text-ink-label">Nothing on the chase list yet.</p>
@@ -602,6 +646,8 @@ export function BidPursuitList({
                   invitations={invitations}
                   isOwner={isOwner}
                   beginHold={beginHold}
+                  showInFlight={showInFlight}
+                  reportRefusal={setRowRefusal}
                 />
               ))}
             </ul>
@@ -619,6 +665,8 @@ export function BidPursuitList({
                   invitations={invitations}
                   isOwner={isOwner}
                   beginHold={beginHold}
+                  showInFlight={showInFlight}
+                  reportRefusal={setRowRefusal}
                 />
                 ))}
               </ul>
