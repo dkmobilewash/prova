@@ -510,6 +510,16 @@ model TimesheetSignoff {
   entryCount Int
   totalHours Decimal @db.Decimal(7, 2)
 
+  /// The day's crew by craft at signing, from its TimeEntry rows:
+  /// `{ headcount, hours, byCraft: [{ craft, headcount, hours }] }`.
+  manpower       Json?
+  /// The daily report and its delays as they stood at signing — work
+  /// performed, weather, other trades, and each DelayEvent. Null when no
+  /// report had been filed. Nothing can change under a live sign-off, so
+  /// this only differs from the live rows after a reopen, which is exactly
+  /// when you want to know what was signed.
+  reportSnapshot Json?
+
   approvedAt       DateTime?
   approvedByUserId String?
   approvedByUser   User?     @relation("TimesheetSignoffApprovedBy", fields: [approvedByUserId], references: [id])
@@ -531,4 +541,96 @@ model TimesheetSignoff {
   @@index([signedByUserId])
   @@index([approvedByUserId])
   @@index([reopenedByUserId])
+}
+
+enum DelayCause {
+  WEATHER
+  GC_SCHEDULE
+  OTHER_TRADE
+  MATERIAL
+  INSPECTION
+  DESIGN_RFI
+  SITE_ACCESS
+  EQUIPMENT
+  OTHER
+}
+
+enum DelayResponsibleParty {
+  GC
+  OWNER
+  OTHER_TRADE
+  SUPPLIER
+  OURSELVES
+  NOBODY
+}
+
+enum NotificationMethod {
+  PHONE
+  EMAIL
+  TEXT
+  IN_PERSON
+  MEETING
+  OTHER
+}
+
+/// One thing that cost the crew time on one job on one day — the record a
+/// delay claim or a change order is argued from months later.
+///
+/// Replaces the free-text DailyFieldReport.delays. Keyed on (jobId, date)
+/// rather than on a report, so a delay can be logged before the day's report
+/// exists, and it is locked by the same day sign-off as the hours and the
+/// report (`prova_delay_event_day_lock`). The one change that trigger lets
+/// through on a signed day is `changeOrderId`: drafting a change order from a
+/// delay is exactly what the office does after the day is signed.
+model DelayEvent {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+  jobId     String
+  job       Job     @relation(fields: [jobId], references: [id])
+
+  /// The day it happened. UTC midnight, like every date that matters.
+  date DateTime
+
+  cause            DelayCause
+  responsibleParty DelayResponsibleParty
+  /// "Acme Electric", "the GC's super" — who, in words, when the category
+  /// is not enough.
+  responsibleName  String?
+
+  /// Minutes after midnight, site time. Optional: a delay is often known
+  /// only as "most of the morning".
+  startMinute Int?
+  endMinute   Int?
+
+  workersAffected Int?
+  /// Crew-hours lost. Entered, or worked out from workers x (end - start)
+  /// when those are given and this is left blank.
+  hoursLost       Decimal? @db.Decimal(7, 2)
+
+  description String
+
+  /// Whether, how, when and to whom the GC was told. Null method = not yet.
+  gcNotifiedHow NotificationMethod?
+  gcNotifiedWho String?
+  gcNotifiedAt  DateTime?
+
+  /// The change order drafted from this delay, if one was.
+  changeOrderId String?
+  changeOrder   ChangeOrder? @relation(fields: [changeOrderId], references: [id], onDelete: SetNull)
+
+  loggedByUserId String?
+  loggedBy       User?   @relation("DelayEventLoggedBy", fields: [loggedByUserId], references: [id])
+
+  /// Idempotency key from the phone.
+  clientOperationId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, clientOperationId])
+  @@index([companyId])
+  @@index([jobId, date])
+  @@index([changeOrderId])
+  @@index([loggedByUserId])
 }

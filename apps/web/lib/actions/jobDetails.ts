@@ -17,6 +17,7 @@ import {
   jobDetailsFromForm,
   mayChangeClient,
 } from "@/lib/job-details";
+import { geocodeSite } from "@/lib/weather";
 
 const JOBS_ONLY = "Editing a job isn't part of your job function.";
 
@@ -46,7 +47,7 @@ export async function updateJobDetails(jobId: string, formData: FormData): Promi
 
   const job = await prisma.job.findUnique({
     where: { id: jobId },
-    select: { id: true, companyId: true, status: true, contactId: true },
+    select: { id: true, companyId: true, status: true, contactId: true, siteAddress: true },
   });
   // The same sentence for "does not exist" and "belongs to someone else":
   // a different message for the second is a membership oracle.
@@ -71,7 +72,26 @@ export async function updateJobDetails(jobId: string, formData: FormData): Promi
   });
   if (!contact || contact.companyId !== context.company.id) return fail("Client not found");
 
-  await prisma.job.update({ where: { id: jobId }, data: { name, scope, contactId } });
+  // The site address is what daily-report weather is looked up for. Looked
+  // up again only when it CHANGES (the lookup is two network calls), and a
+  // miss is saved as blank coordinates rather than refused: the address is
+  // still the right thing to record, and the job page says weather could not
+  // be found for it.
+  const siteAddress = String(formData.get("siteAddress") ?? "").trim() || null;
+  let site = {};
+  if (formData.has("siteAddress") && siteAddress !== job.siteAddress) {
+    if (siteAddress && siteAddress.length > 300) return fail("Keep the site address under 300 characters.");
+    const found = siteAddress ? await geocodeSite(siteAddress) : null;
+    site = {
+      siteAddress,
+      siteLatitude: found?.latitude ?? null,
+      siteLongitude: found?.longitude ?? null,
+      siteTimeZone: found?.timeZone ?? null,
+      siteGeocodedAt: found ? new Date() : null,
+    };
+  }
+
+  await prisma.job.update({ where: { id: jobId }, data: { name, scope, contactId, ...site } });
 
   revalidatePath(`/jobs/${jobId}`);
   revalidatePath("/jobs");

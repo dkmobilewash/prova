@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@prova/db";
 import { reopenBlockers } from "@/lib/change-order";
+import { causeLabel, formatMinutes, methodLabel, partyLabel } from "@/lib/delays-core";
 import { Prisma } from "@prova/db";
 import {
   actionFail as fail,
@@ -210,6 +211,65 @@ export async function createChangeOrder(jobId: string, formData: FormData): Prom
     });
 
     revalidatePath(`/jobs/${jobId}`);
+  });
+}
+
+/**
+ * Starts a DRAFT change order from a logged delay — the sub-side move the
+ * delay log exists for. The title and description are the delay's own
+ * record (cause, who, when, crew-hours, and who at the GC was told), so the
+ * draft starts from the evidence rather than from memory. Nothing is sent:
+ * it is an ordinary draft, priced and submitted the ordinary way. The delay
+ * keeps a link to it, and a delay can start only one.
+ */
+export async function draftChangeOrderFromDelay(delayId: string): Promise<ActionResult> {
+  return runAction(async () => {
+    const { company } = await requireCompanyContext();
+    const delay = await prisma.delayEvent.findUnique({ where: { id: delayId } });
+    if (!delay || delay.companyId !== company.id) throw new InputError("That delay is gone. Reload the page.");
+    if (delay.changeOrderId) throw new InputError("A change order was already drafted from this delay.");
+    const job = await requireJob(delay.jobId, company.id);
+    requireEditableViaChangeOrder(job);
+
+    const day = delay.date.toISOString().slice(0, 10);
+    const who = delay.responsibleName ? `${partyLabel(delay.responsibleParty)} — ${delay.responsibleName}` : partyLabel(delay.responsibleParty);
+    const lines = [
+      `Delay on ${day}: ${causeLabel(delay.cause)}. Caused by: ${who}.`,
+      delay.startMinute !== null || delay.endMinute !== null
+        ? `From ${formatMinutes(delay.startMinute) ?? "?"} to ${formatMinutes(delay.endMinute) ?? "?"}.`
+        : null,
+      delay.workersAffected !== null ? `Workers affected: ${delay.workersAffected}.` : null,
+      delay.hoursLost !== null ? `Crew-hours lost: ${Number(delay.hoursLost)}.` : null,
+      delay.gcNotifiedHow
+        ? `GC notified by ${methodLabel(delay.gcNotifiedHow).toLowerCase()}${delay.gcNotifiedWho ? ` (${delay.gcNotifiedWho})` : ""}${
+            delay.gcNotifiedAt ? ` on ${delay.gcNotifiedAt.toISOString().slice(0, 16).replace("T", " ")} UTC` : ""
+          }.`
+        : "GC not recorded as notified.",
+      "",
+      delay.description,
+    ].filter((l): l is string => l !== null);
+
+    await prisma.$transaction(async (tx) => {
+      const number = await issueChangeOrderNumber(tx, delay.jobId);
+      const changeOrder = await tx.changeOrder.create({
+        data: {
+          jobId: delay.jobId,
+          number,
+          title: `Delay ${day}: ${causeLabel(delay.cause)}`,
+          description: lines.join("\n"),
+          status: "DRAFT",
+        },
+      });
+      // Conditional, so two clicks cannot both link a change order: the
+      // second finds the link already set and rolls its draft back.
+      const { count } = await tx.delayEvent.updateMany({
+        where: { id: delay.id, changeOrderId: null },
+        data: { changeOrderId: changeOrder.id },
+      });
+      if (count === 0) throw new InputError("A change order was already drafted from this delay.");
+    });
+
+    revalidatePath(`/jobs/${delay.jobId}`);
   });
 }
 

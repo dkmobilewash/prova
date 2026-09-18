@@ -27,6 +27,8 @@ export function JobDetailsForm({
   contacts,
   isEstimate,
   canRemove,
+  siteAddress,
+  siteStatus,
 }: {
   jobId: string;
   name: string;
@@ -37,6 +39,11 @@ export function JobDetailsForm({
   /** Owner only — the action refuses anyone else anyway; this keeps a
    *  control off screen that a person could never use. */
   canRemove: boolean;
+  /** Prefilled from the bid's free-text location when none is saved yet. */
+  siteAddress: string | null;
+  /** "none" = nothing saved yet; "found" / "notFound" = whether the saved
+   *  address was found on a map — weather needs coordinates. */
+  siteStatus: "none" | "found" | "notFound";
 }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -87,6 +94,25 @@ export function JobDetailsForm({
             billed against this job was sent to.
           </p>
         )}
+
+        <label className={label}>
+          Site address
+          <input
+            name="siteAddress"
+            defaultValue={siteAddress ?? ""}
+            placeholder="123 Main St, Portland, OR 97201"
+            className={input}
+          />
+        </label>
+        {/* Said here, where it can be fixed: a report can only fill in the
+            weather for a place that was found. */}
+        <p className="-mt-1 text-xs text-ink-muted">
+          {siteStatus === "found"
+            ? "Daily reports fill in the weather for this address automatically."
+            : siteStatus === "notFound"
+              ? "Couldn't find this address on a map, so daily reports can't fill in the weather. Try a street address or \"City, ST\"."
+              : "Save where the work is and daily reports fill in the weather automatically."}
+        </p>
 
         <label className={label}>
           Scope

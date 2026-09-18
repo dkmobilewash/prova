@@ -82,6 +82,11 @@ export type CreateOp =
       signerName: string;
       signaturePath?: string;
     }
+  | ({
+      type: "delay:create";
+      jobId: string;
+      clientOperationId: string;
+    } & Omit<api.CreateDelayInput, "clientOperationId">)
   | {
       type: "signoff:create";
       jobId: string;
@@ -289,6 +294,11 @@ async function runOp(op: PendingOp, token: string): Promise<void> {
         token,
       );
       return;
+    case "delay:create": {
+      const { type: _type, jobId, ...input } = op;
+      await api.createDelay(jobId, input, token);
+      return;
+    }
     case "signoff:create":
       await api.createSignoff(
         op.jobId,
