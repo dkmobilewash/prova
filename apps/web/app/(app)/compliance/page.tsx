@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { prisma } from "@prova/db";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
@@ -13,6 +14,7 @@ import { toJobOption } from "@/components/jobLabels";
 import { ExperienceModRates } from "@/components/ExperienceModRates";
 import { loadExperienceModRates } from "@/lib/emr-query";
 import { emrStanding } from "@/lib/emr";
+import { supersededCoiIds } from "@/lib/coi-standing";
 
 export default async function CompliancePage() {
   const { context, allowed } = await requireCapability("MANAGE_COMPLIANCE");
@@ -41,6 +43,10 @@ export default async function CompliancePage() {
   // is worse than either being wrong (settings/page.tsx:66).
   const today = serverToday();
   const renewals = renewalAlerts(renewalSources, today);
+  // Which COI rows a renewal of the same line has replaced — the same
+  // derivation the alerts above use (lib/renewals.ts), so a row can never
+  // read "Expired" here while the alerts treat it as renewed.
+  const superseded = supersededCoiIds(documents.filter((doc) => doc.type === "CERTIFICATE_OF_INSURANCE"));
 
   // A SECOND today, for a DIFFERENT fact, and deliberately so. Which mod rate
   // is in force is decided by the exact day, and on New Year's Eve evening in
@@ -83,6 +89,15 @@ export default async function CompliancePage() {
       <section className="mb-8 rounded-lg border border-line-card bg-surface p-4" data-tour="compliance-upload">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Upload a document</h2>
         <ComplianceUploadForm companyId={company.id} jobs={jobs.map(toJobOption)} />
+        {currentUser.role === "OWNER" && (
+          <p className="mt-3 text-xs text-ink-body" data-tour="compliance-mycoi">
+            Track your subs&apos; insurance in myCOI?{" "}
+            <Link href="/settings/import#mycoi" className="text-link hover:text-link-hover">
+              Import a myCOI export
+            </Link>{" "}
+            instead of uploading certificates one at a time.
+          </p>
+        )}
       </section>
 
       <section>
@@ -139,6 +154,8 @@ export default async function CompliancePage() {
                   fileName: doc.fileName,
                   aiExtracted: doc.aiExtracted,
                   jobName: doc.job?.name ?? null,
+                  coverageType: doc.coverageType,
+                  superseded: superseded.has(doc.id),
                 }}
               />
             ))}

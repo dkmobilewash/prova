@@ -70,6 +70,11 @@ export interface ComplianceDocumentRowData {
   fileName: string | null;
   aiExtracted: boolean;
   jobName: string | null;
+  /** The line of cover, for a COI imported per line (e.g. from myCOI). */
+  coverageType?: string | null;
+  /** A later certificate for the same party, job and line exists — derived
+   * on the page by lib/coi-standing.ts, never stored. */
+  superseded?: boolean;
 }
 
 /** A document's whole row, including its own edit-mode toggle — the fix
@@ -189,7 +194,11 @@ export function ComplianceDocumentRow({
     );
   }
 
-  const expiration = expirationStatus(doc.expiresAt, todayIso);
+  // A renewed line's old row is history, not a lapse: saying "Expired" in
+  // red beside its own replacement is the false alarm this avoids.
+  const expiration = doc.superseded
+    ? { text: "Renewed — a later certificate replaces this one", className: "text-ink-muted" }
+    : expirationStatus(doc.expiresAt, todayIso);
 
   return (
     <li className="flex flex-col gap-2 p-4">
@@ -200,7 +209,10 @@ export function ComplianceDocumentRow({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <p className="font-medium text-ink">{TYPE_LABELS[doc.type] ?? doc.type}</p>
+            <p className="font-medium text-ink">
+              {TYPE_LABELS[doc.type] ?? doc.type}
+              {doc.coverageType && <span className="font-normal text-ink-body"> — {doc.coverageType}</span>}
+            </p>
             <span
               className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
                 doc.status === "RECEIVED" ? "bg-tag-green text-tag-green-ink" : "bg-neutral-800 text-ink-label"

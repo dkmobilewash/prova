@@ -53,3 +53,31 @@ describe("isProviderVisible", () => {
     }
   });
 });
+
+describe("the myCOI card says what is real and what is not", () => {
+  const mycoi = PROVIDERS.find((entry) => entry.provider === "MYCOI");
+
+  it("exists, and is a file import — not 'planned', and never a connection", () => {
+    expect(mycoi).toBeDefined();
+    expect(mycoi!.implementation.kind).toBe("file-import");
+  });
+
+  it("names why there is no live connection, in words an owner can act on", () => {
+    const impl = mycoi!.implementation;
+    if (impl.kind !== "file-import") throw new Error("not a file import");
+    expect(impl.liveApi).toMatch(/agreement with illumend/);
+    expect(impl.liveApi).toMatch(/export file/);
+  });
+
+  it("links to an import that actually exists at that anchor", async () => {
+    const impl = mycoi!.implementation;
+    if (impl.kind !== "file-import") throw new Error("not a file import");
+    const [path, anchor] = impl.importHref.split("#");
+    expect(path).toBe("/settings/import");
+    const { readFileSync } = await import("node:fs");
+    const page = readFileSync(new URL("../../app/(app)/settings/import/page.tsx", import.meta.url), "utf8");
+    // The anchor, and the component that renders the import, on that page.
+    expect(page).toContain(`id="${anchor}"`);
+    expect(page).toMatch(/<MyCoiImport\b/);
+  });
+});

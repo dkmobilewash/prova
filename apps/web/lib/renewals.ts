@@ -1,6 +1,7 @@
 import { cache } from "react";
 import { prisma } from "@prova/db";
 import { toIsoDate, type RenewalSource } from "@/lib/compliance-expiry";
+import { governingCois } from "@/lib/coi-standing";
 
 /**
  * Collects everything in one company that can lapse.
@@ -42,7 +43,7 @@ async function readRenewalSources(companyId: string): Promise<RenewalSource[]> {
     // date and never will, so they are not candidates at all.
     prisma.complianceDocument.findMany({
       where: { companyId, type: "CERTIFICATE_OF_INSURANCE" },
-      select: { id: true, type: true, partyName: true, expiresAt: true },
+      select: { id: true, type: true, partyName: true, jobId: true, coverageType: true, expiresAt: true },
     }),
     prisma.companyLicense.findMany({
       where: { companyId },
@@ -76,10 +77,15 @@ async function readRenewalSources(companyId: string): Promise<RenewalSource[]> {
   ]);
 
   return [
-    ...documents.map((doc): RenewalSource => ({
+    // A renewed line of cover replaces the row it renewed — see
+    // lib/coi-standing.ts. Rows with no coverage line are all kept, exactly
+    // as before that column existed.
+    ...governingCois(documents).map((doc): RenewalSource => ({
       id: doc.id,
       kind: "COMPLIANCE_DOCUMENT",
-      title: TYPE_LABELS[doc.type] ?? doc.type,
+      title: doc.coverageType
+        ? `${TYPE_LABELS[doc.type] ?? doc.type} — ${doc.coverageType}`
+        : (TYPE_LABELS[doc.type] ?? doc.type),
       detail: doc.partyName,
       date: toIsoDate(doc.expiresAt),
       expectsDate: true,

@@ -2,6 +2,8 @@ import Link from "next/link";
 import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { SpreadsheetImport } from "@/components/SpreadsheetImport";
+import { MyCoiImport } from "@/components/MyCoiImport";
+import { toIsoDate } from "@/lib/compliance-expiry";
 
 /**
  * Bringing a contractor's existing clients, jobs and crew in from a
@@ -40,8 +42,8 @@ export default async function ImportPage() {
     );
   }
 
-  const [contacts, jobs, crew] = await Promise.all([
-    prisma.contact.findMany({ where: { companyId: company.id }, select: { name: true } }),
+  const [contacts, jobs, crew, certificates, vendors] = await Promise.all([
+    prisma.contact.findMany({ where: { companyId: company.id }, select: { name: true, accountType: true } }),
     prisma.job.findMany({
       where: { companyId: company.id },
       select: { name: true, contact: { select: { name: true } } },
@@ -50,6 +52,13 @@ export default async function ImportPage() {
       where: { companyId: company.id },
       select: { legalFirstName: true, legalMiddleName: true, legalLastName: true, employeeNumber: true },
     }),
+    // For the myCOI import's "already here": the same three facts the
+    // confirm compares, read the same way.
+    prisma.complianceDocument.findMany({
+      where: { companyId: company.id, type: "CERTIFICATE_OF_INSURANCE" },
+      select: { partyName: true, coverageType: true, expiresAt: true },
+    }),
+    prisma.vendor.findMany({ where: { companyId: company.id }, select: { name: true } }),
   ]);
   const contactNames = contacts.map((contact) => contact.name);
 
@@ -97,6 +106,22 @@ export default async function ImportPage() {
         </div>
         <div data-tour="import-crew">
           <SpreadsheetImport kind="crew" existingCrew={crew} />
+        </div>
+        {/* The myCOI card on Settings → Integrations links here. */}
+        <div id="mycoi" className="scroll-mt-6" data-tour="import-mycoi">
+          <MyCoiImport
+            existing={certificates.map((row) => ({
+              partyName: row.partyName,
+              coverageType: row.coverageType,
+              expiresOn: toIsoDate(row.expiresAt),
+            }))}
+            known={{
+              vendors: vendors.map((vendor) => vendor.name),
+              subsAndSuppliers: contacts
+                .filter((contact) => contact.accountType === "SUBCONTRACTOR" || contact.accountType === "VENDOR")
+                .map((contact) => contact.name),
+            }}
+          />
         </div>
       </div>
 
