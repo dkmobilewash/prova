@@ -33,7 +33,7 @@ drift failure pointing in the unusual direction: the warning was stale, not
 the data. Same lesson as CLAUDE.md's `MIGRATE_EXPECT_HOST` deletion — a doc
 note that says "X has not been done" is a claim with an expiry date on it.
 
-**131 items audited — 105 built / 20 partial / 5 missing / 1 descoped**
+**132 items audited — 105 built / 21 partial / 5 missing / 1 descoped**
 
 (THIS IS THE FOURTH MERGE IN A DAY WHERE BOTH SIDES' TOTALS WERE WRONG, and
 the count is now worth less than the habit. Sheet 17 gained two rows on
@@ -102,7 +102,7 @@ header cannot.)
 | Status | Count |
 | --- | --- |
 | Built | 105 |
-| Partial | 20 |
+| Partial | 21 |
 | Missing | 5 |
 | Descoped | 1 |
 
@@ -418,7 +418,7 @@ nav-reachable.*
 | Missing | Plan/drawing takeoff via computer vision | explicitly deferred as a later, larger effort — different modality, different accuracy bar |
 | Descoped | Client-facing chatbot | GCs are the customer here, not homeowners — deliberately out of scope for this ICP |
 
-## 24. Integrations — 3 built · 3 partial · 2 missing
+## 24. Integrations — 3 built · 4 partial · 2 missing
 
 | Status | Feature | Note |
 | --- | --- | --- |
@@ -426,7 +426,8 @@ nav-reachable.*
 | Partial | Accounting: QuickBooks, and likely Sage 300 CRE / Foundation | QuickBooks is connected, mapped and syncing one direction — invoices AND payments push, the record is read back to confirm what landed, and reconciliation reports where the two disagree. Verified end to end against a sandbox company (#31, #33, #34, #36, and the payment half on 2026-09-03): the invoice reached QuickBooks as invoice 146, the $500 payment applied against it, and the BALANCE MOVED IN QUICKBOOKS from $1,000.00 to $500.00 with status Partial — read in the books, not from Prova's own success message. A deliberate second click updated the same document rather than creating a duplicate, which is the first live exercise of the retry rules. Deliberately NOT two-way: Prova does not pull QuickBooks edits back, and does not pretend to. Sage/Foundation not started |
 | Partial | Jobber import (onboarding) | One-way, read-only: OAuth (PKCE) connect on the Jobber card, then clients, property addresses, jobs and open quotes through the spreadsheet importer's own preview-then-confirm rules — every job an ESTIMATE, Serializable write, 500-new-rows cap, SSN refusal. `Contact.jobberId`/`Job.jobberId` make a re-import recognise its own rows after a rename. Tokens as `lib/crypto.ts` envelopes; refresh is compare-and-swap because Jobber rotates refresh tokens. PARTIAL because it has only ever run against a mocked Jobber: no Jobber app is registered yet, and Jobber's current GraphQL field names sit behind its Developer Center login and are unverified. Without `JOBBER_*` env vars the card says it is not set up |
 | Missing | Payroll processor integration (for running actual pay) | not started |
-| Missing | DocuSign, Procore, myCOI | 0 built. Each has a registry entry so the page can render it, and each renders DISABLED with a "Coming soon" label. A card on a settings page is not an integration |
+| Partial | Procore feed (read-only, from a GC's project) | OAuth connect with the SUB's own Procore login (state + PKCE, session decides the company); the owner links a GC's Procore project to a job; that project's current drawings, RFIs and submittals are cached in `ProcoreItem` and shown in a separate "From the GC's Procore" section on /drawings, /rfis and /submittals — marked as the GC's, linked back to Procore, never mixed into the sub's own counter-numbered evidence tables. Refresh on open (15 min stale) and by button. Read-only is structural: the one API function is a literal GET, and a test counts every request. PARTIAL because it has only run against a mocked Procore: no Procore app is registered yet, every GC company must INSTALL the app before a sub can read its project (Procore's rule, not ours), and production access needs Procore Marketplace Partner verification. Submittal/drawing web-link paths are unverified. Without `PROCORE_*` env vars the card says it is not set up |
+| Missing | DocuSign, myCOI | 0 built. Each has a registry entry so the page can render it, and each renders DISABLED with a "Coming soon" label. A card on a settings page is not an integration |
 | Partial | E-signature provider | homegrown token-based e-sign (`SignatureRequest`) covers contract signing only — not a general provider for every doc type |
 | Built | Anthropic API (for the AI features above) | Four call sites, all on `claude-opus-5`, all in `packages/integrations/src`: the three one-shot calls — `generateWipNarrative`, `extractComplianceDocument`, `draftEstimateLineItems` (`anthropic.ts`) — and `streamToolConversation` (`ask.ts`), which is both halves of Ask. `checkAnthropicConnection` is a fifth export and bills nothing: it asks the Models endpoint, behind the **Check connection** button. **Verified 2026-09-16 by audit, three ways that have to agree: the SDK imports, the `AskUsageFeature` union, and the metered `feature` on each call site.** This row previously said "five shipped features"; that counted Ask's two halves separately, which is true of the product and not of the code — one function serves both, and a count that disagrees with the call sites is the kind this file exists to catch. `/intake` is NOT one of them despite the name: it is the human review tray over what `compliance-extract` already produced, and makes no model call |
 | Built | Outbound email from the contractor's own domain, with a delivery log | `OutboundMessage` + `OutboundMessageEvent`, `/messages` — provider-agnostic send, signed delivery webhook that fails closed, events deduplicated by provider id, status derived from the newest event and never stored. Sends as the contractor, not as us: mail from a vendor domain is the deliverability complaint the research report found at every competitor. SMS is in the channel enum and not wired |
