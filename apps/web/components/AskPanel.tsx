@@ -14,6 +14,7 @@ import {
   type TranscriptEntry,
 } from "@/lib/ask/transcript";
 import { EXAMPLES } from "@/components/askExamples";
+import { ASK_PREFILL_EVENT, takePendingAsk } from "@/lib/empty-state-events";
 import type { AskRequest, AskStreamEvent, ClarifyView, ProposalView } from "@/lib/ask/answer";
 import type { Citation } from "@/lib/ask/tools";
 import {
@@ -225,6 +226,28 @@ export function AskPanel() {
   const askedRef = useRef("");
   const [isAsking, setIsAsking] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // "Ask C Stream to do it" on an empty state (EmptyState.tsx): the sentence
+  // lands in the box and waits. Never sent from here — the person reads it,
+  // changes it if they like, and presses Ask. Taken on mount for the
+  // launcher's panel, which does not exist until the click that opens it.
+  useEffect(() => {
+    const fill = (text: string) => {
+      setQuestion(text);
+      requestAnimationFrame(() => inputRef.current?.focus());
+    };
+    const pending = takePendingAsk();
+    if (pending) fill(pending);
+    const onPrefill = (event: Event) => {
+      const text = (event as CustomEvent<unknown>).detail;
+      if (typeof text === "string" && text !== "") {
+        takePendingAsk();
+        fill(text);
+      }
+    };
+    window.addEventListener(ASK_PREFILL_EVENT, onPrefill);
+    return () => window.removeEventListener(ASK_PREFILL_EVENT, onPrefill);
+  }, []);
   const abortRef = useRef<AbortController | null>(null);
 
   // A command's card, a resolver's chips, and what a confirmed card became.

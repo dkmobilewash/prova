@@ -13,6 +13,16 @@ const STATUS_STYLE: Record<string, string> = {
   INACTIVE: "bg-neutral-800 text-ink-muted",
 };
 
+/** "Sep 3, 2026". Stored at UTC midnight, rendered in UTC. */
+function lastInTouchLabel(iso: string): string {
+  return new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-US", {
+    timeZone: "UTC",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
 const btn =
   "rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-neutral-800 disabled:opacity-50";
 
@@ -29,6 +39,8 @@ export function ContactRow({
     accountType: string | null;
     jobCount: number;
     openBidCount: number;
+    /** The latest logged call, email, visit or note, as YYYY-MM-DD. */
+    lastInTouch?: string | null;
   };
   canDelete: boolean;
 }) {
@@ -53,6 +65,9 @@ export function ContactRow({
               )}
             </div>
             <p className="text-sm text-ink-body">{contact.email ?? contact.phone ?? "No contact info"}</p>
+            {contact.lastInTouch && (
+              <p className="text-xs text-ink-body">Last in touch {lastInTouchLabel(contact.lastInTouch)}</p>
+            )}
           </div>
         </Link>
         <div className="shrink-0 text-right text-sm text-ink-body">

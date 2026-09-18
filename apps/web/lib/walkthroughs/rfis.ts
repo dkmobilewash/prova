@@ -33,5 +33,23 @@ export const rfisWalkthrough: Walkthrough = {
       body:
         "Press Mark sent when it goes out, then Record answer when the answer comes back. Once it is dealt with, press Close.",
     },
+    {
+      anchor: "procore-feed",
+      title: "The GC's RFIs from Procore",
+      body:
+        "If your GC runs the job in Procore, their RFIs show here once the owner links the project. They are the GC's records, not part of your log.",
+    },
+    {
+      anchor: "procore-refresh",
+      title: "Get the latest from Procore",
+      body:
+        "This refreshes by itself when the page opens. Press Refresh from Procore to read it again now.",
+    },
+    {
+      anchor: "procore-feed-list",
+      title: "Open it in Procore",
+      body:
+        "C Stream only reads these. Press Open in Procore to answer or change one there.",
+    },
   ],
 };

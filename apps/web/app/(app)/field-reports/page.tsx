@@ -3,6 +3,7 @@ import { prisma } from "@prova/db";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { FieldReportComposer } from "@/components/FieldReportComposer";
+import { EmptyState } from "@/components/EmptyState";
 import { FieldReportEntry } from "@/components/FieldReportEntry";
 import { WeekSummary } from "@/components/WeekSummary";
 import {
@@ -159,16 +160,36 @@ export default async function FieldReportsPage({
       )}
 
       {weeks.length === 0 ? (
-        <div className="rounded-lg border border-line-card bg-surface p-6" data-tour="field-reports-empty">
-          <p className="text-ink-label">
-            {activeJob ? "Nothing filed on this job yet." : "Nothing filed yet."}
-          </p>
-          <p className="mt-2 text-sm text-ink-body">
-            One entry a day: who was on site, what got done, the weather, and anything that
-            cost time. The weather and delay fields are the ones a claim is argued from
-            months later, when nobody remembers whether it rained.
-          </p>
-        </div>
+        <EmptyState
+          data-tour="field-reports-empty"
+          title={activeJob ? "Nothing filed on this job yet" : "No field reports yet"}
+          purpose={
+            <p>
+              A short daily log for each job: who was on site, what got done, the weather, and
+              anything that held you up. Thirty seconds at the end of the day, and months later
+              it answers &ldquo;when did the drywall go up?&rdquo; or &ldquo;why did it take an
+              extra week?&rdquo; without anyone having to remember.
+            </p>
+          }
+          actions={
+            jobOptions.length === 0
+              ? [{ label: "Create a job", href: "/jobs/new" }]
+              : [{ label: "Log a day", opens: "field-reports-log-day" }]
+          }
+          ask={
+            jobOptions.length === 0
+              ? undefined
+              : `Log today on ${jobOptions[0].name}: crew of 3, framed the back wall, rain in the afternoon`
+          }
+          example={{
+            caption: "What a week of reports looks like. Not your data — nothing here is saved.",
+            rows: [
+              { title: "Mon, Sep 8 — Smith kitchen remodel", detail: "Crew of 3 · demo done, dumpster swapped · sunny", meta: "full day" },
+              { title: "Tue, Sep 9 — Smith kitchen remodel", detail: "Crew of 2 · rough plumbing moved · rain after 2pm", tag: "Delay", meta: "lost 2 hrs" },
+              { title: "Wed, Sep 10 — Smith kitchen remodel", detail: "Crew of 3 · inspection passed · framing patched", meta: "full day" },
+            ],
+          }}
+        />
       ) : (
         <div className="flex flex-col gap-8" data-tour="field-reports-weeks">
           {weeks.map((week) => {

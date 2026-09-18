@@ -78,6 +78,12 @@ export const HANDLED_MODELS = [
   // Lien-rights deadlines. Required jobId, RESTRICT on Job — the #227 shape
   // again, so it is here AND in both scripts' del() order.
   "LienDeadline",
+  // A job's link to a GC's Procore project, and (by cascade) the cached GC
+  // records under it. CASCADE on Job, so it would not block the delete —
+  // it is here because it belongs to the job and carries a jobId, which is
+  // what clean-test-jobs.mjs counts. Deleting the link deletes nothing in
+  // Procore and none of the sub's own records.
+  "ProcoreProjectLink",
   "JobAssignment",
   "EquipmentAssignment",
   "EstimateVersion",

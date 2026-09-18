@@ -228,6 +228,8 @@ async function main() {
     await del("equipmentAssignment", () => prisma.equipmentAssignment.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("crewScheduleDay", () => prisma.crewScheduleDay.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("lienDeadline", () => prisma.lienDeadline.deleteMany({ where: { jobId: { in: jobIds } } }));
+    // Cascades to its cached ProcoreItem rows. Nothing in Procore changes.
+    await del("procoreProjectLink", () => prisma.procoreProjectLink.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("timeEntry", () => prisma.timeEntry.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("dailyFieldReport", () => prisma.dailyFieldReport.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("tmTicket", () => prisma.tmTicket.deleteMany({ where: { jobId: { in: jobIds } } }));

@@ -1441,6 +1441,8 @@ async function undo(companyId) {
     await del("drawingSet", () => prisma.drawingSet.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("crewScheduleDay", () => prisma.crewScheduleDay.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("lienDeadline", () => prisma.lienDeadline.deleteMany({ where: { jobId: { in: jobIds } } }));
+    // Cascades to its cached ProcoreItem rows. Nothing in Procore changes.
+    await del("procoreProjectLink", () => prisma.procoreProjectLink.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("timeEntry", () => prisma.timeEntry.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("safetyIncident", () =>
       prisma.safetyIncident.deleteMany({ where: { jobId: { in: jobIds } } }),

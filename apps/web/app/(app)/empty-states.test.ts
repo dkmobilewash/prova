@@ -100,6 +100,13 @@ vi.mock("@/lib/viewerToday", () => ({
   viewerToday: vi.fn(async () => "2026-09-12"),
   viewerTimeZone: vi.fn(async () => "UTC"),
 }));
+// The empty state's "Walk me through this page" button asks which page it is
+// on, and its Ask button holds a router; neither exists in a bare render.
+// "/contacts" has a walkthrough, so the button renders and is exercised.
+vi.mock("next/navigation", () => ({
+  usePathname: () => "/contacts",
+  useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
+}));
 // Server actions, imported by these pages only to hand to a form.
 vi.mock("@/lib/actions/notifications", () => ({ sendMyAlertDigest: vi.fn() }));
 
@@ -193,7 +200,7 @@ describe("/pipeline with no pursuits and no invitations", () => {
 
   it("still says the invitation half is empty, separately — one does not hide the other", async () => {
     const html = await load();
-    expect(html).toContain("No bid invitations recorded yet.");
+    expect(html).toContain("No bid invitations recorded yet");
   });
 
   it("does not render the add form until somebody clicks — it is collapsed", async () => {
@@ -340,4 +347,197 @@ describe("/compliance with no mod rate recorded", () => {
     // No rate means no "current" claim anywhere on the page.
     expect(html).not.toContain("Current rate");
   });
+});
+
+/**
+ * The pages that adopted the shared EmptyState (components/EmptyState.tsx),
+ * each rendered against the empty database above. What a brand-new company
+ * sees: the page's own title for what is missing, a primary way forward, and
+ * an example that says it is one.
+ *
+ * `primary` is the first action's markup — a link to where the missing thing
+ * comes from when the page cannot be used yet (no jobs), or the page's own add
+ * button, pressed through its anchor, when it can.
+ */
+describe("pages that use the shared empty state, on an empty account", () => {
+  const cases: {
+    route: string;
+    load: () => Promise<string>;
+    title: string;
+    primary: RegExp;
+    example: boolean;
+  }[] = [
+    {
+      route: "/contacts",
+      load: async () => {
+        const { default: Page } = await import("@/app/(app)/contacts/page");
+        return renderToStaticMarkup(await Page({ searchParams: noSearchParams() }));
+      },
+      title: "No contacts yet",
+      primary: /<button(?=[^>]*bg-brand)[^>]*data-opens="contacts-add"/,
+      example: true,
+    },
+    {
+      route: "/messages",
+      load: async () => {
+        const { default: Page } = await import("@/app/(app)/messages/page");
+        return renderToStaticMarkup(await Page({ searchParams: noSearchParams() }));
+      },
+      title: "Nothing sent yet",
+      // No email provider in a test, so there is nothing to press: the page
+      // must not offer a Send button it would then refuse.
+      primary: /^(?![\s\S]*data-opens="messages-compose")/,
+      example: true,
+    },
+    {
+      route: "/catalog",
+      load: async () => {
+        const { default: Page } = await import("@/app/(app)/catalog/page");
+        return renderToStaticMarkup(await Page());
+      },
+      title: "No catalog entries yet",
+      primary: /<button(?=[^>]*bg-brand)[^>]*data-opens="catalog-add"/,
+      example: true,
+    },
+    {
+      route: "/vendors",
+      load: async () => {
+        const { default: Page } = await import("@/app/(app)/vendors/page");
+        return renderToStaticMarkup(await Page());
+      },
+      title: "No vendors yet",
+      primary: /<button(?=[^>]*bg-brand)[^>]*data-opens="vendors-add"/,
+      example: true,
+    },
+    {
+      route: "/equipment",
+      load: async () => {
+        const { default: Page } = await import("@/app/(app)/equipment/page");
+        return renderToStaticMarkup(await Page());
+      },
+      title: "No equipment yet",
+      primary: /<button(?=[^>]*bg-brand)[^>]*data-opens="equipment-add"/,
+      example: true,
+    },
+    {
+      route: "/rfis",
+      load: async () => {
+        const { default: Page } = await import("@/app/(app)/rfis/page");
+        return renderToStaticMarkup(await Page({ searchParams: noSearchParams() }));
+      },
+      title: "No RFIs yet",
+      primary: /<a(?=[^>]*href="\/jobs\/new")(?=[^>]*bg-brand)[^>]*>Create a job</,
+      example: true,
+    },
+    {
+      route: "/submittals",
+      load: async () => {
+        const { default: Page } = await import("@/app/(app)/submittals/page");
+        return renderToStaticMarkup(await Page({ searchParams: noSearchParams() }));
+      },
+      title: "No submittals yet",
+      primary: /<a(?=[^>]*href="\/jobs\/new")(?=[^>]*bg-brand)[^>]*>Create a job</,
+      example: true,
+    },
+    {
+      route: "/drawings",
+      load: async () => {
+        const { default: Page } = await import("@/app/(app)/drawings/page");
+        return renderToStaticMarkup(await Page({ searchParams: noSearchParams() }));
+      },
+      title: "No drawings yet",
+      primary: /<a(?=[^>]*href="\/jobs\/new")(?=[^>]*bg-brand)[^>]*>Create a job</,
+      example: true,
+    },
+    {
+      route: "/backcharges",
+      load: async () => {
+        const { default: Page } = await import("@/app/(app)/backcharges/page");
+        return renderToStaticMarkup(await Page({ searchParams: noSearchParams() }));
+      },
+      title: "No backcharges yet",
+      primary: /<a(?=[^>]*href="\/jobs\/new")(?=[^>]*bg-brand)[^>]*>Create a job</,
+      example: true,
+    },
+    {
+      route: "/material-orders",
+      load: async () => {
+        const { default: Page } = await import("@/app/(app)/material-orders/page");
+        return renderToStaticMarkup(await Page({ searchParams: noSearchParams() }));
+      },
+      title: "Nothing on order yet",
+      primary: /<a(?=[^>]*href="\/jobs\/new")(?=[^>]*bg-brand)[^>]*>Create a job</,
+      example: true,
+    },
+    {
+      route: "/punch-lists",
+      load: async () => {
+        const { default: Page } = await import("@/app/(app)/punch-lists/page");
+        return renderToStaticMarkup(await Page({ searchParams: noSearchParams() }));
+      },
+      title: "No punch items yet",
+      primary: /<a(?=[^>]*href="\/jobs\/new")(?=[^>]*bg-brand)[^>]*>Create a job</,
+      example: true,
+    },
+    {
+      route: "/field-reports",
+      load: async () => {
+        const { default: Page } = await import("@/app/(app)/field-reports/page");
+        return renderToStaticMarkup(await Page({ searchParams: noSearchParams() }));
+      },
+      title: "No field reports yet",
+      primary: /<a(?=[^>]*href="\/jobs\/new")(?=[^>]*bg-brand)[^>]*>Create a job</,
+      example: true,
+    },
+    {
+      route: "/photos",
+      load: async () => {
+        const { default: Page } = await import("@/app/(app)/photos/page");
+        return renderToStaticMarkup(await Page({ searchParams: noSearchParams() }));
+      },
+      title: "No photos yet",
+      primary: /<a(?=[^>]*href="\/jobs\/new")(?=[^>]*bg-brand)[^>]*>Create a job</,
+      example: true,
+    },
+    {
+      route: "/compliance",
+      load: async () => {
+        const { default: Page } = await import("@/app/(app)/compliance/page");
+        return renderToStaticMarkup(await Page());
+      },
+      title: "No documents yet",
+      primary: /<button(?=[^>]*bg-brand)[^>]*data-opens="compliance-upload"/,
+      example: true,
+    },
+  ];
+
+  for (const c of cases) {
+    describe(c.route, () => {
+      it("renders the shared empty state with its own title", async () => {
+        const html = await c.load();
+        // Anti-vacuity: the component itself rendered, not just the page.
+        expect(html).toContain("data-empty-state");
+        expect(html).toContain(c.title);
+      });
+
+      it("offers its first way forward", async () => {
+        expect(await c.load()).toMatch(c.primary);
+      });
+
+      it("labels its example as an example, never as data", async () => {
+        const html = await c.load();
+        const figure = html.match(/<figure[\s\S]*?<\/figure>/)?.[0] ?? "";
+        expect(figure !== "", `${c.route} has no example`).toBe(c.example);
+        if (c.example) {
+          expect(figure).toMatch(/>Example</);
+          expect(figure).toContain("Not your data");
+          expect(figure).toMatch(/<ul[^>]*aria-hidden="true"[^>]*inert=""/);
+        }
+      });
+
+      it("offers the walkthrough", async () => {
+        expect(await c.load()).toContain("Walk me through this page");
+      });
+    });
+  }
 });

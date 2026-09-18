@@ -587,6 +587,8 @@ export const EXPORT_INTERNAL_MODELS: Record<string, string> = {
   QuickBooksEntityLink: "integration plumbing — our id against QuickBooks' id for the same record",
   QuickBooksSyncAttempt: "sync log — each attempt to post a record to QuickBooks",
   IntegrationSyncLog: "sync log — each run of an integration, and what it moved",
+  ProcoreProjectLink: "integration plumbing — which GC Procore project feeds which job, meaningless without that Procore login",
+  ProcoreItem: "a cached copy of the GC's own Procore records — theirs, kept in Procore, not this company's",
   NotificationDispatch: "notification record — which alert was sent to whom, not the thing it was about",
   AlertAcknowledgement: "notification record — who dismissed or snoozed an alert",
   DeviceToken: "notification record — a phone's push address, and a credential in its own right",

@@ -3,12 +3,14 @@ import { prisma } from "@prova/db";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { SubmittalForm } from "@/components/SubmittalForm";
+import { EmptyState } from "@/components/EmptyState";
 import { SubmittalRow } from "@/components/SubmittalRow";
 import { daysBetween, isOverdue, latestRevision, submittalState } from "@/components/submittalLabels";
 import { StatusLine } from "@/components/StatusLine";
 import { submittalsStatus } from "@/lib/status-sentences";
 import { jobPickerLabel, toJobOption } from "@/components/jobLabels";
 import { viewerToday } from "@/lib/viewerToday";
+import { ProcoreFeedSection, loadProcoreFeed } from "@/components/ProcoreFeedSection";
 
 /** Stored at UTC midnight, rendered in UTC — same rule as RFIs, the
  * safety log and daily field reports. */
@@ -82,6 +84,11 @@ export default async function SubmittalsPage({
   // Approval is the normal end state, so approved packages leave the
   // default view — but they stay one click away, because "which revision
   // was approved" is exactly what someone checks before building.
+  // Whether this company has EVER logged one, not whether the current
+  // filter shows any — the teaching empty state is for the first, and a
+  // filter that happens to match nothing keeps its plain line.
+  const everLogged = activeJob ? await prisma.submittal.count({ where: { companyId: company.id } }) : allRows.length;
+
   const rows = showApproved
     ? allRows
     : allRows.filter((row) => submittalState(row.revisions) !== "APPROVED");
@@ -116,6 +123,10 @@ export default async function SubmittalsPage({
     `rounded-md border px-3 py-1.5 text-sm ${
       active ? "border-brand text-link" : "border-line-card text-ink-label hover:bg-neutral-800"
     }`;
+
+  // The GC's records from Procore, if this company links any (see
+  // components/ProcoreFeedSection.tsx).
+  const procoreFeed = await loadProcoreFeed(company.id, "SUBMITTAL", activeJob);
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8">
@@ -159,10 +170,36 @@ export default async function SubmittalsPage({
         </Link>
       </div>
 
-      {rows.length === 0 ? (
-        <p className="text-ink-body" data-tour="submittals-empty">
-          Nothing here yet. Log a package the day it goes out — the gap between the date you sent it
-          and the date it came back is the whole value of the record.
+      {rows.length === 0 && everLogged === 0 ? (
+        <EmptyState
+          data-tour="submittals-empty"
+          title="No submittals yet"
+          purpose={
+            <p>
+              What you sent for sign-off before you build — cabinet shop drawings, window and
+              fixture spec sheets, finish samples — and what came back: approved, or revise and
+              resend. It answers &ldquo;did they approve this one, and when?&rdquo; before the crew
+              installs it.
+            </p>
+          }
+          actions={
+            jobs.length === 0
+              ? [{ label: "Create a job", href: "/jobs/new" }]
+              : [{ label: "Log a submittal", opens: "submittals-log" }]
+          }
+          example={{
+            rows: [
+              { title: "#4 Kitchen cabinets — shop drawings", tag: "With client", detail: "Smith kitchen remodel · sent Sep 6", meta: "due back Sep 13" },
+              { title: "#3 Windows — product data", tag: "Revise and resend", detail: "Oak Ave addition · rev 1 returned Sep 2", meta: "rev 2 next" },
+              { title: "#2 Tile and grout samples", tag: "Approved", detail: "Smith kitchen remodel · 5 days to approve", meta: "Aug 30" },
+            ],
+          }}
+        />
+      ) : rows.length === 0 ? (
+        <p className="text-ink-body">
+          {showApproved
+            ? `No submittals${activeJob ? " on this job" : ""}.`
+            : `Nothing in play${activeJob ? " on this job" : ""}. Approved ones are under “Show approved”.`}
         </p>
       ) : (
         <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface" data-tour="submittals-list">
@@ -177,6 +214,10 @@ export default async function SubmittalsPage({
           ))}
         </ul>
       )}
+
+      {/* The GC's records from Procore: a separate section, never merged
+          into this company's own log above. */}
+      <ProcoreFeedSection feed={procoreFeed} />
     </div>
   );
 }
