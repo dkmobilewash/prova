@@ -1088,6 +1088,7 @@ export function AskPanel() {
           setQuestion("");
         }}
         className="flex gap-2"
+        data-tour="ask-box"
       >
         <input
           ref={inputRef}

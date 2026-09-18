@@ -74,7 +74,7 @@ export function FieldReportComposer({
   // and find.
   if (jobs.length === 0) {
     return (
-      <div className="rounded-lg border border-line-card bg-surface p-4">
+      <div className="rounded-lg border border-line-card bg-surface p-4" data-tour="field-reports-no-jobs">
         <p className="text-sm text-ink-body">
           No jobs yet. A field report records what happened on a job, so there has to be one to
           file against.
@@ -94,6 +94,7 @@ export function FieldReportComposer({
       <button
         type="button"
         onClick={() => setIsOpen(true)}
+        data-tour="field-reports-log-day"
         className="rounded-md bg-brand px-5 py-3 text-base font-semibold text-neutral-900 hover:bg-yellow-500"
       >
         Log a day
@@ -130,6 +131,7 @@ export function FieldReportComposer({
         });
       }}
       className="flex flex-col gap-3 rounded-lg border border-line-card bg-surface p-4"
+      data-tour="field-reports-form"
     >
       <h2 className="text-sm font-semibold text-ink-label">Log a day</h2>
       <FormDraftNotice draft={draft} />

@@ -704,7 +704,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
           ContractSummary component also used by the public /esign/[token]
           signing page. Nothing below this heading is retyped anywhere. */}
       {showsJobMoney && (
-      <div className="mb-10">
+      <div className="mb-10" data-tour="job-summary">
         <ContractSummary
           companyName={company.name}
           jobName={job.name}
@@ -736,7 +736,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             Field Reports → Pay Apps) that nothing in this file marks and
             nothing may reorder. */}
         {showsJobManagement && (
-        <section className="mb-10">
+        <section className="mb-10" data-tour="job-details">
           <h2 className="mb-3 text-lg font-semibold text-slate-100">Job details</h2>
           <JobDetailsForm
             jobId={job.id}
@@ -758,13 +758,13 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
         )}
 
         {showsJobManagement && (
-        <section className="mb-10">
+        <section className="mb-10" data-tour="job-status">
           <h2 className="mb-3 text-lg font-semibold text-ink">Job status</h2>
           <JobStatusControl jobId={job.id} status={job.status as JobStatusValue} />
         </section>
         )}
 
-        <section className="mb-10">
+        <section className="mb-10" data-tour="job-schedule">
           <h2 className="mb-3 text-lg font-semibold text-ink">Schedule</h2>
           <div className="rounded-lg border border-line-card bg-surface p-4">
             <form action={updateScheduleWithId} className="flex flex-wrap items-end gap-3">
@@ -870,7 +870,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
 
         {/* The signing link renders the priced contract. */}
         {showsJobMoney && (
-        <section className="mb-10">
+        <section className="mb-10" data-tour="job-signature">
           <h2 className="mb-3 text-lg font-semibold text-ink">Contract signature</h2>
 
           {/* WHICH ROUTE THIS CONTRACT TOOK, said outright.
@@ -1263,7 +1263,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
         </section>
         )}
 
-        <section className="mb-10">
+        <section className="mb-10" data-tour="job-time">
           <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
             <h2 className="text-lg font-semibold text-ink">Field time entries</h2>
             <Link href={`/jobs/${job.id}/certified-payroll`} className="text-sm text-link hover:underline">
@@ -1489,7 +1489,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
         </section>
 
         {!isEstimateStage && showsBilling && (
-          <section className="mb-10">
+          <section className="mb-10" data-tour="job-invoices">
             <h2 className="mb-3 text-lg font-semibold text-ink">Invoices</h2>
             <div className="flex flex-col gap-4">
               {job.invoices.map((invoice) => {
@@ -1819,7 +1819,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             job's commercial terms. */}
         {!showsJobMoney ? null : isEstimateStage ? (
           <>
-            <section className="mb-10">
+            <section className="mb-10" data-tour="job-line-items">
               <h2 className="mb-3 text-lg font-semibold text-ink">Line items (estimate)</h2>
               <DraftLineItemsForm jobId={job.id} initialScope={job.scope ?? ""} />
               {/* Beside the scope drafter rather than below the list: both
@@ -1980,7 +1980,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
               </div>
             </section>
 
-            <section className="mb-10">
+            <section className="mb-10" data-tour="job-add-line-item">
               <h2 className="mb-3 text-lg font-semibold text-ink">Add line item</h2>
               <form action={addLineItemWithId} className="flex flex-wrap items-end gap-3">
                 <label className="flex flex-col gap-1 text-sm text-ink-label">
@@ -2140,7 +2140,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
               </form>
             </section>
 
-            <section className="mb-10 rounded-lg border border-line-card bg-surface p-4">
+            <section className="mb-10 rounded-lg border border-line-card bg-surface p-4" data-tour="job-lock-in">
               <h2 className="mb-2 text-lg font-semibold text-ink">Ready to lock this in?</h2>
               <p className="mb-3 text-sm text-ink-body">
                 Once contracted, line items can only change through a change order — this keeps an

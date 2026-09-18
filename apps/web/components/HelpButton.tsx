@@ -11,6 +11,9 @@ import {
   type HelpChannel,
 } from "@/lib/help-request";
 import { inputClass } from "@/components/RfiFields";
+import { WalkthroughTour, isAnchorShown } from "@/components/WalkthroughTour";
+import { walkthroughFor, type Walkthrough } from "@/lib/walkthroughs";
+import { browserStorage, markFinished, readFinished, shownSteps } from "@/lib/walkthroughs/engine";
 
 /**
  * The way out of the app to a human, on every screen.
@@ -37,6 +40,14 @@ import { inputClass } from "@/components/RfiFields";
  * reason: no thread, no history, no typing indicator, no "we usually reply
  * in a few minutes". One question, sent, with an honest expectation printed
  * next to the button.
+ *
+ * AND THE TOUR LIVES HERE TOO. "Walk me through this page" sits at the top
+ * of this panel, above the question form, because this is the one control
+ * guaranteed to be on every page — the same argument as above. It appears
+ * only on a page that has a walkthrough AND has at least one of its steps
+ * on screen; a page without one gets no button, never a dead one. The tour
+ * itself is mounted from here so it survives the panel closing, and ends
+ * on navigation for the same reason the panel does.
  */
 export function HelpButton({
   companyName,
@@ -55,6 +66,12 @@ export function HelpButton({
   const [isPending, startTransition] = useTransition();
   const pathname = usePathname();
   const textarea = useRef<HTMLTextAreaElement | null>(null);
+  const trigger = useRef<HTMLButtonElement | null>(null);
+
+  /** The walkthrough on offer, decided when the panel opens — from the page
+   * as it is then, so a tour whose steps are all hidden is not offered. */
+  const [offer, setOffer] = useState<{ walkthrough: Walkthrough; again: boolean } | null>(null);
+  const [touring, setTouring] = useState<Walkthrough | null>(null);
 
   /**
    * The page they were on WHEN THEY ASKED FOR HELP, frozen at open.
@@ -74,6 +91,7 @@ export function HelpButton({
   // this open describing a page you are no longer on.
   useEffect(() => {
     setIsOpen(false);
+    setTouring(null);
   }, [pathname]);
 
   useEffect(() => {
@@ -86,12 +104,23 @@ export function HelpButton({
   }, [isOpen]);
 
   function open() {
+    const walkthrough = walkthroughFor(pathname);
+    const offered = walkthrough && shownSteps(walkthrough.steps, isAnchorShown).length > 0 ? walkthrough : null;
+    setOffer(offered ? { walkthrough: offered, again: readFinished(browserStorage()).includes(offered.route) } : null);
     setOpenedOn(pathname);
     setError(null);
     setSentTo(null);
     setIsOpen(true);
     // Focus after paint, so the cursor is in the box the moment it appears.
-    requestAnimationFrame(() => textarea.current?.focus());
+    // Not when a walkthrough is on offer: the tour is the first thing on the
+    // panel then, and a cursor already in the question box would be telling
+    // them to type.
+    if (!offered) requestAnimationFrame(() => textarea.current?.focus());
+  }
+
+  function startTour(walkthrough: Walkthrough) {
+    setIsOpen(false);
+    setTouring(walkthrough);
   }
 
   // What the panel promises to include, and what `helpBody` actually
@@ -107,6 +136,7 @@ export function HelpButton({
   return (
     <>
       <button
+        ref={trigger}
         type="button"
         onClick={open}
         aria-expanded={isOpen}
@@ -148,11 +178,11 @@ export function HelpButton({
           />
           <div
             role="dialog"
-            aria-label="Ask us for help"
+            aria-label={offer ? "Help" : "Ask us for help"}
             className="fixed right-2 top-14 z-50 max-h-[calc(100dvh-4.5rem)] w-[min(26rem,calc(100vw-1rem))] overflow-y-auto rounded-lg border border-slate-700 bg-slate-900 p-4 shadow-xl sm:right-4"
           >
             <div className="mb-3 flex items-start justify-between gap-3">
-              <h2 className="text-sm font-semibold text-slate-100">Ask us</h2>
+              <h2 className="text-sm font-semibold text-slate-100">{offer ? "Help" : "Ask us"}</h2>
               <button
                 type="button"
                 onClick={() => setIsOpen(false)}
@@ -169,6 +199,25 @@ export function HelpButton({
                 </svg>
               </button>
             </div>
+
+            {offer && (
+              <div className="mb-4 border-b border-line-row pb-4">
+                <h3 className="text-sm font-semibold text-ink">Not sure how this page works?</h3>
+                <p className="mt-1 text-sm text-ink-body">
+                  We will point at each part of it and say what it does, one step at a time. Nothing
+                  is clicked or changed for you.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => startTour(offer.walkthrough)}
+                  className="mt-3 inline-flex min-h-11 w-full items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 sm:w-auto"
+                >
+                  {offer.again ? "Walk me through this page again" : "Walk me through this page"}
+                </button>
+              </div>
+            )}
+
+            {offer && <h3 className="mb-1 text-sm font-semibold text-ink">Or ask a person</h3>}
 
             {/* The expectation, stated before anything is typed and not
                 after. Two people build this and one is not an engineer;
@@ -310,6 +359,17 @@ export function HelpButton({
             )}
           </div>
         </>
+      )}
+
+      {touring && (
+        <WalkthroughTour
+          walkthrough={touring}
+          returnFocusTo={trigger}
+          onClose={(finished) => {
+            if (finished) markFinished(browserStorage(), touring.route);
+            setTouring(null);
+          }}
+        />
       )}
     </>
   );

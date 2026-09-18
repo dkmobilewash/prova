@@ -87,7 +87,7 @@ export default async function SchedulePage() {
     return (
       <div className="mx-auto max-w-3xl px-6 py-8">
         <h1 className="mb-6 text-xl font-semibold text-ink">Schedule</h1>
-        <div className="rounded-lg border border-line-card bg-surface p-6">
+        <div className="rounded-lg border border-line-card bg-surface p-6" data-tour="schedule-no-jobs">
           <p className="text-ink-label">No jobs yet, so there is nothing to lay out.</p>
           <p className="mt-2 max-w-xl text-sm text-ink-body">
             This page puts every job on one list in start-date order, with the crew assigned to each —
@@ -123,7 +123,7 @@ export default async function SchedulePage() {
         canWrite={canWrite && workers.length > 0 && scheduled.length + unscheduled.length > 0}
       />
 
-      <section className="mb-10">
+      <section className="mb-10" data-tour="schedule-start-dates">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Job start dates</h2>
         {scheduled.length === 0 ? (
           <p className="text-ink-body">
@@ -162,7 +162,7 @@ export default async function SchedulePage() {
           when empty. "Every job has a start date" is the thing you came to
           check, and a section that vanishes when its answer is "none" is
           one you cannot use to confirm it. */}
-      <section>
+      <section data-tour="schedule-unscheduled">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Unscheduled</h2>
         {unscheduled.length === 0 ? (
           <p className="text-ink-body">Every job has a start date.</p>
