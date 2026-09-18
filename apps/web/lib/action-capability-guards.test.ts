@@ -724,6 +724,9 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   emr: () => import("./actions/emr"),
   rfis: () => import("./actions/rfis"),
   submittals: () => import("./actions/submittals"),
+  // setWorkerCraft is the first action in this module to assert its
+  // capability; the rest are still on OPEN_BEHIND_AN_ALREADY_GUARDED_PAGE.
+  unionCompliance: () => import("./actions/unionCompliance"),
   drawings: () => import("./actions/drawings"),
   closeout: () => import("./actions/closeout"),
   closeoutSubmissions: () => import("./actions/closeoutSubmissions"),

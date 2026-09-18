@@ -13,6 +13,9 @@ import { punchListCommands, punchListExclusions } from "./commands/punchLists";
 import { retainageCommands } from "./commands/retainage";
 import { rfiCommands, rfiExclusions } from "./commands/rfis";
 import { scheduleCommands } from "./commands/schedule";
+import { pursuitCommands } from "./commands/pursuits";
+import { crewScheduleCommands } from "./commands/crewSchedule";
+import { contactCommands, contactExclusions } from "./commands/contacts";
 
 /**
  * The commands: what Ask can DO, as distinct from what it can answer.
@@ -61,7 +64,11 @@ export type CommandName =
   | "log_time_entry"
   | "send_email"
   | "reschedule_job"
-  | "log_bid_invitation";
+  | "log_bid_invitation"
+  | "add_bid_pursuit"
+  | "set_pursuit_stage"
+  | "schedule_crew"
+  | "add_contact";
 
 /** Risk tier. T5 (delete, void, contract, admin, outward send without a
  * composer) has no member on purpose: it cannot be registered. T4 is an
@@ -224,6 +231,9 @@ export const COMMANDS: CommandDefinition[] = [
   ...messageCommands,
   ...scheduleCommands,
   ...bidCommands,
+  ...pursuitCommands,
+  ...crewScheduleCommands,
+  ...contactCommands,
 ];
 
 export const EXCLUSIONS: Exclusion[] = [
@@ -235,6 +245,7 @@ export const EXCLUSIONS: Exclusion[] = [
   ...billingExclusions,
   ...laborExclusions,
   ...messageExclusions,
+  ...contactExclusions,
   ...notYetRegistered,
 ];
 

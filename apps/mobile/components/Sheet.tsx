@@ -14,6 +14,7 @@ export function Sheet({
   children,
   primaryLabel,
   onPrimary,
+  primaryDisabled,
 }: {
   visible: boolean;
   onClose: () => void;
@@ -21,6 +22,8 @@ export function Sheet({
   children: ReactNode;
   primaryLabel?: string;
   onPrimary?: () => void;
+  /** Greys the primary button out, e.g. until a required choice is made. */
+  primaryDisabled?: boolean;
 }) {
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -32,7 +35,8 @@ export function Sheet({
         {primaryLabel && onPrimary ? (
           <Pressable
             onPress={onPrimary}
-            style={({ pressed }) => [styles.primary, pressed && styles.pressed]}
+            disabled={primaryDisabled}
+            style={({ pressed }) => [styles.primary, primaryDisabled && styles.disabled, pressed && styles.pressed]}
           >
             <Text style={styles.primaryLabel}>{primaryLabel}</Text>
           </Pressable>
@@ -80,6 +84,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   pressed: { opacity: 0.85 },
+  disabled: { opacity: 0.4 },
   primaryLabel: {
     color: colors.brandInk,
     fontSize: typography.size.md,

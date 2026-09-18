@@ -405,8 +405,8 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
     title: "Pay rates, crews, classifications and union agreements",
     detail:
       "Hours are exported; what they are worth is not. Craft classifications, fringe " +
-      "schedules, prevailing wage determinations, union agreements, crew records and " +
-      "apprenticeship enrolments all stay behind — which means the hours file cannot be " +
+      "schedules, prevailing wage determinations, union agreements, crew records, who works " +
+      "under which craft, and apprenticeship enrolments all stay behind — which means the hours file cannot be " +
       "repriced somewhere else on its own, and the classification ids in it will not " +
       "resolve to names.",
     models: [
@@ -423,6 +423,9 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
       "ApprenticeshipPeriodRecord",
       "ApprenticeRatioRule",
       "DispatchSlip",
+      // Which crafts each person can be logged under -- setup for the
+      // phone's craft picker, not a record of work done.
+      "WorkerCraft",
     ],
   },
   {

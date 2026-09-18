@@ -140,6 +140,7 @@ describe("who is offered what", () => {
       "log_time_entry",
       "send_email",
       "reschedule_job",
+      "schedule_crew",
     ]);
     // FIELD holds MANAGE_FIELD and MANAGE_JOBS (lib/permissions.ts: "an
     // RFI when the drawings are wrong"), and nothing else — so no money.
@@ -157,8 +158,13 @@ describe("who is offered what", () => {
       "send_email",
       "reschedule_job",
       "log_bid_invitation",
+      "add_bid_pursuit",
+      "set_pursuit_stage",
+      "add_contact",
     ]);
     expect(commandsFor(ESTIMATOR).map((c) => c.name)).not.toContain("add_punch_items");
+    // Writing the crew schedule is MANAGE_FIELD, which an estimator lacks.
+    expect(commandsFor(ESTIMATOR).map((c) => c.name)).not.toContain("schedule_crew");
   });
 
   it("registers the bid invitation as a T1 draft, DIRECT over its lifted core, on the capability that guards /bids — and withholds it from the field and from accounting", () => {
@@ -203,6 +209,31 @@ describe("who is offered what", () => {
     expect(EXCLUSIONS.map((e) => e.action)).not.toContain("createRetainageRelease");
   });
 
+  it("registers the pursuit, crew-schedule and contact writes DIRECT over the ActionResult actions their pages call, on the capability those actions check", () => {
+    const pinned: Record<string, { action: string; capability: string; tier: string }> = {
+      add_bid_pursuit: { action: "createBidPursuit", capability: ROUTE_CAPABILITY["/pipeline"]!, tier: "T1_DRAFT" },
+      set_pursuit_stage: { action: "setBidPursuitStage", capability: ROUTE_CAPABILITY["/pipeline"]!, tier: "T2_MODIFY" },
+      // lib/actions/crewSchedule.ts: "WRITING it is MANAGE_FIELD".
+      schedule_crew: { action: "scheduleCrewDay", capability: "MANAGE_FIELD", tier: "T1_DRAFT" },
+      // Stricter than the open /contacts page, deliberately — see
+      // commands/contacts.ts. The page itself is unchanged.
+      add_contact: { action: "createContact", capability: "MANAGE_ESTIMATING", tier: "T1_DRAFT" },
+    };
+    for (const [name, want] of Object.entries(pinned)) {
+      const command = COMMANDS.find((c) => c.name === name)!;
+      expect(command.mode, name).toBe("DIRECT");
+      expect(command.action, name).toBe(want.action);
+      expect(command.core, name).toBe(want.action);
+      expect(command.capability, name).toBe(want.capability);
+      expect(command.tier, name).toBe(want.tier);
+      expect(EXCLUSIONS.map((e) => e.action), name).not.toContain(want.action);
+    }
+    // The ones beside them that stay on their pages.
+    for (const action of ["unscheduleCrewDay", "deleteBidPursuit", "linkBidPursuitToInvitation", "deleteContact", "createLienDeadline"]) {
+      expect(EXCLUSIONS.map((e) => e.action), action).toContain(action);
+    }
+  });
+
   it("registers the outward send as T4 and HANDOFF only — a tap never sends", () => {
     const outward = COMMANDS.filter((c) => c.tier === "T4_OUTWARD");
     expect(outward.map((c) => c.name)).toEqual(["send_email"]);
@@ -223,6 +254,7 @@ describe("who is offered what", () => {
       "send_equipment_to_job",
       "bring_equipment_back",
       "reschedule_job",
+      "set_pursuit_stage",
     ]);
     const reschedule = COMMANDS.find((c) => c.name === "reschedule_job")!;
     expect(reschedule.mode).toBe("DIRECT");
@@ -360,6 +392,16 @@ describe("read-tool capabilities match the pages they cite", () => {
     // it is asked for alongside. NOT /safety's MANAGE_FIELD: the OSHA log is
     // what a bureau calculates an EMR from, and the rate is not on that page.
     experience_mod_rate: ROUTE_CAPABILITY["/compliance"],
+    // /alerts is open and its CONTENT is filtered per person in
+    // lib/alerts-query.ts; the tool calls that loader with the asker's
+    // principal, so it is open for the same reason.
+    needs_attention: null,
+    // /contacts is open; the People section of /contacts/[id] is
+    // MANAGE_ESTIMATING and the handler withholds it on that check.
+    contact_lookup: null,
+    // /jobs/[id] is open with its sections withheld in-page; the handler
+    // gates each section on the capability of its own tool.
+    job_overview: null,
   };
 
   it.each(TOOLS.map((tool) => [tool.name, tool.capability] as const))("%s", (name, capability) => {

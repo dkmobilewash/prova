@@ -1,7 +1,13 @@
 import Link from "next/link";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
-import { loadRatioReviews, loadRemittance, loadUnionSetup, monthBounds } from "@/lib/union-compliance-query";
+import {
+  loadRatioReviews,
+  loadRemittance,
+  loadUnionSetup,
+  loadWorkerCrafts,
+  monthBounds,
+} from "@/lib/union-compliance-query";
 import { UnionLocalForm } from "@/components/UnionLocalForm";
 import { UnionLocalCard } from "@/components/UnionLocalCard";
 import { ratioLabel } from "@/lib/apprentice-ratio";
@@ -10,6 +16,7 @@ import { isWhollyUnpriced } from "@/lib/fringe-remittance";
 import { loadApprenticeships, loadTeamForApprenticeship } from "@/lib/apprenticeship-query";
 import { ApprenticeshipForm } from "@/components/ApprenticeshipForm";
 import { ApprenticeshipPanel } from "@/components/ApprenticeshipPanel";
+import { WorkerCraftsPanel } from "@/components/WorkerCraftsPanel";
 
 const STATUS_TONE: Record<string, string> = {
   WITHIN: "text-tag-green-ink",
@@ -42,7 +49,7 @@ export default async function UnionCompliancePage({
     : new Date().toISOString().slice(0, 7);
   const { start, end } = monthBounds(month);
 
-  const [setup, remittance, ratioReviews, apprenticeships, team] = await Promise.all([
+  const [setup, remittance, ratioReviews, apprenticeships, team, workerCrafts] = await Promise.all([
     loadUnionSetup(company.id),
     loadRemittance(company.id, month),
     loadRatioReviews(company.id, month),
@@ -51,6 +58,7 @@ export default async function UnionCompliancePage({
     // from whichever month this page happens to be showing.
     loadApprenticeships(company.id, new Date().toISOString().slice(0, 10)),
     loadTeamForApprenticeship(company.id),
+    loadWorkerCrafts(company.id),
   ]);
 
   const crafts = setup.flatMap((local) => local.crafts);
@@ -304,6 +312,20 @@ export default async function UnionCompliancePage({
           />
         </div>
         <ApprenticeshipPanel rows={apprenticeships} canDelete={currentUser.role === "OWNER"} />
+      </section>
+
+      {/* ------------------------------------------ who works as what --- */}
+      <section className="mb-8">
+        <h2 className="mb-1 text-sm font-semibold text-ink-label">Who works under each craft</h2>
+        <p className="mb-3 text-xs text-ink-muted">
+          The phone&apos;s craft picker shows each person only the crafts ticked for them — one
+          ticked craft is picked for them automatically. Nobody ticked for a person means they are
+          shown every craft, so this never stops anyone logging hours.
+        </p>
+        <WorkerCraftsPanel
+          people={workerCrafts}
+          crafts={crafts.map((c) => ({ id: c.id, label: c.name }))}
+        />
       </section>
 
       {/* ----------------------------------------------------- setup --- */}

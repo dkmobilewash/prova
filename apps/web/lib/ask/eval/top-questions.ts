@@ -357,6 +357,38 @@ export const TOP_QUESTIONS: TopQuestion[] = [
   // the app never works out a legal deadline, and `lien_deadlines` answers
   // only from dates a person typed in from counsel or the statute.
   t("q-lien-deadline", "when does our lien deadline run out on Riverside?", "lien_deadlines"),
+  // Adding one is deliberately NOT a command, and the reason is in
+  // commands/exclusions.ts: the date is legal advice the app refuses to
+  // generate, and a model proposing one is the app computing a deadline by
+  // another route — however carefully the card is worded.
+  refused(
+    "q-lien-add",
+    "put a preliminary notice deadline on Riverside for October 20",
+    "Deliberately excluded, not missing. `createLienDeadline` is on the exclusion list as 'Never a command': every lien date is typed by a person from counsel or the statute on /lien-deadlines, and a model carrying the date onto a confirm card is the app supplying a legal deadline by another route. Reversing that is a decision for Diego and Cyrus, not a registration.",
+    ACCOUNTING,
+  ),
+
+  // ══════════════════════════════════ the morning, the phone book, one job
+  t("q-attention-today", "what needs my attention today?", "needs_attention"),
+  t("q-attention-overdue", "what have we let slip past its date?", "needs_attention", ACCOUNTING),
+  t("q-contact-number", "what's the number for the PM at Halvorsen?", "contact_lookup", ESTIMATOR),
+  t("q-job-rundown", "give me the rundown on Riverside", "job_overview"),
+  c("q-contact-add", "add Halvorsen Builders to our contacts, they're a GC, 555-0142", "add_contact", ESTIMATOR),
+  c("q-pursuit-add", "add Northgate Medical to what we're chasing, Turner and Skanska are bidding it", "add_bid_pursuit", ESTIMATOR),
+  c("q-pursuit-stage", "we called about Northgate Medical, move it to contacted", "set_pursuit_stage", ESTIMATOR),
+  c("q-schedule-crew", "put Mike on Riverside tomorrow", "schedule_crew", FIELD),
+  // The clock-in model (#309) records an interval once it is CLOSED; a
+  // running clock lives only in the phone's own storage. So "who is on the
+  // clock" has no server row to read, and crew_schedule — who was PLANNED —
+  // is the near-miss that would answer it in the right shape.
+  gap(
+    "q-clocked-in",
+    "who's clocked in right now?",
+    "crew_schedule",
+    "clocked in",
+    "A running clock is held only on the worker's phone (apps/mobile/lib/clock-session.ts) and the server writes a time entry when it CLOSES, so no row anywhere says who is on the clock this minute. `crew_schedule` answers who was planned, in the same shape, and reading it as who clocked in is the near-miss. Closing this needs an open-interval row on the server, which is a schema change.",
+    FIELD,
+  ),
 ];
 
 /**
@@ -389,18 +421,28 @@ export const TOP_QUESTIONS: TopQuestion[] = [
  * 4 -> 3 on 2026-09-18: our own pre-bid pipeline, closed by BidPursuit and
  * the `bid_pursuits` tool. The pipeline branch had also written "6 -> 5";
  * three branches each closed one gap from the same starting count.
+ * 3 -> 4 on 2026-09-18, UP and on purpose: "who's clocked in right now"
+ * (`q-clocked-in`). #309's clock stores an interval only once it closes, so
+ * there is nothing to read — recorded with its KNOWN_GAPS entry rather than
+ * left for a tool to near-miss.
  */
-export const CENSUS_GAPS = 3;
+export const CENSUS_GAPS = 4;
 
 /** Questions the registry deliberately refuses. Counted APART from the
  * gaps and asserted separately, because the two must never be added
  * together: a refusal is a decision somebody made and defended, and
  * folding it into a gap list turns a safety rule into a to-do. */
-export const CENSUS_REFUSALS = 1;
+export const CENSUS_REFUSALS = 2;
 
 /** How many questions there are. Same reasoning: a census that can shrink
  * without failing is a census that has already shrunk. */
-export const TOTAL_QUESTIONS = 100;
+/** 100 -> 110 on 2026-09-18: eight questions for the tools and commands
+ * added with `needs_attention`, `contact_lookup`, `job_overview`,
+ * `add_contact`, `add_bid_pursuit`, `set_pursuit_stage` and `schedule_crew`,
+ * a refusal for adding a lien deadline by chat, and a gap for who is on
+ * the clock. Still called "the hundred" everywhere else, which is the name
+ * of the census rather than its size — the size is this literal. */
+export const TOTAL_QUESTIONS = 110;
 
 /**
  * The routable ninety-seven, as eval cases, so the model half of the

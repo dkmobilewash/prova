@@ -613,13 +613,11 @@ export const estimatingExclusions: Exclusion[] = [
   { action: "updateBidInvitationStatus", reason: "A won/lost decision is made on the bids page where the bid is visible." },
   { action: "deleteBidInvitation", reason: "Deletes are never commands (T5)." },
   // The pre-bid pursuit list (lib/actions/bidPursuits.ts, BidPursuit). The
-  // read side ships as the bid_pursuits tool; the writes are page-only for
-  // now. "Add the St. Mary's job to what we're chasing" is a plausible T1
-  // command later — that is a scope call for this PR, not a judgement that
-  // it never should be.
-  { action: "createBidPursuit", reason: "Adding a pursuit is done on /pipeline for now. Its fields are free text a person types about a project the app has never heard of, and a card for that is worth designing rather than bolting on to the PR that added the model." },
+  // read side is the bid_pursuits tool. createBidPursuit and
+  // setBidPursuitStage are the add_bid_pursuit and set_pursuit_stage
+  // commands (commands/pursuits.ts) — the stage only ever the one the
+  // person named, never inferred. The rest stay on /pipeline:
   { action: "updateBidPursuit", reason: "Editing a pursuit is done on /pipeline, where the row being changed is visible." },
-  { action: "setBidPursuitStage", reason: "Moving a pursuit's stage is done on /pipeline beside the row it changes; a stage is somebody's judgement about a chase, not something to infer from a sentence." },
   { action: "linkBidPursuitToInvitation", reason: "Linking needs the right invitation picked from a list of similarly named projects, and it moves the stage to INVITED in the same write — done on /pipeline where both are visible." },
   { action: "deleteBidPursuit", reason: "Deletes are never commands (T5)." },
   { action: "createLineItemCatalogEntry", reason: "A catalog entry carries a typed default price, a number the model would be supplying." },

@@ -53,7 +53,9 @@ export const notYetRegistered: Exclusion[] = [
   { action: "closeoutSubmissions.*", reason: "Counter-numbered closeout packages go to a GC; phase 3 once retries are safe." },
   { action: "quickbooks.*", reason: ADMIN },
   { action: "integrations.*", reason: ADMIN },
-  { action: "company.*", reason: ADMIN + " Contact creation is reached through create_estimate_job's resolve-or-create instead." },
+  // company.* was here. createContact became `add_contact`
+  // (commands/contacts.ts), and the module's other actions are excluded
+  // per action beside it.
   { action: "permissions.*", reason: ADMIN },
   { action: "jobMedia.*", reason: "Site photos: recording one needs a real File in the blob store, and tags and deletes are edits made on the photo being looked at. Never a command." },
   // Document intake. Recording needs a real File already in the blob store,

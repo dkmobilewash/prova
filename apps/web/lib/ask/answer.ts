@@ -655,7 +655,7 @@ export async function* streamAnswer(
       }
       const toolName = name as ToolName;
       const result = await runTool(
-        { companyId: ctx.companyId, principal: ctx.principal },
+        { companyId: ctx.companyId, principal: ctx.principal, userId: ctx.userId },
         toolName,
         (rawInput ?? {}) as { jobName?: string },
       );

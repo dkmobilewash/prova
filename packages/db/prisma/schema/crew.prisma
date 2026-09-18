@@ -163,6 +163,7 @@ model CrewMember {
   timeEntries TimeEntry[]
 
   crewScheduleDays CrewScheduleDay[]
+  workerCrafts     WorkerCraft[]
 
   @@unique([companyId, employeeNumber])
   @@index([companyId])

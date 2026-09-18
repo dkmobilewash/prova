@@ -67,6 +67,9 @@ import {
   summarisePursuits,
   type BidPursuitStage,
 } from "@/lib/bid-pursuits";
+import { loadAlerts } from "@/lib/alerts-query";
+import { summarizeAlerts } from "@/lib/alerts";
+import { resolveJob } from "./resolve";
 import { matchesJobName, TOOLS, type ToolName, type ToolResult } from "./tools";
 
 /**
@@ -93,6 +96,8 @@ type Input = {
   /** bid_pursuits' stage filter — carried with the handler in the #308 merge,
    * since re-applying the handler without it is a type error. */
   stage?: string;
+  /** contact_lookup's name — a company OR a person, as the person said it. */
+  name?: string;
 };
 
 const iso = (date: Date | null) => (date ? date.toISOString().slice(0, 10) : null);
@@ -131,7 +136,12 @@ async function jobNameMismatch(companyId: string, jobName: string | undefined): 
  * was written, exported, and reachable from nowhere. */
 export const HANDLERS: Record<
   ToolName,
-  (companyId: string, input: Input) => Promise<ToolResult>
+  /** `actor` is optional so a handler that does not need to know WHO is
+   * asking keeps its two-argument shape. The three that do — the alert
+   * list, the contact book's People section, the job overview's gated
+   * sections — treat a missing actor as the narrowest person, never the
+   * widest. */
+  (companyId: string, input: Input, actor?: ToolActor) => Promise<ToolResult>
 > = {
   crew_assignments: (companyId) => crewAssignments(companyId),
   crew_schedule: crewSchedule,
@@ -175,6 +185,9 @@ export const HANDLERS: Record<
   experience_mod_rate: (companyId) => experienceModRate(companyId),
   lien_deadlines: lienDeadlines,
   bid_pursuits: bidPursuits,
+  needs_attention: needsAttention,
+  contact_lookup: contactLookup,
+  job_overview: jobOverview,
 };
 
 /**
@@ -241,7 +254,14 @@ export function certificationLabel(kind: string, otherLabel: string | null): str
 /** Who is asking: the company, and the person's role and job function.
  * Handlers still take only the company id — what changed is that the
  * gate now stands in front of them. */
-export type ToolActor = { companyId: string; principal: Principal };
+export type ToolActor = {
+  companyId: string;
+  principal: Principal;
+  /** Whose alert acknowledgements apply (needs_attention). Optional so the
+   * existing callers and tests keep their shape; the only production caller,
+   * answer.ts, always passes it. */
+  userId?: string;
+};
 
 export async function runTool(
   actor: ToolActor,
@@ -268,7 +288,7 @@ export async function runTool(
     return { data: null, citations: [], unavailable: refusalFor(definition.capability) };
   }
 
-  return handler(actor.companyId, input);
+  return handler(actor.companyId, input, actor);
 }
 
 async function crewAssignments(companyId: string): Promise<ToolResult> {
@@ -3569,5 +3589,275 @@ async function bidPursuits(companyId: string, input: Input): Promise<ToolResult>
           ? "No pursuits are at that stage. This list only knows what somebody here has entered."
           : "No pursuits have been entered. This list only knows about work somebody here has typed in — it is not a feed of upcoming projects, so an empty list does not mean nothing is out there."
         : undefined,
+  };
+}
+
+/* ───────────────── what needs me, who to call, one job at a glance ───────────────── */
+
+/** How many alert rows the model is handed. The summary counts every alert
+ * regardless, so a long list is capped without the totals lying. */
+const ATTENTION_ROWS = 25;
+
+/**
+ * "What needs my attention today?" — the /alerts list, read through the
+ * SAME loader that page and the bell call. Nothing is decided here: which
+ * alerts exist, how bad each is, who may see it and whether its money
+ * figure is stripped are all `loadAlerts`'s, via ALERT_CAPABILITY and
+ * visibleToPrincipal. A second list built here would be exactly the "two
+ * surfaces computing the same number" this file's header forbids.
+ *
+ * The page is open and its CONTENT is per-person (lib/permissions.test.ts
+ * says so of /alerts), so this tool is open and passes the asker's
+ * principal through. A missing actor is refused rather than defaulted:
+ * `loadAlerts` treats an omitted principal as an OWNER, which is the widest
+ * reading, and that is the one default this tool must never take.
+ */
+async function needsAttention(companyId: string, _input: Input, actor?: ToolActor): Promise<ToolResult> {
+  const citations = [{ label: "Alerts", href: "/alerts" }];
+  if (!actor?.userId) {
+    return { data: null, citations, unavailable: "The alert list could not be read for this person." };
+  }
+  // The reader's calendar day, as /alerts itself uses — a follow-up due
+  // tomorrow must not read "due today" at 6pm in Los Angeles (#111).
+  const today = await viewerToday();
+  const { visible, silenced } = await loadAlerts(companyId, actor.userId, today, actor.principal);
+  const summary = summarizeAlerts(visible);
+  return {
+    data: visible.slice(0, ATTENTION_ROWS).map((alert) => ({
+      what: alert.title,
+      detail: alert.detail,
+      severity: alert.severity,
+      dueOn: alert.dueOn,
+      daysUntil: alert.daysUntil,
+      // Present only when this person may be told the figure —
+      // visibleToPrincipal has already nulled it otherwise.
+      amount: alert.amount,
+      where: alert.href,
+      asOf: today,
+    })),
+    summary: {
+      needingAttention: summary.total,
+      overdue: summary.overdue,
+      dueSoon: summary.dueSoon,
+      standing: summary.standing,
+      // Things this person marked as seen. Not in the list above, and
+      // named so "nothing needs attention" is never said over them.
+      silencedByYou: silenced.length,
+    },
+    citations,
+    unavailable:
+      visible.length === 0
+        ? silenced.length > 0
+          ? `Nothing new needs attention. ${silenced.length} item${silenced.length === 1 ? " is" : "s are"} silenced on the alerts page.`
+          : "Nothing needs attention. The alert list only sees dates somebody has recorded, so a quiet list means nothing recorded is due — not that nothing is."
+        : undefined,
+  };
+}
+
+/** How many contacts or people a lookup returns. A name that matches more
+ * than this is not a lookup. */
+const CONTACT_ROWS = 20;
+
+/**
+ * "What's the number for the PM at Halvorsen?" — the address book, company
+ * scoped in every WHERE.
+ *
+ * Two levels, gated the way /contacts/[id] gates them: the account's own
+ * phone, email and address are open to every member ("names and phone
+ * numbers are not a tier", lib/permissions.test.ts), and the PEOPLE at an
+ * account render only inside that page's MANAGE_ESTIMATING branch — so a
+ * person without it is told the account's number and that the individuals
+ * are withheld, never handed them. The capability check runs BEFORE the
+ * people query, so a withheld section is not read at all.
+ */
+async function contactLookup(companyId: string, input: Input, actor?: ToolActor): Promise<ToolResult> {
+  const citations = [{ label: "Contacts", href: "/contacts" }];
+  const name = input.name?.trim();
+  if (!name) {
+    return { data: null, citations, unavailable: "Say which company or person to look up." };
+  }
+  const showsPeople = actor ? can(actor.principal, "MANAGE_ESTIMATING") : false;
+  const contains = { contains: name, mode: "insensitive" as const };
+
+  const contacts = await prisma.contact.findMany({
+    where: { companyId, name: contains },
+    select: { id: true, name: true, phone: true, email: true, address: true, status: true, accountType: true },
+    orderBy: { name: "asc" },
+    take: CONTACT_ROWS,
+  });
+
+  // People at a matching account, AND people whose own name matches — "call
+  // Dana" is as common as "call Halvorsen". Only read at all when the page
+  // would show them.
+  const people = showsPeople
+    ? await prisma.contactPerson.findMany({
+        where: {
+          companyId,
+          OR: [{ name: contains }, { contactId: { in: contacts.map((contact) => contact.id) } }],
+        },
+        select: {
+          id: true,
+          name: true,
+          title: true,
+          phone: true,
+          email: true,
+          contactId: true,
+          contact: { select: { name: true } },
+        },
+        orderBy: { name: "asc" },
+        take: CONTACT_ROWS,
+      })
+    : [];
+
+  return {
+    data: {
+      accounts: contacts.map((contact) => ({
+        account: contact.name,
+        phone: contact.phone,
+        email: contact.email,
+        address: contact.address,
+        status: contact.status,
+        type: contact.accountType,
+        page: `/contacts/${contact.id}`,
+      })),
+      people: people.map((person) => ({
+        name: person.name,
+        // The title as somebody typed it — "PM", "Project Manager",
+        // "Super". Matching a role word to it is the model's reading, and
+        // the title is quoted so the person can see what it read.
+        title: person.title,
+        phone: person.phone,
+        email: person.email,
+        at: person.contact.name,
+        page: `/contacts/${person.contactId}`,
+      })),
+      // Said, not silently empty: an empty people list for someone who
+      // cannot see people is not "nobody works there".
+      peopleWithheld: !showsPeople,
+    },
+    summary: { accountsMatched: contacts.length, peopleMatched: people.length },
+    citations,
+    unavailable:
+      contacts.length === 0 && people.length === 0
+        ? `Nobody on the contacts list matches "${name}".${showsPeople ? "" : " The individual people at each account are shown only to estimating access, so a person's own name was not searched."}`
+        : undefined,
+  };
+}
+
+/**
+ * One job at a glance, COMPOSED from the handlers above rather than
+ * recomputed: contract value and billed-to-date are job_margin's (the
+ * calculateJobWip the job page renders), the open counts are open_rfis',
+ * open_punch_list's and change_order_status's. A figure here therefore
+ * cannot disagree with the tool that answers the same question in detail.
+ *
+ * Each section is gated by the capability its own tool and the job page's
+ * section take, checked BEFORE that section is read: /jobs/[id] is open and
+ * withholds its money branch per person, and so does this. A withheld
+ * section is named, never silently dropped — an overview with no money in
+ * it must not read as a job with no money.
+ *
+ * One job, resolved exactly: several jobs matching the name is a question
+ * back, never the first one.
+ */
+async function jobOverview(companyId: string, input: Input, actor?: ToolActor): Promise<ToolResult> {
+  const citations = [{ label: "Jobs", href: "/jobs" }];
+  const wanted = input.jobName?.trim();
+  if (!wanted) return { data: null, citations, unavailable: "Say which job." };
+
+  const found = await resolveJob(companyId, wanted);
+  if (found.kind === "none") return { data: null, citations, unavailable: `No job matches "${wanted}".` };
+  if (found.kind === "many") {
+    return {
+      data: { matchingJobs: found.options.map((option) => `${option.label} (${option.detail})`) },
+      citations,
+      unavailable: `Several jobs match "${wanted}" — ask which one.`,
+    };
+  }
+
+  const job = await prisma.job.findFirst({
+    where: { id: found.match.id, companyId },
+    select: { id: true, name: true, status: true, startDate: true, endDate: true, contact: { select: { name: true } } },
+  });
+  if (!job) return { data: null, citations, unavailable: `No job matches "${wanted}".` };
+
+  const holds = (capability: Parameters<typeof can>[1]) => (actor ? can(actor.principal, capability) : false);
+  const only = { jobName: job.name };
+  const onThisJob = (rows: unknown) =>
+    Array.isArray(rows) ? rows.filter((row: { job?: string }) => row.job === job.name) : [];
+  const withheld: string[] = [];
+  const cite = (result: ToolResult) => {
+    for (const citation of result.citations) {
+      if (!citations.some((existing) => existing.href === citation.href)) citations.push(citation);
+    }
+  };
+
+  let money: Record<string, unknown> | null = null;
+  let changeOrders: Record<string, number> | null = null;
+  if (holds("VIEW_JOB_COSTS")) {
+    const [margin, cos] = await Promise.all([jobMargin(companyId, only), changeOrderStatus(companyId, only)]);
+    const row = onThisJob(margin.data)[0] as Record<string, unknown> | undefined;
+    money = row
+      ? {
+          contractValue: row.contractValue,
+          billedToDate: row.billedToDate,
+          costToDate: row.costToDate,
+          percentComplete: row.percentComplete,
+          shareOfValueWithACostEstimate: row.shareOfValueWithACostEstimate,
+        }
+      : null;
+    const coRows = onThisJob(cos.data) as { status: string }[];
+    changeOrders = {
+      total: coRows.length,
+      pending: coRows.filter((co) => PENDING_CHANGE_ORDERS.includes(co.status)).length,
+      awaitingGc: coRows.filter((co) => co.status === "SUBMITTED").length,
+    };
+    cite(margin);
+  } else {
+    withheld.push("contract value, billing and change orders (job cost access)");
+  }
+
+  let openRfiCount: number | null = null;
+  let overdueRfiCount: number | null = null;
+  if (holds("MANAGE_JOBS")) {
+    const rfis = await openRfis(companyId, only);
+    const rows = onThisJob(rfis.data) as { answerIsOverdue: boolean | null }[];
+    openRfiCount = rows.length;
+    overdueRfiCount = rows.filter((rfi) => rfi.answerIsOverdue === true).length;
+    cite(rfis);
+  } else {
+    withheld.push("RFIs (job correspondence access)");
+  }
+
+  let openPunchCount: number | null = null;
+  if (holds("MANAGE_FIELD")) {
+    const punch = await openPunchList(companyId, only);
+    openPunchCount = onThisJob(punch.data).length;
+    cite(punch);
+  } else {
+    withheld.push("the punch list (field access)");
+  }
+
+  return {
+    data: {
+      job: job.name,
+      gc: job.contact.name,
+      status: job.status,
+      scheduledStart: iso(job.startDate),
+      scheduledEnd: iso(job.endDate),
+      // job_margin covers contracted and in-progress work only, the jobs a
+      // WIP figure means anything for. Null here on an estimate or a
+      // finished job is that, not a job worth nothing.
+      money: holds("VIEW_JOB_COSTS")
+        ? (money ?? "no cost figures: only contracted and in-progress jobs carry them")
+        : null,
+      openRfis: openRfiCount,
+      rfisPastResponseDate: overdueRfiCount,
+      openPunchItems: openPunchCount,
+      changeOrders,
+      withheldFromYou: withheld,
+      page: `/jobs/${job.id}`,
+    },
+    citations,
   };
 }
