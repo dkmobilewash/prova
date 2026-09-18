@@ -53,6 +53,15 @@ import {
   loadUpcomingSchedule,
   scheduledWorkerName,
 } from "@/lib/crew-schedule-query";
+import { loadBidPursuits } from "@/lib/bid-pursuits-query";
+import {
+  BID_PURSUIT_STAGES,
+  COMING_UP_DAYS,
+  QUIET_AFTER_DAYS,
+  STAGE_LABELS,
+  summarisePursuits,
+  type BidPursuitStage,
+} from "@/lib/bid-pursuits";
 import { matchesJobName, TOOLS, type ToolName, type ToolResult } from "./tools";
 
 /**
@@ -70,7 +79,14 @@ import { matchesJobName, TOOLS, type ToolName, type ToolResult } from "./tools";
  * All read-only.
  */
 
-type Input = { jobName?: string; status?: string; year?: string; withinDays?: string; month?: string };
+type Input = {
+  jobName?: string;
+  status?: string;
+  year?: string;
+  withinDays?: string;
+  month?: string;
+  stage?: string;
+};
 
 const iso = (date: Date | null) => (date ? date.toISOString().slice(0, 10) : null);
 
@@ -112,6 +128,7 @@ export const HANDLERS: Record<
 > = {
   crew_assignments: (companyId) => crewAssignments(companyId),
   crew_schedule: crewSchedule,
+  bid_pursuits: bidPursuits,
   open_punch_list: openPunchList,
   compliance_status: (companyId) => complianceStatus(companyId),
   drawing_currency: drawingCurrency,
@@ -3306,6 +3323,84 @@ async function crewSchedule(companyId: string, input: Input): Promise<ToolResult
         ? wanted
           ? "Nobody has been put on the schedule for that job. That is a gap in the plan rather than a quiet week — nothing fills the schedule in for you."
           : "Nobody has been put on the schedule at all. That is a gap in the plan rather than a quiet fortnight — nothing fills the schedule in for you."
+        : undefined,
+  };
+}
+
+/**
+ * The company's OWN pre-bid pipeline: what it is chasing before any GC has
+ * invited it to bid.
+ *
+ * READS BidPursuit ONLY (and, through its optional link, the BidInvitation
+ * it became). Never SalesLead, SalesOpportunity or SalesActivity: those are
+ * Prova's own CRM for selling this product, populated only on the operator
+ * company, and a tool over them would hand every tenant the vendor's sales
+ * pipeline. handlers.bidPursuits.test.ts proxies the client and fails if
+ * this handler so much as touches one.
+ *
+ * Everything flagged here — coming up, passed, gone quiet — is derived by
+ * lib/bid-pursuits.ts on every read, the same functions /pipeline renders
+ * from, so the answer and the screen cannot disagree.
+ */
+async function bidPursuits(companyId: string, input: Input): Promise<ToolResult> {
+  const requested = input.stage?.trim().toUpperCase();
+  const stages: BidPursuitStage[] | undefined =
+    requested === "OPEN"
+      ? ["WATCHING", "CONTACTED", "EXPECTING_INVITE"]
+      : requested && (BID_PURSUIT_STAGES as readonly string[]).includes(requested)
+        ? [requested as BidPursuitStage]
+        : undefined;
+
+  const today = serverToday();
+  const pursuits = await loadBidPursuits(companyId, today, stages);
+  const summary = summarisePursuits(pursuits, today);
+
+  return {
+    data: pursuits.map((p) => ({
+      project: p.projectName,
+      stage: STAGE_LABELS[p.stage],
+      owner: p.owner,
+      architect: p.architect,
+      // As typed. Null means nobody has named a GC yet, which is normal
+      // this early — not a missing field.
+      expectedGcs: p.expectedGcs,
+      expectedBidDate: p.expectedBidDate,
+      estimatedValue: p.estimatedValue,
+      lastUpdated: p.lastUpdated,
+      daysSinceAnyoneTouchedIt: p.daysSinceUpdate,
+      bidDateComingUp: p.bidDateComingUp,
+      // Spelled out on the row, because a row is what gets quoted back.
+      bidDatePassedWithNoInvite: p.bidDatePassed,
+      goneQuiet: p.goneQuiet,
+      becameInvitation: p.invitation
+        ? { project: p.invitation.projectName, gc: p.invitation.contactName, status: p.invitation.status }
+        : null,
+      note: p.note,
+    })),
+    // Over every matching row, never the list forModel may cap.
+    summary: {
+      totalPursuits: summary.total,
+      openPursuits: summary.open,
+      watching: summary.byStage.WATCHING,
+      contacted: summary.byStage.CONTACTED,
+      expectingInvite: summary.byStage.EXPECTING_INVITE,
+      invited: summary.byStage.INVITED,
+      dropped: summary.byStage.DROPPED,
+      bidDatesInNext30Days: summary.bidDatesComingUp,
+      bidDatesPassedWithNoInvite: summary.bidDatesPassed,
+      goneQuiet30Days: summary.goneQuiet,
+      openEstimatedValue: summary.openEstimatedValue,
+      // When above zero, openEstimatedValue is a floor, not a total.
+      openPursuitsWithNoValue: summary.openUnpriced,
+      comingUpWindowDays: COMING_UP_DAYS,
+      quietAfterDays: QUIET_AFTER_DAYS,
+    },
+    citations: [{ label: "Bid pipeline", href: "/pipeline" }],
+    unavailable:
+      pursuits.length === 0
+        ? stages
+          ? "No pursuits are at that stage. This list only knows what somebody here has entered."
+          : "No pursuits have been entered. This list only knows about work somebody here has typed in — it is not a feed of upcoming projects, so an empty list does not mean nothing is out there."
         : undefined,
   };
 }

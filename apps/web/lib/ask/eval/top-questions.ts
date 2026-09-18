@@ -327,14 +327,16 @@ export const TOP_QUESTIONS: TopQuestion[] = [
   t("q-vendor-quote", "what did we get quoted for 5/8 type X?", "vendor_pricing", ESTIMATOR),
   t("q-vendor-stale", "are those prices still good or have they run out?", "vendor_pricing", ESTIMATOR),
   t("q-estimate-read", "what's in the Northgate estimate?", "estimate_detail", ESTIMATOR),
-  gap(
-    "q-pipeline",
-    "what have we got out chasing that we haven't bid yet?",
-    "bid_status",
-    "our own sales pipeline",
-    "A subcontractor's own pre-bid pipeline is not modelled. SalesLead and SalesOpportunity look like the answer and are NOT: sales.prisma's first line says they are Prova's own CRM for selling this product, populated only on the operator company, so a tool over them would hand every tenant the vendor's sales pipeline. `bid_status` starts at the bid INVITATION, so it knows about work a GC has already asked us to price and nothing about what is being chased.",
-    ESTIMATOR,
-  ),
+  // WAS A GAP until BidPursuit (pursuits.prisma). A subcontractor's own
+  // pre-bid pipeline was not modelled: `bid_status` starts at the bid
+  // INVITATION and knows nothing about what is being chased before one.
+  // SalesLead and SalesOpportunity looked like the answer and were NOT —
+  // sales.prisma's first line says they are Prova's own CRM for selling this
+  // product, populated only on the operator company, so a tool over them
+  // would have handed every tenant the vendor's sales pipeline. bid_pursuits
+  // reads BidPursuit only, and its handler test fails if it touches a sales
+  // model.
+  t("q-pipeline", "what have we got out chasing that we haven't bid yet?", "bid_pursuits", ESTIMATOR),
 
   // ══════════════════════════════════ schedule, closeout, warranty
   c("q-reschedule", "push Riverside's start to October 6", "reschedule_job"),
@@ -380,7 +382,7 @@ export const TOP_QUESTIONS: TopQuestion[] = [
  * It goes DOWN when a gap is closed. It going UP is a decision, not an
  * accident.
  */
-export const CENSUS_GAPS = 6;
+export const CENSUS_GAPS = 5;
 
 /** Questions the registry deliberately refuses. Counted APART from the
  * gaps and asserted separately, because the two must never be added

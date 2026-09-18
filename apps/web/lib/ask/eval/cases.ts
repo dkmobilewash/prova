@@ -79,6 +79,10 @@ export const EVAL_CASES: EvalCase[] = [
   tool("read-deliveries", "did the drywall delivery show up at Maple yet?", "material_deliveries", { jobName: "Maple" }),
   tool("read-drawings", "are the drawings we're working from on Riverside still current?", "drawing_currency", { jobName: "Riverside" }),
   tool("read-bids", "what bids do we have out?", "bid_status"),
+  // The pre-bid half: work being chased before a GC has invited us. NOT
+  // bid_status (that starts at the invitation) and never the SalesLead CRM,
+  // which is Prova's own and not the tenant's.
+  tool("read-pursuits", "what are we chasing that nobody has invited us to bid yet?", "bid_pursuits", undefined, ESTIMATOR),
   tool("read-field-scope", "any open RFIs on Riverside?", "open_rfis", { jobName: "Riverside" }, FIELD),
   // Roadmap item 4's five. Each is phrased the way the question actually
   // arrives — "what's coming in", "what is the GC sitting on" — rather than

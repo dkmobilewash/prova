@@ -726,6 +726,11 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // reached from an upload route as well as a page, and the file it records
   // a URL for is in a blob store shared by every tenant.
   intake: () => import("./actions/intake"),
+  // The pre-bid pursuit list. All five actions are reachable only from
+  // /pipeline, which demands MANAGE_ESTIMATING, so the walk put all five in
+  // MUST_ASSERT on the day they were added — and each is executed below as
+  // a principal without it.
+  bidPursuits: () => import("./actions/bidPursuits"),
   // The Ask box. Only `checkAssistantConnection` lands in MUST_ASSERT: it
   // is reachable from /settings/assistant alone, which demands
   // MANAGE_COMPLIANCE. The card actions (confirm, cancel, settle, load)

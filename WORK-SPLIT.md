@@ -349,6 +349,14 @@ the `/bids` page all stay with estimating, and a status is changed there.
 Shared files touched, one line each: `navItems.tsx`, `middleware.ts`, and
 the `ROUTE_CAPABILITY` map in `lib/permissions.ts`.
 
+**Updated 2026-09-18: `/pipeline` now has ONE write surface, and it is not
+`BidInvitation`.** The pre-bid chase list (`BidPursuit`, `pursuits.prisma`,
+`lib/actions/bidPursuits.ts`) sits at the top of the page — projects being
+chased before any GC has invited us. The invitation half below it is still
+read-only exactly as described above; a pursuit only LINKS to the invitation
+it became (nullable FK, SET NULL) and never edits it. Not `SalesLead`, which
+is Prova's own CRM — see `sales.prisma`'s first line.
+
 The CRM lane (`claude/prova-crm-contact-lifecycle`, #72) owns contacts
 themselves — creation, status, MSA/prequal, and whatever comes next on
 `/contacts`. This page links to those pages and edits none of them.
