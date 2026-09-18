@@ -69,6 +69,14 @@ export default async function ImportPage() {
         </Link>{" "}
         — your clients, jobs and open quotes come straight across, with no spreadsheet in between.
       </p>
+      <p className="mb-2 text-sm text-ink-body" data-tour="import-quickbooks">
+        Use QuickBooks Online?{" "}
+        <Link href="/settings#quickbooks-import" className="text-link hover:text-link-hover">
+          Import from QuickBooks
+        </Link>{" "}
+        — your customers, vendors and products and services come straight across. It only reads
+        QuickBooks.
+      </p>
       <p className="mb-6 text-sm text-ink-body">
         Nothing is saved until you press Confirm. First you see what will be added, what is
         already in C Stream (matched by name, so importing the same file twice adds nothing the
