@@ -40,6 +40,30 @@ export const settingsWalkthrough: Walkthrough = {
         "Press Connect QuickBooks to send your invoices into QuickBooks Online. It only sends one way — changes made in QuickBooks do not come back here.",
     },
     {
+      anchor: "qbo-import-connect-first",
+      title: "Bring your QuickBooks lists in",
+      body:
+        "To bring your QuickBooks customers, vendors and products into C Stream, connect QuickBooks first. An Import from QuickBooks button then appears here.",
+    },
+    {
+      anchor: "qbo-import",
+      title: "Import from QuickBooks",
+      body:
+        "Press Import from QuickBooks to see which customers, vendors and products would come across. Nothing is saved yet, and nothing in QuickBooks is changed.",
+    },
+    {
+      anchor: "qbo-import-preview",
+      title: "Check what comes across",
+      body:
+        "Each list shows what will be added, what is already in C Stream, and anything skipped with the reason. Customers become clients and products become catalog entries.",
+    },
+    {
+      anchor: "qbo-import-confirm",
+      title: "Save them",
+      body:
+        "When it looks right, press Confirm. Only new ones are added, so importing again later is safe.",
+    },
+    {
       anchor: "settings-locations",
       title: "Offices and yards",
       body: "Open Add a location to record each office, yard or warehouse you run work out of.",

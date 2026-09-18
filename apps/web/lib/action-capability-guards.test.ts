@@ -687,6 +687,10 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // /settings/integrations, so they assert its MANAGE_COMPLIANCE before
   // the owner check and before anything is read.
   jobber: () => import("./actions/jobber"),
+  // The QuickBooks import's two actions: reachable only from /settings, so
+  // they assert its MANAGE_COMPLIANCE before the owner check and before
+  // anything is read.
+  quickbooksImport: () => import("./actions/quickbooksImport"),
   safety: () => import("./actions/safety"),
   certifications: () => import("./actions/certifications"),
   punchLists: () => import("./actions/punchLists"),

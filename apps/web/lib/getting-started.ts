@@ -139,7 +139,7 @@ const STEPS: StepDefinition[] = [
   {
     id: "import",
     title: "Bring in what you already have",
-    body: "Keep your clients, jobs or crew in a spreadsheet or in Jobber? Bring them in instead of typing it all again.",
+    body: "Keep your clients, jobs or crew in a spreadsheet, in Jobber or in QuickBooks? Bring them in instead of typing it all again.",
     doneBody: "",
     href: "/settings/import",
     linkLabel: "Import a spreadsheet",
