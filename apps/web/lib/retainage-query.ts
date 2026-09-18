@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { prisma } from "@prova/db";
 
 /**
@@ -86,7 +87,7 @@ export const companyRetainageScope = (companyId: string) => ({ job: { companyId 
  * "nothing withheld" and "zero withheld" genuinely mean the same thing for
  * a total.
  */
-export async function loadRetainageHeld(companyId: string): Promise<number> {
+async function readRetainageHeld(companyId: string): Promise<number> {
   const [withheld, released] = await Promise.all([
     prisma.invoice.aggregate({
       where: companyRetainageScope(companyId),
@@ -100,3 +101,14 @@ export async function loadRetainageHeld(companyId: string): Promise<number> {
 
   return Number(withheld._sum.retainageWithheld ?? 0) - Number(released._sum.amount ?? 0);
 }
+
+/**
+ * ONE READ PER RENDER. The (app) layout asks for this from two loaders at
+ * once (loadCompanyFinancials for the metric bar and getMoneyRailStages
+ * for the rail), and nothing deduped server reads within a render, so
+ * every page ran it twice. React's `cache()` scopes the memo to a single
+ * server request -- a Server Action's re-render reads fresh data, never a
+ * previous request's -- and outside a React server render (tests, scripts)
+ * it simply calls through. Same function, same result, read once.
+ */
+export const loadRetainageHeld = cache(readRetainageHeld);
