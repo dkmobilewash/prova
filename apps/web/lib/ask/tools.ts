@@ -134,7 +134,21 @@ export type ToolDefinition = {
   /** The capability the page this tool cites is guarded by. `null` means
    * the page is open to every signed-in member (the schedule is), and is a
    * decision written down rather than a default: tools.test.ts pins each
-   * one against ROUTE_CAPABILITY. */
+   * one against ROUTE_CAPABILITY.
+   *
+   * THAT LAST SENTENCE WAS FALSE UNTIL 2026-09-18 and is the reason the
+   * guard now exists. tools.test.ts had nineteen tests and mentioned
+   * neither `capability` nor `ROUTE_CAPABILITY`; commands.test.ts pins the
+   * COMMANDS that way, which is where the claim seems to have come from. A
+   * documented guard that does not exist is worse than an absent one,
+   * because it is why nobody writes it.
+   *
+   * READ IT AS COVERING ONE PAGE, NOT ALL OF THEM. This is a single field
+   * and a handler cites several pages, so it names the guard on the page
+   * its author had in mind. The rest are checked by the test now, against
+   * a mapping derived from the citations handlers.ts actually emits — and
+   * four pairs disagree today, listed there with the reason each is
+   * recorded rather than fixed. */
   capability: Capability | null;
   input_schema: {
     type: "object";
