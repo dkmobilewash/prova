@@ -75,6 +75,7 @@ export const notYetRegistered: Exclusion[] = [
   // confirmed one would skip the only step the screen exists for.
   { action: "spreadsheetImport.*", reason: ADMIN + " Bulk import from a pasted file: the preview is the human judgement, so it is page only." },
   { action: "jobber.*", reason: ADMIN + " Connecting to and importing from Jobber: an OAuth sign-in and a preview a person reads before confirming, so it is page only." },
+  { action: "mycoi.*", reason: ADMIN + " Importing certificates from a myCOI export: a pasted file and a preview a person reads before confirming, so it is page only." },
   { action: "sales.*", reason: "Prova-operator-only CRM, unreachable for any contractor tenant; excluded from the agent surface entirely." },
   { action: "alerts.*", reason: "Snooze and dismiss are done on the alert being read; nothing to resolve by name." },
   { action: "notifications.*", reason: "Sends the person their own digest; not a task anyone asks the box for." },

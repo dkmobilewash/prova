@@ -24,6 +24,12 @@ export const complianceWalkthrough: Walkthrough = {
         "Pick a scan or photo of a lien waiver, insurance certificate or payroll form, choose the job if it belongs to one, and press Upload & extract. The app reads it into fields you can check and fix.",
     },
     {
+      anchor: "compliance-mycoi",
+      title: "Already use myCOI?",
+      body:
+        "If your subs' insurance is kept in myCOI, press Import a myCOI export to bring it all in at once instead of uploading each certificate.",
+    },
+    {
       anchor: "compliance-empty",
       title: "Nothing filed yet",
       body: "Documents you upload will be listed here, newest first.",

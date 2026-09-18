@@ -166,6 +166,10 @@ export default async function IntegrationsPage({
                   <span className="inline-flex items-center rounded-full border border-line-card bg-tag-slate px-2.5 py-0.5 text-xs font-medium text-tag-slate-ink">
                     Coming soon
                   </span>
+                ) : impl.kind === "file-import" ? (
+                  <span className="inline-flex items-center rounded-full border border-line-card bg-tag-slate px-2.5 py-0.5 text-xs font-medium text-tag-slate-ink">
+                    File import
+                  </span>
                 ) : importState === "not-set-up" ? (
                   <span className="inline-flex items-center rounded-full border border-line-card bg-tag-slate px-2.5 py-0.5 text-xs font-medium text-tag-slate-ink">
                     Not set up
@@ -175,6 +179,11 @@ export default async function IntegrationsPage({
                 )}
               </div>
               <p className="max-w-xl text-sm text-ink-body">{entry.description}</p>
+              {impl.kind === "file-import" && (
+                <p className="max-w-xl text-xs text-ink-muted" data-tour="mycoi-live-api">
+                  <span className="font-medium text-ink-label">Live connection: not available.</span> {impl.liveApi}
+                </p>
+              )}
             </div>
           </div>
 
@@ -189,6 +198,15 @@ export default async function IntegrationsPage({
             )}
             {impl.kind === "import" && importState && (
               <JobberControls state={importState} startHref={impl.startHref} />
+            )}
+            {impl.kind === "file-import" && (
+              <Link
+                href={impl.importHref}
+                data-tour="mycoi-import-link"
+                className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card bg-surface px-4 py-2 text-sm font-medium text-ink-label hover:bg-neutral-800"
+              >
+                {impl.importLabel}
+              </Link>
             )}
             {impl.kind === "external" && (
               <Link

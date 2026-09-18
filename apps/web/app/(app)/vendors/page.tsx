@@ -3,14 +3,34 @@ import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { VendorForm } from "@/components/VendorForm";
 import { VendorRow } from "@/components/VendorRow";
+import { can } from "@/lib/permissions";
+import { coiStandingFor, coiStandingLine, governingCois } from "@/lib/coi-standing";
+import { serverToday } from "@/lib/serverToday";
 
 export default async function VendorsPage() {
-  const { company, ...currentUser } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  const { company, ...currentUser } = context;
+  // Insurance standing is a summary of compliance records, so it is shown
+  // only to someone who could open /compliance — the same rule an alert
+  // follows (ALERT_CAPABILITY).
+  const showCoi = can(context, "MANAGE_COMPLIANCE");
 
-  const vendors = await prisma.vendor.findMany({
-    where: { companyId: company.id },
-    orderBy: { name: "asc" },
-  });
+  const [vendors, certificates] = await Promise.all([
+    prisma.vendor.findMany({
+      where: { companyId: company.id },
+      orderBy: { name: "asc" },
+    }),
+    showCoi
+      ? prisma.complianceDocument.findMany({
+          where: { companyId: company.id, type: "CERTIFICATE_OF_INSURANCE" },
+          select: { id: true, partyName: true, jobId: true, coverageType: true, expiresAt: true },
+        })
+      : Promise.resolve([]),
+  ]);
+  // Derived per render from the dates, never stored. Renewed lines drop out
+  // first, exactly as they do from the alerts.
+  const governing = governingCois(certificates);
+  const today = serverToday();
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-8">
@@ -30,6 +50,23 @@ export default async function VendorsPage() {
 
       <section>
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Directory</h2>
+        {showCoi && (
+          <p className="mb-3 text-xs text-ink-body" data-tour="vendors-coi">
+            Each vendor shows its certificate of insurance, matched by name to the certificates on{" "}
+            <Link href="/compliance" className="text-link hover:text-link-hover">
+              Compliance
+            </Link>
+            {currentUser.role === "OWNER" && (
+              <>
+                {" "}— or{" "}
+                <Link href="/settings/import#mycoi" className="text-link hover:text-link-hover">
+                  import them from myCOI
+                </Link>
+              </>
+            )}
+            .
+          </p>
+        )}
         {vendors.length === 0 ? (
           <p className="text-ink-body" data-tour="vendors-empty">
             No vendors yet. Add the suppliers you buy from most — board and steel, scaffolding,
@@ -41,6 +78,7 @@ export default async function VendorsPage() {
               <VendorRow
                 key={vendor.id}
                 canDelete={currentUser.role === "OWNER"}
+                coi={showCoi ? coiStandingLine(coiStandingFor(vendor.name, governing, today), today) : undefined}
                 vendor={{
                   id: vendor.id,
                   name: vendor.name,
