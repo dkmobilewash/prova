@@ -79,6 +79,7 @@ export const notYetRegistered: Exclusion[] = [
   { action: "procore.*", reason: ADMIN + " Linking a GC's Procore project to a job: picked from Procore's own live list, so it is page only." },
   { action: "procoreFeed.*", reason: "Refresh from Procore is a button on the page whose GC records it re-reads; nothing to resolve by name." },
   { action: "jobber.*", reason: ADMIN + " Connecting to and importing from Jobber: an OAuth sign-in and a preview a person reads before confirming, so it is page only." },
+  { action: "mycoi.*", reason: ADMIN + " Importing certificates from a myCOI export: a pasted file and a preview a person reads before confirming, so it is page only." },
   { action: "sales.*", reason: "Prova-operator-only CRM, unreachable for any contractor tenant; excluded from the agent surface entirely." },
   { action: "alerts.*", reason: "Snooze and dismiss are done on the alert being read; nothing to resolve by name." },
   { action: "notifications.*", reason: "Sends the person their own digest; not a task anyone asks the box for." },

@@ -59,6 +59,18 @@ export const settingsIntegrationsWalkthrough: Walkthrough = {
         "When it looks right, press Confirm. Only new ones are added, so running the import again later is safe — it skips everything already here.",
     },
     {
+      anchor: "mycoi-import-link",
+      title: "Bring in myCOI",
+      body:
+        "Press Import a myCOI export to bring your vendors' insurance in from a file you export from myCOI. You check it before anything is saved.",
+    },
+    {
+      anchor: "mycoi-live-api",
+      title: "Why there is no Connect button",
+      body:
+        "myCOI does not offer a live connection to other apps without an agreement with them, so for now it comes in as a file. This line says so, so nobody waits for a sync that isn't there.",
+    },
+    {
       anchor: "procore-not-set-up",
       title: "Procore isn't set up yet",
       body:

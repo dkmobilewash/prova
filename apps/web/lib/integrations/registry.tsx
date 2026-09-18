@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { IntegrationProvider } from "@prova/db";
 import { JOBBER_REQUIRED_ENV } from "@/lib/jobber/setup";
+import { MYCOI_API_UNAVAILABLE } from "@/lib/mycoi/api";
 import { PROCORE_REQUIRED_ENV } from "@/lib/procore/setup";
 
 /**
@@ -43,6 +44,15 @@ export type ProviderImplementation =
    * service is not set up here yet, rather than showing a broken button.
    */
   | { kind: "import"; startHref: string; requiredEnv: readonly string[] }
+  /**
+   * A provider whose live API is not available to us, but whose customers
+   * can EXPORT a file that C Stream imports — the path that works today.
+   * The card links to that import and says, in `liveApi`, why there is no
+   * Connect button. Never rendered as "Connected": there is no connection,
+   * and pretending the file import is one would be the untrue card this
+   * union exists to prevent.
+   */
+  | { kind: "file-import"; importHref: string; importLabel: string; liveApi: string }
   /**
    * A standing READ-ONLY feed from someone else's system into this
    * company's jobs: OAuth connect, then the owner links an outside project
@@ -179,8 +189,13 @@ export const PROVIDERS: ProviderEntry[] = [
     provider: "MYCOI",
     name: "myCOI",
     description:
-      "Certificate-of-insurance verification for vendors and subs, so an expired COI is caught before somebody is on site under it rather than after.",
-    implementation: { kind: "planned" },
+      "Your vendors' and subs' certificates of insurance, from a myCOI export. Each line of cover lands on Compliance with its expiry date, shows beside the vendor, and warns you before it runs out — so an expired COI is caught before somebody is on site under it rather than after.",
+    implementation: {
+      kind: "file-import",
+      importHref: "/settings/import#mycoi",
+      importLabel: "Import a myCOI export",
+      liveApi: MYCOI_API_UNAVAILABLE,
+    },
     icon: (
       <svg viewBox="0 0 20 20" fill="none" className={iconClass} aria-hidden="true">
         <path d="M10 3.2 15.5 5.4v4.3c0 3-2.2 5.6-5.5 7-3.3-1.4-5.5-4-5.5-7V5.4L10 3.2Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />

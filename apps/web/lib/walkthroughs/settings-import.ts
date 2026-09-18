@@ -35,6 +35,12 @@ export const settingsImportWalkthrough: Walkthrough = {
       body: "Press Import crew to bring in the people who work for you.",
     },
     {
+      anchor: "import-mycoi",
+      title: "Insurance from myCOI",
+      body:
+        "If you track your vendors' and subs' insurance in myCOI, export it from there as a spreadsheet, save it as CSV, and press Import certificates. Each vendor's cover lands on Compliance with its expiry date.",
+    },
+    {
       anchor: "import-file",
       title: "Pick your file",
       body:
@@ -57,6 +63,18 @@ export const settingsImportWalkthrough: Walkthrough = {
       title: "Save them",
       body:
         "When the preview looks right, press Confirm. Only new ones are added — nothing already in C Stream is changed, so importing the same file twice is safe.",
+    },
+    {
+      anchor: "import-mycoi-preview",
+      title: "Check the certificates",
+      body:
+        "This shows how many certificates will be added, which are already here, and any rows with a problem. Each row says whether the name matches a vendor you already have.",
+    },
+    {
+      anchor: "import-mycoi-confirm",
+      title: "Save the certificates",
+      body:
+        "Press Confirm to add them. Anything that has run out shows on Compliance and in your alerts straight away. Import next month's export the same way — a renewal replaces the old line.",
     },
   ],
 };

@@ -21,12 +21,25 @@ const state = vi.hoisted(() => ({
   role: "OWNER",
   queried: [] as string[],
   props: [] as Record<string, unknown>[],
+  coiProps: [] as Record<string, unknown>[],
 }));
 
 const TABLES: Record<string, Row[]> = {
   contact: [
-    { companyId: "co_A", name: "Acme Builders" },
-    { companyId: "co_B", name: "Zenith GC" },
+    { companyId: "co_A", name: "Acme Builders", accountType: "GENERAL_CONTRACTOR" },
+    { companyId: "co_A", name: "Ready Rentals", accountType: "VENDOR" },
+    { companyId: "co_B", name: "Zenith GC", accountType: "GENERAL_CONTRACTOR" },
+    { companyId: "co_B", name: "Rival Rentals", accountType: "VENDOR" },
+  ],
+  vendor: [
+    { companyId: "co_A", name: "Acme Scaffold" },
+    { companyId: "co_B", name: "Harbor Supply" },
+  ],
+  complianceDocument: [
+    { companyId: "co_A", type: "CERTIFICATE_OF_INSURANCE", partyName: "Acme Scaffold", coverageType: "General liability", expiresAt: new Date("2027-01-01T00:00:00.000Z") },
+    // Same company, not a COI: the import compares certificates only.
+    { companyId: "co_A", type: "LIEN_WAIVER", partyName: "Lien Waiver Party", coverageType: null, expiresAt: null },
+    { companyId: "co_B", type: "CERTIFICATE_OF_INSURANCE", partyName: "Their Insured Sub", coverageType: "Auto", expiresAt: new Date("2027-02-01T00:00:00.000Z") },
   ],
   job: [
     { companyId: "co_A", name: "Tower", contact: { name: "Acme Builders" } },
@@ -48,7 +61,13 @@ function fakeModel(name: string) {
 }
 
 vi.mock("@prova/db", () => ({
-  prisma: { contact: fakeModel("contact"), job: fakeModel("job"), crewMember: fakeModel("crewMember") },
+  prisma: {
+    contact: fakeModel("contact"),
+    job: fakeModel("job"),
+    crewMember: fakeModel("crewMember"),
+    vendor: fakeModel("vendor"),
+    complianceDocument: fakeModel("complianceDocument"),
+  },
   Prisma: {},
 }));
 vi.mock("@/lib/auth", () => ({
@@ -66,6 +85,13 @@ vi.mock("@/components/SpreadsheetImport", () => ({
   },
 }));
 
+vi.mock("@/components/MyCoiImport", () => ({
+  MyCoiImport: (props: Record<string, unknown>) => {
+    state.coiProps.push(props);
+    return null;
+  },
+}));
+
 const { default: ImportPage } = await import("./page");
 
 async function render() {
@@ -76,6 +102,7 @@ beforeEach(() => {
   state.role = "OWNER";
   state.queried = [];
   state.props = [];
+  state.coiProps = [];
 });
 
 describe("/settings/import", () => {
@@ -87,6 +114,7 @@ describe("/settings/import", () => {
     }
     expect(state.queried).toEqual([]);
     expect(state.props).toEqual([]);
+    expect(state.coiProps).toEqual([]);
   });
 
   it("gives the owner all three imports, fed only this company's records", async () => {
@@ -97,6 +125,25 @@ describe("/settings/import", () => {
     expect(payload).toContain("Tower");
     expect(payload).toContain("Maria");
     for (const theirs of ["Zenith GC", "Harbor", "John", "Smith", "E-1"]) {
+      expect(payload).not.toContain(theirs);
+    }
+  });
+
+  it("feeds the myCOI import only this company's certificates and parties", async () => {
+    await render();
+    expect(state.coiProps).toHaveLength(1);
+    const props = state.coiProps[0] as {
+      existing: { partyName: string; coverageType: string | null; expiresOn: string | null }[];
+      known: { vendors: string[]; subsAndSuppliers: string[] };
+    };
+    // Anti-vacuity: our own rows ARE there, so "theirs is absent" means
+    // something rather than describing an empty list.
+    expect(props.existing).toEqual([
+      { partyName: "Acme Scaffold", coverageType: "General liability", expiresOn: "2027-01-01" },
+    ]);
+    expect(props.known).toEqual({ vendors: ["Acme Scaffold"], subsAndSuppliers: ["Ready Rentals"] });
+    const payload = JSON.stringify(state.coiProps);
+    for (const theirs of ["Their Insured Sub", "Harbor Supply", "Rival Rentals", "Zenith GC", "Lien Waiver Party"]) {
       expect(payload).not.toContain(theirs);
     }
   });

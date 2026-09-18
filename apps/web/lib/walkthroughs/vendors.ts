@@ -18,6 +18,12 @@ export const vendorsWalkthrough: Walkthrough = {
         "Start with the ones you buy from most — board and steel, scaffolding, equipment rental.",
     },
     {
+      anchor: "vendors-coi",
+      title: "Their insurance",
+      body:
+        "Each vendor shows whether their certificate of insurance is current, running out or expired. Red means don't put them on site until a new one is in.",
+    },
+    {
       anchor: "vendors-list",
       title: "Your directory",
       body: "Every vendor, A to Z, with their phone and email. Press Edit on a line to change it.",
