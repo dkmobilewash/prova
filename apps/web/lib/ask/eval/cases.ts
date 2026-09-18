@@ -100,6 +100,42 @@ export const EVAL_CASES: EvalCase[] = [
   // current year is.
   tool("read-safety", "how many recordable injuries have we had this year?", "safety_record"),
   tool("read-safety-field", "what is on the OSHA log for 2025?", "safety_record", { year: "2025" }, FIELD),
+  tool("read-submittals", "what is the GC still sitting on?", "open_submittals"),
+  // Phrased the way a PM says it, and with a job, because the job filter is
+  // the half most likely to be dropped on the way through.
+  tool("read-submittals-job", "which submittals are outstanding on Riverside?", "open_submittals", { jobName: "Riverside" }),
+  tool("read-certs", "whose certifications are about to expire?", "certification_expiry", undefined, FIELD),
+  // The window has to survive as the person's own number rather than being
+  // rounded to the default — "in the next 30 days" is a different question
+  // from "soon", and a foreman planning a week means it literally.
+  tool("read-certs-window", "any cards expiring in the next 30 days?", "certification_expiry", { withinDays: "30" }, FIELD),
+  tool("read-ratio", "are we in ratio?", "apprentice_ratio"),
+  // The month must survive as the person's own, not be rounded to "now".
+  tool("read-ratio-month", "did we stay in ratio in August 2026?", "apprentice_ratio", { month: "2026-08" }),
+  tool("read-closeout", "what is stopping us closing out Riverside?", "closeout_status", { jobName: "Riverside" }),
+  tool("read-remittance", "what do we owe the funds this month?", "fringe_remittance"),
+  tool("read-remittance-month", "what were the fringes for July 2026?", "fringe_remittance", { month: "2026-07" }),
+  tool("read-backcharges", "what is Turner charging back to us?", "backcharge_exposure"),
+  tool("read-apprentices", "is anybody behind on their apprenticeship hours?", "apprenticeship_standing"),
+  tool("read-field-reports", "what did we write up on Riverside last week?", "daily_field_reports", { jobName: "Riverside" }, FIELD),
+  tool("read-determinations", "do we have the wage determination for Riverside on file?", "wage_determinations", { jobName: "Riverside" }),
+  tool("read-photos", "do we have pictures of the Riverside deck?", "job_photos", { jobName: "Riverside" }, FIELD),
+  tool("read-vendor-prices", "what did we get quoted for 5/8 type X?", "vendor_pricing", undefined, ESTIMATOR),
+  tool("read-gc-status", "is our MSA with Turner still good?", "gc_relationship"),
+  tool("read-payapps", "has Turner approved our last pay application?", "pay_application_status", undefined, ACCOUNTING),
+  tool("read-warranty", "are we still on the hook for Cedar Park?", "warranty_obligations", { jobName: "Cedar Park" }),
+  tool("read-messages", "did that lien waiver email actually reach them?", "outbound_messages"),
+  // The eight the hundred-question census found unreachable. Each is
+  // phrased the way the question arrives rather than in the tool's own
+  // words — see lib/ask/eval/top-questions.ts for where they came from.
+  tool("read-certified-payroll", "could we produce certified payroll for last week on Riverside?", "certified_payroll", { jobName: "Riverside" }),
+  tool("read-tm-tickets", "what T&M tickets have we got signed on Riverside?", "tm_tickets", { jobName: "Riverside" }, FIELD),
+  tool("read-unbilled-cos", "which approved change orders have we not invoiced yet?", "unbilled_change_orders"),
+  tool("read-schedule", "how many days have we got left on Riverside?", "schedule_status", { jobName: "Riverside" }, FIELD),
+  tool("read-estimate", "what lines are on the Riverside estimate?", "estimate_detail", { jobName: "Riverside" }, ESTIMATOR),
+  tool("read-intake", "what came in that nobody has filed yet?", "document_intake"),
+  tool("read-team", "who have we got on the books?", "team_roster", undefined, FIELD),
+  tool("read-dispatch", "have we got dispatch on file for everybody on Riverside?", "dispatch_slips", { jobName: "Riverside" }),
 
   // ------------------------------------------------------- commands
   command("cmd-create-estimate", "create an estimate for Riverside Plaza for Turner", "create_estimate_job", { jobName: "Riverside Plaza", gcName: "Turner" }),

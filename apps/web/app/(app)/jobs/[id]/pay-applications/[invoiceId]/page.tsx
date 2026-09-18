@@ -46,13 +46,25 @@ export default async function PayApplicationPage({
       <h1 className="text-xl font-semibold text-ink">
         Application for payment #{invoice.number} — {job.name}
       </h1>
+      {/* LABELLED, because unlabelled it is read as the wrong field. A
+          G702 header carries an APPLICATION DATE and a PERIOD TO, and a
+          bare date under a G702-style heading is taken for the period —
+          which is the date a GC's accounting department keys on. This one
+          is `issuedAt`, the moment of submission, so it says so. C Stream has
+          no column for a period-ending date; see the note below, which is
+          deliberately on screen only. */}
       <p className="mt-1 text-sm text-ink-muted">
-        {job.contact.name} · {formatInstant(invoice.issuedAt, timeZone)}
+        {job.contact.name} · Application date {formatInstant(invoice.issuedAt, timeZone)}
         {invoice.description ? ` · ${invoice.description}` : ""}
       </p>
       <p className="mt-3 max-w-2xl text-xs text-ink-muted">
         This is a G702/G703-style summary and continuation sheet built from this job&rsquo;s schedule of values — it is
         not formatted as the AIA G702/G703 forms themselves.
+      </p>
+      <p className="mt-2 max-w-2xl text-xs text-amber-300 print:hidden">
+        No PERIOD TO date. A G702 states the period this application covers, and C Stream does not yet record one — so
+        this document prints the application date and nothing that could be mistaken for the period. Write the period
+        ending date on whatever cover sheet this GC wants before you send it.
       </p>
 
       {!isPayApplication ? (

@@ -73,6 +73,7 @@ const LABELLED_PICKERS: Record<string, number> = {
   // ---- filter chip rows: which job a log is narrowed to
   "app/(app)/backcharges/page.tsx": 1,
   "app/(app)/drawings/page.tsx": 1,
+  "app/(app)/field-reports/page.tsx": 1,
   "app/(app)/material-orders/page.tsx": 1,
   "app/(app)/photos/page.tsx": 1,
   "app/(app)/punch-lists/page.tsx": 1,
@@ -173,11 +174,18 @@ describe("the job-picker census", () => {
     // reviewer. Moving this number is meant to be a decision, which is why
     // it is a literal and not derived.
     //
-    // 23 -> 24 on 2026-09-17: the crew schedule's "which job is he on"
-    // picker. Caught the same way and it is worth saying so, because that is
-    // twice now that this census has found a new picker rendering the bare
-    // name rather than a reviewer finding it.
-    expect(expected).toEqual(24);
+    // 23 -> 24 on 2026-09-16: /field-reports gained the job filter chips
+    // that /punch-lists and /photos already had. It is the log a GC asks
+    // for by job, and reading it meant picking rows out of a company-wide
+    // week by eye.
+    //
+    // 24 -> 25 on 2026-09-17: the crew schedule's "which job is he on"
+    // picker. BOTH sides of the merge that brought this in had moved the
+    // number 23 -> 24 independently — /field-reports above, /schedule here
+    // — so a mechanical merge kept "24" and would have failed on a count
+    // that was right on each branch alone. Two pickers, one literal, which
+    // is the reason it is a literal: it made a person add them up.
+    expect(expected).toEqual(25);
     expect(actual).toEqual(expected);
   });
 

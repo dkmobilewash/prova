@@ -25,6 +25,9 @@ import {
   type Option,
   type PreviewLine,
 } from "./commands";
+import { pageContextSentence } from "./page-context";
+import { resolvePageJob } from "./page-context-query";
+import { PRIOR_TURNS_RULE, type AskTurn } from "./turns";
 import { runTool } from "./handlers";
 import { recordProposal } from "./proposals";
 import { readingLabel } from "./toolLabels";
@@ -103,6 +106,10 @@ WHEN YOU CANNOT ANSWER
 
 Some questions this app simply does not hold the data for. Say so plainly, say why in one clause, and stop. Do not guess, do not approximate from something adjacent, and do not offer a number from a different question as though it were close enough. A person who trusts a wrong number here mis-bids a job or misses a payroll.
 
+THAT IS ABOUT FACTS. A question about what you can DO is a different case and must not end the same way. If they asked for something this app does not do — a kind of record it does not keep, a document it does not produce — say that in one clause and then NAME THE NEAREST THING YOU ACTUALLY DO, concretely and by name, in one sentence. "There are no purchase orders here. I can record a material order against a job and log its deliveries." Most people have no idea what you can do, and a bare refusal teaches them you can do nothing; someone judged this whole assistant unable to act after one correct answer about a record type that does not exist.
+
+This does not relax the paragraph above and must never be used to. Naming a capability is not offering a substitute figure. Never answer a question about money, dates or quantities with an adjacent number. Offer an adjacent ACTION, never an adjacent ANSWER.
+
 Known gaps, so you recognise them:
 ${KNOWN_GAPS.map((gap) => `- ${gap.topic}: ${gap.why}`).join("\n")}
 
@@ -156,6 +163,23 @@ export type AskCitation = Citation;
 const MAX_ROWS_PER_TOOL = 40;
 
 export function forModel(data: unknown): unknown {
+  // A tool that wraps its rows in an object — `{ month, rows }`,
+  // `{ withinDays, rows }` — used to walk straight past this cap, because
+  // the guard below only asks whether the WHOLE result is an array. Three
+  // tools did it and shipped every row into the prompt uncapped and with no
+  // note. Found reviewing #303: the rule was "an array is capped" when it
+  // needed to be "rows are capped, wherever they are".
+  //
+  // The wrapper's own keys are preserved, so a tool can still hand the
+  // model a month or a window alongside its rows.
+  if (!Array.isArray(data) && typeof data === "object" && data !== null) {
+    const wrapper = data as Record<string, unknown>;
+    if (Array.isArray(wrapper.rows)) {
+      const capped = forModel(wrapper.rows) as { count: number; rows: unknown[]; note?: string };
+      return { ...wrapper, ...capped };
+    }
+    return data;
+  }
   if (!Array.isArray(data)) return data;
 
   // ALWAYS send the count, even for a short list.
@@ -252,6 +276,16 @@ export type AskStreamEvent =
  * model had supplied, and the person's pick. */
 export type AskRequest = {
   question: string;
+  /** The route the person had open when they asked, e.g. `/jobs/<id>`.
+   * A HINT, never an authority — see lib/ask/page-context.ts for why that
+   * distinction is the whole security design, and
+   * lib/ask/page-context-query.ts for the company scope that enforces it.
+   * Optional: every caller that omits it gets exactly the old behaviour. */
+  pagePath?: string;
+  /** What was said earlier in this sitting, oldest first. Bounded and
+   * sanitised by lib/ask/turns.ts — see that file for why memory carries
+   * the conversation and never the facts. */
+  priorTurns?: AskTurn[];
   continuation?: {
     command: string;
     partialInput: Record<string, string>;
@@ -476,9 +510,29 @@ export async function* streamAnswer(
 
   const offered = offeredTools(ctx.principal);
 
+  // Where they are standing, if it is a job of theirs. Resolved through the
+  // company scope, so a forged path is indistinguishable from no path.
+  // Joined onto the access line rather than into SYSTEM_PROMPT because both
+  // vary per request and the prompt is the cached half.
+  const pageJob = await resolvePageJob(ctx.companyId, request.pagePath);
+
+  // The rule about prior turns is only stated when there ARE prior turns:
+  // a paragraph explaining what earlier answers are not, on a question with
+  // no history, is prompt weight bought for nothing.
+  const priorTurns = request.priorTurns ?? [];
+  const perRequestContext =
+    [
+      accessContext(ctx.principal),
+      pageContextSentence(pageJob),
+      priorTurns.length > 0 ? PRIOR_TURNS_RULE : null,
+    ]
+      .filter(Boolean)
+      .join("\n\n") || undefined;
+
   const events = streamToolConversation<AskHalt>({
     system: SYSTEM_PROMPT,
-    context: accessContext(ctx.principal),
+    context: perRequestContext,
+    priorTurns,
     question,
     tools: offered,
     // ctx is closed over here and is not a parameter of any tool schema,

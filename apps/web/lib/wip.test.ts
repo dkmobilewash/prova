@@ -3,6 +3,7 @@ import {
   calculateJobWip,
   calculateLineItemWip,
   formatCoveragePercent,
+  formatLoggedHours,
   formatPercentComplete,
   type WipLineItemInput,
 } from "./wip";
@@ -252,5 +253,24 @@ describe("formatPercentComplete / formatCoveragePercent (issue #103, finding 1)"
     expect(formatCoveragePercent(1)).toBe("100%");
     expect(formatCoveragePercent(0)).toBe("0%");
     expect(formatCoveragePercent(0.965)).toBe("97%");
+  });
+});
+
+describe("formatLoggedHours (issue #287)", () => {
+  it("keeps the half hour and drops the float noise", () => {
+    // TimeEntry.hours is Decimal(5,2) and these totals are floating-point
+    // sums of many rows, so this is not hypothetical: 0.1 + 0.2 is the
+    // canonical case and it lands on a caveat whose only job is to be
+    // believed.
+    expect(formatLoggedHours(7.5)).toBe("7.5");
+    expect(formatLoggedHours(0.1 + 0.2)).toBe("0.3");
+    expect(formatLoggedHours(16 + 7.5 + 0.1 + 0.2)).toBe("23.8");
+  });
+
+  it("prints a whole number of hours without trailing zeroes", () => {
+    // Hours read as a quantity, not as money. "16.00" would look like a
+    // dollar figure on a tile that is surrounded by them.
+    expect(formatLoggedHours(16)).toBe("16");
+    expect(formatLoggedHours(0)).toBe("0");
   });
 });

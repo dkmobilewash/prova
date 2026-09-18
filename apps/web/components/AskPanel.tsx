@@ -2,23 +2,75 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { boundTurns, type AskTurn } from "@/lib/ask/turns";
+import {
+  answeredAgo,
+  boundTranscript,
+  staleIndices,
+  stalenessNote,
+  summarizeQuestion,
+  type TranscriptEntry,
+} from "@/lib/ask/transcript";
+import { EXAMPLES } from "@/components/askExamples";
 import type { AskRequest, AskStreamEvent, ClarifyView, ProposalView } from "@/lib/ask/answer";
 import type { Citation } from "@/lib/ask/tools";
 import { cancelAskProposal, confirmAskProposal, loadAskProposal } from "@/lib/actions";
 import { AskProposalCard, type ProposalOutcome } from "@/components/AskProposalCard";
+import {
+  DICTATION_TRUNCATED_NOTE,
+  finalTranscript,
+  mergeDictation,
+  speechRecognitionFrom,
+  type SpeechRecognitionLike,
+} from "@/components/speechInput";
 
 /** The ask box on the dashboard.
  *
- * Deliberately not a chat. There is no thread and no history: a question
- * about this week's money is answered from today's rows, and a scrollback
- * of stale answers is a place for a number to be read long after it stopped
- * being true. Ask, read, ask again.
+ * It is SHAPED like a chat now — history above, input pinned below it — and
+ * this header has claimed "deliberately not a chat" through two commits that
+ * made it more of one. The claim was never about the layout. It is about
+ * what is remembered: the assistant carries the CONVERSATION and never the
+ * FACTS, which is the line below and the only one worth defending. The
+ * layout is just where a person's hand already is.
  *
- * It can now DO things as well as answer, and that did not make it a chat.
- * A command ends the stream with a card or a row of chips; the card is one
- * tap to confirm or cancel, the chips re-run the same question with the
- * pick, and either way the task dies on "Ask something else". Nothing
- * here remembers a previous question.
+ * This header also used to end "Nothing here remembers a previous question",
+ * and that is no longer true, so it is amended rather than left to go
+ * quietly false.
+ *
+ * The original reason stands and is the reason the change took the shape it
+ * did: "a scrollback of stale answers is a place for a number to be read
+ * long after it stopped being true." A dollar figure from four minutes ago
+ * is not a fact about now, and a panel that leaves it on screen invites
+ * somebody to read it as one.
+ *
+ * So: the assistant remembers the CONVERSATION and never the FACTS. The last
+ * few questions and answers travel with the next question so it can resolve
+ * "the same", "that job", "it" — the things a person says to a colleague who
+ * was listening. Every figure in the new answer still comes from a fresh
+ * tool call, because the standing rule did not move. **A stale number cannot
+ * survive into a new answer, not because it is filtered but because nothing
+ * quotes it** — see lib/ask/turns.ts.
+ *
+ * A SCROLLBACK IS NOW RENDERED, and this paragraph said the opposite — "no
+ * scrollback is rendered, old answers are not redisplayed" — for the whole
+ * life of the commit that added one. Corrected rather than deleted, because
+ * the shape is the lesson this repo keeps paying for: a sentence describing
+ * what the code does NOT do goes stale the moment somebody builds it, and it
+ * reads as a decision to anyone who gets this far.
+ *
+ * What the scrollback looks like is the answer to the objection above.
+ * Every row is CLOSED, showing the question the person typed, when it was
+ * answered and which pages it read — and no figure at all. A tap opens one,
+ * and an opened row that is not the newest carries the mark. So a stale
+ * number is never merely on screen: somebody chose to look at it, and the
+ * sentence saying when it was read is next to it when they do.
+ *
+ * It can also DO things as well as answer, and that did not make it a chat
+ * either. A command ends the stream with a card or a row of chips; the card
+ * is one tap to confirm or cancel, the chips re-run the same question with
+ * the pick. "Ask something else" ends the sitting — it clears the result AND
+ * what was remembered, which is what its name has always promised.
  */
 
 /** Shown until someone types. Each one is a question this app can actually
@@ -43,6 +95,66 @@ function rememberCard(id: string | null) {
   }
 }
 
+/** What was said earlier in this sitting.
+ *
+ * sessionStorage for the same reason the pending card uses it: it dies with
+ * the tab. A jobsite tablet passed between two people must not carry one
+ * person's questions into the next person's session, and a conversation is
+ * even less of a standing instruction than a card is.
+ *
+ * Nothing is stored server-side. The turns travel with the request and the
+ * server bounds them (lib/ask/turns.ts) — memory carries the conversation,
+ * never the facts, so there is nothing here worth persisting beyond the tab.
+ */
+/** The scrollback a person reads. A SECOND key beside askTurns on purpose:
+ * that one is the wire format and every byte of it is prompt weight paid on
+ * every question, while this never leaves the browser and holds what the
+ * screen needs — when it was asked, what it cited. See lib/ask/transcript.ts
+ * for the argument. sessionStorage for the same reason the card id is:
+ * a conversation dies with the tab. */
+const TRANSCRIPT_KEY = "askTranscript";
+
+function rememberTranscript(entries: TranscriptEntry[]) {
+  try {
+    if (entries.length) sessionStorage.setItem(TRANSCRIPT_KEY, JSON.stringify(entries));
+    else sessionStorage.removeItem(TRANSCRIPT_KEY);
+  } catch {
+    // Private window, blocked storage. The panel renders without a
+    // scrollback rather than not rendering.
+  }
+}
+
+function rememberedTranscript(): TranscriptEntry[] {
+  try {
+    const raw = sessionStorage.getItem(TRANSCRIPT_KEY);
+    return raw ? boundTranscript(JSON.parse(raw)) : [];
+  } catch {
+    return [];
+  }
+}
+
+const TURNS_KEY = "askTurns";
+
+function rememberTurns(turns: AskTurn[]) {
+  try {
+    if (turns.length) sessionStorage.setItem(TURNS_KEY, JSON.stringify(turns));
+    else sessionStorage.removeItem(TURNS_KEY);
+  } catch {
+    // No storage, no memory. Every question still answers on its own,
+    // which is exactly how this panel behaved before.
+  }
+}
+
+function rememberedTurns(): AskTurn[] {
+  try {
+    const raw = sessionStorage.getItem(TURNS_KEY);
+    return raw ? boundTurns(JSON.parse(raw)) : [];
+  } catch {
+    // Unparseable or unavailable. Same answer either way.
+    return [];
+  }
+}
+
 function rememberedCard(): string | null {
   try {
     return sessionStorage.getItem(PENDING_CARD_KEY);
@@ -51,14 +163,16 @@ function rememberedCard(): string | null {
   }
 }
 
-const EXAMPLES = [
-  "What's overdue and who do I chase first?",
-  "Which drawings am I not building to the latest revision of?",
-  "What's left on the punch list?",
-  "Anything expiring I should renew?",
-];
+// EXAMPLES moved to components/askExamples.ts — a constant exported from
+// a "use client" module crosses the RSC boundary as a client-reference
+// proxy, which is the Hint.tsx scar in CLAUDE.md.
 
 export function AskPanel() {
+  // The route the person is looking at, sent with every question so the
+  // assistant does not have to ask which job they mean when they are
+  // standing on it. See lib/ask/page-context.ts — it is a hint the server
+  // resolves through the session's own company, never an authority.
+  const pathname = usePathname();
   const [question, setQuestion] = useState("");
   const [asked, setAsked] = useState("");
   const [answer, setAnswer] = useState("");
@@ -84,6 +198,11 @@ export function AskPanel() {
   // double-append under React's double-invoked updaters.
   const provisionalRef = useRef(true);
   const progressRef = useRef("");
+  // The answer text and the question it answered, readable at "done".
+  // State updaters cannot be read synchronously and recording a turn from
+  // inside one would run twice under StrictMode.
+  const answerRef = useRef("");
+  const askedRef = useRef("");
   const [isAsking, setIsAsking] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -94,7 +213,107 @@ export function AskPanel() {
   const [clarify, setClarify] = useState<ClarifyView | null>(null);
   const [outcome, setOutcome] = useState<ProposalOutcome | null>(null);
   const [tapError, setTapError] = useState<string | null>(null);
+
+  // The scrollback, and the clock the staleness marks are measured against.
+  // Both start empty and are filled in an effect: the server renders no
+  // transcript and no timestamp, so there is nothing for hydration to
+  // disagree about — the same rule this repo applies to every other date.
+  const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
+  const [now, setNow] = useState(0);
+  // Which rows are open, by the moment they were asked. Everything starts
+  // CLOSED: a scrollback whose rows are all open is the old full-height
+  // list with extra chrome, and the point of collapsing is that a sitting's
+  // worth of questions fits on screen at once. `askedAt` rather than an
+  // index because trimming at MAX_TRANSCRIPT shifts every index down one
+  // and would silently open somebody else's row.
+  const [openRows, setOpenRows] = useState<number[]>([]);
+  const citationsRef = useRef<Citation[]>([]);
+  const scrollbackRef = useRef<HTMLDivElement>(null);
+
+  // Open at the BOTTOM, which is where the newest prior exchange is. A
+  // scrollback that opens at the top shows the oldest thing first and cuts
+  // the one most likely to be wanted off below the fold — which is what the
+  // first click test of this showed. Older is what you scroll UP for.
+  useEffect(() => {
+    const box = scrollbackRef.current;
+    if (box) box.scrollTop = box.scrollHeight;
+  }, [transcript]);
+
+  useEffect(() => {
+    setTranscript(rememberedTranscript());
+    setNow(Date.now());
+    // Ages are coarse ("3 hours ago"), so a minute is plenty — and without
+    // it a panel left open all afternoon keeps claiming "just now".
+    const tick = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(tick);
+  }, []);
   const [isConfirming, startConfirm] = useTransition();
+
+  // Dictation. `canDictate` starts false and is only ever set in an effect:
+  // the server renders no mic, and the browser adds one if it has the API.
+  // Reading `window` during render would differ between the two passes and
+  // break hydration — the same rule this repo already applies to dates.
+  const [canDictate, setCanDictate] = useState(false);
+  const [listening, setListening] = useState(false);
+  const [dictationNote, setDictationNote] = useState<string | null>(null);
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+
+  useEffect(() => {
+    setCanDictate(speechRecognitionFrom(window) !== null);
+  }, []);
+
+  // Stop the microphone when this panel goes away. Without it the browser
+  // keeps listening after a navigation — a live mic the person cannot see
+  // is the one bug in this feature that is worse than it not working.
+  useEffect(() => {
+    return () => {
+      recognitionRef.current?.stop();
+      recognitionRef.current = null;
+    };
+  }, []);
+
+  function stopDictation() {
+    recognitionRef.current?.stop();
+    recognitionRef.current = null;
+    setListening(false);
+  }
+
+  function toggleDictation() {
+    if (listening) {
+      stopDictation();
+      return;
+    }
+    const Ctor = speechRecognitionFrom(window);
+    if (!Ctor) return;
+
+    const recognition = new Ctor();
+    // `continuous` because this is for the long requests a person would not
+    // type standing on a deck; `interimResults` so the recogniser settles a
+    // phrase before it is final, while `finalTranscript` drops the interim
+    // ones so the same words never land twice.
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = navigator.language || "en-US";
+
+    recognition.onresult = (event) => {
+      const phrase = finalTranscript(event);
+      if (phrase === "") return;
+      setQuestion((current) => {
+        const merged = mergeDictation(current, phrase);
+        setDictationNote(merged.truncated ? DICTATION_TRUNCATED_NOTE : null);
+        return merged.text;
+      });
+    };
+    // The browser's own words are not shown. "no-speech" and "aborted" are
+    // ordinary, and a denied mic is a permission the person can see in their
+    // own browser chrome — so this stops rather than explaining.
+    recognition.onerror = () => stopDictation();
+    recognition.onend = () => setListening(false);
+
+    recognitionRef.current = recognition;
+    setListening(true);
+    recognition.start();
+  }
 
   // Asking something else, or leaving, must stop the request in flight —
   // otherwise a slow answer to an abandoned question arrives later and
@@ -143,22 +362,53 @@ export function AskPanel() {
           progressRef.current += event.delta;
           setProgress(progressRef.current);
         } else {
+          answerRef.current += event.delta;
           setAnswer((current) => current + event.delta);
         }
         break;
       case "done":
         setCitations(event.citations);
+        citationsRef.current = event.citations;
         setStatus(null);
         // An answer that called no tool at all — a refusal, a clarifying
         // question — never gets `answering`, so everything it said is
         // sitting in the progress slot. Move it across, or a refusal
         // renders as a status line that never resolves into an answer.
         if (provisionalRef.current && progressRef.current) {
+          answerRef.current = progressRef.current;
           setAnswer(progressRef.current);
           progressRef.current = "";
           setProgress("");
         }
         provisionalRef.current = false;
+        // The exchange, recorded now that the answer is whole. Questions and
+        // answer TEXT only — no tool results, so nothing here can be quoted
+        // as a fact later. See lib/ask/turns.ts.
+        if (askedRef.current && answerRef.current.trim()) {
+          rememberTurns(
+            boundTurns([
+              ...rememberedTurns(),
+              { role: "user", content: askedRef.current },
+              { role: "assistant", content: answerRef.current.trim() },
+            ]),
+          );
+          // And the person's copy, which keeps what the model has no use
+          // for: when it was asked, and the pages the figures came from.
+          // The citations are the real remedy for a stale figure — not
+          // hiding the number, but leaving the live one one tap away.
+          const recorded = boundTranscript([
+            ...rememberedTranscript(),
+            {
+              question: askedRef.current,
+              answer: answerRef.current.trim(),
+              citations: citationsRef.current,
+              askedAt: Date.now(),
+            },
+          ]);
+          rememberTranscript(recorded);
+          setTranscript(recorded);
+          setNow(Date.now());
+        }
         break;
       case "proposal":
         // Terminal. Whatever the model was saying is not the answer; the
@@ -193,6 +443,7 @@ export function AskPanel() {
     rememberCard(null);
     setAnswer("");
     setCitations([]);
+    citationsRef.current = [];
     setError(null);
     setProposal(null);
     setClarify(null);
@@ -201,6 +452,10 @@ export function AskPanel() {
   }
 
   async function send(request: AskRequest, shown: string) {
+    // Captured here rather than read off state at "done": `asked` is state
+    // and the closure that handles the stream would see a stale one.
+    askedRef.current = shown;
+    answerRef.current = "";
     // A question already in flight is abandoned rather than blocking this
     // one. Previously the input stayed enabled while the button was
     // disabled, so pressing Return mid-answer did nothing at all — no new
@@ -227,7 +482,13 @@ export function AskPanel() {
       const response = await fetch("/api/ask", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(request),
+        // Where they are standing, sent with every question. Read here
+        // rather than passed in as a prop, so all three mount points — the
+        // Topbar launcher, the dashboard and /ask — get it with nothing to
+        // keep in sync, which is the property AskLauncher's own comment is
+        // about. A HINT only: the server resolves it through the session's
+        // company and ignores anything that is not this company's job.
+        body: JSON.stringify({ ...request, pagePath: pathname, priorTurns: rememberedTurns() }),
         signal: controller.signal,
       });
       if (!response.ok || !response.body) {
@@ -317,61 +578,141 @@ export function AskPanel() {
   const hasResult =
     answer !== "" || error !== null || proposal !== null || clarify !== null || outcome !== null;
 
+  /**
+   * The scrollback shows what came BEFORE the answer on screen, never the
+   * answer on screen.
+   *
+   * Without this the newest exchange renders twice — once in the box and
+   * again in the live block below it — which is what the first click test
+   * of this feature showed. Matching on the question rather than on a
+   * count is what makes the two other cases right: after a reload there is
+   * no live answer, so every entry belongs in the box; and while a NEW
+   * question is in flight the last entry is the previous one, which also
+   * belongs in the box.
+   *
+   * The index is carried through because staleness is a fact about a
+   * position in the whole transcript, not in this filtered view.
+   */
+  const priorExchanges = transcript
+    .map((entry, index) => ({ entry, index }))
+    .filter(({ entry, index }) => !(hasResult && index === transcript.length - 1 && entry.question === asked));
+
+  function toggleRow(askedAt: number) {
+    setOpenRows((current) =>
+      current.includes(askedAt) ? current.filter((value) => value !== askedAt) : [...current, askedAt],
+    );
+  }
+
   return (
     <section className="rounded-lg border border-line-card bg-surface p-4">
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          ask(question);
-        }}
-        className="flex gap-2"
-      >
-        <input
-          ref={inputRef}
-          value={question}
-          onChange={(event) => setQuestion(event.target.value)}
-          placeholder="Ask about your jobs, money, drawings, crews — or start an estimate…"
-          aria-label="Ask about your jobs"
-          maxLength={1000}
-          className="min-w-0 flex-1 rounded-md border border-line-card bg-surface px-3 py-2 text-sm text-ink placeholder:text-ink-muted focus:border-brand focus:outline-none"
-        />
-        <button
-          type="submit"
-          // Disabled while in flight. Every create button in this app got
-          // this treatment after a failed page invited a second click; this
-          // one writes nothing, so a repeat is only a wasted call — but a
-          // button that looks live during a slow answer invites the click
-          // that makes it slower.
-          disabled={question.trim() === "" || (isAsking && question.trim() === asked)}
-          className="shrink-0 rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {isAsking && question.trim() === asked ? "Looking…" : "Ask"}
-        </button>
-      </form>
+      {/* THE SCROLLBACK, ABOVE THE BOX.
+          It sat BELOW the input until now, which put the conversation in
+          the wrong reading order — you typed at the top and the history
+          grew underneath, so the newest exchange was furthest from the
+          thing you were about to type into. Above the box, oldest at the
+          top, newest nearest the input, is how every chat a person has
+          ever used is laid out, and it means the input stays where the
+          hand already is as the sitting grows.
 
-      {!hasResult && !isAsking && (
-        <ul className="mt-3 flex flex-wrap gap-2">
-          {EXAMPLES.map((example) => (
-            <li key={example}>
-              <button
-                type="button"
-                onClick={() => {
-                  setQuestion(example);
-                  inputRef.current?.focus();
-                  ask(example);
-                }}
-                className="rounded-full border border-line-card px-3 py-1 text-xs text-ink-body hover:border-link hover:text-link"
-              >
-                {example}
-              </button>
-            </li>
-          ))}
-        </ul>
+          Rows are COLLAPSED to the question. What opens a row is a tap;
+          what a closed row shows is the person's own words, when it was
+          answered, and which pages it read — see summarizeQuestion in
+          lib/ask/transcript.ts for why it is never a slice of the answer.
+
+          Capped in height and scrolled on its own, because this panel sits
+          above the rest of the dashboard and must not push it down the
+          page as a conversation grows. */}
+      {priorExchanges.length > 0 && (
+        <div
+          ref={scrollbackRef}
+          className="mb-3 max-h-80 overflow-y-auto rounded-md border border-line-row"
+          data-ask="transcript"
+        >
+          <ol className="divide-y divide-line-row">
+            {priorExchanges.map(({ entry, index }) => {
+              const stale = staleIndices(transcript).includes(index);
+              const open = openRows.includes(entry.askedAt);
+              const rowId = `ask-entry-${entry.askedAt}-${index}`;
+              return (
+                <li key={rowId}>
+                  <button
+                    type="button"
+                    onClick={() => toggleRow(entry.askedAt)}
+                    aria-expanded={open}
+                    aria-controls={rowId}
+                    data-ask="transcript-row"
+                    className="flex w-full min-h-11 items-start gap-2 px-3 py-2 text-left hover:bg-rail-hover"
+                  >
+                    <span aria-hidden="true" className="mt-0.5 shrink-0 text-xs text-ink-muted">
+                      {open ? "▾" : "▸"}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm text-ink-body">{summarizeQuestion(entry.question)}</span>
+                      {/* The age and the pages, and no figure of any kind.
+                          Nothing on a closed row can be read as a current
+                          number, which is why the staleness note lives
+                          inside: the mark travels with the figures it is
+                          about. */}
+                      <span className="mt-0.5 block text-xs text-ink-muted">
+                        {answeredAgo(entry.askedAt, now)}
+                        {entry.citations.length > 0 &&
+                          ` · ${entry.citations.map((citation) => citation.label).join(", ")}`}
+                      </span>
+                    </span>
+                  </button>
+
+                  {open && (
+                    <div id={rowId} className="px-3 pb-3 pl-8" data-ask="transcript-open">
+                      {/* The question again, in full — the row above it is
+                          cut, and a person opening a row is often opening
+                          it to find out which question it was. */}
+                      <p className="text-sm font-medium text-ink-label">{entry.question}</p>
+                      {entry.answer ? (
+                        <p className={`mt-2 max-w-prose whitespace-pre-line text-base leading-relaxed ${stale ? "text-ink-muted" : "text-ink"}`}>
+                          {entry.answer}
+                        </p>
+                      ) : (
+                        <p className="mt-1 text-sm text-ink-muted">Nothing came back for this one.</p>
+                      )}
+                      {entry.citations.length > 0 && (
+                        <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-ink-body">
+                          <span>Read from</span>
+                          {entry.citations.map((citation) => (
+                            <Link key={citation.href} href={citation.href} className="underline hover:text-link">
+                              {citation.label}
+                            </Link>
+                          ))}
+                        </p>
+                      )}
+                      {stale && (
+                        <p className="mt-1 text-xs text-tag-amber-ink">
+                          {stalenessNote(entry.askedAt, now)}{" "}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setQuestion(entry.question);
+                              ask(entry.question);
+                            }}
+                            className="underline hover:text-link"
+                          >
+                            Ask again
+                          </button>
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ol>
+        </div>
       )}
 
+      {/* The live exchange, between the history and the box — newest
+          nearest the input, same as the scrollback's own ordering. */}
       {(hasResult || isAsking) && (
-        <div className="mt-3">
-          <p className="text-xs text-ink-body">{asked}</p>
+        <div className="mb-3">
+          <p className="text-sm font-medium text-ink-label">{asked}</p>
 
           {/* The status line names what is being read, because a question
               spanning several areas spends most of its time in the
@@ -379,7 +720,7 @@ export function AskPanel() {
               hang rather than as work. */}
           {(status || progress) && (
             <p
-              className="mt-1 whitespace-pre-line text-sm text-ink-body"
+              className="mt-2 whitespace-pre-line text-base leading-relaxed text-ink-body"
               data-ask="progress"
               aria-live="polite"
             >
@@ -397,7 +738,11 @@ export function AskPanel() {
               is a prefix of the other. */}
           {answer && (
             <p
-              className="mt-1 whitespace-pre-line text-sm text-ink"
+              // 16px with relaxed leading and a readable line length.
+              // It was 14px with the default tight leading, which was the
+              // first thing said in a live demo: answers are the point of
+              // this panel and they were set like a caption.
+              className="mt-2 max-w-prose whitespace-pre-line text-base leading-relaxed text-ink"
               data-ask="answer"
               aria-live="polite"
             >
@@ -475,6 +820,20 @@ export function AskPanel() {
               onClick={() => {
                 abortRef.current?.abort();
                 clearResult();
+                // Something ELSE. The name has always promised a clean
+                // start, so the remembered conversation goes with the
+                // result — otherwise "the same" would reach back across a
+                // boundary the person drew deliberately.
+                rememberTurns([]);
+                // The scrollback goes with them. "Something else" has
+                // always promised a clean start, and a transcript that
+                // survives it is the boundary the person drew being
+                // ignored on screen while it is honoured in the prompt.
+                rememberTranscript([]);
+                setTranscript([]);
+                setOpenRows([]);
+                askedRef.current = "";
+                answerRef.current = "";
                 setAsked("");
                 setQuestion("");
                 inputRef.current?.focus();
@@ -485,6 +844,122 @@ export function AskPanel() {
             </button>
           )}
         </div>
+      )}
+
+      {!hasResult && !isAsking && (
+        <ul className="mb-3 flex flex-wrap gap-2">
+          {EXAMPLES.map((example) => (
+            <li key={example}>
+              <button
+                type="button"
+                onClick={() => {
+                  setQuestion(example);
+                  inputRef.current?.focus();
+                  ask(example);
+                }}
+                className="rounded-full border border-line-card px-3 py-1 text-xs text-ink-body hover:border-link hover:text-link"
+              >
+                {example}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {/* The box, LAST — the one fixed thing in the panel, with everything
+          the sitting has produced stacked above it. */}
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          // Sending ends the dictation. Leaving the mic live across a submit
+          // drops the next sentence into a box that is about to be cleared.
+          stopDictation();
+          setDictationNote(null);
+          ask(question);
+          // Clear the box on send. Harmless while this was one question at
+          // a time — you could edit and re-ask — and a real defect now that
+          // it is a conversation: a follow-up typed into a box still
+          // holding the last question APPENDS to it, and the person sends
+          // "which invoices are overdue?raise an RFI on that job". Found on
+          // the first two-question click test.
+          setQuestion("");
+        }}
+        className="flex gap-2"
+      >
+        <input
+          ref={inputRef}
+          value={question}
+          onChange={(event) => setQuestion(event.target.value)}
+          placeholder="Ask about your jobs, money, drawings, crews — or start an estimate…"
+          aria-label="Ask about your jobs"
+          maxLength={1000}
+          className="min-w-0 flex-1 rounded-md border border-line-card bg-surface px-3 py-2 text-sm text-ink placeholder:text-ink-muted focus:border-brand focus:outline-none"
+        />
+        {/* Rendered only where the browser has the API. A mic that is on
+            screen and does nothing reads as broken, not as unavailable —
+            so Firefox gets no button rather than a dead one. */}
+        {canDictate && (
+          <button
+            type="button"
+            onClick={toggleDictation}
+            aria-pressed={listening}
+            aria-label={listening ? "Stop dictating" : "Dictate your question"}
+            title={listening ? "Stop dictating" : "Dictate your question"}
+            className={`shrink-0 rounded-md border px-3 py-2 ${
+              listening
+                ? "border-brand bg-brand/10 text-brand"
+                : "border-line-card bg-surface text-ink-body hover:text-ink"
+            }`}
+          >
+            <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5" aria-hidden="true">
+              <path
+                d="M10 3.5a2 2 0 0 1 2 2v4a2 2 0 1 1-4 0v-4a2 2 0 0 1 2-2Z"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M5.5 9.5a4.5 4.5 0 0 0 9 0M10 14v2.5"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+        )}
+        <button
+          type="submit"
+          // Disabled while in flight. Every create button in this app got
+          // this treatment after a failed page invited a second click; this
+          // one writes nothing, so a repeat is only a wasted call — but a
+          // button that looks live during a slow answer invites the click
+          // that makes it slower.
+          // Was `isAsking && question.trim() === asked`, which read the box
+          // to decide whether ITS OWN question was in flight. Clearing the
+          // box on send makes that comparison always false, so it asks
+          // `isAsking` directly — which is what it meant.
+          disabled={question.trim() === "" || isAsking}
+          className="shrink-0 rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {isAsking ? "Looking…" : "Ask"}
+        </button>
+      </form>
+
+      {/* Said out loud rather than shown only as a button colour: the person
+          dictating is looking at the deck, not at the screen. The truncation
+          note outlives the listening state on purpose — it is still true
+          after the mic stops, and it is the one thing they must act on. */}
+      {listening && (
+        <p role="status" className="mt-2 text-xs text-ink-body">
+          Listening — say it, then tap the mic again.
+        </p>
+      )}
+      {dictationNote && (
+        <p role="status" className="mt-2 text-xs font-medium text-tag-amber-ink">
+          {dictationNote}
+        </p>
       )}
     </section>
   );

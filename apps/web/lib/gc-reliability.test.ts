@@ -14,6 +14,11 @@ const day = (iso: string) => new Date(`${iso}T00:00:00.000Z`);
 function invoice(over: Partial<ReliabilityInvoiceInput> = {}): ReliabilityInvoiceInput {
   return {
     amount: 100_000,
+    // No retainage terms unless a test says so. The #288 cases below set
+    // it explicitly; everything above them is the #189 world, where the
+    // amount due and the gross amount are the same number — which is why
+    // those assertions are unchanged and still mean what they meant.
+    retainageWithheld: null,
     issuedAt: day("2026-08-01"),
     dueAt: day("2026-08-31"),
     paidAmount: 100_000,
@@ -111,6 +116,68 @@ describe("a genuine shortfall is named, not dropped", () => {
   });
 });
 
+describe("retainage is held by contract, not paid late — issue #288", () => {
+  // $100,000 billed, 10% retained, the GC paid the $90,000 an AIA G702
+  // certifies as currently due. They were not late by a dollar.
+  const withRetainage = invoice({ retainageWithheld: 10_000, paidAmount: 90_000 });
+
+  it("counts an invoice settled once the GC has paid what was CERTIFIED DUE", () => {
+    // THE DEFECT: isSettled compared cash against GROSS, so this could
+    // never be true, the settled set was empty, and both timing figures
+    // came back null for every GC who holds retainage — which is all of
+    // them. The panel rendered blank and read as an unbuilt feature.
+    const r = calculatePaymentReliability([withRetainage]);
+    expect(r.settledCount).toBe(1);
+    expect(r.onTimeRate).toBe(1);
+    expect(r.averageDaysToPay).toBe(19);
+  });
+
+  it("does not report a GC who paid exactly right as having short-paid", () => {
+    // Worse than the blank panel, and the half that would have survived a
+    // narrower fix: these invoices were landing in shortPaidCount, so a GC
+    // paying to the penny was reported as short on every invoice they had
+    // ever settled.
+    expect(calculatePaymentReliability([withRetainage]).shortPaidCount).toBe(0);
+  });
+
+  it("still ages a GC who is short of even the net amount", () => {
+    // $85,000 against $90,000 due. Five thousand really is owed, and a fix
+    // that simply excused retainage-bearing invoices would swallow it.
+    const short = invoice({ retainageWithheld: 10_000, paidAmount: 85_000 });
+    const r = calculatePaymentReliability([short]);
+    expect(r.settledCount).toBe(0);
+    expect(r.shortPaidCount).toBe(1);
+  });
+
+  it("combines with the fee rule rather than replacing it", () => {
+    // Both deductions at once: $90,000 due, a platform took $220 of it, so
+    // $89,780 arrived. Settled. The two rules are independent and #189's
+    // has to keep working inside #288's.
+    const r = calculatePaymentReliability([
+      invoice({ retainageWithheld: 10_000, paidAmount: 89_780, feesDeducted: 220 }),
+    ]);
+    expect(r.settledCount).toBe(1);
+    expect(r.shortPaidCount).toBe(0);
+  });
+
+  it("keeps outstandingTotal gross, and names what the timings excluded", () => {
+    // The money is not written off — it is still outstanding, it is just
+    // not LATE. And the panel has to be able to say how much of the
+    // billed total these timings were not asked about.
+    const r = calculatePaymentReliability([withRetainage]);
+    expect(r.outstandingTotal).toBe(10_000);
+    expect(r.retainageExcluded).toBe(10_000);
+  });
+
+  it("treats no retainage terms as no subtraction", () => {
+    // Null is not zero as a claim, but it is zero as arithmetic — and a
+    // GC on a job with no retainage rate must be judged exactly as before.
+    const r = calculatePaymentReliability([invoice({ retainageWithheld: null, paidAmount: 99_999 })]);
+    expect(r.settledCount).toBe(0);
+    expect(r.retainageExcluded).toBe(0);
+  });
+});
+
 describe("the timing figures themselves", () => {
   it("averages days from issued to the last payment, across settled invoices only", () => {
     const r = calculatePaymentReliability([
@@ -149,6 +216,7 @@ describe("the timing figures themselves", () => {
       averageDaysToPay: null,
       settledCount: 0,
       shortPaidCount: 0,
+      retainageExcluded: 0,
     });
   });
 });

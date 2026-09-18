@@ -31,9 +31,31 @@
 //      repo names what it cannot compute rather than hiding it —
 //      `hasUncomputedHours`, "Name not recorded" — and a timing average
 //      over an unstated subset is the same failure in a different column.
+//
+// THE SAME DEFECT CAME BACK THROUGH A THIRD DOOR — issue #288, and #189's
+// fix could not see it. `isSettled` compared cash against the GROSS invoice
+// amount, and retainage is a slice of gross the GC is entitled to hold
+// until substantial completion. So an invoice with retainage on it could
+// never settle, however promptly the GC paid what was certified due, and
+// the timing figures were computed over an EMPTY SET: onTimeRate and
+// averageDaysToPay came back null for every GC who holds retainage, which
+// is all of them. The panel rendered blank and looked like a feature that
+// had not been built.
+//
+// Worse than #189's version, because #189 at least counted the
+// fee-shortened invoices somewhere: these landed in `shortPaidCount`,
+// so a GC paying exactly right was reported as having SHORT-PAID every
+// invoice they had ever settled.
 
 export interface ReliabilityInvoiceInput {
+  /** Invoice.amount -- GROSS, retainage included. */
   amount: number;
+  /** Invoice.retainageWithheld: the slice of `amount` held back until
+   * substantial completion. Null when the job has no retainage terms.
+   * Subtracted from what the GC has to cover for this invoice to count as
+   * settled -- retainage arrives later, as a RetainageRelease, and is not
+   * a payment this GC is late on. */
+  retainageWithheld: number | null;
   issuedAt: Date;
   dueAt: Date | null;
   /** Sum of that invoice's payments — cash actually applied. */
@@ -68,21 +90,43 @@ export interface PaymentReliability {
    * because they are not finished — but they are NAMED here rather than
    * silently dropped, which is the whole of issue #189. */
   shortPaidCount: number;
+  /** Retainage subtracted from what these invoices had to be paid to count
+   * as settled. The timing figures above are about how promptly this GC
+   * pays what is CERTIFIED DUE; this much is money they are still holding,
+   * legitimately, and no lateness is being claimed about it either way.
+   * Reported so the panel can say so instead of leaving a reader to assume
+   * the on-time rate covers every dollar billed. */
+  retainageExcluded: number;
 }
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
 
+/** Whole cents at the settlement boundary, for the reason
+ * lib/cash-flow.ts spells out: this is now a three-term comparison of
+ * Decimal(12,2) values round-tripped through JS numbers, and a tenth of a
+ * cent of float dust decides whether an invoice is finished. */
+function cents(value: number): number {
+  return Math.round(value * 100);
+}
+
+/** What the GC has to cover for this invoice to be finished: gross less
+ * the retainage they are entitled to hold until substantial completion. */
+function amountDue(invoice: ReliabilityInvoiceInput): number {
+  return invoice.amount - (invoice.retainageWithheld ?? 0);
+}
+
 /** An invoice is settled when cash received plus what a platform took in
- * transit covers what was billed.
+ * transit covers what was DUE — gross less retainage.
  *
  * Deliberately NOT a tolerance ("within a dollar"). A tolerance is a
  * number somebody picks, and it would swallow a real short payment of
  * that size — a disputed backcharge deducted at source is exactly the
  * thing a sub needs to see, not round away. This asks a question with a
- * real answer instead: was the balance taken by a fee, or is it still owed?
+ * real answer instead: was the balance taken by a fee, held back as
+ * retainage, or is it still owed?
  */
 function isSettled(invoice: ReliabilityInvoiceInput): boolean {
-  return invoice.paidAmount + invoice.feesDeducted >= invoice.amount;
+  return cents(invoice.paidAmount) + cents(invoice.feesDeducted) >= cents(amountDue(invoice));
 }
 
 export function calculatePaymentReliability(invoices: ReliabilityInvoiceInput[]): PaymentReliability {
@@ -117,7 +161,12 @@ export function calculatePaymentReliability(invoices: ReliabilityInvoiceInput[])
     invoiceCount: invoices.length,
     invoicedTotal,
     paidTotal,
+    // Deliberately GROSS, and deliberately not the aging balance: "how much
+    // of what I billed this GC has not reached me" is a true statement
+    // about a relationship, retainage included. Whether any of it is LATE
+    // is the question the timing figures answer, and that one is net.
     outstandingTotal: invoicedTotal - paidTotal,
+    retainageExcluded: invoices.reduce((sum, inv) => sum + (inv.retainageWithheld ?? 0), 0),
     onTimeRate,
     averageDaysToPay,
     settledCount: settled.length,

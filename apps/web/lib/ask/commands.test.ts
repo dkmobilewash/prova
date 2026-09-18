@@ -283,6 +283,73 @@ describe("read-tool capabilities match the pages they cite", () => {
     change_order_status: "VIEW_JOB_COSTS",
     job_labor_cost: "VIEW_JOB_COSTS",
     safety_record: ROUTE_CAPABILITY["/safety"],
+    open_submittals: ROUTE_CAPABILITY["/submittals"],
+    // /certifications is MANAGE_FIELD, and that is the right gate rather
+    // than a compliance one: the question this answers is "who can start on
+    // Monday", which a foreman asks and a compliance manager does not.
+    certification_expiry: ROUTE_CAPABILITY["/certifications"],
+    apprentice_ratio: ROUTE_CAPABILITY["/union-compliance"],
+    closeout_status: ROUTE_CAPABILITY["/closeout"],
+    fringe_remittance: ROUTE_CAPABILITY["/union-compliance"],
+    // /backcharges is MANAGE_BILLING. A backcharge is money the GC is
+    // taking off the next cheque, so it sits with whoever chases the
+    // cheque rather than with compliance.
+    backcharge_exposure: ROUTE_CAPABILITY["/backcharges"],
+    // Apprenticeship standing renders on /union-compliance, which is where
+    // its loader is called from — not /certifications, which is cards.
+    apprenticeship_standing: ROUTE_CAPABILITY["/union-compliance"],
+    daily_field_reports: ROUTE_CAPABILITY["/field-reports"],
+    wage_determinations: ROUTE_CAPABILITY["/prevailing-wage"],
+    job_photos: ROUTE_CAPABILITY["/photos"],
+    vendor_pricing: ROUTE_CAPABILITY["/vendors/pricing"],
+    // /contacts is on lib/permissions.test.ts's open list, so this is null
+    // by the same rule every other row here follows: a tool takes the gate
+    // of the page it cites. A tool stricter than its own screen refuses
+    // what the person can already read.
+    gc_relationship: null,
+    // Same literal as `receivables`: the pay applications section renders
+    // inside the job page's money branch, which is not its own route.
+    pay_application_status: "MANAGE_BILLING",
+    warranty_obligations: ROUTE_CAPABILITY["/closeout"],
+    // /messages is on the open list too — the delivery log is open and
+    // sending is the action's problem, not the page's.
+    outbound_messages: null,
+
+    /* ───────── the eight the assistant could not see ───────── */
+
+    // The certified-payroll page calls requireCapability("MANAGE_COMPLIANCE")
+    // directly — it is a dynamic route under /jobs/[id], so it is guarded at
+    // the page rather than in ROUTE_CAPABILITY, and that literal is read off
+    // the page itself rather than guessed from the subject.
+    certified_payroll: "MANAGE_COMPLIANCE",
+    // NO PAGE EXISTS FOR T&M TICKETS AT ALL, so this row cannot take a gate
+    // from the page it cites and is the one place the rule above has nothing
+    // to read. MANAGE_FIELD is the argued answer: a T&M ticket is field
+    // paperwork — the foreman describes the extra work and gets it signed on
+    // site, and the phone app that writes them is the field app. When the
+    // page is built it must be guarded to match, and this line is the thing
+    // that will disagree loudly if it is not.
+    tm_tickets: "MANAGE_FIELD",
+    // Same literal as change_order_status, for the same reason: change
+    // orders render inside the job page's `showsJobMoney` branch.
+    unbilled_change_orders: "VIEW_JOB_COSTS",
+    // /schedule is open, and lib/permissions.test.ts gives the reason this
+    // tool is shaped by — "No money on it". The first draft of this tool
+    // carried cost percent complete and would have put money on an open
+    // surface; the figure was removed rather than the gate tightened,
+    // because tightening it locks a foreman out of a question about his own
+    // dates.
+    schedule_status: null,
+    // Line items with prices on them. The job page renders them inside the
+    // money branch, same as change orders.
+    estimate_detail: "VIEW_JOB_COSTS",
+    document_intake: ROUTE_CAPABILITY["/intake"],
+    // /team is on the open list: "The roster. Everyone should be able to see
+    // who they work with; changing it is owner-only in the actions." This
+    // tool reads and never changes, so it takes the page's gate.
+    team_roster: null,
+    // Dispatch slips are union paperwork and render on /union-compliance.
+    dispatch_slips: ROUTE_CAPABILITY["/union-compliance"],
   };
 
   it.each(TOOLS.map((tool) => [tool.name, tool.capability] as const))("%s", (name, capability) => {
