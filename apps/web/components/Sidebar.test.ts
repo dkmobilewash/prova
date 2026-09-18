@@ -203,10 +203,10 @@ describe("the Money Rail's groups collapse", () => {
     renderRail();
 
     for (const heading of HEADINGS) expect(isExpanded(heading)).toBe(false);
-    // Two links live outside the groups, present whether anything is
+    // The logo row links home (/dashboard, 2026-09-18). Besides it, links live outside the groups, present whether anything is
     // expanded or not: "/ask" pinned above them, and "/settings" pinned at
     // the bottom (NAV_FOOTER) — Cyrus could not find it inside Financials.
-    expect(linkHrefs()).toEqual(["/ask", "/settings/integrations", "/settings"]);
+    expect(linkHrefs()).toEqual(["/dashboard", "/ask", "/settings/integrations", "/settings"]);
   });
 
   it("keeps a closed group's links OUT of the document, not merely invisible", () => {
