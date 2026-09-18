@@ -111,6 +111,18 @@ describe("applyPursuitChanges", () => {
     expect(shown.map((r) => [r.id, r.projectName])).toEqual([["b", "renamed"]]);
     expect(list.map((r) => r.id)).toEqual(["a", "b"]);
   });
+
+  it("shows a created row once when the same create is both held and still in flight", () => {
+    // Seen in the browser on #316: after a save succeeds the create is held
+    // (so it survives until the refreshed list arrives) while useOptimistic
+    // still applies the in-flight copy on top. Two rows with key "saving-1"
+    // made React warn about duplicate keys and leave a "saving…" ghost next
+    // to the real row after the refresh.
+    const created = row({ id: "saving-1" });
+    const held = applyPursuitChanges(list, [{ kind: "create", row: created }]);
+    const shown = applyPursuitChanges(held, [{ kind: "create", row: created }]);
+    expect(shown.map((r) => r.id)).toEqual(["a", "b", "saving-1"]);
+  });
 });
 
 describe("heldOver", () => {

@@ -55,7 +55,16 @@ export function applyPursuitChanges(
   if (changes.length === 0) return pursuits as ShownPursuit[];
   let rows = [...pursuits];
   for (const change of changes) {
-    if (change.kind === "create") rows.push(change.row);
+    // A create can arrive twice — held after the save succeeded AND still
+    // applied by useOptimistic until the transition ends. Twice in the list
+    // is two rows with one React key, which left a "saving…" ghost beside
+    // the real row after the refresh (#316, seen in the browser). So a
+    // create whose row is already shown replaces it instead.
+    if (change.kind === "create") {
+      const at = rows.findIndex((row) => row.id === change.row.id);
+      if (at === -1) rows.push(change.row);
+      else rows[at] = change.row;
+    }
     else if (change.kind === "edit") rows = rows.map((row) => (row.id === change.row.id ? change.row : row));
     else rows = rows.filter((row) => row.id !== change.id);
   }
