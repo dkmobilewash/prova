@@ -52,13 +52,37 @@ export type ParsedImport = {
  * worse trade than forty lines. Handles the cases a real export actually
  * produces — quoted commas ("2x4, 8ft"), doubled quotes as an escape,
  * CRLF line endings, and the UTF-8 BOM Excel writes.
+ *
+ * A thin view over `parseCsvRecords` below, and its output is unchanged by
+ * that: the same records, without the line numbers.
  */
 export function parseCsv(text: string): string[][] {
-  const input = text.replace(/^﻿/, "");
-  const records: string[][] = [];
+  return parseCsvRecords(text).map((record) => record.cells);
+}
+
+/** One CSV record and the physical line of the text it STARTED on. */
+export type CsvRecord = { line: number; cells: string[] };
+
+/**
+ * The same parser as `parseCsv`, keeping where each record came from.
+ *
+ * Added for the spreadsheet importer (lib/spreadsheet-import.ts), whose
+ * problems are reported by line number. Counting records instead of lines
+ * gets that number wrong as soon as the file has a blank line in it —
+ * blank records are dropped below, so every row after one would be
+ * reported one line early — or a quoted field with a line break inside it.
+ * The line counter advances on every physical line break, quoted or not.
+ * One parser, so the two importers can never disagree about what a file
+ * said.
+ */
+export function parseCsvRecords(text: string): CsvRecord[] {
+  const input = text.replace(/^\uFEFF/, "");
+  const records: CsvRecord[] = [];
   let field = "";
   let record: string[] = [];
   let inQuotes = false;
+  let line = 1;
+  let recordLine = 1;
 
   for (let i = 0; i < input.length; i++) {
     const char = input[i];
@@ -72,6 +96,9 @@ export function parseCsv(text: string): string[][] {
           inQuotes = false;
         }
       } else {
+        // A CRLF inside a quoted field is one physical line break, counted
+        // on its \n; a lone \r is one on its own.
+        if (char === "\n" || (char === "\r" && input[i + 1] !== "\n")) line++;
         field += char;
       }
       continue;
@@ -90,19 +117,21 @@ export function parseCsv(text: string): string[][] {
       // Consume CRLF as one break.
       if (char === "\r" && input[i + 1] === "\n") i++;
       record.push(field);
-      records.push(record);
+      records.push({ line: recordLine, cells: record });
       record = [];
       field = "";
+      line++;
+      recordLine = line;
     } else {
       field += char;
     }
   }
   record.push(field);
-  records.push(record);
+  records.push({ line: recordLine, cells: record });
 
   // A trailing newline produces one empty record; blank lines mid-file are
   // dropped too rather than reported as broken rows.
-  return records.filter((r) => r.some((cell) => cell.trim() !== ""));
+  return records.filter((r) => r.cells.some((cell) => cell.trim() !== ""));
 }
 
 /* ------------------------------------------------------------------ */

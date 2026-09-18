@@ -243,6 +243,15 @@ export default async function SettingsPage({
         names what it does not cover.
       </p>
 
+      {/* The way in, beside the way out. Owner-only like export. */}
+      <p className="mb-6 text-sm text-ink-body">
+        <Link href="/settings/import" className="text-link hover:text-link-hover">
+          Import from a spreadsheet
+        </Link>{" "}
+        — bring in your clients, jobs and crew from Excel, Google Sheets or QuickBooks, with a
+        preview before anything is saved.
+      </p>
+
       {qb === "connected" && (
         <p className="mb-6 rounded-md border border-green-700 bg-tag-green px-4 py-3 text-sm text-green-400">
           QuickBooks connected successfully.

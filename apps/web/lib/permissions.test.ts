@@ -307,6 +307,8 @@ const OPEN_ROUTES: Record<string, string> = {
   "/estimating": "A bare redirect to /dashboard?status=ESTIMATE. Same reason as /jobs.",
   "/settings/export":
     "Guarded HARDER than any capability: the page itself refuses anyone whose role is not OWNER, because it hands over the whole company's data. A capability would loosen it.",
+  "/settings/import":
+    "Guarded HARDER than any capability, like /settings/export beside it: the page refuses anyone whose role is not OWNER, because it bulk-writes the company's clients, jobs and crew. Each confirm action ALSO asserts the capability that owns what it creates — MANAGE_JOBS for clients and jobs, MANAGE_FIELD for crew — on top of the owner check.",
 };
 
 describe("every route the app serves has an access decision", () => {
