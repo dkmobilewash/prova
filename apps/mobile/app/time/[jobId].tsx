@@ -138,6 +138,10 @@ export default function TimeScreen() {
   // "Sign the day" — the foreman's signature on one day's hours. From then
   // the day is locked until the office reopens it on the web.
   const [signoffs, setSignoffs] = useState<TimesheetSignoff[]>([]);
+  // The day's report and delays, so the sign sheet can say what else the
+  // signature covers — signing locks them too.
+  const [reportDates, setReportDates] = useState<Set<string>>(new Set());
+  const [delayCounts, setDelayCounts] = useState<Map<string, number>>(new Map());
   const [showSign, setShowSign] = useState(false);
   const [signDate, setSignDate] = useState("");
   const [signerName, setSignerName] = useState("");
@@ -168,6 +172,15 @@ export default function TimeScreen() {
       setSignoffs(await api.listSignoffs(jobId, token));
     } catch {
       setSignoffs([]);
+    }
+    try {
+      const [rs, ds] = await Promise.all([api.listFieldReports(jobId, token), api.listDelays(jobId, token)]);
+      setReportDates(new Set(rs.map((r) => r.reportDate)));
+      const counts = new Map<string, number>();
+      for (const d of ds) counts.set(d.date, (counts.get(d.date) ?? 0) + 1);
+      setDelayCounts(counts);
+    } catch {
+      // Unknown is shown as unknown, not as "no report".
     }
     // Separate from the list above: a ratio that cannot be read must not
     // hide the entries, and offline it simply shows nothing.
@@ -729,9 +742,14 @@ export default function TimeScreen() {
             ))}
           </View>
         )}
+        <Text style={styles.meta}>
+          Daily report: {reportDates.has(signDate) ? "filed" : "not filed yet"}
+          {delayCounts.get(signDate) ? ` · ${delayCounts.get(signDate)} delay${delayCounts.get(signDate) === 1 ? "" : "s"}` : ""}
+        </Text>
         <Text style={styles.hint}>
-          Signing locks these hours. Anything still waiting to sync goes up first. If something is wrong later,
-          the office reopens the day on the web.
+          Signing locks these hours{reportDates.has(signDate) || delayCounts.get(signDate) ? ", the daily report and its delays" : ""}.
+          Anything still waiting to sync goes up first. If something is wrong later, the office reopens the day on
+          the web.
         </Text>
         <Field label="Your name" placeholder="Printed under the signature" value={signerName} onChangeText={setSignerName} />
         <Text style={styles.chipLabel}>Signature</Text>
