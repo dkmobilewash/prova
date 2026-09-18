@@ -1,0 +1,61 @@
+// The experience modification rate, as the rating bureau issued it.
+//
+// Its own file, like crew-schedule.prisma and certifications.prisma, so this
+// lane's migrations do not collide with anyone else's schema edits.
+//
+// WHY THIS IS RECORDED AND NEVER COMPUTED.
+//
+// An EMR is issued by a rating bureau (NCCI, or a state bureau such as the
+// WCIRB) from payroll and loss data the carrier reports, over a window that
+// usually excludes the most recent year. The OSHA log on /safety is what an
+// EMR is calculated FROM, by somebody else, with inputs this app does not
+// hold. A figure derived from `SafetyIncident` would therefore be a number no
+// insurer has ever quoted — and a GC's prequalification form asks for the
+// quoted one. So this table holds what was written on the worksheet, and
+// nothing in the app estimates, projects or back-fills it.
+
+/// One rate, for one company, for one policy year.
+///
+/// Company-scoped, not job-scoped: a mod belongs to the employer's workers'
+/// comp policy, and every job the company bids carries the same one.
+///
+/// UNIQUE ON (companyId, effectiveDate): one rate per policy year start. A
+/// bureau that REVISES a rating reissues it for the same effective date, and
+/// that is an edit of this row rather than a second row — two rows with the
+/// same date would leave "which one is current" with no honest answer.
+///
+/// THERE IS NO `isCurrent` COLUMN. Which rate is current is DERIVED: the
+/// latest effective date that is not in the future (see lib/emr.ts). A stored
+/// flag would disagree with the dates the day a new policy year starts, and
+/// nobody would be there to flip it.
+model ExperienceModRate {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  /// The first day of the policy year the rate applies to. ENTERED from the
+  /// worksheet, never stamped — `now()` would be the day somebody typed, not
+  /// the day the rate took effect. UTC midnight, rendered in UTC.
+  effectiveDate DateTime
+
+  /// The rate itself, e.g. 0.870. Three places because some state bureaus
+  /// publish three; stored as Decimal so 0.87 is 0.87 and not 0.8699999.
+  rate Decimal @db.Decimal(5, 3)
+
+  /// Who issued it — "NCCI", "WCIRB", the carrier's name. Free text: the
+  /// bureau differs by state, and a GC asks for it by name.
+  source String
+
+  /// A link to the worksheet, when there is one. http(s) only.
+  sourceUrl String?
+
+  note String?
+
+  createdByUserId String?
+  createdBy       User?   @relation("ExperienceModRateCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, effectiveDate])
+}
