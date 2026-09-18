@@ -121,6 +121,11 @@ export type TimeEntry = {
   employeeName: string;
   lineItemDescription: string | null;
   craftLabel: string | null;
+  crewMemberId?: string | null;
+  lineItemId?: string | null;
+  craftClassificationId?: string | null;
+  /** The entry is the signed-in user's own (only on the list endpoint). */
+  mine?: boolean;
 };
 
 export type CrewMember = {

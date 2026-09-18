@@ -1,11 +1,16 @@
 import type { ReactNode } from "react";
-import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { colors, typography } from "@/lib/theme";
 
 /**
  * A bottom sheet for the create/edit forms. The primary action sits in the
  * bottom third — where a thumb holding the phone one-handed actually
  * reaches — not at the top of the screen. Tap the backdrop to dismiss.
+ *
+ * Never taller than the screen: the sheet is capped below the status bar and
+ * the fields scroll between a fixed title and a fixed primary button. A long
+ * form (Log time grew a craft note and chips) used to push its own title up
+ * behind the status bar with no way to reach it.
  */
 export function Sheet({
   visible,
@@ -31,7 +36,13 @@ export function Sheet({
       <View style={styles.sheet}>
         <View style={styles.grabber} />
         <Text style={styles.title}>{title}</Text>
-        <View style={styles.body}>{children}</View>
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={styles.body}
+          keyboardShouldPersistTaps="handled"
+        >
+          {children}
+        </ScrollView>
         {primaryLabel && onPrimary ? (
           <Pressable
             onPress={onPrimary}
@@ -53,6 +64,8 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
+    // Leaves the status bar and a strip of backdrop to tap-to-dismiss.
+    maxHeight: "88%",
     backgroundColor: colors.canvas,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
@@ -75,6 +88,9 @@ const styles = StyleSheet.create({
     fontSize: typography.size.xl,
     fontWeight: typography.weight.bold,
   },
+  // Shrinks to fit when the sheet hits its cap; otherwise only as tall as
+  // its content, so a short sheet stays short.
+  scroll: { flexGrow: 0, flexShrink: 1 },
   body: { gap: 12 },
   primary: {
     minHeight: 52,
