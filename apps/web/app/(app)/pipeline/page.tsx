@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { EmptyState } from "@/components/EmptyState";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { loadBidPipeline } from "@/lib/bid-pipeline-query";
@@ -67,16 +68,33 @@ export default async function PipelinePage() {
       />
 
       {rows.length === 0 ? (
-        <div className="rounded-lg border border-line-card bg-surface p-6" data-tour="pipeline-no-invitations">
-          <p className="text-ink-label">No bid invitations recorded yet.</p>
-          <p className="mt-2 text-sm text-ink-body">
-            A GC appears here once they have invited you to bid at least once. Log one from{" "}
-            <Link href="/contacts" className="text-link hover:underline">
-              a contact&apos;s page
-            </Link>
-            .
-          </p>
-        </div>
+        <EmptyState
+          data-tour="pipeline-no-invitations"
+          title="No bid invitations recorded yet"
+          purpose={
+            <p>
+              Where your next jobs are coming from: who asks you to price work, how often you win
+              it, and which bids are waiting on you. It fills in on its own from the bids you log —
+              nothing here is typed twice.
+            </p>
+          }
+          actions={[{ label: "Open your contacts", href: "/contacts" }, { label: "See all bids", href: "/bids" }]}
+          ask="Northside Builders invited us to bid the Oak Ave addition, due October 3"
+          sources={
+            <p>
+              Every bid invitation logged on a contact&apos;s page. The chase list above is separate
+              — jobs you are after before anyone has asked you to bid.
+            </p>
+          }
+          example={{
+            caption: "What the pipeline looks like after a few months of bids. Not your data — nothing here is saved.",
+            rows: [
+              { title: "Northside Builders", detail: "9 invitations · won 4 · 44%", meta: "$186,000 won" },
+              { title: "Jane Smith (homeowner)", detail: "2 invitations · won 1", meta: "$18,200 won" },
+              { title: "Waiting on us: Oak Ave addition", tag: "Due Oct 3", detail: "Northside Builders", meta: "5 days left" },
+            ],
+          }}
+        />
       ) : (
         <>
           <section className="mb-8" data-tour="pipeline-waiting">

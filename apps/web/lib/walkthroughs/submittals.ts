@@ -33,5 +33,23 @@ export const submittalsWalkthrough: Walkthrough = {
       body:
         "Press Record response when the GC sends it back. If they want changes, press Send revision to log the next version, so you always know which one is safe to build from.",
     },
+    {
+      anchor: "procore-feed",
+      title: "The GC's submittals from Procore",
+      body:
+        "If your GC runs the job in Procore, their submittals show here once the owner links the project. They are the GC's records, not part of your log.",
+    },
+    {
+      anchor: "procore-refresh",
+      title: "Get the latest from Procore",
+      body:
+        "This refreshes by itself when the page opens. Press Refresh from Procore to read it again now.",
+    },
+    {
+      anchor: "procore-feed-list",
+      title: "Open it in Procore",
+      body:
+        "C Stream only reads these. Press Open in Procore to answer or change one there.",
+    },
   ],
 };

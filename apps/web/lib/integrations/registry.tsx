@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { IntegrationProvider } from "@prova/db";
 import { JOBBER_REQUIRED_ENV } from "@/lib/jobber/setup";
+import { PROCORE_REQUIRED_ENV } from "@/lib/procore/setup";
 
 /**
  * The one list of providers, and the seam the next phase hooks into.
@@ -42,6 +43,14 @@ export type ProviderImplementation =
    * service is not set up here yet, rather than showing a broken button.
    */
   | { kind: "import"; startHref: string; requiredEnv: readonly string[] }
+  /**
+   * A standing READ-ONLY feed from someone else's system into this
+   * company's jobs: OAuth connect, then the owner links an outside project
+   * to a job and its records show on that job's pages. Same `requiredEnv`
+   * rule as `import` — missing keys mean "not set up here", never a dead
+   * button.
+   */
+  | { kind: "feed"; startHref: string; requiredEnv: readonly string[] }
   /** Not built. Renders disabled, with no control that implies otherwise. */
   | { kind: "planned" };
 
@@ -157,8 +166,8 @@ export const PROVIDERS: ProviderEntry[] = [
     provider: "PROCORE",
     name: "Procore",
     description:
-      "A read-only feed from a GC's Procore project, so drawings, RFIs and submittals arrive without being re-keyed. Read-only by intent: the GC's project is theirs, not ours to write to.",
-    implementation: { kind: "planned" },
+      "Sign in with your own Procore login and link a GC's Procore project to your job. The GC's current drawings, RFIs and submittals then show on your Drawings, RFIs and Submittals pages, marked as theirs, with a link back to Procore. Read-only: C Stream never changes anything in the GC's project.",
+    implementation: { kind: "feed", startHref: "/api/procore/start", requiredEnv: PROCORE_REQUIRED_ENV },
     icon: (
       <svg viewBox="0 0 20 20" fill="none" className={iconClass} aria-hidden="true">
         <path d="M10 3.2 16.5 7v6L10 16.8 3.5 13V7L10 3.2Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />

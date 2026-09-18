@@ -35,6 +35,10 @@ export type TimeEntryRowData = {
   /** "corrected Sep 13, 2026 by Cyrus Obiz", or null on an entry nobody has
    * corrected — which is every entry logged right the first time. */
   lastCorrectedLabel: string | null;
+  /** "Signed" or "Approved" when the day has a live timesheet sign-off —
+   * the hours are locked, so the row offers no Edit or Remove. Null on an
+   * open day. */
+  lockedLabel: string | null;
 };
 
 const btn =
@@ -190,6 +194,14 @@ export function TimeEntryRow({
         )}
       </div>
 
+      {entry.lockedLabel ? (
+        <span
+          className="shrink-0 rounded bg-emerald-500/10 px-1.5 py-0.5 text-xs text-emerald-300"
+          title="This day is signed, so its hours are locked. Reopen the day under Timesheet sign-off to change them."
+        >
+          {entry.lockedLabel} · locked
+        </span>
+      ) : (
       <RowActions
         className="flex shrink-0 flex-wrap items-center gap-2"
         destructive={
@@ -236,6 +248,7 @@ export function TimeEntryRow({
           Edit
         </button>
       </RowActions>
+      )}
     </li>
   );
 }

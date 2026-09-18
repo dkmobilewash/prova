@@ -84,6 +84,7 @@ model Job {
   assignments                    JobAssignment[]
   crewScheduleDays               CrewScheduleDay[]
   lienDeadlines                  LienDeadline[]
+  procoreProjectLink             ProcoreProjectLink?
   signatureRequests              SignatureRequest[]
   invoices                       Invoice[]
   complianceDocuments            ComplianceDocument[]
@@ -98,6 +99,7 @@ model Job {
   retainageReleases              RetainageRelease[]
   punchListItems                 PunchListItem[]
   tmTickets                      TmTicket[]
+  timesheetSignoffs              TimesheetSignoff[]
   dailyFieldReports              DailyFieldReport[]
   media                          JobMedia[]
   /// Documents dropped into `/intake` and filed against this job. Optional

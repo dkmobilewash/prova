@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { EmptyState } from "@/components/EmptyState";
 import { prisma } from "@prova/db";
 import { requireCapability } from "@/lib/authz";
 import { viewerTimeZone } from "@/lib/viewerToday";
@@ -168,17 +169,25 @@ export default async function PhotosPage({
       </p>
 
       {jobs.length === 0 ? (
-        <div className="rounded-lg border border-line-card bg-surface p-6" data-tour="photos-no-jobs">
-          <p className="text-sm text-ink-label">
-            There are no jobs yet, and a photo is always filed against one.
-          </p>
-          <Link
-            href="/jobs/new"
-            className="mt-3 inline-flex min-h-11 items-center rounded-md bg-brand px-4 text-sm font-semibold text-neutral-900 hover:bg-yellow-500"
-          >
-            Create a job
-          </Link>
-        </div>
+        <EmptyState
+          data-tour="photos-no-jobs"
+          title="No photos yet"
+          purpose={
+            <p>
+              Before, during and after pictures for every job, filed against the job instead of
+              lost in someone&apos;s camera roll — tagged in your own words (&ldquo;rough
+              plumbing&rdquo;, &ldquo;before&rdquo;), and shareable with the homeowner through
+              their job link. A photo always belongs to a job, so start with one.
+            </p>
+          }
+          actions={[{ label: "Create a job", href: "/jobs/new" }]}
+          example={{
+            rows: [
+              { title: "Smith kitchen remodel — 14 photos", tag: "before", detail: "Sep 2 · taken on site, location recorded", meta: "3 shared" },
+              { title: "Oak Ave addition — 22 photos", tag: "rough framing", detail: "Sep 10 · inside the walls before drywall", meta: "not shared" },
+            ],
+          }}
+        />
       ) : (
         <>
           {/* Rendered once for the whole page: every card's tag input points

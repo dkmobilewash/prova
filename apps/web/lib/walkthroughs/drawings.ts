@@ -28,5 +28,23 @@ export const drawingsWalkthrough: Walkthrough = {
       body:
         "When a new revision is sent out, press Record an issue on its set. Anything marked NOT RECEIVED means the crew may be working from old drawings — press Mark received once it is in hand.",
     },
+    {
+      anchor: "procore-feed",
+      title: "The GC's current drawings",
+      body:
+        "If your GC runs the job in Procore, their current drawings show here once the owner links the project. Only the current revision of each sheet is shown.",
+    },
+    {
+      anchor: "procore-refresh",
+      title: "Get the latest from Procore",
+      body:
+        "This refreshes by itself when the page opens. Press Refresh from Procore to read it again now.",
+    },
+    {
+      anchor: "procore-feed-list",
+      title: "Open it in Procore",
+      body:
+        "C Stream only reads these. Press Open in Procore to see the sheet there.",
+    },
   ],
 };

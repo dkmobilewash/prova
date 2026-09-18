@@ -691,6 +691,11 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // they assert its MANAGE_COMPLIANCE before the owner check and before
   // anything is read.
   quickbooksImport: () => import("./actions/quickbooksImport"),
+  // Procore: the Integrations card's four (MANAGE_COMPLIANCE, then owner)
+  // and the feed refresh on /rfis, /submittals and /drawings (MANAGE_JOBS)
+  // — two modules because they sit behind two different doors.
+  procore: () => import("./actions/procore"),
+  procoreFeed: () => import("./actions/procoreFeed"),
   safety: () => import("./actions/safety"),
   certifications: () => import("./actions/certifications"),
   punchLists: () => import("./actions/punchLists"),

@@ -3,6 +3,7 @@ import { prisma } from "@prova/db";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { PunchListForm } from "@/components/PunchListForm";
+import { EmptyState } from "@/components/EmptyState";
 import { PunchListRow } from "@/components/PunchListRow";
 import { jobPickerLabel, toJobOption } from "@/components/jobLabels";
 
@@ -44,6 +45,10 @@ export default async function PunchListsPage({
   const openCount = await prisma.punchListItem.count({
     where: { companyId: company.id, isDone: false, ...(activeJob ? { jobId: activeJob } : {}) },
   });
+
+  // Whether this company has EVER had a punch item, not whether the current
+  // filter shows any — the teaching empty state is for the first.
+  const everLogged = await prisma.punchListItem.count({ where: { companyId: company.id } });
 
   const filterHref = (params: { job?: string | null; show?: string | null }) => {
     const next = new URLSearchParams();
@@ -103,7 +108,36 @@ export default async function PunchListsPage({
           </Link>
         </div>
 
-        {items.length === 0 ? (
+        {items.length === 0 && everLogged === 0 ? (
+          <EmptyState
+            data-tour="punch-empty"
+            title="No punch items yet"
+            purpose={
+              <p>
+                The last-few-things list before a job is done — touch-up paint, a sticking door, a
+                missing outlet cover — found on the walkthrough with the homeowner or builder. Tick
+                each one off as it is fixed, and the job is finished when the list is empty.
+              </p>
+            }
+            actions={
+              jobOptions.length === 0
+                ? [{ label: "Create a job", href: "/jobs/new" }]
+                : [{ label: "Add an item", opens: "punch-add" }]
+            }
+            ask={
+              jobOptions.length === 0
+                ? undefined
+                : `Add to the punch list on ${jobOptions[0].name}: touch up paint in the hall, adjust the pantry door`
+            }
+            example={{
+              rows: [
+                { title: "Touch up paint behind the fridge", detail: "Smith kitchen remodel · raised by Mike", meta: "open" },
+                { title: "Pantry door rubs at the top", detail: "Smith kitchen remodel · raised by the homeowner", meta: "open" },
+                { title: "Outlet cover missing by the island", detail: "Smith kitchen remodel", meta: "done Sep 12" },
+              ],
+            }}
+          />
+        ) : items.length === 0 ? (
           <p className="text-ink-body">
             {showDone || openCount > 0
               ? "Nothing here."

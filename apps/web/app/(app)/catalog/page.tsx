@@ -11,6 +11,7 @@ import { CatalogEntryRow } from "@/components/CatalogEntryRow";
 import { TRADE_SCOPE_OPTIONS, tradeScopeLabel } from "@/lib/trade-scopes";
 import { money } from "@/lib/money";
 import { SubmitButton } from "@/components/SubmitButton";
+import { EmptyState } from "@/components/EmptyState";
 
 type CatalogEntryWithLines = {
   id: string;
@@ -149,7 +150,34 @@ export default async function CatalogPage() {
 
       <section className="mb-8">
         {entries.length === 0 ? (
-          <p className="text-ink-body" data-tour="catalog-empty">No catalog entries yet.</p>
+          <EmptyState
+            data-tour="catalog-empty"
+            title="No catalog entries yet"
+            purpose={
+              <p>
+                Your price book: the things you put on every estimate — a sheet of drywall hung and
+                finished, a day of demo, a door installed — with the unit and what you charge. Save
+                them once and pull them into any estimate in two clicks instead of retyping prices.
+              </p>
+            }
+            actions={[
+              { label: "Add a catalog entry", opens: "catalog-add" },
+              { label: "Import a price list", opens: "catalog-import" },
+            ]}
+            sources={
+              <p>
+                Entries you add below, a price list pasted from a spreadsheet, and any line on a job
+                you save with &ldquo;Save as catalog item&rdquo;.
+              </p>
+            }
+            example={{
+              rows: [
+                { title: "Hang and finish 1/2\" drywall", detail: "sq ft · $2.10/unit", meta: "used on 6 jobs" },
+                { title: "Interior door, prehung, installed", detail: "each · $385.00/unit", meta: "used on 3 jobs" },
+                { title: "Demo and haul-away", detail: "day · $950.00/unit", meta: "used on 4 jobs" },
+              ],
+            }}
+          />
         ) : (
           <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface" data-tour="catalog-list">
             {entries.map((entry) => (
