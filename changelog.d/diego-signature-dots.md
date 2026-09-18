@@ -14,4 +14,9 @@ pad, which the sign-the-day sheet and T&M tickets both use:
 - **Clear was hidden** under the app's floating Tools button. It's on the
   left of the pad now.
 
+**Also:** the phone's Time and T&M screens now reload when you come back
+to them, and when the app returns from the background. Before, they loaded
+once, so entries deleted on the web stayed on the phone until you left the
+screen and came back.
+
 No server change and no migration.
