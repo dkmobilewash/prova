@@ -5,6 +5,8 @@ import {
   formatCoveragePercent,
   formatPercentComplete,
 } from "@/lib/wip";
+import { lineItemCostToDate, unassignedLaborCost } from "@/lib/labor-job-cost";
+import { loadFringeSchedulesByCraft, TIME_ENTRY_COST_SELECT } from "@/lib/fringe-schedules-query";
 import {
   jobCostVariance,
   jobEarnedRevenue,
@@ -15,6 +17,7 @@ import { renewalSourcesForCompany } from "@/lib/renewals";
 import { serverToday } from "@/lib/serverToday";
 import { daysBetween } from "./dates";
 import {
+  arBalanceFor,
   calculateArAgingInvoice,
   calculateCashFlowForecast,
   daysPastDueFor,
@@ -421,7 +424,8 @@ async function drawingCurrency(companyId: string, input: Input): Promise<ToolRes
 }
 
 async function jobMargin(companyId: string, input: Input): Promise<ToolResult> {
-  const jobs = await prisma.job.findMany({
+  const [jobs, fringeSchedulesByCraft] = await Promise.all([
+    prisma.job.findMany({
     where: { companyId, status: { in: ["CONTRACTED", "IN_PROGRESS"] } },
     select: {
       id: true,
@@ -430,6 +434,7 @@ async function jobMargin(companyId: string, input: Input): Promise<ToolResult> {
       lineItems: {
         where: { isDeleted: false },
         select: {
+          id: true,
           description: true,
           quantity: true,
           unitPrice: true,
@@ -440,8 +445,14 @@ async function jobMargin(companyId: string, input: Input): Promise<ToolResult> {
         },
       },
       invoices: { select: { amount: true } },
+      // Hours are job cost (issue #287). Without them this tool answered
+      // "what is our margin" from materials alone, in prose, with the
+      // model forbidden from questioning the figure it was handed.
+      timeEntries: { select: TIME_ENTRY_COST_SELECT },
     },
-  });
+    }),
+    loadFringeSchedulesByCraft(companyId),
+  ]);
 
   const filtered = jobs.filter((job) => matchesJobName(job.name, input.jobName));
 
@@ -456,11 +467,15 @@ async function jobMargin(companyId: string, input: Input): Promise<ToolResult> {
             line.currentEstimatedUnitCost === null ? null : Number(line.currentEstimatedUnitCost),
           estimatedCostToComplete:
             line.estimatedCostToComplete === null ? null : Number(line.estimatedCostToComplete),
-          actualCostToDate: line.costEntries.reduce((sum, cost) => sum + Number(cost.amount), 0),
+          ...lineItemCostToDate(line.id, line.costEntries, job.timeEntries, fringeSchedulesByCraft),
         }),
       );
       const billed = job.invoices.reduce((sum, invoice) => sum + Number(invoice.amount), 0);
-      const wip = calculateJobWip(lines, billed);
+      const wip = calculateJobWip(
+        lines,
+        billed,
+        unassignedLaborCost(job.timeEntries, fringeSchedulesByCraft),
+      );
 
       return {
         job: job.name,
@@ -801,6 +816,9 @@ async function receivables(companyId: string): Promise<ToolResult> {
       amount: true,
       dueAt: true,
       issuedAt: true,
+      // Read, not a dead over-select: the outstanding figure below is net
+      // of it. See issue #288 and lib/cash-flow.ts.
+      retainageWithheld: true,
       job: {
         select: { name: true, contact: { select: { name: true, paymentTermsDays: true } } },
       },
@@ -812,6 +830,7 @@ async function receivables(companyId: string): Promise<ToolResult> {
   const outstanding = invoices
     .map((invoice) => {
       const amount = Number(invoice.amount);
+      const retainageWithheld = invoice.retainageWithheld != null ? Number(invoice.retainageWithheld) : null;
       const paid = invoice.payments.reduce((sum, payment) => sum + Number(payment.amount), 0);
       // The one shared due-date rule — see lib/cash-flow.ts. Two surfaces
       // deriving this separately is how the dashboard and the aging table
@@ -827,7 +846,15 @@ async function receivables(companyId: string): Promise<ToolResult> {
         gc: invoice.job.contact.name,
         amount,
         paid,
-        outstanding: amount - paid,
+        // Named separately so the model can say WHY outstanding is short
+        // of amount - paid, instead of appearing to have got the
+        // subtraction wrong.
+        retainageWithheld: retainageWithheld ?? 0,
+        // The one AR rule, shared with /cash-flow: net of retainage, which
+        // is not due until substantial completion. `retainage_held` and
+        // `cash_flow_forecast` report that money; this tool must not
+        // report it a second time as something the GC owes now.
+        outstanding: arBalanceFor({ amount, paidAmount: paid, retainageWithheld }),
         dueOn: due.toISOString().slice(0, 10),
         dueFromTerms: invoice.dueAt === null,
         daysOverdue: Math.max(0, daysPastDueFor(due, now)),
@@ -909,6 +936,11 @@ async function cashFlowForecast(companyId: string): Promise<ToolResult> {
             contactName: job.contact.name,
             amount: Number(invoice.amount),
             paidAmount: invoice.payments.reduce((sum, p) => sum + Number(p.amount), 0),
+            // Netted out of the aged balance exactly as /cash-flow does it
+            // — issue #288. This column was already selected here and read
+            // only by the retainage half below, so the AR half was ageing
+            // the same dollars a second time.
+            retainageWithheld: invoice.retainageWithheld != null ? Number(invoice.retainageWithheld) : null,
             issuedAt: invoice.issuedAt,
             dueAt: invoice.dueAt,
             paymentTermsDays: job.contact.paymentTermsDays,

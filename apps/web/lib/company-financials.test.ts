@@ -17,6 +17,13 @@ import { daysPastDueFor, effectiveDueDateFor, isOverdue } from "./cash-flow";
 const job = (over: Partial<WipJobResult> = {}): WipJobResult => ({
   contractValue: 100_000,
   actualCostToDate: 30_000,
+  laborCostToDate: 0,
+  laborWageCost: 0,
+  laborAllowanceCost: 0,
+  unassignedLaborCost: 0,
+  pricedLaborHours: 0,
+  unpricedLaborHours: 0,
+  laborHourCoverage: 1,
   estimatedCostAtCompletion: 60_000,
   percentComplete: 0.5,
   costCoverage: 1,

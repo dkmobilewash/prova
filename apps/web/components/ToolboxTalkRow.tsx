@@ -58,14 +58,15 @@ export function ToolboxTalkRow({ talk, canDelete }: { talk: ToolboxTalkRowData; 
               confirmLabel="Confirm remove"
               pendingLabel="Removing…"
               pending={isPending}
+              // Reads the RETURNED refusal. Was a try/catch over
+              // `err.message`, which in production is React's "the specific
+              // message is omitted in production builds" paragraph — so a
+              // non-owner was told nothing about why the talk stayed.
               onConfirm={() => {
                 setError(null);
                 startTransition(async () => {
-                  try {
-                    await deleteToolboxTalk(talk.id);
-                  } catch (err) {
-                    setError(err instanceof Error ? err.message : "Could not remove the talk");
-                  }
+                  const result = await deleteToolboxTalk(talk.id);
+                  if (!result.ok) setError(result.error);
                 });
               }}
               deleteClassName="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:border-red-500 hover:text-red-400 disabled:opacity-50"

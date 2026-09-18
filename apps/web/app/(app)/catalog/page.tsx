@@ -174,7 +174,16 @@ export default async function CatalogPage() {
                         {entry.craftClassification.unionLocal.localNumber} — {entry.craftClassification.name}
                       </>
                     )}
-                    {entry.defaultLaborHours != null && <> · {entry.defaultLaborHours.toString()} hrs</>}
+                    {/* "hrs/line", never a bare "hrs", and deliberately the same
+                        shape as the "/unit" on the price two lines up. The number
+                        is copied onto an added line UNCHANGED — see
+                        `addCatalogLine` and `catalog-line.test.ts`. A reader who
+                        sees "$2.85/unit · 8 hrs" beside each other has no way to
+                        tell that one of them scales with quantity and the other
+                        does not, which is exactly how an estimator read it. */}
+                    {entry.defaultLaborHours != null && (
+                      <> · {entry.defaultLaborHours.toString()} hrs/line</>
+                    )}
                   </p>
                   <ActualsLine entry={entry} />
                 </>
@@ -248,8 +257,16 @@ export default async function CatalogPage() {
               className="w-32 rounded-md border border-line-card bg-canvas px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
             />
           </label>
+          {/* The label states the ARITHMETIC, not the units, because the
+              arithmetic is what nobody could tell. `addCatalogLine` copies this
+              value onto the new line as-is while unit price and budgeted cost
+              are both multiplied by quantity downstream — so a 6 SF line and a
+              600 SF line built from this entry carry identical hours. Whether
+              that is what anyone WANTED is an open question recorded in
+              changelog.d/cyrus-catalog-labor-hours-meaning.md; until it is
+              answered the field says what it does. */}
           <label className="flex flex-col gap-1 text-sm text-ink-label">
-            Default labor hrs
+            Default labor hrs — whole line
             <input
               name="defaultLaborHours"
               type="number"
@@ -257,8 +274,13 @@ export default async function CatalogPage() {
               step="0.01"
               min="0"
               placeholder="optional"
+              aria-describedby="defaultLaborHours-help"
               className="w-28 rounded-md border border-line-card bg-canvas px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
             />
+            <span id="defaultLaborHours-help" className="max-w-[14rem] text-xs text-ink-body">
+              Copied onto the line unchanged — a 6 SF line and a 600 SF line both
+              get this many hours. Not a per-unit rate.
+            </span>
           </label>
           <label className="flex flex-col gap-1 text-sm text-ink-label">
             Trade

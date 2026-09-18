@@ -50,6 +50,11 @@ export default async function CashFlowPage() {
             contactName: job.contact.name,
             amount: Number(invoice.amount),
             paidAmount,
+            // Netted out of the aged balance: it is not due until
+            // substantial completion, and it is already counted once in
+            // the retainage receivable section below. See issue #288 and
+            // the header of lib/cash-flow.ts.
+            retainageWithheld: invoice.retainageWithheld != null ? Number(invoice.retainageWithheld) : null,
             issuedAt: invoice.issuedAt,
             dueAt: invoice.dueAt,
             paymentTermsDays: job.contact.paymentTermsDays,
@@ -201,6 +206,19 @@ export default async function CashFlowPage() {
             <p className="mb-3 text-sm text-ink-body">
               Total outstanding: {money(agingSummary.totalOutstanding)}
             </p>
+            {/* The coverage caveat this table owes its reader. Balances
+                here are net of retainage — a figure 10% lighter than the
+                invoices it came from, with nothing on screen to say why,
+                is the shape of number this product refuses to show. The
+                money is not missing; it is in the next section, dated by
+                substantial completion instead of by a due date. */}
+            {agingSummary.retainageExcluded > 0 && (
+              <p className="mb-3 text-sm text-ink-muted">
+                Balances are net of {money(agingSummary.retainageExcluded)} of retainage withheld on
+                these invoices. Retainage is not due until substantial completion, so it is never
+                counted as overdue here — it is in Retainage receivable below.
+              </p>
+            )}
           </>
         )}
 

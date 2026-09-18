@@ -2,6 +2,8 @@ import { prisma } from "@prova/db";
 import { calculateJobWip, calculateLineItemWip } from "./wip";
 import { loadRetainageHeld } from "./retainage-query";
 import { calculateCompanyFinancials, type CompanyFinancials } from "./company-financials";
+import { lineItemCostToDate, unassignedLaborCost } from "./labor-job-cost";
+import { loadFringeSchedulesByCraft, TIME_ENTRY_COST_SELECT } from "./fringe-schedules-query";
 
 /**
  * Loads what the company-wide figures need, and computes them.
@@ -21,13 +23,14 @@ import { calculateCompanyFinancials, type CompanyFinancials } from "./company-fi
  * already dropped it.
  */
 export async function loadCompanyFinancials(companyId: string): Promise<CompanyFinancials> {
-  const [jobs, paymentTotal, invoiceTotal, retainageHeld] = await Promise.all([
+  const [jobs, paymentTotal, invoiceTotal, retainageHeld, fringeSchedulesByCraft] = await Promise.all([
     prisma.job.findMany({
       where: { companyId, status: { in: ["CONTRACTED", "IN_PROGRESS"] } },
       select: {
         lineItems: {
           where: { isDeleted: false },
           select: {
+            id: true,
             quantity: true,
             unitPrice: true,
             budgetedUnitCost: true,
@@ -36,6 +39,11 @@ export async function loadCompanyFinancials(companyId: string): Promise<CompanyF
             costEntries: { select: { amount: true } },
           },
         },
+        // Hours are job cost (issue #287). Fetched per job rather than per
+        // line because TimeEntry.lineItemId is nullable and the log form's
+        // default is "No specific line" -- the unattached ones are real
+        // spend and a line-scoped fetch would never see them.
+        timeEntries: { select: TIME_ENTRY_COST_SELECT },
         // amount only, for billedToDate. This file no longer names the
         // retainage column at all, and lib/retainage-single-source.test.ts
         // enforces that it stays that way.
@@ -51,6 +59,7 @@ export async function loadCompanyFinancials(companyId: string): Promise<CompanyF
       _sum: { amount: true },
     }),
     loadRetainageHeld(companyId),
+    loadFringeSchedulesByCraft(companyId),
   ]);
 
   const wipByJob = jobs.map((job) => {
@@ -63,11 +72,15 @@ export async function loadCompanyFinancials(companyId: string): Promise<CompanyF
           line.currentEstimatedUnitCost === null ? null : Number(line.currentEstimatedUnitCost),
         estimatedCostToComplete:
           line.estimatedCostToComplete === null ? null : Number(line.estimatedCostToComplete),
-        actualCostToDate: line.costEntries.reduce((sum, cost) => sum + Number(cost.amount), 0),
+        ...lineItemCostToDate(line.id, line.costEntries, job.timeEntries, fringeSchedulesByCraft),
       }),
     );
     const billedToDate = job.invoices.reduce((sum, invoice) => sum + Number(invoice.amount), 0);
-    return calculateJobWip(lineItems, billedToDate);
+    return calculateJobWip(
+      lineItems,
+      billedToDate,
+      unassignedLaborCost(job.timeEntries, fringeSchedulesByCraft),
+    );
   });
 
   return calculateCompanyFinancials({

@@ -162,7 +162,7 @@ export default async function InternalUsagePage() {
     <div className="mx-auto max-w-4xl px-6 py-8">
       <h1 className="mb-2 text-xl font-semibold text-slate-100">Usage — who is still logging in</h1>
       <p className="mb-4 text-sm text-slate-400">
-        Prova&apos;s own instrument, across every company on this database. One recorded fact per
+        C Stream&apos;s own instrument, across every company on this database. One recorded fact per
         person — the last time their browser made a signed-in request, written at most once every 15
         minutes. Everything else on this page is worked out from that timestamp and the clock when
         the page loads.

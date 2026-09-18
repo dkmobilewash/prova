@@ -706,6 +706,14 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // note on /closeout argues is worse than a consistent state.
   jobMedia: () => import("./actions/jobMedia"),
   materialOrders: () => import("./actions/materialOrders"),
+  // Phase codes — the company's own cost-coding vocabulary. All three
+  // writes are reachable only from /settings, which demands
+  // MANAGE_COMPLIANCE, so the walk puts all three in MUST_ASSERT and every
+  // one is executed below as a principal without it. There is deliberately
+  // no delete in that module: retiring is `isActive = false`, because a
+  // phase code with priced work against it is the evidence of how work on
+  // an already-invoiced job was coded.
+  "phase-codes": () => import("./actions/phase-codes"),
   rfis: () => import("./actions/rfis"),
   submittals: () => import("./actions/submittals"),
   drawings: () => import("./actions/drawings"),

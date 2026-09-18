@@ -69,6 +69,24 @@ export interface WipScheduleRow {
   status: string;
   contractValue: number;
   costToDate: number;
+  /** The burdened labor inside costToDate. A column rather than a footnote
+   * because costToDate CHANGED MEANING at issue #287 -- before it, logged
+   * hours reached no financial figure in this product at all, so a reader
+   * comparing this quarter's schedule against last quarter's is looking at
+   * two different definitions and nothing else on the page would say so. */
+  laborCostToDate: number;
+  /** Hours logged against the job that carry no burdened cost -- no craft
+   * tag, or no fringe rate schedule effective on the day worked. They are in
+   * costToDate at $0 of wages, which is the one way this schedule can still
+   * understate a job, so it ships as a column for the same reason the three
+   * coverage ratios do: a reader can see it rather than wonder.
+   *
+   * HOURS, not dollars, and not a dash. Their dollar value is precisely what
+   * nobody can compute -- pricing them is what lib/labor-cost.ts refuses to
+   * guess at -- so a dollar column here would have to invent the number it
+   * exists to warn about. Zero is a fact here (every hour priced), unlike the
+   * silenced money cells above, which is why this one is never blank. */
+  unpricedLaborHours: number;
   estimatedCostAtCompletion: number;
   estimatedGrossProfit: number | null;
   percentComplete: number | null;
@@ -99,6 +117,8 @@ export const WIP_SCHEDULE_COLUMNS: { key: keyof WipScheduleRow; label: string }[
   { key: "status", label: "Status" },
   { key: "contractValue", label: "Contract value (incl. approved change orders)" },
   { key: "costToDate", label: "Cost to date" },
+  { key: "laborCostToDate", label: "Burdened labor in cost to date" },
+  { key: "unpricedLaborHours", label: "Unpriced labor hours (in cost at $0)" },
   { key: "estimatedCostAtCompletion", label: "Estimated cost at completion" },
   { key: "estimatedGrossProfit", label: "Estimated gross profit" },
   { key: "percentComplete", label: "Percent complete (%)" },
@@ -158,6 +178,8 @@ export function wipScheduleRow(job: WipScheduleJob): WipScheduleRow {
     status: job.status,
     contractValue: money(wip.contractValue),
     costToDate: money(wip.actualCostToDate),
+    laborCostToDate: money(wip.laborCostToDate),
+    unpricedLaborHours: Math.round(wip.unpricedLaborHours * 100) / 100,
     estimatedCostAtCompletion: money(wip.estimatedCostAtCompletion),
     estimatedGrossProfit,
     percentComplete: percent(percentComplete),
@@ -204,6 +226,11 @@ export function wipScheduleTotals(rows: WipScheduleRow[]): WipScheduleRow {
     status: "",
     contractValue: sum((r) => r.contractValue),
     costToDate: sum((r) => r.costToDate),
+    laborCostToDate: sum((r) => r.laborCostToDate),
+    // Hours, and they DO add up across jobs -- unlike the coverage ratios
+    // below, which are blanked here because an average of percentages is not
+    // a fact about the book.
+    unpricedLaborHours: sum((r) => r.unpricedLaborHours),
     estimatedCostAtCompletion: sum((r) => r.estimatedCostAtCompletion),
     estimatedGrossProfit: sum((r) => r.estimatedGrossProfit),
     percentComplete: null,
