@@ -135,6 +135,9 @@ describe("matching a page to its walkthrough", () => {
   it("the real registry sends the job pages to the right tours", () => {
     expect(walkthroughFor("/jobs/new")?.route).toBe("/jobs/new");
     expect(walkthroughFor("/jobs/cm123")?.route).toBe("/jobs/[id]");
-    expect(walkthroughFor("/settings")).toBeNull();
+    // /settings has its own tour now; its sub-pages must not inherit it.
+    expect(walkthroughFor("/settings")?.route).toBe("/settings");
+    expect(walkthroughFor("/settings/import")?.route).toBe("/settings/import");
+    expect(walkthroughFor("/settings/export")).toBeNull();
   });
 });

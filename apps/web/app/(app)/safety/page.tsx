@@ -91,10 +91,10 @@ export default async function SafetyPage({
         </div>
       </section>
 
-      <section className="mb-10">
+      <section className="mb-10" data-tour="safety-incident-log">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-sm font-semibold text-ink-label">Incident log — {activeYear}</h2>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2" data-tour="safety-years">
             {knownYears.map((y) => (
               <Link
                 key={y}
@@ -150,7 +150,7 @@ export default async function SafetyPage({
         )}
       </section>
 
-      <section>
+      <section data-tour="safety-talks">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Toolbox talks</h2>
         {talks.length === 0 ? (
           <p className="text-ink-body">

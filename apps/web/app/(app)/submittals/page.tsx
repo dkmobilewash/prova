@@ -127,14 +127,14 @@ export default async function SubmittalsPage({
         is worth nothing in a delay claim without the dates.
       </p>
 
-      <section className="mb-8">
+      <section className="mb-8" data-tour="submittals-log">
         <SubmittalForm jobs={jobs} defaultJobId={activeJob ?? undefined} />
       </section>
 
       <StatusLine report={status} />
 
       {jobs.length > 0 && (
-        <div className="mb-4 flex flex-wrap gap-2">
+        <div className="mb-4 flex flex-wrap gap-2" data-tour="submittals-job-filter">
           <Link href={filterHref({ job: null })} className={chip(!activeJob)}>
             All jobs
           </Link>
@@ -150,18 +150,22 @@ export default async function SubmittalsPage({
         <h2 className="text-sm font-semibold text-ink-label">
           {rows.length} {showApproved ? "total" : "in play"}
         </h2>
-        <Link href={filterHref({ show: showApproved ? null : "all" })} className="text-sm text-link">
+        <Link
+          href={filterHref({ show: showApproved ? null : "all" })}
+          data-tour="submittals-show-approved"
+          className="text-sm text-link"
+        >
           {showApproved ? "Hide approved" : "Show approved"}
         </Link>
       </div>
 
       {rows.length === 0 ? (
-        <p className="text-ink-body">
+        <p className="text-ink-body" data-tour="submittals-empty">
           Nothing here yet. Log a package the day it goes out — the gap between the date you sent it
           and the date it came back is the whole value of the record.
         </p>
       ) : (
-        <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
+        <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface" data-tour="submittals-list">
           {rows.map((submittal) => (
             <SubmittalRow
               key={submittal.id}

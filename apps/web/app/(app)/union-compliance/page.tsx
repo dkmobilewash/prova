@@ -96,7 +96,7 @@ export default async function UnionCompliancePage({
         company never gets a clean bill of health.
       </p>
 
-      <div className="mb-6 flex items-center gap-3">
+      <div className="mb-6 flex items-center gap-3" data-tour="uc-month">
         <Link href={`/union-compliance?month=${previousMonth}`} className="text-sm text-link">
           ← {previousMonth}
         </Link>
@@ -109,7 +109,7 @@ export default async function UnionCompliancePage({
       </div>
 
       {/* ------------------------------------------------ remittance --- */}
-      <section className="mb-10">
+      <section className="mb-10" data-tour="uc-remittance">
         <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="text-sm font-semibold text-ink-label">Fringe remittance</h2>
           <span className={`text-xs ${remittance.filed ? "text-tag-green-ink" : "text-tag-amber-ink"}`}>
@@ -216,7 +216,7 @@ export default async function UnionCompliancePage({
       </section>
 
       {/* ----------------------------------------------------- ratio --- */}
-      <section className="mb-10">
+      <section className="mb-10" data-tour="uc-ratio">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Apprentice ratio</h2>
 
         {ratioReviews.length === 0 ? (
@@ -290,7 +290,7 @@ export default async function UnionCompliancePage({
       </section>
 
       {/* --------------------------------------- apprenticeship --- */}
-      <section className="mb-10">
+      <section className="mb-10" data-tour="uc-apprenticeships">
         <h2 className="mb-1 text-sm font-semibold text-ink-label">Apprenticeship programmes</h2>
         <p className="mb-3 text-xs text-ink-muted">
           The registration itself — sponsor, programme number, classroom hours and the sign-offs
@@ -315,7 +315,7 @@ export default async function UnionCompliancePage({
       </section>
 
       {/* ------------------------------------------ who works as what --- */}
-      <section className="mb-8">
+      <section className="mb-8" data-tour="uc-worker-crafts">
         <h2 className="mb-1 text-sm font-semibold text-ink-label">Who works under each craft</h2>
         <p className="mb-3 text-xs text-ink-muted">
           The phone&apos;s craft picker shows each person only the crafts ticked for them — one
@@ -329,7 +329,7 @@ export default async function UnionCompliancePage({
       </section>
 
       {/* ----------------------------------------------------- setup --- */}
-      <section>
+      <section data-tour="uc-setup">
         <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="text-sm font-semibold text-ink-label">Locals, classifications and rates</h2>
           <span className="text-xs text-ink-muted">

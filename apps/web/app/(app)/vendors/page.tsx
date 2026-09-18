@@ -18,25 +18,25 @@ export default async function VendorsPage() {
       <p className="mb-6 text-sm text-ink-body">
         Suppliers and service vendors you buy from — board and steel suppliers, equipment rental, scaffolding.
         What each of them has quoted, and which way those prices are moving, is on{" "}
-        <Link href="/vendors/pricing" className="text-link hover:text-link-hover">
+        <Link href="/vendors/pricing" className="text-link hover:text-link-hover" data-tour="vendors-pricing-link">
           vendor pricing
         </Link>
         .
       </p>
 
-      <div className="mb-8">
+      <div className="mb-8" data-tour="vendors-add">
         <VendorForm />
       </div>
 
       <section>
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Directory</h2>
         {vendors.length === 0 ? (
-          <p className="text-ink-body">
+          <p className="text-ink-body" data-tour="vendors-empty">
             No vendors yet. Add the suppliers you buy from most — board and steel, scaffolding,
             equipment rental — so material costs have a source attached to them.
           </p>
         ) : (
-          <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
+          <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface" data-tour="vendors-list">
             {vendors.map((vendor) => (
               <VendorRow
                 key={vendor.id}

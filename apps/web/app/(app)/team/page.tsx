@@ -26,7 +26,7 @@ export default async function TeamPage() {
         everything, whatever else is set.
       </p>
 
-      <section className="mb-10">
+      <section className="mb-10" data-tour="team-members">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Team members</h2>
         <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
           {members.map((member) => (
@@ -68,7 +68,7 @@ export default async function TeamPage() {
 
       {isOwner && (
         <>
-          <section className="mb-10">
+          <section className="mb-10" data-tour="team-invite">
             <h2 className="mb-3 text-sm font-semibold text-ink-label">Invite a teammate</h2>
             <InviteTeamMemberForm />
             <p className="mt-2 text-xs text-ink-muted">
@@ -78,7 +78,7 @@ export default async function TeamPage() {
           </section>
 
           {invites.length > 0 && (
-            <section>
+            <section data-tour="team-pending">
               <h2 className="mb-3 text-sm font-semibold text-ink-label">Pending invites</h2>
               <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
                 {invites.map((invite) => (
