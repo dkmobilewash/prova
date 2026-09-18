@@ -47,6 +47,7 @@ const LABELS: Record<ToolName, string> = {
   document_intake: "the intake tray",
   team_roster: "your people",
   dispatch_slips: "dispatch slips",
+  experience_mod_rate: "your mod rate",
   lien_deadlines: "your lien deadlines",
 };
 

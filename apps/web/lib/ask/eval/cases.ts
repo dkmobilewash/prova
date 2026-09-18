@@ -140,6 +140,10 @@ export const EVAL_CASES: EvalCase[] = [
   tool("read-intake", "what came in that nobody has filed yet?", "document_intake"),
   tool("read-team", "who have we got on the books?", "team_roster", undefined, FIELD),
   tool("read-dispatch", "have we got dispatch on file for everybody on Riverside?", "dispatch_slips", { jobName: "Riverside" }),
+  // Phrased the way a GC's prequal form makes somebody ask it. The failure
+  // being graded is reaching for safety_record — the OSHA log is what an EMR
+  // is calculated FROM, and a figure derived from it was never quoted.
+  tool("read-emr", "what's our EMR for the prequal Turner sent over?", "experience_mod_rate"),
 
   // ------------------------------------------------------- commands
   command("cmd-create-estimate", "create an estimate for Riverside Plaza for Turner", "create_estimate_job", { jobName: "Riverside Plaza", gcName: "Turner" }),

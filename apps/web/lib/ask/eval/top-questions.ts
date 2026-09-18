@@ -297,13 +297,12 @@ export const TOP_QUESTIONS: TopQuestion[] = [
   t("q-recordables", "how many recordable injuries have we had this year?", "safety_record", FIELD),
   t("q-days-away", "how many days away have we lost this year?", "safety_record", FIELD),
   t("q-dispatch", "have we got dispatch slips on file for everybody on Riverside?", "dispatch_slips", PAYROLL),
-  gap(
-    "q-emr",
-    "what's our mod rate this year?",
-    "safety_record",
-    "experience modification rate",
-    "The experience modification rate is not recorded anywhere — it comes from the carrier's rating bureau, not from the OSHA log. `safety_record` holds incidents, which is what an EMR is CALCULATED from by somebody else, so an answer derived from it would be a number nobody has ever quoted us.",
-  ),
+  // WAS A GAP, nearest `safety_record`: the EMR was recorded nowhere, and the
+  // OSHA log is what one is CALCULATED from by somebody else. Closed by
+  // recording the bureau's rate on /compliance — never by deriving one — and
+  // its KNOWN_GAPS entry was removed in the same change, since that list is
+  // injected into the system prompt and would have told the model to refuse.
+  t("q-emr", "what's our mod rate this year?", "experience_mod_rate"),
 
   // ══════════════════════════════════ estimating and bids
   t("q-bids-out", "what bids have we got out?", "bid_status", ESTIMATOR),
@@ -379,10 +378,14 @@ export const TOP_QUESTIONS: TopQuestion[] = [
  * It goes DOWN when a gap is closed. It going UP is a decision, not an
  * accident.
  *
- * 6 -> 5 on 2026-09-18: the lien deadline, closed by LienDeadline and the
- * `lien_deadlines` tool.
+ * 6 -> 5 when `q-emr` closed: the mod rate is now RECORDED from the bureau
+ * on /compliance and read by `experience_mod_rate`.
+ * 5 -> 4 on 2026-09-18: the lien deadline, closed by LienDeadline and the
+ * `lien_deadlines` tool. BOTH branches had written "6 -> 5" and set the
+ * literal to 5; git merged the identical edit as agreement and kept 5.
+ * Two gaps closed, so it is 4 — the literal exists to make somebody add up.
  */
-export const CENSUS_GAPS = 5;
+export const CENSUS_GAPS = 4;
 
 /** Questions the registry deliberately refuses. Counted APART from the
  * gaps and asserted separately, because the two must never be added

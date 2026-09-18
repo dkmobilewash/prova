@@ -92,6 +92,28 @@ export const notYetRegistered: Exclusion[] = [
   { action: "closeout.*", reason: CYRUS },
   { action: "certifications.*", reason: CYRUS },
 
+  // The experience modification rate, per action rather than a wildcard,
+  // because these are DECISIONS and not a placeholder: none of the three is
+  // ever a command. The whole value of the figure is that a bureau issued it
+  // and a person copied it off the worksheet. A command would put the number
+  // in the MODEL'S hands — a model that, asked "what's our mod rate", has
+  // every incentive to supply one — and a card the person confirms by reflex
+  // is how an invented 0.85 reaches a GC's prequalification form.
+  {
+    action: "recordExperienceModRate",
+    reason:
+      "The rate is copied from the bureau's worksheet by a person. The model must never supply a rate number, so recording one is not a command — done on /compliance.",
+  },
+  {
+    action: "updateExperienceModRate",
+    reason:
+      "Correcting a rate is the same act as recording one: the new figure has to come off the worksheet, not out of a model. Done on /compliance, beside the rate being changed.",
+  },
+  {
+    action: "deleteExperienceModRate",
+    reason: "Deletes are never commands (T5); owner-only on /compliance.",
+  },
+
   // Correcting or removing a job's own identity. Deliberately NOT commands,
   // and the reason is the same for both: they are the two writes on this
   // page a person should have to look at while making. A rename reaches

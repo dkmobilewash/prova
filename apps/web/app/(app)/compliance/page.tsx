@@ -7,14 +7,18 @@ import { RenewalAlerts } from "@/components/RenewalAlerts";
 import { renewalSourcesForCompany } from "@/lib/renewals";
 import { renewalAlerts } from "@/lib/compliance-expiry";
 import { serverToday } from "@/lib/serverToday";
+import { viewerToday } from "@/lib/viewerToday";
 import { toJobOption } from "@/components/jobLabels";
+import { ExperienceModRates } from "@/components/ExperienceModRates";
+import { loadExperienceModRates } from "@/lib/emr-query";
+import { emrStanding } from "@/lib/emr";
 
 export default async function CompliancePage() {
   const { context, allowed } = await requireCapability("MANAGE_COMPLIANCE");
   if (!allowed) return <NoAccess capability="MANAGE_COMPLIANCE" />;
   const { company, ...currentUser } = context;
 
-  const [documents, jobs, renewalSources] = await Promise.all([
+  const [documents, jobs, renewalSources, modRates] = await Promise.all([
     prisma.complianceDocument.findMany({
       where: { companyId: company.id },
       orderBy: { createdAt: "desc" },
@@ -28,19 +32,29 @@ export default async function CompliancePage() {
       include: { contact: { select: { name: true } } },
     }),
     renewalSourcesForCompany(company.id),
+    loadExperienceModRates(company.id),
   ]);
 
-  // ONE today for this page. The rows below decide "Expired" against the
-  // same day the alerts above are computed from -- two answers for the
-  // same fact is worse than either being wrong (settings/page.tsx:66).
+  // ONE today for the renewal rows. They decide "Expired" against the same
+  // day the alerts above are computed from -- two answers for the same fact
+  // is worse than either being wrong (settings/page.tsx:66).
   const today = serverToday();
   const renewals = renewalAlerts(renewalSources, today);
+
+  // A SECOND today, for a DIFFERENT fact, and deliberately so. Which mod rate
+  // is in force is decided by the exact day, and on New Year's Eve evening in
+  // the US the UTC day is already next year -- so serverToday() would show
+  // next year's rate on a prequal form filled in that evening. The renewal
+  // horizons above are 30/60-day windows where a day either way is noise.
+  // Found in review; see lib/emr.ts. Derived, never stored.
+  const modRateStanding = emrStanding(modRates, await viewerToday());
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-8">
       <h1 className="mb-2 text-xl font-semibold text-ink">Compliance</h1>
       <p className="mb-6 text-sm text-ink-body">
-        Lien waivers, certificates of insurance, certified payroll, and union fringe/benefit filings. Upload a
+        Lien waivers, certificates of insurance, your experience modification rate, certified payroll, and union
+        fringe/benefit filings. Upload a
         scanned document and Claude reads it into the fields below — review and fix anything before it&apos;s final.
       </p>
 
@@ -57,6 +71,13 @@ export default async function CompliancePage() {
           heading="Expiring and expired"
         />
       </div>
+
+      {/* The EMR lives here rather than on /safety, deliberately: it is an
+          insurance figure issued by a rating bureau, asked for on the same
+          prequalification forms as the certificates below. On /safety it
+          would sit beside the OSHA log and read as something derived from
+          it — which is exactly the number this app refuses to produce. */}
+      <ExperienceModRates standing={modRateStanding} canDelete={currentUser.role === "OWNER"} />
 
       <section className="mb-8 rounded-lg border border-line-card bg-surface p-4">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Upload a document</h2>

@@ -358,10 +358,13 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
     key: "compliance",
     title: "Licences, bonds, insurance and compliance documents",
     detail:
-      "Contractor licences, bonds, insurance policies, worker certifications and the " +
-      "documents filed against them. The expiry dates a GC asks for are in the app; they " +
-      "are not in this file.",
+      "Contractor licences, bonds, insurance policies, experience modification rates, " +
+      "worker certifications and the documents filed against them. The expiry dates and " +
+      "mod rates a GC asks for are in the app; they are not in this file.",
     models: [
+      // Review finding on #306: the table shipped and the export neither
+      // carried it nor said so -- the exact defect this list exists for.
+      "ExperienceModRate",
       "CompanyLicense",
       "CompanyBond",
       "CompanyInsurancePolicy",
