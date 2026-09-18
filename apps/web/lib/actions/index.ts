@@ -16,6 +16,7 @@ export * from "./estimating";
 export * from "./billing";
 export * from "./labor";
 export * from "./timesheetSignoff";
+export * from "./crewMembers";
 export * from "./compliance";
 export * from "./emr";
 export * from "./company";

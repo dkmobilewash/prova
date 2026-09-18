@@ -29,6 +29,11 @@ Gap 1 audit ("time entry is a typed form, not a payroll instrument").
   can't fix (a signed day, an archived crew member) used to sit at the
   head of the queue forever, holding every later write behind it. It is
   now set aside, and the screen shows what wasn't saved and why.
+- **Archive a crew member (web, Team page).** Crew members are now listed
+  on the Team page, and the owner can archive one in two steps. There was
+  no way to do that before. Their hours and their name on past payrolls
+  stay as they are; they just stop being offered for new hours. There is
+  still no delete, on purpose.
 
 Migration `20260918230000_add_timesheet_signoff`, additive: one table, one
 nullable column on TmTicket, two triggers. No existing row is touched, and
