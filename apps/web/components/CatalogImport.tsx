@@ -23,10 +23,18 @@ import { SubmitButton } from "@/components/SubmitButton";
 const inputClass =
   "rounded-md border border-line-card bg-canvas px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none";
 
-const SAMPLE = `Description,Unit,Unit Price,Cost,Hours,Trade
-5/8" Type X board,SF,2.85,1.90,0.012,drywall
-Corner bead,LF,1.20,0.60,0.03,drywall
-Level 5 finish,SF,1.75,0.95,0.02,drywall`;
+/* The Hours column USED to be in this sample, at 0.012 / 0.03 / 0.02 — the
+   per-unit productivity factors a real price list carries. It is out because
+   the app does not treat that column as per-unit: `addCatalogLine` copies an
+   entry's hours onto the estimate line unchanged at every quantity, so 0.012
+   imported against a 600 SF line prices 0.012 hours of labor, not 7.2. The
+   column still imports and is still previewed; the example just stopped
+   teaching the reading the code does not implement. Which reading is RIGHT is
+   an open question — see changelog.d/cyrus-catalog-labor-hours-meaning.md. */
+const SAMPLE = `Description,Unit,Unit Price,Cost,Trade
+5/8" Type X board,SF,2.85,1.90,drywall
+Corner bead,LF,1.20,0.60,drywall
+Level 5 finish,SF,1.75,0.95,drywall`;
 
 export function CatalogImport({ existingDescriptions }: { existingDescriptions: string[] }) {
   const [open, setOpen] = useState(false);
@@ -87,6 +95,12 @@ export function CatalogImport({ existingDescriptions }: { existingDescriptions: 
         Paste from a spreadsheet or choose a CSV. The first row must name the columns — one of them
         called <span className="text-ink-label">Description</span> (or Item, or Name). Unit, Price,
         Cost, Hours and Trade are all optional, and column names don&apos;t have to match exactly.
+      </p>
+      <p className="mb-3 text-xs text-ink-body">
+        <span className="text-ink-label">Hours are for the whole line, not per unit.</span> They are
+        copied onto an estimate line unchanged whatever the quantity, so a price list&apos;s per-unit
+        productivity column (0.012 hrs per SF) will not scale — and the field stores two decimals, so
+        0.012 saves as 0.01. Leave Hours out of the file unless you mean a flat per-line figure.
       </p>
 
       <div className="mb-3 flex flex-wrap items-center gap-3">
@@ -171,7 +185,7 @@ export function CatalogImport({ existingDescriptions }: { existingDescriptions: 
                     <th className="px-3 py-2 font-medium">Unit</th>
                     <th className="px-3 py-2 font-medium">Price</th>
                     <th className="px-3 py-2 font-medium">Cost</th>
-                    <th className="px-3 py-2 font-medium">Hours</th>
+                    <th className="px-3 py-2 font-medium">Hrs/line</th>
                     <th className="px-3 py-2 font-medium">Trade</th>
                   </tr>
                 </thead>

@@ -422,7 +422,7 @@ export default async function JobPhotoReportPage({
                 <p className="mt-2 text-[11px]">
                   {notPrintable.length === 1 ? "This capture is" : `These ${notPrintable.length} captures are`}{" "}
                   in the same selection as the photographs above. Paper cannot hold a recording, so
-                  they are listed rather than left out — open the job in Prova to watch or listen.
+                  they are listed rather than left out — open the job in C Stream to watch or listen.
                 </p>
                 <ul className="mt-2">
                   {notPrintable.map((capture) => (

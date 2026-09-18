@@ -135,7 +135,7 @@ model AskUsage {
   /// row limits are about how many questions a person may ask, and a
   /// compliance upload is not a question. Bounding the other three is a
   /// separate decision and wants a spend ceiling rather than a row count.
-  feature          String  @default("ask")
+  feature String @default("ask")
 
   /// The model id the passes ran on, so a row can be priced later.
   model            String

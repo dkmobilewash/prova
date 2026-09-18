@@ -1,8 +1,10 @@
 import { prisma } from "@prova/db";
 import { calculateJobWip, calculateLineItemWip, type WipJobResult } from "./wip";
+import { lineItemCostToDate, unassignedLaborCost } from "./labor-job-cost";
+import { loadFringeSchedulesByCraft, TIME_ENTRY_COST_SELECT } from "./fringe-schedules-query";
 import { loadRetainageHeld } from "./retainage-query";
 import { calculatePaymentReliability, type PaymentReliability } from "./gc-reliability";
-import { daysPastDueFor, effectiveDueDateFor } from "./cash-flow";
+import { arBalanceFor, daysPastDueFor, effectiveDueDateFor } from "./cash-flow";
 import { MIN_ESTIMATE_COVERAGE, jobHealthSentence, jobIsOverBudget } from "./company-financials";
 
 /**
@@ -60,13 +62,20 @@ export type GcReliabilityRow = {
 
 
 export async function loadTodayDashboard(companyId: string, now: Date) {
-  const [invoices, activeJobs, retainageHeld, contacts] = await Promise.all([
+  const [invoices, activeJobs, retainageHeld, contacts, fringeSchedulesByCraft] =
+    await Promise.all([
     prisma.invoice.findMany({
       where: { job: { companyId } },
       select: {
         id: true,
         number: true,
         amount: true,
+        // READ, not a dead over-select — contrast the job-health list
+        // below, which deliberately takes `amount` only. The receivables
+        // tile nets this out of what it calls outstanding, because
+        // retainage is not due until substantial completion and this tile
+        // has to say the same thing /cash-flow says. Issue #288.
+        retainageWithheld: true,
         dueAt: true,
         issuedAt: true,
         jobId: true,
@@ -95,6 +104,7 @@ export async function loadTodayDashboard(companyId: string, now: Date) {
         lineItems: {
           where: { isDeleted: false },
           select: {
+            id: true,
             quantity: true,
             unitPrice: true,
             budgetedUnitCost: true,
@@ -109,6 +119,10 @@ export async function loadTodayDashboard(companyId: string, now: Date) {
         // job list gathered for one question sitting one line away from
         // the columns for a different one.
         invoices: { select: { amount: true } },
+        // Hours are job cost (issue #287). Without these, this page's job
+        // health read materials-only cost while /jobs/[id] read the whole
+        // thing -- two screens disagreeing about the same job.
+        timeEntries: { select: TIME_ENTRY_COST_SELECT },
       },
       orderBy: { createdAt: "desc" },
     }),
@@ -127,6 +141,10 @@ export async function loadTodayDashboard(companyId: string, now: Date) {
             invoices: {
               select: {
                 amount: true,
+                // Also read, by isSettled: without it no invoice with
+                // retainage on it could ever settle and this column's two
+                // timing figures were blank for every GC. Issue #288.
+                retainageWithheld: true,
                 issuedAt: true,
                 dueAt: true,
                 payments: { select: { amount: true, receivedAt: true, feeAmount: true } },
@@ -136,6 +154,7 @@ export async function loadTodayDashboard(companyId: string, now: Date) {
         },
       },
     }),
+    loadFringeSchedulesByCraft(companyId),
   ]);
 
   /* -------------------------------------------------- receivables ---- */
@@ -144,7 +163,22 @@ export async function loadTodayDashboard(companyId: string, now: Date) {
     .map((invoice) => {
       const amount = Number(invoice.amount);
       const paid = invoice.payments.reduce((sum, payment) => sum + Number(payment.amount), 0);
-      return { invoice, amount, paid, outstanding: amount - paid };
+      // The one AR rule, imported rather than mirrored — the same reason
+      // effectiveDueDateFor is imported two lines below. Retainage is not
+      // due until substantial completion, so it is not outstanding here;
+      // /cash-flow reports it as retainage receivable. Mirroring the rule
+      // by hand is how this tile and that page disagreed about overdue
+      // invoices twice already.
+      return {
+        invoice,
+        amount,
+        paid,
+        outstanding: arBalanceFor({
+          amount,
+          paidAmount: paid,
+          retainageWithheld: invoice.retainageWithheld != null ? Number(invoice.retainageWithheld) : null,
+        }),
+      };
     })
     // A rounding cent should not appear as an unpaid invoice.
     .filter((row) => row.outstanding > 0.005);
@@ -199,11 +233,15 @@ export async function loadTodayDashboard(companyId: string, now: Date) {
           line.currentEstimatedUnitCost === null ? null : Number(line.currentEstimatedUnitCost),
         estimatedCostToComplete:
           line.estimatedCostToComplete === null ? null : Number(line.estimatedCostToComplete),
-        actualCostToDate: line.costEntries.reduce((sum, cost) => sum + Number(cost.amount), 0),
+        ...lineItemCostToDate(line.id, line.costEntries, job.timeEntries, fringeSchedulesByCraft),
       }),
     );
     const billed = job.invoices.reduce((sum, invoice) => sum + Number(invoice.amount), 0);
-    const wip = calculateJobWip(lineItems, billed);
+    const wip = calculateJobWip(
+      lineItems,
+      billed,
+      unassignedLaborCost(job.timeEntries, fringeSchedulesByCraft),
+    );
 
     // What share of this job's contract value sits on lines that actually
     // carry a cost estimate. A job budgeted on one line out of seven is
@@ -275,6 +313,10 @@ export async function loadTodayDashboard(companyId: string, now: Date) {
           );
           return {
             amount: Number(invoice.amount),
+            // Held back by contract, not paid late — see
+            // lib/gc-reliability.ts and issue #288.
+            retainageWithheld:
+              invoice.retainageWithheld != null ? Number(invoice.retainageWithheld) : null,
             issuedAt: invoice.issuedAt,
             dueAt: invoice.dueAt,
             paidAmount: payments.reduce((sum, payment) => sum + Number(payment.amount), 0),

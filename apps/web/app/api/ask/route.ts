@@ -1,6 +1,7 @@
 import { requireCompanyContext } from "@/lib/auth";
 import { viewerToday } from "@/lib/viewerToday";
 import { streamAnswer, type AskRequest } from "@/lib/ask/answer";
+import { boundTurns } from "@/lib/ask/turns";
 import type { CommandContext } from "@/lib/ask/commands";
 
 /** Ask, streamed.
@@ -17,10 +18,24 @@ import type { CommandContext } from "@/lib/ask/commands";
  * given there.
  *
  * PROTECTED. The company AND the person come from the Clerk session on
- * this side and are passed down as arguments; nothing is read from the
- * request body except the question and, for a chip answer, the pick. So
- * there is nothing a caller could put in a payload to reach another
- * company's rows or act as somebody else. `/api/ask` is also on the
+ * this side and are passed down as arguments. So there is nothing a caller
+ * could put in a payload to reach another company's rows or act as somebody
+ * else.
+ *
+ * THIS COMMENT USED TO SAY "nothing is read from the request body except
+ * the question and, for a chip answer, the pick", and that is no longer
+ * literally true — `pagePath` was added so the assistant knows which page
+ * the person is standing on. It is amended rather than left to go quietly
+ * false, because a security invariant nobody has re-read is the kind of
+ * sentence this repo has paid for before.
+ *
+ * What makes the addition safe is not that the path is validated — it is
+ * that the path CANNOT WIDEN ACCESS. It is parsed to an id
+ * (`lib/ask/page-context.ts`, which reads no rows) and then looked up
+ * through this session's own companyId (`lib/ask/page-context-query.ts`),
+ * so a forged path naming another company's job resolves to null, which is
+ * byte-identical to sending no path. The worst a hostile payload achieves
+ * is a wrong default among jobs the caller can already see. `/api/ask` is also on the
  * middleware's protected list — requireCompanyContext already redirects
  * an anonymous caller, but that list is the allowlist a reader checks,
  * and a route missing from it looks public whether or not it is.
@@ -31,7 +46,7 @@ export const runtime = "nodejs";
 // and on rows that change.
 export const dynamic = "force-dynamic";
 
-type Body = { question?: unknown; continuation?: unknown };
+type Body = { question?: unknown; pagePath?: unknown; priorTurns?: unknown; continuation?: unknown };
 
 /** Only string values, only string keys, and never more than a handful:
  * a chip answer is one field. */
@@ -44,14 +59,29 @@ function stringRecord(value: unknown): Record<string, string> {
   return out;
 }
 
+/** A route, bounded. Length-capped because it is a path rather than prose
+ * and an unbounded string from a browser has no business reaching a parser;
+ * anything longer is not a route this app serves. The parser rejects
+ * whatever shape survives, so this is a belt, not the braces. */
+function pagePathOf(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > 512) return undefined;
+  return trimmed;
+}
+
 function parseRequest(body: Body): AskRequest {
   const question = typeof body.question === "string" ? body.question : "";
+  const pagePath = pagePathOf(body.pagePath);
+  const priorTurns = boundTurns(body.priorTurns);
   const raw = body.continuation;
-  if (typeof raw !== "object" || raw === null) return { question };
+  if (typeof raw !== "object" || raw === null) return { question, pagePath, priorTurns };
   const c = raw as { command?: unknown; partialInput?: unknown; answers?: unknown };
   if (typeof c.command !== "string") return { question };
   return {
     question,
+    pagePath,
+    priorTurns,
     continuation: {
       command: c.command,
       partialInput: stringRecord(c.partialInput),

@@ -11,6 +11,7 @@ import {
   labelClass,
 } from "@/components/DailyFieldReports";
 import { jobPickerLabel, type JobOption } from "@/components/jobLabels";
+import { defaultFieldReportJobId } from "@/lib/field-report-jobs";
 
 /** Was its own `{ id, name }` declaration — the fourth in the app, and the
  * reason issue #65's bare-name picker kept getting copied. The shared type
@@ -30,6 +31,16 @@ export type JobChoice = JobOption;
  * because nothing renders until the button is clicked. A server-rendered
  * default would be the server's UTC date — already tomorrow after 5pm in
  * California, which is exactly when a foreman files.
+ *
+ * THE JOB IS NO LONGER `jobs[0]`. It was, and the page hands its jobs over
+ * `orderBy: { name: "asc" }` with every status in the list, so the default
+ * was the alphabetically first job the company has ever had — an estimate,
+ * a job closed out last spring, whatever sorts first. Work performed is the
+ * only field a foreman types; the rest of this form arrives filled in. So
+ * the one thing he wrote got filed against the wrong job on any day the
+ * alphabet disagreed with the schedule, and nothing on screen said so.
+ * `defaultFieldReportJobId` picks only when there is exactly one active job
+ * and otherwise leaves the select on "Choose a job", which stops the submit.
  */
 export function FieldReportComposer({
   jobs,
@@ -38,8 +49,12 @@ export function FieldReportComposer({
   jobs: JobChoice[];
   defaultJobId?: string;
 }) {
+  const initialJobId = defaultFieldReportJobId(jobs, defaultJobId);
+  /** No job could be picked for him, so the select carries a placeholder and
+   * the form refuses to submit until he says which. */
+  const mustChoose = initialJobId === "";
   const [isOpen, setIsOpen] = useState(false);
-  const [jobId, setJobId] = useState(defaultJobId ?? jobs[0]?.id ?? "");
+  const [jobId, setJobId] = useState(initialJobId);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   // The job select is controlled, so the hook alone can't restore it —
@@ -51,7 +66,7 @@ export function FieldReportComposer({
         setJobId(restoredJob);
       }
     },
-    onDiscard: () => setJobId(defaultJobId ?? jobs[0]?.id ?? ""),
+    onDiscard: () => setJobId(initialJobId),
   });
 
   // The same case /photos handles with a real link — refusing with a bare
@@ -94,6 +109,15 @@ export function FieldReportComposer({
         event.preventDefault();
         setError(null);
         const formData = new FormData(event.currentTarget);
+        // `required` on the select already stops this in a browser; the
+        // guard is for the case where it does not, because the failure it
+        // prevents is a report filed against "" rather than a report not
+        // filed — the action would answer "Job not found" and the day's
+        // work would be gone with it.
+        if (!jobId) {
+          setError("Choose which job this report is for.");
+          return;
+        }
         startTransition(async () => {
           const result = await createDailyFieldReport(jobId, formData);
           if (result.ok) {
@@ -120,12 +144,23 @@ export function FieldReportComposer({
             onChange={(e) => setJobId(e.target.value)}
             className={inputClass}
           >
+            {mustChoose && <option value="">Choose a job…</option>}
             {jobs.map((job) => (
               <option key={job.id} value={job.id}>
                 {jobPickerLabel(job)}
               </option>
             ))}
           </select>
+          {mustChoose && (
+            // ink-body, matching the date hint below and for the same
+            // reason: this sentence is the difference between a report on
+            // the right job and one on the wrong job.
+            <span className="text-xs text-ink-body">
+              Nothing is preselected — more than one job could be the right one, and a day
+              filed against the wrong one looks exactly like a day filed against the right
+              one.
+            </span>
+          )}
         </label>
         <label className={labelClass}>
           Date

@@ -347,8 +347,34 @@ scrollback gets broken by whoever didn't scroll far enough.
 - **List pages** all follow the same conventions: add-form collapsed
   behind a button; inline row edit; two-step delete (never
   `window.confirm`); one shared `*Fields` component for create+edit;
-  real empty states with a way out; owner-only destructive actions via
-  `assertOwner(context, "specific message")`.
+  real empty states with a way out; owner-only destructive actions
+  refused with `ownerRefusal(context, "specific message")`.
+
+  **That last clause said `assertOwner` until 2026-09-16 and following it
+  FAILED THE BUILD.** Found by a branch that did exactly what this bullet
+  told it to. `assertOwner` THROWS, and the bullet above about errors is
+  the reason that matters: production redacts a thrown Server Action
+  message to a digest, so a refusal written here reads perfectly in
+  `next dev` and reaches a real user as a dead button.
+
+  `apps/web/lib/ownerRefusalCensus.test.ts` exists to catch precisely
+  this, and its own header says so — *"an action that promises a readable
+  refusal must not refuse by throwing… `assertOwner`, which throws, breaks
+  that promise for the owner case only."* It fails the build when an action
+  declaring `Promise<ActionResult>` refuses by throwing.
+
+  So the two are not interchangeable and both are correct in their own
+  place: **`ownerRefusal` returns `{ ok: false, error }` or `null` and
+  belongs in anything returning `ActionResult`; `assertOwner` throws and
+  belongs only in the older throw-style actions** that have no ActionResult
+  to return. `shared.ts` documents the pair at length, which is where this
+  bullet should have been read from rather than repeated from memory.
+
+  The shape is this file's most expensive recurring one: a sentence that
+  was true when the convention was younger, left standing after the
+  convention grew a second half, and then handed to somebody as
+  instructions. The guard caught it in seconds — the cost was only that a
+  branch built the wrong thing first.
 
 ## Traps that already fired — do not rediscover
 
