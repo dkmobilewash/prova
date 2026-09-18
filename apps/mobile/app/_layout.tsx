@@ -5,17 +5,28 @@ import * as SecureStore from "expo-secure-store";
 const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY ?? "";
 
 // Clerk stores the session token on-device; SecureStore (Keychain/Keystore)
-// is the recommended cache for it on native.
+// is the recommended cache for it on native. The storage key is namespaced
+// by the publishable key so a session from a DIFFERENT Clerk instance (e.g.
+// dev vs production) can never be read as this one's — switching instances
+// starts signed-out instead of hanging on a foreign, unvalidatable token.
+//
+// The separator must be SecureStore-safe: keys allow only alphanumerics,
+// '.', '-', and '_'. A ':' here threw "Invalid key provided to SecureStore"
+// and silently stalled Clerk init (isLoaded stayed false).
 const tokenCache = {
   async getToken(key: string): Promise<string | null> {
     try {
-      return await SecureStore.getItemAsync(key);
+      return await SecureStore.getItemAsync(`${publishableKey}_${key}`);
     } catch {
       return null;
     }
   },
   async saveToken(key: string, value: string): Promise<void> {
-    await SecureStore.setItemAsync(key, value);
+    try {
+      await SecureStore.setItemAsync(`${publishableKey}_${key}`, value);
+    } catch {
+      // best-effort — never block Clerk init on a cache write failure
+    }
   },
 };
 
