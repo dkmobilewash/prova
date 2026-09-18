@@ -706,6 +706,9 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // note on /closeout argues is worse than a consistent state.
   jobMedia: () => import("./actions/jobMedia"),
   materialOrders: () => import("./actions/materialOrders"),
+  // Lien deadlines — every write reachable only from /lien-deadlines, which
+  // demands MANAGE_BILLING, and every one asserts it before any query.
+  lienDeadlines: () => import("./actions/lienDeadlines"),
   // Phase codes — the company's own cost-coding vocabulary. All three
   // writes are reachable only from /settings, which demands
   // MANAGE_COMPLIANCE, so the walk puts all three in MUST_ASSERT and every

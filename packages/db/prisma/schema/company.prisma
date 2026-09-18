@@ -92,6 +92,7 @@ model Company {
   equipmentAssignments      EquipmentAssignment[]
   crewMembers               CrewMember[]
   crewScheduleDays          CrewScheduleDay[]
+  lienDeadlines             LienDeadline[]
   workerCertifications      WorkerCertification[]
   requiredCertifications    CertificationRequirement[]
 }
@@ -152,6 +153,7 @@ model User {
   assignments                          JobAssignment[]
   crewScheduleDays                     CrewScheduleDay[]      @relation("CrewScheduleDayUser")
   crewScheduleDaysCreated              CrewScheduleDay[]      @relation("CrewScheduleDayCreatedBy")
+  lienDeadlinesCreated                 LienDeadline[]         @relation("LienDeadlineCreatedBy")
   connectedQuickBooks                  QuickBooksConnection[]
   quickBooksSyncAttempts               QuickBooksSyncAttempt[]
   connectedIntegrations                IntegrationConnection[]

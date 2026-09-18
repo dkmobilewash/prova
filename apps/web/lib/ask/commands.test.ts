@@ -295,6 +295,9 @@ describe("read-tool capabilities match the pages they cite", () => {
     // taking off the next cheque, so it sits with whoever chases the
     // cheque rather than with compliance.
     backcharge_exposure: ROUTE_CAPABILITY["/backcharges"],
+    // /lien-deadlines is MANAGE_BILLING for the same reason: a lien is how
+    // the cheque gets collected when the GC stops sending it.
+    lien_deadlines: ROUTE_CAPABILITY["/lien-deadlines"],
     // Apprenticeship standing renders on /union-compliance, which is where
     // its loader is called from — not /certifications, which is cards.
     apprenticeship_standing: ROUTE_CAPABILITY["/union-compliance"],

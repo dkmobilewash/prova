@@ -117,7 +117,8 @@ export type ToolName =
   | "estimate_detail"
   | "document_intake"
   | "team_roster"
-  | "dispatch_slips";
+  | "dispatch_slips"
+  | "lien_deadlines";
 
 export type ToolDefinition = {
   name: ToolName;
@@ -418,6 +419,15 @@ export const TOOLS: ToolDefinition[] = [
     input_schema: jobFilter,
   },
   {
+    name: "lien_deadlines",
+    // /lien-deadlines. MANAGE_BILLING, the page's own gate: a lien is how a
+    // sub gets paid, and this tool answers what that page shows.
+    capability: "MANAGE_BILLING",
+    description:
+      "Lien-rights deadlines recorded against each job — preliminary notices, mechanic's liens, stop payment notices and payment bond claims — with the deadline, who it goes to, whether it has been served, and for unserved ones how many days are left or how many days overdue. Answers 'when does our lien deadline run out on Riverside'. THIS APP NEVER COMPUTES A LEGAL DEADLINE AND NEITHER MAY YOU: every date here was ENTERED by a person from their counsel or the statute. Never work out, estimate or suggest a deadline from a first-furnishing date, a completion date, a state's rules or anything else — the rules vary by state, public versus private work and the contractor's tier, and a wrong date costs the whole remedy. If nothing is recorded for a job, say that no deadline has been entered and that the date has to come from their attorney or the statute; an empty list is NOT evidence that no deadline is running. A row served after its entered date is still served; whether late service preserves the right is a question for counsel, not for you.",
+    input_schema: jobFilter,
+  },
+  {
     name: "apprenticeship_standing",
     // /union-compliance
     capability: "MANAGE_COMPLIANCE",
@@ -632,10 +642,6 @@ export const KNOWN_GAPS: { topic: string; why: string }[] = [
   {
     topic: "the experience modification rate, or mod rate",
     why: "the EMR comes from the carrier's rating bureau and is not recorded here. The OSHA log is what an EMR is calculated FROM by somebody else, so a figure derived from it would be a number no insurer has ever quoted us.",
-  },
-  {
-    topic: "lien deadlines, preliminary notices or stop notices",
-    why: "none of it is modelled — not a date, not a document, not a reminder. This is missing DATA rather than a missing screen, and the cost of a confident wrong answer is total: on California public work the preliminary notice window is 20 days from first furnishing and missing it forfeits the remedy.",
   },
   {
     topic: "whether a job will finish on time, or a forecast completion date",

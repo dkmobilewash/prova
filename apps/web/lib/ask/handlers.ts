@@ -53,6 +53,8 @@ import {
   loadUpcomingSchedule,
   scheduledWorkerName,
 } from "@/lib/crew-schedule-query";
+import { loadLienDeadlines } from "@/lib/lien-deadlines-query";
+import { lienKindLabel, summarizeLienDeadlines } from "@/lib/lien-deadlines";
 import { matchesJobName, TOOLS, type ToolName, type ToolResult } from "./tools";
 
 /**
@@ -149,6 +151,7 @@ export const HANDLERS: Record<
   document_intake: (companyId) => documentIntake(companyId),
   team_roster: (companyId) => teamRoster(companyId),
   dispatch_slips: dispatchSlips,
+  lien_deadlines: lienDeadlines,
 };
 
 /**
@@ -3306,6 +3309,93 @@ async function crewSchedule(companyId: string, input: Input): Promise<ToolResult
         ? wanted
           ? "Nobody has been put on the schedule for that job. That is a gap in the plan rather than a quiet week — nothing fills the schedule in for you."
           : "Nobody has been put on the schedule at all. That is a gap in the plan rather than a quiet fortnight — nothing fills the schedule in for you."
+        : undefined,
+  };
+}
+
+/**
+ * Lien-rights deadlines, per job: unserved ones with the days left or the
+ * days overdue, and the served ones as the record.
+ *
+ * THIS APP NEVER COMPUTES A LEGAL DEADLINE, and this handler is where the
+ * temptation would be strongest, so it is said again here. Every `deadline`
+ * in the output is a date a PERSON entered; each row carries
+ * `deadlineSource: "entered"` so the model is told on the row, not only in
+ * the description, where the date came from. The only arithmetic is the
+ * count of days between today and that entered date — never a way of
+ * producing a date.
+ *
+ * "Today" is serverToday (UTC), like every handler here, because a tool
+ * call has no viewer cookie in hand. For the US that errs EARLY — in the
+ * evening a deadline reads one day closer than the person's own calendar —
+ * which is the safe direction for this tool to be wrong in.
+ *
+ * An empty answer says nothing has been ENTERED, never that no deadline is
+ * running: silence here is the most dangerous thing this tool could say.
+ */
+async function lienDeadlines(companyId: string, input: Input): Promise<ToolResult> {
+  const citations = [{ label: "Lien deadlines", href: "/lien-deadlines" }];
+  const mismatch = await jobNameMismatch(companyId, input.jobName);
+  if (mismatch) return { data: null, citations, unavailable: mismatch };
+
+  const today = serverToday();
+  const wanted = input.jobName?.trim();
+  // EVERY job the name matches, not the first: "Riverside" can be two jobs,
+  // and answering for one of them silently drops the other's deadlines.
+  const jobIds = wanted
+    ? (
+        await prisma.job.findMany({
+          where: { companyId, name: { contains: wanted, mode: "insensitive" } },
+          select: { id: true },
+        })
+      ).map((job) => job.id)
+    : undefined;
+
+  const rows = await loadLienDeadlines(companyId, today, jobIds);
+  const summary = summarizeLienDeadlines(rows, today);
+
+  const byJob = new Map<string, { job: string; unserved: unknown[]; served: unknown[] }>();
+  for (const row of rows) {
+    const group = byJob.get(row.jobId) ?? { job: row.jobName, unserved: [], served: [] };
+    byJob.set(row.jobId, group);
+    const base = {
+      what: lienKindLabel(row.kind, row.otherLabel),
+      recipient: row.recipient,
+      deadline: row.dueOn,
+      deadlineSource: "entered" as const,
+    };
+    if (row.state === "served") {
+      group.served.push({
+        ...base,
+        servedOn: row.servedOn,
+        // A fact about two entered dates, and deliberately no more.
+        ...(row.servedAfterDueDate
+          ? { note: "served after the deadline that was entered — whether that still counts is for counsel" }
+          : {}),
+      });
+    } else {
+      const days = row.daysUntilDue as number;
+      group.unserved.push({
+        ...base,
+        state: row.state,
+        ...(days < 0 ? { daysOverdue: -days } : { daysLeft: days }),
+      });
+    }
+  }
+
+  return {
+    data: { today, jobs: [...byJob.values()] },
+    summary: {
+      overdueUnserved: summary.overdueUnserved,
+      dueWithin14Days: summary.dueWithin14Days,
+      served: summary.served,
+    },
+    citations,
+    unavailable:
+      rows.length === 0
+        ? wanted
+          ? "No lien deadline has been entered for that job. That is not the same as no deadline running — the date has to come from their attorney or the statute and be added on the Lien deadlines page. Do not work one out."
+          : "No lien deadlines have been entered at all. That is not the same as none running — each date has to come from their attorney or the statute and be added on the Lien deadlines page. Do not work one out."
         : undefined,
   };
 }

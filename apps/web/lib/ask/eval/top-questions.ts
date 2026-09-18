@@ -350,13 +350,12 @@ export const TOP_QUESTIONS: TopQuestion[] = [
     "Nothing forecasts a completion DATE. `schedule_status` now answers where a job stands against its dates, which is as far as the data goes; `job_margin`'s percent complete is cost-based — money spent against money expected — and a job can be 80% through its budget and nowhere near 80% through its programme. Reading one as the other is exactly the mistake a schedule question invites.",
   ),
   t("q-intake-unfiled", "what came in this week that nobody has filed yet?", "document_intake"),
-  gap(
-    "q-lien-deadline",
-    "when does our lien deadline run out on Riverside?",
-    null,
-    "lien deadlines",
-    "There is no lien, preliminary notice or stop notice model in this app at all. Not a missing tool — missing data. On a California public job the preliminary notice window is 20 days from first furnishing, and missing it forfeits the remedy entirely, so a confident wrong answer here is worse than no answer.",
-  ),
+  // WAS A GAP until LienDeadline existed: there was no lien, preliminary
+  // notice or stop notice model at all — missing data, not a missing tool.
+  // What closed it is a place to ENTER the date, not a way to compute one:
+  // the app never works out a legal deadline, and `lien_deadlines` answers
+  // only from dates a person typed in from counsel or the statute.
+  t("q-lien-deadline", "when does our lien deadline run out on Riverside?", "lien_deadlines"),
 ];
 
 /**
@@ -379,8 +378,11 @@ export const TOP_QUESTIONS: TopQuestion[] = [
  *
  * It goes DOWN when a gap is closed. It going UP is a decision, not an
  * accident.
+ *
+ * 6 -> 5 on 2026-09-18: the lien deadline, closed by LienDeadline and the
+ * `lien_deadlines` tool.
  */
-export const CENSUS_GAPS = 6;
+export const CENSUS_GAPS = 5;
 
 /** Questions the registry deliberately refuses. Counted APART from the
  * gaps and asserted separately, because the two must never be added
