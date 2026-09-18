@@ -15,6 +15,7 @@ import { WalkthroughTour, isAnchorShown } from "@/components/WalkthroughTour";
 import { walkthroughFor, type Walkthrough } from "@/lib/walkthroughs";
 import { browserStorage, markFinished, readFinished, shownSteps } from "@/lib/walkthroughs/engine";
 import { WALKTHROUGH_EVENT } from "@/lib/empty-state-events";
+import { startFullTour } from "@/lib/walkthroughs/full-tour";
 
 /**
  * The way out of the app to a human, on every screen.
@@ -49,6 +50,10 @@ import { WALKTHROUGH_EVENT } from "@/lib/empty-state-events";
  * on screen; a page without one gets no button, never a dead one. The tour
  * itself is mounted from here so it survives the panel closing, and ends
  * on navigation for the same reason the panel does.
+ *
+ * "TAKE THE FULL TOUR" SITS ABOVE IT, on every page: one walk across the
+ * app rather than around this page. It is started from here but run by
+ * `FullTour` in the layout, because it outlives the page changes it makes.
  */
 export function HelpButton({
   companyName,
@@ -113,10 +118,15 @@ export function HelpButton({
     setSentTo(null);
     setIsOpen(true);
     // Focus after paint, so the cursor is in the box the moment it appears.
-    // Not when a walkthrough is on offer: the tour is the first thing on the
-    // panel then, and a cursor already in the question box would be telling
+    // Not any more: "Take the full tour" is the first thing on the panel on
+    // every page, and a cursor already in the question box would be telling
     // them to type.
-    if (!offered) requestAnimationFrame(() => textarea.current?.focus());
+  }
+
+  function takeFullTour() {
+    setIsOpen(false);
+    setTouring(null);
+    startFullTour();
   }
 
   function startTour(walkthrough: Walkthrough) {
@@ -194,11 +204,11 @@ export function HelpButton({
           />
           <div
             role="dialog"
-            aria-label={offer ? "Help" : "Ask us for help"}
+            aria-label="Help"
             className="fixed right-2 top-14 z-50 max-h-[calc(100dvh-4.5rem)] w-[min(26rem,calc(100vw-1rem))] overflow-y-auto rounded-lg border border-slate-700 bg-slate-900 p-4 shadow-xl sm:right-4"
           >
             <div className="mb-3 flex items-start justify-between gap-3">
-              <h2 className="text-sm font-semibold text-slate-100">{offer ? "Help" : "Ask us"}</h2>
+              <h2 className="text-sm font-semibold text-slate-100">Help</h2>
               <button
                 type="button"
                 onClick={() => setIsOpen(false)}
@@ -213,6 +223,21 @@ export function HelpButton({
                     strokeLinecap="round"
                   />
                 </svg>
+              </button>
+            </div>
+
+            <div className="mb-4 border-b border-line-row pb-4">
+              <h3 className="text-sm font-semibold text-ink">New to C Stream?</h3>
+              <p className="mt-1 text-sm text-ink-body">
+                A three-minute walk across the app, page by page, in the order you would use it.
+                Nothing is clicked or changed for you.
+              </p>
+              <button
+                type="button"
+                onClick={takeFullTour}
+                className="mt-3 inline-flex min-h-11 w-full items-center justify-center rounded-md border border-brand px-4 py-2 text-sm font-semibold text-ink hover:bg-rail-hover sm:w-auto"
+              >
+                Take the full tour
               </button>
             </div>
 
@@ -233,7 +258,7 @@ export function HelpButton({
               </div>
             )}
 
-            {offer && <h3 className="mb-1 text-sm font-semibold text-ink">Or ask a person</h3>}
+            <h3 className="mb-1 text-sm font-semibold text-ink">Or ask a person</h3>
 
             {/* The expectation, stated before anything is typed and not
                 after. Two people build this and one is not an engineer;

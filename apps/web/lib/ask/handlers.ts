@@ -45,7 +45,7 @@ import {
 } from "@/components/drawingLabels";
 import { orderState, stateLabel as orderStateLabel, daysLate } from "@/components/materialOrderLabels";
 import { currentAssignment } from "@/components/equipmentDeployment";
-import { can, type Principal } from "@/lib/permissions";
+import { can, type Capability, type Principal } from "@/lib/permissions";
 import { refusalFor } from "./access";
 import { certifiedPayrollWeekStart } from "@/lib/certified-payroll-week";
 import { timeEntryWorkerId, timeEntryWorkerName } from "@/lib/worker-name";
@@ -70,6 +70,10 @@ import {
 import { loadAlerts } from "@/lib/alerts-query";
 import { summarizeAlerts } from "@/lib/alerts";
 import { resolveJob } from "./resolve";
+import { cookies } from "next/headers";
+import { gettingStartedChecklist, type GettingStartedStepId } from "@/lib/getting-started";
+import { loadGettingStartedCounts } from "@/lib/getting-started-counts";
+import { GETTING_STARTED_HIDDEN_COOKIE, isGettingStartedHidden } from "@/lib/getting-started-cookie";
 import { matchesJobName, TOOLS, type ToolName, type ToolResult } from "./tools";
 
 /**
@@ -188,6 +192,7 @@ export const HANDLERS: Record<
   needs_attention: needsAttention,
   contact_lookup: contactLookup,
   job_overview: jobOverview,
+  getting_started: gettingStarted,
 };
 
 /**
@@ -3860,4 +3865,140 @@ async function jobOverview(companyId: string, input: Input, actor?: ToolActor): 
     },
     citations,
   };
+}
+
+/**
+ * Which confirm-card command can DO an open getting-started step, and what
+ * it needs from the person first. A step not in this map is done on its page
+ * and ONLY on its page — the assistant links to it.
+ *
+ * Deliberately absent, because the registry excludes them on purpose
+ * (lib/ask/commands/contacts.ts): `name-company` (updateCompanyProfile —
+ * the name prints on every GC-facing document) and `crew`
+ * (inviteTeamMember — an invitation grants somebody access to the company's
+ * data). `quickbooks` is an OAuth hand-off, and `import` is a file upload or
+ * a Jobber connection; neither has a command. `import` does name add_contact
+ * as the one-at-a-time alternative for a GC or client, but the import itself
+ * stays a link.
+ *
+ * `capabilities` is what the command itself is gated on, so the tool never
+ * offers a person a card the command would refuse them.
+ * handlers.gettingStarted.test.ts pins every entry against the real command
+ * definition — a hand-copied capability list that drifted from the command
+ * would offer a card that then refuses.
+ */
+export const GETTING_STARTED_COMMANDS: Partial<
+  Record<GettingStartedStepId, { command: string; capabilities: Capability[]; needs: string }>
+> = {
+  "first-job": {
+    command: "create_estimate_job",
+    capabilities: ["MANAGE_ESTIMATING", "VIEW_JOB_COSTS"],
+    needs: "the job's name and the general contractor's name",
+  },
+  import: {
+    command: "add_contact",
+    capabilities: ["MANAGE_ESTIMATING"],
+    needs: "one GC or client at a time: its name, and a phone or email if they have it. A spreadsheet or Jobber import is done on the page",
+  },
+  schedule: {
+    command: "schedule_crew",
+    capabilities: ["MANAGE_FIELD"],
+    needs: "who is going, which job and which day — the job and the person must already be in C Stream",
+  },
+  "first-day": {
+    command: "log_daily_field_report",
+    capabilities: ["MANAGE_FIELD"],
+    needs: "which job, and what was done today in their own words — the job must already exist",
+  },
+};
+
+/**
+ * "Help me finish getting started" — the getting-started checklist on the
+ * dashboard, for the asker's company AND the asker.
+ *
+ * NOTHING IS RECOMPUTED HERE. The counts come from the card's own loader
+ * (lib/getting-started-counts.ts) and the steps from the card's own pure
+ * function (lib/getting-started.ts), handed the asker's principal — so the
+ * steps a person cannot do are left out by the same `viewerCanDo` that
+ * leaves them off their card, and "done" is the same derivation from the
+ * same rows. A second copy of any of that is the two-surfaces bug the note
+ * at the top of this file exists to prevent.
+ *
+ * The "Hide this" cookie is reported, never obeyed: hiding the card is a
+ * choice about the dashboard, and somebody asking about the checklist has
+ * just said they want it. It also changes nothing the card would say.
+ */
+async function gettingStarted(companyId: string, _input: Input, actor?: ToolActor): Promise<ToolResult> {
+  const citations: { label: string; href: string }[] = [{ label: "Dashboard", href: "/dashboard" }];
+  // Which steps show depends on WHO is asking, so without a person there is
+  // no honest answer — never the owner's list by default.
+  if (!actor) {
+    return { data: null, citations, unavailable: "The getting-started checklist could not be read for this person." };
+  }
+
+  const [company, counts, hiddenOnDashboard] = await Promise.all([
+    prisma.company.findUnique({ where: { id: companyId }, select: { name: true } }),
+    loadGettingStartedCounts(companyId),
+    readGettingStartedHidden(companyId),
+  ]);
+  if (!company) return { data: null, citations, unavailable: "The getting-started checklist could not be read." };
+
+  const checklist = gettingStartedChecklist({ companyName: company.name, counts, viewer: actor.principal });
+
+  const steps = checklist.steps.map((step) => {
+    const helper = GETTING_STARTED_COMMANDS[step.id];
+    const askCanDo =
+      !step.done && helper && helper.capabilities.every((capability) => can(actor.principal, capability))
+        ? { command: helper.command, needsFromPerson: helper.needs }
+        : null;
+    return {
+      step: step.title,
+      done: step.done,
+      optional: step.optional,
+      // The card's own words: what it says while the step is open, and what
+      // it says once done (import has no done wording — it is never done).
+      whatItMeans: step.done && step.doneBody ? step.doneBody : step.body,
+      page: step.href,
+      pageLinkLabel: step.linkLabel,
+      askCanDo,
+    };
+  });
+  for (const step of checklist.steps) {
+    if (!citations.some((citation) => citation.href === step.href)) {
+      citations.push({ label: step.linkLabel, href: step.href });
+    }
+  }
+
+  return {
+    data: {
+      steps,
+      // Every step the card would show this person is here; steps they
+      // cannot do are left off, as on their card, and are not "done".
+      allRequiredDone: checklist.complete,
+      hiddenOnDashboard,
+    },
+    summary: {
+      requiredSteps: checklist.requiredTotal,
+      requiredDone: checklist.requiredDone,
+      requiredLeft: checklist.requiredTotal - checklist.requiredDone,
+      stepsShown: checklist.steps.length,
+    },
+    citations,
+    unavailable:
+      checklist.steps.length === 0
+        ? "There is nothing on the getting-started checklist for you to do — its steps are the owner's or need access you do not have."
+        : undefined,
+  };
+}
+
+/** Whether this browser hid the card, for THIS company. Information only.
+ * Reading a cookie outside a request throws; that is "not known", not
+ * "hidden". */
+async function readGettingStartedHidden(companyId: string): Promise<boolean | null> {
+  try {
+    const store = await cookies();
+    return isGettingStartedHidden(store.get(GETTING_STARTED_HIDDEN_COOKIE)?.value, companyId);
+  } catch {
+    return null;
+  }
 }
