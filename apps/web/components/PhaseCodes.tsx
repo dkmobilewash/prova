@@ -137,7 +137,16 @@ function PhaseCodeRow({ phaseCode, canManage }: { phaseCode: PhaseCodeData; canM
   if (isEditing) {
     return (
       <li className="p-4">
-        <form action={handleUpdate} className="flex flex-col gap-3">
+        <form
+          // onSubmit, never `action=`: React 19 resets a form handed to `action`
+          // before the action runs, so a refusal would arrive over emptied
+          // fields. formActionCensus.test.ts holds every client form to this.
+          onSubmit={(event) => {
+            event.preventDefault();
+            handleUpdate(new FormData(event.currentTarget));
+          }}
+          className="flex flex-col gap-3"
+        >
           <PhaseCodeFields phaseCode={phaseCode} />
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -284,7 +293,10 @@ export function PhaseCodes({
       {canManage &&
         (isAdding ? (
           <form
-            action={handleCreate}
+            onSubmit={(event) => {
+              event.preventDefault();
+              handleCreate(new FormData(event.currentTarget));
+            }}
             className="flex flex-col gap-3 rounded-lg border border-line-row p-4"
           >
             <PhaseCodeFields />

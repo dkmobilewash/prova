@@ -29,8 +29,15 @@ export class CrewScheduleInputError extends Error {}
 export function workDateFromString(raw: unknown): Date {
   const value = typeof raw === "string" ? raw.trim() : "";
   if (!value) throw new CrewScheduleInputError("A date is required");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new CrewScheduleInputError("That date is not valid");
   const date = new Date(`${value}T00:00:00.000Z`);
-  if (Number.isNaN(date.getTime())) throw new CrewScheduleInputError("That date is not valid");
+  // THE ROUND TRIP IS THE CHECK, not the NaN test. `2026-02-30` parses
+  // without complaint to 2 March, so a typo in the day planned somebody for
+  // a day nobody chose. Formatting back and comparing catches every
+  // rollover; `emrEffectiveDate` in lib/emr.ts does the same.
+  if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== value) {
+    throw new CrewScheduleInputError("That date does not exist — check the day and month");
+  }
   return date;
 }
 
