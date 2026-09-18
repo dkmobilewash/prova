@@ -125,6 +125,9 @@ export async function createTimeEntry(
     crewMemberId?: string;
     lineItemId?: string;
     craftClassificationId?: string;
+    clockStartedAt?: string;
+    clockEndedAt?: string;
+    clockBreakMinutes?: number;
   },
   token: string,
 ): Promise<TimeEntry> {

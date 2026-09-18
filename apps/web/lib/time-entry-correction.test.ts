@@ -189,13 +189,17 @@ describe("the database holds the same lock this module names", () => {
   );
 
   const triggerSql = (() => {
+    let found: string | null = null;
     for (const dir of readdirSync(migrationsDir).sort()) {
       const file = join(migrationsDir, dir, "migration.sql");
       if (!existsSync(file)) continue;
       const sql = readFileSync(file, "utf8");
-      if (sql.includes("prova_time_entry_identity_lock")) return sql;
+      // The trigger is widened by later migrations (CREATE OR REPLACE
+      // FUNCTION), so the LATEST file that names it is the body in effect —
+      // an earlier install no longer describes the lock.
+      if (sql.includes("prova_time_entry_identity_lock")) found = sql;
     }
-    return null;
+    return found;
   })();
 
   it("installs a BEFORE UPDATE trigger on TimeEntry", () => {

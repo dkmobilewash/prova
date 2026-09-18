@@ -114,6 +114,10 @@ export type TimeEntry = {
   hours: string;
   payType: TimeEntryPayType;
   note: string | null;
+  /** Set only on clocked entries; null on typed ones. */
+  clockStartedAt: string | null;
+  clockEndedAt: string | null;
+  clockBreakMinutes: number | null;
   employeeName: string;
   lineItemDescription: string | null;
   craftLabel: string | null;

@@ -7,10 +7,12 @@ import { List } from "@/components/List";
 import { StatusBadge } from "@/components/StatusBadge";
 import { colors, typography } from "@/lib/theme";
 import * as api from "@/lib/api";
+import { useStableGetToken } from "@/lib/use-stable-get-token";
 import type { Job } from "@/lib/types";
 
 export default function JobsScreen() {
-  const { isLoaded, isSignedIn, getToken } = useAuth();
+  const { isLoaded, isSignedIn } = useAuth();
+  const getToken = useStableGetToken();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [error, setError] = useState<string | null>(null);
 

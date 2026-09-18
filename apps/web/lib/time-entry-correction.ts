@@ -14,17 +14,19 @@
  * A correction changes the FIGURES. It never changes WHOSE day it was or
  * WHICH day it was.
  *
- *   LOCKED — `jobId`, `employeeUserId`, `crewMemberId`, `date`. These four
- *   are what a WH-347 line is keyed by: the project, the named person, the
- *   day worked. Change any one of them and the row is not a corrected record
- *   of Tuesday's work, it is a record of somebody else's Wednesday — a new
- *   entry, not an edit. So the path for those stays what it has always been:
- *   delete the entry and enter the right one, which now takes two clicks
- *   instead of one. This is CLAUDE.md's evidence-record rule applied to the
- *   table it had not yet been applied to (identity fields locked after
- *   creation), and it is the same rule the CrewMember trigger enforces one
- *   table over: "a misspelt name is fixed by archiving the row and creating a
- *   corrected one."
+ *   LOCKED — `jobId`, `employeeUserId`, `crewMemberId`, `date`, plus the three
+ *   clock-capture columns `clockStartedAt`, `clockEndedAt`, `clockBreakMinutes`.
+ *   The first four are what a WH-347 line is keyed by: the project, the named
+ *   person, the day worked. Change any one of them and the row is not a
+ *   corrected record of Tuesday's work, it is a record of somebody else's
+ *   Wednesday — a new entry, not an edit. The clock three are CAPTURE EVIDENCE
+ *   behind `hours`: the timestamps the phone recorded at clock-in/out and the
+ *   unpaid break, written once at create and never corrected — fixing the
+ *   figure means editing `hours`, which stays authoritative. The path for any
+ *   locked column is delete-and-re-enter, two clicks as of issue #63. This is
+ *   CLAUDE.md's evidence-record rule applied to the table it had not yet been
+ *   applied to, and the CrewMember trigger enforces the same rule one table
+ *   over.
  *
  *   CORRECTABLE — hours, pay type, note, per diem, travel pay, cost code,
  *   craft classification. Every one of these is a figure or a classification
@@ -94,6 +96,10 @@ export function timeEntryPayTypeFromForm(formData: FormData): TimeEntryPayType {
  * The columns a correction may never write, and the ones the database
  * trigger refuses.
  *
+ * The three clock-capture columns (clockStartedAt/clockEndedAt/
+ * clockBreakMinutes) sit beside the identity four: they are capture evidence,
+ * written once at create, and a correction fixes `hours` instead of them.
+ *
  * `crewMemberId` is NULL on every row today and read by nothing (see
  * labor.prisma), and it is in this list anyway: the guarantee it carries —
  * "an hour, once attributed, does not change hands" — is the one CLAUDE.md
@@ -101,7 +107,15 @@ export function timeEntryPayTypeFromForm(formData: FormData): TimeEntryPayType {
  * column is wired is the moment an update path would be able to move a
  * filed hour from one named person to another.
  */
-export const TIME_ENTRY_LOCKED_COLUMNS = ["jobId", "employeeUserId", "crewMemberId", "date"] as const;
+export const TIME_ENTRY_LOCKED_COLUMNS = [
+  "jobId",
+  "employeeUserId",
+  "crewMemberId",
+  "date",
+  "clockStartedAt",
+  "clockEndedAt",
+  "clockBreakMinutes",
+] as const;
 
 /** The seven fields a correction may touch. Named as data rather than left
  * implicit in a type, so a test can assert the SIZE of the set the update

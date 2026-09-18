@@ -1,12 +1,14 @@
 import { useAuth } from "@clerk/expo";
 import { useEffect } from "react";
 import { registerForPush } from "./push";
+import { useStableGetToken } from "./use-stable-get-token";
 
 /** Registers the device for push once the user is signed in. Idempotent —
  * the backend upserts on the token, so re-registering only refreshes
  * lastSeenAt and re-binds the user. */
 export function usePushRegistration() {
-  const { isSignedIn, getToken } = useAuth();
+  const { isSignedIn } = useAuth();
+  const getToken = useStableGetToken();
 
   useEffect(() => {
     if (!isSignedIn) return;
