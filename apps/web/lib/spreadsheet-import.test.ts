@@ -245,6 +245,36 @@ describe("crew — and never more than four SSN digits", () => {
     expect(JSON.stringify(plan)).not.toContain("6789");
   });
 
+  it("refuses a whole SSN in ANY column it would store, not only the last-4 one", () => {
+    // Phone, address and zip are free text; a sheet with its columns one
+    // off, or a clerk who typed the number into the wrong cell, would
+    // otherwise store it verbatim on the crew record.
+    const wide = "First Name,Middle Name,Last Name,Phone,Address,Address 2,City,State,Zip";
+    const plan = planCrewImport(
+      [
+        wide,
+        "Maria,,Lopez,123-45-6789,,,,,",
+        "Juan,,Diaz,,123-45-6789,,,,",
+        "Ana,,Ruiz,,,,,,123 45 6789",
+        "Bo,123-45-6789,Ng,,,,,,",
+        "Eve,,Park,555-201-4400,12 Oak Ave,,Reno,NV,89501-1234",
+      ].join("\n"),
+      [],
+    );
+    expect(plan.create.map((r) => r.legalLastName)).toEqual(["Park"]);
+    expect(plan.problems.map((p) => p.line)).toEqual([2, 3, 4, 5]);
+    for (const problem of plan.problems) expect(problem.message).toContain("Social Security number");
+    expect(JSON.stringify(plan)).not.toContain("45-6789");
+    expect(JSON.stringify(plan)).not.toContain("45 6789");
+  });
+
+  it("never carries a column it does not use, so a whole SSN under an unknown header goes nowhere", () => {
+    const plan = planCrewImport("First Name,Last Name,Social Security Number\nMaria,Lopez,123-45-6789", []);
+    expect(plan.create.map((r) => r.legalLastName)).toEqual(["Lopez"]);
+    expect(plan.ignoredColumns).toEqual(["Social Security Number"]);
+    expect(JSON.stringify(plan)).not.toContain("6789");
+  });
+
   it("needs separate first and last name columns rather than splitting one", () => {
     const plan = planCrewImport("Name,Phone\nMaria Lopez,555", []);
     expect(plan.create).toEqual([]);

@@ -7,7 +7,10 @@ import {
   IMPORT_TEMPLATES,
   JOB_STATUS_WORDS,
   MAX_IMPORT_ROWS,
+  MAX_IMPORT_BYTES,
+  TOO_LARGE_MESSAGE,
   crewName,
+  importTooLarge,
   planClientImport,
   planCrewImport,
   planJobImport,
@@ -16,6 +19,7 @@ import {
   type ExistingMatch,
   type ImportKind,
   type JobClient,
+  type JobPlanRow,
   type RowProblem,
 } from "@/lib/spreadsheet-import";
 
@@ -165,6 +169,39 @@ function Problems({ problems }: { problems: RowProblem[] }) {
   );
 }
 
+/**
+ * Said once, above the table, whenever the sheet marks any job as anything
+ * but an estimate — because the per-row "sheet says Contracted" is easy to
+ * miss, and the table only shows the first 25 rows.
+ *
+ * Every imported job lands as an ESTIMATE, whatever the sheet says. A job
+ * becomes contracted on its own page, through the same evidence gate as any
+ * other job (line items, and a signed or recorded contract). An import that
+ * wrote CONTRACTED would be a second door into billing with no evidence
+ * behind it. Decided by Cyrus; see the note at the top of
+ * lib/spreadsheet-import.ts.
+ */
+export function EstimateNotice({ rows }: { rows: Pick<JobPlanRow, "sheetStatus">[] }) {
+  const marked = rows.filter((row) => row.sheetStatus && row.sheetStatus !== "ESTIMATE");
+  if (marked.length === 0) return null;
+  const counts = new Map<string, number>();
+  for (const row of marked) {
+    const word = JOB_STATUS_WORDS[row.sheetStatus!];
+    counts.set(word, (counts.get(word) ?? 0) + 1);
+  }
+  const listed = [...counts].map(([word, n]) => `${n} ${word}`).join(", ");
+  return (
+    <p role="note" className="mt-3 rounded-md border border-line-card bg-tag-amber px-3 py-2 text-xs text-tag-amber-ink">
+      <span className="font-semibold">
+        {marked.length === 1 ? "1 job" : `${marked.length} jobs`} will come in as an estimate, not as
+        your sheet marks {marked.length === 1 ? "it" : "them"} ({listed}).
+      </span>{" "}
+      Every imported job starts as an estimate. To make one contracted, open it, add its line items
+      and its signed contract, and mark it contracted there — the same as any other job.
+    </p>
+  );
+}
+
 const th = "px-3 py-2 font-medium";
 const td = "px-3 py-1.5";
 
@@ -199,8 +236,8 @@ export function SpreadsheetImport(props: Props) {
   async function onFile(file: File | undefined) {
     setFileError(null);
     if (!file) return;
-    if (file.size > 1_000_000) {
-      setFileError("That file is over 1 MB — split it and import in parts.");
+    if (file.size > MAX_IMPORT_BYTES) {
+      setFileError(TOO_LARGE_MESSAGE);
       return;
     }
     if (/\.xlsx?$/i.test(file.name)) {
@@ -242,6 +279,9 @@ export function SpreadsheetImport(props: Props) {
   }
 
   const createCount = plan?.create.length ?? 0;
+  // Checked here as well as in the action: over Next's body limit the
+  // confirm would never reach the action, only the error page.
+  const tooLarge = importTooLarge(text);
 
   return (
     <section className="rounded-lg border border-line-card bg-surface p-4">
@@ -328,6 +368,7 @@ export function SpreadsheetImport(props: Props) {
           )}
 
           <Problems problems={plan.problems} />
+          {plan.kind === "jobs" && <EstimateNotice rows={plan.create} />}
 
           {createCount > 0 && (
             <div className="mt-3 overflow-x-auto rounded-md border border-line-row">
@@ -436,7 +477,7 @@ export function SpreadsheetImport(props: Props) {
             <button
               type="button"
               onClick={confirm}
-              disabled={pending || createCount === 0}
+              disabled={pending || createCount === 0 || tooLarge}
               aria-busy={pending || undefined}
               className="min-h-11 rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-60"
             >
@@ -446,6 +487,7 @@ export function SpreadsheetImport(props: Props) {
                   ? "Nothing new to add"
                   : `Confirm — add ${createCount} ${createCount === 1 ? copy.noun[0] : copy.noun[1]}`}
             </button>
+            {tooLarge && <span className="text-xs text-tag-rose-ink">{TOO_LARGE_MESSAGE}</span>}
             <span className="text-xs text-ink-muted">
               Nothing already in C Stream is changed. Up to {MAX_IMPORT_ROWS} rows at a time.
             </span>

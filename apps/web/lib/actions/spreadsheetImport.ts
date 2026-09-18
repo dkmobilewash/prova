@@ -5,7 +5,9 @@ import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import {
+  TOO_LARGE_MESSAGE,
   dateFromDay,
+  importTooLarge,
   nameKey,
   planClientImport,
   planCrewImport,
@@ -54,7 +56,6 @@ export type ImportSummary = {
 
 type ImportResult = ActionResultWith<ImportSummary>;
 
-const MAX_TEXT_LENGTH = 1_000_000;
 const TX_OPTIONS = { isolationLevel: "Serializable" as const, timeout: 20_000 };
 
 const COLLIDED =
@@ -73,7 +74,7 @@ function isWriteConflict(err: unknown): boolean {
 function textFrom(formData: FormData): string | ImportResult {
   const text = String(formData.get("csv") ?? "");
   if (!text.trim()) return fail("Paste your spreadsheet, or choose a CSV file, before confirming.");
-  if (text.length > MAX_TEXT_LENGTH) return fail("That file is over 1 MB — split it and import in parts.");
+  if (importTooLarge(text)) return fail(TOO_LARGE_MESSAGE);
   return text;
 }
 

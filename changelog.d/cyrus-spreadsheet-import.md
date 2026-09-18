@@ -44,3 +44,31 @@ each read, the existing-match per kind, the four-digit rule, date
 validation, the transaction, the isolation level, the owner and capability
 checks, the estimate-only status, line numbers, the row cap — each turned
 at least one test red.
+
+**Independent verification before merge found four gaps the author's own
+tests could not see**, each reproduced red first:
+
+- **A whole SSN in any OTHER crew column was stored verbatim.** Only the
+  last-4 and employee-number cells were checked, so `123-45-6789` in Phone,
+  Address, Zip or Middle name went onto the crew record. Every stored crew
+  column is now checked for the 3-2-4 shape (nine bare digits only where a
+  zip+4 cannot be meant), and the message names the row by first and last
+  name only, since the middle-name cell is one of those checked.
+- **A paste between 1 MB of text and Next's 1 MB Server Action body limit
+  died on the error page.** The action allowed 1,000,000 CHARACTERS; Next
+  refuses the request body first, at 1 MB of BYTES, and production redacts
+  the throw. The limit is now 900 KB in bytes, checked in the browser
+  before sending and again in the action.
+- **The page's owner check and company scope were untested.** Removing
+  either stayed green. `app/(app)/settings/import/page.test.ts` renders the
+  page against two companies.
+- **The fake transaction could not see a write that escaped it.** It
+  passed the same client as `prisma`, so moving a write in `importJobs` or
+  `importCrew` onto the bare client stayed green. The fake now hands the
+  callback a distinct transaction client and a rollback only undoes that
+  client's writes; each of the three actions is asserted to write only
+  through it, at Serializable.
+
+The jobs preview now says once, above the table, how many rows the sheet
+marks Contracted / In progress / Complete and that they all come in as
+estimates — the per-row note is in a table that shows only 25 rows.

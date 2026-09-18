@@ -67,10 +67,18 @@ function pick(name: string, row: Row, select?: Record<string, unknown>): Record<
   return out;
 }
 
-function model(name: string) {
+/** Rows inserted through the transaction client of the transaction now
+ * running. A rollback removes exactly these — a write made through the BARE
+ * client in the middle of a transaction is committed on its own, exactly as
+ * Postgres would, and survives the rollback. That is what lets the tests see
+ * a write that escaped the transaction, rather than the fake quietly
+ * undoing it along with everything else. */
+const txInserted = new Set<Row>();
+
+function model(name: string, viaTx: boolean) {
   const write = (op: string) => {
     const what = `${name}.${op}`;
-    state.writes.push(`${what}@${state.txDepth > 0 ? "tx" : "bare"}`);
+    state.writes.push(`${what}@${viaTx ? "tx" : "bare"}`);
     if (state.failNext === what) {
       state.failNext = null;
       throw Object.assign(new Error(`simulated failure: ${what}`), state.failCode ? { code: state.failCode } : {});
@@ -79,6 +87,7 @@ function model(name: string) {
   const insert = (data: Record<string, unknown>) => {
     const row = { id: `${name}_${++state.seq}`, ...data } as Row;
     table(name).push(row);
+    if (viaTx) txInserted.add(row);
     return row;
   };
   return {
@@ -98,6 +107,20 @@ function model(name: string) {
   };
 }
 
+/** The transaction client handed to an interactive transaction's callback —
+ * a DIFFERENT object from `client`, as Prisma's is, so a write through
+ * `prisma` inside the callback is recorded as `@bare`, not `@tx`. */
+const txClient: Record<string, unknown> = new Proxy(
+  {},
+  {
+    get: (_target, property) => {
+      if (property === "then" || typeof property === "symbol") return undefined;
+      if (property === "$transaction") throw new Error("nested transactions are not faked");
+      return model(String(property), true);
+    },
+  },
+);
+
 const client: Record<string, unknown> = new Proxy(
   {},
   {
@@ -107,19 +130,22 @@ const client: Record<string, unknown> = new Proxy(
         return async (fn: (tx: unknown) => Promise<unknown>, options: unknown) => {
           if (typeof fn !== "function") throw new Error("only interactive transactions are faked");
           state.txOptions.push(options);
-          const snapshot = new Map([...state.tables].map(([k, rows]) => [k, [...rows]]));
+          txInserted.clear();
           state.txDepth++;
           try {
-            return await fn(client);
+            return await fn(txClient);
           } catch (err) {
-            state.tables = snapshot;
+            for (const [name, rows] of state.tables) {
+              state.tables.set(name, rows.filter((row) => !txInserted.has(row)));
+            }
             throw err;
           } finally {
+            txInserted.clear();
             state.txDepth--;
           }
         };
       }
-      return model(String(property));
+      return model(String(property), false);
     },
   },
 );
@@ -314,6 +340,47 @@ describe("importCrew", () => {
     const again = await importCrew(form(CSV));
     expect(again).toEqual({ ok: true, value: expect.objectContaining({ created: 0, alreadyThere: 3 }) });
     expect(rows("crewMember", "co_A")).toHaveLength(3);
+  });
+});
+
+describe("every confirm writes inside one serializable transaction, and only there", () => {
+  const cases = [
+    ["importClients", () => importClients(form("Name\nNew Co")), ["contact.createMany@tx"]],
+    [
+      "importJobs",
+      () => importJobs(form("Job,Client\nPier,Brand New GC")),
+      ["contact.createManyAndReturn@tx", "job.createMany@tx"],
+    ],
+    ["importCrew", () => importCrew(form("First,Last\nAna,Ruiz")), ["crewMember.createMany@tx"]],
+  ] as const;
+
+  for (const [name, run, writes] of cases) {
+    it(name, async () => {
+      const result = await run();
+      expect(result).toEqual({ ok: true, value: expect.objectContaining({ created: 1 }) });
+      // Through the transaction client, never the bare one: a bare write
+      // commits on its own and survives a rollback of everything else.
+      expect(state.writes).toEqual(writes);
+      expect(state.txOptions).toEqual([expect.objectContaining({ isolationLevel: "Serializable" })]);
+    });
+  }
+});
+
+describe("size", () => {
+  // A Server Action's request body is capped at 1 MB by Next (no
+  // serverActions.bodySizeLimit in next.config.mjs). A text the action
+  // would accept but Next refuses first never reaches the action at all: it
+  // throws, production redacts the message, and the person sees the error
+  // page instead of a sentence. So the action's own limit must sit BELOW
+  // Next's, counted in BYTES — a 400,000-character paste of accented names
+  // is well over a megabyte.
+  it("refuses, with a sentence, a text too big to have been sent", async () => {
+    const ascii = "Name\n" + "x".repeat(950_000);
+    const accented = "Name\n" + "é".repeat(500_000); // 2 bytes each
+    for (const text of [ascii, accented]) {
+      expect(await importClients(form(text))).toEqual({ ok: false, error: expect.stringContaining("split it") });
+    }
+    expect(state.txOptions).toEqual([]);
   });
 });
 

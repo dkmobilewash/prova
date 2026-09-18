@@ -121,6 +121,24 @@ function applyCap<R extends { line: number }>(rows: R[], problems: RowProblem[])
   return rows.slice(0, MAX_IMPORT_ROWS);
 }
 
+/**
+ * The biggest paste or file a confirm can send, in BYTES.
+ *
+ * Below Next's 1 MB Server Action body limit (next.config.mjs sets no
+ * `serverActions.bodySizeLimit`), with room for the form encoding. A text
+ * over Next's limit never reaches the action: the request throws, production
+ * redacts the message, and the person gets the error page instead of a
+ * sentence. So the browser checks this before sending and the action checks
+ * it again. Bytes, not characters: an accented name is two bytes a letter.
+ */
+export const MAX_IMPORT_BYTES = 900_000;
+
+export const TOO_LARGE_MESSAGE = "That is more than 900 KB of text — split it and import in parts.";
+
+export function importTooLarge(text: string): boolean {
+  return new TextEncoder().encode(text).length > MAX_IMPORT_BYTES;
+}
+
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /* ------------------------------------------------------------------ */
@@ -607,6 +625,13 @@ export function parseLast4(raw: string | undefined): Last4Cell {
   return { ok: false, message: "the last-4 column must be exactly 4 digits" };
 }
 
+/** A whole SSN as people write one: 3-2-4 digits, split by dashes or
+ * spaces. Refused in any crew column (see planCrewImport). Nine bare digits
+ * are only refused where a number that long has no other reading — the
+ * last-4 and employee-number columns — because a zip+4 typed without its
+ * dash is nine digits too. */
+const WHOLE_SSN = /^\d{3}[-\s]\d{2}[-\s]\d{4}$/;
+
 /** An employee number shaped like an SSN is refused for the same reason. */
 function looksLikeSsn(value: string): boolean {
   return /^\d{3}[-\s]\d{2}[-\s]\d{4}$/.test(value) || /^\d{9}$/.test(value);
@@ -705,16 +730,24 @@ export function planCrewImport(text: string, existingCrew: ExistingCrew[]): Crew
     const first = clean(cell("legalFirstName"));
     const last = clean(cell("legalLastName"));
     const middle = clean(cell("legalMiddleName"));
-    const who = [first, middle, last].filter(Boolean).join(" ");
 
     // Checked before anything else about the row, so a whole SSN is never
     // carried any further than this line — not into a row, not into a
-    // name-based message, not into the preview.
+    // name-based message, not into the preview. EVERY stored column is
+    // checked, not only the last-4 one: phone, address and zip are free
+    // text, and a sheet whose columns are one off would otherwise store the
+    // number verbatim. The message names the row by first and last name
+    // only, because the middle-name cell is one of the cells being checked.
     const last4 = parseLast4(cell("identifyingNumberLast4"));
-    if (!last4.ok) {
-      problems.push({ line, message: `${who || "This row"} — ${last4.message}` });
+    const strayWholeSsn = (Object.keys(CREW_COLUMNS) as (keyof typeof CREW_COLUMNS)[]).some(
+      (field) => field !== "identifyingNumberLast4" && WHOLE_SSN.test(clean(cell(field))),
+    );
+    if (!last4.ok || strayWholeSsn) {
+      const named = [first, last].filter(Boolean).join(" ") || "This row";
+      problems.push({ line, message: `${named} — ${last4.ok ? FULL_SSN_REFUSAL : last4.message}` });
       continue;
     }
+    const who = [first, middle, last].filter(Boolean).join(" ");
     if (first === "" || last === "") {
       problems.push({ line, message: `${who || "This row"} — needs both a first and a last name. Skipped.` });
       continue;
