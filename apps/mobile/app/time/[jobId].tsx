@@ -33,6 +33,7 @@ import {
 } from "@/lib/crew-entry";
 import { uuid } from "@/lib/id";
 import { enqueue } from "@/lib/sync-queue";
+import { useReloadWhenShown } from "@/lib/use-reload-when-shown";
 import { useSync } from "@/lib/use-sync";
 import type {
   Craft,
@@ -187,12 +188,9 @@ export default function TimeScreen() {
     })();
   }, []);
 
-  useEffect(() => {
-    (async () => {
-      await load();
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [jobId]);
+  // On first show, on every return to this screen, and when the app comes
+  // back from the background — so rows changed elsewhere don't linger.
+  useReloadWhenShown(load);
 
   // Tick the elapsed clock once a minute.
   useEffect(() => {
