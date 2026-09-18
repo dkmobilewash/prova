@@ -3,6 +3,7 @@ import { prisma } from "@prova/db";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { BackchargeForm } from "@/components/BackchargeForm";
+import { EmptyState } from "@/components/EmptyState";
 import { BackchargeRow } from "@/components/BackchargeRow";
 import { isResponseOverdue, summarizeBackcharges } from "@/lib/backcharges";
 import { money } from "@/lib/money";
@@ -49,6 +50,11 @@ export default async function BackchargesPage({
     orderBy: [{ jobId: "asc" }, { number: "desc" }],
     include: { job: { select: { name: true } }, loggedByUser: { select: { name: true } } },
   });
+
+  // Whether this company has EVER logged one, not whether the current
+  // filter shows any — the teaching empty state is for the first, and a
+  // filter that happens to match nothing keeps its plain line.
+  const everLogged = await prisma.backcharge.count({ where: { companyId: company.id } });
 
   const rows = backcharges.map((bc) => ({
     id: bc.id,
@@ -177,8 +183,32 @@ export default async function BackchargesPage({
         </Link>
       </div>
 
-      {rows.length === 0 ? (
-        <p className="text-ink-body" data-tour="backcharges-empty">
+      {rows.length === 0 && everLogged === 0 ? (
+        <EmptyState
+          data-tour="backcharges-empty"
+          title="No backcharges yet"
+          purpose={
+            <p>
+              Money someone takes off what they owe you — a builder charging you for cleanup, a
+              repair to another trade&apos;s work, a punch item they finished themselves. Log it
+              the day it arrives, with the amount and the date, so you can dispute it in writing
+              before the deadline instead of finding a short payment months later.
+            </p>
+          }
+          actions={
+            jobs.length === 0
+              ? [{ label: "Create a job", href: "/jobs/new" }]
+              : [{ label: "Log a backcharge", opens: "backcharges-log" }]
+          }
+          example={{
+            rows: [
+              { title: "#2 Site cleanup, week of Sep 1", tag: "Disputed", detail: "Oak Ave addition · objection sent Sep 5", meta: "$450.00" },
+              { title: "#1 Drywall damage by another trade", tag: "Accepted", detail: "Oak Ave addition · taken off pay app 2", meta: "$180.00" },
+            ],
+          }}
+        />
+      ) : rows.length === 0 ? (
+        <p className="text-ink-body">
           {showResolved
             ? "No backcharges logged. That is worth being sure of rather than assuming — a deduction sheet stapled to a pay application is still a backcharge."
             : "Nothing unresolved. Switch to “Show resolved” for the ones already closed out."}

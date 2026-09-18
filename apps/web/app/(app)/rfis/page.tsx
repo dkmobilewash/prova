@@ -5,6 +5,7 @@ import { NoAccess } from "@/components/NoAccess";
 import { AskDraftNotice } from "@/components/AskDraftNotice";
 import { loadRfiDraft } from "@/lib/ask/drafts";
 import { RfiForm } from "@/components/RfiForm";
+import { EmptyState } from "@/components/EmptyState";
 import { RfiRow } from "@/components/RfiRow";
 import { daysBetween, isOpen, isOverdue } from "@/components/rfiLabels";
 import { StatusLine } from "@/components/StatusLine";
@@ -98,6 +99,11 @@ export default async function RfisPage({
   // set you pull when building a change order — a job-lifetime figure —
   // and closing an answered RFI is the normal end state, so counting the
   // visible rows made the tile fall to zero exactly as the work got done.
+  // Whether this company has EVER raised one, not whether the current
+  // filter shows any — the teaching empty state is for the first, and a
+  // filter that happens to match nothing gets the plain line.
+  const everRaised = await prisma.rfi.count({ where: { companyId: company.id } });
+
   const impactCount = await prisma.rfi.count({
     where: {
       companyId: company.id,
@@ -178,10 +184,37 @@ export default async function RfisPage({
         </Link>
       </div>
 
-      {rows.length === 0 ? (
-        <p className="text-ink-body" data-tour="rfis-empty">
-          Nothing here yet. Raise one the day the question comes up rather than the day it becomes a
-          problem — the gap between those two dates is the whole value of the log.
+      {rows.length === 0 && everRaised === 0 ? (
+        <EmptyState
+          data-tour="rfis-empty"
+          title="No RFIs yet"
+          purpose={
+            <p>
+              A written question to the builder, architect or homeowner when the plans do not
+              answer it — &ldquo;which tile goes in the hall bath?&rdquo;, &ldquo;can we move this
+              wall six inches?&rdquo; — with the date you asked and the date they answered. When a
+              late answer holds up the job, this is the proof.
+            </p>
+          }
+          actions={
+            jobs.length === 0
+              ? [{ label: "Create a job", href: "/jobs/new" }]
+              : [{ label: "Raise an RFI", opens: "rfis-raise" }]
+          }
+          ask={jobs.length === 0 ? undefined : `Raise an RFI on ${jobs[0].name}: which tile goes in the hall bath?`}
+          example={{
+            rows: [
+              { title: "RFI 3 — Hall bath tile selection", tag: "Waiting on answer", detail: "Smith kitchen remodel · asked Sep 4", meta: "due Sep 11" },
+              { title: "RFI 2 — Header size over new opening", tag: "Answered", detail: "Oak Ave addition · answered in 6 days", meta: "cost impact" },
+              { title: "RFI 1 — Outlet height at island", tag: "Closed", detail: "Smith kitchen remodel", meta: "Aug 29" },
+            ],
+          }}
+        />
+      ) : rows.length === 0 ? (
+        <p className="text-ink-body">
+          {showClosed
+            ? `No RFIs${activeJob ? " on this job" : ""}.`
+            : `Nothing open${activeJob ? " on this job" : ""}. Closed ones are under “Show closed”.`}
         </p>
       ) : (
         <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface" data-tour="rfis-list">

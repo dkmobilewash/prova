@@ -17,6 +17,12 @@ export const punchListsWalkthrough: Walkthrough = {
       body: "Tap a job to see only its list. All jobs shows everything that is still open.",
     },
     {
+      anchor: "punch-empty",
+      title: "Nothing on the list yet",
+      body:
+        "Until the first item is added, this box shows what a punch list looks like once it is in use. The example is only a picture — nothing in it is saved.",
+    },
+    {
       anchor: "punch-open",
       title: "What is still open",
       body:
