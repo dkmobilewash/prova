@@ -50,3 +50,4 @@ export * from "./intake";
 export * from "./ask";
 export * from "./phase-codes";
 export * from "./help";
+export * from "./gettingStarted";

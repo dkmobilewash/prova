@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { cookies } from "next/headers";
 import { Card, StatusBadge } from "@prova/ui";
 import { JobStatus, Prisma, prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
@@ -10,6 +11,10 @@ import { renewalAlerts, renewalTiming } from "@/lib/compliance-expiry";
 import { serverToday } from "@/lib/serverToday";
 import { loadTodayDashboard } from "@/lib/today-dashboard";
 import { AskPanel } from "@/components/AskPanel";
+import { GettingStartedCard } from "@/components/GettingStartedCard";
+import { gettingStartedChecklist } from "@/lib/getting-started";
+import { loadGettingStartedCounts } from "@/lib/getting-started-counts";
+import { GETTING_STARTED_HIDDEN_COOKIE, isGettingStartedHidden } from "@/lib/getting-started-cookie";
 import {
   ReceivablesDetailPanel,
   ReceivablesList,
@@ -124,12 +129,27 @@ export default async function TodayPage({
 
   const now = new Date();
 
-  const [jobs, allJobs, renewalSources, today] = await Promise.all([
+  // The getting-started card. Hidden-by-cookie is decided HERE, on the
+  // server, from the request — so the markup the browser hydrates already
+  // either has the card or does not, and nothing on the client re-decides
+  // it. Once hidden, the counts are not even asked for.
+  const cookieStore = await cookies();
+  const gettingStartedHidden = isGettingStartedHidden(
+    cookieStore.get(GETTING_STARTED_HIDDEN_COOKIE)?.value,
+    company.id,
+  );
+
+  const [jobs, allJobs, renewalSources, today, gettingStartedCounts] = await Promise.all([
     loadJobs(company.id, where),
     loadJobs(company.id, { companyId: company.id }),
     renewalSourcesForCompany(company.id),
     loadTodayDashboard(company.id, now),
+    gettingStartedHidden ? null : loadGettingStartedCounts(company.id),
   ]);
+
+  const gettingStarted = gettingStartedCounts
+    ? gettingStartedChecklist({ companyName: company.name, counts: gettingStartedCounts, viewer: principal })
+    : null;
 
   const renewals = renewalAlerts(renewalSources, serverToday());
   const expiringSoon = renewals.filter(
@@ -170,6 +190,14 @@ export default async function TodayPage({
             <p className="mt-1 text-sm text-ink-body">
               What needs a decision, before you go looking for it.
             </p>
+
+            {/* First, and only until the required steps are done or someone
+                hides it on this browser. Everything below keeps its order. */}
+            {gettingStarted && !gettingStarted.complete && (
+              <div className="mt-6">
+                <GettingStartedCard checklist={gettingStarted} />
+              </div>
+            )}
 
             {/* Above the tiles on purpose. The tiles answer the four
                 questions we guessed at; this answers the one they actually

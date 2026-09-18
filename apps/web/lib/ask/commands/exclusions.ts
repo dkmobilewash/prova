@@ -70,6 +70,7 @@ export const notYetRegistered: Exclusion[] = [
   { action: "sales.*", reason: "Prova-operator-only CRM, unreachable for any contractor tenant; excluded from the agent surface entirely." },
   { action: "alerts.*", reason: "Snooze and dismiss are done on the alert being read; nothing to resolve by name." },
   { action: "notifications.*", reason: "Sends the person their own digest; not a task anyone asks the box for." },
+  { action: "gettingStarted.*", reason: "Hides the dashboard's getting-started card on this browser — a cookie about one card, not work anyone asks the box for. Never a command." },
   { action: "prevailingWage.*", reason: "Rule sets are compliance configuration edited on their own page; needs a File for determinations." },
   { action: "apprenticeship.*", reason: "Enrollment and period sign-off are evidence with sign-off dates; page only for now." },
   { action: "unionCompliance.*", reason: "Craft, local and rate configuration; several writes are global reference data. Never a command." },
