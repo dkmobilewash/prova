@@ -81,6 +81,7 @@ const LABELLED_PICKERS: Record<string, number> = {
   "app/(app)/punch-lists/page.tsx": 1,
   "app/(app)/rfis/page.tsx": 1,
   "app/(app)/submittals/page.tsx": 1,
+  "app/(app)/settings/integrations/page.tsx": 1,
 };
 
 /**
@@ -192,7 +193,10 @@ describe("the job-picker census", () => {
     // on" picker, in LienDeadlinesBoard's shared create/edit fields (the
     // edit form does not render it — job is what the row IS — so the call
     // appears once in source).
-    expect(expected).toEqual(26);
+    //
+    // 26 -> 27 on 2026-09-18: the Procore card's "which of your jobs does
+    // this GC project feed" picker on /settings/integrations.
+    expect(expected).toEqual(27);
     expect(actual).toEqual(expected);
   });
 

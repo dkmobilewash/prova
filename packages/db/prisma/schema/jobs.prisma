@@ -84,6 +84,7 @@ model Job {
   assignments                    JobAssignment[]
   crewScheduleDays               CrewScheduleDay[]
   lienDeadlines                  LienDeadline[]
+  procoreProjectLink             ProcoreProjectLink?
   signatureRequests              SignatureRequest[]
   invoices                       Invoice[]
   complianceDocuments            ComplianceDocument[]

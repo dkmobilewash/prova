@@ -13,6 +13,10 @@ import { JobberControls } from "@/components/JobberControls";
 import { JobberImport } from "@/components/JobberImport";
 import { importCardState, jobberCallbackMessage } from "@/lib/jobber/setup";
 import { integrationEncryptionConfigured } from "@/lib/crypto";
+import { ProcoreControls } from "@/components/ProcoreControls";
+import { ProcoreLinks } from "@/components/ProcoreLinks";
+import { feedCardState, procoreCallbackMessage } from "@/lib/procore/setup";
+import { toJobOption, jobPickerLabel } from "@/components/jobLabels";
 
 /**
  * Settings → Integrations.
@@ -66,7 +70,7 @@ export default async function IntegrationsPage({
     );
   }
 
-  const [connections, quickBooks] = await Promise.all([
+  const [connections, quickBooks, procoreLinks, jobsForLinking] = await Promise.all([
     prisma.integrationConnection.findMany({
       where: { companyId: company.id },
       // Named columns, not `include`. The encrypted envelopes are not in the
@@ -89,6 +93,27 @@ export default async function IntegrationsPage({
       // whole row into a page is exactly what not to do here.
       select: { realmId: true, createdAt: true, status: true, statusDetail: true },
     }),
+    // The Procore card's linked projects. Scoped to the session's company;
+    // no credential is in this select because none is on this table.
+    prisma.procoreProjectLink.findMany({
+      where: { companyId: company.id },
+      orderBy: { linkedAt: "asc" },
+      select: {
+        id: true,
+        jobId: true,
+        procoreProjectName: true,
+        procoreCompanyName: true,
+        lastRefreshedAt: true,
+        lastRefreshStatus: true,
+        lastRefreshMessage: true,
+        job: { select: { name: true } },
+      },
+    }),
+    prisma.job.findMany({
+      where: { companyId: company.id },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, name: true, status: true, contact: { select: { name: true } } },
+    }),
   ]);
 
   const byProvider = new Map(connections.map((connection) => [connection.provider, connection]));
@@ -98,6 +123,7 @@ export default async function IntegrationsPage({
   const query = (await searchParams) ?? {};
   const one = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value);
   const jobberReturn = jobberCallbackMessage(one(query.jobber), one(query.jobber_detail));
+  const procoreReturn = procoreCallbackMessage(one(query.procore), one(query.procore_detail));
   const blob = {
     environment: process.env.VERCEL_ENV ?? "local",
     present: Boolean(process.env.BLOB_READ_WRITE_TOKEN?.trim()),
@@ -135,13 +161,16 @@ export default async function IntegrationsPage({
     // An import provider is only offered when this install has its keys —
     // the registry names them, this reads them. Otherwise the card says it
     // is not set up here, instead of showing a button that would fail.
+    const configured =
+      (impl.kind === "import" || impl.kind === "feed") &&
+      impl.requiredEnv.every((name) => Boolean(process.env[name]?.trim())) &&
+      integrationEncryptionConfigured();
     const importState =
       impl.kind === "import"
-        ? importCardState(
-            impl.requiredEnv.every((name) => Boolean(process.env[name]?.trim())) && integrationEncryptionConfigured(),
-            connection?.status,
-          )
-        : null;
+        ? importCardState(configured, connection?.status)
+        : impl.kind === "feed"
+          ? feedCardState(configured, connection?.status)
+          : null;
 
     const isConnected = status === "CONNECTED";
 
@@ -190,6 +219,9 @@ export default async function IntegrationsPage({
             {impl.kind === "import" && importState && (
               <JobberControls state={importState} startHref={impl.startHref} />
             )}
+            {impl.kind === "feed" && importState && (
+              <ProcoreControls state={importState} startHref={impl.startHref} />
+            )}
             {impl.kind === "external" && (
               <Link
                 href={impl.href}
@@ -228,6 +260,30 @@ export default async function IntegrationsPage({
               <DetailRow label="Direction" value="Jobber → C Stream only" />
             </dl>
             <JobberImport />
+          </>
+        )}
+
+        {impl.kind === "feed" && importState === "connected" && connection && (
+          <>
+            <dl className="mt-4 grid gap-4 border-t border-line-card pt-4 sm:grid-cols-3">
+              <DetailRow label="Procore login" value={connection.externalAccountLabel ?? "—"} />
+              <DetailRow label="Linked projects" value={String(procoreLinks.length)} />
+              <DetailRow label="Direction" value="Procore → C Stream only" />
+            </dl>
+            <ProcoreLinks
+              links={procoreLinks.map((link) => ({
+                id: link.id,
+                jobName: link.job.name,
+                procoreProjectName: link.procoreProjectName,
+                procoreCompanyName: link.procoreCompanyName,
+                lastRefreshedLabel: link.lastRefreshedAt ? relativeTime(link.lastRefreshedAt, now) : "never",
+                lastRefreshOk: link.lastRefreshStatus ? link.lastRefreshStatus === "SUCCESS" : null,
+                lastRefreshMessage: link.lastRefreshMessage,
+              }))}
+              jobs={jobsForLinking
+                .filter((job) => !procoreLinks.some((link) => link.jobId === job.id))
+                .map((job) => ({ id: job.id, label: jobPickerLabel(toJobOption(job)) }))}
+            />
           </>
         )}
 
@@ -293,6 +349,19 @@ export default async function IntegrationsPage({
           company&rsquo;s data, and a credential is stored encrypted and never shown back here.
         </p>
       </div>
+
+      {procoreReturn && (
+        <p
+          role="status"
+          className={`mb-4 rounded-md border px-3 py-2 text-sm ${
+            procoreReturn.ok
+              ? "border-line-card bg-tag-green text-tag-green-ink"
+              : "border-line-card bg-tag-rose text-tag-rose-ink"
+          }`}
+        >
+          {procoreReturn.text}
+        </p>
+      )}
 
       {jobberReturn && (
         <p

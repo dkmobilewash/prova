@@ -11,6 +11,7 @@ import { StatusLine } from "@/components/StatusLine";
 import { rfisStatus } from "@/lib/status-sentences";
 import { jobPickerLabel, toJobOption } from "@/components/jobLabels";
 import { viewerToday } from "@/lib/viewerToday";
+import { ProcoreFeedSection, loadProcoreFeed } from "@/components/ProcoreFeedSection";
 
 /** Stored at UTC midnight, rendered in UTC — same rule as the safety log
  * and daily field reports. Local rendering shows the previous day to
@@ -123,6 +124,10 @@ export default async function RfisPage({
       active ? "border-brand text-link" : "border-line-card text-ink-label hover:bg-neutral-800"
     }`;
 
+  // The GC's records from Procore, if this company links any (see
+  // components/ProcoreFeedSection.tsx).
+  const procoreFeed = await loadProcoreFeed(company.id, "RFI", activeJob);
+
   return (
     <div className="mx-auto max-w-4xl px-6 py-8">
       <h1 className="mb-2 text-xl font-semibold text-ink">RFIs</h1>
@@ -191,6 +196,10 @@ export default async function RfisPage({
           ))}
         </ul>
       )}
+
+      {/* The GC's records from Procore: a separate section, never merged
+          into this company's own log above. */}
+      <ProcoreFeedSection feed={procoreFeed} />
     </div>
   );
 }
