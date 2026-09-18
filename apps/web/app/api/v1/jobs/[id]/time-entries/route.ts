@@ -20,6 +20,10 @@ const entrySelect = {
   clockStartedAt: true,
   clockEndedAt: true,
   clockBreakMinutes: true,
+  employeeUserId: true,
+  crewMemberId: true,
+  lineItemId: true,
+  craftClassificationId: true,
   employeeUser: { select: { name: true, email: true } },
   crewMember: { select: { legalFirstName: true, legalMiddleName: true, legalLastName: true } },
   lineItem: { select: { description: true } },
@@ -35,6 +39,10 @@ function toJson(e: {
   clockStartedAt: Date | null;
   clockEndedAt: Date | null;
   clockBreakMinutes: number | null;
+  employeeUserId: string | null;
+  crewMemberId: string | null;
+  lineItemId: string | null;
+  craftClassificationId: string | null;
   employeeUser: { name: string | null; email: string } | null;
   crewMember: { legalFirstName: string; legalMiddleName: string | null; legalLastName: string } | null;
   lineItem: { description: string } | null;
@@ -59,6 +67,11 @@ function toJson(e: {
         : "Name not recorded",
     lineItemDescription: e.lineItem?.description ?? null,
     craftLabel: e.craftClassification?.name ?? null,
+    // The ids behind the labels, so the phone's "Copy from yesterday" can
+    // put the same people, cost code and crafts back on a new day.
+    crewMemberId: e.crewMemberId,
+    lineItemId: e.lineItemId,
+    craftClassificationId: e.craftClassificationId,
   };
 }
 
@@ -116,7 +129,9 @@ export async function GET(
     select: entrySelect,
   });
 
-  return NextResponse.json(entries.map(toJson));
+  // `mine` rather than the user id: the phone knows the caller as "Me", not
+  // by database id.
+  return NextResponse.json(entries.map((e) => ({ ...toJson(e), mine: e.employeeUserId === context.id })));
 }
 
 export async function POST(
