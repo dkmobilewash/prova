@@ -54,6 +54,10 @@ import {
   loadUpcomingSchedule,
   scheduledWorkerName,
 } from "@/lib/crew-schedule-query";
+import { loadLienDeadlines } from "@/lib/lien-deadlines-query";
+import { lienKindLabel, summarizeLienDeadlines } from "@/lib/lien-deadlines";
+import { emrStanding } from "@/lib/emr";
+import { loadExperienceModRates } from "@/lib/emr-query";
 import { loadBidPursuits } from "@/lib/bid-pursuits-query";
 import {
   BID_PURSUIT_STAGES,
@@ -86,6 +90,8 @@ type Input = {
   year?: string;
   withinDays?: string;
   month?: string;
+  /** bid_pursuits' stage filter — carried with the handler in the #308 merge,
+   * since re-applying the handler without it is a type error. */
   stage?: string;
 };
 
@@ -129,7 +135,6 @@ export const HANDLERS: Record<
 > = {
   crew_assignments: (companyId) => crewAssignments(companyId),
   crew_schedule: crewSchedule,
-  bid_pursuits: bidPursuits,
   open_punch_list: openPunchList,
   compliance_status: (companyId) => complianceStatus(companyId),
   drawing_currency: drawingCurrency,
@@ -167,6 +172,9 @@ export const HANDLERS: Record<
   document_intake: (companyId) => documentIntake(companyId),
   team_roster: (companyId) => teamRoster(companyId),
   dispatch_slips: dispatchSlips,
+  experience_mod_rate: (companyId) => experienceModRate(companyId),
+  lien_deadlines: lienDeadlines,
+  bid_pursuits: bidPursuits,
 };
 
 /**
@@ -3324,6 +3332,160 @@ async function crewSchedule(companyId: string, input: Input): Promise<ToolResult
         ? wanted
           ? "Nobody has been put on the schedule for that job. That is a gap in the plan rather than a quiet week — nothing fills the schedule in for you."
           : "Nobody has been put on the schedule at all. That is a gap in the plan rather than a quiet fortnight — nothing fills the schedule in for you."
+        : undefined,
+  };
+}
+
+/**
+ * The experience modification rate, as RECORDED — never computed.
+ *
+ * Which rate is current is derived by `emrStanding` from the effective dates,
+ * with the same `today` the /compliance page uses, so the box and the page
+ * cannot disagree. A rate dated in the future is reported as upcoming and is
+ * NOT the current one, however recently it was typed in.
+ *
+ * `rate` goes to the model as the string the database holds ("0.87"), not a
+ * float: it is a figure to be repeated verbatim onto a GC's form, and there
+ * is no arithmetic for anyone to do with it.
+ */
+async function experienceModRate(companyId: string): Promise<ToolResult> {
+  const citations = [{ label: "Compliance", href: "/compliance" }];
+  const records = await loadExperienceModRates(companyId);
+  // The viewer's day, the same one the page uses -- which rate is in force is
+  // decided by the exact day. Every other tool here reads serverToday(); this
+  // one must not, or the Ask box and /compliance disagree about which mod is
+  // current for ~8 hours on the evening a new policy year starts.
+  const today = await viewerToday();
+  const standing = emrStanding(records, today);
+
+  const shape = (record: (typeof records)[number]) => ({
+    rate: record.rate,
+    effectiveDate: record.effectiveDate,
+    issuedBy: record.source,
+    note: record.note,
+  });
+
+  return {
+    data: {
+      current: standing.current ? shape(standing.current) : null,
+      currentIsPastItsPolicyYear: standing.currentIsPastItsPolicyYear,
+      upcoming: standing.upcoming.map(shape),
+      history: standing.history.map(shape),
+    },
+    summary: {
+      ratesOnFile: standing.history.length,
+      upcomingRates: standing.upcoming.length,
+    },
+    citations,
+    unavailable:
+      records.length === 0
+        ? "No experience modification rate is recorded. It comes from the rating bureau through the carrier or broker, and this app never computes one — record it on the Compliance page."
+        : standing.current === null
+          ? `No recorded rate has taken effect yet; the earliest starts ${standing.upcoming[0]?.effectiveDate}.`
+          : undefined,
+  };
+}
+
+/**
+ * Lien-rights deadlines, per job: unserved ones with the days left or the
+ * days overdue, and the served ones as the record.
+ *
+ * THIS APP NEVER COMPUTES A LEGAL DEADLINE, and this handler is where the
+ * temptation would be strongest, so it is said again here. Every `deadline`
+ * in the output is a date a PERSON entered; each row carries
+ * `deadlineSource: "entered"` so the model is told on the row, not only in
+ * the description, where the date came from. The only arithmetic is the
+ * count of days between today and that entered date — never a way of
+ * producing a date.
+ *
+ * "Today" is serverToday (UTC), and deliberately so. For the US that errs
+ * EARLY — in the evening a deadline reads one day closer than the person's
+ * own calendar — which is the safe direction for this tool to be wrong in.
+ *
+ * Corrected in the merge with #306: this used to say a tool call "has no
+ * viewer cookie in hand". False — `experience_mod_rate` reads viewerToday()
+ * inside a tool call. The choice here is conservatism, not a limitation.
+ *
+ * An empty answer says nothing has been ENTERED, never that no deadline is
+ * running: silence here is the most dangerous thing this tool could say.
+ */
+async function lienDeadlines(companyId: string, input: Input): Promise<ToolResult> {
+  const citations = [{ label: "Lien deadlines", href: "/lien-deadlines" }];
+  const mismatch = await jobNameMismatch(companyId, input.jobName);
+  if (mismatch) return { data: null, citations, unavailable: mismatch };
+
+  const today = serverToday();
+  const wanted = input.jobName?.trim();
+  // EVERY job the name matches, not the first: "Riverside" can be two jobs,
+  // and answering for one of them silently drops the other's deadlines.
+  const matchedJobs = wanted
+    ? await prisma.job.findMany({
+        where: { companyId, name: { contains: wanted, mode: "insensitive" } },
+        select: { id: true, name: true },
+      })
+    : undefined;
+  const jobIds = matchedJobs?.map((job) => job.id);
+
+  const rows = await loadLienDeadlines(companyId, today, jobIds);
+  const summary = summarizeLienDeadlines(rows, today);
+
+  const byJob = new Map<string, { job: string; unserved: unknown[]; served: unknown[]; note?: string }>();
+  // With a job filter, EVERY matched job gets a group — seeded before the
+  // rows, so one with nothing entered is named rather than left out. The
+  // old shape built groups from rows alone: "Riverside" matching Ph 1 (with
+  // deadlines) and Ph 2 (none) answered for Ph 1 and said nothing about
+  // Ph 2, which reads as "nothing due there". The note says what is true:
+  // nothing has been ENTERED. Replaced below if a row turns up.
+  for (const job of matchedJobs ?? []) {
+    byJob.set(job.id, {
+      job: job.name,
+      unserved: [],
+      served: [],
+      note: "No lien deadline has been entered for this job. That is not the same as no deadline running — the date has to come from their attorney or the statute and be added on the Lien deadlines page. Do not work one out.",
+    });
+  }
+  for (const row of rows) {
+    const seeded = byJob.get(row.jobId);
+    const group = seeded && !seeded.note ? seeded : { job: row.jobName, unserved: [], served: [] };
+    byJob.set(row.jobId, group);
+    const base = {
+      what: lienKindLabel(row.kind, row.otherLabel),
+      recipient: row.recipient,
+      deadline: row.dueOn,
+      deadlineSource: "entered" as const,
+    };
+    if (row.state === "served") {
+      group.served.push({
+        ...base,
+        servedOn: row.servedOn,
+        // A fact about two entered dates, and deliberately no more.
+        ...(row.servedAfterDueDate
+          ? { note: "served after the deadline that was entered — whether that still counts is for counsel" }
+          : {}),
+      });
+    } else {
+      const days = row.daysUntilDue as number;
+      group.unserved.push({
+        ...base,
+        state: row.state,
+        ...(days < 0 ? { daysOverdue: -days } : { daysLeft: days }),
+      });
+    }
+  }
+
+  return {
+    data: { today, jobs: [...byJob.values()] },
+    summary: {
+      overdueUnserved: summary.overdueUnserved,
+      dueWithin14Days: summary.dueWithin14Days,
+      served: summary.served,
+    },
+    citations,
+    unavailable:
+      rows.length === 0
+        ? wanted
+          ? "No lien deadline has been entered for that job. That is not the same as no deadline running — the date has to come from their attorney or the statute and be added on the Lien deadlines page. Do not work one out."
+          : "No lien deadlines have been entered at all. That is not the same as none running — each date has to come from their attorney or the statute and be added on the Lien deadlines page. Do not work one out."
         : undefined,
   };
 }

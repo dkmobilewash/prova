@@ -92,6 +92,28 @@ export const notYetRegistered: Exclusion[] = [
   { action: "closeout.*", reason: CYRUS },
   { action: "certifications.*", reason: CYRUS },
 
+  // The experience modification rate, per action rather than a wildcard,
+  // because these are DECISIONS and not a placeholder: none of the three is
+  // ever a command. The whole value of the figure is that a bureau issued it
+  // and a person copied it off the worksheet. A command would put the number
+  // in the MODEL'S hands — a model that, asked "what's our mod rate", has
+  // every incentive to supply one — and a card the person confirms by reflex
+  // is how an invented 0.85 reaches a GC's prequalification form.
+  {
+    action: "recordExperienceModRate",
+    reason:
+      "The rate is copied from the bureau's worksheet by a person. The model must never supply a rate number, so recording one is not a command — done on /compliance.",
+  },
+  {
+    action: "updateExperienceModRate",
+    reason:
+      "Correcting a rate is the same act as recording one: the new figure has to come off the worksheet, not out of a model. Done on /compliance, beside the rate being changed.",
+  },
+  {
+    action: "deleteExperienceModRate",
+    reason: "Deletes are never commands (T5); owner-only on /compliance.",
+  },
+
   // Correcting or removing a job's own identity. Deliberately NOT commands,
   // and the reason is the same for both: they are the two writes on this
   // page a person should have to look at while making. A rename reaches
@@ -110,4 +132,30 @@ export const notYetRegistered: Exclusion[] = [
     reason:
       "The only irreversible act in the product. Owner-only, estimate-only, and never from a card that could be confirmed by reflex.",
   },
+
+  // Lien deadlines, per action, and NEVER commands — not a scope call. The
+  // whole design rests on one rule: this app never computes a legal
+  // deadline, every date is typed by a person from counsel or the statute.
+  // A command would put a MODEL in the position of supplying that date, and
+  // a plausible wrong one on a confirm card can cost lien rights. Reading
+  // them is the `lien_deadlines` tool; writing them is the page.
+  {
+    action: "createLienDeadline",
+    reason:
+      "The deadline date is legal advice the app refuses to generate. A model proposing one — however it was worded — is the app computing a deadline by another route. Entered on /lien-deadlines by a person, from counsel or the statute. Never a command.",
+  },
+  {
+    action: "updateLienDeadline",
+    reason: "Changing a deadline date is the same judgement as setting one. Done on /lien-deadlines, where the row is visible. Never a command.",
+  },
+  {
+    action: "markLienDeadlineServed",
+    reason:
+      "The served date is the date on the proof of service — evidence a person reads off a document, not something a model can know. Marked on /lien-deadlines. Never a command.",
+  },
+  {
+    action: "clearLienDeadlineServed",
+    reason: "Removes the fact that says a right was preserved; owner-only, one deliberate tap on the row. Never a command.",
+  },
+  { action: "deleteLienDeadline", reason: "T5: deletes are never commands." },
 ];

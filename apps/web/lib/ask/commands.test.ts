@@ -298,6 +298,9 @@ describe("read-tool capabilities match the pages they cite", () => {
     // taking off the next cheque, so it sits with whoever chases the
     // cheque rather than with compliance.
     backcharge_exposure: ROUTE_CAPABILITY["/backcharges"],
+    // /lien-deadlines is MANAGE_BILLING for the same reason: a lien is how
+    // the cheque gets collected when the GC stops sending it.
+    lien_deadlines: ROUTE_CAPABILITY["/lien-deadlines"],
     // Apprenticeship standing renders on /union-compliance, which is where
     // its loader is called from — not /certifications, which is cards.
     apprenticeship_standing: ROUTE_CAPABILITY["/union-compliance"],
@@ -353,6 +356,10 @@ describe("read-tool capabilities match the pages they cite", () => {
     team_roster: null,
     // Dispatch slips are union paperwork and render on /union-compliance.
     dispatch_slips: ROUTE_CAPABILITY["/union-compliance"],
+    // The EMR is recorded and shown on /compliance, beside the certificates
+    // it is asked for alongside. NOT /safety's MANAGE_FIELD: the OSHA log is
+    // what a bureau calculates an EMR from, and the rate is not on that page.
+    experience_mod_rate: ROUTE_CAPABILITY["/compliance"],
   };
 
   it.each(TOOLS.map((tool) => [tool.name, tool.capability] as const))("%s", (name, capability) => {
