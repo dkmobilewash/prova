@@ -66,8 +66,19 @@ the `CHANGELOG.md` scar in CLAUDE.md, which cost four resolutions of one
 conflict in a day across three PRs, and whose expensive part was not the
 conflict but the CI that never queued behind it. Pinning the figure trades a
 stale number for a serialised edit on a file two people share. Not a trade
-worth making, and it was only visible because main added two more tools
-while the first fix sat unpushed.
+worth making, and CI proved it rather than the reasoning above: the pinned
+version was pushed, and run 35310885185 went red with
+
+    FEATURE-AUDIT.md Sheet 23 says 41 read tools;
+    lib/ask/tools.ts exports 42
+
+on a branch that had not touched a tool. That is sharper than the conflict
+argument. A `pull_request` build tests the MERGE of the branch with its
+base, so once the count is pinned, a tool landing on main turns every open
+PR carrying that row red without anybody editing it — and main itself goes
+red the moment a tool-adding PR forgets the row. 4,034 of 4,035 tests
+passed; the one failure was the guard, working exactly as designed, on a
+design that should not ship.
 
 So the count goes where CLAUDE.md put the counter roll-call after the same
 lesson: into the code, with nothing in the prose to maintain. `TOOLS` is the
