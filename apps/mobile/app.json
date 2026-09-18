@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Prova",
+    "name": "C Stream",
     "slug": "prova",
     "scheme": "prova",
     "version": "0.0.1",
@@ -21,7 +21,11 @@
       }
     },
     "android": {
-      "package": "com.cstream.prova"
+      "package": "com.cstream.prova",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0f0f0f"
+      }
     },
     "web": {
       "bundler": "metro",
@@ -33,6 +37,12 @@
         "projectId": "2f42926a-3311-4a3a-a351-1b57abdb4f5e"
       }
     },
-    "owner": "diegocstream"
+    "owner": "diegocstream",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0f0f0f"
+    }
   }
 }

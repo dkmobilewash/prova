@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { activeFooterHref, navFooterFor, navGroupsFor } from "@/components/navItems";
@@ -89,7 +90,13 @@ export function MobileNav({
           >
             <div className="flex items-start justify-between gap-2 border-b border-neutral-800 px-5 py-4">
               <div className="flex min-w-0 flex-col gap-0.5">
-                <span className="text-sm font-semibold tracking-tight text-white">C Stream</span>
+                <Image
+                  src="/brand/cstream-wordmark.png"
+                  alt="C Stream"
+                  width={120}
+                  height={24}
+                  className="h-5 w-auto"
+                />
                 <span className="truncate text-xs text-neutral-400">{companyName}</span>
               </div>
               <button
