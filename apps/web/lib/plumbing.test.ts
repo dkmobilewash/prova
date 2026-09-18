@@ -2,6 +2,8 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
+import { TOOLS } from "./ask/tools";
+
 /**
  * Guards on the plumbing BETWEEN the two lanes, rather than on the code
  * inside either one.
@@ -17,8 +19,8 @@ import { describe, expect, it } from "vitest";
  * no signal when it drifts.** The mistake is never the interesting part.
  * The silence around it is.
  *
- * These two assertions are the cheapest possible version of that signal.
- * Neither can tell you a thing is RIGHT — only that two places which must
+ * These assertions are the cheapest possible version of that signal. None
+ * of them can tell you a thing is RIGHT — only that two places which must
  * agree still do.
  */
 
@@ -239,5 +241,59 @@ describe("FEATURE-AUDIT counts agree with its own rows", () => {
         `the other landed. Do not recount by grepping "^| Built |" — that also ` +
         `matches the summary table's own rows and overcounts by exactly four.`,
     ).toEqual({ items: items(total), ...total });
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * 3. FEATURE-AUDIT's read-tool count must equal the tools that exist.
+ * ------------------------------------------------------------------ */
+
+/*
+ * This row has now been stale FOUR times in seven days, and the fourth is
+ * the reason it is a test rather than a sentence.
+ *
+ * The audit of 2026-09-18 corrected it from "fifteen" to "thirty-nine",
+ * re-derived from `TOOLS` rather than counted by hand, and wrote "do not
+ * re-add a number here without that derivation" beside it. Within four
+ * hours #306 and #307 had each landed another tool and the corrected
+ * figure was false again — on the same branch that corrected it, before it
+ * had even merged. A derivation nobody re-runs is a claim with an expiry
+ * date; CLAUDE.md says exactly this about the counter roll-call, which is
+ * why that count lives in `counterCensus.test.ts` and not in prose.
+ *
+ * So the number stays where a reader wants it and stops being maintained
+ * by memory. Adding a read tool now fails here, naming the row to change —
+ * a one-word edit inside the PR that adds the tool, which is working
+ * agreement rule 1: documentation rides along with the work it describes.
+ *
+ * The count side is IMPORTED rather than parsed. The doc side cannot be,
+ * so it gets the same treatment every deriving check in this repo gets:
+ * its own assertion that it matched anything at all, run before the
+ * comparison, because nothing is ever missing from an empty set.
+ */
+
+describe("FEATURE-AUDIT's read-tool count agrees with lib/ask/tools.ts", () => {
+  const claim = /\*\*(\d+)\*\* read tools \(`lib\/ask\/tools\.ts`\)/.exec(
+    readFileSync(join(REPO, "FEATURE-AUDIT.md"), "utf8"),
+  );
+
+  it("finds the figure it is checking", () => {
+    expect(
+      claim,
+      "FEATURE-AUDIT.md no longer contains the shape this test reads:\n" +
+        "  **<n>** read tools (`lib/ask/tools.ts`)\n\n" +
+        "Reword the row freely, but keep a DIGIT in that shape. The figure " +
+        "was wrong four times in seven days while it was spelled in words " +
+        "and checked by nobody.",
+    ).not.toBeNull();
+  });
+
+  it("the stated figure equals the number of tools", () => {
+    expect(
+      Number(claim![1]),
+      `FEATURE-AUDIT.md Sheet 23 says ${claim![1]} read tools; lib/ask/tools.ts ` +
+        `exports ${TOOLS.length}. Change the row in the PR that adds the tool — ` +
+        `the count is one word and the drift is what costs a day.`,
+    ).toBe(TOOLS.length);
   });
 });
