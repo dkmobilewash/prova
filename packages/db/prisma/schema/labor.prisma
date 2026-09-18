@@ -40,10 +40,12 @@ model TimeEntry {
   employeeUser   User?   @relation("TimeEntryEmployee", fields: [employeeUserId], references: [id], onDelete: Restrict)
 
   /// The crew member this entry is for, when the worker has no login. See
-  /// crew.prisma. NULL on every row today and read by nothing — this ships
-  /// deliberately unwired, and the report and crew.prisma both say so, so
-  /// that it is not mistaken for the "written, documented, never called"
-  /// defect CLAUDE.md warns about.
+  /// crew.prisma. WIRED since #292 (corrected 2026-09-18 — this line said
+  /// "NULL on every row today and read by nothing" for a week after that
+  /// stopped being true): the phone's time screen writes it through
+  /// POST /api/v1/jobs/[id]/time-entries, which checks the crew member is
+  /// this company's and not archived, and the crew schedule and the Ask
+  /// tools read it.
   ///
   /// employeeUserId is now NULLABLE — the relaxation this comment held back.
   /// An entry names a User (employeeUserId) OR a crew member (crewMemberId),
@@ -62,7 +64,8 @@ model TimeEntry {
   /// THERE IS A DATABASE TRIGGER AGAIN. `prova_time_entry_identity_lock`, a
   /// BEFORE UPDATE trigger installed by
   /// 20260913120000_add_time_entry_correction, refuses any UPDATE that changes
-  /// jobId, employeeUserId or date, and refuses a crewMemberId that is already
+  /// jobId, employeeUserId or date (and, since 20260918130000, the three
+  /// clock-capture columns below), and refuses a crewMemberId that is already
   /// set from becoming a different one (NULL -> an id is still allowed: that
   /// is attribution, not reassignment). It is the trigger
   /// 20260905183000_add_crew_members deliberately did not ship, and the reason
