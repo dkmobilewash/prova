@@ -11,7 +11,13 @@ import {
   setBidPursuitStage,
   updateBidPursuit,
 } from "@/lib/actions";
-import { BID_PURSUIT_STAGES, STAGE_LABELS, type BidPursuitStage } from "@/lib/bid-pursuits";
+import {
+  BID_PURSUIT_STAGES,
+  STAGE_LABELS,
+  describeOpenPursuitValue,
+  openPursuitValue,
+  type BidPursuitStage,
+} from "@/lib/bid-pursuits";
 import type { PursuitRow } from "@/lib/bid-pursuits-query";
 import { money } from "@/lib/money";
 
@@ -397,11 +403,21 @@ export function BidPursuitList({
 
   const open = pursuits.filter((p) => p.open);
   const closed = pursuits.filter((p) => !p.open);
+  // The same sum the bid_pursuits Ask tool reports — openPursuitValue is the
+  // only one. Over the rows the page already loaded for this company.
+  const valueLine = describeOpenPursuitValue(openPursuitValue(pursuits));
 
   return (
     <section className="mb-10">
       <div className="mb-3 flex items-center justify-between gap-3">
-        <h2 className="text-sm font-medium text-ink-label">Out chasing — not invited yet</h2>
+        <div>
+          <h2 className="text-sm font-medium text-ink-label">Out chasing — not invited yet</h2>
+          {valueLine && (
+            <p data-testid="bid-pursuit-total" className="mt-0.5 text-sm text-ink-body">
+              {valueLine}
+            </p>
+          )}
+        </div>
         {/* Collapsed behind a button, like every list page in this app: a
             form open by default on a page you came to READ is noise. */}
         <button
