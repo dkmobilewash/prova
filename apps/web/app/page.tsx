@@ -1,7 +1,12 @@
 import Link from "next/link";
 import { SignedIn, SignedOut } from "@clerk/nextjs";
+import { auth } from "@clerk/nextjs/server";
+import { redirect } from "next/navigation";
 
-export default function HomePage() {
+export default async function HomePage() {
+  // A signed-in person has nowhere to go from here but the dashboard.
+  const { userId } = await auth();
+  if (userId) redirect("/dashboard");
   return (
     <main className="mx-auto flex min-h-screen max-w-2xl flex-col items-center justify-center gap-6 px-4 text-center">
       <h1 className="text-3xl font-semibold text-ink">C Stream</h1>
