@@ -73,6 +73,14 @@ export const notYetRegistered: Exclusion[] = [
   { action: "prevailingWage.*", reason: "Rule sets are compliance configuration edited on their own page; needs a File for determinations." },
   { action: "apprenticeship.*", reason: "Enrollment and period sign-off are evidence with sign-off dates; page only for now." },
   { action: "unionCompliance.*", reason: "Craft, local and rate configuration; several writes are global reference data. Never a command." },
+  // Phase codes. A company's cost-coding vocabulary is the thing every
+  // cost report is grouped BY, so a model inventing or renaming one
+  // silently re-labels history on jobs that are already invoiced — and
+  // `@@unique([companyId, code])` means an invented code can also collide
+  // with a real one. Retiring is the same shape from the other side: it
+  // takes a code off every future picker. All three are owner-only edits
+  // to reference data, made on the page that shows the list they change.
+  { action: "phase-codes.*", reason: "The vocabulary every cost report is grouped by: inventing, renaming or retiring a code re-labels history on invoiced jobs. Owner-only reference data, edited on the settings page that shows the whole list. Never a command." },
 
   // Cyrus's lane, phase 2.
   { action: "vendors.*", reason: CYRUS },

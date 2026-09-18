@@ -174,9 +174,9 @@ model DailyFieldReport {
   /// web Server Action leaves them absent. clientOperationId is the
   /// create-intent idempotency key (reused across a retried POST);
   /// clientUpdatedAt is the last-write-wins conflict clock.
-  clientId            String?
-  clientOperationId   String?
-  clientUpdatedAt     DateTime?
+  clientId          String?
+  clientOperationId String?
+  clientUpdatedAt   DateTime?
 
   filedByUserId String?
   filedBy       User?   @relation(fields: [filedByUserId], references: [id])

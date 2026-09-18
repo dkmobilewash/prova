@@ -391,6 +391,22 @@ export const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
+    href: "/phase-codes",
+    label: "Phase codes",
+    icon: (
+      // A stack of labelled bars: buckets of work, each with its own total.
+      <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5">
+        <path
+          d="M3.5 5.5h9M3.5 10h13M3.5 14.5h6"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinecap="round"
+        />
+        <path d="M16.5 4.5v3M15 6h3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      </svg>
+    ),
+  },
+  {
     href: "/field-reports",
     label: "Field reports",
     icon: (
@@ -598,10 +614,14 @@ export const NAV_GROUPS: NavGroup[] = [
   },
   {
     heading: "Financials",
-    description: "Money in and money held back: cash coming in, backcharges you are claiming, and the company settings behind them.",
+    description: "Money in, money held back, and what the work is costing: cash coming in, backcharges you are claiming, budget against actual by phase code, and the company settings behind them.",
     // A bank note.
     icon: groupIcon("M3.5 6.5h13v7h-13zM10 12a2 2 0 1 0 0-4 2 2 0 0 0 0 4ZM6 10h.01M14 10h.01"),
-    items: [item("/cash-flow"), item("/backcharges"), item("/settings")],
+    // Phase codes next to cash flow: both are company-wide money read
+    // across the whole book rather than one job, and both answer to
+    // VIEW_COMPANY_FINANCIALS. Settings stays last because it is where the
+    // phase codes this page reports on are set up.
+    items: [item("/cash-flow"), item("/phase-codes"), item("/backcharges"), item("/settings")],
   },
   {
     heading: "Compliance & safety",
