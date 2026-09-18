@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { GettingStartedChecklist } from "@/lib/getting-started";
 import { HideGettingStartedButton } from "@/components/HideGettingStartedButton";
+import { StartFullTourButton } from "@/components/StartFullTourButton";
 
 /**
  * The first thing a brand-new account sees on /dashboard: what to do
@@ -29,6 +30,9 @@ export function GettingStartedCard({ checklist }: { checklist: GettingStartedChe
             <span className="font-medium text-ink">
               {requiredDone} of {requiredTotal} done.
             </span>
+          </p>
+          <p className="text-sm text-ink-body">
+            New here? <StartFullTourButton>Take the 3-minute tour</StartFullTourButton>
           </p>
         </div>
         <HideGettingStartedButton />

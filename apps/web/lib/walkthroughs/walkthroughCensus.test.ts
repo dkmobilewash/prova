@@ -27,93 +27,20 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { readFileSync } from "node:fs";
+import { relative } from "node:path";
 import { describe, expect, it } from "vitest";
 import { NAV_ITEMS } from "@/components/navItems";
+import {
+  anchorLiteralsByGit,
+  anchorsIn,
+  pageFiles,
+  pages,
+  pagesByGit,
+  reachable,
+  repoRoot,
+} from "./census-helpers";
 import { ROUTES_WITHOUT_WALKTHROUGH, WALKTHROUGHS, walkthroughFor } from "./index";
-
-const webRoot = resolve(fileURLToPath(new URL("../..", import.meta.url)));
-const repoRoot = resolve(webRoot, "../..");
-const appDir = join(webRoot, "app");
-
-/** `data-tour="…"`, literal, lowercase words and hyphens. */
-const ANCHOR = /data-tour="([a-z0-9-]+)"/g;
-
-function withoutComments(source: string): string {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, (block) => block.replace(/[^\n]/g, ""))
-    .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
-}
-
-function anchorsIn(source: string): string[] {
-  return [...withoutComments(source).matchAll(ANCHOR)].map((match) => match[1]);
-}
-
-// ------------------------------------------------------------ page files --
-
-function walkPages(dir: string, out: string[] = []): string[] {
-  for (const name of readdirSync(dir)) {
-    const full = join(dir, name);
-    if (statSync(full).isDirectory()) walkPages(full, out);
-    else if (name === "page.tsx") out.push(full);
-  }
-  return out;
-}
-
-/** app/(app)/jobs/[id]/page.tsx -> /jobs/[id]. Route groups vanish. */
-function routeOf(pageFile: string): string {
-  const segments = relative(appDir, dirname(pageFile))
-    .split(/[\\/]/)
-    .filter((segment) => segment && !/^\(.*\)$/.test(segment));
-  return `/${segments.join("/")}`;
-}
-
-const pageFiles = walkPages(appDir);
-const pages = new Map(pageFiles.map((file) => [routeOf(file), file]));
-
-function pagesByGit(): string[] {
-  const out = execFileSync(
-    "git",
-    ["ls-files", "--cached", "--others", "--exclude-standard", "--", "apps/web/app"],
-    { cwd: repoRoot, encoding: "utf8" },
-  );
-  return out.split("\n").filter((path) => /(^|\/)page\.tsx$/.test(path));
-}
-
-// ------------------------------------------------------------ import walk --
-
-const IMPORT = /(?:import|export)\s[^;]*?from\s*["']([^"']+)["']|import\(\s*["']([^"']+)["']\s*\)/g;
-
-function resolveImport(spec: string, fromFile: string): string | null {
-  let base: string;
-  if (spec.startsWith("@/")) base = join(webRoot, spec.slice(2));
-  else if (spec.startsWith("./") || spec.startsWith("../")) base = resolve(dirname(fromFile), spec);
-  else return null; // a package: nothing of ours to render
-  for (const candidate of [`${base}.tsx`, `${base}.ts`, join(base, "index.tsx"), join(base, "index.ts"), base]) {
-    if (existsSync(candidate) && statSync(candidate).isFile()) return candidate;
-  }
-  return null;
-}
-
-/** Every module of this app a file reaches through its imports, itself
- * included. Test files are never followed. */
-function reachable(entry: string): Set<string> {
-  const seen = new Set<string>();
-  const queue = [entry];
-  while (queue.length > 0) {
-    const file = queue.pop()!;
-    if (seen.has(file)) continue;
-    seen.add(file);
-    const source = withoutComments(readFileSync(file, "utf8"));
-    for (const match of source.matchAll(IMPORT)) {
-      const target = resolveImport(match[1] ?? match[2], file);
-      if (target && !/\.test\.tsx?$/.test(target) && !seen.has(target)) queue.push(target);
-    }
-  }
-  return seen;
-}
 
 const reachByRoute = new Map(
   WALKTHROUGHS.filter((w) => pages.has(w.route)).map((w) => [w.route, reachable(pages.get(w.route)!)]),
@@ -123,25 +50,6 @@ function anchorsReachedFrom(route: string): Set<string> {
   const ids = new Set<string>();
   for (const file of reachByRoute.get(route) ?? []) for (const id of anchorsIn(readFileSync(file, "utf8"))) ids.add(id);
   return ids;
-}
-
-/** The independent count: git's own grep over the app, no import walk. */
-function anchorLiteralsByGit(): string[] {
-  let out = "";
-  try {
-    out = execFileSync(
-      "git",
-      ["grep", "--untracked", "-h", "-o", "-E", 'data-tour="[a-z0-9-]+"', "--", "apps/web", ":!*.test.ts", ":!*.test.tsx"],
-      { cwd: repoRoot, encoding: "utf8" },
-    );
-  } catch (error) {
-    // git grep exits 1 when nothing matches, which is a finding, not a crash.
-    if ((error as { status?: number }).status !== 1) throw error;
-  }
-  return out
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => line.slice('data-tour="'.length, -1));
 }
 
 // ------------------------------------------------------------------ tests --
