@@ -141,6 +141,11 @@ export function importTooLarge(text: string): boolean {
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+/** The same email check the sheet importer applies, for the Jobber import. */
+export function looksLikeEmail(value: string): boolean {
+  return EMAIL.test(value);
+}
+
 /* ------------------------------------------------------------------ */
 /* Dates                                                               */
 /* ------------------------------------------------------------------ */
@@ -631,6 +636,16 @@ export function parseLast4(raw: string | undefined): Last4Cell {
  * last-4 and employee-number columns — because a zip+4 typed without its
  * dash is nine digits too. */
 const WHOLE_SSN = /^\d{3}[-\s]\d{2}[-\s]\d{4}$/;
+
+/**
+ * A whole SSN written anywhere INSIDE free text — a Jobber note, a job's
+ * instructions, a phone field somebody misused. The cell check above is
+ * anchored because a sheet cell holds one value; free text does not. The
+ * 3-2-4 grouping is what keeps a phone number (3-3-4) out of it.
+ */
+export function mentionsWholeSsn(value: string | null | undefined): boolean {
+  return /(^|[^\d])\d{3}[-\s]\d{2}[-\s]\d{4}($|[^\d])/.test(value ?? "");
+}
 
 /** An employee number shaped like an SSN is refused for the same reason. */
 function looksLikeSsn(value: string): boolean {

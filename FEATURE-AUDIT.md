@@ -33,7 +33,7 @@ drift failure pointing in the unusual direction: the warning was stale, not
 the data. Same lesson as CLAUDE.md's `MIGRATE_EXPECT_HOST` deletion — a doc
 note that says "X has not been done" is a claim with an expiry date on it.
 
-**130 items audited — 105 built / 19 partial / 5 missing / 1 descoped**
+**131 items audited — 105 built / 20 partial / 5 missing / 1 descoped**
 
 (THIS IS THE FOURTH MERGE IN A DAY WHERE BOTH SIDES' TOTALS WERE WRONG, and
 the count is now worth less than the habit. Sheet 17 gained two rows on
@@ -102,7 +102,7 @@ header cannot.)
 | Status | Count |
 | --- | --- |
 | Built | 105 |
-| Partial | 19 |
+| Partial | 20 |
 | Missing | 5 |
 | Descoped | 1 |
 
@@ -418,12 +418,13 @@ nav-reachable.*
 | Missing | Plan/drawing takeoff via computer vision | explicitly deferred as a later, larger effort — different modality, different accuracy bar |
 | Descoped | Client-facing chatbot | GCs are the customer here, not homeowners — deliberately out of scope for this ICP |
 
-## 24. Integrations — 3 built · 2 partial · 2 missing
+## 24. Integrations — 3 built · 3 partial · 2 missing
 
 | Status | Feature | Note |
 | --- | --- | --- |
-| Built | Integration framework (the shelf, not the things on it) | `IntegrationConnection` + append-only `IntegrationSyncLog`, a provider registry, an owner-only Settings → Integrations page, encrypted-at-rest credential columns (`lib/crypto.ts`, AES-256-GCM), and a generic inbound webhook route. Proven end to end against a scratch Postgres: 45 migrations applied clean, connect/disconnect verified by row rather than by return value, webhook exercised across all six branches. NO REAL PROVIDER SHIPPED WITH IT — the only thing it connects is a mock called Sandbox, which talks to nothing. QuickBooks predates this and still runs on its own tables |
+| Built | Integration framework (the shelf, not the things on it) | `IntegrationConnection` + append-only `IntegrationSyncLog`, a provider registry, an owner-only Settings → Integrations page, encrypted-at-rest credential columns (`lib/crypto.ts`, AES-256-GCM), and a generic inbound webhook route. Proven end to end against a scratch Postgres: 45 migrations applied clean, connect/disconnect verified by row rather than by return value, webhook exercised across all six branches. No real provider shipped WITH it — at launch the only thing it connected was a mock called Sandbox, which talks to nothing. Jobber (row below) is the first real provider on it. QuickBooks predates this and still runs on its own tables |
 | Partial | Accounting: QuickBooks, and likely Sage 300 CRE / Foundation | QuickBooks is connected, mapped and syncing one direction — invoices AND payments push, the record is read back to confirm what landed, and reconciliation reports where the two disagree. Verified end to end against a sandbox company (#31, #33, #34, #36, and the payment half on 2026-09-03): the invoice reached QuickBooks as invoice 146, the $500 payment applied against it, and the BALANCE MOVED IN QUICKBOOKS from $1,000.00 to $500.00 with status Partial — read in the books, not from Prova's own success message. A deliberate second click updated the same document rather than creating a duplicate, which is the first live exercise of the retry rules. Deliberately NOT two-way: Prova does not pull QuickBooks edits back, and does not pretend to. Sage/Foundation not started |
+| Partial | Jobber import (onboarding) | One-way, read-only: OAuth (PKCE) connect on the Jobber card, then clients, property addresses, jobs and open quotes through the spreadsheet importer's own preview-then-confirm rules — every job an ESTIMATE, Serializable write, 500-new-rows cap, SSN refusal. `Contact.jobberId`/`Job.jobberId` make a re-import recognise its own rows after a rename. Tokens as `lib/crypto.ts` envelopes; refresh is compare-and-swap because Jobber rotates refresh tokens. PARTIAL because it has only ever run against a mocked Jobber: no Jobber app is registered yet, and Jobber's current GraphQL field names sit behind its Developer Center login and are unverified. Without `JOBBER_*` env vars the card says it is not set up |
 | Missing | Payroll processor integration (for running actual pay) | not started |
 | Missing | DocuSign, Procore, myCOI | 0 built. Each has a registry entry so the page can render it, and each renders DISABLED with a "Coming soon" label. A card on a settings page is not an integration |
 | Partial | E-signature provider | homegrown token-based e-sign (`SignatureRequest`) covers contract signing only — not a general provider for every doc type |

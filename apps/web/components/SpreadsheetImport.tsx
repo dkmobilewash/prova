@@ -134,7 +134,9 @@ function clientNote(client: JobClient): string {
   return `new client — added by line ${client.line}`;
 }
 
-function ExistingList({ items, noun }: { items: ExistingMatch[]; noun: string }) {
+/** Also used by the Jobber import (JobberImport.tsx), whose rows have no
+ * line numbers — `showLine={false}` drops the "Line N:" prefix. */
+export function ExistingList({ items, noun, showLine = true }: { items: ExistingMatch[]; noun: string; showLine?: boolean }) {
   if (items.length === 0) return null;
   return (
     <details className="mt-3 rounded-md border border-line-row px-3 py-2 text-xs text-ink-body">
@@ -144,7 +146,8 @@ function ExistingList({ items, noun }: { items: ExistingMatch[]; noun: string })
       <ul className="mt-2 flex flex-col gap-0.5">
         {items.slice(0, 50).map((item) => (
           <li key={item.line}>
-            Line {item.line}: {item.label}
+            {showLine && `Line ${item.line}: `}
+            {item.label}
           </li>
         ))}
         {items.length > 50 && <li className="text-ink-muted">…and {items.length - 50} more {noun}.</li>}
@@ -153,13 +156,14 @@ function ExistingList({ items, noun }: { items: ExistingMatch[]; noun: string })
   );
 }
 
-function Problems({ problems }: { problems: RowProblem[] }) {
+export function Problems({ problems, showLine = true }: { problems: RowProblem[]; showLine?: boolean }) {
   if (problems.length === 0) return null;
   return (
     <ul className="mt-3 flex flex-col gap-0.5">
       {problems.slice(0, 20).map((problem) => (
         <li key={`${problem.line}-${problem.message}`} className="text-xs text-tag-amber-ink">
-          Line {problem.line}: {problem.message}
+          {showLine && `Line ${problem.line}: `}
+          {problem.message}
         </li>
       ))}
       {problems.length > 20 && (

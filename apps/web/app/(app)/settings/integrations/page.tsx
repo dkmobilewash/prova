@@ -9,6 +9,10 @@ import { PROVIDERS, isProviderVisible, type ProviderEntry } from "@/lib/integrat
 import { relativeTime } from "@/lib/integrations/relativeTime";
 import { CONNECTION_CARD_SELECT } from "@/lib/integrations/selects";
 import { blobStoreId } from "@/lib/blob-urls";
+import { JobberControls } from "@/components/JobberControls";
+import { JobberImport } from "@/components/JobberImport";
+import { importCardState, jobberCallbackMessage } from "@/lib/jobber/setup";
+import { integrationEncryptionConfigured } from "@/lib/crypto";
 
 /**
  * Settings → Integrations.
@@ -39,7 +43,11 @@ function DetailRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-export default async function IntegrationsPage() {
+export default async function IntegrationsPage({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const { context, allowed } = await requireCapability("MANAGE_COMPLIANCE");
   if (!allowed) return <NoAccess capability="MANAGE_COMPLIANCE" />;
   const { company, ...currentUser } = context;
@@ -84,6 +92,12 @@ export default async function IntegrationsPage() {
   ]);
 
   const byProvider = new Map(connections.map((connection) => [connection.provider, connection]));
+
+  // Where /api/jobber/callback sent the owner back to, as a sentence. Only
+  // fixed codes are read; nothing from the URL is echoed.
+  const query = (await searchParams) ?? {};
+  const one = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value);
+  const jobberReturn = jobberCallbackMessage(one(query.jobber), one(query.jobber_detail));
   const blob = {
     environment: process.env.VERCEL_ENV ?? "local",
     present: Boolean(process.env.BLOB_READ_WRITE_TOKEN?.trim()),
@@ -118,11 +132,25 @@ export default async function IntegrationsPage() {
         ? (quickBooks?.status ?? "NOT_CONNECTED")
         : (connection?.status ?? "NOT_CONNECTED");
 
+    // An import provider is only offered when this install has its keys —
+    // the registry names them, this reads them. Otherwise the card says it
+    // is not set up here, instead of showing a button that would fail.
+    const importState =
+      impl.kind === "import"
+        ? importCardState(
+            impl.requiredEnv.every((name) => Boolean(process.env[name]?.trim())) && integrationEncryptionConfigured(),
+            connection?.status,
+          )
+        : null;
+
     const isConnected = status === "CONNECTED";
 
     return (
       <Card
         key={entry.provider}
+        // A link target, so "Use Jobber? Connect it instead" on
+        // /settings/import can land on the right card.
+        id={entry.provider.toLowerCase()}
         // Reuses the nav rail's treatment for something that exists but
         // cannot be used yet, rather than inventing a second disabled style.
         className={planned ? "opacity-50" : ""}
@@ -137,6 +165,10 @@ export default async function IntegrationsPage() {
                 {planned ? (
                   <span className="inline-flex items-center rounded-full border border-line-card bg-tag-slate px-2.5 py-0.5 text-xs font-medium text-tag-slate-ink">
                     Coming soon
+                  </span>
+                ) : importState === "not-set-up" ? (
+                  <span className="inline-flex items-center rounded-full border border-line-card bg-tag-slate px-2.5 py-0.5 text-xs font-medium text-tag-slate-ink">
+                    Not set up
                   </span>
                 ) : (
                   <StatusBadge status={status} />
@@ -154,6 +186,9 @@ export default async function IntegrationsPage() {
                 disconnect={disconnectSandboxIntegration}
                 providerName={entry.name}
               />
+            )}
+            {impl.kind === "import" && importState && (
+              <JobberControls state={importState} startHref={impl.startHref} />
             )}
             {impl.kind === "external" && (
               <Link
@@ -180,6 +215,20 @@ export default async function IntegrationsPage() {
               </div>
             )}
           </dl>
+        )}
+
+        {impl.kind === "import" && importState === "connected" && connection && (
+          <>
+            <dl className="mt-4 grid gap-4 border-t border-line-card pt-4 sm:grid-cols-3">
+              <DetailRow label="Account" value={connection.externalAccountLabel ?? "—"} />
+              <DetailRow
+                label="Last imported"
+                value={connection.lastSyncedAt ? relativeTime(connection.lastSyncedAt, now) : "Never"}
+              />
+              <DetailRow label="Direction" value="Jobber → C Stream only" />
+            </dl>
+            <JobberImport />
+          </>
         )}
 
         {impl.kind === "builtin" && connection && isConnected && (
@@ -244,6 +293,19 @@ export default async function IntegrationsPage() {
           company&rsquo;s data, and a credential is stored encrypted and never shown back here.
         </p>
       </div>
+
+      {jobberReturn && (
+        <p
+          role="status"
+          className={`mb-4 rounded-md border px-3 py-2 text-sm ${
+            jobberReturn.ok
+              ? "border-line-card bg-tag-green text-tag-green-ink"
+              : "border-line-card bg-tag-rose text-tag-rose-ink"
+          }`}
+        >
+          {jobberReturn.text}
+        </p>
+      )}
 
       <div className="flex flex-col gap-4" data-tour="integrations-list">
         {visibleProviders.map(renderCard)}

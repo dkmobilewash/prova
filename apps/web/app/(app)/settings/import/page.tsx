@@ -62,6 +62,13 @@ export default async function ImportPage() {
         Bring in the clients, jobs and crew you already keep in Excel, Google Sheets or a
         QuickBooks export, instead of adding them one at a time.
       </p>
+      <p className="mb-2 text-sm text-ink-body" data-tour="import-jobber">
+        Use Jobber?{" "}
+        <Link href="/settings/integrations#jobber" className="text-link hover:text-link-hover">
+          Connect it instead
+        </Link>{" "}
+        — your clients, jobs and open quotes come straight across, with no spreadsheet in between.
+      </p>
       <p className="mb-6 text-sm text-ink-body">
         Nothing is saved until you press Confirm. First you see what will be added, what is
         already in C Stream (matched by name, so importing the same file twice adds nothing the
