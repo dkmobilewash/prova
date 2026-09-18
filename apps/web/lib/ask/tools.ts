@@ -123,7 +123,11 @@ export type ToolName =
   // Was the census gap `q-lien-deadline`.
   | "lien_deadlines"
   // Was the census gap `q-pipeline`.
-  | "bid_pursuits";
+  | "bid_pursuits"
+  // The morning question, the address book, and one job on one screen.
+  | "needs_attention"
+  | "contact_lookup"
+  | "job_overview";
 
 export type ToolDefinition = {
   name: ToolName;
@@ -262,6 +266,30 @@ const pursuitStageFilter = {
       enum: ["OPEN", "WATCHING", "CONTACTED", "EXPECTING_INVITE", "INVITED", "DROPPED"],
       description:
         "Optional. OPEN means still being chased — not yet invited and not dropped — and is what 'what are we chasing' means. Omit to cover every pursuit, open ones first.",
+    },
+  },
+};
+
+/** contact_lookup: one name, a company OR a person. */
+const contactNameFilter = {
+  type: "object" as const,
+  properties: {
+    name: {
+      type: "string",
+      description:
+        "The company or the person to look up, as the person said it — 'Halvorsen', 'Turner', 'Dana'. Matched loosely and case-insensitively. For 'the PM at Halvorsen', pass the company, 'Halvorsen'; the people there come back with their titles.",
+    },
+  },
+};
+
+/** job_overview: the job is not optional — an overview of everything is the
+ * dashboard, not this. */
+const oneJob = {
+  type: "object" as const,
+  properties: {
+    jobName: {
+      type: "string",
+      description: "The job to summarise, as the person named it, e.g. 'Riverside'. Required: ask which job if they did not say.",
     },
   },
 };
@@ -642,6 +670,38 @@ export const TOOLS: ToolDefinition[] = [
       "The company's experience modification rate (EMR, mod rate) as RECORDED from the rating bureau's worksheet: the current rate — the one with the latest effective date that has started — who issued it, any rate recorded for a policy year not yet started, and the history. Answers 'what is our mod rate' and 'what EMR do we put on this prequal'. IT NEVER COMPUTES, ESTIMATES OR PROJECTS AN EMR, and neither may you: the rate comes from the bureau, and the OSHA log (safety_record) is only one input to a calculation somebody else does with payroll and loss data this app does not hold. Never derive, adjust or forecast a rate from incidents, and never state a rate that is not in this tool's result. When nothing is recorded, say it is not recorded and that the figure comes from the carrier or broker. `currentIsPastItsPolicyYear` means the newest rate on file is from a policy year that has ended — say so rather than presenting it as this year's rate.",
     input_schema: noInput,
   },
+  {
+    name: "needs_attention",
+    // /alerts, which lib/permissions.test.ts records as open with its
+    // CONTENT filtered per person by lib/alerts-query.ts. This tool calls
+    // that same loader with the asker's principal, so it is open for the
+    // same reason and filtered by the same code.
+    capability: null,
+    description:
+      "Everything with a date on it that nobody has dealt with, worst first — the same list as the Alerts page and the bell: cover about to lapse, backcharges nobody has answered, retainage now collectable, closeout packages the GC is sitting on, certified payroll owed, RFIs and submittals past their dates, drawing revisions not received, lien deadlines, follow-ups due, jobs forecast over contract. Answers 'what needs my attention today' and 'what's overdue'. Filtered to what THIS person may see, with money figures removed where their access does not include them. It only sees dates somebody has recorded, so an empty list means nothing recorded is due, never that nothing is; items the person silenced are counted separately and are not in the list. For one job's RFIs, submittals or punch list in detail, use that job's own tool.",
+    input_schema: noInput,
+  },
+  {
+    name: "contact_lookup",
+    // /contacts, open: "names and phone numbers are not a tier". The PEOPLE
+    // at an account render inside /contacts/[id]'s MANAGE_ESTIMATING branch,
+    // and the handler withholds them on exactly that check — which is why
+    // this row is null and the handler, not this field, carries the gate.
+    capability: null,
+    description:
+      "Phone number, email and address for a GC, client, vendor or other account on this company's contacts list, and the individual people recorded at it with their titles, phones and emails. Answers 'what's the number for the PM at Halvorsen' and 'what's Dana's email'. Returns every person at a matching account with the title as typed ('PM', 'Project Manager', 'Super') — read the titles rather than assuming one. Individual people are shown only to someone with estimating access, as on the contact's own page; `peopleWithheld` says when they were not searched. It knows only what has been entered here, and never guesses a number.",
+    input_schema: contactNameFilter,
+  },
+  {
+    name: "job_overview",
+    // /jobs/[id], open with its money branch withheld per person. The
+    // handler gates each section on the capability its own tool takes,
+    // before reading it.
+    capability: null,
+    description:
+      "One job at a glance: its status, GC and scheduled dates; contract value, billed to date, cost to date and percent complete; and how many RFIs are open (and past their response date), punch items are open and change orders are pending or awaiting the GC. Answers 'how's Riverside looking' and 'give me the rundown on Maple'. Every figure comes from the same calculation as job_margin, open_rfis, open_punch_list and change_order_status — use those for the detail behind a count. Sections the person's access does not include are listed in `withheldFromYou` and must be described as withheld, never as zero. Needs one job: if several match, ask which.",
+    input_schema: oneJob,
+  },
 ];
 
 /**
@@ -703,6 +763,10 @@ export const KNOWN_GAPS: { topic: string; why: string }[] = [
   {
     topic: "whether a job will finish on time, or a forecast completion date",
     why: "nothing forecasts a date. `schedule_status` says where a job stands against the dates somebody entered, which is as far as the data goes. Percent complete is COST-based — money spent against money expected — and a job can be 80% through its budget and nowhere near 80% through its programme.",
+  },
+  {
+    topic: "who is clocked in right now, or who has not clocked out",
+    why: "a running clock lives only on the worker's phone until they clock out — the server stores an interval once it is CLOSED, as a time entry with its clock-in and clock-out times. So nothing here knows who is on the clock at this moment. crew_schedule says who was PLANNED on a day; it is not who clocked in, and must not be read as one.",
   },
   {
     topic: "what a person is paid an hour",

@@ -289,15 +289,9 @@ export const fieldCommands: CommandDefinition[] = [logDailyFieldReportCommand, r
 /** The rest of fieldReports.ts and materialOrders.ts, per action, replacing
  * the phase-1 module wildcards. */
 export const fieldExclusions: Exclusion[] = [
-  // The crew schedule, per action. Both are genuine candidates for a command
-  // later — "put Mike on Riverside Tuesday" is exactly the shape this
-  // registry is good at — and neither is one today, which is a scope call
-  // rather than a judgement that they never should be.
-  {
-    action: "scheduleCrewDay",
-    reason:
-      "Putting somebody on a day is done on /schedule for now. It resolves three things at once — a person who may be a User or a crew member, a job, and a day in the person's own words — and that is a card worth designing rather than bolting on to the PR that added the model. The read side (crew_schedule) ships here.",
-  },
+  // The crew schedule. scheduleCrewDay is the `schedule_crew` command now
+  // (commands/crewSchedule.ts), the card this line used to say was worth
+  // designing. Taking somebody OFF a day stays on the page.
   {
     action: "unscheduleCrewDay",
     reason:

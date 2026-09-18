@@ -84,6 +84,9 @@ export const EVAL_CASES: EvalCase[] = [
   // which is Prova's own and not the tenant's.
   tool("read-pursuits", "what are we chasing that nobody has invited us to bid yet?", "bid_pursuits", undefined, ESTIMATOR),
   tool("read-field-scope", "any open RFIs on Riverside?", "open_rfis", { jobName: "Riverside" }, FIELD),
+  tool("read-attention", "what needs my attention today?", "needs_attention"),
+  tool("read-contact", "what's the number for the PM at Halvorsen?", "contact_lookup", { name: "Halvorsen" }, ESTIMATOR),
+  tool("read-job-overview", "give me the rundown on Riverside", "job_overview", { jobName: "Riverside" }),
   // Roadmap item 4's five. Each is phrased the way the question actually
   // arrives — "what's coming in", "what is the GC sitting on" — rather than
   // in the tool's own vocabulary, since routing from the words a
@@ -215,6 +218,12 @@ export const EVAL_CASES: EvalCase[] = [
   // is the person's words for lib/ask/dates.ts.
   command("cmd-retainage-amount", "release 12,500 of retainage on Riverside", "release_retainage", { jobName: "Riverside", amount: "12" }),
   command("cmd-retainage-all", "release the retainage held on Riverside", "release_retainage", { jobName: "Riverside" }),
+  // Pursuits, the crew schedule and contacts. The stage is only ever the
+  // one the person named; the day is their words for lib/ask/dates.ts.
+  command("cmd-pursuit-add", "add Northgate Medical to what we're chasing, Turner and Skanska are bidding it", "add_bid_pursuit", { projectName: "Northgate" }, ESTIMATOR),
+  command("cmd-pursuit-stage", "move Northgate Medical to contacted", "set_pursuit_stage", { projectName: "Northgate", stage: "contacted" }, ESTIMATOR),
+  command("cmd-schedule-crew", "put Mike on Riverside tomorrow", "schedule_crew", { workerName: "Mike", jobName: "Riverside", workDate: "tomorrow" }, FIELD),
+  command("cmd-contact-add", "add Halvorsen Builders to our contacts, they're a GC, 555-0142", "add_contact", { name: "Halvorsen" }, ESTIMATOR),
   command("cmd-retainage-accounting", "Turner released 12,500 of the Riverside retainage on September 8, check 5102", "release_retainage", { jobName: "Riverside", amount: "12", releasedAt: "September 8" }, ACCOUNTING),
 
   // ------------------------------------ nothing offered, so no card

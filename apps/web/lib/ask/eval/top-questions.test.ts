@@ -47,7 +47,8 @@ describe("the hundred questions", () => {
     // array against itself would pass at any size, which is the failure
     // mode that makes a census worthless — nothing is ever missing from a
     // list you measured with itself.
-    expect(TOTAL_QUESTIONS).toBe(100);
+    // 110 since the tools of 2026-09-18; the census keeps its name.
+    expect(TOTAL_QUESTIONS).toBe(110);
     expect(TOP_QUESTIONS).toHaveLength(TOTAL_QUESTIONS);
   });
 
