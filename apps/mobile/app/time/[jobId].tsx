@@ -41,8 +41,12 @@ export default function TimeScreen() {
   const [crafts, setCrafts] = useState<Craft[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  // Clock state.
+  // Clock state. `sessionLoaded` holds the card back until the saved session
+  // has been read — until then a running clock would render as "Not on the
+  // clock", and Clock in would overwrite its start time.
   const [openSession, setOpenSession] = useState<OpenClockSession | null>(null);
+  const [sessionLoaded, setSessionLoaded] = useState(false);
+  const [clockError, setClockError] = useState<string | null>(null);
   const [now, setNow] = useState(() => new Date());
   const [showClockIn, setShowClockIn] = useState(false);
   const [showSwitch, setShowSwitch] = useState(false);
@@ -79,10 +83,18 @@ export default function TimeScreen() {
     }
   };
 
+  // The saved session is local, so read it straight away rather than after
+  // the network load.
+  useEffect(() => {
+    (async () => {
+      setOpenSession(await getOpenSession());
+      setSessionLoaded(true);
+    })();
+  }, []);
+
   useEffect(() => {
     (async () => {
       await load();
-      setOpenSession(await getOpenSession());
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobId]);
@@ -98,17 +110,23 @@ export default function TimeScreen() {
   /** Close the running interval: compute the worked duration (phone computes
    * DURATION only — pay type is entered, never derived) and enqueue the
    * TimeEntry with the captured clock evidence. */
-  const closeInterval = async (endedAtISO: string) => {
-    if (!openSession) return;
+  const closeInterval = async (endedAtISO: string): Promise<boolean> => {
+    if (!openSession) return false;
     const computedHours = hoursFromClockInterval(
       openSession.clockStartedAt,
       endedAtISO,
       openSession.breakMinutes,
     );
-    // A degenerate interval (clocked in and straight back out) has no hours
-    // to record — and a "0" entry would be rejected by the server and block
-    // the offline queue. Drop it; the session is still cleared by the caller.
-    if (Number(computedHours) <= 0) return;
+    // Nothing left to record once the break is subtracted. A "0" entry would
+    // be rejected by the server and block the offline queue, so refuse and
+    // SAY SO — the caller keeps the session open so the break can be fixed.
+    if (Number(computedHours) <= 0) {
+      setClockError(
+        `Nothing to record: the ${openSession.breakMinutes}-minute break is as long as the time on the clock. Lower the break first.`,
+      );
+      return false;
+    }
+    setClockError(null);
     await enqueue({
       type: "time:create",
       jobId: openSession.jobId,
@@ -123,10 +141,20 @@ export default function TimeScreen() {
       clockBreakMinutes: openSession.breakMinutes || undefined,
     });
     await sync();
+    return true;
   };
 
   const onClockIn = async () => {
     if (!jobId) return;
+    // Never overwrite a running clock: its start time is the evidence.
+    const existing = await getOpenSession();
+    if (existing) {
+      setOpenSession(existing);
+      setShowClockIn(false);
+      setClockError("You're already on the clock. Clock out or switch instead.");
+      return;
+    }
+    setClockError(null);
     const session: OpenClockSession = {
       clockStartedAt: new Date().toISOString(),
       jobId,
@@ -139,16 +167,27 @@ export default function TimeScreen() {
     setShowClockIn(false);
   };
 
-  const onBreak = async () => {
+  /** Adjust the unpaid break by `delta` minutes, never below zero and never
+   * past the time actually on the clock. */
+  const onBreak = async (delta: number) => {
     if (!openSession) return;
-    const updated = { ...openSession, breakMinutes: openSession.breakMinutes + 30 };
+    const onClockMinutes = Math.floor(
+      (Date.now() - new Date(openSession.clockStartedAt).getTime()) / 60000,
+    );
+    const breakMinutes = Math.min(Math.max(0, openSession.breakMinutes + delta), onClockMinutes);
+    const updated = { ...openSession, breakMinutes };
     await saveSession(updated);
     setOpenSession(updated);
+    setClockError(null);
   };
 
   const onSwitch = async () => {
-    if (!jobId) return;
-    await closeInterval(new Date().toISOString());
+    if (!jobId || !openSession) return;
+    const closed = await closeInterval(new Date().toISOString());
+    if (!closed) {
+      setShowSwitch(false);
+      return;
+    }
     const session: OpenClockSession = {
       clockStartedAt: new Date().toISOString(),
       jobId,
@@ -162,7 +201,8 @@ export default function TimeScreen() {
   };
 
   const onClockOut = async () => {
-    await closeInterval(new Date().toISOString());
+    const closed = await closeInterval(new Date().toISOString());
+    if (!closed) return;
     await clearSession();
     setOpenSession(null);
   };
@@ -216,23 +256,35 @@ export default function TimeScreen() {
 
       {/* Clock card */}
       <View style={styles.clockCard}>
-        {openSession ? (
+        {!sessionLoaded ? (
+          <Card>
+            <Text style={styles.clockIdle}>Checking the clock…</Text>
+          </Card>
+        ) : openSession ? (
           <Card>
             <Text style={styles.clockElapsed}>On the clock · {formatElapsed(elapsedMs)}</Text>
             {clockCraftLabel || clockLineItemLabel ? (
               <Text style={styles.clockContext}>
-                {[clockCraftLabel, clockLineItemLabel].filter(Boolean).join(" · ") || "No craft / cost code"}
+                {[clockCraftLabel, clockLineItemLabel].filter(Boolean).join(" · ")}
               </Text>
             ) : null}
-            <Text style={styles.clockBreak}>Break: {openSession.breakMinutes} min</Text>
-            <View style={styles.clockActions}>
-              <Button variant="ghost" onPress={onBreak}>
-                Break +30m
+            <View style={styles.breakRow}>
+              <Button variant="secondary" onPress={() => onBreak(-30)}>
+                −30m
               </Button>
-              <Button variant="ghost" onPress={openSwitch}>
+              <Text style={styles.clockBreak}>Break: {openSession.breakMinutes} min</Text>
+              <Button variant="secondary" onPress={() => onBreak(30)}>
+                +30m
+              </Button>
+            </View>
+            {clockError ? <Text style={styles.clockErrorText}>{clockError}</Text> : null}
+            <View style={styles.clockActions}>
+              <Button variant="secondary" onPress={openSwitch}>
                 Switch
               </Button>
-              <Button onPress={onClockOut}>Clock out</Button>
+              <Button fullWidth onPress={onClockOut}>
+                Clock out
+              </Button>
             </View>
           </Card>
         ) : (
@@ -351,9 +403,11 @@ const styles = StyleSheet.create({
   clockCard: { padding: 16, paddingBottom: 4 },
   clockElapsed: { color: colors.ink, fontSize: typography.size.lg, fontWeight: typography.weight.bold },
   clockContext: { color: colors.inkBody, fontSize: typography.size.md, marginTop: 4 },
-  clockBreak: { color: colors.inkMuted, fontSize: typography.size.sm, marginTop: 2 },
+  clockBreak: { color: colors.inkBody, fontSize: typography.size.md, fontWeight: typography.weight.semibold },
+  clockErrorText: { color: colors.tagRoseInk, fontSize: typography.size.sm, marginTop: 8 },
   clockIdle: { color: colors.ink, fontSize: typography.size.md, fontWeight: typography.weight.semibold },
-  clockActions: { flexDirection: "row", gap: 8, marginTop: 8 },
+  breakRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8, marginTop: 8 },
+  clockActions: { gap: 8, marginTop: 8 },
   entryHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   date: { color: colors.ink, fontSize: typography.size.md, fontWeight: typography.weight.semibold },
   hours: { color: colors.ink, fontSize: typography.size.lg, fontWeight: typography.weight.bold },
