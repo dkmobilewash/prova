@@ -230,6 +230,23 @@ model JobMedia {
   sharedWithClientByUserId String?
   sharedWithClientBy       User?   @relation("JobMediaSharedBy", fields: [sharedWithClientByUserId], references: [id])
 
+  /// WHERE THIS PHOTO CAME FROM, when it came from CompanyCam — that
+  /// service's own photo id, and null (the value on every row a crew
+  /// uploaded) otherwise. Two jobs in one column:
+  ///
+  ///   - PROVENANCE. The galleries derive a "CompanyCam" mark from this
+  ///     being non-null, stored nowhere else — a `source` enum beside it
+  ///     would be a second column able to disagree with this one.
+  ///   - THE DUPLICATE GUARD. Re-running an import must not import the
+  ///     same photo twice, and "have we seen this one?" is answered by
+  ///     the unique below rather than by comparing bytes or captions.
+  ///
+  /// Scoped per job, not global: the same CompanyCam photo legitimately
+  /// lands on two DIFFERENT jobs if two links ever point at overlapping
+  /// projects, and Postgres treats NULLs as distinct so ordinary uploads
+  /// are untouched by the constraint.
+  companycamPhotoId String?
+
   /// The labels somebody put on this photo. See media-tags.prisma for why
   /// a join to a vocabulary table rather than a string column here.
   tags JobMediaTagAssignment[]
@@ -248,6 +265,7 @@ model JobMedia {
   /// `[companyId, capturedAt]` answers that AND everything the bare
   /// `[companyId]` answered, being its leftmost prefix, so keeping both
   /// would only be a second index to write on every insert.
+  @@unique([jobId, companycamPhotoId])
   @@unique([companyId, clientOperationId])
   @@index([companyId, capturedAt])
   @@index([dailyFieldReportId])

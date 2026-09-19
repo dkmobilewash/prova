@@ -91,6 +91,12 @@ export const HANDLED_MODELS = [
   // what clean-test-jobs.mjs counts. Deleting the link deletes nothing in
   // Procore and none of the sub's own records.
   "ProcoreProjectLink",
+  // A job's link to a CompanyCam project. CASCADE on Job, same shape as
+  // ProcoreProjectLink — it would not block the delete, but it carries a
+  // jobId, which is what clean-test-jobs.mjs counts. Deleting the link
+  // deletes nothing in CompanyCam; the imported photos are ordinary
+  // JobMedia rows, handled like every other photo.
+  "CompanyCamProjectLink",
   "JobAssignment",
   "EquipmentAssignment",
   "EstimateVersion",

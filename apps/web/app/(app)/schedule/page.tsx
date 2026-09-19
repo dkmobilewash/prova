@@ -12,6 +12,7 @@ import {
   scheduledWorkerName,
 } from "@/lib/crew-schedule-query";
 import { CrewScheduleBoard, type ScheduleDay } from "@/components/CrewScheduleBoard";
+import { CalendarSubscribe } from "@/components/CalendarSubscribe";
 import { toJobOption } from "@/components/jobLabels";
 
 function formatDate(date: Date) {
@@ -38,7 +39,7 @@ export default async function SchedulePage() {
   const today = serverToday();
   const canWrite = can(user, "MANAGE_FIELD");
 
-  const [scheduled, unscheduled, upcoming, missing, people, crew, crafts] = await Promise.all([
+  const [scheduled, unscheduled, upcoming, missing, people, crew, crafts, feedToken] = await Promise.all([
     prisma.job.findMany({
       where: { companyId: company.id, startDate: { not: null } },
       orderBy: { startDate: "asc" },
@@ -67,6 +68,13 @@ export default async function SchedulePage() {
       where: { companyId: company.id },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
+    }),
+    // This viewer's own calendar-feed token, if they've made one. The
+    // token string going to this person's browser is by design — it is
+    // THEIR credential, shown so they can paste it into a calendar app.
+    prisma.calendarFeedToken.findUnique({
+      where: { companyId_userId: { companyId: company.id, userId: user.id } },
+      select: { token: true },
     }),
   ]);
 
@@ -135,6 +143,10 @@ export default async function SchedulePage() {
         crafts={crafts}
         canWrite={canWrite && workers.length > 0 && scheduled.length + unscheduled.length > 0}
       />
+
+      {/* Below the board, above the start-date list: the feed serves what
+          the board shows, so its control lives next to it. */}
+      <CalendarSubscribe token={feedToken?.token ?? null} />
 
       <section className="mb-10" data-tour="schedule-start-dates">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Job start dates</h2>

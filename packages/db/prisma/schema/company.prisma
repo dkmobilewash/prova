@@ -51,6 +51,8 @@ model Company {
   integrationConnections    IntegrationConnection[]
   docuSignEnvelopes         DocuSignEnvelope[]
   procoreProjectLinks       ProcoreProjectLink[]
+  companycamProjectLinks    CompanyCamProjectLink[]
+  calendarFeedTokens        CalendarFeedToken[]
   complianceDocuments       ComplianceDocument[]
   licenses                  CompanyLicense[]
   tradeScopes               CompanyTradeScope[]
@@ -169,6 +171,8 @@ model User {
   assignments                          JobAssignment[]
   crewScheduleDays                     CrewScheduleDay[]      @relation("CrewScheduleDayUser")
   crewScheduleDaysCreated              CrewScheduleDay[]      @relation("CrewScheduleDayCreatedBy")
+  companycamLinksCreated               CompanyCamProjectLink[] @relation("CompanyCamLinkedBy")
+  calendarFeedTokens                   CalendarFeedToken[]
   workerCrafts                         WorkerCraft[]
   experienceModRatesCreated            ExperienceModRate[]    @relation("ExperienceModRateCreatedBy")
   lienDeadlinesCreated                 LienDeadline[]         @relation("LienDeadlineCreatedBy")

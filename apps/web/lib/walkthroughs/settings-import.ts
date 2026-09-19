@@ -41,6 +41,18 @@ export const settingsImportWalkthrough: Walkthrough = {
       body: "Press Import crew to bring in the people who work for you.",
     },
     {
+      anchor: "import-cost-codes",
+      title: "And your cost codes",
+      body:
+        "Press Import cost codes to bring in the phase or cost-code list from your accounting system — Sage 100 Contractor, Foundation, or your own spreadsheet. They land on Phase codes.",
+    },
+    {
+      anchor: "import-mapping",
+      title: "Match your columns",
+      body:
+        "If your file's own headers don't line up — an export calls the client column something else, say — match each field here to the right column by hand. This is what makes any accounting export importable, not only the ones C Stream recognises on its own.",
+    },
+    {
       anchor: "import-mycoi",
       title: "Insurance from myCOI",
       body:
