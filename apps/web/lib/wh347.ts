@@ -118,6 +118,40 @@ export const WH347_BLOCKING_FIELD_REASON: Record<Wh347BlockingField, string> = {
     "Page 2 is signed under penalty of perjury and names how fringes were paid. It is not built yet.",
 };
 
+/** A period, already formatted for print ("Aug 24" — see
+ * lib/payroll-register-import.ts's shortDate, which produces these). */
+export type Wh347RegisterPeriod = { periodStart: string; periodEnd: string };
+
+/**
+ * Columns 8/9's explanation when a worker has no register money for this
+ * week — and the ONE thing that matters here is that the two reasons this
+ * can happen do not read the same.
+ *
+ * "Nothing was ever imported for this worker" and "something was imported,
+ * for a different week" are different situations with different next
+ * steps — the first sends the office manager to Settings → Import, the
+ * second tells them the file they already hold does not cover this week
+ * and names both periods so they can tell whether it is a typo in the
+ * week they are viewing or a genuinely different pay cycle. A page whose
+ * blank cell reads the same for both looks like nothing was imported even
+ * when something was, which is indistinguishable from a broken import.
+ *
+ * Deliberately NOT part of buildWh347 / Wh347BuildInput: the "nearby
+ * period" lookup is a wider, un-exact query the page runs purely to
+ * explain a gap, and buildWh347 stays a pure function of the week's own
+ * data. The page calls this directly when rendering the missing cell.
+ */
+export function wh347RegisterGapMessage(
+  workerName: string,
+  formPeriod: Wh347RegisterPeriod,
+  nearbyPeriod: Wh347RegisterPeriod | null,
+): string {
+  if (!nearbyPeriod) {
+    return "Not on the imported register for this week. Import it at Settings → Import.";
+  }
+  return `${workerName}'s register covers ${nearbyPeriod.periodStart} – ${nearbyPeriod.periodEnd}. This form covers ${formPeriod.periodStart} – ${formPeriod.periodEnd}.`;
+}
+
 export interface Wh347DayCell {
   /** UTC midnight, the same convention every writer of TimeEntry.date
    * uses. Rendered in UTC, per the repo's date rule. */

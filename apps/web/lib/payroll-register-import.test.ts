@@ -440,6 +440,56 @@ describe("re-import: create vs update vs unchanged", () => {
   });
 });
 
+describe("period alignment with the certified-payroll week", () => {
+  it("notes a Monday–Sunday week in the preview, but still imports it", () => {
+    // certifiedPayrollWeekStart is Sunday-anchored (deliberately not
+    // touched here). A Monday-start register is a real, common shape —
+    // the contractor is still holding a usable file, just not one that
+    // will join to a Sunday-Saturday WH-347 week yet.
+    const text = [
+      row("Employee", "Period start", "Period end", "Gross", "Net"),
+      row("Maria Lopez", "2026-08-24", "2026-08-30", "1000.00", "800.00"),
+    ].join("\n");
+    const plan = planPayrollRegisterImport(text, CREW, []);
+    expect(plan.problems).toEqual([]);
+    expect(plan.create).toHaveLength(1);
+    expect(plan.notes.some((n) => n.includes("Monday–Sunday week"))).toBe(true);
+    expect(plan.notes.some((n) => n.includes("Sunday–Saturday weeks"))).toBe(true);
+  });
+
+  it("does NOT note a Sunday–Saturday period — the common, aligned case", () => {
+    const text = [
+      row("Employee", "Period start", "Period end", "Gross", "Net"),
+      row("Maria Lopez", "2026-08-23", "2026-08-29", "1000.00", "800.00"),
+    ].join("\n");
+    const plan = planPayrollRegisterImport(text, CREW, []);
+    expect(plan.notes.some((n) => n.includes("Certified payroll prints"))).toBe(false);
+  });
+
+  it("refuses a 14-day (bi-weekly) period with the weekly-filing reason, rather than storing it", () => {
+    const text = [
+      row("Employee", "Period start", "Period end", "Gross", "Net"),
+      row("Maria Lopez", "2026-08-23", "2026-09-05", "2000.00", "1600.00"),
+    ].join("\n");
+    const plan = planPayrollRegisterImport(text, CREW, []);
+    expect(plan.create).toEqual([]);
+    expect(plan.problems).toHaveLength(1);
+    expect(plan.problems[0].message).toContain("14-day pay period");
+    expect(plan.problems[0].message).toMatch(/filed WEEKLY/);
+  });
+
+  it("refuses a monthly (~30-day) period the same way", () => {
+    const text = [
+      row("Employee", "Period start", "Period end", "Gross", "Net"),
+      row("Maria Lopez", "2026-08-01", "2026-08-31", "4000.00", "3200.00"),
+    ].join("\n");
+    const plan = planPayrollRegisterImport(text, CREW, []);
+    expect(plan.create).toEqual([]);
+    expect(plan.problems).toHaveLength(1);
+    expect(plan.problems[0].message).toMatch(/filed WEEKLY/);
+  });
+});
+
 describe("row cap", () => {
   it("caps rows that WOULD be saved at MAX_IMPORT_ROWS and says so", () => {
     // Same convention as catalog-import.ts's cap: it bounds rows destined

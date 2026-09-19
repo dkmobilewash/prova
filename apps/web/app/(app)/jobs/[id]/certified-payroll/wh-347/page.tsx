@@ -29,11 +29,14 @@ import { loadCertifiedPayrollWeekEntries } from "@/lib/certified-payroll-query";
 import type { FringeRateScheduleInput } from "@/lib/labor-cost";
 import {
   buildWh347,
+  wh347RegisterGapMessage,
   WH347_BLOCKING_FIELD_REASON,
   type Wh347Deductions,
   type Wh347RegisterMoney,
+  type Wh347RegisterPeriod,
   type Wh347TimeEntryInput,
 } from "@/lib/wh347";
+import { shortDate } from "@/lib/payroll-register-import";
 import { IssuePayrollNumberButton } from "./IssuePayrollNumberButton";
 
 /** cents -> dollars, for display only. Every other number wh347.ts works
@@ -116,7 +119,16 @@ export default async function Wh347Page({
   const weekEnding = new Date(weekStart);
   weekEnding.setUTCDate(weekEnding.getUTCDate() + 6);
 
-  const [entries, craftClassifications, crew, registerRows, issuedNumber] = await Promise.all([
+  // Cheap, bounded window for explaining a gap — never fed into buildWh347.
+  // 45 days each side comfortably covers a register one week off (Monday
+  // start), biweekly, semi-monthly and monthly cadences without loading a
+  // crew member's whole history.
+  const nearbyWindowStart = new Date(weekStart);
+  nearbyWindowStart.setUTCDate(nearbyWindowStart.getUTCDate() - 45);
+  const nearbyWindowEnd = new Date(weekEnding);
+  nearbyWindowEnd.setUTCDate(nearbyWindowEnd.getUTCDate() + 45);
+
+  const [entries, craftClassifications, crew, registerRows, issuedNumber, nearbyRegisterRows] = await Promise.all([
     loadCertifiedPayrollWeekEntries(company.id, job.id, weekStart),
     prisma.craftClassification.findMany({
       where: { unionLocal: { companyAgreements: { some: { companyId: company.id } } } },
@@ -152,6 +164,22 @@ export default async function Wh347Page({
       where: { jobId_weekStart: { jobId: job.id, weekStart } },
       select: { number: true },
     }),
+    // Purely to EXPLAIN a gap in columns 8/9 — "nothing imported" and
+    // "imported, wrong week" must not read the same (see
+    // wh347RegisterGapMessage). This is not this week's money and never
+    // feeds buildWh347; the exact-match query above stays the only source
+    // of that.
+    prisma.payrollRegisterEntry.findMany({
+      where: {
+        companyId: company.id,
+        periodStart: { gte: nearbyWindowStart, lte: nearbyWindowEnd },
+      },
+      select: {
+        periodStart: true,
+        periodEnd: true,
+        crewMember: { select: { linkedUserId: true, id: true } },
+      },
+    }),
   ]);
 
   const identifyingNumbers = new Map<string, string>();
@@ -181,6 +209,29 @@ export default async function Wh347Page({
       netWages: dollars(row.netCents),
     });
   }
+
+  // Per worker, the register period closest to THIS week — used only to
+  // explain a blank columns 8/9 cell, never to fill one. A worker with
+  // several nearby periods (e.g. a biweekly register spanning both
+  // neighbours) gets the single closest one, which is the one most likely
+  // to be "the file I just imported, for the wrong week".
+  const nearbyRegisterPeriod = new Map<string, Wh347RegisterPeriod>();
+  const nearbyDistance = new Map<string, number>();
+  for (const row of nearbyRegisterRows) {
+    const workerId = row.crewMember.linkedUserId ?? row.crewMember.id;
+    const distance = Math.abs(row.periodStart.getTime() - weekStart.getTime());
+    const current = nearbyDistance.get(workerId);
+    if (current !== undefined && current <= distance) continue;
+    nearbyDistance.set(workerId, distance);
+    nearbyRegisterPeriod.set(workerId, {
+      periodStart: shortDate(isoDate(row.periodStart)),
+      periodEnd: shortDate(isoDate(row.periodEnd)),
+    });
+  }
+  const formPeriod: Wh347RegisterPeriod = {
+    periodStart: shortDate(isoDate(weekStart)),
+    periodEnd: shortDate(isoDate(weekEnding)),
+  };
 
   const fringeSchedulesByCraft = new Map<string, FringeRateScheduleInput[]>(
     craftClassifications.map((craft) => [
@@ -497,8 +548,11 @@ export default async function Wh347Page({
                             </>
                           ) : (
                             <Missing>
-                              Not on the imported register for this week. Import it at Settings →
-                              Import.
+                              {wh347RegisterGapMessage(
+                                worker.name,
+                                formPeriod,
+                                nearbyRegisterPeriod.get(worker.employeeUserId) ?? null,
+                              )}
                             </Missing>
                           )}
                         </td>
@@ -511,7 +565,13 @@ export default async function Wh347Page({
                           ) : worker.netWagesThisWeek != null ? (
                             money(worker.netWagesThisWeek)
                           ) : (
-                            <Missing>Not on the imported register for this week.</Missing>
+                            <Missing>
+                              {wh347RegisterGapMessage(
+                                worker.name,
+                                formPeriod,
+                                nearbyRegisterPeriod.get(worker.employeeUserId) ?? null,
+                              )}
+                            </Missing>
                           )}
                         </td>
                       </>

@@ -353,6 +353,24 @@ function daySpan(startDay: string, endDay: string): number {
   return Math.round((dateFromDay(endDay).getTime() - dateFromDay(startDay).getTime()) / 86_400_000);
 }
 
+const WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** "Aug 24" — deliberately not Intl/toLocaleDateString: this module runs
+ * in the browser for the preview too, and a fixed table keeps the note
+ * text identical across environments rather than depending on the local
+ * ICU data. Exported so the WH-347 filing page can format a period the
+ * same way when it explains a register that covers a different week —
+ * one date format for "Aug 24" everywhere it appears. */
+export function shortDate(day: string): string {
+  const d = dateFromDay(day);
+  return `${MONTH_ABBR[d.getUTCMonth()]} ${d.getUTCDate()}`;
+}
+
+function weekdayName(day: string): string {
+  return WEEKDAY_NAMES[dateFromDay(day).getUTCDay()];
+}
+
 /** Same hours, read two different ways: a fresh register cell keeps
  * whatever the file printed ("40.00"), a stored row comes back off a
  * Prisma Decimal, which drops trailing zeros ("40.00" -> "40"). Compared
@@ -651,9 +669,34 @@ export function planPayrollRegisterImport(
       hours = h[2] ? `${h[1]}.${h[2]}` : h[1];
     }
 
-    if (daySpan(start.value, end.value) !== 6) {
+    // A period longer than a week cannot fill a WEEKLY certified payroll
+    // without prorating a paycheck across weeks — reattributing real pay
+    // on a document signed under penalty of perjury. Refused rather than
+    // stored-but-unusable: a row that can never print on a WH-347 is the
+    // "written, documented, and never called" shape wearing payroll data.
+    const span = daySpan(start.value, end.value);
+    if (span > 6) {
+      problems.push({
+        line,
+        message: `${named} — ${shortDate(start.value)} to ${shortDate(end.value)} is a ${span + 1}-day pay period. Certified payroll on prevailing-wage work is filed WEEKLY, so a bi-weekly, semi-monthly or monthly register can't fill it on its own — pull a weekly register (or a weekly deduction report) from your payroll provider instead.`,
+      });
+      continue;
+    }
+    if (span < 6) {
+      // Shorter than a week — a stub period, or a data problem. Left as
+      // a note rather than a refusal: unlike a multi-week period, this
+      // is not a paycheck this app would have to prorate to use.
       rowNotes.push(
         `Line ${line}: ${named} — ${start.value} to ${end.value} is not a 7-day week. The row is stored, but only a period that matches a certified-payroll week fills that week's WH-347.`,
+      );
+    } else if (dateFromDay(start.value).getUTCDay() !== 0) {
+      // Exactly 7 days, but not Sunday–Saturday — a Monday-start register
+      // is common and otherwise looks like nothing was imported at all,
+      // since buildWh347's join requires an EXACT period match. The row
+      // still imports; the contractor is told why it won't fill a form
+      // yet, while still holding the file.
+      rowNotes.push(
+        `Line ${line}: ${named} — ${shortDate(start.value)} – ${shortDate(end.value)} is a ${weekdayName(start.value)}–${weekdayName(end.value)} week. Certified payroll prints Sunday–Saturday weeks, so these lines won't fill a WH-347 yet.`,
       );
     }
 

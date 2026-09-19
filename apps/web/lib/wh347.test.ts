@@ -9,6 +9,7 @@ import {
   cashWagesFor,
   fringeCreditFor,
   wh347Days,
+  wh347RegisterGapMessage,
   WH347_DAY_COUNT,
   type Wh347TimeEntryInput,
 } from "./wh347";
@@ -367,6 +368,39 @@ describe("column 1's identifying number", () => {
     const form = build([entry()]);
     expect(form.workers[0].identifyingNumber).toBeNull();
     expect(form.workers[0].blocking).toContain("identifyingNumber");
+  });
+});
+
+describe("wh347RegisterGapMessage — the two reasons for no register money must not read the same", () => {
+  const FORM_PERIOD = { periodStart: "Aug 23", periodEnd: "Aug 29" };
+
+  it("names the generic 'nothing imported' sentence when there is no nearby period", () => {
+    const message = wh347RegisterGapMessage("Rosa Delgado", FORM_PERIOD, null);
+    expect(message).toBe("Not on the imported register for this week. Import it at Settings → Import.");
+  });
+
+  it("names the worker and BOTH date ranges when a register exists for a different period", () => {
+    const message = wh347RegisterGapMessage("Rosa Delgado", FORM_PERIOD, {
+      periodStart: "Aug 24",
+      periodEnd: "Aug 30",
+    });
+    expect(message).toBe(
+      "Rosa Delgado's register covers Aug 24 – Aug 30. This form covers Aug 23 – Aug 29.",
+    );
+  });
+
+  // The anti-vacuity check itself: a reader hitting a blank columns 8/9
+  // cell must be able to tell "nothing was ever imported" from "something
+  // was imported, for the wrong week" from the TEXT alone. If a future
+  // edit ever made these converge, this is the one assertion that catches
+  // it — a page rendering either string looks fine on its own.
+  it("the two messages are never equal", () => {
+    const nothingImported = wh347RegisterGapMessage("Rosa Delgado", FORM_PERIOD, null);
+    const wrongPeriod = wh347RegisterGapMessage("Rosa Delgado", FORM_PERIOD, {
+      periodStart: "Aug 24",
+      periodEnd: "Aug 30",
+    });
+    expect(nothingImported).not.toBe(wrongPeriod);
   });
 });
 
