@@ -59,6 +59,10 @@ const TABLES: Record<string, Row[]> = {
     { companyId: "co_A", crewMemberId: "crew_maria", periodStart: new Date("2026-08-23T00:00:00.000Z"), periodEnd: new Date("2026-08-29T00:00:00.000Z"), grossCents: 100000, deductionsCents: 20000, netCents: 80000, hours: "40", payDate: null },
     { companyId: "co_B", crewMemberId: "crew_john", periodStart: new Date("2026-08-23T00:00:00.000Z"), periodEnd: new Date("2026-08-29T00:00:00.000Z"), grossCents: 200000, deductionsCents: 40000, netCents: 160000, hours: "40", payDate: null },
   ],
+  phaseCode: [
+    { companyId: "co_A", code: "04112" },
+    { companyId: "co_B", code: "ZZ-999" },
+  ],
 };
 
 function fakeModel(name: string) {
@@ -75,6 +79,7 @@ vi.mock("@prova/db", () => ({
     contact: fakeModel("contact"),
     job: fakeModel("job"),
     crewMember: fakeModel("crewMember"),
+    phaseCode: fakeModel("phaseCode"),
     vendor: fakeModel("vendor"),
     complianceDocument: fakeModel("complianceDocument"),
     payrollRegisterEntry: fakeModel("payrollRegisterEntry"),
@@ -169,15 +174,16 @@ describe("/settings/import", () => {
     }
   });
 
-  it("gives the owner all three imports and the payroll register, fed only this company's records", async () => {
+  it("gives the owner all four imports and the payroll register, fed only this company's records", async () => {
     await render();
-    expect(state.props.map((p) => p.kind)).toEqual(["clients", "jobs", "crew"]);
+    expect(state.props.map((p) => p.kind)).toEqual(["clients", "jobs", "crew", "costCodes"]);
     const payload = JSON.stringify(state.props);
     expect(payload).toContain("Acme Builders");
     expect(payload).toContain("Tower");
     expect(payload).toContain("Maria");
     expect(payload).toContain("Priya Shah");
-    for (const theirs of ["Zenith GC", "Harbor", "John", "Smith", "E-1", "Wei Chen"]) {
+    expect(payload).toContain("04112");
+    for (const theirs of ["Zenith GC", "Harbor", "John", "Smith", "E-1", "Wei Chen", "ZZ-999"]) {
       expect(payload).not.toContain(theirs);
     }
     expect(state.registerProps).toHaveLength(1);

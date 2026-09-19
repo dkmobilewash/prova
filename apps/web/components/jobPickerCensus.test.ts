@@ -81,7 +81,7 @@ const LABELLED_PICKERS: Record<string, number> = {
   "app/(app)/punch-lists/page.tsx": 1,
   "app/(app)/rfis/page.tsx": 1,
   "app/(app)/submittals/page.tsx": 1,
-  "app/(app)/settings/integrations/page.tsx": 1,
+  "app/(app)/settings/integrations/page.tsx": 2,
 };
 
 /**
@@ -196,7 +196,12 @@ describe("the job-picker census", () => {
     //
     // 26 -> 27 on 2026-09-18: the Procore card's "which of your jobs does
     // this GC project feed" picker on /settings/integrations.
-    expect(expected).toEqual(27);
+    //
+    // 27 -> 28 on 2026-09-19: the CompanyCam card's own "which of your jobs
+    // does this project import into" picker, the same shape as Procore's
+    // and on the same page — /settings/integrations now calls the helper
+    // twice, once per card.
+    expect(expected).toEqual(28);
     expect(actual).toEqual(expected);
   });
 

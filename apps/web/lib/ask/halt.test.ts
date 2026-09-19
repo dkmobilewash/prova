@@ -129,7 +129,7 @@ describe("what a question cost", () => {
     }
     const usageEvents = events.filter((e) => e.type === "usage");
     expect(usageEvents).toHaveLength(1);
-    expect(usageEvents[0].usage).toEqual({ passes: 2, inputTokens: 10200, outputTokens: 340, cacheReadTokens: 8000, cacheWriteTokens: 0 });
+    expect(usageEvents[0].usage).toEqual({ passes: 2, inputTokens: 10200, outputTokens: 340, cacheReadTokens: 8000, cacheWriteTokens: 0, webSearches: 0 });
     expect(events.map((e) => e.type).slice(-2)).toEqual(["usage", "done"]);
   });
 

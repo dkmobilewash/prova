@@ -32,6 +32,9 @@ enum IntegrationProvider {
   /// A one-way, read-only import of clients, jobs and quotes (onboarding).
   /// Not a sync: see lib/jobber-import.ts.
   JOBBER
+  /// A one-way, read-only import of a CompanyCam project's photos into a
+  /// job's gallery. See companycam.prisma for the link.
+  COMPANYCAM
 }
 
 enum IntegrationConnectionStatus {

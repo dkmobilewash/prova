@@ -30,6 +30,12 @@ export const scheduleWalkthrough: Walkthrough = {
         "Someone was planned on a job for a day that is over, but no hours were logged for them. Open the job and log the time, so your costs and payroll are right.",
     },
     {
+      anchor: "schedule-subscribe",
+      title: "Put the schedule on your phone",
+      body:
+        "Press Create my calendar link, then copy it into your phone's calendar app. Every planned day shows up as an all-day event and updates itself — nobody has to re-send it. Regenerating replaces the link, so every calendar subscribed to the old one stops updating.",
+    },
+    {
       anchor: "schedule-start-dates",
       title: "When each job runs",
       body:

@@ -162,8 +162,10 @@ vi.mock("@/lib/permissions", async (importOriginal) => {
   };
 });
 
-const { importClients, importJobs, importCrew } = await import("./spreadsheetImport");
-const { planClientImport, planCrewImport, planJobImport } = await import("@/lib/spreadsheet-import");
+const { importClients, importJobs, importCrew, importPhaseCodes } = await import("./spreadsheetImport");
+const { planClientImport, planCrewImport, planJobImport, planPhaseCodeImport } = await import(
+  "@/lib/spreadsheet-import"
+);
 
 function form(csv: string) {
   const fd = new FormData();
@@ -191,17 +193,19 @@ function seed() {
   table("crewMember").push({
     id: "m_A_maria", companyId: "co_A", legalFirstName: "Maria", legalMiddleName: null, legalLastName: "Lopez", employeeNumber: null,
   });
+  table("phaseCode").push({ id: "pc_A_04112", companyId: "co_A", code: "04112", name: "Plywood" });
   // Theirs — every one of these would match the uploads below by name.
   table("contact").push({ id: "c_B_zenith", companyId: "co_B", name: "Zenith GC" });
   table("job").push({ id: "j_B_harbor", companyId: "co_B", contactId: "c_B_zenith", name: "Harbor" });
   table("crewMember").push({
     id: "m_B_john", companyId: "co_B", legalFirstName: "John", legalMiddleName: null, legalLastName: "Smith", employeeNumber: "E-1",
   });
+  table("phaseCode").push({ id: "pc_B_09250", companyId: "co_B", code: "09250", name: "Drywall" });
 }
 
 beforeEach(seed);
 
-const theirs = () => JSON.stringify(["contact", "job", "crewMember"].map((t) => rows(t, "co_B")));
+const theirs = () => JSON.stringify(["contact", "job", "crewMember", "phaseCode"].map((t) => rows(t, "co_B")));
 
 describe("importClients", () => {
   const CSV = "Name,Type,Email\nacme builders,GC,\nZenith GC,,pm@zenith.co\nNorth Supply,vendor,\n,gc,\nBad,architect,";
@@ -343,6 +347,71 @@ describe("importCrew", () => {
   });
 });
 
+describe("importPhaseCodes", () => {
+  const CSV = ["Code,Name,Unit", "04112,Plywood again,SF", "09250,drywall,SF", "04220,,SF", "17400,Framing,LF"].join(
+    "\n",
+  );
+
+  it("creates only this company's missing codes, matched EXACTLY (not case-folded), and a second run creates nothing", async () => {
+    const before = theirs();
+    const preview = planPhaseCodeImport(
+      CSV,
+      rows("phaseCode", "co_A").map((c) => c.code as string),
+    );
+    const result = await importPhaseCodes(form(CSV));
+    expect(rows("phaseCode", "co_A").slice(1).map((c) => c.code)).toEqual(preview.create.map((r) => r.code));
+    expect(result).toEqual({ ok: true, value: expect.objectContaining({ created: 2, alreadyThere: 1, skipped: 1 }) });
+
+    const created = rows("phaseCode", "co_A").filter((c) => c.id !== "pc_A_04112");
+    expect(created.map((c) => [c.code, c.name, c.unit])).toEqual([
+      // "04112" already exists on co_A (added by seed as "Plywood") — the
+      // upload's own "04112,Plywood again" is left alone, not overwritten.
+      // "09250" is company B's code, matched by exact code only when it is
+      // company A's own row, so co_A's line for 09250 IS new here.
+      ["09250", "drywall", "SF"],
+      ["17400", "Framing", "LF"],
+    ]);
+    // Company B's "09250" is untouched, and never counted as "already here"
+    // for company A.
+    expect(theirs()).toBe(before);
+
+    const again = await importPhaseCodes(form(CSV));
+    expect(again).toEqual({ ok: true, value: expect.objectContaining({ created: 0, alreadyThere: 3, skipped: 1 }) });
+    expect(rows("phaseCode", "co_A")).toHaveLength(3);
+    expect(rows("phaseCode")).toHaveLength(4);
+  });
+
+  it("writes inside one serializable transaction", async () => {
+    await importPhaseCodes(form(CSV));
+    expect(state.writes).toEqual(["phaseCode.createMany@tx"]);
+    expect(state.txOptions).toEqual([expect.objectContaining({ isolationLevel: "Serializable" })]);
+  });
+
+  it("returns a sentence, not a throw, when Postgres refuses an overlapping import (P2034)", async () => {
+    state.failNext = "phaseCode.createMany";
+    state.failCode = "P2034";
+    const result = await importPhaseCodes(form(CSV));
+    expect(result).toEqual({ ok: false, error: expect.stringContaining("at the same moment") });
+    expect(rows("phaseCode", "co_A")).toHaveLength(1);
+  });
+
+  it("is owner-only and answers to MANAGE_COMPLIANCE, before any query", async () => {
+    state.context.role = "MEMBER";
+    expect(await importPhaseCodes(form(CSV))).toEqual({ ok: false, error: expect.stringContaining("Only the account owner") });
+    state.context.role = "OWNER";
+
+    state.denied = new Set(["MANAGE_COMPLIANCE"]);
+    expect(await importPhaseCodes(form(CSV))).toEqual({ ok: false, error: expect.stringContaining("job function") });
+    expect(state.writes).toEqual([]);
+    expect(state.txOptions).toEqual([]);
+
+    // MANAGE_JOBS, the capability the other three imports answer to, does
+    // NOT gate this one.
+    state.denied = new Set(["MANAGE_JOBS"]);
+    expect(await importPhaseCodes(form(CSV))).toEqual({ ok: true, value: expect.anything() });
+  });
+});
+
 describe("every confirm writes inside one serializable transaction, and only there", () => {
   const cases = [
     ["importClients", () => importClients(form("Name\nNew Co")), ["contact.createMany@tx"]],
@@ -352,6 +421,7 @@ describe("every confirm writes inside one serializable transaction, and only the
       ["contact.createManyAndReturn@tx", "job.createMany@tx"],
     ],
     ["importCrew", () => importCrew(form("First,Last\nAna,Ruiz")), ["crewMember.createMany@tx"]],
+    ["importPhaseCodes", () => importPhaseCodes(form("Code,Name\n17400,Framing")), ["phaseCode.createMany@tx"]],
   ] as const;
 
   for (const [name, run, writes] of cases) {
@@ -387,7 +457,7 @@ describe("size", () => {
 describe("who may confirm", () => {
   it("refuses a non-owner before any query", async () => {
     state.context.role = "MEMBER";
-    for (const action of [importClients, importJobs, importCrew]) {
+    for (const action of [importClients, importJobs, importCrew, importPhaseCodes]) {
       const result = await action(form("Name\nX"));
       expect(result).toEqual({ ok: false, error: expect.stringContaining("Only the account owner") });
     }
