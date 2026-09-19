@@ -32,7 +32,7 @@ import {
   type WorkerKey,
 } from "@/lib/crew-entry";
 import { uuid } from "@/lib/id";
-import { enqueue } from "@/lib/sync-queue";
+import { enqueue, queuedOperationIds, type CreateOp } from "@/lib/sync-queue";
 import { useReloadWhenShown } from "@/lib/use-reload-when-shown";
 import { useSync } from "@/lib/use-sync";
 import type {
@@ -100,6 +100,10 @@ export default function TimeScreen() {
   const { jobId } = useLocalSearchParams<{ jobId: string }>();
   const { getToken } = useAuth();
   const [entries, setEntries] = useState<TimeEntry[]>([]);
+  // Rows saved on this phone that the server hasn't returned yet. Shown at
+  // once, marked "Syncing…", so a save never looks like it did nothing while
+  // the queue flushes and the list reloads.
+  const [optimistic, setOptimistic] = useState<(TimeEntry & { clientOperationId: string })[]>([]);
   const [crew, setCrew] = useState<CrewMember[]>([]);
   const [lineItems, setLineItems] = useState<LineItem[]>([]);
   const [crafts, setCrafts] = useState<Craft[]>([]);
@@ -150,46 +154,40 @@ export default function TimeScreen() {
   const load = async () => {
     const token = await getToken();
     if (!token || !jobId) return;
-    try {
-      const [es, cs, ls, cts, js] = await Promise.all([
-        api.listTimeEntries(jobId, token),
-        api.listCrew(token),
-        api.listLineItems(jobId, token),
-        api.listCrafts(token),
-        api.listJobs(token),
-      ]);
-      setEntries(es);
-      setCrew(cs);
-      setLineItems(ls);
-      setCrafts(cts);
-      setJobNames(Object.fromEntries(js.map((j) => [j.id, j.name])));
-      setError(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load time");
-    }
-    // Separate, so an older server without sign-offs still shows the hours.
-    try {
-      setSignoffs(await api.listSignoffs(jobId, token));
-    } catch {
-      setSignoffs([]);
-    }
-    try {
-      const [rs, ds] = await Promise.all([api.listFieldReports(jobId, token), api.listDelays(jobId, token)]);
-      setReportDates(new Set(rs.map((r) => r.reportDate)));
-      const counts = new Map<string, number>();
-      for (const d of ds) counts.set(d.date, (counts.get(d.date) ?? 0) + 1);
-      setDelayCounts(counts);
-    } catch {
-      // Unknown is shown as unknown, not as "no report".
-    }
-    // Separate from the list above: a ratio that cannot be read must not
-    // hide the entries, and offline it simply shows nothing.
-    try {
-      const today = dayFromClockIn(new Date().toISOString());
-      setRatioWarnings((await api.getApprenticeRatio(jobId, today, token)).warnings);
-    } catch {
-      setRatioWarnings([]);
-    }
+    const today = dayFromClockIn(new Date().toISOString());
+    // Everything at once, each piece shown the moment it arrives. These used
+    // to run one batch after another, and the list a person had just saved
+    // into waited for the slowest of them — seconds, on a phone connection.
+    await Promise.allSettled([
+      api.listTimeEntries(jobId, token).then(
+        async (es) => {
+          setEntries(es);
+          setError(null);
+          // Drop just-saved rows the server now has, or refused.
+          const queued = await queuedOperationIds();
+          setOptimistic((rows) => rows.filter((r) => queued.has(r.clientOperationId)));
+        },
+        (e) => setError(e instanceof Error ? e.message : "Failed to load time"),
+      ),
+      api.listCrew(token).then(setCrew),
+      api.listLineItems(jobId, token).then(setLineItems),
+      api.listCrafts(token).then(setCrafts),
+      api.listJobs(token).then((js) => setJobNames(Object.fromEntries(js.map((j) => [j.id, j.name])))),
+      // An older server without sign-offs still shows the hours.
+      api.listSignoffs(jobId, token).then(setSignoffs, () => setSignoffs([])),
+      Promise.all([api.listFieldReports(jobId, token), api.listDelays(jobId, token)]).then(([rs, ds]) => {
+        setReportDates(new Set(rs.map((r) => r.reportDate)));
+        const counts = new Map<string, number>();
+        for (const d of ds) counts.set(d.date, (counts.get(d.date) ?? 0) + 1);
+        setDelayCounts(counts);
+      }),
+      // A ratio that cannot be read is not a warning, and offline it simply
+      // shows nothing.
+      api.getApprenticeRatio(jobId, today, token).then(
+        (r) => setRatioWarnings(r.warnings),
+        () => setRatioWarnings([]),
+      ),
+    ]);
   };
 
   // The saved session is local, so read it straight away rather than after
@@ -233,7 +231,7 @@ export default function TimeScreen() {
       return false;
     }
     setClockError(null);
-    await enqueue({
+    await saveEntry({
       type: "time:create",
       jobId: openSession.jobId,
       clientOperationId: uuid(),
@@ -248,6 +246,32 @@ export default function TimeScreen() {
     });
     await sync();
     return true;
+  };
+
+  /** Queues one entry and shows it straight away as "Syncing…" when it is
+   * for this job. The server's copy replaces it on the next load. */
+  const saveEntry = async (op: Extract<CreateOp, { type: "time:create" }>) => {
+    if (op.jobId === jobId) {
+      const crewId = op.crewMemberId ?? null;
+      setOptimistic((rows) => [
+        {
+          id: `local-${op.clientOperationId}`,
+          clientOperationId: op.clientOperationId,
+          date: op.date,
+          hours: op.hours,
+          payType: op.payType as TimeEntryPayType,
+          note: op.note ?? null,
+          clockStartedAt: op.clockStartedAt ?? null,
+          clockEndedAt: op.clockEndedAt ?? null,
+          clockBreakMinutes: op.clockBreakMinutes ?? null,
+          employeeName: crewId ? (crew.find((c) => c.id === crewId)?.name ?? "Crew member") : "Me",
+          lineItemDescription: lineItems.find((l) => l.id === op.lineItemId)?.description ?? null,
+          craftLabel: crafts.find((c) => c.id === op.craftClassificationId)?.name ?? null,
+        },
+        ...rows,
+      ]);
+    }
+    await enqueue(op);
   };
 
   const onClockIn = async () => {
@@ -415,7 +439,7 @@ export default function TimeScreen() {
     // One entry per person, each with its own idempotency key, so a retried
     // offline flush replays each rather than duplicating any.
     for (const r of toSave) {
-      await enqueue({
+      await saveEntry({
         type: "time:create",
         jobId,
         clientOperationId: uuid(),
@@ -547,7 +571,7 @@ export default function TimeScreen() {
       </View>
 
       <List
-        data={entries}
+        data={[...optimistic, ...entries]}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
           <Card>
@@ -555,6 +579,7 @@ export default function TimeScreen() {
               <Text style={styles.date}>{item.date}</Text>
               <Text style={styles.hours}>{item.hours}h</Text>
             </View>
+            {item.id.startsWith("local-") ? <Text style={styles.syncing}>Syncing…</Text> : null}
             {signedByDate.get(item.date) ? (
               <Text style={styles.signed}>
                 {signedByDate.get(item.date)!.state === "APPROVED" ? "Approved" : "Signed"} · locked
@@ -810,4 +835,5 @@ const styles = StyleSheet.create({
   footerRow: { flexDirection: "row", gap: 8, alignItems: "center" },
   footerMain: { flex: 1 },
   signed: { color: colors.link, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
+  syncing: { color: colors.inkMuted, fontSize: typography.size.sm, fontStyle: "italic" },
 });

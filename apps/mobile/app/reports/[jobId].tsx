@@ -12,7 +12,7 @@ import { Sheet } from "@/components/Sheet";
 import * as api from "@/lib/api";
 import { dayFromClockIn } from "@/lib/clock-session";
 import { uuid } from "@/lib/id";
-import { enqueue } from "@/lib/sync-queue";
+import { enqueue, queuedOperationIds } from "@/lib/sync-queue";
 import { colors, typography } from "@/lib/theme";
 import type { DelayRow, FieldReportRow } from "@/lib/types";
 import { useFieldReports } from "@/lib/use-field-reports";
@@ -68,6 +68,9 @@ export default function ReportsScreen() {
   const getToken = useStableGetToken();
   const { reports, pending, error, create, refresh } = useFieldReports(jobId ?? "");
   const [delays, setDelays] = useState<DelayRow[]>([]);
+  // Delays logged on this phone that the server hasn't returned yet — shown
+  // at once as "Syncing…" rather than appearing seconds after Save.
+  const [optimisticDelays, setOptimisticDelays] = useState<(DelayRow & { clientOperationId: string })[]>([]);
   const today = dayFromClockIn(new Date().toISOString());
 
   const loadDelays = useCallback(async () => {
@@ -75,6 +78,8 @@ export default function ReportsScreen() {
     if (!token || !jobId) return;
     try {
       setDelays(await api.listDelays(jobId, token));
+      const queued = await queuedOperationIds();
+      setOptimisticDelays((rows) => rows.filter((r) => queued.has(r.clientOperationId)));
     } catch {
       // Offline or an older server: reports still show.
     }
@@ -169,6 +174,30 @@ export default function ReportsScreen() {
     setTold(null);
     setToldWho("");
     setShowDelay(false);
+    const causeText = CAUSES.find(([v]) => v === op.cause)?.[1] ?? op.cause;
+    const partyText = PARTIES.find(([v]) => v === op.responsibleParty)?.[1] ?? op.responsibleParty;
+    setOptimisticDelays((rows) => [
+      ...rows,
+      {
+        id: `local-${op.clientOperationId}`,
+        clientOperationId: op.clientOperationId,
+        date: op.date,
+        cause: op.cause,
+        causeLabel: causeText,
+        responsibleParty: op.responsibleParty,
+        responsibleLabel: partyText,
+        responsibleName: op.responsibleName ?? null,
+        start: op.startTime ?? null,
+        end: op.endTime ?? null,
+        workersAffected: op.workersAffected ? Number(op.workersAffected) : null,
+        hoursLost: op.hoursLost ?? null,
+        description: op.description,
+        gcNotifiedHow: op.gcNotifiedHow ?? null,
+        gcNotifiedWho: op.gcNotifiedWho ?? null,
+        gcNotifiedAt: op.gcNotifiedAt ?? null,
+        changeOrderId: null,
+      },
+    ]);
     await enqueue(op);
     await sync();
   };
@@ -180,7 +209,7 @@ export default function ReportsScreen() {
       <RefusedBanner refused={refused} onDismiss={dismissRefused} />
 
       <List
-        data={daysOf(reports, delays)}
+        data={daysOf(reports, [...delays, ...optimisticDelays])}
         keyExtractor={(item) => item.date}
         renderItem={({ item }) => (
           <Card>
@@ -212,6 +241,7 @@ export default function ReportsScreen() {
             )}
             {item.delays.map((d) => (
               <View key={d.id} style={styles.delay}>
+                {d.id.startsWith("local-") ? <Text style={styles.syncing}>Syncing…</Text> : null}
                 <Text style={styles.delayTitle}>
                   Delay · {d.causeLabel} · {d.responsibleLabel}
                   {d.responsibleName ? ` (${d.responsibleName})` : ""}
@@ -350,6 +380,7 @@ const styles = StyleSheet.create({
   work: { color: colors.inkBody, fontSize: typography.size.md, marginTop: 2 },
   meta: { color: colors.inkMuted, fontSize: typography.size.sm, marginTop: 2 },
   delay: { marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.lineRow },
+  syncing: { color: colors.inkMuted, fontSize: typography.size.sm, fontStyle: "italic" },
   delayTitle: { color: colors.ink, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
   delayText: { color: colors.tagRoseInk, fontSize: typography.size.sm, marginTop: 2 },
   label: { color: colors.inkLabel, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },

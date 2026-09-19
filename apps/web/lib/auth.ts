@@ -49,13 +49,25 @@ export async function requireCompanyContext() {
  *
  * A phone sends `Authorization: Bearer <jwt>` with no cookie, so this reads
  * the session via `auth()` (which sees the bearer token) rather than
- * `currentUser()` (which reads only the `__session` cookie). It then fetches
- * the full Clerk user by id and hands the same identity to
- * adoptCompanyContext the web path does.
+ * `currentUser()` (which reads only the `__session` cookie).
+ *
+ * A person already linked to this Clerk id is answered from the database
+ * alone. Fetching the full Clerk user is only needed to ADOPT someone — to
+ * read the verified email that links a new Clerk id to an existing row — and
+ * it is a network round trip to Clerk on every phone request: measured
+ * 2026-09-18 at 0.5-1s per call, which a screen making eight calls after a
+ * save felt as a list that updated seconds late. adoptCompanyContext's own
+ * first step is this same clerkId lookup, so a known user gets exactly the
+ * row it would have returned.
  */
 export async function requireApiContext() {
   const { userId } = await auth();
   if (!userId) return null;
+  const known = await prisma.user.findUnique({ where: { clerkId: userId }, include: { company: true } });
+  if (known) {
+    await recordLastSeen(known);
+    return known;
+  }
   const client = await clerkClient();
   const clerkUser = await client.users.getUser(userId);
   const primary = clerkUser.emailAddresses.find((e) => e.id === clerkUser.primaryEmailAddressId) ?? null;
