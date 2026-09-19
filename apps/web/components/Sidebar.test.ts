@@ -123,10 +123,10 @@ afterEach(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = false;
 });
 
-function renderRail() {
+function renderRail(overrides: Partial<Parameters<typeof Sidebar>[0]> = {}) {
   act(() => {
     root.render(
-      createElement(Sidebar, { companyName: "Acme Drywall", principal, stages }),
+      createElement(Sidebar, { companyName: "Acme Drywall", principal, stages, ...overrides }),
     );
   });
 }
@@ -273,6 +273,18 @@ describe("the five figures are never what collapses", () => {
     // only one available — see the note in Sidebar.tsx.
     expect(text).toContain("Proving");
     for (const figure of FIGURE_TEXTS) expect(text).toContain(figure);
+  });
+
+  it("draws every heading and no figure for a principal handed none", () => {
+    // A FIELD user's rail: the layout passes stages=[] (no
+    // VIEW_COMPANY_FINANCIALS), and the rail must stay a working nav —
+    // headings, groups, items — with no dollar figure and no Proving row.
+    nav.pathname = "/schedule";
+    renderRail({ stages: [] });
+    const text = container.textContent ?? "";
+    for (const heading of HEADINGS) expect(text).toContain(heading);
+    for (const figure of FIGURE_TEXTS) expect(text).not.toContain(figure);
+    expect(text).not.toContain("Proving");
   });
 
   it("draws Proving right after Compliance & safety, before Paper trail", () => {

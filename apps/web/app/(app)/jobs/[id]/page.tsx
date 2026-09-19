@@ -245,7 +245,10 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
       },
       dailyFieldReports: {
         orderBy: { reportDate: "desc" },
-        include: { filedBy: true },
+        // `_count.media`: photos taken on the phone with "Attach to today's
+        // report" on, counted rather than loaded — the row shows a number
+        // and the gallery below shows the pictures.
+        include: { filedBy: true, _count: { select: { media: true } } },
       },
       assignments: {
         include: { user: true },
@@ -2365,6 +2368,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
               weatherAutoKind: auto?.kind ?? null,
               manpowerLine: manpowerLine(reportManpower.get(day) ?? { headcount: 0, hours: 0, byCraft: [] }),
               lockedLabel: lockedTimeDays.get(day) ?? null,
+              photoCount: report._count.media,
             };
           })}
         >
