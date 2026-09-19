@@ -7,6 +7,7 @@ import {
   isPooled,
   neonEndpointId,
   sameDatabase,
+  scratchProblem,
   wrongTarget,
 } from "../../../packages/db/scripts/connection-target.mjs";
 
@@ -197,5 +198,58 @@ group("asserting the named target", () => {
     const problem = wrongTarget("ep-patient-lake", describeTarget(OTHER_DIRECT));
     expect(JSON.stringify(problem)).not.toContain("hunter2");
     expect(problem?.message).not.toContain(":p@");
+  });
+});
+
+group("the scratch-only rule for the db suite", () => {
+  // The endpoint that was actually reset on 2026-09-18, by tooling handed
+  // a real URL where a throwaway one belonged. The db suite deletes rows,
+  // so it gets the same refusal, by name.
+  it("refuses every real Neon endpoint, pooled or direct", () => {
+    for (const url of [APP, APP_DIRECT, OTHER_DIRECT]) {
+      const problem = scratchProblem(url, "DATABASE_URL");
+      expect(problem).toMatch(/not a local database/);
+      // The message reaches a terminal; the credential must not.
+      expect(problem).not.toContain(":p@");
+    }
+  });
+
+  it("accepts the scratch recipe's own shapes and nothing fancier", () => {
+    expect(scratchProblem("postgresql://me@localhost:5433/prova_test", "DATABASE_URL")).toBeNull();
+    expect(scratchProblem("postgresql://me@127.0.0.1:5432/prova_test", "DIRECT_URL")).toBeNull();
+    // The unix-socket form from vitest.db.config.mts's comment.
+    expect(
+      scratchProblem("postgresql://me@localhost:5433/prova_test?host=/tmp/pgsock", "DATABASE_URL"),
+    ).toBeNull();
+  });
+
+  it("a socket path that is not a path does not smuggle a remote host through", () => {
+    expect(
+      scratchProblem(`${APP_DIRECT}?host=tmp`, "DATABASE_URL"),
+    ).toMatch(/not a local database/);
+  });
+
+  it("rejects host overrides and remote authorities even when a socket is present", () => {
+    for (const url of [
+      `${APP_DIRECT}?host=/tmp/pgsock`,
+      "postgresql://me@localhost/prova_test?host=remote.example",
+      "postgresql://me@localhost/prova_test?host=/tmp/pgsock&host=remote.example",
+      "postgresql://me@localhost/prova_test?host=//remote/share",
+      "postgresql://me@localhost/prova_test?hostaddr=203.0.113.1",
+      "postgresql://me@localhost/prova_test?service=production",
+    ]) expect(scratchProblem(url, "DATABASE_URL")).not.toBeNull();
+  });
+
+  it("requires a test database even on localhost", () => {
+    for (const database of ["", "postgres", "prova", "neondb", "prova_test/other"]) {
+      expect(scratchProblem(`postgresql://me@localhost/${database}`, "DATABASE_URL")).not.toBeNull();
+    }
+    expect(scratchProblem("postgresql://me@[::1]/prova_dbtest", "DIRECT_URL")).toBeNull();
+    expect(scratchProblem("https://localhost/prova_test", "DATABASE_URL")).not.toBeNull();
+  });
+
+  it("missing or malformed is refused, not waved through", () => {
+    expect(scratchProblem(undefined, "DATABASE_URL")).toMatch(/missing or not a valid/);
+    expect(scratchProblem("not a url", "DIRECT_URL")).toMatch(/missing or not a valid/);
   });
 });
