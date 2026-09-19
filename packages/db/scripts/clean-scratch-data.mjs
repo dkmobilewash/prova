@@ -235,6 +235,9 @@ async function main() {
     await del("timesheetSignoff", () =>
       prisma.timesheetSignoff.deleteMany({ where: { jobId: { in: jobIds } } }),
     );
+    // After the sign-offs: a live one makes the day-lock triggers refuse to
+    // delete that day's delays (and its daily report, below).
+    await del("delayEvent", () => prisma.delayEvent.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("timeEntry", () => prisma.timeEntry.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("dailyFieldReport", () => prisma.dailyFieldReport.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("tmTicket", () => prisma.tmTicket.deleteMany({ where: { jobId: { in: jobIds } } }));

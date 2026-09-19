@@ -82,6 +82,11 @@ export type CreateOp =
       signerName: string;
       signaturePath?: string;
     }
+  | ({
+      type: "delay:create";
+      jobId: string;
+      clientOperationId: string;
+    } & Omit<api.CreateDelayInput, "clientOperationId">)
   | {
       type: "signoff:create";
       jobId: string;
@@ -123,6 +128,16 @@ export async function enqueue(op: PendingOp): Promise<void> {
 
 export async function pendingCount(): Promise<number> {
   return (await read()).length;
+}
+
+/** The idempotency keys of every write still waiting to go up. A screen that
+ * shows a just-saved row before the server has it keeps the row while its key
+ * is here, and drops it once the key is gone — sent (the server's copy
+ * replaces it) or set aside as refused (the refused banner says why). */
+export async function queuedOperationIds(): Promise<Set<string>> {
+  const ids = new Set<string>();
+  for (const op of await read()) if ("clientOperationId" in op) ids.add(op.clientOperationId);
+  return ids;
 }
 
 /** A write the server refused for good — kept so the screen can say what
@@ -289,6 +304,11 @@ async function runOp(op: PendingOp, token: string): Promise<void> {
         token,
       );
       return;
+    case "delay:create": {
+      const { type: _type, jobId, ...input } = op;
+      await api.createDelay(jobId, input, token);
+      return;
+    }
     case "signoff:create":
       await api.createSignoff(
         op.jobId,

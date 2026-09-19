@@ -60,6 +60,7 @@ model Company {
   punchListItems            PunchListItem[]
   tmTickets                 TmTicket[]
   timesheetSignoffs         TimesheetSignoff[]
+  delayEvents               DelayEvent[]
   deviceTokens              DeviceToken[]
   dailyFieldReports         DailyFieldReport[]
   jobMedia                  JobMedia[]
@@ -182,6 +183,7 @@ model User {
   signedTimesheets                     TimesheetSignoff[]            @relation("TimesheetSignoffSignedBy")
   approvedTimesheets                   TimesheetSignoff[]            @relation("TimesheetSignoffApprovedBy")
   reopenedTimesheets                   TimesheetSignoff[]            @relation("TimesheetSignoffReopenedBy")
+  loggedDelays                         DelayEvent[]                  @relation("DelayEventLoggedBy")
   deviceTokens                         DeviceToken[]
   filedDailyFieldReports               DailyFieldReport[]
   capturedJobMedia                     JobMedia[]                    @relation("JobMediaCapturedBy")

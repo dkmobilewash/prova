@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
-import { prisma } from "@prova/db";
+import { prisma, type Prisma } from "@prova/db";
+import { summarizeManpower } from "@/lib/manpower";
+import { toDelayRow } from "@/lib/delays-core";
 import {
   dayText,
   isUniqueViolation,
@@ -121,9 +123,40 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const live = await liveSignoff(job.id, date);
   if (live) return jsonError(lockedDayMessage(date, live), 409);
 
-  const entries = await prisma.timeEntry.findMany({ where: { jobId: job.id, date }, select: { hours: true } });
+  const entries = await prisma.timeEntry.findMany({
+    where: { jobId: job.id, date },
+    select: {
+      hours: true,
+      employeeUserId: true,
+      crewMemberId: true,
+      craftClassification: { select: { name: true } },
+    },
+  });
   if (entries.length === 0) return jsonError(`There are no hours on ${dayText(date)} to sign.`, 409);
   const totalHours = entries.reduce((sum, e) => sum + Number(e.hours), 0);
+
+  // What the signature covers besides the hours: the crew by craft, and the
+  // day's report and delays as they stand now. Frozen here so a reopen can't
+  // quietly change what was signed.
+  const [report, delays] = await Promise.all([
+    prisma.dailyFieldReport.findUnique({ where: { jobId_reportDate: { jobId: job.id, reportDate: date } } }),
+    prisma.delayEvent.findMany({ where: { jobId: job.id, date }, orderBy: { createdAt: "asc" } }),
+  ]);
+  const reportSnapshot =
+    report || delays.length > 0
+      ? {
+          report: report
+            ? {
+                workPerformed: report.workPerformed,
+                otherTradesOnSite: report.crewPresent,
+                siteConditionsNote: report.weather,
+                weather: report.weatherAuto,
+                legacyDelaysText: report.delays,
+              }
+            : null,
+          delays: delays.map(toDelayRow),
+        }
+      : null;
 
   try {
     const signoff = await prisma.timesheetSignoff.create({
@@ -137,6 +170,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         signedAt: new Date(),
         entryCount: entries.length,
         totalHours: totalHours.toFixed(2),
+        manpower: summarizeManpower(entries) as unknown as Prisma.InputJsonValue,
+        ...(reportSnapshot ? { reportSnapshot: reportSnapshot as unknown as Prisma.InputJsonValue } : {}),
         clientOperationId,
       },
       select,

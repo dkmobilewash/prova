@@ -124,12 +124,23 @@ export function TimeEntryFields({
 
       <label className={labelClass}>
         Cost code / SOV line
+        {/* Required on a NEW entry whenever the job has lines: job costing
+            and WIP can't place hours on "no line". A correction keeps the
+            empty option, so an older entry logged before this rule can still
+            have its hours fixed without being forced onto a line. */}
         <select
           name="lineItemId"
           defaultValue={defaults?.lineItemId ?? ""}
+          required={!locked && lineItems.length > 0}
           className={fieldClass}
         >
-          <option value="">No specific line</option>
+          {!locked && lineItems.length > 0 ? (
+            <option value="" disabled>
+              Pick a cost code
+            </option>
+          ) : (
+            <option value="">No specific line</option>
+          )}
           {lineItems.map((item) => (
             <option key={item.id} value={item.id}>
               {item.description}
