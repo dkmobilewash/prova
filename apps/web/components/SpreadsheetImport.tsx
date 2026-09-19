@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState, useTransition } from "react";
-import { importClients, importCrew, importJobs, importVcfContacts } from "@/lib/actions";
+import { importClients, importCrew, importJobs, importPhaseCodes, importVcfContacts } from "@/lib/actions";
 import { readImportFile } from "@/lib/import-files";
 import {
   looksLikeVcf,
@@ -11,24 +11,37 @@ import {
   type ExistingPerson,
 } from "@/lib/vcf-import";
 import {
+  CLIENT_COLUMNS,
+  CLIENT_FIELD_OPTIONS,
   CONTACT_TYPE_WORDS,
+  CREW_COLUMNS,
+  CREW_FIELD_OPTIONS,
   IMPORT_TEMPLATES,
+  JOB_COLUMNS,
+  JOB_FIELD_OPTIONS,
   JOB_STATUS_WORDS,
   MAX_IMPORT_ROWS,
+  PHASE_CODE_COLUMNS,
+  PHASE_CODE_FIELD_OPTIONS,
   TOO_LARGE_MESSAGE,
   crewName,
   importTooLarge,
+  mapColumns,
   planClientImport,
   planCrewImport,
   planJobImport,
+  planPhaseCodeImport,
   type ExistingCrew,
   type ExistingJob,
   type ExistingMatch,
+  type FieldOption,
   type ImportKind,
   type JobClient,
   type JobPlanRow,
   type RowProblem,
 } from "@/lib/spreadsheet-import";
+import { applyColumnMapping, headerOf, type ColumnMapping } from "@/lib/import-mapping";
+import { matchPreset, presetMapping } from "@/lib/import-presets";
 
 /**
  * Paste or upload a spreadsheet, see exactly what will happen, then confirm.
@@ -44,19 +57,48 @@ import {
  * render. Copying them into useState would freeze the first answer, so
  * after a confirm the page's revalidation would bring new rows that the
  * preview never saw, and the same file would still show "will be added".
+ *
+ * THE COLUMN MAPPING (`overrides`, below) is state for the same reason:
+ * it is this person's input too, and it is never sent anywhere until
+ * Confirm — see lib/import-mapping.ts for how it turns into the text the
+ * server re-parses, with no separate write path of its own.
  */
 
 type Props =
   | { kind: "clients"; existingContactNames: string[]; existingPeople: ExistingPerson[] }
   | { kind: "jobs"; existingContactNames: string[]; existingJobs: ExistingJob[] }
-  | { kind: "crew"; existingCrew: ExistingCrew[] };
+  | { kind: "crew"; existingCrew: ExistingCrew[] }
+  | { kind: "costCodes"; existingPhaseCodeCodes: string[] };
 
 type Result = { ok: true; message: string } | { ok: false; message: string };
 
-const COPY: Record<ImportKind, { title: string; button: string; noun: [string, string] }> = {
-  clients: { title: "Clients", button: "Import clients", noun: ["client", "clients"] },
-  jobs: { title: "Jobs", button: "Import jobs", noun: ["job", "jobs"] },
-  crew: { title: "Crew", button: "Import crew", noun: ["crew member", "crew members"] },
+const COPY: Record<ImportKind, { title: string; button: string; noun: [string, string]; listNoun: string }> = {
+  clients: { title: "Clients", button: "Import clients", noun: ["client", "clients"], listNoun: "client list" },
+  jobs: { title: "Jobs", button: "Import jobs", noun: ["job", "jobs"], listNoun: "job list" },
+  crew: { title: "Crew", button: "Import crew", noun: ["crew member", "crew members"], listNoun: "crew list" },
+  costCodes: {
+    title: "Cost codes",
+    button: "Import cost codes",
+    noun: ["cost code", "cost codes"],
+    listNoun: "cost-code list",
+  },
+};
+
+/** The alias table each kind guesses a mapping from, and the labelled
+ * field list its mapping UI offers — one place tying `ImportKind` to the
+ * two tables lib/spreadsheet-import.ts keeps beside each kind's parser. */
+const ALIASES: Record<ImportKind, Record<string, readonly string[]>> = {
+  clients: CLIENT_COLUMNS,
+  jobs: JOB_COLUMNS,
+  crew: CREW_COLUMNS,
+  costCodes: PHASE_CODE_COLUMNS,
+};
+
+const FIELD_OPTIONS: Record<ImportKind, FieldOption<string>[]> = {
+  clients: CLIENT_FIELD_OPTIONS,
+  jobs: JOB_FIELD_OPTIONS,
+  crew: CREW_FIELD_OPTIONS,
+  costCodes: PHASE_CODE_FIELD_OPTIONS,
 };
 
 const inputClass =
@@ -107,6 +149,24 @@ function ColumnHelp({ kind }: { kind: ImportKind }) {
           A job&apos;s value in C Stream is the sum of its line items, so it is built on the job
           page, not typed in here. A value, amount or price column in your file is left out and
           named in the preview.
+        </p>
+      </>
+    );
+  }
+  if (kind === "costCodes") {
+    return (
+      <>
+        <ul className="mb-3 flex flex-col gap-1 text-xs text-ink-body">
+          <Row name="Code">required. As your company writes it — 04112.</Row>
+          <Row name="Name">required, or a Description column. What it is, in your words.</Row>
+          <Row name="Unit">optional — SF, LF, EA, HR.</Row>
+        </ul>
+        <p className="mb-3 rounded-md border border-line-card bg-canvas px-3 py-2 text-xs text-ink-body">
+          <span className="font-medium text-ink-label">Brought in as phase codes.</span> A code
+          already in C Stream is left alone, matched exactly (not case-folded — 04112 and 04112-A
+          stay different codes, the same way the database tells them apart). Nothing is ever
+          deleted here: retiring a code you no longer use is done on{" "}
+          <span className="text-ink-label">Phase codes</span>, one at a time, after the import.
         </p>
       </>
     );
@@ -213,18 +273,130 @@ export function EstimateNotice({ rows }: { rows: Pick<JobPlanRow, "sheetStatus">
   );
 }
 
+/**
+ * The column-mapping step: which of THIS file's columns holds each target
+ * field, guessed first (a vendor preset if the headers look like one, else
+ * the ordinary word-matching guess), and always overridable — nothing here
+ * is trusted the way a person's own pick is. See lib/import-mapping.ts and
+ * lib/import-presets.ts for the mechanics.
+ */
+function ColumnMappingStep({
+  header,
+  fieldOptions,
+  mapping,
+  onChange,
+  presetLabel,
+  onDismissPreset,
+}: {
+  header: string[];
+  fieldOptions: FieldOption<string>[];
+  mapping: ColumnMapping<string>;
+  onChange: (field: string, index: number | undefined) => void;
+  presetLabel: string | null;
+  onDismissPreset: () => void;
+}) {
+  return (
+    <div className="mb-3 rounded-md border border-line-card bg-canvas p-3" data-tour="import-mapping">
+      {presetLabel && (
+        <p className="mb-2 text-xs text-ink-body">
+          <span className="font-medium text-ink-label">Detected: looks like a {presetLabel}.</span>{" "}
+          The columns below were matched for you — not the right file?{" "}
+          <button type="button" onClick={onDismissPreset} className="text-link hover:text-link-hover">
+            Map the columns yourself
+          </button>
+          .
+        </p>
+      )}
+      <p className="mb-2 text-xs text-ink-body">
+        Match each field below to one of your file&apos;s columns. Anything not matched here is
+        listed as unused, further down.
+      </p>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {fieldOptions.map((option) => {
+          const value = mapping[option.field];
+          const missing = option.required && value === undefined;
+          return (
+            <label key={option.field} className="flex flex-col gap-1 text-xs">
+              <span className={missing ? "font-medium text-tag-rose-ink" : "font-medium text-ink-label"}>
+                {option.label}
+                {option.required && " *"}
+              </span>
+              <select
+                value={value ?? ""}
+                onChange={(event) => {
+                  const raw = event.target.value;
+                  onChange(option.field, raw === "" ? undefined : Number(raw));
+                }}
+                aria-label={`Which column is ${option.label}`}
+                className={`${inputClass} min-h-11 text-xs`}
+              >
+                <option value="">Not in this file</option>
+                {header.map((headerText, index) => (
+                  <option key={index} value={index}>
+                    {headerText.trim() || `Column ${index + 1}`}
+                  </option>
+                ))}
+              </select>
+              {missing && <span className="text-tag-rose-ink">Required — pick a column.</span>}
+            </label>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 const th = "px-3 py-2 font-medium";
 const td = "px-3 py-1.5";
 
 export function SpreadsheetImport(props: Props) {
   const { kind } = props;
   const copy = COPY[kind];
+  const fieldOptions = FIELD_OPTIONS[kind];
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
   const [fileError, setFileError] = useState<string | null>(null);
   const [result, setResult] = useState<Result | null>(null);
+  const [overrides, setOverrides] = useState<ColumnMapping<string>>({});
+  const [presetDismissed, setPresetDismissed] = useState(false);
   const [pending, startTransition] = useTransition();
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // A vCard in the clients box bypasses the column mapping entirely — it
+  // isn't tabular, and lib/vcf-import.ts reads it on its own.
+  const isVcf = kind === "clients" && looksLikeVcf(text);
+
+  // The mapping this file's headers suggest — recomputed from `text`, never
+  // stored across a new paste or file (see `edit`, below, which clears
+  // `overrides` the moment the text itself changes).
+  const header = useMemo(() => (!isVcf && text.trim() ? headerOf(text) : null), [text, isVcf]);
+  const preset = useMemo(
+    () => (header && !presetDismissed ? matchPreset(kind, header) : null),
+    [header, kind, presetDismissed],
+  );
+  const guessedMapping = useMemo<ColumnMapping<string>>(
+    () => (header ? mapColumns(header, ALIASES[kind]).mapping : {}),
+    [header, kind],
+  );
+  const baseMapping = useMemo<ColumnMapping<string>>(
+    () => (preset && header ? { ...guessedMapping, ...presetMapping(preset, header) } : guessedMapping),
+    [preset, guessedMapping, header],
+  );
+  // The person's own picks always win over any guess — this is the only
+  // place a mapping decision is made, and it is never remembered past this
+  // render other than in this component's own state.
+  const effectiveMapping = useMemo<ColumnMapping<string>>(() => ({ ...baseMapping, ...overrides }), [baseMapping, overrides]);
+  const labelFor = useMemo(
+    () => Object.fromEntries(fieldOptions.map((option) => [option.field, option.label])),
+    [fieldOptions],
+  );
+  // The text every parser below actually reads: identical to what was
+  // pasted or uploaded except for its header line, which now says what the
+  // person confirmed each column means — see lib/import-mapping.ts.
+  const mappedText = useMemo(
+    () => (header ? applyColumnMapping(text, effectiveMapping, labelFor) : text),
+    [text, header, effectiveMapping, labelFor],
+  );
 
   // Recomputed from props every render — see the note at the top.
   const plan = useMemo(() => {
@@ -232,16 +404,19 @@ export function SpreadsheetImport(props: Props) {
     if (props.kind === "clients") {
       // A vCard in the clients box — chosen as a .vcf file or pasted —
       // takes the vCard planner; the same preview-then-Confirm follows.
-      if (looksLikeVcf(text)) {
+      if (isVcf) {
         return { kind: "vcf" as const, ...planVcfImport(text, props.existingContactNames, props.existingPeople) };
       }
-      return { kind: "clients" as const, ...planClientImport(text, props.existingContactNames) };
+      return { kind: "clients" as const, ...planClientImport(mappedText, props.existingContactNames) };
     }
     if (props.kind === "jobs") {
-      return { kind: "jobs" as const, ...planJobImport(text, props.existingContactNames, props.existingJobs) };
+      return { kind: "jobs" as const, ...planJobImport(mappedText, props.existingContactNames, props.existingJobs) };
     }
-    return { kind: "crew" as const, ...planCrewImport(text, props.existingCrew) };
-  }, [text, props]);
+    if (props.kind === "crew") {
+      return { kind: "crew" as const, ...planCrewImport(mappedText, props.existingCrew) };
+    }
+    return { kind: "costCodes" as const, ...planPhaseCodeImport(mappedText, props.existingPhaseCodeCodes) };
+  }, [text, mappedText, isVcf, props]);
 
   const template = IMPORT_TEMPLATES[kind];
   const templateHref = `data:text/csv;charset=utf-8,${encodeURIComponent(template.csv)}`;
@@ -249,6 +424,10 @@ export function SpreadsheetImport(props: Props) {
   function edit(next: string) {
     setText(next);
     setResult(null);
+    // A new file or a fresh paste gets a fresh guess — a mapping chosen for
+    // the last file has no business surviving onto a different one.
+    setOverrides({});
+    setPresetDismissed(false);
   }
 
   async function onFile(file: File | undefined) {
@@ -271,15 +450,17 @@ export function SpreadsheetImport(props: Props) {
 
   function confirm() {
     const formData = new FormData();
-    formData.set("csv", text);
+    formData.set("csv", isVcf ? text : mappedText);
     const action =
       kind === "clients"
-        ? looksLikeVcf(text)
+        ? isVcf
           ? importVcfContacts
           : importClients
         : kind === "jobs"
           ? importJobs
-          : importCrew;
+          : kind === "crew"
+            ? importCrew
+            : importPhaseCodes;
     startTransition(async () => {
       const outcome = await action(formData);
       setResult(outcome.ok ? { ok: true, message: outcome.value.message } : { ok: false, message: outcome.error });
@@ -309,7 +490,7 @@ export function SpreadsheetImport(props: Props) {
   const noun: [string, string] = plan?.kind === "vcf" ? ["contact", "contacts"] : copy.noun;
   // Checked here as well as in the action: over Next's body limit the
   // confirm would never reach the action, only the error page.
-  const tooLarge = importTooLarge(text);
+  const tooLarge = importTooLarge(isVcf ? text : mappedText);
 
   return (
     <section className="rounded-lg border border-line-card bg-surface p-4">
@@ -330,7 +511,9 @@ export function SpreadsheetImport(props: Props) {
 
       <p className="mb-2 text-xs text-ink-body">
         The first row must name the columns. Names don&apos;t have to match exactly, and columns
-        can be in any order.
+        can be in any order — or map them yourself below if they don&apos;t match at all, which is
+        how any accounting system&apos;s export comes across, not only the ones C Stream
+        recognises by name.
       </p>
       <ColumnHelp kind={kind} />
 
@@ -378,6 +561,17 @@ export function SpreadsheetImport(props: Props) {
         className={`${inputClass} w-full font-mono text-xs`}
       />
 
+      {header && (
+        <ColumnMappingStep
+          header={header}
+          fieldOptions={fieldOptions}
+          mapping={effectiveMapping}
+          onChange={(field, index) => setOverrides((prev) => ({ ...prev, [field]: index }))}
+          presetLabel={preset ? `${preset.vendorLabel} ${copy.listNoun}` : null}
+          onDismissPreset={() => setPresetDismissed(true)}
+        />
+      )}
+
       {plan && (
         <div className="mt-3">
           <div className="flex flex-wrap gap-2 text-xs" data-tour="import-preview">
@@ -412,7 +606,7 @@ export function SpreadsheetImport(props: Props) {
           {plan.kind !== "vcf" && plan.ignoredColumns.length > 0 && (
             <p className="mt-2 text-xs text-ink-muted">
               Columns not used: {plan.ignoredColumns.join(", ")}. If something you need is in one
-              of those, rename its header to one listed above and paste again.
+              of those, map it above and confirm again.
             </p>
           )}
 
@@ -532,6 +726,28 @@ export function SpreadsheetImport(props: Props) {
                             {row.identifyingNumberLast4 ? `•••-••-${row.identifyingNumberLast4}` : "—"}
                           </td>
                           <td className={`${td} tabular-nums text-ink-body`}>{row.hiredOn ?? "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </>
+                )}
+                {plan.kind === "costCodes" && (
+                  <>
+                    <thead className="text-ink-muted">
+                      <tr>
+                        <th className={th}>Line</th>
+                        <th className={th}>Code</th>
+                        <th className={th}>Name</th>
+                        <th className={th}>Unit</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-line-row">
+                      {plan.create.slice(0, 25).map((row) => (
+                        <tr key={row.line} className="text-ink-label">
+                          <td className={`${td} tabular-nums text-ink-muted`}>{row.line}</td>
+                          <td className={`${td} tabular-nums`}>{row.code}</td>
+                          <td className={td}>{row.name}</td>
+                          <td className={`${td} text-ink-body`}>{row.unit ?? "—"}</td>
                         </tr>
                       ))}
                     </tbody>

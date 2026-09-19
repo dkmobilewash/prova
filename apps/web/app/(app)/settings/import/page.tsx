@@ -42,7 +42,7 @@ export default async function ImportPage() {
     );
   }
 
-  const [contacts, contactPeople, jobs, crew, certificates, vendors] = await Promise.all([
+  const [contacts, contactPeople, jobs, crew, phaseCodes, certificates, vendors] = await Promise.all([
     prisma.contact.findMany({ where: { companyId: company.id }, select: { name: true, accountType: true } }),
     // For the phone-contacts (.vcf) preview's "already here": which people
     // already exist under which contact, matched the same way the confirm
@@ -59,6 +59,10 @@ export default async function ImportPage() {
       where: { companyId: company.id },
       select: { legalFirstName: true, legalMiddleName: true, legalLastName: true, employeeNumber: true },
     }),
+    // For the cost-codes import's "already here" — every code this company
+    // has, active or retired, matched exactly the way the confirm matches
+    // them (lib/spreadsheet-import.ts, planPhaseCodeImport).
+    prisma.phaseCode.findMany({ where: { companyId: company.id }, select: { code: true } }),
     // For the myCOI import's "already here": the same three facts the
     // confirm compares, read the same way.
     prisma.complianceDocument.findMany({
@@ -75,10 +79,12 @@ export default async function ImportPage() {
         Import from a spreadsheet
       </h1>
       <p className="mb-2 text-sm text-ink-body">
-        Bring in the clients, jobs and crew you already keep in Excel, Google Sheets or a
-        QuickBooks export, instead of adding them one at a time. Excel files (.xlsx) work as-is —
-        no saving as CSV first — and the Clients box also takes the contacts file your phone
-        exports (.vcf).
+        Bring in the clients, jobs, crew and cost codes you already keep in Excel, Google Sheets,
+        or an export from Sage 100 Contractor, Foundation, QuickBooks or any other system —
+        instead of adding them one at a time. Excel files (.xlsx) work as-is — no saving as CSV
+        first — and the Clients box also takes the contacts file your phone exports (.vcf).
+        Headers that don&apos;t match a name C Stream recognises can be mapped by hand, column by
+        column, so any export is importable, not only the ones it guesses.
       </p>
       <p className="mb-2 text-sm text-ink-body" data-tour="import-jobber">
         Use Jobber?{" "}
@@ -122,6 +128,9 @@ export default async function ImportPage() {
         </div>
         <div data-tour="import-crew">
           <SpreadsheetImport kind="crew" existingCrew={crew} />
+        </div>
+        <div data-tour="import-cost-codes">
+          <SpreadsheetImport kind="costCodes" existingPhaseCodeCodes={phaseCodes.map((row) => row.code)} />
         </div>
         {/* The myCOI card on Settings → Integrations links here. */}
         <div id="mycoi" className="scroll-mt-6" data-tour="import-mycoi">

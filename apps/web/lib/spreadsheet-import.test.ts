@@ -11,6 +11,7 @@ import {
   planClientImport,
   planCrewImport,
   planJobImport,
+  planPhaseCodeImport,
 } from "./spreadsheet-import";
 
 /**
@@ -304,5 +305,62 @@ describe("crew — and never more than four SSN digits", () => {
   it("refuses an impossible hire date by line", () => {
     const plan = planCrewImport(`${header}\nMaria,,Lopez,,,2/30/2024`, []);
     expect(plan.problems).toEqual([{ line: 2, message: expect.stringContaining("isn't a real date") }]);
+  });
+});
+
+describe("cost codes — matched by CODE ONLY, and not case-folded", () => {
+  const header = "Code,Name,Unit";
+
+  it("requires a Code and a Name (or Description) column", () => {
+    expect(planPhaseCodeImport("Foo,Bar\n1,2", []).problems).toEqual([
+      { line: 1, message: expect.stringContaining("No Code or Name column found") },
+    ]);
+    // "Description" reads onto Name.
+    const plan = planPhaseCodeImport("Code,Description\n04112,Plywood", []);
+    expect(plan.create).toEqual([{ line: 2, code: "04112", name: "Plywood", unit: null }]);
+  });
+
+  it("creates only what is new, skips a blank code or name, and dedupes within the file", () => {
+    const plan = planPhaseCodeImport(
+      [
+        header,
+        "04112,Plywood,SF",
+        "04112,Plywood again,SF", // same code as line 2
+        ",No code,SF",
+        "04220,,SF", // no name
+        "09250,Drywall,SF",
+      ].join("\n"),
+      ["09250"],
+    );
+    expect(plan.create).toEqual([{ line: 2, code: "04112", name: "Plywood", unit: "SF" }]);
+    expect(plan.existing).toEqual([{ line: 6, label: "09250 — Drywall" }]);
+    expect(plan.problems).toEqual([
+      { line: 3, message: expect.stringContaining("same code as line 2") },
+      { line: 4, message: "No code — skipped." },
+      { line: 5, message: expect.stringContaining("04220 — no name") },
+    ]);
+  });
+
+  it("matches an existing code EXACTLY — not case-folded, unlike a client or job name", () => {
+    // "04112" and "04112-A" stay different codes; "04112" and "04112" (same
+    // case) collide, exactly as the database's case-sensitive unique index
+    // does (createPhaseCode in lib/actions/phase-codes.ts).
+    const plan = planPhaseCodeImport(`${header}\n04112-A,Plywood A,SF\n04112,Plywood,SF`, ["04112"]);
+    expect(plan.create).toEqual([{ line: 2, code: "04112-A", name: "Plywood A", unit: "SF" }]);
+    expect(plan.existing).toEqual([{ line: 3, label: "04112 — Plywood" }]);
+  });
+
+  it(`caps the import at ${MAX_IMPORT_ROWS} rows and names the first one left out`, () => {
+    const lines = Array.from({ length: MAX_IMPORT_ROWS + 2 }, (_, i) => `C${i + 1},Name ${i + 1},`);
+    const plan = planPhaseCodeImport(`${header}\n${lines.join("\n")}`, []);
+    expect(plan.create).toHaveLength(MAX_IMPORT_ROWS);
+    expect(plan.problems).toEqual([
+      { line: MAX_IMPORT_ROWS + 2, message: expect.stringContaining("2 more were left out") },
+    ]);
+  });
+
+  it("leaves an unrecognised column out and names it", () => {
+    const plan = planPhaseCodeImport("Code,Name,Division\n04112,Plywood,04", []);
+    expect(plan.ignoredColumns).toEqual(["Division"]);
   });
 });
