@@ -268,8 +268,8 @@ export function IntakeDropZone({ companyId }: { companyId: string }) {
         </p>
         <p className="mx-auto mt-1 max-w-xl text-sm text-ink-body">
           Everything a GC has sent you — transmittals, returned submittals, COIs, pay apps, signed
-          change orders. We read each one and propose where it goes. Nothing is filed until you say
-          so.
+          change orders. We read each filename — not what&apos;s inside — and propose where it goes.
+          Nothing is filed until you say so.
         </p>
         <p className="mt-2 text-xs text-ink-muted">
           Up to {INTAKE_MAX_FILES} files at a time, {formatIntakeSize(INTAKE_MAX_FILE_BYTES)} each.

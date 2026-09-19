@@ -27,7 +27,7 @@ export const settingsImportWalkthrough: Walkthrough = {
       anchor: "import-clients",
       title: "Start with clients",
       body:
-        "Press Import clients to open this box. Clients first is easiest, because your jobs will need them.",
+        "Press Import clients to open this box. Clients first is easiest, because your jobs will need them. This box also takes the contacts file your phone exports (.vcf) — people with a company land under that company.",
     },
     {
       anchor: "import-jobs",
@@ -44,13 +44,13 @@ export const settingsImportWalkthrough: Walkthrough = {
       anchor: "import-mycoi",
       title: "Insurance from myCOI",
       body:
-        "If you track your vendors' and subs' insurance in myCOI, export it from there as a spreadsheet, save it as CSV, and press Import certificates. Each vendor's cover lands on Compliance with its expiry date.",
+        "If you track your vendors' and subs' insurance in myCOI, export it from there as a spreadsheet and press Import certificates — an Excel file works as-is. Each vendor's cover lands on Compliance with its expiry date.",
     },
     {
       anchor: "import-file",
       title: "Pick your file",
       body:
-        "Save your sheet as a CSV file (in Excel: File, Save As, CSV) and choose it here. Not sure how to lay it out? Download a blank template and fill that in.",
+        "Choose your file here — an Excel file (.xlsx) works as-is, no saving as CSV first, and a CSV works too. Not sure how to lay it out? Download a blank template and fill that in.",
     },
     {
       anchor: "import-paste",

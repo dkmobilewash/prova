@@ -10,6 +10,8 @@ function describe(op: PendingOp): string {
       return `Signature for ${op.date}`;
     case "delay:create":
       return `Delay on ${op.date}`;
+    case "media:create":
+      return `Photo from ${op.capturedAt.slice(0, 10)}`;
     case "field-report:create":
       return `Report for ${op.reportDate}`;
     case "ticket:create":

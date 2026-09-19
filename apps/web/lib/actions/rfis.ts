@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
+import { viewerToday } from "@/lib/viewerToday";
 import { can } from "@/lib/permissions";
 import { Prisma, prisma } from "@prova/db";
 import {
@@ -49,12 +50,6 @@ function required(formData: FormData, key: string, label: string) {
   const value = text(formData, key);
   if (!value) throw new InputError(`${label} is required`);
   return value;
-}
-
-/** Every date in this module is stored at UTC midnight so that comparisons
- * between them are comparisons between calendar days, not instants. */
-function utcMidnight(date: Date) {
-  return new Date(`${date.toISOString().slice(0, 10)}T00:00:00.000Z`);
 }
 
 /** Dates are stored at UTC midnight and rendered in UTC, same rule as the
@@ -223,7 +218,12 @@ export async function markRfiSent(rfiId: string): Promise<ActionResult> {
       // normalises to midnight, so it compared as EARLIER than a send
       // stamped at 14:30, and the guard rejected it with a message blaming
       // the user for data that was correct.
-      data: { status: "SENT", sentOn: utcMidnight(new Date()) },
+      //
+      // The VIEWER'S calendar day, not the server's: "dates that matter
+      // are ENTERED, not stamped", and UTC-today marks an RFI sent after
+      // ~5pm US time as sent TOMORROW — a day the correspondence log,
+      // days-outstanding and the GC's copy then all disagree about.
+      data: { status: "SENT", sentOn: new Date(`${await viewerToday()}T00:00:00.000Z`) },
     });
     revalidatePath("/rfis");
     return ok;
@@ -240,7 +240,11 @@ export async function answerRfi(rfiId: string, formData: FormData): Promise<Acti
     if (!rfi) return fail("RFI not found");
     if (rfi.status === "DRAFT") return fail("Send this RFI before recording an answer");
 
-    const answeredAt = optionalDate(formData, "answeredOn") ?? utcMidnight(new Date());
+    // Blank falls back to TODAY on the viewer's calendar, never the UTC
+    // day of the click — an answer recorded in a US evening is not
+    // tomorrow's answer.
+    const answeredAt =
+      optionalDate(formData, "answeredOn") ?? new Date(`${await viewerToday()}T00:00:00.000Z`);
 
     // An answer that arrived before the question was asked discredits the
     // whole log — and a log that can hold one is worth nothing in a dispute.

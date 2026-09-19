@@ -123,8 +123,15 @@ export default async function ImportPage() {
     );
   }
 
-  const [contacts, jobs, crew, certificates, vendors, registerEntries] = await Promise.all([
+  const [contacts, contactPeople, jobs, crew, certificates, vendors, registerEntries] = await Promise.all([
     prisma.contact.findMany({ where: { companyId: company.id }, select: { name: true, accountType: true } }),
+    // For the phone-contacts (.vcf) preview's "already here": which people
+    // already exist under which contact, matched the same way the confirm
+    // matches them.
+    prisma.contactPerson.findMany({
+      where: { companyId: company.id },
+      select: { name: true, contact: { select: { name: true } } },
+    }),
     prisma.job.findMany({
       where: { companyId: company.id },
       select: { name: true, contact: { select: { name: true } } },
@@ -170,7 +177,9 @@ export default async function ImportPage() {
       </h1>
       <p className="mb-2 text-sm text-ink-body">
         Bring in the clients, jobs and crew you already keep in Excel, Google Sheets or a
-        QuickBooks export, instead of adding them one at a time.
+        QuickBooks export, instead of adding them one at a time. Excel files (.xlsx) work as-is —
+        no saving as CSV first — and the Clients box also takes the contacts file your phone
+        exports (.vcf).
       </p>
       <p className="mb-2 text-sm text-ink-body" data-tour="import-jobber">
         Use Jobber?{" "}
@@ -196,7 +205,14 @@ export default async function ImportPage() {
 
       <div className="mb-8 flex flex-col gap-6">
         <div data-tour="import-clients">
-          <SpreadsheetImport kind="clients" existingContactNames={contactNames} />
+          <SpreadsheetImport
+            kind="clients"
+            existingContactNames={contactNames}
+            existingPeople={contactPeople.map((person) => ({
+              contactName: person.contact.name,
+              name: person.name,
+            }))}
+          />
         </div>
         <div data-tour="import-jobs">
           <SpreadsheetImport

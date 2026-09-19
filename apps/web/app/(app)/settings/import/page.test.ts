@@ -47,6 +47,10 @@ const TABLES: Record<string, Row[]> = {
     { companyId: "co_A", name: "Tower", contact: { name: "Acme Builders" } },
     { companyId: "co_B", name: "Harbor", contact: { name: "Zenith GC" } },
   ],
+  contactPerson: [
+    { companyId: "co_A", name: "Priya Shah", contact: { name: "Acme Builders" } },
+    { companyId: "co_B", name: "Wei Chen", contact: { name: "Zenith GC" } },
+  ],
   crewMember: [
     { companyId: "co_A", id: "crew_maria", legalFirstName: "Maria", legalMiddleName: null, legalLastName: "Lopez", employeeNumber: null, identifyingNumberLast4: null },
     { companyId: "co_B", id: "crew_john", legalFirstName: "John", legalMiddleName: null, legalLastName: "Smith", employeeNumber: "E-1", identifyingNumberLast4: null },
@@ -74,6 +78,7 @@ vi.mock("@prova/db", () => ({
     vendor: fakeModel("vendor"),
     complianceDocument: fakeModel("complianceDocument"),
     payrollRegisterEntry: fakeModel("payrollRegisterEntry"),
+    contactPerson: fakeModel("contactPerson"),
   },
   Prisma: {},
 }));
@@ -171,7 +176,8 @@ describe("/settings/import", () => {
     expect(payload).toContain("Acme Builders");
     expect(payload).toContain("Tower");
     expect(payload).toContain("Maria");
-    for (const theirs of ["Zenith GC", "Harbor", "John", "Smith", "E-1"]) {
+    expect(payload).toContain("Priya Shah");
+    for (const theirs of ["Zenith GC", "Harbor", "John", "Smith", "E-1", "Wei Chen"]) {
       expect(payload).not.toContain(theirs);
     }
     expect(state.registerProps).toHaveLength(1);

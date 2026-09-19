@@ -271,7 +271,9 @@ export default async function Wh347Page({
           <ul className="mt-3 flex flex-col gap-1.5">
             {form.blocking.map((field) => (
               <li key={field} className="text-xs leading-snug text-tag-rose-ink">
-                {WH347_BLOCKING_FIELD_REASON[field]}
+                {field === "hoursOutsideWeek"
+                  ? `${form.hoursOutsideWeek} ${form.hoursOutsideWeek === 1 ? "hour falls" : "hours fall"} outside this week's grid. ${WH347_BLOCKING_FIELD_REASON[field]}`
+                  : WH347_BLOCKING_FIELD_REASON[field]}
               </li>
             ))}
           </ul>

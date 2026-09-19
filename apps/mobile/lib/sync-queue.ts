@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as api from "./api";
+import { discardQueuedPhoto, queuedPhotoExists } from "./photo-store";
 import type { FieldReportFields } from "./types";
 
 const KEY = "prova.field-queue";
@@ -81,6 +82,24 @@ export type CreateOp =
       workDescription: string;
       signerName: string;
       signaturePath?: string;
+    }
+  | {
+      type: "media:create";
+      jobId: string;
+      clientOperationId: string;
+      /** The stamped photo, kept in the app's document directory until it
+       * goes up (lib/photo-store.ts). */
+      fileUri: string;
+      fileName: string;
+      mimeType: string;
+      capturedAt: string;
+      capturedLatitude?: number;
+      capturedLongitude?: number;
+      capturedAccuracyMeters?: number;
+      caption?: string;
+      tagIds?: string[];
+      dailyFieldReportId?: string;
+      punchListItemId?: string;
     }
   | ({
       type: "delay:create";
@@ -197,6 +216,8 @@ export async function flushQueue(token: string): Promise<void> {
         throw error;
       }
       if (error instanceof api.ApiError && isFinalRefusal(error.status)) {
+        // A photo the server will never take is not worth the phone's disk.
+        if (op.type === "media:create") discardQueuedPhoto(op.fileUri);
         refused.push({ op, error: error.message, status: error.status, at: new Date().toISOString() });
         done++;
         continue;
@@ -307,6 +328,29 @@ async function runOp(op: PendingOp, token: string): Promise<void> {
     case "delay:create": {
       const { type: _type, jobId, ...input } = op;
       await api.createDelay(jobId, input, token);
+      return;
+    }
+    case "media:create": {
+      // The file the system cleared out from under us: nothing to upload
+      // and nothing a retry can fix, so let it be set aside like a refusal.
+      if (!queuedPhotoExists(op.fileUri)) {
+        throw new api.ApiError("The photo file is no longer on this phone", 410);
+      }
+      const form = new FormData();
+      form.append("file", { uri: op.fileUri, name: op.fileName, type: op.mimeType } as unknown as Blob);
+      form.append("capturedAt", op.capturedAt);
+      form.append("clientOperationId", op.clientOperationId);
+      if (op.caption) form.append("caption", op.caption);
+      if (op.capturedLatitude !== undefined) form.append("capturedLatitude", String(op.capturedLatitude));
+      if (op.capturedLongitude !== undefined) form.append("capturedLongitude", String(op.capturedLongitude));
+      if (op.capturedAccuracyMeters !== undefined) {
+        form.append("capturedAccuracyMeters", String(op.capturedAccuracyMeters));
+      }
+      if (op.dailyFieldReportId) form.append("dailyFieldReportId", op.dailyFieldReportId);
+      if (op.punchListItemId) form.append("punchListItemId", op.punchListItemId);
+      for (const tagId of op.tagIds ?? []) form.append("tagIds", tagId);
+      await api.uploadMedia(op.jobId, form, token);
+      discardQueuedPhoto(op.fileUri);
       return;
     }
     case "signoff:create":

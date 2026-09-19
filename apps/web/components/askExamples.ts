@@ -36,6 +36,10 @@ export const EXAMPLES = [
   "Start an estimate for a new job",
   "Log today's field report",
   "Anything expiring I should renew?",
+  // The one chip a brand-new account can always use: it routes to the
+  // getting_started tool, which answers per person from the dashboard
+  // card's own steps. Every other chip assumes something exists.
+  "What should I set up first?",
 ] as const;
 
 /** Question words an example can open with. Anything not starting with one

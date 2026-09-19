@@ -54,7 +54,9 @@ const INSURANCE_POLICY_TYPE_OPTIONS = [
 ] as const;
 
 const BOND_TYPE_OPTIONS = [
-  { value: "LICENSE_BOND", label: "License bond" },
+  // "Licence" is this app's rendered voice everywhere else on this page
+  // (Contractor licences, licence bond) — the enum stays LICENSE_BOND.
+  { value: "LICENSE_BOND", label: "Licence bond" },
   { value: "PERFORMANCE_PAYMENT_CAPACITY", label: "Performance/payment capacity" },
 ] as const;
 
@@ -666,7 +668,7 @@ export default async function SettingsPage({
       <section data-tour="settings-bonding">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Bonding</h2>
         <p className="mb-4 text-sm text-ink-body">
-          License bonds and overall performance/payment bonding capacity, and who to contact to
+          Licence bonds and overall performance/payment bonding capacity, and who to contact to
           increase it or pull a bond for a specific job.
         </p>
 

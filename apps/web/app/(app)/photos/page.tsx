@@ -176,8 +176,8 @@ export default async function PhotosPage({
             <p>
               Before, during and after pictures for every job, filed against the job instead of
               lost in someone&apos;s camera roll — tagged in your own words (&ldquo;rough
-              plumbing&rdquo;, &ldquo;before&rdquo;), and shareable with the homeowner through
-              their job link. A photo always belongs to a job, so start with one.
+              plumbing&rdquo;, &ldquo;before&rdquo;), and shareable with the GC through their job
+              link. A photo always belongs to a job, so start with one.
             </p>
           }
           actions={[{ label: "Create a job", href: "/jobs/new" }]}

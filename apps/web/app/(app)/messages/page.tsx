@@ -122,14 +122,25 @@ export default async function MessagesPage({
         <div className="mb-6 rounded-lg border border-amber-700 bg-tag-amber p-4" data-tour="messages-setup">
           <p className="text-sm font-medium text-tag-amber-ink">Sending isn&apos;t set up yet</p>
           <p className="mt-1 text-sm text-tag-amber-ink/80">{setupProblem}</p>
-          <p className="mt-2 text-xs text-tag-amber-ink/60">
-            It needs <span className="font-mono">RESEND_API_KEY</span> and{" "}
-            <span className="font-mono">OUTBOUND_EMAIL_FROM</span> set to an address on your own
-            domain, verified with the provider — plus{" "}
-            <span className="font-mono">RESEND_WEBHOOK_SECRET</span>, without which no delivery
-            events are accepted at all. Sending from your own domain rather than ours is the point:
-            it&apos;s what keeps quotes out of spam.
-          </p>
+          {company.isProvaOperator ? (
+            // Deployment plumbing, for the people who run the deployment.
+            // A drywall contractor was reading these env-var names in
+            // monospace on their first visit; the fix is who sees them,
+            // not the sentence — an operator still needs the exact names.
+            <p className="mt-2 text-xs text-tag-amber-ink/60">
+              It needs <span className="font-mono">RESEND_API_KEY</span> and{" "}
+              <span className="font-mono">OUTBOUND_EMAIL_FROM</span> set to an address on your own
+              domain, verified with the provider — plus{" "}
+              <span className="font-mono">RESEND_WEBHOOK_SECRET</span>, without which no delivery
+              events are accepted at all. Sending from your own domain rather than ours is the point:
+              it&apos;s what keeps quotes out of spam.
+            </p>
+          ) : (
+            <p className="mt-2 text-xs text-tag-amber-ink/60">
+              Whoever runs C Stream for you has to configure the email provider on this deployment.
+              Everything else on this page works without it.
+            </p>
+          )}
         </div>
       )}
 
@@ -145,8 +156,8 @@ export default async function MessagesPage({
           purpose={
             <p>
               Your sent mail, with proof it arrived. Every email C Stream sends for you — a note to
-              a homeowner, a question to the builder, a change of start date — is kept here with
-              what happened to it: delivered, bounced, or no word back yet.
+              the GC&apos;s super, a question to the architect, a change of start date — is kept
+              here with what happened to it: delivered, bounced, or no word back yet.
             </p>
           }
           actions={setupProblem === null ? [{ label: "Send an email", opens: "messages-compose" }] : []}
