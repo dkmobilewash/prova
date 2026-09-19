@@ -179,7 +179,17 @@ export async function POST(
   // Tags picked at the shutter. Company-scoped, deduplicated, and silently
   // narrowed to the ones that exist — a tag renamed or deleted between
   // taking the photo and the upload going through must not lose the photo.
-  const tagIds = [...new Set(formData.getAll("tagIds").map((t) => String(t).trim()).filter(Boolean))];
+  // Repeated fields from the web, comma-separated from the phone: a native
+  // multipart upload carries one value per field name.
+  const tagIds = [
+    ...new Set(
+      formData
+        .getAll("tagIds")
+        .flatMap((t) => String(t).split(","))
+        .map((t) => t.trim())
+        .filter(Boolean),
+    ),
+  ];
   const tags = tagIds.length
     ? await prisma.jobMediaTag.findMany({
         where: { id: { in: tagIds }, companyId: context.companyId },

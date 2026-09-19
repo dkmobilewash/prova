@@ -1,4 +1,4 @@
-import { Directory, File, Paths } from "expo-file-system";
+import { Directory, File, Paths, UploadType } from "expo-file-system";
 
 /**
  * Where a photo waits while it is queued.
@@ -54,4 +54,36 @@ export function queuedPhotoExists(uri: string): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * Sends one queued photo to the API as multipart form data.
+ *
+ * NOT `fetch` with a `{ uri, name, type }` part: that shape is React
+ * Native's own, and the runtime's newer WinterCG `fetch` refuses it with
+ * "Unsupported FormDataPart implementation" — which is exactly how a photo
+ * sat in the queue saying "Syncing…" forever. This is the file system's own
+ * native multipart upload, which streams the file from disk rather than
+ * pulling it through JavaScript.
+ *
+ * Returns the HTTP status and body so the queue can tell a refusal (the
+ * server read it and said no) from a retry (no signal, a 5xx).
+ */
+export async function uploadQueuedPhoto(
+  fileUri: string,
+  url: string,
+  token: string,
+  mimeType: string,
+  parameters: Record<string, string>,
+): Promise<{ status: number; body: string }> {
+  const task = new File(fileUri).createUploadTask(url, {
+    httpMethod: "POST",
+    uploadType: UploadType.MULTIPART,
+    fieldName: "file",
+    mimeType,
+    parameters,
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const result = await task.uploadAsync();
+  return { status: result.status, body: result.body };
 }

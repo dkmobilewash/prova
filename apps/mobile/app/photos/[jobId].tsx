@@ -28,7 +28,6 @@ import { keepForUpload } from "@/lib/photo-store";
 import { enqueue, queuedOperationIds } from "@/lib/sync-queue";
 import { colors, typography } from "@/lib/theme";
 import type { Media, MediaTag, PunchListItem } from "@/lib/types";
-import { useReloadWhenShown } from "@/lib/use-reload-when-shown";
 import { useStableGetToken } from "@/lib/use-stable-get-token";
 import { useSync } from "@/lib/use-sync";
 
@@ -91,7 +90,6 @@ export default function PhotosScreen() {
     ]);
   }, [getToken, jobId]);
 
-  useReloadWhenShown(load);
   const { sync, refused, dismissRefused } = useSync(load);
 
   // The details sheet, opened once a photo has been taken or picked.
@@ -279,7 +277,15 @@ export default function PhotosScreen() {
           a view with display:none or zero opacity has nothing to capture. */}
       {shot ? (
         <View style={styles.offscreen} pointerEvents="none">
-          <ViewShot ref={stampRef} style={{ width: STAMP_WIDTH, height: stampHeight }}>
+          {/* `width`/`height` pin the OUTPUT size. Without them the capture
+              comes out at the screen's pixel density — a 3600px, 2.7MB file
+              measured on an iPhone — which is a lot to push up a site
+              connection for a photo nobody will view that large. */}
+          <ViewShot
+            ref={stampRef}
+            options={{ format: "jpg", quality: 0.9, width: STAMP_WIDTH, height: stampHeight }}
+            style={{ width: STAMP_WIDTH, height: stampHeight }}
+          >
             <Image source={{ uri: shot.uri }} style={{ width: STAMP_WIDTH, height: stampHeight }} resizeMode="cover" />
             <View style={styles.stamp}>
               {lines.map((line, i) => (
