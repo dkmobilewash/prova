@@ -16,7 +16,12 @@ import { planJobImport } from "@/lib/spreadsheet-import";
  * above the table that cannot be scrolled past.
  */
 
-vi.mock("@/lib/actions", () => ({ importClients: vi.fn(), importJobs: vi.fn(), importCrew: vi.fn() }));
+vi.mock("@/lib/actions", () => ({
+  importClients: vi.fn(),
+  importJobs: vi.fn(),
+  importCrew: vi.fn(),
+  importVcfContacts: vi.fn(),
+}));
 
 const { EstimateNotice } = await import("./SpreadsheetImport");
 
