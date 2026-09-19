@@ -147,8 +147,14 @@ export default async function SchedulePage() {
           <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
             {scheduled.map((job) => (
               <li key={job.id} className="p-4">
-                <Link href={`/jobs/${job.id}`} className="flex items-center justify-between gap-3">
-                  <div>
+                {/* Stacks below sm: a nowrap date range beside a name
+                    column left ~140px for the name at 375px. Same
+                    max-sm pattern as the field rows (#89). */}
+                <Link
+                  href={`/jobs/${job.id}`}
+                  className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-3"
+                >
+                  <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <p className="font-medium text-ink">{job.name}</p>
                       <StatusBadge status={job.status} />
@@ -160,7 +166,7 @@ export default async function SchedulePage() {
                       </p>
                     )}
                   </div>
-                  <p className="whitespace-nowrap text-sm text-ink-label">
+                  <p className="text-sm text-ink-label sm:whitespace-nowrap">
                     {formatDate(job.startDate!)}
                     {job.endDate ? ` – ${formatDate(job.endDate)}` : ""}
                   </p>
@@ -183,7 +189,12 @@ export default async function SchedulePage() {
           <ul className="divide-y divide-slate-800 rounded-lg border border-line-card bg-surface">
             {unscheduled.map((job) => (
               <li key={job.id} className="p-4">
-                <Link href={`/jobs/${job.id}`} className="flex items-center justify-between gap-3">
+                {/* Name + status pill + GC name forced onto one ~295px
+                    line was the audit's phone finding; stack below sm. */}
+                <Link
+                  href={`/jobs/${job.id}`}
+                  className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-3"
+                >
                   <div className="flex items-center gap-2">
                     <p className="font-medium text-ink">{job.name}</p>
                     <StatusBadge status={job.status} />

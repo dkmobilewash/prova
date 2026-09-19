@@ -941,7 +941,15 @@ async function receivables(companyId: string): Promise<ToolResult> {
       { label: "Today", href: "/dashboard" },
     ],
     unavailable:
-      outstanding.length === 0 ? "Every invoice raised has been paid in full." : undefined,
+      // "Every invoice raised has been paid in full" is true of a company
+      // that has raised none — and absurd on a first morning. The same
+      // split ReceivablesPanel already makes: the count distinguishes the
+      // two, the outstanding list cannot.
+      outstanding.length === 0
+        ? invoices.length === 0
+          ? "No invoices raised yet. Once a job is billed, what each GC still owes shows up here, longest overdue first."
+          : "Every invoice raised has been paid in full."
+        : undefined,
   };
 }
 

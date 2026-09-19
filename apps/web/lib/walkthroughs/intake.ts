@@ -12,6 +12,12 @@ export const intakeWalkthrough: Walkthrough = {
         "Drag a folder of paperwork the contractor sent you onto this box, or press Choose a folder or Choose files. Nothing is filed yet — each file just gets a row below.",
     },
     {
+      anchor: "intake-forward",
+      title: "Or forward it by email",
+      body:
+        "Your company has its own address for paperwork. Forward any email to it and the attachments land in this tray, marked with who sent them — copy the address into the contacts you forward from.",
+    },
+    {
       anchor: "intake-learned",
       title: "What it has learned",
       body:

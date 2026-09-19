@@ -653,9 +653,13 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     name: "team_roster",
-    // /team, which lib/permissions.test.ts records as open — a roster of
-    // who works here is not a tier.
-    capability: null,
+    // MANAGE_FIELD, matching /certifications exactly — this tool's answer
+    // is mostly that page: certifications on file and what is missing on
+    // them. It was null for a while on the primary citation's reasoning
+    // (/team is open, "a roster of who works here is not a tier") and the
+    // secondary citation never came up, which tools.test.ts recorded as
+    // "the one worth fixing". Fixed 2026-09-19.
+    capability: "MANAGE_FIELD",
     description:
       "Everyone with an account on this company: name, email, role, job function, which craft classifications they have actually worked under, how many certifications are on file, and what is missing on them. THERE IS NO PER-PERSON PAY RATE IN THIS APP AND THIS DOES NOT REPORT ONE — a rate belongs to a craft classification and the fringe schedule in force on a given date, which is why job_labor_cost prices an hour rather than a person. What it does report is the blanks that break paperwork downstream: no name on an account is a blank in the name column of a WH-347, and hours with no craft are a blank in the classification column and are invisible to the ratio review.",
     input_schema: noInput,

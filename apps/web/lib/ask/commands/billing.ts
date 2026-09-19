@@ -253,7 +253,7 @@ async function resolveLogPayment(ctx: CommandContext, input: CommandInput): Prom
   };
 }
 
-async function executeLogPayment(_ctx: CommandContext, payload: ResolvedPayload) {
+async function executeLogPayment(ctx: CommandContext, payload: ResolvedPayload) {
   const jobId = str(payload, "jobId");
   const jobName = str(payload, "jobName");
   const invoiceId = str(payload, "invoiceId");
@@ -267,7 +267,9 @@ async function executeLogPayment(_ctx: CommandContext, payload: ResolvedPayload)
   );
   if (!result.ok) return { ok: false as const, error: result.error };
   const row = await prisma.payment.findFirst({
-    where: { invoiceId },
+    // The action above already proved the invoice is in-company; the extra
+    // clause keeps this decoration lookup caller-proof under refactor.
+    where: { invoiceId, invoice: { job: { companyId: ctx.companyId } } },
     orderBy: { receivedAt: "desc" },
     select: { id: true },
   });

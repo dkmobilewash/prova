@@ -2,7 +2,8 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { importMyCoiExport } from "@/lib/actions";
-import { MAX_IMPORT_BYTES, MAX_IMPORT_ROWS, TOO_LARGE_MESSAGE, importTooLarge } from "@/lib/spreadsheet-import";
+import { MAX_IMPORT_ROWS, TOO_LARGE_MESSAGE, importTooLarge } from "@/lib/spreadsheet-import";
+import { readImportFile } from "@/lib/import-files";
 import {
   COI_TEMPLATE,
   planCoiImport,
@@ -63,21 +64,15 @@ export function MyCoiImport({ existing, known }: Props) {
   async function onFile(file: File | undefined) {
     setFileError(null);
     if (!file) return;
-    if (file.size > MAX_IMPORT_BYTES) {
-      setFileError(TOO_LARGE_MESSAGE);
+    // Size and .xls are refused before any parse; an .xlsx is converted in
+    // the browser to the same CSV text a pasted export would be, so every
+    // guard on the text path applies to it unchanged (lib/import-files.ts).
+    const read = await readImportFile(file);
+    if (!read.ok) {
+      setFileError(read.message);
       return;
     }
-    if (/\.xlsx?$/i.test(file.name)) {
-      setFileError(
-        "That is an Excel workbook. Open it in Excel, choose File → Save As → CSV, then choose the CSV here — or copy the cells and paste them below.",
-      );
-      return;
-    }
-    try {
-      edit(await file.text());
-    } catch {
-      setFileError("Couldn't read that file. Try opening it and pasting the contents instead.");
-    }
+    edit(read.text);
   }
 
   function confirm() {
@@ -133,9 +128,10 @@ export function MyCoiImport({ existing, known }: Props) {
       </div>
 
       <p className="mb-2 text-xs text-ink-body">
-        In myCOI, export your vendors&apos; certificates or policies as a spreadsheet, save it as CSV,
-        and choose it here. One row per vendor per line of cover is best. The first row must name
-        the columns; they don&apos;t have to match exactly.
+        In myCOI, export your vendors&apos; certificates or policies as a spreadsheet and choose it
+        here — an Excel file (.xlsx) works as-is, no saving as CSV first. One row per vendor per
+        line of cover is best. The first row must name the columns; they don&apos;t have to match
+        exactly.
       </p>
       <ul className="mb-3 flex flex-col gap-1 text-xs text-ink-body">
         <li>
@@ -165,9 +161,9 @@ export function MyCoiImport({ existing, known }: Props) {
         </a>
         <input
           type="file"
-          accept=".csv,.tsv,.txt,text/csv,text/plain"
+          accept=".csv,.tsv,.txt,.xlsx,text/csv,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
           onChange={(event) => onFile(event.target.files?.[0])}
-          aria-label="Choose a myCOI export as a CSV file"
+          aria-label="Choose a myCOI export (CSV or Excel)"
           className="min-h-11 text-xs text-ink-body file:mr-3 file:min-h-11 file:rounded-md file:border file:border-line-card file:bg-neutral-800 file:px-3 file:text-xs file:text-ink-label"
         />
       </div>

@@ -133,7 +133,7 @@ export default async function CashFlowPage() {
             </Link>
           ) : (
             <p className="mt-4 text-sm text-ink-body">
-              Invoices are raised on the job they bill, in its Billing section.{" "}
+              Invoices are raised on the job they bill, in its Invoices section.{" "}
               <Link href="/jobs" className="text-link hover:text-brand">
                 Open a job
               </Link>

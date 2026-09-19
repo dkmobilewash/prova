@@ -382,10 +382,13 @@ describe("read-tool capabilities match the pages they cite", () => {
     // money branch, same as change orders.
     estimate_detail: "VIEW_JOB_COSTS",
     document_intake: ROUTE_CAPABILITY["/intake"],
-    // /team is on the open list: "The roster. Everyone should be able to see
-    // who they work with; changing it is owner-only in the actions." This
-    // tool reads and never changes, so it takes the page's gate.
-    team_roster: null,
+    // MANAGE_FIELD, matching /certifications — the tool's answer is mostly
+    // that page (certifications on file and what is missing on them), not
+    // the open /team roster it was first reasoned from. tools.test.ts
+    // carried this as "the one worth fixing" while it was null; fixed
+    // 2026-09-19, and ESTIMATOR/ACCOUNTING no longer get a certification
+    // summary their own page would refuse.
+    team_roster: "MANAGE_FIELD",
     // Dispatch slips are union paperwork and render on /union-compliance.
     dispatch_slips: ROUTE_CAPABILITY["/union-compliance"],
     // The EMR is recorded and shown on /compliance, beside the certificates

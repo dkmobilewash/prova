@@ -30,6 +30,7 @@ vi.mock("@prova/db", async (importOriginal) => ({
   prisma: {
     workerCertification: { findMany: async () => EMPTY },
     submittal: { findMany: async () => EMPTY },
+    invoice: { findMany: async () => EMPTY },
     job: { findFirst: async () => ({ id: "job-1" }) },
   },
 }));
@@ -55,5 +56,16 @@ describe("an empty register is not a clean bill", () => {
     const result = await ask("open_submittals");
     expect(result.unavailable).toMatch(/No submittal has been raised at all/i);
     expect(result.unavailable).not.toMatch(/every submittal sent has come back/i);
+  });
+
+  it("receivables says no invoice has been RAISED, not that every one was paid", async () => {
+    // The first suggested chip routes here. "Every invoice raised has been
+    // paid in full" was the answer a brand-new company got — true of an
+    // empty set, and the exact sentence ReceivablesPanel was already fixed
+    // for (its test: "does not congratulate an account that has raised no
+    // invoices"). The screen was fixed; the assistant was missed.
+    const result = await ask("receivables");
+    expect(result.unavailable).toMatch(/No invoices raised yet/i);
+    expect(result.unavailable).not.toMatch(/paid in full/i);
   });
 });

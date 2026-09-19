@@ -115,7 +115,7 @@ export default async function PunchListsPage({
             purpose={
               <p>
                 The last-few-things list before a job is done — touch-up paint, a sticking door, a
-                missing outlet cover — found on the walkthrough with the homeowner or builder. Tick
+                missing outlet cover — found on the walkthrough with the GC&apos;s super. Tick
                 each one off as it is fixed, and the job is finished when the list is empty.
               </p>
             }
@@ -132,7 +132,7 @@ export default async function PunchListsPage({
             example={{
               rows: [
                 { title: "Touch up paint behind the fridge", detail: "Smith kitchen remodel · raised by Mike", meta: "open" },
-                { title: "Pantry door rubs at the top", detail: "Smith kitchen remodel · raised by the homeowner", meta: "open" },
+                { title: "Pantry door rubs at the top", detail: "Smith kitchen remodel · raised by the GC's super", meta: "open" },
                 { title: "Outlet cover missing by the island", detail: "Smith kitchen remodel", meta: "done Sep 12" },
               ],
             }}

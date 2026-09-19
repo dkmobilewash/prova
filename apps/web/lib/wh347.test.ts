@@ -349,6 +349,98 @@ describe("hours outside the week", () => {
     expect(form.totalHours).toBe(8);
     expect(form.workers[0].hoursRows[0].days.reduce((s, d) => s + (d.hours ?? 0), 0)).toBe(8);
   });
+
+  it("counts out-of-window hours into a blocking field, never a silent drop", () => {
+    // The comment above the `continue` claimed these hours were counted,
+    // and nothing counted them. If the query window ever regresses -- the
+    // repo has a prior, the eight-day window that certified every Sunday
+    // twice -- hours would vanish from a perjury document with no signal.
+    const form = build([
+      entry({ date: utc("2026-08-24"), hours: 8 }),
+      entry({ date: utc("2026-08-20"), hours: 6 }), // the week before
+    ]);
+    expect(form.hoursOutsideWeek).toBe(6);
+    expect(form.blocking).toContain("hoursOutsideWeek");
+    expect(form.fileable).toBe(false);
+    // The in-window hours still print where they belong.
+    expect(form.totalHours).toBe(8);
+  });
+
+  it("reports zero outside hours and no such blocking field on a clean week", () => {
+    const form = build([entry({ date: utc("2026-08-24"), hours: 8 })]);
+    expect(form.hoursOutsideWeek).toBe(0);
+    expect(form.blocking).not.toContain("hoursOutsideWeek");
+  });
+});
+
+describe("a rate change effective mid-week splits the line", () => {
+  // Union increases are dated July 1; July 1 2026 is a Wednesday. One
+  // line printing one rate against a gross computed at two is mutually
+  // inconsistent on the signed form: a clerk checking 40h x rate gets a
+  // number column 7 does not show, and which rate printed depended on
+  // row order. Two lines, each at its own rate, is the form's own answer
+  // -- the same shape as the two-classification split.
+  const RAISED: FringeRateScheduleInput = {
+    ...CARPENTER,
+    baseWage: 42,
+    effectiveFrom: utc("2026-08-26"), // the Wednesday of WEEK_START's week
+  };
+  const changing = new Map([["craft-carp", [CARPENTER, RAISED]]]);
+
+  it("prints two lines, each internally consistent, when the schedule changes on Wednesday", () => {
+    const form = build(
+      [
+        entry({ date: utc("2026-08-24"), hours: 8 }), // Mon @ 40
+        entry({ date: utc("2026-08-25"), hours: 8 }), // Tue @ 40
+        entry({ date: utc("2026-08-26"), hours: 8 }), // Wed @ 42
+        entry({ date: utc("2026-08-27"), hours: 8 }), // Thu @ 42
+        entry({ date: utc("2026-08-28"), hours: 8 }), // Fri @ 42
+      ],
+      { fringeSchedulesByCraft: changing },
+    );
+    expect(form.workers).toHaveLength(2);
+    const [early, late] = form.workers;
+    expect(early.baseHourlyRate).toBe(40);
+    expect(early.totalHours).toBe(16);
+    expect(early.grossEarnedThisProject).toBe(16 * 40);
+    expect(late.baseHourlyRate).toBe(42);
+    expect(late.totalHours).toBe(24);
+    expect(late.grossEarnedThisProject).toBe(24 * 42);
+    // Neither line is missing a rate -- the split is the fix, not a flag.
+    expect(early.blocking).not.toContain("rateOfPay");
+    expect(late.blocking).not.toContain("rateOfPay");
+    expect(form.totalHours).toBe(40);
+  });
+
+  it("prints the earlier-effective line first, so the split is stable across query order", () => {
+    const entries = [
+      entry({ date: utc("2026-08-26"), hours: 8 }), // Wed first in query order
+      entry({ date: utc("2026-08-24"), hours: 8 }),
+    ];
+    const form = build(entries, { fringeSchedulesByCraft: changing });
+    expect(form.workers.map((w) => w.baseHourlyRate)).toEqual([40, 42]);
+  });
+
+  it("still keeps ONE line when every day resolves the same schedule", () => {
+    const form = build(
+      [entry({ date: utc("2026-08-24") }), entry({ date: utc("2026-08-25") })],
+      { fringeSchedulesByCraft: changing },
+    );
+    expect(form.workers).toHaveLength(1);
+  });
+
+  it("does not let the split weaken the no-partial-gross rule for uncovered days", () => {
+    // A day with NO schedule at all still poisons the line it lands on,
+    // exactly as before -- the split is only for two real rates.
+    const lapsed: FringeRateScheduleInput = { ...CARPENTER, effectiveTo: utc("2026-08-24") };
+    const form = build(
+      [entry({ date: utc("2026-08-24"), hours: 8 }), entry({ date: utc("2026-08-26"), hours: 8 })],
+      { fringeSchedulesByCraft: new Map([["craft-carp", [lapsed]]]) },
+    );
+    expect(form.workers).toHaveLength(1);
+    expect(form.workers[0].grossEarnedThisProject).toBeNull();
+    expect(form.workers[0].blocking).toContain("rateOfPay");
+  });
 });
 
 describe("an empty week", () => {
