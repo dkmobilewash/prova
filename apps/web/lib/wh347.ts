@@ -95,7 +95,7 @@ export const WH347_BLOCKING_FIELD_REASON: Record<Wh347BlockingField, string> = {
   workerName:
     "This account has no name recorded. Column 1 is a statement to the agency about who did the work.",
   identifyingNumber:
-    "Column 1 wants the last four digits of the worker's identifying number. cstream does not record it.",
+    "Column 1 wants the last four digits of the worker's identifying number, or the company's own employee number. Record either on the crew list — the payroll register import fills the last 4 when the register carries it.",
   classification:
     "These hours carry no craft tag, so column 3 has nothing to say. Tag the entries, then reprint.",
   rateOfPay:
@@ -103,12 +103,13 @@ export const WH347_BLOCKING_FIELD_REASON: Record<Wh347BlockingField, string> = {
   grossEarned:
     "Column 7 follows from the rate, which could not be derived for at least one of these days.",
   deductions:
-    "Columns 8 are FICA, withholding and other deductions. cstream does not hold them — they come off the payroll register.",
-  netWages: "Column 9 is gross less deductions, so it follows whatever is missing from column 8.",
+    "Columns 8 are FICA, withholding and other deductions. They come off the payroll register — import this week's register under Settings → Import.",
+  netWages:
+    "Column 9 is the week's net pay, off the payroll register. Import this week's register under Settings → Import.",
   payrollNumber:
-    "Every WH-347 carries a sequential payroll number for the project. cstream does not issue one yet.",
+    "Every WH-347 carries a sequential payroll number for the project. Issue this week's with the button above the form.",
   projectLocation:
-    "The header wants the project's location. A job records a name but no address.",
+    "The header wants the project's location. Record the job's site address on the job page.",
   contractNumber: "The header wants the project or contract number. A job does not record one.",
   statementOfCompliance:
     "Page 2 is signed under penalty of perjury and names how fringes were paid. It is not built yet.",
@@ -137,6 +138,10 @@ export interface Wh347WorkerLine {
   employeeUserId: string;
   /** Never an email. See lib/worker-name.ts. */
   name: string;
+  /** Column 1's identifying number as it should PRINT — "…1234" for a
+   * recorded last-4, or the company's own employee number, whichever the
+   * crew record holds. null blocks the line. */
+  identifyingNumber: string | null;
   /** Column 3. The craft as the agency reads it. */
   classification: string;
   /** One row per pay type actually worked, in ROW_ORDER. A pay type with
@@ -158,19 +163,37 @@ export interface Wh347WorkerLine {
   /** Fringe credited to plans for these hours. Not part of column 7; it
    * is what page 2's 4(a) is about. */
   fringeCredited: number | null;
-  /** Columns 8 and 9. Always null today — cstream does not run payroll
-   * and holds no deductions. Typed as the real shape so the filing record
-   * that will carry them slots in without changing every reader. */
+  /** Columns 8 and 9 — off the imported payroll register, for the register
+   * period that exactly matches this week. null means no register row
+   * covers the week, which blocks the line.
+   *
+   * A worker who ran two crafts occupies two LINES but drew ONE paycheck,
+   * so the money lands on the worker's first line only and later lines
+   * carry `paycheckOnFirstLine` — printing it twice would double column
+   * 8's total for anyone summing the form. */
   deductions: Wh347Deductions | null;
   netWagesThisWeek: number | null;
+  paycheckOnFirstLine: boolean;
   blocking: Wh347BlockingField[];
 }
 
 export interface Wh347Deductions {
-  fica: number;
-  withholdingTax: number;
-  other: number;
+  /** The itemised sub-columns are null when the register carried only a
+   * total — a null prints blank, never zero, because a zero on this form
+   * asserts "nothing was withheld". */
+  fica: number | null;
+  withholdingTax: number | null;
+  other: number | null;
   total: number;
+}
+
+/** One worker's columns 8 and 9 for the week, joined from the imported
+ * payroll register by the CALLER (the page owns the period-to-week match;
+ * this module stays pure and printable). Keyed by the same worker id the
+ * time entries carry. */
+export interface Wh347RegisterMoney {
+  deductions: Wh347Deductions;
+  netWages: number;
 }
 
 export interface Wh347Header {
@@ -233,8 +256,16 @@ export interface Wh347BuildInput {
   weekStart: Date;
   entries: Wh347TimeEntryInput[];
   fringeSchedulesByCraft: Map<string, FringeRateScheduleInput[]>;
-  /** Issued by a counter when one exists. Absent until then. */
+  /** From Wh347PayrollCounter, via the issue button on the filing view.
+   * null until the office manager issues one for this week. */
   payrollNumber?: number | null;
+  /** Worker id -> the identifying number column 1 prints ("…1234" or an
+   * employee number). A worker absent from the map blocks their line. */
+  identifyingNumbers?: Map<string, string>;
+  /** Worker id -> columns 8/9 off the imported register, for register
+   * periods that exactly match this week. A worker absent here blocks
+   * their line's deductions and net. */
+  registerMoney?: Map<string, Wh347RegisterMoney>;
 }
 
 /** The multipliers WH-347 column 7 needs.
@@ -353,17 +384,18 @@ export function buildWh347(input: Wh347BuildInput): Wh347Form {
     let line = lines.get(key);
     if (!line) {
       const name = payrollWorkerName(entry.employee);
+      const identifyingNumber = input.identifyingNumbers?.get(entry.employeeUserId) ?? null;
       const blocking: Wh347BlockingField[] = [];
       if (name.nameMissing) blocking.push("workerName");
       if (!entry.craftLabel) blocking.push("classification");
-      // Not recorded anywhere in the schema, so it blocks every line.
-      blocking.push("identifyingNumber");
-      blocking.push("deductions");
-      blocking.push("netWages");
+      // Off the crew record — a recorded last-4 or an employee number.
+      // Neither recorded blocks the line.
+      if (!identifyingNumber) blocking.push("identifyingNumber");
       line = {
         employeeUserId: entry.employeeUserId,
         sortName: name.label,
         name: name.label,
+        identifyingNumber,
         classification: entry.craftLabel ?? "Not tagged",
         hoursRows: [],
         totalHours: 0,
@@ -373,6 +405,7 @@ export function buildWh347(input: Wh347BuildInput): Wh347Form {
         fringeCredited: 0,
         deductions: null,
         netWagesThisWeek: null,
+        paycheckOnFirstLine: false,
         blocking,
       };
       lines.set(key, line);
@@ -417,6 +450,33 @@ export function buildWh347(input: Wh347BuildInput): Wh347Form {
         (a, b) => ROW_ORDER.indexOf(a.payType) - ROW_ORDER.indexOf(b.payType),
       ),
     }));
+
+  // Columns 8/9: one paycheck per WORKER, but a worker who ran two crafts
+  // prints two LINES. The sort above already puts a worker's lines
+  // together (same sortName), so the first line encountered per
+  // employeeUserId is deterministically the one the grid prints first —
+  // that one carries the money, every later line for the same worker
+  // carries `paycheckOnFirstLine` instead of a second copy of it.
+  const moneyAssigned = new Set<string>();
+  for (const w of workers) {
+    if (moneyAssigned.has(w.employeeUserId)) {
+      w.paycheckOnFirstLine = true;
+      w.deductions = null;
+      w.netWagesThisWeek = null;
+      continue;
+    }
+    moneyAssigned.add(w.employeeUserId);
+    const money = input.registerMoney?.get(w.employeeUserId);
+    if (money) {
+      w.deductions = money.deductions;
+      w.netWagesThisWeek = money.netWages;
+    } else {
+      w.deductions = null;
+      w.netWagesThisWeek = null;
+      if (!w.blocking.includes("deductions")) w.blocking.push("deductions");
+      if (!w.blocking.includes("netWages")) w.blocking.push("netWages");
+    }
+  }
 
   const header: Wh347Header = {
     contractorName: input.company.dbaName?.trim() || input.company.name,

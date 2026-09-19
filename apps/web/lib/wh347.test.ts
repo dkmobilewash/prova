@@ -306,6 +306,70 @@ describe("the header", () => {
   });
 });
 
+describe("columns 8 and 9, off the imported register", () => {
+  it("fills deductions and net wages when the register covers this worker for this week", () => {
+    const form = build([entry()], {
+      registerMoney: new Map([
+        ["u1", { deductions: { fica: 30, withholdingTax: 40, other: 5, total: 75 }, netWages: 245 }],
+      ]),
+    });
+    expect(form.workers[0].deductions).toEqual({ fica: 30, withholdingTax: 40, other: 5, total: 75 });
+    expect(form.workers[0].netWagesThisWeek).toBe(245);
+    expect(form.workers[0].blocking).not.toContain("deductions");
+    expect(form.workers[0].blocking).not.toContain("netWages");
+  });
+
+  it("still blocks deductions and net wages for a worker absent from the register map", () => {
+    const form = build([entry()], { registerMoney: new Map([["someone-else", { deductions: { fica: 1, withholdingTax: 1, other: 1, total: 3 }, netWages: 10 }]]) });
+    expect(form.workers[0].deductions).toBeNull();
+    expect(form.workers[0].netWagesThisWeek).toBeNull();
+    expect(form.workers[0].blocking).toContain("deductions");
+    expect(form.workers[0].blocking).toContain("netWages");
+  });
+
+  it("prints the money on the worker's FIRST line only when they ran two crafts, never doubled", () => {
+    const form = build(
+      [
+        entry({ craftClassificationId: "craft-carp", craftLabel: "Carpenter, Journeyman" }),
+        entry({ craftClassificationId: "craft-lath", craftLabel: "Lather", hours: 4 }),
+      ],
+      {
+        registerMoney: new Map([
+          ["u1", { deductions: { fica: 30, withholdingTax: 40, other: 5, total: 75 }, netWages: 245 }],
+        ]),
+      },
+    );
+    expect(form.workers).toHaveLength(2);
+    // Sorted by name then classification: Carpenter sorts before Lather.
+    const [first, second] = form.workers;
+    expect(first.classification).toBe("Carpenter, Journeyman");
+    expect(first.paycheckOnFirstLine).toBe(false);
+    expect(first.netWagesThisWeek).toBe(245);
+    expect(second.paycheckOnFirstLine).toBe(true);
+    expect(second.netWagesThisWeek).toBeNull();
+    expect(second.deductions).toBeNull();
+    // The second line is not reported as MISSING money — it is the first
+    // line's money, printed once. A "deductions"/"netWages" blocker here
+    // would say the register is missing this worker when it is not.
+    expect(second.blocking).not.toContain("deductions");
+    expect(second.blocking).not.toContain("netWages");
+  });
+});
+
+describe("column 1's identifying number", () => {
+  it("prints the crew record's identifying number and unblocks the line", () => {
+    const form = build([entry()], { identifyingNumbers: new Map([["u1", "…4321"]]) });
+    expect(form.workers[0].identifyingNumber).toBe("…4321");
+    expect(form.workers[0].blocking).not.toContain("identifyingNumber");
+  });
+
+  it("blocks the line when the worker has no identifying number recorded", () => {
+    const form = build([entry()]);
+    expect(form.workers[0].identifyingNumber).toBeNull();
+    expect(form.workers[0].blocking).toContain("identifyingNumber");
+  });
+});
+
 describe("fileable", () => {
   it("is false while anything is blocking — a form you cannot complete must not look ready to sign", () => {
     const form = build([entry()]);
@@ -337,6 +401,36 @@ describe("fileable", () => {
     ]);
     expect(form.blocking.filter((f) => f === "workerName")).toHaveLength(1);
     expect(form.blocking.indexOf("payrollNumber")).toBeLessThan(form.blocking.indexOf("workerName"));
+  });
+
+  it("clears every blocker the payroll-register import can fill — everything but the statement of compliance", () => {
+    // The four this PR exists for: deductions, net wages, an identifying
+    // number, and an issued payroll number. Also supplies the two header
+    // fields (project location, contract number) so this case isolates
+    // exactly one remaining reason: page 2 is not built. statementOfCompliance
+    // is not part of the import's scope and this file does not remove it —
+    // see CLAUDE.md and the PR description for why.
+    const withRegister = buildWh347({
+      company: COMPANY,
+      job: { name: JOB.name, location: "123 Main St, Sacramento, CA", contractNumber: "C-4021" },
+      weekStart: WEEK_START,
+      entries: [entry()],
+      fringeSchedulesByCraft: schedules,
+      payrollNumber: 7,
+      identifyingNumbers: new Map([["u1", "…4321"]]),
+      registerMoney: new Map([
+        ["u1", { deductions: { fica: 30, withholdingTax: 40, other: 5, total: 75 }, netWages: 245 }],
+      ]),
+    });
+    expect(withRegister.blocking).toEqual(["statementOfCompliance"]);
+    expect(withRegister.fileable).toBe(false);
+
+    // The contrast: without any of that, every one of them blocks.
+    const withoutRegister = build([entry()]);
+    for (const field of ["deductions", "netWages", "identifyingNumber", "payrollNumber"] as const) {
+      expect(withoutRegister.blocking).toContain(field);
+    }
+    expect(withoutRegister.fileable).toBe(false);
   });
 });
 

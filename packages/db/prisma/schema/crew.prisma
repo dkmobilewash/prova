@@ -100,7 +100,12 @@ model CrewMember {
   /// digit to this app at all.
   ///
   /// Nullable because a crew member is worth recording before payroll has
-  /// sent the number over. LOCKED after creation by trigger.
+  /// sent the number over. SET ONCE by trigger: NULL -> a value is allowed
+  /// (that is precisely "payroll sent the number over" — the payroll
+  /// register import is the caller), and any change AFTER that is refused,
+  /// the same one-way rule linkedUserId already follows. Changed by
+  /// 20260919200000_add_payroll_register from a full lock, which
+  /// contradicted this comment's own reason for the field being nullable.
   identifyingNumberLast4 String?
 
   /// Davis-Bacon's basic-records rule (29 CFR 5.5(a)(3)) requires the
@@ -164,6 +169,11 @@ model CrewMember {
 
   crewScheduleDays CrewScheduleDay[]
   workerCrafts     WorkerCraft[]
+
+  /// This person's lines on imported payroll registers. RESTRICT (Prisma's
+  /// default for a required relation), which is fine: crew members archive,
+  /// they never delete.
+  payrollRegisterEntries PayrollRegisterEntry[]
 
   @@unique([companyId, employeeNumber])
   @@index([companyId])

@@ -1,0 +1,122 @@
+// The weekly payroll register, imported from the payroll system the
+// contractor already runs — and the WH-347 payroll numbers that make the
+// certified-payroll filing view fileable.
+//
+// C Stream does not run payroll and never will pretend to: it computes no
+// withholding, no FICA, no net. What it needs for a WH-347 (columns 8 and
+// 9, and the last-4 identifying number) EXISTS, in Gusto, ADP RUN, Sage
+// 100 Contractor or Foundation — so it is imported from those systems'
+// register exports rather than derived. See
+// apps/web/lib/payroll-register-import.ts for the import itself.
+//
+// Part of the multi-file Prisma schema in this folder.
+
+/// One person's line on one pay period of the company's payroll register.
+///
+/// Company-scoped, not job-scoped, because a paycheck is: the register the
+/// payroll system prints covers everything the person worked that period,
+/// and WH-347's own instructions have columns 8/9 reflect the WHOLE
+/// paycheck while column 7 is this project's gross. So this model hangs
+/// off CrewMember, carries no jobId, and the WH-347 page joins it to a
+/// job-week by period dates.
+///
+/// MONEY IS CENTS, in integers, always. The register is the document the
+/// deductions on a signed federal form will be copied from; a float that
+/// renders as 1147.9999999 is not that document.
+///
+/// WHAT IS DELIBERATELY NOT HERE: any SSN column. The import refuses a
+/// whole Social Security number in ANY cell (same sweep as the crew
+/// importer), and the last-4 — when a register carries one — goes to the
+/// existing CrewMember.identifyingNumberLast4, never to a second column
+/// here. One place a number that sensitive can live is one place to guard.
+model PayrollRegisterEntry {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  /// Always a crew member, never a User: only rows the import matched to
+  /// the crew list are written at all. An unmatched register line is a
+  /// preview problem with a reason, not a row with a dangling name.
+  crewMemberId String
+  crewMember   CrewMember @relation(fields: [crewMemberId], references: [id])
+
+  /// UTC midnight, like every date in this schema. ENTERED — they come off
+  /// the register, never stamped by the app.
+  periodStart DateTime
+  periodEnd   DateTime
+  payDate     DateTime?
+
+  /// Hours the register shows for the period, if it shows them. The app's
+  /// own TimeEntry hours stay authoritative for column 4/5; this is kept
+  /// so the office manager can see the two sources disagree.
+  hours Decimal? @db.Decimal(6, 2)
+
+  grossCents      Int
+  /// Total deductions for the period. Either read from the register's own
+  /// total column, or derived as gross − net when the register has no
+  /// total column — the preview says which, per row.
+  deductionsCents Int
+  netCents        Int
+
+  /// Itemized deductions in cents, when the register itemizes:
+  /// { ficaCents, federalTaxCents, stateTaxCents, otherCents }. Absent
+  /// keys mean "the register did not say", never zero — a zero on a WH-347
+  /// is a statement.
+  deductionsDetail Json?
+
+  /// Which format the row came in as — "gusto", or "generic" for the
+  /// column-mapped path. A label for the preview and for debugging, not
+  /// logic.
+  source String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// Re-importing the same period for the same person UPDATES the row.
+  /// This is what makes a corrected register safe to import twice.
+  @@unique([crewMemberId, periodStart, periodEnd])
+  @@index([companyId, periodStart])
+}
+
+/// A WH-347 payroll number that has been issued for one job's week.
+///
+/// The form's "Payroll No." is sequential PER PROJECT — the DOL reads it
+/// to see that no week is missing from the run, which is also why a
+/// "no work" payroll still gets a number. Issued EXPLICITLY by a button on
+/// the filing view, never as a side effect of rendering it: a page render
+/// is not an intent to file, and a number issued by a stray page load
+/// would leave holes in the sequence for weeks nobody filed.
+///
+/// Evidence rules apply: once issued, a week's number never changes and is
+/// never deleted from the app. There is deliberately no update or delete
+/// action for this model.
+model Wh347PayrollNumber {
+  id    String @id @default(cuid())
+  jobId String
+  job   Job    @relation(fields: [jobId], references: [id])
+
+  /// The certified-payroll week's Sunday, UTC midnight — the same
+  /// weekStart certifiedPayrollWeekWindow anchors on.
+  weekStart DateTime
+
+  /// From Wh347PayrollCounter, in the same transaction as this insert.
+  number Int
+
+  issuedAt DateTime @default(now())
+
+  @@unique([jobId, weekStart])
+  @@unique([jobId, number])
+  @@index([jobId])
+}
+
+/// Issues Wh347PayrollNumber numbers per job. Same shape and same reason
+/// as InvoiceCounter (see billing.prisma): a counter row bumped in the
+/// insert's own transaction, never max(n)+1 off surviving rows. Bumped
+/// only by issueWh347PayrollNumber (apps/web/lib/wh347-payroll-number.ts).
+model Wh347PayrollCounter {
+  jobId      String @id
+  job        Job    @relation(fields: [jobId], references: [id])
+  lastNumber Int    @default(0)
+
+  updatedAt DateTime @updatedAt
+}

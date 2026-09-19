@@ -727,6 +727,11 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // Lien deadlines — every write reachable only from /lien-deadlines, which
   // demands MANAGE_BILLING, and every one asserts it before any query.
   lienDeadlines: () => import("./actions/lienDeadlines"),
+  // The payroll register import and issuing a WH-347 payroll number —
+  // both MANAGE_COMPLIANCE, deliberately NOT owner-only like the bulk
+  // spreadsheet importers beside the register import on /settings/import.
+  // See lib/actions/payrollRegister.ts's own doc comment for why.
+  payrollRegister: () => import("./actions/payrollRegister"),
   // Phase codes — the company's own cost-coding vocabulary. All three
   // writes are reachable only from /settings, which demands
   // MANAGE_COMPLIANCE, so the walk puts all three in MUST_ASSERT and every

@@ -30,8 +30,31 @@ import type { FringeRateScheduleInput } from "@/lib/labor-cost";
 import {
   buildWh347,
   WH347_BLOCKING_FIELD_REASON,
+  type Wh347Deductions,
+  type Wh347RegisterMoney,
   type Wh347TimeEntryInput,
 } from "@/lib/wh347";
+import { IssuePayrollNumberButton } from "./IssuePayrollNumberButton";
+
+/** cents -> dollars, for display only. Every other number wh347.ts works
+ * in is a dollar figure (baseHourlyRate, grossEarnedThisProject…), so the
+ * register's cents are converted at this one boundary rather than teaching
+ * the form module a second unit. Nothing here is stored or recomputed. */
+function dollars(cents: number): number {
+  return cents / 100;
+}
+
+/** Column 1's identifying number as it should print: the recorded last-4
+ * wins (it is the actual federal identifier), an employee number is the
+ * fallback so a crew member payroll hasn't reached yet can still print
+ * something the company already has on the register. */
+function printedIdentifyingNumber(crew: {
+  identifyingNumberLast4: string | null;
+  employeeNumber: string | null;
+}): string | null {
+  if (crew.identifyingNumberLast4) return `…${crew.identifyingNumberLast4}`;
+  return crew.employeeNumber;
+}
 
 function isoDate(date: Date): string {
   return date.toISOString().slice(0, 10);
@@ -90,8 +113,10 @@ export default async function Wh347Page({
   const weekStart = certifiedPayrollWeekStart(
     Number.isNaN(requested.getTime()) ? new Date() : requested,
   );
+  const weekEnding = new Date(weekStart);
+  weekEnding.setUTCDate(weekEnding.getUTCDate() + 6);
 
-  const [entries, craftClassifications] = await Promise.all([
+  const [entries, craftClassifications, crew, registerRows, issuedNumber] = await Promise.all([
     loadCertifiedPayrollWeekEntries(company.id, job.id, weekStart),
     prisma.craftClassification.findMany({
       where: { unionLocal: { companyAgreements: { some: { companyId: company.id } } } },
@@ -100,7 +125,62 @@ export default async function Wh347Page({
       // finding 3, so the raw list itself reads sensibly too.
       include: { fringeRateSchedules: { orderBy: { effectiveFrom: "desc" } } },
     }),
+    // Column 1's identifying number, per crew member: keyed by the same
+    // worker id timeEntryWorkerId uses (linkedUserId when the crew member
+    // has a login, the crew member's own id otherwise) so it joins onto
+    // wh347Entries without a second lookup at render time.
+    prisma.crewMember.findMany({
+      where: { companyId: company.id },
+      select: { id: true, linkedUserId: true, employeeNumber: true, identifyingNumberLast4: true },
+    }),
+    // Columns 8/9, off the register — ONLY a period that exactly matches
+    // this WH-347 week. A register period that merely overlaps is not
+    // this week's paycheck; buildWh347 blocks a worker absent here rather
+    // than guess at a partial week.
+    prisma.payrollRegisterEntry.findMany({
+      where: { companyId: company.id, periodStart: weekStart, periodEnd: weekEnding },
+      select: {
+        crewMemberId: true,
+        grossCents: true,
+        deductionsCents: true,
+        netCents: true,
+        deductionsDetail: true,
+        crewMember: { select: { linkedUserId: true } },
+      },
+    }),
+    prisma.wh347PayrollNumber.findUnique({
+      where: { jobId_weekStart: { jobId: job.id, weekStart } },
+      select: { number: true },
+    }),
   ]);
+
+  const identifyingNumbers = new Map<string, string>();
+  for (const c of crew) {
+    const printed = printedIdentifyingNumber(c);
+    if (!printed) continue;
+    identifyingNumbers.set(c.linkedUserId ?? c.id, printed);
+  }
+
+  const registerMoney = new Map<string, Wh347RegisterMoney>();
+  for (const row of registerRows) {
+    const detail = (row.deductionsDetail ?? null) as {
+      ficaCents?: number;
+      federalTaxCents?: number;
+      stateTaxCents?: number;
+      otherCents?: number;
+    } | null;
+    const fica = detail?.ficaCents != null ? dollars(detail.ficaCents) : null;
+    const withholding =
+      detail?.federalTaxCents != null || detail?.stateTaxCents != null
+        ? dollars((detail?.federalTaxCents ?? 0) + (detail?.stateTaxCents ?? 0))
+        : null;
+    const other = detail?.otherCents != null ? dollars(detail.otherCents) : null;
+    const deductions: Wh347Deductions = { fica, withholdingTax: withholding, other, total: dollars(row.deductionsCents) };
+    registerMoney.set(row.crewMember.linkedUserId ?? row.crewMemberId, {
+      deductions,
+      netWages: dollars(row.netCents),
+    });
+  }
 
   const fringeSchedulesByCraft = new Map<string, FringeRateScheduleInput[]>(
     craftClassifications.map((craft) => [
@@ -148,6 +228,9 @@ export default async function Wh347Page({
     weekStart,
     entries: wh347Entries,
     fringeSchedulesByCraft,
+    payrollNumber: issuedNumber?.number ?? null,
+    identifyingNumbers,
+    registerMoney,
   });
 
   const headings = form.days.map(dayHeading);
@@ -227,7 +310,12 @@ export default async function Wh347Page({
           </div>
           <div>
             <span className="font-semibold">Payroll No.: </span>
-            {form.header.payrollNumber ?? <Missing>Not issued — see the list above.</Missing>}
+            {form.header.payrollNumber ?? (
+              <>
+                <Missing>Not issued yet.</Missing>{" "}
+                <IssuePayrollNumberButton jobId={job.id} weekStart={isoDate(weekStart)} />
+              </>
+            )}
           </div>
           <div>
             <span className="font-semibold">For Week Ending: </span>
@@ -314,7 +402,12 @@ export default async function Wh347Page({
                         <div className={worker.name === "Name not recorded" ? "text-red-600" : ""}>
                           {worker.name}
                         </div>
-                        <Missing>ID number not recorded</Missing>
+                        {worker.identifyingNumber ?? (
+                          <Missing>
+                            ID number not recorded. Record a last-4 or employee number on the crew
+                            list.
+                          </Missing>
+                        )}
                       </td>
                     )}
                     {rowIndex === 0 && (
@@ -377,16 +470,30 @@ export default async function Wh347Page({
                           className="border border-black px-1 py-1 align-top"
                           rowSpan={worker.hoursRows.length}
                         >
-                          <Missing>
-                            FICA, withholding and other come off the payroll register. cstream does
-                            not hold them.
-                          </Missing>
+                          {worker.paycheckOnFirstLine ? (
+                            <span className="text-[9px] text-slate-600">
+                              See {worker.name}&apos;s first line — one paycheck.
+                            </span>
+                          ) : worker.deductions != null ? (
+                            <div>{money(worker.deductions.total)}</div>
+                          ) : (
+                            <Missing>
+                              Not on the imported register for this week. Import it at Settings →
+                              Import.
+                            </Missing>
+                          )}
                         </td>
                         <td
                           className="border border-black px-1 py-1 align-top"
                           rowSpan={worker.hoursRows.length}
                         >
-                          <Missing>Gross less deductions.</Missing>
+                          {worker.paycheckOnFirstLine ? (
+                            ""
+                          ) : worker.netWagesThisWeek != null ? (
+                            money(worker.netWagesThisWeek)
+                          ) : (
+                            <Missing>Not on the imported register for this week.</Missing>
+                          )}
                         </td>
                       </>
                     )}
